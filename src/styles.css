@@ -175,10 +175,10 @@
   --bg-tertiary: #2d2d30;
   --bg-highlight: #37373d;
   --fg-primary: #cccccc;
-  --fg-secondary: #9d9d9d;
-  --fg-muted: #848d97;
-  --accent: #007acc;
-  --accent-hover: #1a8cd6;
+  --fg-secondary: #a0a0a0;
+  --fg-muted: #9aa1a9;
+  --accent: #59a8dd;
+  --accent-hover: #7abde5;
   --border: #3e3e42;
   --success: #4ec9b0;
   --warning: #dcdcaa;
@@ -600,7 +600,7 @@ html, body {
   font-size: 10px;
   font-weight: 600;
   font-family: var(--font-mono);
-  color: #fff;
+  color: var(--bg-primary);
   border-radius: 8px;
   white-space: nowrap;
   cursor: pointer;
@@ -625,8 +625,8 @@ html, body {
 
 .branch-pr-badge.draft {
   background: transparent;
-  border: 1px dashed #848d97;
-  color: #848d97;
+  border: 1px dashed var(--fg-muted);
+  color: var(--fg-muted);
 }
 
 .branch-pr-badge.conflict {
@@ -703,7 +703,7 @@ html, body {
 
 .branch-remove-btn:hover {
   background: var(--error);
-  color: white;
+  color: var(--bg-primary);
 }
 
 /* Main Content */
@@ -948,7 +948,7 @@ html, body {
 
 .tab-close:hover {
   background: var(--error);
-  color: white;
+  color: var(--bg-primary);
 }
 
 .tab-new-btn {
@@ -1361,23 +1361,23 @@ html, body {
 }
 
 .status-badge.branch.ahead {
-  background: rgba(122, 162, 247, 0.2);
+  background: rgba(122, 162, 247, 0.12);
   color: var(--accent);
 }
 
 .status-badge.pr {
   background: var(--accent);
-  color: white;
+  color: var(--bg-primary);
 }
 
 .status-badge.merged {
   background: #a371f7;
-  color: white;
+  color: var(--bg-primary);
 }
 
 .status-badge.closed {
   background: var(--error);
-  color: white;
+  color: var(--bg-primary);
 }
 
 .status-badge.ci {
@@ -1666,7 +1666,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .file-status.status-modified {
   background: rgba(59, 130, 246, 0.2);
-  color: #3b82f6;
+  color: #5e98f7;
 }
 
 .file-status.status-added {
@@ -1676,12 +1676,12 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .file-status.status-deleted {
   background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
+  color: #f26b6b;
 }
 
 .file-status.status-renamed {
   background: rgba(168, 85, 247, 0.2);
-  color: #a855f7;
+  color: #bb7af8;
 }
 
 .file-status.status-unknown {
@@ -2372,7 +2372,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .variable-dialog-actions button:nth-child(2) {
   background: var(--success);
-  color: white;
+  color: var(--bg-primary);
 }
 
 .variable-dialog-actions button:last-child {
@@ -3823,7 +3823,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .task-item-cancel:hover {
   background: var(--error);
-  color: white;
+  color: var(--bg-primary);
 }
 
 /* ============================================================================
@@ -3982,7 +3982,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .git-ops-state-clean {
   background: var(--success);
-  color: white;
+  color: var(--bg-primary);
 }
 
 .git-ops-state-dirty {
@@ -3993,12 +3993,12 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .git-ops-state-conflict,
 .git-ops-state-merge {
   background: var(--error);
-  color: white;
+  color: var(--bg-primary);
 }
 
 .git-ops-state-unknown {
   background: var(--fg-muted);
-  color: white;
+  color: var(--bg-primary);
 }
 
 .git-ops-section {
@@ -4328,7 +4328,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .quit-dialog-quit {
   background: var(--error);
-  color: white;
+  color: var(--bg-primary);
 }
 
 .quit-dialog-quit:hover {
@@ -4437,12 +4437,12 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .ci-check-status.success {
-  background: rgba(158, 206, 106, 0.2);
+  background: rgba(158, 206, 106, 0.12);
   color: var(--success);
 }
 
 .ci-check-status.failure {
-  background: rgba(247, 118, 142, 0.2);
+  background: rgba(247, 118, 142, 0.12);
   color: var(--error);
 }
 
@@ -4503,23 +4503,23 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .pr-state-badge.open {
-  background: rgba(63, 185, 80, 0.2);
+  background: rgba(63, 185, 80, 0.12);
   color: var(--success);
 }
 
 .pr-state-badge.merged {
-  background: rgba(163, 113, 247, 0.2);
+  background: rgba(163, 113, 247, 0.12);
   color: #a371f7;
 }
 
 .pr-state-badge.closed {
-  background: rgba(248, 81, 73, 0.2);
+  background: rgba(248, 81, 73, 0.12);
   color: var(--error);
 }
 
 .pr-state-badge.draft {
-  background: rgba(132, 141, 151, 0.2);
-  color: #848d97;
+  background: rgba(132, 141, 151, 0.12);
+  color: var(--fg-muted);
 }
 
 /* PR labels in detail popover */
@@ -4601,12 +4601,12 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .merge-state-badge.blocked {
-  background: rgba(247, 118, 142, 0.15);
+  background: rgba(247, 118, 142, 0.1);
   color: var(--error);
 }
 
 .merge-state-badge.conflicting {
-  background: rgba(248, 81, 73, 0.2);
+  background: rgba(248, 81, 73, 0.12);
   color: var(--error);
 }
 
@@ -4625,7 +4625,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .review-state-badge.changes-requested {
-  background: rgba(248, 81, 73, 0.2);
+  background: rgba(248, 81, 73, 0.12);
   color: var(--error);
 }
 
