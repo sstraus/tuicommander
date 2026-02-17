@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal, createMemo } from "solid-js";
+import { Component, Show, For, createSignal, createMemo, onCleanup } from "solid-js";
 import { invoke } from "../../invoke";
 import { ZoomIndicator, BranchBadge, PrBadge, CiBadge } from "../ui";
 import { terminalsStore } from "../../stores/terminals";
@@ -7,6 +7,8 @@ import { BranchPopover } from "../BranchPopover";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { useGitHub } from "../../hooks/useGitHub";
 import { githubStore } from "../../stores/github";
+import { rateLimitStore } from "../../stores/ratelimit";
+import { formatWaitTime } from "../../rate-limit";
 import { dictationStore } from "../../stores/dictation";
 import { getModifierSymbol } from "../../platform";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -39,6 +41,29 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   const [ciChecks, setCiChecks] = createSignal<CiCheckDetail[]>([]);
   const [ciLoading, setCiLoading] = createSignal(false);
   const [cwdCopied, setCwdCopied] = createSignal(false);
+
+  // Rate limit countdown — tick every second while any rate limit is active
+  const [rlTick, setRlTick] = createSignal(0);
+  const rlTimer = setInterval(() => {
+    if (rateLimitStore.getRateLimitedCount() > 0) {
+      setRlTick((t) => t + 1);
+      rateLimitStore.cleanupExpired();
+    }
+  }, 1000);
+  onCleanup(() => clearInterval(rlTimer));
+
+  const rateLimitWarning = createMemo(() => {
+    rlTick(); // Subscribe to ticks for reactivity
+    const sessions = rateLimitStore.getRateLimitedSessions();
+    if (sessions.length === 0) return null;
+    // Show the longest remaining wait
+    let maxWait = 0;
+    for (const sid of sessions) {
+      const wait = rateLimitStore.getWaitTime(sid);
+      if (wait > maxWait) maxWait = wait;
+    }
+    return { count: sessions.length, remaining: formatWaitTime(maxWait) };
+  });
 
   const handleCopyCwd = async () => {
     if (!props.cwd) return;
@@ -145,6 +170,13 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
               </span>
             );
           }}
+        </Show>
+        <Show when={rateLimitWarning()}>
+          {(rl) => (
+            <span class="status-rate-limit" title={`${rl().count} session(s) rate limited`}>
+              ⚠ Rate limited ({rl().remaining})
+            </span>
+          )}
         </Show>
       </div>
 

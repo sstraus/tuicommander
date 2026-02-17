@@ -1403,6 +1403,18 @@ html, body {
   white-space: nowrap;
 }
 
+.status-rate-limit {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.1);
+  white-space: nowrap;
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+
 #agent-stats {
   font-family: var(--font-mono);
   font-size: 10px;
