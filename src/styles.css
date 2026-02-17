@@ -547,7 +547,7 @@ html, body {
 }
 
 .branch-icon.question {
-  color: var(--warning);
+  color: #ffd700;
   animation: pulse-opacity 1s ease-in-out infinite;
   font-weight: bold;
 }
