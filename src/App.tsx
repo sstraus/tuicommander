@@ -53,7 +53,7 @@ import { useAgentPolling } from "./hooks/useAgentPolling";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { initApp } from "./hooks/useAppInit";
 import { applyAppTheme } from "./themes";
-import { hotkeyToTauriShortcut } from "./utils";
+import { hotkeyToTauriShortcut, isValidHotkey } from "./utils";
 import {
   register as registerShortcut,
   unregister as unregisterShortcut,
@@ -387,6 +387,7 @@ const App: Component = () => {
     const hotkey = dictationStore.state.hotkey;
     const capturing = dictationStore.state.capturingHotkey;
     if (!dictationStore.state.enabled || !hotkey || capturing) return;
+    if (!isValidHotkey(hotkey)) return;
 
     const shortcut = hotkeyToTauriShortcut(hotkey);
     let registered = false;
