@@ -373,25 +373,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
     terminal.open(containerRef);
 
     // Load WebGL renderer for 3-5x rendering performance over canvas.
-    // On context loss, fall back to CanvasAddon for continued usability.
-    const loadCanvasFallback = async () => {
-      try {
-        const { CanvasAddon } = await import("@xterm/addon-canvas");
-        terminal!.loadAddon(new CanvasAddon());
-      } catch {
-        // DOM renderer remains as ultimate fallback
-      }
-    };
-
+    // CanvasAddon fallback deferred to Story 158 (@xterm/addon-canvas beta has broken exports).
+    // On context loss, DOM renderer remains as fallback.
     try {
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => {
         webgl.dispose();
-        loadCanvasFallback();
       });
       terminal.loadAddon(webgl);
     } catch {
-      loadCanvasFallback();
+      // DOM renderer as fallback
     }
 
     // Update tab title from shell OSC 0/2 escape sequences (e.g. user@host:~/path)
