@@ -17,7 +17,8 @@ type ParsedEvent =
   | { type: "rate-limit"; pattern_name: string; matched_text: string; retry_after_ms: number | null }
   | { type: "status-line"; task_name: string; full_line: string; time_info: string | null; token_info: string | null }
   | { type: "pr-url"; number: number; url: string; platform: string }
-  | { type: "progress"; state: number; value: number };
+  | { type: "progress"; state: number; value: number }
+  | { type: "question"; prompt_text: string };
 
 export interface TerminalProps {
   id: string;
@@ -218,6 +219,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
         switch (parsed.type) {
           case "progress": {
+            terminalsStore.clearAwaitingInput(props.id);
             if (parsed.state === 0) {
               terminalsStore.update(props.id, { progress: null });
             } else if (parsed.state === 1 || parsed.state === 2 || parsed.state === 3) {
@@ -226,6 +228,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           }
           case "status-line": {
+            // Agent is working again — clear any question state
+            terminalsStore.clearAwaitingInput(props.id);
             const now = Date.now();
             const currentTerm = terminalsStore.get(props.id);
             // Only use status-line title if OSC hasn't set a title recently (2s)
@@ -254,6 +258,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
             }
             break;
           }
+          case "question":
+            terminalsStore.setAwaitingInput(props.id, "question");
+            if (terminalsStore.state.activeId !== props.id) {
+              notificationsStore.playQuestion();
+            }
+            break;
           case "pr-url":
             break;
         }

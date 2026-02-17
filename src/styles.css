@@ -546,6 +546,12 @@ html, body {
   color: var(--success);
 }
 
+.branch-icon.question {
+  color: var(--warning);
+  animation: pulse-opacity 1s ease-in-out infinite;
+  font-weight: bold;
+}
+
 .branch-content {
   flex: 1;
   min-width: 0;

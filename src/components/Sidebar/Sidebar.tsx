@@ -27,10 +27,10 @@ export interface SidebarProps {
   onGitCommand?: (command: string) => void;
 }
 
-/** Branch icon component */
-const BranchIcon: Component<{ isMain: boolean }> = (props) => (
-  <span class={`branch-icon ${props.isMain ? "main" : "feature"}`}>
-    {props.isMain ? "★" : "Y"}
+/** Branch icon component — shows ? when any terminal in the branch awaits input */
+const BranchIcon: Component<{ isMain: boolean; hasQuestion?: boolean }> = (props) => (
+  <span class={`branch-icon ${props.hasQuestion ? "question" : props.isMain ? "main" : "feature"}`}>
+    {props.hasQuestion ? "?" : props.isMain ? "★" : "Y"}
   </span>
 );
 
@@ -202,6 +202,9 @@ const BranchItem: Component<{
   const hasIdle = () =>
     !hasActivity() && props.branch.terminals.some((id) => terminalsStore.get(id)?.shellState === "idle");
 
+  const hasQuestion = () =>
+    props.branch.terminals.some((id) => terminalsStore.get(id)?.awaitingInput != null);
+
   const handleDoubleClick = (e: MouseEvent) => {
     e.stopPropagation();
     props.onRename();
@@ -232,7 +235,7 @@ const BranchItem: Component<{
       onClick={props.onSelect}
       onContextMenu={ctxMenu.open}
     >
-      <BranchIcon isMain={props.branch.isMain} />
+      <BranchIcon isMain={props.branch.isMain} hasQuestion={hasQuestion()} />
       <div class="branch-content">
         <span
           class="branch-name"

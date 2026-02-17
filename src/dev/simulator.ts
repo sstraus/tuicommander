@@ -5,10 +5,12 @@
 import type { AgentType } from "../agents";
 import type { NotificationSound } from "../notifications";
 import type { RateLimitInfo } from "../rate-limit";
+import type { AwaitingInputType } from "../stores/terminals";
 import { githubStore } from "../stores/github";
 import { rateLimitStore } from "../stores/ratelimit";
 import { agentFallbackStore } from "../stores/agentFallback";
 import { repositoriesStore } from "../stores/repositories";
+import { terminalsStore } from "../stores/terminals";
 import { notificationsStore } from "../stores/notifications";
 import { PRESETS, buildPrStatus, type PrOverride } from "./presets";
 
@@ -104,6 +106,29 @@ const simulator = {
     }
   },
 
+  /** Simulate a terminal awaiting input (shows ? icon on branch) */
+  question(options?: { type?: AwaitingInputType; clear?: boolean }): void {
+    const { branch } = ensureRepo();
+    const active = repositoriesStore.getActive();
+    if (!active) return;
+
+    const branchState = active.branches[branch];
+    if (!branchState?.terminals.length) {
+      console.error("[tuic] No terminals on active branch. Open a terminal first.");
+      return;
+    }
+
+    const termId = branchState.terminals[0];
+    if (options?.clear) {
+      terminalsStore.clearAwaitingInput(termId);
+      console.log(`[tuic] Cleared awaitingInput on terminal ${termId}`);
+    } else {
+      const type = options?.type ?? "question";
+      terminalsStore.setAwaitingInput(termId, type);
+      console.log(`[tuic] Set awaitingInput="${type}" on terminal ${termId} (branch: ${branch})`);
+    }
+  },
+
   /** Trigger notification sound */
   notification(options: { sound: NotificationSound }): void {
     notificationsStore.testSound(options.sound);
@@ -190,6 +215,12 @@ const simulator = {
   __tuic.rateLimit({ agent: 'gemini', minutes: 10 })
   __tuic.agent({ active: 'gemini' })
   __tuic.agent({ unavailable: ['claude', 'gemini'] })
+
+── Question / Awaiting Input ──────────────────────────────────
+  __tuic.question()                              Show ? icon (question type)
+  __tuic.question({ type: 'error' })             Show ? icon (error type)
+  __tuic.question({ type: 'confirmation' })      Show ? icon (confirmation type)
+  __tuic.question({ clear: true })               Clear ? icon
 
 ── Notifications ──────────────────────────────────────────────
   __tuic.notification({ sound: 'question' })

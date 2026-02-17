@@ -106,8 +106,9 @@ describe("NotificationManager", () => {
       await vi.advanceTimersByTimeAsync(1000);
       await p1;
       await p2;
-      // Only one oscillator should have been created (second was rate-limited)
-      expect(mockAudioContext.createOscillator).toHaveBeenCalledTimes(1);
+      // Only the first play should have created oscillators (second was rate-limited).
+      // "question" is a 2-note sequence, so one play = 2 oscillator creations.
+      expect(mockAudioContext.createOscillator).toHaveBeenCalledTimes(2);
     });
 
     it("allows play after rate limit interval", async () => {

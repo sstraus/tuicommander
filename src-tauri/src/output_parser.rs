@@ -28,6 +28,11 @@ pub enum ParsedEvent {
         state: u8,  // 0=remove, 1=normal, 2=error, 3=indeterminate
         value: u8,  // 0-100
     },
+    /// Agent is waiting for user input (question, confirmation, menu)
+    #[serde(rename = "question")]
+    Question {
+        prompt_text: String,
+    },
 }
 
 /// OutputParser: detects structured events in PTY output text.
@@ -71,6 +76,11 @@ impl OutputParser {
 
         // Rate limit detection
         if let Some(evt) = self.parse_rate_limit(text) {
+            events.push(evt);
+        }
+
+        // Question/attention detection
+        if let Some(evt) = parse_question(text) {
             events.push(evt);
         }
 
@@ -225,6 +235,52 @@ fn parse_status_line(text: &str) -> Option<ParsedEvent> {
                     token_info,
                 });
             }
+        }
+    }
+    None
+}
+
+/// Detect when an agent is waiting for user input (question, confirmation, menu choice).
+fn parse_question(text: &str) -> Option<ParsedEvent> {
+    let clean = strip_ansi(text);
+    lazy_static::lazy_static! {
+        // Claude Code: "Would you like to proceed?" / "Do you want to..."
+        static ref QUESTION_RE: regex::Regex =
+            regex::Regex::new(r"(?i)(Would you like to proceed|Do you want to\b[^?]*\?|Is this (plan|approach) okay)").unwrap();
+        // Numbered menu choices: ❯ 1. or ) 1. followed by option text
+        static ref MENU_RE: regex::Regex =
+            regex::Regex::new(r"[❯\)]\s*1\.\s+\S").unwrap();
+        // Generic Y/N prompts: [Y/n], [y/N], (yes/no)
+        static ref YN_RE: regex::Regex =
+            regex::Regex::new(r"\[([Yy]/[Nn]|[Nn]/[Yy])\]|\(yes/no\)").unwrap();
+        // "? " prefix (inquirer-style prompts used by many CLI tools)
+        static ref INQUIRER_RE: regex::Regex =
+            regex::Regex::new(r"^\?\s+.+\??\s*$").unwrap();
+    }
+
+    for line in clean.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() { continue; }
+
+        if QUESTION_RE.is_match(trimmed) {
+            return Some(ParsedEvent::Question {
+                prompt_text: trimmed.to_string(),
+            });
+        }
+        if MENU_RE.is_match(trimmed) {
+            return Some(ParsedEvent::Question {
+                prompt_text: trimmed.to_string(),
+            });
+        }
+        if YN_RE.is_match(trimmed) {
+            return Some(ParsedEvent::Question {
+                prompt_text: trimmed.to_string(),
+            });
+        }
+        if INQUIRER_RE.is_match(trimmed) {
+            return Some(ParsedEvent::Question {
+                prompt_text: trimmed.to_string(),
+            });
         }
     }
     None
@@ -395,6 +451,48 @@ mod tests {
     fn test_strip_ansi() {
         assert_eq!(strip_ansi("\x1b[32mhello\x1b[0m"), "hello");
         assert_eq!(strip_ansi("no escapes"), "no escapes");
+    }
+
+    #[test]
+    fn test_question_would_you_like() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Would you like to proceed?");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+    }
+
+    #[test]
+    fn test_question_do_you_want() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Do you want to continue with this approach?");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+    }
+
+    #[test]
+    fn test_question_menu_choice() {
+        let parser = OutputParser::new();
+        let events = parser.parse("❯ 1. Yes, clear context and bypass permissions");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+    }
+
+    #[test]
+    fn test_question_yn_prompt() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Apply changes? [Y/n]");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+    }
+
+    #[test]
+    fn test_question_inquirer_style() {
+        let parser = OutputParser::new();
+        let events = parser.parse("? Which template would you like to use?");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+    }
+
+    #[test]
+    fn test_no_question_normal_output() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Building project... done");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]

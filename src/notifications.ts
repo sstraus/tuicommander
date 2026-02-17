@@ -20,16 +20,54 @@ export const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
   },
 };
 
-/** Base64 encoded notification sounds (short beeps) */
-const SOUNDS: Record<NotificationSound, string> = {
-  // Short ascending tone for questions
-  question: generateToneDataUrl(880, 0.15, "sine"),
-  // Short descending tone for errors
-  error: generateToneDataUrl(330, 0.2, "square"),
-  // Pleasant completion chime
-  completion: generateToneDataUrl(660, 0.15, "sine"),
-  // Warning beep
-  warning: generateToneDataUrl(440, 0.1, "triangle"),
+/** A single note in a sound sequence */
+interface Note {
+  frequency: number;
+  duration: number;
+  wave: OscillatorType;
+}
+
+/** A sequence of notes with a gap between them */
+interface SoundSequence {
+  notes: Note[];
+  gap: number;
+}
+
+/** Sound definitions as note sequences */
+const SOUNDS: Record<NotificationSound, SoundSequence> = {
+  // Gentle two-note ascending chime: C5 → E5
+  question: {
+    notes: [
+      { frequency: 523, duration: 0.12, wave: "sine" },
+      { frequency: 659, duration: 0.12, wave: "sine" },
+    ],
+    gap: 0.03,
+  },
+  // Satisfying major triad arpeggio: C5 → E5 → G5
+  completion: {
+    notes: [
+      { frequency: 523, duration: 0.1, wave: "sine" },
+      { frequency: 659, duration: 0.1, wave: "sine" },
+      { frequency: 784, duration: 0.1, wave: "sine" },
+    ],
+    gap: 0.03,
+  },
+  // Low descending minor interval: E4 → C4
+  error: {
+    notes: [
+      { frequency: 330, duration: 0.15, wave: "triangle" },
+      { frequency: 262, duration: 0.15, wave: "triangle" },
+    ],
+    gap: 0.04,
+  },
+  // Quick double-tap: A4 × 2
+  warning: {
+    notes: [
+      { frequency: 440, duration: 0.08, wave: "triangle" },
+      { frequency: 440, duration: 0.08, wave: "triangle" },
+    ],
+    gap: 0.06,
+  },
 };
 
 /** Audio context for sound generation */
@@ -51,21 +89,9 @@ function getAudioContext(): AudioContext {
   return audioContext;
 }
 
-/** Generate a simple tone as a data URL */
-function generateToneDataUrl(
-  frequency: number,
-  duration: number,
-  waveType: OscillatorType
-): string {
-  // We'll use Web Audio API directly instead of data URLs for better quality
-  return `tone:${frequency}:${duration}:${waveType}`;
-}
-
-/** Play a tone using Web Audio API */
-async function playTone(
-  frequency: number,
-  duration: number,
-  waveType: OscillatorType,
+/** Play a sound sequence using Web Audio API */
+async function playSoundSequence(
+  sequence: SoundSequence,
   volume: number
 ): Promise<void> {
   const ctx = getAudioContext();
@@ -75,39 +101,38 @@ async function playTone(
     await ctx.resume();
   }
 
-  const oscillator = ctx.createOscillator();
-  const gainNode = ctx.createGain();
+  const attackTime = 0.01;
+  const releaseTime = 0.03;
+  let offset = 0;
 
-  oscillator.type = waveType;
-  oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
+  for (const note of sequence.notes) {
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
 
-  // Envelope: quick attack, sustain, quick release
-  gainNode.gain.setValueAtTime(0, ctx.currentTime);
-  gainNode.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.01);
-  gainNode.gain.setValueAtTime(volume, ctx.currentTime + duration - 0.05);
-  gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
+    oscillator.type = note.wave;
+    oscillator.frequency.setValueAtTime(note.frequency, ctx.currentTime + offset);
 
-  oscillator.connect(gainNode);
-  gainNode.connect(ctx.destination);
+    // ADSR envelope: quick attack, sustain, smooth release to avoid clicks
+    const noteStart = ctx.currentTime + offset;
+    const noteEnd = noteStart + note.duration;
+    gainNode.gain.setValueAtTime(0, noteStart);
+    gainNode.gain.linearRampToValueAtTime(volume, noteStart + attackTime);
+    gainNode.gain.setValueAtTime(volume, noteEnd - releaseTime);
+    gainNode.gain.linearRampToValueAtTime(0, noteEnd);
 
-  oscillator.start(ctx.currentTime);
-  oscillator.stop(ctx.currentTime + duration);
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
 
+    oscillator.start(noteStart);
+    oscillator.stop(noteEnd);
+
+    offset += note.duration + sequence.gap;
+  }
+
+  // Wait for the full sequence to finish
   return new Promise((resolve) => {
-    setTimeout(resolve, duration * 1000);
+    setTimeout(resolve, offset * 1000);
   });
-}
-
-/** Parse tone data URL */
-function parseToneUrl(url: string): { frequency: number; duration: number; waveType: OscillatorType } | null {
-  if (!url.startsWith("tone:")) return null;
-  const parts = url.split(":");
-  if (parts.length !== 4) return null;
-  return {
-    frequency: parseFloat(parts[1]),
-    duration: parseFloat(parts[2]),
-    waveType: parts[3] as OscillatorType,
-  };
 }
 
 /** Notification manager class */
@@ -134,19 +159,10 @@ export class NotificationManager {
     if (now - lastPlay < this.minInterval) return;
     this.lastPlayTime.set(sound, now);
 
-    // Parse and play the tone
-    const toneData = parseToneUrl(SOUNDS[sound]);
-    if (toneData) {
-      try {
-        await playTone(
-          toneData.frequency,
-          toneData.duration,
-          toneData.waveType,
-          this.config.volume
-        );
-      } catch (err) {
-        console.warn("Failed to play notification sound:", err);
-      }
+    try {
+      await playSoundSequence(SOUNDS[sound], this.config.volume);
+    } catch (err) {
+      console.warn("Failed to play notification sound:", err);
     }
   }
 
