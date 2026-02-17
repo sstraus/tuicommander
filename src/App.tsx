@@ -199,6 +199,9 @@ const App: Component = () => {
   // Apply the active theme to the entire app chrome (sidebar, tabs, toolbar, etc.)
   createEffect(() => applyAppTheme(settingsStore.state.theme));
 
+  // Clear dock badge when window gains focus
+  window.addEventListener("focus", () => notificationsStore.clearBadge());
+
   // Force quit - close all sessions and exit (Story 057)
   const forceQuit = async () => {
     setQuitDialogVisible(false);

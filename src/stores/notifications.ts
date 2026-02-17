@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   notificationManager,
   type NotificationConfig,
@@ -28,6 +29,7 @@ function saveConfig(config: NotificationConfig): void {
 interface NotificationsState {
   config: NotificationConfig;
   isAvailable: boolean;
+  badgeCount: number;
 }
 
 /** Create notifications store */
@@ -38,6 +40,7 @@ function createNotificationsStore() {
   const [state, setState] = createStore<NotificationsState>({
     config: defaults,
     isAvailable: notificationManager.isAvailable(),
+    badgeCount: 0,
   });
 
   const actions = {
@@ -85,29 +88,32 @@ function createNotificationsStore() {
       saveConfig(state.config);
     },
 
-    /** Play a notification sound */
+    /** Play a notification sound; also increments dock badge when window is not focused */
     async play(sound: NotificationSound): Promise<void> {
       await notificationManager.play(sound);
+      if (!document.hasFocus()) {
+        actions.incrementBadge();
+      }
     },
 
     /** Play question notification */
     async playQuestion(): Promise<void> {
-      await notificationManager.playQuestion();
+      await actions.play("question");
     },
 
     /** Play error notification */
     async playError(): Promise<void> {
-      await notificationManager.playError();
+      await actions.play("error");
     },
 
     /** Play completion notification */
     async playCompletion(): Promise<void> {
-      await notificationManager.playCompletion();
+      await actions.play("completion");
     },
 
     /** Play warning notification */
     async playWarning(): Promise<void> {
-      await notificationManager.playWarning();
+      await actions.play("warning");
     },
 
     /** Test a notification sound (bypasses enabled check) */
@@ -124,6 +130,28 @@ function createNotificationsStore() {
       // Restore
       notificationManager.setEnabled(wasEnabled);
       notificationManager.setSoundEnabled(sound, wasSoundEnabled);
+    },
+
+    /** Increment badge count on the app dock icon */
+    async incrementBadge(): Promise<void> {
+      const newCount = state.badgeCount + 1;
+      setState("badgeCount", newCount);
+      try {
+        await getCurrentWindow().setBadgeCount(newCount);
+      } catch {
+        // setBadgeCount may not be supported on all platforms
+      }
+    },
+
+    /** Clear badge count from the app dock icon */
+    async clearBadge(): Promise<void> {
+      if (state.badgeCount === 0) return;
+      setState("badgeCount", 0);
+      try {
+        await getCurrentWindow().setBadgeCount(0);
+      } catch {
+        // setBadgeCount may not be supported on all platforms
+      }
     },
 
     /** Reset to defaults */

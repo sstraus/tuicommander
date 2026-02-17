@@ -2,9 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createRoot } from "solid-js";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
+const mockSetBadgeCount = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: mockInvoke,
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    setBadgeCount: mockSetBadgeCount,
+  }),
 }));
 
 // Mock the notificationManager before importing the store
@@ -52,10 +59,17 @@ describe("notificationsStore", () => {
   beforeEach(async () => {
     vi.resetModules();
     mockInvoke.mockReset().mockResolvedValue(undefined);
+    mockSetBadgeCount.mockReset().mockResolvedValue(undefined);
     localStorage.clear();
 
     vi.doMock("@tauri-apps/api/core", () => ({
       invoke: mockInvoke,
+    }));
+
+    vi.doMock("@tauri-apps/api/window", () => ({
+      getCurrentWindow: () => ({
+        setBadgeCount: mockSetBadgeCount,
+      }),
     }));
 
     // Re-mock after resetModules
@@ -310,30 +324,73 @@ describe("notificationsStore", () => {
   });
 
   describe("playQuestion()", () => {
-    it("delegates to notificationManager.playQuestion()", async () => {
+    it("plays question sound via play()", async () => {
       await store.playQuestion();
-      expect(mockManager.playQuestion).toHaveBeenCalledOnce();
+      expect(mockManager.play).toHaveBeenCalledWith("question");
     });
   });
 
   describe("playError()", () => {
-    it("delegates to notificationManager.playError()", async () => {
+    it("plays error sound via play()", async () => {
       await store.playError();
-      expect(mockManager.playError).toHaveBeenCalledOnce();
+      expect(mockManager.play).toHaveBeenCalledWith("error");
     });
   });
 
   describe("playCompletion()", () => {
-    it("delegates to notificationManager.playCompletion()", async () => {
+    it("plays completion sound via play()", async () => {
       await store.playCompletion();
-      expect(mockManager.playCompletion).toHaveBeenCalledOnce();
+      expect(mockManager.play).toHaveBeenCalledWith("completion");
     });
   });
 
   describe("playWarning()", () => {
-    it("delegates to notificationManager.playWarning()", async () => {
+    it("plays warning sound via play()", async () => {
       await store.playWarning();
-      expect(mockManager.playWarning).toHaveBeenCalledOnce();
+      expect(mockManager.play).toHaveBeenCalledWith("warning");
+    });
+  });
+
+  describe("badge count", () => {
+    it("defaults badgeCount to 0", () => {
+      createRoot((dispose) => {
+        expect(store.state.badgeCount).toBe(0);
+        dispose();
+      });
+    });
+
+    it("incrementBadge increments count and calls setBadgeCount", async () => {
+      await createRoot(async (dispose) => {
+        await store.incrementBadge();
+        expect(store.state.badgeCount).toBe(1);
+        expect(mockSetBadgeCount).toHaveBeenCalledWith(1);
+
+        await store.incrementBadge();
+        expect(store.state.badgeCount).toBe(2);
+        expect(mockSetBadgeCount).toHaveBeenCalledWith(2);
+        dispose();
+      });
+    });
+
+    it("clearBadge resets count and calls setBadgeCount(0)", async () => {
+      await createRoot(async (dispose) => {
+        await store.incrementBadge();
+        await store.incrementBadge();
+        expect(store.state.badgeCount).toBe(2);
+
+        await store.clearBadge();
+        expect(store.state.badgeCount).toBe(0);
+        expect(mockSetBadgeCount).toHaveBeenCalledWith(0);
+        dispose();
+      });
+    });
+
+    it("clearBadge is a no-op when count is already 0", async () => {
+      await createRoot(async (dispose) => {
+        await store.clearBadge();
+        expect(mockSetBadgeCount).not.toHaveBeenCalled();
+        dispose();
+      });
     });
   });
 
