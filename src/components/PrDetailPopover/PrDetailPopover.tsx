@@ -112,22 +112,24 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                 <button class="pr-detail-close" onClick={props.onClose}>&times;</button>
               </div>
 
-              {/* Merge readiness */}
-              <Show when={mergeState()}>
-                {(ms) => (
-                  <div class={`merge-state-badge ${ms().cssClass}`}>
-                    {ms().label}
-                  </div>
-                )}
-              </Show>
-
-              {/* Review status */}
-              <Show when={reviewState()}>
-                {(rs) => (
-                  <div class={`review-state-badge ${rs().cssClass}`}>
-                    {rs().label}
-                  </div>
-                )}
+              {/* Merge + review status pills */}
+              <Show when={mergeState() || reviewState()}>
+                <div class="pr-detail-status-row">
+                  <Show when={mergeState()}>
+                    {(ms) => (
+                      <span class={`merge-state-badge ${ms().cssClass}`}>
+                        {ms().label}
+                      </span>
+                    )}
+                  </Show>
+                  <Show when={reviewState()}>
+                    {(rs) => (
+                      <span class={`review-state-badge ${rs().cssClass}`}>
+                        {rs().label}
+                      </span>
+                    )}
+                  </Show>
+                </div>
               </Show>
 
               {/* Labels */}
@@ -218,6 +220,16 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                       </div>
                     )}
                   </For>
+                </div>
+              </Show>
+
+              {/* Open on GitHub */}
+              <Show when={pr().url}>
+                <div
+                  class="pr-detail-open-github"
+                  onClick={() => openUrl(pr().url).catch(() => {})}
+                >
+                  Open on GitHub {"\u2197"}
                 </div>
               </Show>
             </>

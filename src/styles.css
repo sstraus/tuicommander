@@ -176,7 +176,7 @@
   --bg-highlight: #37373d;
   --fg-primary: #cccccc;
   --fg-secondary: #9d9d9d;
-  --fg-muted: #6e6e6e;
+  --fg-muted: #848d97;
   --accent: #007acc;
   --accent-hover: #1a8cd6;
   --border: #3e3e42;
@@ -4574,7 +4574,15 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 /* Merge readiness badge in PR detail popover */
+.pr-detail-status-row {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px;
+  flex-wrap: wrap;
+}
+
 .merge-state-badge {
+  display: inline-flex;
   padding: 2px 8px;
   border-radius: 12px;
   font-size: 10px;
@@ -4603,6 +4611,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .review-state-badge {
+  display: inline-flex;
   padding: 2px 8px;
   border-radius: 12px;
   font-size: 10px;
@@ -4752,6 +4761,22 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   text-align: center;
   color: var(--fg-muted);
   font-size: 12px;
+}
+
+.pr-detail-open-github {
+  padding: 8px 12px;
+  color: var(--accent);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  text-align: center;
+  border-top: 1px solid var(--border);
+  transition: color 0.1s, background 0.1s;
+}
+
+.pr-detail-open-github:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
 }
 
 /* ============================================================================
