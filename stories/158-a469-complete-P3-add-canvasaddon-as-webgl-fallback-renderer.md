@@ -1,10 +1,10 @@
 ---
 id: 158-a469
 title: Add CanvasAddon as WebGL fallback renderer
-status: blocked
+status: complete
 priority: P3
 created: "2026-02-16T07:05:09.778Z"
-updated: "2026-02-16T08:08:00.001Z"
+updated: "2026-02-17T15:38:06.640Z"
 dependencies: []
 ---
 

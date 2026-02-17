@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import checker from "vite-plugin-checker";
 import { visualizer } from "rollup-plugin-visualizer";
+import purgecss from "vite-plugin-purgecss";
+import { Features } from "lightningcss";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -12,13 +14,30 @@ export default defineConfig(async () => ({
     solid(),
     checker({ typescript: true }),
     visualizer({ filename: "dist/bundle-stats.html", gzipSize: true }),
+    purgecss({
+      content: ["index.html", "src/**/*.tsx", "src/**/*.ts"],
+      safelist: [
+        // xterm.js classes (generated at runtime by the library)
+        /^xterm/,
+        // Dynamic classList patterns used via SolidJS classList={{}}
+        /^split-/,
+        /^awaiting-/,
+        /^platform-/,
+      ],
+    }),
   ],
 
-  // Use Lightning CSS for CSS processing (minification, vendor prefixing, modern syntax)
+  // Lightning CSS: minify only, no vendor prefixes or syntax lowering.
+  // Tauri webviews (WKWebView, WebView2, WebKitGTK) are all modern engines.
   css: {
     transformer: "lightningcss",
+    lightningcss: {
+      include: Features.Nesting,
+      exclude: Features.VendorPrefixes,
+    },
   },
   build: {
+    target: "esnext",
     cssMinify: "lightningcss",
   },
 
