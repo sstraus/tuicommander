@@ -3,7 +3,6 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { CanvasAddon } from "@xterm/addon-canvas";
 import { isTauri, subscribePty, type Unsubscribe } from "../../transport";
 import { usePty } from "../../hooks/usePty";
 import { settingsStore } from "../../stores/settings";
@@ -375,8 +374,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     // Load WebGL renderer for 3-5x rendering performance over canvas.
     // On context loss, fall back to CanvasAddon for continued usability.
-    const loadCanvasFallback = () => {
+    const loadCanvasFallback = async () => {
       try {
+        const { CanvasAddon } = await import("@xterm/addon-canvas");
         terminal!.loadAddon(new CanvasAddon());
       } catch {
         // DOM renderer remains as ultimate fallback
