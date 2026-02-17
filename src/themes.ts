@@ -229,6 +229,34 @@ export function getTerminalTheme(key: string): ITheme {
   return TERMINAL_THEMES[key] ?? TERMINAL_THEMES["vscode-dark"];
 }
 
+/** Parse a hex color (#rrggbb) to [r, g, b] in 0–255 */
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
+}
+
+/** WCAG 2.x relative luminance (0 = black, 1 = white) */
+function relativeLuminance(hex: string): number {
+  const [r, g, b] = hexToRgb(hex).map((c) => {
+    const s = c / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG contrast ratio between two hex colors (range 1–21) */
+export function contrastRatio(hex1: string, hex2: string): number {
+  const l1 = relativeLuminance(hex1);
+  const l2 = relativeLuminance(hex2);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 /** App-wide color scheme applied to the UI chrome (sidebar, tabs, toolbar, etc.) */
 export interface IAppTheme {
   bgPrimary: string;
@@ -244,6 +272,9 @@ export interface IAppTheme {
   success: string;
   warning: string;
   error: string;
+  textOnAccent: string;
+  textOnError: string;
+  textOnSuccess: string;
 }
 
 /** App chrome colors for each theme, derived from official palettes */
@@ -262,6 +293,9 @@ export const APP_THEMES: Record<string, IAppTheme> = {
     success: "#9ece6a",
     warning: "#e0af68",
     error: "#f7768e",
+    textOnAccent: "#000000",
+    textOnError: "#000000",
+    textOnSuccess: "#000000",
   },
   "vscode-dark": {
     bgPrimary: "#1e1e1e",
@@ -277,6 +311,9 @@ export const APP_THEMES: Record<string, IAppTheme> = {
     success: "#4ec9b0",
     warning: "#dcdcaa",
     error: "#f48771",
+    textOnAccent: "#000000",
+    textOnError: "#000000",
+    textOnSuccess: "#000000",
   },
   "vscode-light": {
     bgPrimary: "#ffffff",
@@ -292,6 +329,9 @@ export const APP_THEMES: Record<string, IAppTheme> = {
     success: "#2ea043",
     warning: "#895503",
     error: "#c72e0f",
+    textOnAccent: "#ffffff",
+    textOnError: "#ffffff",
+    textOnSuccess: "#000000",
   },
   "dracula": {
     bgPrimary: "#282a36",
@@ -307,6 +347,9 @@ export const APP_THEMES: Record<string, IAppTheme> = {
     success: "#50fa7b",
     warning: "#f1fa8c",
     error: "#ff5555",
+    textOnAccent: "#000000",
+    textOnError: "#000000",
+    textOnSuccess: "#000000",
   },
   "monokai": {
     bgPrimary: "#272822",
@@ -322,6 +365,9 @@ export const APP_THEMES: Record<string, IAppTheme> = {
     success: "#a6e22e",
     warning: "#f4bf75",
     error: "#f92672",
+    textOnAccent: "#000000",
+    textOnError: "#000000",
+    textOnSuccess: "#000000",
   },
   "catppuccin-mocha": {
     bgPrimary: "#1e1e2e",
@@ -337,6 +383,9 @@ export const APP_THEMES: Record<string, IAppTheme> = {
     success: "#a6e3a1",
     warning: "#f9e2af",
     error: "#f38ba8",
+    textOnAccent: "#000000",
+    textOnError: "#000000",
+    textOnSuccess: "#000000",
   },
   "github-dark": {
     bgPrimary: "#0d1117",
@@ -352,6 +401,9 @@ export const APP_THEMES: Record<string, IAppTheme> = {
     success: "#3fb950",
     warning: "#d29922",
     error: "#ff7b72",
+    textOnAccent: "#000000",
+    textOnError: "#000000",
+    textOnSuccess: "#000000",
   },
   "solarized-dark": {
     bgPrimary: "#002b36",
@@ -367,6 +419,9 @@ export const APP_THEMES: Record<string, IAppTheme> = {
     success: "#859900",
     warning: "#b58900",
     error: "#dc322f",
+    textOnAccent: "#000000",
+    textOnError: "#ffffff",
+    textOnSuccess: "#000000",
   },
   "nord": {
     bgPrimary: "#2e3440",
@@ -382,6 +437,9 @@ export const APP_THEMES: Record<string, IAppTheme> = {
     success: "#a3be8c",
     warning: "#ebcb8b",
     error: "#bf616a",
+    textOnAccent: "#000000",
+    textOnError: "#000000",
+    textOnSuccess: "#000000",
   },
 };
 

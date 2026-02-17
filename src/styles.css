@@ -183,6 +183,9 @@
   --success: #4ec9b0;
   --warning: #dcdcaa;
   --error: #f48771;
+  --text-on-accent: #000000;
+  --text-on-error: #000000;
+  --text-on-success: #000000;
 
   --sidebar-width: 300px;
   --toolbar-height: 38px;
@@ -359,7 +362,7 @@ html, body {
   background: var(--accent);
   border: none;
   border-radius: 6px;
-  color: white;
+  color: var(--text-on-accent);
   font-size: 12px;
   cursor: pointer;
 }
@@ -388,7 +391,7 @@ html, body {
   border-radius: 4px;
   font-size: 10px;
   font-weight: 600;
-  color: white;
+  color: var(--text-on-accent);
   cursor: pointer;
   transition: all 0.15s;
   flex-shrink: 0;
@@ -469,7 +472,7 @@ html, body {
 
 .repo-action-btn.add-btn:hover {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 /* Collapsed repository state */
@@ -600,7 +603,6 @@ html, body {
   font-size: 10px;
   font-weight: 600;
   font-family: var(--font-mono);
-  color: var(--bg-primary);
   border-radius: 8px;
   white-space: nowrap;
   cursor: pointer;
@@ -609,18 +611,22 @@ html, body {
 
 .branch-pr-badge.ready {
   background: var(--success);
+  color: var(--text-on-success);
 }
 
 .branch-pr-badge.open {
   background: var(--success);
+  color: var(--text-on-success);
 }
 
 .branch-pr-badge.merged {
   background: #a371f7;
+  color: var(--text-on-accent);
 }
 
 .branch-pr-badge.closed {
   background: var(--error);
+  color: var(--text-on-error);
 }
 
 .branch-pr-badge.draft {
@@ -631,15 +637,18 @@ html, body {
 
 .branch-pr-badge.conflict {
   background: var(--error);
+  color: var(--text-on-error);
   animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
 .branch-pr-badge.ci-failed {
   background: var(--error);
+  color: var(--text-on-error);
 }
 
 .branch-pr-badge.changes-requested {
   background: #d29922;
+  color: var(--text-on-accent);
 }
 
 .branch-pr-badge.review-required {
@@ -689,7 +698,7 @@ html, body {
 
 .branch-add-btn {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .branch-add-btn:hover {
@@ -703,7 +712,7 @@ html, body {
 
 .branch-remove-btn:hover {
   background: var(--error);
-  color: var(--bg-primary);
+  color: var(--text-on-error);
 }
 
 /* Main Content */
@@ -948,7 +957,7 @@ html, body {
 
 .tab-close:hover {
   background: var(--error);
-  color: var(--bg-primary);
+  color: var(--text-on-error);
 }
 
 .tab-new-btn {
@@ -1039,7 +1048,7 @@ html, body {
 
 .dropdown-item.selected {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .dropdown-divider {
@@ -1328,7 +1337,7 @@ html, body {
 .toggle-btn.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 
@@ -1367,17 +1376,17 @@ html, body {
 
 .status-badge.pr {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--text-on-accent);
 }
 
 .status-badge.merged {
   background: #a371f7;
-  color: var(--bg-primary);
+  color: var(--text-on-accent);
 }
 
 .status-badge.closed {
   background: var(--error);
-  color: var(--bg-primary);
+  color: var(--text-on-error);
 }
 
 .status-badge.ci {
@@ -1616,7 +1625,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   height: 18px;
   padding: 0 6px;
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--text-on-accent);
   border-radius: 9px;
   font-size: 11px;
   font-weight: 600;
@@ -2059,7 +2068,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .prompt-option.selected {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .prompt-option-key {
@@ -2073,7 +2082,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .prompt-option.selected .prompt-option-key {
   background: rgba(255, 255, 255, 0.2);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .prompt-option-text {
@@ -2178,7 +2187,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .category-btn.active {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .prompt-drawer-list {
@@ -2199,7 +2208,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: var(--accent);
   border: none;
   border-radius: 4px;
-  color: white;
+  color: var(--text-on-accent);
   cursor: pointer;
 }
 
@@ -2294,7 +2303,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: var(--accent);
   border: none;
   border-radius: 4px;
-  color: white;
+  color: var(--text-on-accent);
   font-size: 12px;
   cursor: pointer;
 }
@@ -2367,12 +2376,12 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .variable-dialog-actions button:first-child {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .variable-dialog-actions button:nth-child(2) {
   background: var(--success);
-  color: var(--bg-primary);
+  color: var(--text-on-success);
 }
 
 .variable-dialog-actions button:last-child {
@@ -2450,7 +2459,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .prompt-editor-actions button:first-child {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .prompt-editor-actions button:last-child {
@@ -2537,7 +2546,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .settings-tab.active {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .settings-tab-separator {
@@ -2809,7 +2818,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: var(--accent);
   border: 1px solid var(--accent);
   border-radius: 6px;
-  color: var(--bg-primary);
+  color: var(--text-on-accent);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -2895,7 +2904,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: var(--accent);
   border: none;
   border-radius: 6px;
-  color: white;
+  color: var(--text-on-accent);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -3057,7 +3066,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .dictation-model-download {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .dictation-model-download:hover {
@@ -3094,7 +3103,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .settings-download-btn {
   padding: 8px 16px;
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -3280,7 +3289,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .mic-recording {
   background: var(--accent) !important;
   border-color: var(--accent) !important;
-  color: white !important;
+  color: var(--text-on-accent) !important;
   animation: mic-pulse 1s ease-in-out infinite;
 }
 
@@ -3420,7 +3429,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .branch-popover-rename {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .branch-popover-rename:hover:not(:disabled) {
@@ -3823,7 +3832,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .task-item-cancel:hover {
   background: var(--error);
-  color: var(--bg-primary);
+  color: var(--text-on-error);
 }
 
 /* ============================================================================
@@ -3982,7 +3991,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .git-ops-state-clean {
   background: var(--success);
-  color: var(--bg-primary);
+  color: var(--text-on-success);
 }
 
 .git-ops-state-dirty {
@@ -3993,12 +4002,12 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .git-ops-state-conflict,
 .git-ops-state-merge {
   background: var(--error);
-  color: var(--bg-primary);
+  color: var(--text-on-error);
 }
 
 .git-ops-state-unknown {
   background: var(--fg-muted);
-  color: var(--bg-primary);
+  color: var(--text-on-accent);
 }
 
 .git-ops-section {
@@ -4328,7 +4337,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .quit-dialog-quit {
   background: var(--error);
-  color: var(--bg-primary);
+  color: var(--text-on-error);
 }
 
 .quit-dialog-quit:hover {
@@ -4809,7 +4818,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .hotkey-hint.quick-switcher-active {
   display: block;
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   border-color: var(--accent);
   font-size: 11px;
   font-weight: 600;

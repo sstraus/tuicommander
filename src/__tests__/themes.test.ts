@@ -6,6 +6,7 @@ import {
   APP_THEMES,
   getAppTheme,
   applyAppTheme,
+  contrastRatio,
 } from "../themes";
 
 describe("themes", () => {
@@ -40,6 +41,7 @@ describe("themes", () => {
         "fgPrimary", "fgSecondary", "fgMuted",
         "accent", "accentHover", "border",
         "success", "warning", "error",
+        "textOnAccent", "textOnError", "textOnSuccess",
       ];
       for (const [themeName, theme] of Object.entries(APP_THEMES)) {
         for (const key of requiredKeys) {
@@ -90,7 +92,7 @@ describe("themes", () => {
       warnSpy.mockRestore();
     });
 
-    it("applies all 13 CSS variables from theme", () => {
+    it("applies all 16 CSS variables from theme", () => {
       applyAppTheme("nord");
       const style = document.documentElement.style;
 
@@ -99,6 +101,7 @@ describe("themes", () => {
         "--fg-primary", "--fg-secondary", "--fg-muted",
         "--accent", "--accent-hover", "--border",
         "--success", "--warning", "--error",
+        "--text-on-accent", "--text-on-error", "--text-on-success",
       ];
 
       for (const varName of expectedVars) {
@@ -114,5 +117,35 @@ describe("themes", () => {
       const style = document.documentElement.style;
       expect(style.getPropertyValue("--bg-primary")).toBe("#2e3440");
     });
+  });
+
+  describe("contrastRatio()", () => {
+    it("returns 21:1 for black on white", () => {
+      expect(contrastRatio("#000000", "#ffffff")).toBeCloseTo(21, 0);
+    });
+
+    it("returns 1:1 for identical colors", () => {
+      expect(contrastRatio("#336699", "#336699")).toBeCloseTo(1, 1);
+    });
+  });
+
+  describe("WCAG AA contrast compliance", () => {
+    const MIN_CONTRAST = 4.5;
+    const pairs: Array<{ bg: keyof typeof APP_THEMES extends string ? string : never; prop: "accent" | "error" | "success"; textProp: "textOnAccent" | "textOnError" | "textOnSuccess" }> = [
+      { bg: "accent", prop: "accent", textProp: "textOnAccent" },
+      { bg: "error", prop: "error", textProp: "textOnError" },
+      { bg: "success", prop: "success", textProp: "textOnSuccess" },
+    ];
+
+    for (const [themeName, theme] of Object.entries(APP_THEMES)) {
+      for (const { bg, prop, textProp } of pairs) {
+        it(`${themeName}: ${textProp} on ${bg} has >= ${MIN_CONTRAST}:1 contrast`, () => {
+          const bgColor = theme[prop];
+          const fgColor = theme[textProp];
+          const ratio = contrastRatio(bgColor, fgColor);
+          expect(ratio, `${themeName} ${textProp}(${fgColor}) on ${bg}(${bgColor}) = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+        });
+      }
+    }
   });
 });
