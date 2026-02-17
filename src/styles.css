@@ -591,7 +591,7 @@ html, body {
   color: var(--error);
 }
 
-/* PR badge for branches (detected from terminal output) */
+/* PR state badge in sidebar — replaces old PR number + CI ring */
 .branch-pr-badge {
   display: inline-flex;
   align-items: center;
@@ -600,10 +600,19 @@ html, body {
   font-size: 10px;
   font-weight: 600;
   font-family: var(--font-mono);
-  background: var(--success);
   color: #fff;
   border-radius: 8px;
   white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.branch-pr-badge.ready {
+  background: var(--success);
+}
+
+.branch-pr-badge.open {
+  background: var(--success);
 }
 
 .branch-pr-badge.merged {
@@ -625,6 +634,10 @@ html, body {
   animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
+.branch-pr-badge.ci-failed {
+  background: var(--error);
+}
+
 .branch-pr-badge.changes-requested {
   background: #d29922;
 }
@@ -635,10 +648,11 @@ html, body {
   color: #d29922;
 }
 
-/* CI status ring in sidebar */
-.ci-ring {
-  margin-left: 4px;
-  flex-shrink: 0;
+.branch-pr-badge.ci-pending {
+  background: transparent;
+  border: 1px solid #e3b341;
+  color: #e3b341;
+  animation: pulse-opacity 2s ease-in-out infinite;
 }
 
 .branch-actions {

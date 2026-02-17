@@ -669,7 +669,7 @@ describe("Sidebar", () => {
       expect(stats).not.toBeNull();
     });
 
-    it("shows PrBadgeSidebar when GitHub store has PR data for branch", () => {
+    it("shows PrStateBadge when GitHub store has PR data for branch", () => {
       setRepos({
         "/repo1": makeRepo({
           branches: {
@@ -681,17 +681,16 @@ describe("Sidebar", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       const prBadge = container.querySelector(".branch-pr-badge");
       expect(prBadge).not.toBeNull();
-      expect(prBadge!.textContent).toBe("#123");
       expect(prBadge!.getAttribute("title")).toBe("PR #123");
     });
 
-    it("does not show PrBadgeSidebar when branch has no prNumber", () => {
+    it("does not show PrStateBadge when branch has no PR data", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       const prBadge = container.querySelector(".branch-pr-badge");
       expect(prBadge).toBeNull();
     });
 
-    it("applies merged class to PR badge when PR state is MERGED", () => {
+    it("shows Merged label and class when PR state is MERGED", () => {
       setRepos({
         "/repo1": makeRepo({
           branches: {
@@ -704,9 +703,10 @@ describe("Sidebar", () => {
       const prBadge = container.querySelector(".branch-pr-badge");
       expect(prBadge).not.toBeNull();
       expect(prBadge!.classList.contains("merged")).toBe(true);
+      expect(prBadge!.textContent).toBe("Merged");
     });
 
-    it("applies closed class to PR badge when PR state is CLOSED", () => {
+    it("shows Closed label and class when PR state is CLOSED", () => {
       setRepos({
         "/repo1": makeRepo({
           branches: {
@@ -719,9 +719,10 @@ describe("Sidebar", () => {
       const prBadge = container.querySelector(".branch-pr-badge");
       expect(prBadge).not.toBeNull();
       expect(prBadge!.classList.contains("closed")).toBe(true);
+      expect(prBadge!.textContent).toBe("Closed");
     });
 
-    it("applies draft class to PR badge when PR is a draft", () => {
+    it("shows Draft label and class when PR is a draft", () => {
       setRepos({
         "/repo1": makeRepo({
           branches: {
@@ -734,9 +735,10 @@ describe("Sidebar", () => {
       const prBadge = container.querySelector(".branch-pr-badge");
       expect(prBadge).not.toBeNull();
       expect(prBadge!.classList.contains("draft")).toBe(true);
+      expect(prBadge!.textContent).toBe("Draft");
     });
 
-    it("does not apply state class when PR state is OPEN", () => {
+    it("shows open class with PR number when state is OPEN with no special conditions", () => {
       setRepos({
         "/repo1": makeRepo({
           branches: {
@@ -748,8 +750,8 @@ describe("Sidebar", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       const prBadge = container.querySelector(".branch-pr-badge");
       expect(prBadge).not.toBeNull();
-      expect(prBadge!.classList.contains("merged")).toBe(false);
-      expect(prBadge!.classList.contains("closed")).toBe(false);
+      expect(prBadge!.classList.contains("open")).toBe(true);
+      expect(prBadge!.textContent).toBe("#44");
     });
   });
 

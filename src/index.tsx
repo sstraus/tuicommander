@@ -51,6 +51,9 @@ render(
   root,
 );
 
+// Remove splash screen once app has mounted
+document.getElementById("splash")?.remove();
+
 if (import.meta.env.DEV) {
   import("./dev/simulator");
 }

@@ -5,7 +5,6 @@ import { terminalsStore } from "../../stores/terminals";
 import { githubStore } from "../../stores/github";
 import { settingsStore } from "../../stores/settings";
 import { uiStore } from "../../stores/ui";
-import { CiRing } from "../ui/CiRing";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
@@ -44,37 +43,37 @@ const StatsBadge: Component<{ additions: number; deletions: number }> = (props) 
   </Show>
 );
 
-/** PR badge component - shows PR number with state-aware styling */
-const PrBadgeSidebar: Component<{
+/** PR state badge — single badge replacing both old PR number badge and CI ring.
+ *  Shows the most critical state as short text with color/animation. */
+const PrStateBadge: Component<{
   prNumber: number;
   state?: string;
   isDraft?: boolean;
   mergeable?: string;
   reviewDecision?: string;
+  ciPassed?: number;
+  ciFailed?: number;
+  ciPending?: number;
 }> = (props) => {
-  const stateClass = () => {
-    if (props.isDraft) return " draft";
+  const badge = (): { label: string; cls: string } => {
+    // Terminal states
+    if (props.isDraft) return { label: "Draft", cls: "draft" };
     const s = props.state?.toLowerCase();
-    if (s === "merged") return " merged";
-    if (s === "closed") return " closed";
-    // Action-required states for open PRs
-    if (props.mergeable === "CONFLICTING") return " conflict";
-    if (props.reviewDecision === "CHANGES_REQUESTED") return " changes-requested";
-    if (props.reviewDecision === "REVIEW_REQUIRED") return " review-required";
-    return "";
-  };
-
-  const title = () => {
-    const parts = [`PR #${props.prNumber}`];
-    if (props.mergeable === "CONFLICTING") parts.push("(conflicts)");
-    else if (props.reviewDecision === "CHANGES_REQUESTED") parts.push("(changes requested)");
-    else if (props.reviewDecision === "REVIEW_REQUIRED") parts.push("(review required)");
-    return parts.join(" ");
+    if (s === "merged") return { label: "Merged", cls: "merged" };
+    if (s === "closed") return { label: "Closed", cls: "closed" };
+    // Action-required states (priority order)
+    if (props.mergeable === "CONFLICTING") return { label: "Conflicts", cls: "conflict" };
+    if ((props.ciFailed ?? 0) > 0) return { label: "CI Failed", cls: "ci-failed" };
+    if (props.reviewDecision === "CHANGES_REQUESTED") return { label: "Changes Req.", cls: "changes-requested" };
+    if (props.reviewDecision === "REVIEW_REQUIRED") return { label: "Review Req.", cls: "review-required" };
+    if ((props.ciPending ?? 0) > 0) return { label: "CI Running", cls: "ci-pending" };
+    if (props.mergeable === "MERGEABLE" && props.reviewDecision === "APPROVED") return { label: "Ready", cls: "ready" };
+    return { label: `#${props.prNumber}`, cls: "open" };
   };
 
   return (
-    <span class={`branch-pr-badge${stateClass()}`} title={title()}>
-      #{props.prNumber}
+    <span class={`branch-pr-badge ${badge().cls}`} title={`PR #${props.prNumber}`}>
+      {badge().label}
     </span>
   );
 };
@@ -264,27 +263,23 @@ const BranchItem: Component<{
         </span>
       </div>
       <Show when={githubStore.getPrStatus(props.repoPath, props.branch.name)}>
-        {(prData) => (
-          <span onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}>
-            <PrBadgeSidebar
-              prNumber={prData().number}
-              state={prData().state}
-              isDraft={prData().is_draft}
-              mergeable={prData().mergeable}
-              reviewDecision={prData().review_decision}
-            />
-          </span>
-        )}
-      </Show>
-      <Show when={githubStore.getCheckSummary(props.repoPath, props.branch.name)}>
-        {(summary) => (
-          <CiRing
-            passed={summary().passed}
-            failed={summary().failed}
-            pending={summary().pending}
-            onClick={() => props.onShowPrDetail()}
-          />
-        )}
+        {(prData) => {
+          const checks = () => githubStore.getCheckSummary(props.repoPath, props.branch.name);
+          return (
+            <span onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}>
+              <PrStateBadge
+                prNumber={prData().number}
+                state={prData().state}
+                isDraft={prData().is_draft}
+                mergeable={prData().mergeable}
+                reviewDecision={prData().review_decision}
+                ciPassed={checks()?.passed}
+                ciFailed={checks()?.failed}
+                ciPending={checks()?.pending}
+              />
+            </span>
+          );
+        }}
       </Show>
       <StatsBadge additions={props.branch.additions} deletions={props.branch.deletions} />
       <Show when={props.shortcutIndex !== undefined} fallback={
@@ -532,7 +527,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         </div>
       </div>
 
-      {/* PR detail popover (triggered from CiRing or PrBadge clicks) */}
+      {/* PR detail popover (triggered from PrStateBadge click) */}
       <Show when={prDetailTarget()}>
         {(target) => (
           <PrDetailPopover
