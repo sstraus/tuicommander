@@ -44,9 +44,45 @@ const basePr: BranchPrStatus = {
   review_state_label: { label: "Approved", css_class: "success" },
 };
 
-/** Merge a partial override with base PR defaults, using the given branch name */
+/** Derive merge_state_label from mergeable/merge_state_status when not explicitly set */
+function deriveMergeLabel(pr: BranchPrStatus): { label: string; css_class: string } {
+  if (pr.is_draft) return { label: "Draft", css_class: "muted" };
+  switch (pr.mergeable) {
+    case "CONFLICTING": return { label: "Conflicts", css_class: "danger" };
+    case "UNKNOWN": return { label: "Checking mergeability...", css_class: "pending" };
+    default: break;
+  }
+  switch (pr.merge_state_status) {
+    case "BEHIND": return { label: "Behind base", css_class: "warning" };
+    case "BLOCKED": return { label: "Checks running", css_class: "pending" };
+    case "DIRTY": return { label: "Conflicts", css_class: "danger" };
+    case "CLEAN": return { label: "Ready to merge", css_class: "success" };
+    default: return { label: "Ready to merge", css_class: "success" };
+  }
+}
+
+/** Derive review_state_label from review_decision when not explicitly set */
+function deriveReviewLabel(pr: BranchPrStatus): { label: string; css_class: string } {
+  switch (pr.review_decision) {
+    case "APPROVED": return { label: "Approved", css_class: "success" };
+    case "CHANGES_REQUESTED": return { label: "Changes requested", css_class: "warning" };
+    case "REVIEW_REQUIRED": return { label: "Review required", css_class: "warning" };
+    default: return { label: "Approved", css_class: "success" };
+  }
+}
+
+/** Merge a partial override with base PR defaults, using the given branch name.
+ *  Auto-derives merge/review labels from state fields when not explicitly set. */
 export function buildPrStatus(branch: string, override?: PrOverride): BranchPrStatus {
-  return { ...basePr, branch, ...override };
+  const merged = { ...basePr, branch, ...override };
+  // Auto-derive labels unless explicitly overridden
+  if (!override?.merge_state_label) {
+    merged.merge_state_label = deriveMergeLabel(merged);
+  }
+  if (!override?.review_state_label) {
+    merged.review_state_label = deriveReviewLabel(merged);
+  }
+  return merged;
 }
 
 function rateLimitFor(agent: AgentType, minutes: number): RateLimitInfo {
