@@ -1,0 +1,1056 @@
+use serde::Serialize;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::Arc;
+use tauri::State;
+
+use crate::state::{AppState, GITHUB_CACHE_TTL};
+
+/// GitHub integration types
+#[derive(Clone, Serialize)]
+pub(crate) struct GitHubStatus {
+    has_remote: bool,
+    current_branch: String,
+    pr_status: Option<PrStatus>,
+    ci_status: Option<CiStatus>,
+    ahead: i32,
+    behind: i32,
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct PrStatus {
+    number: i32,
+    title: String,
+    state: String, // "OPEN", "MERGED", "CLOSED"
+    url: String,
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct CiStatus {
+    status: String, // "success", "failure", "pending", "queued"
+    conclusion: Option<String>,
+    workflow_name: String,
+}
+
+/// Summary of CI check states for a PR
+#[derive(Clone, Serialize)]
+pub(crate) struct CheckSummary {
+    pub(crate) passed: u32,
+    pub(crate) failed: u32,
+    pub(crate) pending: u32,
+    pub(crate) total: u32,
+}
+
+/// Individual CI check detail
+#[derive(Clone, Serialize)]
+pub(crate) struct CheckDetail {
+    pub(crate) context: String,
+    pub(crate) state: String,
+}
+
+/// Pre-computed merge/review state label for the UI
+#[derive(Clone, Serialize, Debug, PartialEq)]
+pub(crate) struct StateLabel {
+    pub(crate) label: String,
+    pub(crate) css_class: String,
+}
+
+/// Classify merge readiness from mergeable + merge_state_status fields
+pub(crate) fn classify_merge_state(
+    mergeable: Option<&str>,
+    merge_state_status: Option<&str>,
+) -> Option<StateLabel> {
+    // CONFLICTING takes priority (merge would fail)
+    if mergeable == Some("CONFLICTING") {
+        return Some(StateLabel {
+            label: "Conflicts".to_string(),
+            css_class: "conflicting".to_string(),
+        });
+    }
+
+    match merge_state_status {
+        Some("CLEAN") => Some(StateLabel {
+            label: "Ready to merge".to_string(),
+            css_class: "clean".to_string(),
+        }),
+        Some("BEHIND") => Some(StateLabel {
+            label: "Behind base".to_string(),
+            css_class: "behind".to_string(),
+        }),
+        Some("BLOCKED") => Some(StateLabel {
+            label: "Blocked".to_string(),
+            css_class: "blocked".to_string(),
+        }),
+        Some("UNSTABLE") => Some(StateLabel {
+            label: "Unstable".to_string(),
+            css_class: "blocked".to_string(),
+        }),
+        Some("DRAFT") => Some(StateLabel {
+            label: "Draft".to_string(),
+            css_class: "behind".to_string(),
+        }),
+        Some("DIRTY") => Some(StateLabel {
+            label: "Conflicts".to_string(),
+            css_class: "conflicting".to_string(),
+        }),
+        _ => None, // UNKNOWN, HAS_HOOKS — don't show
+    }
+}
+
+/// Classify review decision into display label
+pub(crate) fn classify_review_state(review_decision: Option<&str>) -> Option<StateLabel> {
+    match review_decision {
+        Some("APPROVED") => Some(StateLabel {
+            label: "Approved".to_string(),
+            css_class: "approved".to_string(),
+        }),
+        Some("CHANGES_REQUESTED") => Some(StateLabel {
+            label: "Changes requested".to_string(),
+            css_class: "changes-requested".to_string(),
+        }),
+        Some("REVIEW_REQUIRED") => Some(StateLabel {
+            label: "Review required".to_string(),
+            css_class: "review-required".to_string(),
+        }),
+        _ => None,
+    }
+}
+
+/// Convert a 6-char hex color to an rgba() CSS string with the given alpha
+pub(crate) fn hex_to_rgba(hex: &str, alpha: f64) -> String {
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+    format!("rgba({r}, {g}, {b}, {alpha})")
+}
+
+/// Determine if a hex color is light (needs dark text) using BT.601 luma
+pub(crate) fn is_light_color(hex: &str) -> bool {
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as u32;
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as u32;
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as u32;
+    (r * 299 + g * 587 + b * 114) / 1000 > 128
+}
+
+/// PR label with name, hex color, and pre-computed display colors
+#[derive(Clone, Serialize)]
+pub(crate) struct PrLabel {
+    name: String,
+    color: String,
+    text_color: String,
+    background_color: String,
+}
+
+/// PR status for a branch, returned by batch endpoint
+#[derive(Clone, Serialize)]
+pub(crate) struct BranchPrStatus {
+    pub(crate) branch: String,
+    pub(crate) number: i32,
+    pub(crate) title: String,
+    pub(crate) state: String,
+    pub(crate) url: String,
+    pub(crate) additions: i32,
+    pub(crate) deletions: i32,
+    pub(crate) checks: CheckSummary,
+    pub(crate) check_details: Vec<CheckDetail>,
+    pub(crate) author: String,
+    pub(crate) commits: i32,
+    pub(crate) mergeable: String,
+    pub(crate) merge_state_status: String,
+    pub(crate) review_decision: String,
+    pub(crate) labels: Vec<PrLabel>,
+    pub(crate) is_draft: bool,
+    pub(crate) base_ref_name: String,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+    pub(crate) merge_state_label: Option<StateLabel>,
+    pub(crate) review_state_label: Option<StateLabel>,
+}
+
+/// Parse `gh pr list` JSON output into BranchPrStatus entries.
+/// Pure function with no I/O — fully testable.
+pub(crate) fn parse_pr_list_json(json_str: &str) -> Vec<BranchPrStatus> {
+    let arr: Vec<serde_json::Value> = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+
+    arr.into_iter()
+        .filter_map(|v| {
+            let branch = v["headRefName"].as_str()?.to_string();
+            let number = v["number"].as_i64()? as i32;
+            let title = v["title"].as_str().unwrap_or("").to_string();
+            let state = v["state"].as_str().unwrap_or("").to_string();
+            let url = v["url"].as_str().unwrap_or("").to_string();
+            let additions = v["additions"].as_i64().unwrap_or(0) as i32;
+            let deletions = v["deletions"].as_i64().unwrap_or(0) as i32;
+            let author = v["author"]["login"].as_str().unwrap_or("").to_string();
+            let commits = v["commits"]["totalCount"].as_i64().unwrap_or(0) as i32;
+
+            // Parse statusCheckRollup into check summary and details
+            let rollup = v["statusCheckRollup"].as_array();
+            let mut passed: u32 = 0;
+            let mut failed: u32 = 0;
+            let mut pending: u32 = 0;
+            let mut check_details = Vec::new();
+
+            if let Some(checks) = rollup {
+                for check in checks {
+                    let context = check["context"].as_str()
+                        .or_else(|| check["name"].as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let state_val = check["state"].as_str()
+                        .or_else(|| check["conclusion"].as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    match state_val.as_str() {
+                        "SUCCESS" | "success" => passed += 1,
+                        "FAILURE" | "failure" | "ERROR" | "error" => failed += 1,
+                        _ => pending += 1,
+                    }
+
+                    check_details.push(CheckDetail {
+                        context,
+                        state: state_val,
+                    });
+                }
+            }
+
+            let total = passed + failed + pending;
+
+            let mergeable = v["mergeable"].as_str().unwrap_or("UNKNOWN").to_string();
+            let merge_state_status = v["mergeStateStatus"].as_str().unwrap_or("UNKNOWN").to_string();
+            let review_decision = v["reviewDecision"].as_str().unwrap_or("").to_string();
+            let is_draft = v["isDraft"].as_bool().unwrap_or(false);
+
+            let labels = v["labels"].as_array()
+                .map(|arr| arr.iter().filter_map(|l| {
+                    let color = l["color"].as_str().unwrap_or("").to_string();
+                    let (text_color, background_color) = if color.len() == 6 {
+                        let text = if is_light_color(&color) { "#1e1e1e" } else { "#e5e5e5" };
+                        (text.to_string(), hex_to_rgba(&color, 0.3))
+                    } else {
+                        (String::new(), String::new())
+                    };
+                    Some(PrLabel {
+                        name: l["name"].as_str()?.to_string(),
+                        color,
+                        text_color,
+                        background_color,
+                    })
+                }).collect())
+                .unwrap_or_default();
+
+            let base_ref_name = v["baseRefName"].as_str().unwrap_or("").to_string();
+            let created_at = v["createdAt"].as_str().unwrap_or("").to_string();
+            let updated_at = v["updatedAt"].as_str().unwrap_or("").to_string();
+
+            let merge_state_label = classify_merge_state(
+                Some(mergeable.as_str()),
+                Some(merge_state_status.as_str()),
+            );
+            let review_state_label = classify_review_state(
+                if review_decision.is_empty() { None } else { Some(review_decision.as_str()) },
+            );
+
+            Some(BranchPrStatus {
+                branch,
+                number,
+                title,
+                state,
+                url,
+                additions,
+                deletions,
+                checks: CheckSummary { passed, failed, pending, total },
+                check_details,
+                author,
+                commits,
+                mergeable,
+                merge_state_status,
+                review_decision,
+                labels,
+                is_draft,
+                base_ref_name,
+                created_at,
+                updated_at,
+                merge_state_label,
+                review_state_label,
+            })
+        })
+        .collect()
+}
+
+/// Core logic for fetching PR statuses (no caching).
+pub(crate) fn get_repo_pr_statuses_impl(path: &str) -> Vec<BranchPrStatus> {
+    let repo_path = PathBuf::from(path);
+
+    // Check if repo has GitHub remote
+    let has_remote = Command::new("git")
+        .current_dir(&repo_path)
+        .args(["remote", "get-url", "origin"])
+        .output()
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("github.com"))
+        .unwrap_or(false);
+
+    if !has_remote {
+        return vec![];
+    }
+
+    // Batch fetch all PRs (open, merged, closed) with CI rollup
+    let output = Command::new("gh")
+        .current_dir(&repo_path)
+        .args([
+            "pr", "list",
+            "--state", "all",
+            "--json", "number,title,state,url,headRefName,additions,deletions,statusCheckRollup,author,commits,mergeable,mergeStateStatus,reviewDecision,labels,isDraft,baseRefName,createdAt,updatedAt",
+            "--limit", "50",
+        ])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let json_str = String::from_utf8_lossy(&o.stdout);
+            parse_pr_list_json(&json_str)
+        }
+        _ => vec![],
+    }
+}
+
+/// Get all open PR statuses for a repository (cached, 30s TTL)
+#[tauri::command]
+pub(crate) fn get_repo_pr_statuses(state: State<'_, Arc<AppState>>, path: String) -> Vec<BranchPrStatus> {
+    if let Some(cached) = AppState::get_cached(&state.github_status_cache, &path, GITHUB_CACHE_TTL) {
+        return cached;
+    }
+
+    let statuses = get_repo_pr_statuses_impl(&path);
+    AppState::set_cached(&state.github_status_cache, path, statuses.clone());
+    statuses
+}
+
+/// Get GitHub status for a repository
+#[tauri::command]
+pub(crate) fn get_github_status(path: String) -> GitHubStatus {
+    let repo_path = PathBuf::from(&path);
+
+    // Check if repo has GitHub remote
+    let remote_output = Command::new("git")
+        .current_dir(&repo_path)
+        .args(["remote", "get-url", "origin"])
+        .output();
+
+    let has_remote = remote_output
+        .as_ref()
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("github.com"))
+        .unwrap_or(false);
+
+    // Get current branch
+    let current_branch = Command::new("git")
+        .current_dir(&repo_path)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+
+    if !has_remote {
+        return GitHubStatus {
+            has_remote: false,
+            current_branch,
+            pr_status: None,
+            ci_status: None,
+            ahead: 0,
+            behind: 0,
+        };
+    }
+
+    // Get ahead/behind counts
+    let (ahead, behind) = Command::new("git")
+        .current_dir(&repo_path)
+        .args(["rev-list", "--left-right", "--count", &format!("origin/{current_branch}...HEAD")])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                let output = String::from_utf8_lossy(&o.stdout);
+                let parts: Vec<&str> = output.split_whitespace().collect();
+                if parts.len() == 2 {
+                    let behind = parts[0].parse::<i32>().unwrap_or(0);
+                    let ahead = parts[1].parse::<i32>().unwrap_or(0);
+                    return Some((ahead, behind));
+                }
+            }
+            None
+        })
+        .unwrap_or((0, 0));
+
+    // Get PR status using gh CLI
+    let pr_status = Command::new("gh")
+        .current_dir(&repo_path)
+        .args(["pr", "view", "--json", "number,title,state,url"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                let json_str = String::from_utf8_lossy(&o.stdout);
+                serde_json::from_str::<serde_json::Value>(&json_str).ok().map(|v| {
+                    PrStatus {
+                        number: v["number"].as_i64().unwrap_or(0) as i32,
+                        title: v["title"].as_str().unwrap_or("").to_string(),
+                        state: v["state"].as_str().unwrap_or("").to_string(),
+                        url: v["url"].as_str().unwrap_or("").to_string(),
+                    }
+                })
+            } else {
+                None
+            }
+        });
+
+    // Get CI status using gh CLI
+    let ci_status = Command::new("gh")
+        .current_dir(&repo_path)
+        .args(["run", "list", "--branch", &current_branch, "--limit", "1", "--json", "status,conclusion,workflowName"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                let json_str = String::from_utf8_lossy(&o.stdout);
+                serde_json::from_str::<Vec<serde_json::Value>>(&json_str).ok().and_then(|arr| {
+                    arr.first().map(|v| {
+                        CiStatus {
+                            status: v["status"].as_str().unwrap_or("").to_string(),
+                            conclusion: v["conclusion"].as_str().map(std::string::ToString::to_string),
+                            workflow_name: v["workflowName"].as_str().unwrap_or("").to_string(),
+                        }
+                    })
+                })
+            } else {
+                None
+            }
+        });
+
+    GitHubStatus {
+        has_remote,
+        current_branch,
+        pr_status,
+        ci_status,
+        ahead,
+        behind,
+    }
+}
+
+/// Get CI check details for a repository (Story 060)
+#[tauri::command]
+pub(crate) fn get_ci_checks(path: String) -> Vec<serde_json::Value> {
+    let repo_path = PathBuf::from(&path);
+
+    // Get current branch
+    let current_branch = Command::new("git")
+        .current_dir(&repo_path)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+
+    if current_branch.is_empty() {
+        return vec![];
+    }
+
+    // Get CI check runs using gh CLI, extract individual jobs
+    let runs: Vec<serde_json::Value> = Command::new("gh")
+        .current_dir(&repo_path)
+        .args([
+            "run", "list",
+            "--branch", &current_branch,
+            "--limit", "1",
+            "--json", "status,conclusion,workflowName,jobs",
+        ])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                let json_str = String::from_utf8_lossy(&o.stdout);
+                serde_json::from_str::<Vec<serde_json::Value>>(&json_str).ok()
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+
+    // Extract jobs from runs into flat check details matching frontend CiCheckDetail
+    let mut checks = Vec::new();
+    for run in &runs {
+        if let Some(jobs) = run["jobs"].as_array() {
+            for job in jobs {
+                checks.push(serde_json::json!({
+                    "name": job["name"].as_str().unwrap_or(""),
+                    "status": job["status"].as_str().unwrap_or(""),
+                    "conclusion": job["conclusion"].as_str().unwrap_or(""),
+                    "html_url": job["url"].as_str().unwrap_or(""),
+                }));
+            }
+        }
+        // Fallback: if no jobs, show the run itself
+        if checks.is_empty() {
+            checks.push(serde_json::json!({
+                "name": run["workflowName"].as_str().unwrap_or("CI"),
+                "status": run["status"].as_str().unwrap_or(""),
+                "conclusion": run["conclusion"].as_str().unwrap_or(""),
+                "html_url": "",
+            }));
+        }
+    }
+    checks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_pr_list_json_success() {
+        let json = r#"[
+            {
+                "number": 42,
+                "title": "Add feature X",
+                "state": "OPEN",
+                "url": "https://github.com/org/repo/pull/42",
+                "headRefName": "feature/x",
+                "additions": 150,
+                "deletions": 30,
+                "author": {"login": "alice"},
+                "commits": {"totalCount": 5},
+                "mergeable": "MERGEABLE",
+                "mergeStateStatus": "BLOCKED",
+                "reviewDecision": "CHANGES_REQUESTED",
+                "statusCheckRollup": [
+                    {"context": "build", "state": "SUCCESS"},
+                    {"context": "test", "state": "FAILURE"},
+                    {"name": "lint", "conclusion": "success"},
+                    {"context": "deploy", "state": "PENDING"}
+                ]
+            },
+            {
+                "number": 43,
+                "title": "Fix bug Y",
+                "state": "OPEN",
+                "url": "https://github.com/org/repo/pull/43",
+                "headRefName": "fix/y",
+                "additions": 10,
+                "deletions": 5,
+                "author": {"login": "bob"},
+                "commits": {"totalCount": 1},
+                "mergeable": "MERGEABLE",
+                "mergeStateStatus": "CLEAN",
+                "reviewDecision": "APPROVED",
+                "statusCheckRollup": [
+                    {"context": "build", "state": "SUCCESS"},
+                    {"context": "test", "state": "SUCCESS"}
+                ]
+            }
+        ]"#;
+
+        let result = parse_pr_list_json(json);
+        assert_eq!(result.len(), 2);
+
+        // First PR
+        let pr1 = &result[0];
+        assert_eq!(pr1.branch, "feature/x");
+        assert_eq!(pr1.number, 42);
+        assert_eq!(pr1.title, "Add feature X");
+        assert_eq!(pr1.state, "OPEN");
+        assert_eq!(pr1.url, "https://github.com/org/repo/pull/42");
+        assert_eq!(pr1.additions, 150);
+        assert_eq!(pr1.deletions, 30);
+        assert_eq!(pr1.author, "alice");
+        assert_eq!(pr1.commits, 5);
+        assert_eq!(pr1.checks.passed, 2); // build SUCCESS + lint success
+        assert_eq!(pr1.checks.failed, 1); // test FAILURE
+        assert_eq!(pr1.checks.pending, 1); // deploy PENDING
+        assert_eq!(pr1.checks.total, 4);
+        assert_eq!(pr1.check_details.len(), 4);
+        assert_eq!(pr1.mergeable, "MERGEABLE");
+        assert_eq!(pr1.merge_state_status, "BLOCKED");
+        assert_eq!(pr1.review_decision, "CHANGES_REQUESTED");
+
+        // Second PR
+        let pr2 = &result[1];
+        assert_eq!(pr2.branch, "fix/y");
+        assert_eq!(pr2.number, 43);
+        assert_eq!(pr2.author, "bob");
+        assert_eq!(pr2.checks.passed, 2);
+        assert_eq!(pr2.checks.failed, 0);
+        assert_eq!(pr2.checks.pending, 0);
+        assert_eq!(pr2.checks.total, 2);
+        assert_eq!(pr2.mergeable, "MERGEABLE");
+        assert_eq!(pr2.merge_state_status, "CLEAN");
+        assert_eq!(pr2.review_decision, "APPROVED");
+    }
+
+    #[test]
+    fn test_parse_pr_list_json_empty() {
+        let result = parse_pr_list_json("[]");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_pr_list_json_missing_mergeable_defaults_to_unknown() {
+        let json = r#"[
+            {
+                "number": 7,
+                "title": "No merge info",
+                "state": "OPEN",
+                "url": "https://github.com/org/repo/pull/7",
+                "headRefName": "no-merge-info",
+                "author": {"login": "frank"},
+                "commits": {"totalCount": 1},
+                "statusCheckRollup": []
+            }
+        ]"#;
+
+        let result = parse_pr_list_json(json);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].mergeable, "UNKNOWN");
+        assert_eq!(result[0].merge_state_status, "UNKNOWN");
+    }
+
+    #[test]
+    fn test_parse_pr_list_json_no_checks() {
+        let json = r#"[
+            {
+                "number": 10,
+                "title": "Draft PR",
+                "state": "OPEN",
+                "url": "https://github.com/org/repo/pull/10",
+                "headRefName": "draft/feature",
+                "additions": 0,
+                "deletions": 0,
+                "author": {"login": "carol"},
+                "commits": {"totalCount": 1},
+                "statusCheckRollup": []
+            }
+        ]"#;
+
+        let result = parse_pr_list_json(json);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].checks.total, 0);
+        assert_eq!(result[0].checks.passed, 0);
+        assert_eq!(result[0].checks.failed, 0);
+        assert_eq!(result[0].checks.pending, 0);
+        assert!(result[0].check_details.is_empty());
+    }
+
+    #[test]
+    fn test_parse_pr_list_json_malformed() {
+        let result = parse_pr_list_json("not json at all");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_pr_list_json_missing_branch_skips_entry() {
+        // PR without headRefName should be skipped (filter_map returns None)
+        let json = r#"[
+            {
+                "number": 1,
+                "title": "No branch",
+                "state": "OPEN",
+                "url": "https://github.com/org/repo/pull/1"
+            }
+        ]"#;
+
+        let result = parse_pr_list_json(json);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_pr_list_json_null_rollup() {
+        // statusCheckRollup is null (not an array)
+        let json = r#"[
+            {
+                "number": 5,
+                "title": "No CI",
+                "state": "OPEN",
+                "url": "https://github.com/org/repo/pull/5",
+                "headRefName": "no-ci",
+                "additions": 1,
+                "deletions": 0,
+                "author": {"login": "dave"},
+                "commits": {"totalCount": 1},
+                "statusCheckRollup": null
+            }
+        ]"#;
+
+        let result = parse_pr_list_json(json);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].checks.total, 0);
+        assert!(result[0].check_details.is_empty());
+    }
+
+    #[test]
+    fn test_parse_pr_list_json_error_states() {
+        let json = r#"[
+            {
+                "number": 99,
+                "title": "Error checks",
+                "state": "OPEN",
+                "url": "https://github.com/org/repo/pull/99",
+                "headRefName": "error-branch",
+                "author": {"login": "eve"},
+                "commits": {"totalCount": 1},
+                "statusCheckRollup": [
+                    {"context": "security", "state": "ERROR"},
+                    {"context": "build", "state": "error"}
+                ]
+            }
+        ]"#;
+
+        let result = parse_pr_list_json(json);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].checks.failed, 2); // ERROR and error both count as failed
+        assert_eq!(result[0].checks.passed, 0);
+        assert_eq!(result[0].checks.pending, 0);
+    }
+
+    #[test]
+    fn test_parse_pr_list_json_merged_and_closed_states() {
+        let json = r#"[
+            {
+                "number": 10,
+                "title": "Merged feature",
+                "state": "MERGED",
+                "url": "https://github.com/org/repo/pull/10",
+                "headRefName": "feature/merged",
+                "author": {"login": "alice"},
+                "commits": {"totalCount": 3},
+                "mergeable": "UNKNOWN",
+                "mergeStateStatus": "UNKNOWN",
+                "statusCheckRollup": []
+            },
+            {
+                "number": 11,
+                "title": "Closed PR",
+                "state": "CLOSED",
+                "url": "https://github.com/org/repo/pull/11",
+                "headRefName": "feature/closed",
+                "author": {"login": "bob"},
+                "commits": {"totalCount": 1},
+                "statusCheckRollup": []
+            }
+        ]"#;
+
+        let result = parse_pr_list_json(json);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].state, "MERGED");
+        assert_eq!(result[0].branch, "feature/merged");
+        assert_eq!(result[1].state, "CLOSED");
+        assert_eq!(result[1].branch, "feature/closed");
+    }
+
+    // --- hex_to_rgba tests ---
+
+    #[test]
+    fn test_hex_to_rgba_red_label() {
+        assert_eq!(hex_to_rgba("d73a4a", 0.3), "rgba(215, 58, 74, 0.3)");
+    }
+
+    #[test]
+    fn test_hex_to_rgba_light_blue_label() {
+        assert_eq!(hex_to_rgba("a2eeef", 0.3), "rgba(162, 238, 239, 0.3)");
+    }
+
+    #[test]
+    fn test_hex_to_rgba_black() {
+        assert_eq!(hex_to_rgba("000000", 0.3), "rgba(0, 0, 0, 0.3)");
+    }
+
+    #[test]
+    fn test_hex_to_rgba_white() {
+        assert_eq!(hex_to_rgba("ffffff", 0.3), "rgba(255, 255, 255, 0.3)");
+    }
+
+    #[test]
+    fn test_hex_to_rgba_full_opacity() {
+        assert_eq!(hex_to_rgba("ff0000", 1.0), "rgba(255, 0, 0, 1)");
+    }
+
+    // --- is_light_color tests ---
+
+    #[test]
+    fn test_is_light_color_dark_red() {
+        // d73a4a: (215*299+58*587+74*114)/1000 = 106.767 < 128
+        assert!(!is_light_color("d73a4a"));
+    }
+
+    #[test]
+    fn test_is_light_color_light_blue() {
+        // a2eeef: (162*299+238*587+239*114)/1000 = 215.39 > 128
+        assert!(is_light_color("a2eeef"));
+    }
+
+    #[test]
+    fn test_is_light_color_black() {
+        assert!(!is_light_color("000000"));
+    }
+
+    #[test]
+    fn test_is_light_color_white() {
+        assert!(is_light_color("ffffff"));
+    }
+
+    #[test]
+    fn test_is_light_color_mid_gray() {
+        // 808080: (128*299+128*587+128*114)/1000 = 128.0, NOT > 128 => dark
+        assert!(!is_light_color("808080"));
+    }
+
+    #[test]
+    fn test_is_light_color_just_above_threshold() {
+        // 818181: (129*299+129*587+129*114)/1000 = 129.0 > 128
+        assert!(is_light_color("818181"));
+    }
+
+    // --- label color pre-computation in parse_pr_list_json ---
+
+    #[test]
+    fn test_parse_pr_list_json_computes_label_colors() {
+        let json = r#"[
+            {
+                "number": 1,
+                "title": "Labels PR",
+                "state": "OPEN",
+                "url": "https://github.com/org/repo/pull/1",
+                "headRefName": "label-branch",
+                "author": {"login": "alice"},
+                "commits": {"totalCount": 1},
+                "statusCheckRollup": [],
+                "labels": [
+                    {"name": "bug", "color": "d73a4a"},
+                    {"name": "enhancement", "color": "a2eeef"}
+                ]
+            }
+        ]"#;
+
+        let result = parse_pr_list_json(json);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].labels.len(), 2);
+
+        let bug = &result[0].labels[0];
+        assert_eq!(bug.name, "bug");
+        assert_eq!(bug.color, "d73a4a");
+        assert_eq!(bug.background_color, "rgba(215, 58, 74, 0.3)");
+        assert_eq!(bug.text_color, "#e5e5e5"); // dark label => light text
+
+        let enhancement = &result[0].labels[1];
+        assert_eq!(enhancement.name, "enhancement");
+        assert_eq!(enhancement.color, "a2eeef");
+        assert_eq!(enhancement.background_color, "rgba(162, 238, 239, 0.3)");
+        assert_eq!(enhancement.text_color, "#1e1e1e"); // light label => dark text
+    }
+
+    // --- classify_merge_state tests ---
+
+    #[test]
+    fn test_classify_merge_state_conflicting_overrides_status() {
+        let result = classify_merge_state(Some("CONFLICTING"), Some("CLEAN"));
+        assert_eq!(
+            result,
+            Some(StateLabel { label: "Conflicts".to_string(), css_class: "conflicting".to_string() })
+        );
+    }
+
+    #[test]
+    fn test_classify_merge_state_clean() {
+        let result = classify_merge_state(Some("MERGEABLE"), Some("CLEAN"));
+        assert_eq!(
+            result,
+            Some(StateLabel { label: "Ready to merge".to_string(), css_class: "clean".to_string() })
+        );
+    }
+
+    #[test]
+    fn test_classify_merge_state_behind() {
+        let result = classify_merge_state(Some("MERGEABLE"), Some("BEHIND"));
+        assert_eq!(
+            result,
+            Some(StateLabel { label: "Behind base".to_string(), css_class: "behind".to_string() })
+        );
+    }
+
+    #[test]
+    fn test_classify_merge_state_blocked() {
+        let result = classify_merge_state(Some("MERGEABLE"), Some("BLOCKED"));
+        assert_eq!(
+            result,
+            Some(StateLabel { label: "Blocked".to_string(), css_class: "blocked".to_string() })
+        );
+    }
+
+    #[test]
+    fn test_classify_merge_state_unstable() {
+        let result = classify_merge_state(Some("MERGEABLE"), Some("UNSTABLE"));
+        assert_eq!(
+            result,
+            Some(StateLabel { label: "Unstable".to_string(), css_class: "blocked".to_string() })
+        );
+    }
+
+    #[test]
+    fn test_classify_merge_state_draft() {
+        let result = classify_merge_state(Some("MERGEABLE"), Some("DRAFT"));
+        assert_eq!(
+            result,
+            Some(StateLabel { label: "Draft".to_string(), css_class: "behind".to_string() })
+        );
+    }
+
+    #[test]
+    fn test_classify_merge_state_dirty() {
+        let result = classify_merge_state(Some("MERGEABLE"), Some("DIRTY"));
+        assert_eq!(
+            result,
+            Some(StateLabel { label: "Conflicts".to_string(), css_class: "conflicting".to_string() })
+        );
+    }
+
+    #[test]
+    fn test_classify_merge_state_unknown_returns_none() {
+        assert!(classify_merge_state(Some("MERGEABLE"), Some("UNKNOWN")).is_none());
+    }
+
+    #[test]
+    fn test_classify_merge_state_has_hooks_returns_none() {
+        assert!(classify_merge_state(Some("MERGEABLE"), Some("HAS_HOOKS")).is_none());
+    }
+
+    #[test]
+    fn test_classify_merge_state_none_none_returns_none() {
+        assert!(classify_merge_state(None, None).is_none());
+    }
+
+    // --- classify_review_state tests ---
+
+    #[test]
+    fn test_classify_review_state_approved() {
+        let result = classify_review_state(Some("APPROVED"));
+        assert_eq!(
+            result,
+            Some(StateLabel { label: "Approved".to_string(), css_class: "approved".to_string() })
+        );
+    }
+
+    #[test]
+    fn test_classify_review_state_changes_requested() {
+        let result = classify_review_state(Some("CHANGES_REQUESTED"));
+        assert_eq!(
+            result,
+            Some(StateLabel { label: "Changes requested".to_string(), css_class: "changes-requested".to_string() })
+        );
+    }
+
+    #[test]
+    fn test_classify_review_state_review_required() {
+        let result = classify_review_state(Some("REVIEW_REQUIRED"));
+        assert_eq!(
+            result,
+            Some(StateLabel { label: "Review required".to_string(), css_class: "review-required".to_string() })
+        );
+    }
+
+    #[test]
+    fn test_classify_review_state_none_returns_none() {
+        assert!(classify_review_state(None).is_none());
+    }
+
+    #[test]
+    fn test_classify_review_state_empty_returns_none() {
+        assert!(classify_review_state(Some("")).is_none());
+    }
+
+    // --- Integration: verify parse_pr_list_json populates computed labels ---
+
+    #[test]
+    fn test_parse_pr_list_json_computes_merge_and_review_labels() {
+        let json = r#"[
+            {
+                "number": 1,
+                "title": "Clean PR",
+                "state": "OPEN",
+                "url": "https://github.com/org/repo/pull/1",
+                "headRefName": "clean-branch",
+                "author": {"login": "alice"},
+                "commits": {"totalCount": 1},
+                "mergeable": "MERGEABLE",
+                "mergeStateStatus": "CLEAN",
+                "reviewDecision": "APPROVED",
+                "statusCheckRollup": []
+            },
+            {
+                "number": 2,
+                "title": "Conflicting PR",
+                "state": "OPEN",
+                "url": "https://github.com/org/repo/pull/2",
+                "headRefName": "conflict-branch",
+                "author": {"login": "bob"},
+                "commits": {"totalCount": 1},
+                "mergeable": "CONFLICTING",
+                "mergeStateStatus": "DIRTY",
+                "reviewDecision": "CHANGES_REQUESTED",
+                "statusCheckRollup": []
+            },
+            {
+                "number": 3,
+                "title": "Unknown PR",
+                "state": "OPEN",
+                "url": "https://github.com/org/repo/pull/3",
+                "headRefName": "unknown-branch",
+                "author": {"login": "carol"},
+                "commits": {"totalCount": 1},
+                "mergeable": "UNKNOWN",
+                "mergeStateStatus": "UNKNOWN",
+                "statusCheckRollup": []
+            }
+        ]"#;
+
+        let result = parse_pr_list_json(json);
+        assert_eq!(result.len(), 3);
+
+        // Clean + Approved
+        assert_eq!(
+            result[0].merge_state_label,
+            Some(StateLabel { label: "Ready to merge".to_string(), css_class: "clean".to_string() })
+        );
+        assert_eq!(
+            result[0].review_state_label,
+            Some(StateLabel { label: "Approved".to_string(), css_class: "approved".to_string() })
+        );
+
+        // Conflicting (mergeable overrides status) + Changes requested
+        assert_eq!(
+            result[1].merge_state_label,
+            Some(StateLabel { label: "Conflicts".to_string(), css_class: "conflicting".to_string() })
+        );
+        assert_eq!(
+            result[1].review_state_label,
+            Some(StateLabel { label: "Changes requested".to_string(), css_class: "changes-requested".to_string() })
+        );
+
+        // Unknown — both None
+        assert!(result[2].merge_state_label.is_none());
+        assert!(result[2].review_state_label.is_none());
+    }
+}

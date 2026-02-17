@@ -1,0 +1,6 @@
+[env]
+# whisper-rs-sys bundles whisper.cpp which uses std::filesystem::path (macOS 10.15+).
+# Both vars are needed: MACOSX_DEPLOYMENT_TARGET for clang, CMAKE_OSX_DEPLOYMENT_TARGET
+# for CMake. Without these, CMake auto-detects a wrong version and the build breaks.
+MACOSX_DEPLOYMENT_TARGET = "10.15"
+CMAKE_OSX_DEPLOYMENT_TARGET = "10.15"

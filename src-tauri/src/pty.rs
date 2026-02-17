@@ -1,0 +1,666 @@
+use parking_lot::Mutex;
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use serde::Serialize;
+use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, State};
+use uuid::Uuid;
+
+use crate::output_parser::OutputParser;
+use crate::state::{
+    AppState, EscapeAwareBuffer, OrchestratorStats, OutputRingBuffer, PtyConfig, PtyOutput,
+    PtySession, Utf8ReadBuffer, MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY,
+};
+use crate::worktree::{create_worktree_internal, remove_worktree_internal, WorktreeConfig, WorktreeResult};
+
+/// Get the platform-appropriate default shell when no override is configured.
+pub(crate) fn default_shell() -> String {
+    #[cfg(windows)]
+    {
+        std::env::var("COMSPEC").unwrap_or_else(|_| "powershell.exe".to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+    }
+}
+
+/// Build a CommandBuilder for the given shell with platform-appropriate flags.
+pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
+    let mut cmd = CommandBuilder::new(shell);
+    // Login shell flag is Unix-only; PowerShell/cmd.exe don't support -l
+    #[cfg(not(windows))]
+    cmd.arg("-l");
+    cmd
+}
+
+/// Resolve the shell to use: explicit override > env default > platform default.
+pub(crate) fn resolve_shell(override_shell: Option<String>) -> String {
+    override_shell.unwrap_or_else(default_shell)
+}
+
+/// Spawn a reader thread that reads from a PTY, emits Tauri events, and writes to the ring buffer.
+/// Shared by `create_pty`, `create_pty_with_worktree`, and `spawn_agent` to avoid duplication.
+pub(crate) fn spawn_reader_thread(
+    mut reader: Box<dyn Read + Send>,
+    paused: Arc<AtomicBool>,
+    session_id: String,
+    app: AppHandle,
+    state: Arc<AppState>,
+) {
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        let mut utf8_buf = Utf8ReadBuffer::new();
+        let mut esc_buf = EscapeAwareBuffer::new();
+        let parser = OutputParser::new();
+        loop {
+            while paused.load(Ordering::Relaxed) {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    state.metrics.bytes_emitted.fetch_add(n, Ordering::Relaxed);
+                    let utf8_data = utf8_buf.push(&buf[..n]);
+                    let data = esc_buf.push(&utf8_data);
+                    if !data.is_empty() {
+                        // Write to ring buffer for MCP consumers
+                        if let Some(ring) = state.output_buffers.get(&session_id) {
+                            ring.lock().write(data.as_bytes());
+                        }
+                        // Broadcast to WebSocket clients
+                        if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
+                            clients.retain(|tx| tx.send(data.clone()).is_ok());
+                        }
+                        // Emit parsed events before raw output
+                        let events = parser.parse(&data);
+                        for event in events {
+                            let _ = app.emit(
+                                &format!("pty-parsed-{session_id}"),
+                                &event,
+                            );
+                        }
+                        let _ = app.emit(
+                            &format!("pty-output-{session_id}"),
+                            PtyOutput {
+                                session_id: session_id.clone(),
+                                data,
+                            },
+                        );
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        // Flush both buffers at EOF
+        let utf8_tail = utf8_buf.flush();
+        let mut remaining = if utf8_tail.is_empty() {
+            esc_buf.flush()
+        } else {
+            let mut flushed = esc_buf.push(&utf8_tail);
+            flushed.push_str(&esc_buf.flush());
+            flushed
+        };
+        if remaining.is_empty() {
+            remaining = String::new();
+        }
+        if !remaining.is_empty() {
+            if let Some(ring) = state.output_buffers.get(&session_id) {
+                ring.lock().write(remaining.as_bytes());
+            }
+            if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
+                clients.retain(|tx| tx.send(remaining.clone()).is_ok());
+            }
+            let _ = app.emit(
+                &format!("pty-output-{session_id}"),
+                PtyOutput {
+                    session_id: session_id.clone(),
+                    data: remaining,
+                },
+            );
+        }
+        let _ = app.emit(
+            &format!("pty-exit-{session_id}"),
+            serde_json::json!({ "session_id": session_id }),
+        );
+        state.sessions.remove(&session_id);
+        state.output_buffers.remove(&session_id);
+        state.ws_clients.remove(&session_id);
+        state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+    });
+}
+
+/// Reader thread for sessions created via HTTP (no AppHandle available).
+/// Writes to ring buffer only — MCP consumers poll via GET /sessions/{id}/output.
+pub(crate) fn spawn_headless_reader_thread(
+    mut reader: Box<dyn Read + Send>,
+    paused: Arc<AtomicBool>,
+    session_id: String,
+    state: Arc<AppState>,
+) {
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        let mut utf8_buf = Utf8ReadBuffer::new();
+        let mut esc_buf = EscapeAwareBuffer::new();
+        loop {
+            while paused.load(Ordering::Relaxed) {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    state.metrics.bytes_emitted.fetch_add(n, Ordering::Relaxed);
+                    let utf8_data = utf8_buf.push(&buf[..n]);
+                    let data = esc_buf.push(&utf8_data);
+                    if !data.is_empty() {
+                        if let Some(ring) = state.output_buffers.get(&session_id) {
+                            ring.lock().write(data.as_bytes());
+                        }
+                        // Broadcast to WebSocket clients
+                        if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
+                            clients.retain(|tx| tx.send(data.clone()).is_ok());
+                        }
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        let utf8_tail = utf8_buf.flush();
+        let remaining = if utf8_tail.is_empty() {
+            esc_buf.flush()
+        } else {
+            let mut flushed = esc_buf.push(&utf8_tail);
+            flushed.push_str(&esc_buf.flush());
+            flushed
+        };
+        if !remaining.is_empty() {
+            if let Some(ring) = state.output_buffers.get(&session_id) {
+                ring.lock().write(remaining.as_bytes());
+            }
+            if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
+                clients.retain(|tx| tx.send(remaining.clone()).is_ok());
+            }
+        }
+        state.sessions.remove(&session_id);
+        state.output_buffers.remove(&session_id);
+        state.ws_clients.remove(&session_id);
+        state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+    });
+}
+
+/// Create a new PTY session with optional worktree
+#[tauri::command]
+pub(crate) async fn create_pty(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    config: PtyConfig,
+) -> Result<String, String> {
+    let session_id = Uuid::new_v4().to_string();
+    let pty_system = native_pty_system();
+
+    let shell = resolve_shell(config.shell);
+
+    // Retry PTY spawn up to 3 times with increasing delay (Story 059)
+    let max_retries = 3;
+    let mut last_err = String::new();
+    let mut pair_and_child = None;
+
+    for attempt in 0..max_retries {
+        let pair = match pty_system.openpty(PtySize {
+            rows: config.rows,
+            cols: config.cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        }) {
+            Ok(p) => p,
+            Err(e) => {
+                last_err = format!("Failed to open PTY (attempt {}): {}", attempt + 1, e);
+                if attempt < max_retries - 1 {
+                    tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt as u64 + 1))).await;
+                }
+                continue;
+            }
+        };
+
+        let mut cmd = build_shell_command(&shell);
+
+        if let Some(ref cwd) = config.cwd {
+            cmd.cwd(cwd);
+        }
+
+        match pair.slave.spawn_command(cmd) {
+            Ok(child) => {
+                pair_and_child = Some((pair, child));
+                break;
+            }
+            Err(e) => {
+                last_err = format!("Failed to spawn shell (attempt {}): {}", attempt + 1, e);
+                if attempt < max_retries - 1 {
+                    tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt as u64 + 1))).await;
+                }
+            }
+        }
+    }
+
+    let (pair, child) = pair_and_child.ok_or(last_err)?;
+
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| format!("Failed to get PTY writer: {e}"))?;
+
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("Failed to get PTY reader: {e}"))?;
+
+    // Store session (master handle kept for resize support)
+    let paused = Arc::new(AtomicBool::new(false));
+    state.sessions.insert(
+        session_id.clone(),
+        Mutex::new(PtySession {
+            writer,
+            master: pair.master,
+            _child: child,
+            paused: paused.clone(),
+            worktree: None,
+            cwd: config.cwd,
+        }),
+    );
+    state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
+    state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
+
+    // Create ring buffer for this session
+    state.output_buffers.insert(
+        session_id.clone(),
+        Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+
+    spawn_reader_thread(
+        reader,
+        paused,
+        session_id.clone(),
+        app,
+        state.inner().clone(),
+    );
+
+    Ok(session_id)
+}
+
+/// Create a PTY session with a dedicated git worktree
+#[tauri::command]
+pub(crate) async fn create_pty_with_worktree(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    pty_config: PtyConfig,
+    worktree_config: WorktreeConfig,
+) -> Result<WorktreeResult, String> {
+    // Create the worktree first
+    let worktree = create_worktree_internal(&state.worktrees_dir, &worktree_config)?;
+    let worktree_path = worktree.path.clone();
+
+    // Wrap PTY creation so we can clean up the worktree on failure
+    let pty_result = (|| -> Result<_, String> {
+        let session_id = Uuid::new_v4().to_string();
+        let pty_system = native_pty_system();
+
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: pty_config.rows,
+                cols: pty_config.cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| format!("Failed to open PTY: {e}"))?;
+
+        let shell = resolve_shell(pty_config.shell);
+
+        let mut cmd = build_shell_command(&shell);
+        cmd.cwd(&worktree_path);
+
+        let child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(|e| format!("Failed to spawn shell: {e}"))?;
+
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| format!("Failed to get PTY writer: {e}"))?;
+
+        let reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| format!("Failed to get PTY reader: {e}"))?;
+
+        Ok((session_id, pair.master, child, writer, reader))
+    })();
+
+    let (session_id, master, child, writer, reader) = match pty_result {
+        Ok(result) => result,
+        Err(e) => {
+            // Clean up the worktree since PTY creation failed
+            if let Err(cleanup_err) = remove_worktree_internal(&worktree) {
+                eprintln!("Warning: Failed to cleanup worktree after PTY failure: {cleanup_err}");
+            }
+            return Err(e);
+        }
+    };
+
+    let branch = worktree.branch.clone();
+    let worktree_cwd = Some(worktree.path.to_string_lossy().to_string());
+
+    // Store session with worktree info (master handle kept for resize support)
+    let paused = Arc::new(AtomicBool::new(false));
+    state.sessions.insert(
+        session_id.clone(),
+        Mutex::new(PtySession {
+            writer,
+            master,
+            _child: child,
+            paused: paused.clone(),
+            worktree: Some(worktree),
+            cwd: worktree_cwd,
+        }),
+    );
+    state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
+    state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
+
+    // Create ring buffer for this session
+    state.output_buffers.insert(
+        session_id.clone(),
+        Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+
+    spawn_reader_thread(
+        reader,
+        paused,
+        session_id.clone(),
+        app,
+        state.inner().clone(),
+    );
+
+    Ok(WorktreeResult {
+        session_id,
+        worktree_path: worktree_path.to_string_lossy().to_string(),
+        branch,
+    })
+}
+
+/// List all active worktrees
+#[tauri::command]
+pub(crate) fn list_worktrees(state: State<'_, Arc<AppState>>) -> Vec<serde_json::Value> {
+    state.sessions
+        .iter()
+        .filter_map(|entry| {
+            let session = entry.value().lock();
+            session.worktree.as_ref().map(|wt| {
+                serde_json::json!({
+                    "session_id": entry.key(),
+                    "name": wt.name,
+                    "path": wt.path.to_string_lossy(),
+                    "branch": wt.branch,
+                    "base_repo": wt.base_repo.to_string_lossy(),
+                })
+            })
+        })
+        .collect()
+}
+
+/// Write data to a PTY session
+#[tauri::command]
+pub(crate) fn write_pty(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    if let Some(entry) = state.sessions.get(&session_id) {
+        let mut session = entry.lock();
+        session
+            .writer
+            .write_all(data.as_bytes())
+            .map_err(|e| format!("Failed to write to PTY: {e}"))?;
+        session
+            .writer
+            .flush()
+            .map_err(|e| format!("Failed to flush PTY: {e}"))?;
+        Ok(())
+    } else {
+        Err("Session not found".to_string())
+    }
+}
+
+/// Resize a PTY session
+#[tauri::command]
+pub(crate) fn resize_pty(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    rows: u16,
+    cols: u16,
+) -> Result<(), String> {
+    if rows == 0 || cols == 0 {
+        return Err("Invalid dimensions: rows and cols must be > 0".to_string());
+    }
+    let entry = state.sessions
+        .get(&session_id)
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    let session = entry.lock();
+    session
+        .master
+        .resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| format!("Failed to resize PTY: {e}"))
+}
+
+/// Pause PTY reader thread (flow control: frontend buffer full)
+#[tauri::command]
+pub(crate) fn pause_pty(state: State<'_, Arc<AppState>>, session_id: String) -> Result<(), String> {
+    let entry = state.sessions
+        .get(&session_id)
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    entry.lock().paused.store(true, Ordering::Relaxed);
+    state.metrics.pauses_triggered.fetch_add(1, Ordering::Relaxed);
+    Ok(())
+}
+
+/// Resume PTY reader thread (flow control: frontend buffer drained)
+#[tauri::command]
+pub(crate) fn resume_pty(state: State<'_, Arc<AppState>>, session_id: String) -> Result<(), String> {
+    let entry = state.sessions
+        .get(&session_id)
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    entry.lock().paused.store(false, Ordering::Relaxed);
+    Ok(())
+}
+
+/// Close a PTY session with graceful shutdown and optional worktree cleanup.
+/// Sends Ctrl-C (0x03) and waits briefly for the process to exit cleanly
+/// before forcibly dropping handles.
+#[tauri::command]
+pub(crate) fn close_pty(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    cleanup_worktree: bool,
+) -> Result<(), String> {
+    if let Some((_, session_mutex)) = state.sessions.remove(&session_id) {
+        state.output_buffers.remove(&session_id);
+        state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+        let mut session = session_mutex.into_inner();
+
+        // Send Ctrl-C (0x03) to give the process a chance to clean up
+        let _ = session.writer.write_all(&[0x03]);
+        let _ = session.writer.flush();
+
+        // Wait up to 100ms for process to exit gracefully
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        loop {
+            match session._child.try_wait() {
+                Ok(Some(_)) => break, // Process exited cleanly
+                Ok(None) if std::time::Instant::now() >= deadline => break,
+                _ => std::thread::sleep(std::time::Duration::from_millis(10)),
+            }
+        }
+
+        // Extract worktree info before dropping session
+        let worktree_to_cleanup = if cleanup_worktree {
+            session.worktree.clone()
+        } else {
+            None
+        };
+
+        // Drop session to release file handles (forcibly kills if still running)
+        drop(session);
+
+        // Cleanup worktree if requested
+        if let Some(worktree) = worktree_to_cleanup
+            && let Err(e) = remove_worktree_internal(&worktree) {
+                eprintln!("Warning: Failed to cleanup worktree: {e}");
+            }
+    }
+
+    Ok(())
+}
+
+/// Look up the process name for a given PID using `ps`.
+/// Returns None on Windows or if the lookup fails.
+#[cfg(not(windows))]
+pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
+    let output = std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    // ps may return full path; extract just the binary name
+    name.rsplit('/').next().map(|s| s.to_string())
+}
+
+#[cfg(windows)]
+pub(crate) fn process_name_from_pid(_pid: u32) -> Option<String> {
+    None
+}
+
+/// Map a process name to a known agent type, or None for non-agent processes.
+pub(crate) fn classify_agent(process_name: &str) -> Option<&'static str> {
+    match process_name {
+        "claude" => Some("claude"),
+        "gemini" => Some("gemini"),
+        "opencode" => Some("opencode"),
+        "aider" => Some("aider"),
+        "codex" => Some("codex"),
+        _ => None,
+    }
+}
+
+/// Get the foreground process of a PTY session and classify it as a known agent.
+/// Returns the agent name (e.g. "claude") or None if the foreground process is
+/// not a recognized agent or the session doesn't exist.
+#[tauri::command]
+pub(crate) fn get_session_foreground_process(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Option<String> {
+    let entry = state.sessions.get(&session_id)?;
+    let session = entry.value().lock();
+    let pgid = session.master.process_group_leader()?;
+    let name = process_name_from_pid(pgid as u32)?;
+    classify_agent(&name).map(|s| s.to_string())
+}
+
+/// Get orchestrator stats
+#[tauri::command]
+pub(crate) fn get_orchestrator_stats(state: State<'_, Arc<AppState>>) -> OrchestratorStats {
+    state.orchestrator_stats()
+}
+
+/// Get PTY session metrics for observability
+#[tauri::command]
+pub(crate) fn get_session_metrics(state: State<'_, Arc<AppState>>) -> serde_json::Value {
+    state.session_metrics_json()
+}
+
+/// Check if we can spawn a new session
+#[tauri::command]
+pub(crate) fn can_spawn_session(state: State<'_, Arc<AppState>>) -> bool {
+    state.sessions.len() < MAX_CONCURRENT_SESSIONS
+}
+
+/// Info about an active PTY session for frontend reconnection
+#[derive(Clone, Serialize)]
+pub(crate) struct ActiveSessionInfo {
+    session_id: String,
+    cwd: Option<String>,
+    worktree_path: Option<String>,
+    worktree_branch: Option<String>,
+}
+
+/// List all active PTY sessions for reconnection after frontend reload
+#[tauri::command]
+pub(crate) fn list_active_sessions(state: State<'_, Arc<AppState>>) -> Vec<ActiveSessionInfo> {
+    state
+        .sessions
+        .iter()
+        .map(|entry| {
+            let session_id = entry.key().clone();
+            let session = entry.value().lock();
+            ActiveSessionInfo {
+                session_id,
+                cwd: session.cwd.clone(),
+                worktree_path: session
+                    .worktree
+                    .as_ref()
+                    .map(|w| w.path.to_string_lossy().to_string()),
+                worktree_branch: session.worktree.as_ref().and_then(|w| w.branch.clone()),
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_classify_agent_claude() {
+        assert_eq!(classify_agent("claude"), Some("claude"));
+    }
+
+    #[test]
+    fn test_classify_agent_gemini() {
+        assert_eq!(classify_agent("gemini"), Some("gemini"));
+    }
+
+    #[test]
+    fn test_classify_agent_aider() {
+        assert_eq!(classify_agent("aider"), Some("aider"));
+    }
+
+    #[test]
+    fn test_classify_agent_codex() {
+        assert_eq!(classify_agent("codex"), Some("codex"));
+    }
+
+    #[test]
+    fn test_classify_agent_opencode() {
+        assert_eq!(classify_agent("opencode"), Some("opencode"));
+    }
+
+    #[test]
+    fn test_classify_agent_unknown_returns_none() {
+        assert_eq!(classify_agent("bash"), None);
+        assert_eq!(classify_agent("zsh"), None);
+        assert_eq!(classify_agent("node"), None);
+        assert_eq!(classify_agent("python"), None);
+        assert_eq!(classify_agent("vim"), None);
+    }
+}

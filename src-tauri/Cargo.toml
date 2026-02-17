@@ -1,0 +1,59 @@
+[package]
+name = "tui-commander"
+version = "0.1.0"
+description = "TUI Commander - Multi-agent terminal orchestrator"
+authors = ["Stefano Straus <github.com/sstraus>"]
+edition = "2024"
+default-run = "tui-commander"
+
+[lib]
+name = "tui_commander_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.8"
+tokio = { version = "1", features = ["full"] }
+dashmap = "6"
+parking_lot = "0.12"
+regex = "1"
+lazy_static = "1"
+strip-ansi-escapes = "0.2"
+uuid = { version = "1", features = ["v4"] }
+dirs = "5"
+tauri-plugin-dialog = "2.6.0"
+tauri-plugin-single-instance = "2"
+whisper-rs = "0.15"
+cpal = "0.15"
+hound = "3.5"
+reqwest = { version = "0.12", features = ["stream", "json", "blocking"] }
+anyhow = "1"
+futures-util = "0.3"
+tauri-plugin-global-shortcut = "2"
+axum = { version = "0.8", features = ["ws"] }
+async-stream = "0.3"
+tauri-plugin-window-state = "2.4.1"
+bcrypt = "0.17"
+base64 = "0.22"
+include_dir = { version = "0.7.4", features = ["glob"] }
+mime_guess = "2.0.5"
+tower-http = { version = "0.6.8", features = ["cors"] }
+rand = "0.9"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.15", features = ["metal"] }
+
+[dev-dependencies]
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
+
+[[bin]]
+name = "tui-mcp-bridge"
+path = "src/bin/tui_mcp_bridge.rs"
+
