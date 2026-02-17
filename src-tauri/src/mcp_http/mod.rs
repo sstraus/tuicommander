@@ -177,7 +177,16 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         Ok(l) => l,
         Err(e) => {
             eprintln!("MCP HTTP: failed to bind {bind_addr}: {e}");
-            return;
+            // Fall back to localhost with OS-assigned port (remote access disabled)
+            let fallback = "127.0.0.1:0";
+            eprintln!("MCP HTTP: falling back to {fallback} (remote access disabled)");
+            match tokio::net::TcpListener::bind(fallback).await {
+                Ok(l) => l,
+                Err(e2) => {
+                    eprintln!("MCP HTTP: fallback bind also failed: {e2}, server disabled");
+                    return;
+                }
+            }
         }
     };
 
