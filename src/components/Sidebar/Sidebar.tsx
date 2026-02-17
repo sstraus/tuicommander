@@ -45,17 +45,35 @@ const StatsBadge: Component<{ additions: number; deletions: number }> = (props) 
 );
 
 /** PR badge component - shows PR number with state-aware styling */
-const PrBadgeSidebar: Component<{ prNumber: number; state?: string; isDraft?: boolean }> = (props) => {
+const PrBadgeSidebar: Component<{
+  prNumber: number;
+  state?: string;
+  isDraft?: boolean;
+  mergeable?: string;
+  reviewDecision?: string;
+}> = (props) => {
   const stateClass = () => {
     if (props.isDraft) return " draft";
     const s = props.state?.toLowerCase();
     if (s === "merged") return " merged";
     if (s === "closed") return " closed";
+    // Action-required states for open PRs
+    if (props.mergeable === "CONFLICTING") return " conflict";
+    if (props.reviewDecision === "CHANGES_REQUESTED") return " changes-requested";
+    if (props.reviewDecision === "REVIEW_REQUIRED") return " review-required";
     return "";
   };
 
+  const title = () => {
+    const parts = [`PR #${props.prNumber}`];
+    if (props.mergeable === "CONFLICTING") parts.push("(conflicts)");
+    else if (props.reviewDecision === "CHANGES_REQUESTED") parts.push("(changes requested)");
+    else if (props.reviewDecision === "REVIEW_REQUIRED") parts.push("(review required)");
+    return parts.join(" ");
+  };
+
   return (
-    <span class={`branch-pr-badge${stateClass()}`} title={`PR #${props.prNumber}`}>
+    <span class={`branch-pr-badge${stateClass()}`} title={title()}>
       #{props.prNumber}
     </span>
   );
@@ -252,6 +270,8 @@ const BranchItem: Component<{
               prNumber={prData().number}
               state={prData().state}
               isDraft={prData().is_draft}
+              mergeable={prData().mergeable}
+              reviewDecision={prData().review_decision}
             />
           </span>
         )}

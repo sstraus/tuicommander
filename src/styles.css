@@ -620,6 +620,21 @@ html, body {
   color: #848d97;
 }
 
+.branch-pr-badge.conflict {
+  background: var(--error);
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+.branch-pr-badge.changes-requested {
+  background: #d29922;
+}
+
+.branch-pr-badge.review-required {
+  background: transparent;
+  border: 1px solid #d29922;
+  color: #d29922;
+}
+
 /* CI status ring in sidebar */
 .ci-ring {
   margin-left: 4px;

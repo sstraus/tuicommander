@@ -40,34 +40,33 @@ const basePr: BranchPrStatus = {
   base_ref_name: "main",
   created_at: new Date(Date.now() - 86400000).toISOString(),
   updated_at: new Date().toISOString(),
-  merge_state_label: { label: "Ready to merge", css_class: "success" },
-  review_state_label: { label: "Approved", css_class: "success" },
+  merge_state_label: { label: "Ready to merge", css_class: "clean" },
+  review_state_label: { label: "Approved", css_class: "approved" },
 };
 
-/** Derive merge_state_label from mergeable/merge_state_status when not explicitly set */
+/** Derive merge_state_label from mergeable/merge_state_status when not explicitly set.
+ *  CSS classes match Rust classify_merge_state() output. */
 function deriveMergeLabel(pr: BranchPrStatus): { label: string; css_class: string } {
-  if (pr.is_draft) return { label: "Draft", css_class: "muted" };
-  switch (pr.mergeable) {
-    case "CONFLICTING": return { label: "Conflicts", css_class: "danger" };
-    case "UNKNOWN": return { label: "Checking mergeability...", css_class: "pending" };
-    default: break;
-  }
+  if (pr.mergeable === "CONFLICTING") return { label: "Conflicts", css_class: "conflicting" };
   switch (pr.merge_state_status) {
-    case "BEHIND": return { label: "Behind base", css_class: "warning" };
-    case "BLOCKED": return { label: "Checks running", css_class: "pending" };
-    case "DIRTY": return { label: "Conflicts", css_class: "danger" };
-    case "CLEAN": return { label: "Ready to merge", css_class: "success" };
-    default: return { label: "Ready to merge", css_class: "success" };
+    case "CLEAN": return { label: "Ready to merge", css_class: "clean" };
+    case "BEHIND": return { label: "Behind base", css_class: "behind" };
+    case "BLOCKED": return { label: "Blocked", css_class: "blocked" };
+    case "UNSTABLE": return { label: "Unstable", css_class: "blocked" };
+    case "DIRTY": return { label: "Conflicts", css_class: "conflicting" };
+    case "DRAFT": return { label: "Draft", css_class: "behind" };
+    default: return { label: "Ready to merge", css_class: "clean" };
   }
 }
 
-/** Derive review_state_label from review_decision when not explicitly set */
+/** Derive review_state_label from review_decision when not explicitly set.
+ *  CSS classes match Rust classify_review_state() output. */
 function deriveReviewLabel(pr: BranchPrStatus): { label: string; css_class: string } {
   switch (pr.review_decision) {
-    case "APPROVED": return { label: "Approved", css_class: "success" };
-    case "CHANGES_REQUESTED": return { label: "Changes requested", css_class: "warning" };
-    case "REVIEW_REQUIRED": return { label: "Review required", css_class: "warning" };
-    default: return { label: "Approved", css_class: "success" };
+    case "APPROVED": return { label: "Approved", css_class: "approved" };
+    case "CHANGES_REQUESTED": return { label: "Changes requested", css_class: "changes-requested" };
+    case "REVIEW_REQUIRED": return { label: "Review required", css_class: "review-required" };
+    default: return { label: "Approved", css_class: "approved" };
   }
 }
 
@@ -104,8 +103,6 @@ export const PRESETS: Record<string, Preset> = {
       merge_state_status: "CLEAN",
       review_decision: "APPROVED",
       checks: { passed: 5, failed: 0, pending: 0, total: 5 },
-      merge_state_label: { label: "Ready to merge", css_class: "success" },
-      review_state_label: { label: "Approved", css_class: "success" },
     },
   },
 
@@ -123,8 +120,6 @@ export const PRESETS: Record<string, Preset> = {
         { context: "ci/lint", state: "SUCCESS" },
         { context: "ci/typecheck", state: "SUCCESS" },
       ],
-      merge_state_label: { label: "Conflicts", css_class: "danger" },
-      review_state_label: { label: "Changes requested", css_class: "warning" },
     },
   },
 
@@ -143,8 +138,6 @@ export const PRESETS: Record<string, Preset> = {
         { context: "ci/lint", state: "SUCCESS" },
         { context: "ci/typecheck", state: "PENDING" },
       ],
-      merge_state_label: { label: "Draft", css_class: "muted" },
-      review_state_label: { label: "Review required", css_class: "warning" },
     },
   },
 
@@ -156,8 +149,6 @@ export const PRESETS: Record<string, Preset> = {
       merge_state_status: "BEHIND",
       review_decision: "APPROVED",
       checks: { passed: 5, failed: 0, pending: 0, total: 5 },
-      merge_state_label: { label: "Behind base", css_class: "warning" },
-      review_state_label: { label: "Approved", css_class: "success" },
     },
   },
 
@@ -176,8 +167,6 @@ export const PRESETS: Record<string, Preset> = {
         { context: "ci/typecheck", state: "SUCCESS" },
         { context: "ci/deploy-preview", state: "PENDING" },
       ],
-      merge_state_label: { label: "Checks running", css_class: "pending" },
-      review_state_label: { label: "Review required", css_class: "warning" },
     },
   },
 
