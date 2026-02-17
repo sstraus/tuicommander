@@ -4626,6 +4626,15 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   flex-shrink: 0;
 }
 
+.pr-detail-link {
+  cursor: pointer;
+}
+
+.pr-detail-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .pr-detail-close {
   background: none;
   border: none;

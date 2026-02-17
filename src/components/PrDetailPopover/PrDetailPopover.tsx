@@ -2,6 +2,7 @@ import { Component, Show, For, onMount, onCleanup } from "solid-js";
 import { githubStore } from "../../stores/github";
 import { CiRing } from "../ui/CiRing";
 import { relativeTime } from "../../utils/time";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 export interface PrDetailPopoverProps {
   repoPath: string;
@@ -101,7 +102,13 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
               <div class="pr-detail-header">
                 <span class={`pr-state-badge ${stateClass()}`}>{stateLabel()}</span>
                 <span class="pr-detail-title">{pr().title}</span>
-                <span class="pr-detail-number">#{pr().number}</span>
+                <span
+                  class="pr-detail-number pr-detail-link"
+                  onClick={() => pr().url && openUrl(pr().url).catch(() => {})}
+                  title="Open PR on GitHub"
+                >
+                  #{pr().number}
+                </span>
                 <button class="pr-detail-close" onClick={props.onClose}>&times;</button>
               </div>
 
