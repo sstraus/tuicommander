@@ -22,6 +22,11 @@ export default defineConfig(async () => ({
     cssMinify: "lightningcss",
   },
 
+  // Exclude broken beta package from dep optimization (mismatched entry points)
+  optimizeDeps: {
+    exclude: ["@xterm/addon-canvas"],
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
