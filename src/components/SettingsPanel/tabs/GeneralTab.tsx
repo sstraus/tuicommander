@@ -82,6 +82,20 @@ export const GeneralTab: Component = () => {
         <p class="settings-hint">Ask before closing a terminal tab</p>
       </div>
 
+      <h3>Git Integration</h3>
+
+      <div class="settings-group">
+        <div class="settings-toggle">
+          <input
+            type="checkbox"
+            checked={settingsStore.state.autoShowPrPopover}
+            onChange={(e) => settingsStore.setAutoShowPrPopover(e.currentTarget.checked)}
+          />
+          <span>Auto-show PR detail popover</span>
+        </div>
+        <p class="settings-hint">Automatically show the PR detail popover when selecting a branch with an open PR</p>
+      </div>
+
       <h3>Appearance</h3>
 
       <div class="settings-group">

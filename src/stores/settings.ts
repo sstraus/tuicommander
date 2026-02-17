@@ -23,6 +23,7 @@ interface RustAppConfig {
   confirm_before_closing_tab: boolean;
   max_tab_name_length: number;
   split_tab_mode: string;
+  auto_show_pr_popover: boolean;
 }
 
 // Default values
@@ -218,6 +219,7 @@ interface SettingsStoreState {
   confirmBeforeClosingTab: boolean;
   maxTabNameLength: number;
   splitTabMode: SplitTabMode;
+  autoShowPrPopover: boolean;
 }
 
 /** Create the settings store */
@@ -233,6 +235,7 @@ function createSettingsStore() {
     confirmBeforeClosingTab: true,
     maxTabNameLength: 25,
     splitTabMode: "separate",
+    autoShowPrPopover: true,
   });
 
   const actions = {
@@ -267,6 +270,7 @@ function createSettingsStore() {
         setState("confirmBeforeClosingTab", config.confirm_before_closing_tab ?? true);
         setState("maxTabNameLength", config.max_tab_name_length || 25);
         setState("splitTabMode", config.split_tab_mode === "unified" ? "unified" : "separate");
+        setState("autoShowPrPopover", config.auto_show_pr_popover ?? true);
 
         // Agent stored separately in agent-config
         if (!migrated && !legacyAgent) {
@@ -400,6 +404,20 @@ function createSettingsStore() {
       } catch (err) {
         console.error("Failed to persist splitTabMode:", err);
         setState("splitTabMode", prevMode);
+      }
+    },
+
+    /** Set auto-show PR popover preference */
+    async setAutoShowPrPopover(enabled: boolean): Promise<void> {
+      const prevValue = state.autoShowPrPopover;
+      setState("autoShowPrPopover", enabled);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.auto_show_pr_popover = enabled;
+        await invoke("save_config", { config });
+      } catch (err) {
+        console.error("Failed to persist autoShowPrPopover:", err);
+        setState("autoShowPrPopover", prevValue);
       }
     },
 

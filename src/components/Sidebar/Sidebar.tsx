@@ -1,8 +1,9 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import { Component, For, Show, createMemo, createSignal, createEffect } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
 import type { RepositoryState, BranchState } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 import { githubStore } from "../../stores/github";
+import { settingsStore } from "../../stores/settings";
 import { uiStore } from "../../stores/ui";
 import { CiRing } from "../ui/CiRing";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
@@ -307,6 +308,22 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
   // PR detail popover state
   const [prDetailTarget, setPrDetailTarget] = createSignal<{ repoPath: string; branch: string } | null>(null);
+
+  // Auto-show PR popover when active branch has PR data
+  createEffect(() => {
+    if (!settingsStore.state.autoShowPrPopover) return;
+    const active = repositoriesStore.getActive();
+    if (!active?.activeBranch) {
+      setPrDetailTarget(null);
+      return;
+    }
+    const prStatus = githubStore.getPrStatus(active.path, active.activeBranch);
+    if (prStatus) {
+      setPrDetailTarget({ repoPath: active.path, branch: active.activeBranch });
+    } else {
+      setPrDetailTarget(null);
+    }
+  });
 
   // Sync CSS variable so toolbar-left matches sidebar width
   document.documentElement.style.setProperty("--sidebar-width", `${uiStore.state.sidebarWidth}px`);

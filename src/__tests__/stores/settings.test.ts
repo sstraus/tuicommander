@@ -468,4 +468,59 @@ describe("settingsStore", () => {
       });
     });
   });
+
+  describe("autoShowPrPopover", () => {
+    it("defaults to true", () => {
+      createRoot((dispose) => {
+        expect(store.state.autoShowPrPopover).toBe(true);
+        dispose();
+      });
+    });
+
+    it("sets autoShowPrPopover and persists", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        shell: null, font_family: "JetBrains Mono", font_size: 14,
+        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
+        ide: "vscode", default_font_size: 12, auto_show_pr_popover: true,
+      });
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await createRoot(async (dispose) => {
+        await store.setAutoShowPrPopover(false);
+        expect(store.state.autoShowPrPopover).toBe(false);
+        expect(mockInvoke).toHaveBeenCalledWith("save_config", {
+          config: expect.objectContaining({ auto_show_pr_popover: false }),
+        });
+        dispose();
+      });
+    });
+
+    it("rolls back autoShowPrPopover on persist failure", async () => {
+      mockInvoke.mockRejectedValueOnce(new Error("fail"));
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      await createRoot(async (dispose) => {
+        await store.setAutoShowPrPopover(false);
+        expect(store.state.autoShowPrPopover).toBe(true);
+        expect(errSpy).toHaveBeenCalled();
+        errSpy.mockRestore();
+        dispose();
+      });
+    });
+
+    it("hydrates autoShowPrPopover from config", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        shell: null, font_family: "JetBrains Mono", font_size: 14,
+        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
+        ide: "vscode", default_font_size: 12, auto_show_pr_popover: false,
+      });
+      mockInvoke.mockResolvedValueOnce({ primary_agent: "claude" });
+
+      await createRoot(async (dispose) => {
+        await store.hydrate();
+        expect(store.state.autoShowPrPopover).toBe(false);
+        dispose();
+      });
+    });
+  });
 });

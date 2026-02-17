@@ -165,15 +165,51 @@ const simulator = {
     console.log(`
 [tuic] Dev Simulator — inject mock states for UI testing
 
-  __tuic.pr({ mergeable: 'CONFLICTING', review_decision: 'APPROVED' })
+── PR States ──────────────────────────────────────────────────
+  __tuic.pr()                                     Default: open PR, approved, CI green
+  __tuic.pr({ mergeable: 'CONFLICTING' })         Merge conflict
+  __tuic.pr({ mergeable: 'UNKNOWN' })             GitHub hasn't computed mergeability
+  __tuic.pr({ review_decision: 'APPROVED' })      Review approved
+  __tuic.pr({ review_decision: 'CHANGES_REQUESTED' })  Changes requested
+  __tuic.pr({ review_decision: 'REVIEW_REQUIRED' })    Awaiting review
+  __tuic.pr({ is_draft: true })                   Draft PR
+  __tuic.pr({ state: 'MERGED' })                  Merged PR
+  __tuic.pr({ state: 'CLOSED' })                  Closed PR
+  __tuic.pr({ checks: { passed: 2, failed: 1, pending: 1, total: 4 } })  Mixed CI
+  __tuic.pr({ checks: { passed: 0, failed: 3, pending: 0, total: 3 } })  All CI failing
+  __tuic.pr({ checks: { passed: 0, failed: 0, pending: 5, total: 5 } })  All CI pending
+  __tuic.pr({ merge_state_status: 'BEHIND' })     Behind base branch
+  __tuic.pr({ additions: 500, deletions: 200 })   Large PR
+  __tuic.pr({ labels: [{ name: 'bug', color: 'fc2929', text_color: '#fff', background_color: '#fc2929' }] })
+
+── Git ────────────────────────────────────────────────────────
   __tuic.git({ branch: 'feature/test', additions: 50, deletions: 10 })
+
+── Agents & Rate Limits ───────────────────────────────────────
   __tuic.rateLimit({ agent: 'claude', minutes: 15 })
+  __tuic.rateLimit({ agent: 'gemini', minutes: 10 })
   __tuic.agent({ active: 'gemini' })
+  __tuic.agent({ unavailable: ['claude', 'gemini'] })
+
+── Notifications ──────────────────────────────────────────────
+  __tuic.notification({ sound: 'question' })
+  __tuic.notification({ sound: 'error' })
   __tuic.notification({ sound: 'completion' })
-  __tuic.scenario('pr-ready')
-  __tuic.presets()
-  __tuic.reset()
-  __tuic.help()
+  __tuic.notification({ sound: 'warning' })
+
+── Presets (combined scenarios) ────────────────────────────────
+  __tuic.scenario('pr-ready')      Open PR, approved, all CI green
+  __tuic.scenario('pr-conflict')   Merge conflict, changes requested, CI failing
+  __tuic.scenario('pr-draft')      Draft PR, CI failing, review required
+  __tuic.scenario('pr-behind')     Behind base branch
+  __tuic.scenario('ci-pending')    Checks still running
+  __tuic.scenario('rate-limited')  Claude rate limited, Gemini fallback
+  __tuic.scenario('all-down')      All agents rate limited
+  __tuic.presets()                 List all presets
+
+── Control ────────────────────────────────────────────────────
+  __tuic.reset()                   Clear all mocks, resume polling
+  __tuic.help()                    This help
 `);
   },
 };

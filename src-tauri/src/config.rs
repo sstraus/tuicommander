@@ -190,6 +190,9 @@ pub(crate) struct AppConfig {
     /// Split tab mode: separate (each pane gets a tab) or unified (one shared tab)
     #[serde(default)]
     pub(crate) split_tab_mode: SplitTabMode,
+    /// Auto-show PR detail popover when a branch has PR data
+    #[serde(default = "default_true")]
+    pub(crate) auto_show_pr_popover: bool,
 }
 
 fn default_font_size() -> u16 {
@@ -223,6 +226,7 @@ impl Default for AppConfig {
             confirm_before_closing_tab: true,
             max_tab_name_length: default_max_tab_name_length(),
             split_tab_mode: SplitTabMode::default(),
+            auto_show_pr_popover: true,
         }
     }
 }
@@ -562,6 +566,7 @@ mod tests {
             confirm_before_closing_tab: true,
             max_tab_name_length: 40,
             split_tab_mode: SplitTabMode::Unified,
+            auto_show_pr_popover: true,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
