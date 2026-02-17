@@ -558,7 +558,6 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: block;
 }
 
 .branch-item.active .branch-name {
@@ -623,25 +622,19 @@ html, body {
 
 .branch-actions {
   display: flex;
+  flex-shrink: 0;
   gap: 4px;
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: var(--bg-highlight);
-  padding-left: 4px;
-  border-radius: 4px;
+  width: 0;
+  overflow: hidden;
   opacity: 0;
   pointer-events: none;
+  transition: width 0.15s ease, opacity 0.15s ease;
 }
 
 .branch-item:hover .branch-actions {
+  width: 22px;
   opacity: 1;
   pointer-events: auto;
-}
-
-.branch-item.active .branch-actions {
-  background: var(--bg-tertiary);
 }
 
 .branch-add-btn,

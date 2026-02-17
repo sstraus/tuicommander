@@ -240,28 +240,28 @@ const BranchItem: Component<{
         >
           {props.branch.name}
         </span>
-        <Show when={githubStore.getPrStatus(props.repoPath, props.branch.name)}>
-          {(prData) => (
-            <span onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}>
-              <PrBadgeSidebar
-                prNumber={prData().number}
-                state={prData().state}
-                isDraft={prData().is_draft}
-              />
-            </span>
-          )}
-        </Show>
-        <Show when={githubStore.getCheckSummary(props.repoPath, props.branch.name)}>
-          {(summary) => (
-            <CiRing
-              passed={summary().passed}
-              failed={summary().failed}
-              pending={summary().pending}
-              onClick={() => props.onShowPrDetail()}
-            />
-          )}
-        </Show>
       </div>
+      <Show when={githubStore.getPrStatus(props.repoPath, props.branch.name)}>
+        {(prData) => (
+          <span onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}>
+            <PrBadgeSidebar
+              prNumber={prData().number}
+              state={prData().state}
+              isDraft={prData().is_draft}
+            />
+          </span>
+        )}
+      </Show>
+      <Show when={githubStore.getCheckSummary(props.repoPath, props.branch.name)}>
+        {(summary) => (
+          <CiRing
+            passed={summary().passed}
+            failed={summary().failed}
+            pending={summary().pending}
+            onClick={() => props.onShowPrDetail()}
+          />
+        )}
+      </Show>
       <StatsBadge additions={props.branch.additions} deletions={props.branch.deletions} />
       <Show when={props.shortcutIndex !== undefined} fallback={
         <div class="branch-actions">

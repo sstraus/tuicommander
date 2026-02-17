@@ -29,6 +29,26 @@ describe("hotkeyToTauriShortcut", () => {
   it("handles empty string", () => {
     expect(hotkeyToTauriShortcut("")).toBe("");
   });
+
+  it("converts macOS % symbol (Cmd) to CommandOrControl", () => {
+    expect(hotkeyToTauriShortcut("%+D")).toBe("CommandOrControl+D");
+  });
+
+  it("converts macOS ⌘ symbol to CommandOrControl", () => {
+    expect(hotkeyToTauriShortcut("⌘+D")).toBe("CommandOrControl+D");
+  });
+
+  it("converts macOS ⇧ symbol to Shift", () => {
+    expect(hotkeyToTauriShortcut("⌘+⇧+D")).toBe("CommandOrControl+Shift+D");
+  });
+
+  it("converts macOS ⌥ symbol to Alt", () => {
+    expect(hotkeyToTauriShortcut("⌥+F5")).toBe("Alt+F5");
+  });
+
+  it("converts macOS ⌃ symbol to Ctrl", () => {
+    expect(hotkeyToTauriShortcut("⌃+K")).toBe("Ctrl+K");
+  });
 });
 
 describe("tauriShortcutToHotkey", () => {

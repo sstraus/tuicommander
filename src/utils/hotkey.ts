@@ -5,12 +5,22 @@
  * Tauri uses "CommandOrControl" (e.g. "CommandOrControl+Shift+D", "F5")
  */
 
+/** Modifier mappings from UI/macOS symbols to Tauri global-shortcut format */
+const MODIFIER_TO_TAURI: Record<string, string> = {
+  Cmd: "CommandOrControl",
+  "%": "CommandOrControl",
+  "\u2318": "CommandOrControl", // ⌘
+  "\u21E7": "Shift",           // ⇧
+  "\u2325": "Alt",             // ⌥
+  "\u2303": "Ctrl",            // ⌃
+};
+
 /** Convert our UI hotkey string to Tauri global-shortcut format */
 export function hotkeyToTauriShortcut(hotkey: string): string {
   if (!hotkey) return "";
   return hotkey
     .split("+")
-    .map((part) => (part === "Cmd" ? "CommandOrControl" : part))
+    .map((part) => MODIFIER_TO_TAURI[part] ?? part)
     .join("+");
 }
 
