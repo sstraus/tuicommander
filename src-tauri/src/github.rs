@@ -1250,4 +1250,134 @@ mod tests {
         let data = serde_json::json!({});
         assert_eq!(parse_pr_check_contexts(&data).len(), 0);
     }
+
+    // --- Integration tests: GraphQL API vs gh CLI (requires network + token) ---
+    // Run with: cargo test --lib -- --ignored --test-threads=1
+
+    /// Test that our GraphQL batch PR query returns the same data as `gh pr list`.
+    /// Compares owner/repo extraction, token resolution, API call, and parsed results
+    /// against the gh CLI output on this repository.
+    #[test]
+    #[ignore] // Requires network + GitHub token
+    fn test_graphql_pr_query_matches_gh_cli() {
+        // 1. Resolve token (same path our production code uses)
+        let token = resolve_github_token()
+            .expect("No GitHub token found — set GH_TOKEN or run `gh auth login`");
+
+        // 2. Get repo info from local .git (same as production code)
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let repo_root = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
+        let remote_url = crate::git::read_remote_url(&repo_root)
+            .expect("No origin remote found");
+        let (owner, repo) = parse_remote_url(&remote_url)
+            .expect("Failed to parse remote URL into owner/repo");
+
+        println!("Testing against {owner}/{repo}");
+
+        // 3. Call GraphQL API
+        let client = reqwest::blocking::Client::new();
+        let variables = serde_json::json!({
+            "owner": owner,
+            "repo": repo,
+            "first": 50,
+        });
+        let graphql_result = graphql_request(&client, &token, BATCH_PR_QUERY, variables);
+        assert!(graphql_result.is_ok(), "GraphQL request failed: {:?}", graphql_result.err());
+
+        let data = graphql_result.unwrap();
+
+        // 4. Verify response structure
+        assert!(data["data"]["repository"].is_object(),
+            "Response should have data.repository: {}", serde_json::to_string_pretty(&data).unwrap());
+        assert!(data["data"]["repository"]["pullRequests"]["nodes"].is_array(),
+            "Response should have pullRequests.nodes array");
+        assert!(data["data"]["rateLimit"]["remaining"].is_number(),
+            "Response should include rateLimit info");
+
+        let remaining = data["data"]["rateLimit"]["remaining"].as_i64().unwrap();
+        println!("GraphQL rate limit remaining: {remaining}");
+
+        // 5. Parse into BranchPrStatus (same as production code)
+        let graphql_prs = parse_graphql_prs(&data);
+        println!("GraphQL returned {} PRs", graphql_prs.len());
+
+        // 6. Compare with gh CLI (if available)
+        let gh_output = Command::new("gh")
+            .current_dir(&repo_root)
+            .args([
+                "pr", "list", "--state", "all", "--limit", "50",
+                "--json", "number,title,state,headRefName,additions,deletions,isDraft",
+            ])
+            .output()
+            .ok();
+
+        if let Some(output) = gh_output {
+            if output.status.success() {
+                let gh_json: Vec<serde_json::Value> =
+                    serde_json::from_slice(&output.stdout).unwrap_or_default();
+                println!("gh CLI returned {} PRs", gh_json.len());
+
+                // PR counts should match
+                assert_eq!(graphql_prs.len(), gh_json.len(),
+                    "GraphQL and gh CLI should return the same number of PRs");
+
+                // For each PR, verify key fields match
+                for gh_pr in &gh_json {
+                    let number = gh_pr["number"].as_i64().unwrap() as i32;
+                    let branch = gh_pr["headRefName"].as_str().unwrap();
+
+                    let gql_pr = graphql_prs.iter().find(|p| p.number == number);
+                    assert!(gql_pr.is_some(),
+                        "PR #{number} ({branch}) found in gh CLI but not in GraphQL");
+
+                    let gql_pr = gql_pr.unwrap();
+                    assert_eq!(gql_pr.branch, branch,
+                        "PR #{number}: branch mismatch");
+                    assert_eq!(gql_pr.title, gh_pr["title"].as_str().unwrap(),
+                        "PR #{number}: title mismatch");
+                    assert_eq!(gql_pr.state, gh_pr["state"].as_str().unwrap(),
+                        "PR #{number}: state mismatch");
+                    assert_eq!(gql_pr.is_draft, gh_pr["isDraft"].as_bool().unwrap_or(false),
+                        "PR #{number}: isDraft mismatch");
+                    assert_eq!(gql_pr.additions, gh_pr["additions"].as_i64().unwrap_or(0) as i32,
+                        "PR #{number}: additions mismatch");
+                    assert_eq!(gql_pr.deletions, gh_pr["deletions"].as_i64().unwrap_or(0) as i32,
+                        "PR #{number}: deletions mismatch");
+                }
+
+                println!("All {} PRs match between GraphQL and gh CLI", gh_json.len());
+            } else {
+                println!("gh CLI not available — skipping comparison, GraphQL-only validation passed");
+            }
+        } else {
+            println!("gh CLI not installed — skipping comparison, GraphQL-only validation passed");
+        }
+    }
+
+    /// Test that GraphQL token resolution works and can authenticate.
+    #[test]
+    #[ignore] // Requires network + GitHub token
+    fn test_graphql_auth_and_rate_limit() {
+        let token = resolve_github_token()
+            .expect("No GitHub token found");
+
+        let client = reqwest::blocking::Client::new();
+        // Minimal query just to verify auth works
+        let result = graphql_request(
+            &client, &token,
+            "query { viewer { login } rateLimit { remaining resetAt } }",
+            serde_json::json!({}),
+        );
+
+        assert!(result.is_ok(), "Auth failed: {:?}", result.err());
+        let data = result.unwrap();
+
+        let login = data["data"]["viewer"]["login"].as_str();
+        assert!(login.is_some(), "Should return authenticated user login");
+        println!("Authenticated as: {}", login.unwrap());
+
+        let remaining = data["data"]["rateLimit"]["remaining"].as_i64().unwrap();
+        println!("Rate limit remaining: {remaining}/5000");
+        assert!(remaining > 0, "Should have rate limit remaining");
+    }
 }
