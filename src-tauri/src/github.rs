@@ -371,6 +371,122 @@ pub(crate) fn parse_pr_list_json(json_str: &str) -> Vec<BranchPrStatus> {
         .collect()
 }
 
+/// Parse a GraphQL PR node into a BranchPrStatus.
+/// Shared logic for extracting fields from a single PR node.
+fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
+    let branch = v["headRefName"].as_str()?.to_string();
+    let number = v["number"].as_i64()? as i32;
+    let title = v["title"].as_str().unwrap_or("").to_string();
+    let state = v["state"].as_str().unwrap_or("").to_string();
+    let url = v["url"].as_str().unwrap_or("").to_string();
+    let additions = v["additions"].as_i64().unwrap_or(0) as i32;
+    let deletions = v["deletions"].as_i64().unwrap_or(0) as i32;
+    let author = v["author"]["login"].as_str().unwrap_or("").to_string();
+    let commits = v["commits"]["totalCount"].as_i64().unwrap_or(0) as i32;
+
+    // Parse CI check summary from GraphQL statusCheckRollup
+    let rollup_contexts = &v["commits"]["nodes"][0]["commit"]["statusCheckRollup"]["contexts"];
+    let mut passed: u32 = 0;
+    let mut failed: u32 = 0;
+    let mut pending: u32 = 0;
+
+    // checkRunCountsByState: [{state: "SUCCESS", count: 5}, ...]
+    if let Some(counts) = rollup_contexts["checkRunCountsByState"].as_array() {
+        for entry in counts {
+            let count = entry["count"].as_u64().unwrap_or(0) as u32;
+            match entry["state"].as_str().unwrap_or("") {
+                "SUCCESS" | "NEUTRAL" | "SKIPPED" => passed += count,
+                "FAILURE" | "ERROR" | "TIMED_OUT" | "CANCELLED" | "STARTUP_FAILURE" => failed += count,
+                "ACTION_REQUIRED" | "STALE" | "QUEUED" | "IN_PROGRESS" | "WAITING" | "PENDING" => pending += count,
+                _ => pending += count,
+            }
+        }
+    }
+    // statusContextCountsByState: same shape for commit statuses
+    if let Some(counts) = rollup_contexts["statusContextCountsByState"].as_array() {
+        for entry in counts {
+            let count = entry["count"].as_u64().unwrap_or(0) as u32;
+            match entry["state"].as_str().unwrap_or("") {
+                "SUCCESS" => passed += count,
+                "FAILURE" | "ERROR" => failed += count,
+                _ => pending += count,
+            }
+        }
+    }
+
+    let total = passed + failed + pending;
+
+    let mergeable = v["mergeable"].as_str().unwrap_or("UNKNOWN").to_string();
+    let merge_state_status = v["mergeStateStatus"].as_str().unwrap_or("UNKNOWN").to_string();
+    let review_decision = v["reviewDecision"].as_str().unwrap_or("").to_string();
+    let is_draft = v["isDraft"].as_bool().unwrap_or(false);
+
+    let labels = v["labels"]["nodes"].as_array()
+        .map(|arr| arr.iter().filter_map(|l| {
+            let color = l["color"].as_str().unwrap_or("").to_string();
+            let (text_color, background_color) = if color.len() == 6 {
+                let text = if is_light_color(&color) { "#1e1e1e" } else { "#e5e5e5" };
+                (text.to_string(), hex_to_rgba(&color, 0.3))
+            } else {
+                (String::new(), String::new())
+            };
+            Some(PrLabel {
+                name: l["name"].as_str()?.to_string(),
+                color,
+                text_color,
+                background_color,
+            })
+        }).collect())
+        .unwrap_or_default();
+
+    let base_ref_name = v["baseRefName"].as_str().unwrap_or("").to_string();
+    let created_at = v["createdAt"].as_str().unwrap_or("").to_string();
+    let updated_at = v["updatedAt"].as_str().unwrap_or("").to_string();
+
+    let merge_state_label = classify_merge_state(
+        Some(mergeable.as_str()),
+        Some(merge_state_status.as_str()),
+    );
+    let review_state_label = classify_review_state(
+        if review_decision.is_empty() { None } else { Some(review_decision.as_str()) },
+    );
+
+    Some(BranchPrStatus {
+        branch,
+        number,
+        title,
+        state,
+        url,
+        additions,
+        deletions,
+        checks: CheckSummary { passed, failed, pending, total },
+        check_details: vec![], // Populated on-demand via per-PR query
+        author,
+        commits,
+        mergeable,
+        merge_state_status,
+        review_decision,
+        labels,
+        is_draft,
+        base_ref_name,
+        created_at,
+        updated_at,
+        merge_state_label,
+        review_state_label,
+    })
+}
+
+/// Parse a GraphQL batch PR response into BranchPrStatus entries.
+/// Input: full GraphQL response JSON (with data.repository.pullRequests.nodes).
+pub(crate) fn parse_graphql_prs(response: &serde_json::Value) -> Vec<BranchPrStatus> {
+    let nodes = match response["data"]["repository"]["pullRequests"]["nodes"].as_array() {
+        Some(arr) => arr,
+        None => return vec![],
+    };
+
+    nodes.iter().filter_map(|v| parse_pr_node(v)).collect()
+}
+
 /// Core logic for fetching PR statuses (no caching).
 pub(crate) fn get_repo_pr_statuses_impl(path: &str) -> Vec<BranchPrStatus> {
     let repo_path = PathBuf::from(path);
@@ -1143,6 +1259,258 @@ mod tests {
         assert!(result[2].review_state_label.is_none());
     }
 
+    // --- parse_graphql_prs tests ---
+
+    /// Helper to build a GraphQL PR node for testing
+    fn graphql_pr_node(
+        number: i64,
+        title: &str,
+        state: &str,
+        branch: &str,
+        additions: i64,
+        deletions: i64,
+        author: &str,
+        commits_count: i64,
+        check_run_counts: &[(&str, u64)],
+        status_context_counts: &[(&str, u64)],
+        mergeable: &str,
+        merge_state_status: &str,
+        review_decision: Option<&str>,
+        is_draft: bool,
+        labels: &[(&str, &str)],
+        base_ref_name: &str,
+    ) -> serde_json::Value {
+        let check_run_counts_json: Vec<serde_json::Value> = check_run_counts.iter()
+            .map(|(s, c)| serde_json::json!({"state": s, "count": c}))
+            .collect();
+        let status_context_counts_json: Vec<serde_json::Value> = status_context_counts.iter()
+            .map(|(s, c)| serde_json::json!({"state": s, "count": c}))
+            .collect();
+        let labels_json: Vec<serde_json::Value> = labels.iter()
+            .map(|(name, color)| serde_json::json!({"name": name, "color": color}))
+            .collect();
+
+        serde_json::json!({
+            "number": number,
+            "title": title,
+            "state": state,
+            "url": format!("https://github.com/org/repo/pull/{number}"),
+            "headRefName": branch,
+            "baseRefName": base_ref_name,
+            "isDraft": is_draft,
+            "additions": additions,
+            "deletions": deletions,
+            "mergeable": mergeable,
+            "mergeStateStatus": merge_state_status,
+            "reviewDecision": review_decision,
+            "createdAt": "2025-01-01T00:00:00Z",
+            "updatedAt": "2025-01-02T00:00:00Z",
+            "author": {"login": author},
+            "labels": {"nodes": labels_json},
+            "commits": {
+                "totalCount": commits_count,
+                "nodes": [{
+                    "commit": {
+                        "statusCheckRollup": {
+                            "contexts": {
+                                "checkRunCountsByState": check_run_counts_json,
+                                "statusContextCountsByState": status_context_counts_json,
+                            }
+                        }
+                    }
+                }]
+            }
+        })
+    }
+
+    /// Wrap PR nodes into a full GraphQL response
+    fn graphql_response(nodes: Vec<serde_json::Value>) -> serde_json::Value {
+        serde_json::json!({
+            "data": {
+                "repository": {
+                    "pullRequests": {
+                        "nodes": nodes
+                    }
+                }
+            },
+            "rateLimit": {"cost": 1, "remaining": 4999, "resetAt": "2025-01-01T01:00:00Z"}
+        })
+    }
+
+    #[test]
+    fn test_parse_graphql_prs_basic() {
+        let response = graphql_response(vec![
+            graphql_pr_node(42, "Add feature X", "OPEN", "feature/x",
+                150, 30, "alice", 5,
+                &[("SUCCESS", 2), ("FAILURE", 1)],
+                &[("PENDING", 1)],
+                "MERGEABLE", "BLOCKED", Some("CHANGES_REQUESTED"), false,
+                &[], "main"),
+            graphql_pr_node(43, "Fix bug Y", "OPEN", "fix/y",
+                10, 5, "bob", 1,
+                &[("SUCCESS", 2)],
+                &[],
+                "MERGEABLE", "CLEAN", Some("APPROVED"), false,
+                &[], "main"),
+        ]);
+
+        let result = parse_graphql_prs(&response);
+        assert_eq!(result.len(), 2);
+
+        let pr1 = &result[0];
+        assert_eq!(pr1.branch, "feature/x");
+        assert_eq!(pr1.number, 42);
+        assert_eq!(pr1.title, "Add feature X");
+        assert_eq!(pr1.state, "OPEN");
+        assert_eq!(pr1.additions, 150);
+        assert_eq!(pr1.deletions, 30);
+        assert_eq!(pr1.author, "alice");
+        assert_eq!(pr1.commits, 5);
+        assert_eq!(pr1.checks.passed, 2);
+        assert_eq!(pr1.checks.failed, 1);
+        assert_eq!(pr1.checks.pending, 1);
+        assert_eq!(pr1.checks.total, 4);
+        assert!(pr1.check_details.is_empty()); // Empty for batch query
+
+        let pr2 = &result[1];
+        assert_eq!(pr2.branch, "fix/y");
+        assert_eq!(pr2.number, 43);
+        assert_eq!(pr2.checks.passed, 2);
+        assert_eq!(pr2.checks.failed, 0);
+        assert_eq!(pr2.checks.pending, 0);
+        assert_eq!(pr2.checks.total, 2);
+    }
+
+    #[test]
+    fn test_parse_graphql_prs_empty_nodes() {
+        let response = graphql_response(vec![]);
+        let result = parse_graphql_prs(&response);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_graphql_prs_no_data() {
+        let response = serde_json::json!({"errors": [{"message": "something went wrong"}]});
+        let result = parse_graphql_prs(&response);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_graphql_prs_missing_branch_skips() {
+        let mut node = graphql_pr_node(1, "No branch", "OPEN", "test", 0, 0, "alice", 1,
+            &[], &[], "UNKNOWN", "UNKNOWN", None, false, &[], "main");
+        // Remove headRefName
+        node.as_object_mut().unwrap().remove("headRefName");
+        let response = graphql_response(vec![node]);
+        let result = parse_graphql_prs(&response);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_graphql_prs_no_checks() {
+        let response = graphql_response(vec![
+            graphql_pr_node(10, "Draft PR", "OPEN", "draft/feature",
+                0, 0, "carol", 1,
+                &[], &[],
+                "UNKNOWN", "DRAFT", None, true, &[], "main"),
+        ]);
+
+        let result = parse_graphql_prs(&response);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].checks.total, 0);
+        assert!(result[0].is_draft);
+    }
+
+    #[test]
+    fn test_parse_graphql_prs_labels_with_colors() {
+        let response = graphql_response(vec![
+            graphql_pr_node(1, "Labels PR", "OPEN", "label-branch",
+                0, 0, "alice", 1,
+                &[], &[],
+                "UNKNOWN", "UNKNOWN", None, false,
+                &[("bug", "d73a4a"), ("enhancement", "a2eeef")], "main"),
+        ]);
+
+        let result = parse_graphql_prs(&response);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].labels.len(), 2);
+
+        let bug = &result[0].labels[0];
+        assert_eq!(bug.name, "bug");
+        assert_eq!(bug.color, "d73a4a");
+        assert_eq!(bug.background_color, "rgba(215, 58, 74, 0.3)");
+        assert_eq!(bug.text_color, "#e5e5e5"); // dark label => light text
+
+        let enh = &result[0].labels[1];
+        assert_eq!(enh.name, "enhancement");
+        assert_eq!(enh.text_color, "#1e1e1e"); // light label => dark text
+    }
+
+    #[test]
+    fn test_parse_graphql_prs_merge_and_review_labels() {
+        let response = graphql_response(vec![
+            graphql_pr_node(1, "Clean PR", "OPEN", "clean-branch",
+                0, 0, "alice", 1,
+                &[], &[],
+                "MERGEABLE", "CLEAN", Some("APPROVED"), false, &[], "main"),
+            graphql_pr_node(2, "Conflicting PR", "OPEN", "conflict-branch",
+                0, 0, "bob", 1,
+                &[], &[],
+                "CONFLICTING", "DIRTY", Some("CHANGES_REQUESTED"), false, &[], "main"),
+        ]);
+
+        let result = parse_graphql_prs(&response);
+        assert_eq!(result.len(), 2);
+
+        assert_eq!(
+            result[0].merge_state_label,
+            Some(StateLabel { label: "Ready to merge".to_string(), css_class: "clean".to_string() })
+        );
+        assert_eq!(
+            result[0].review_state_label,
+            Some(StateLabel { label: "Approved".to_string(), css_class: "approved".to_string() })
+        );
+
+        assert_eq!(
+            result[1].merge_state_label,
+            Some(StateLabel { label: "Conflicts".to_string(), css_class: "conflicting".to_string() })
+        );
+    }
+
+    #[test]
+    fn test_parse_graphql_prs_error_check_states() {
+        let response = graphql_response(vec![
+            graphql_pr_node(99, "Error checks", "OPEN", "error-branch",
+                0, 0, "eve", 1,
+                &[("ERROR", 1), ("TIMED_OUT", 1), ("CANCELLED", 1)],
+                &[("ERROR", 1)],
+                "UNKNOWN", "UNKNOWN", None, false, &[], "main"),
+        ]);
+
+        let result = parse_graphql_prs(&response);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].checks.failed, 4); // ERROR + TIMED_OUT + CANCELLED + status ERROR
+    }
+
+    #[test]
+    fn test_parse_graphql_prs_merged_and_closed() {
+        let response = graphql_response(vec![
+            graphql_pr_node(10, "Merged feature", "MERGED", "feature/merged",
+                0, 0, "alice", 3,
+                &[], &[],
+                "UNKNOWN", "UNKNOWN", None, false, &[], "main"),
+            graphql_pr_node(11, "Closed PR", "CLOSED", "feature/closed",
+                0, 0, "bob", 1,
+                &[], &[],
+                "UNKNOWN", "UNKNOWN", None, false, &[], "main"),
+        ]);
+
+        let result = parse_graphql_prs(&response);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].state, "MERGED");
+        assert_eq!(result[1].state, "CLOSED");
+    }
+
     // --- parse_remote_url tests ---
 
     #[test]
@@ -1192,54 +1560,33 @@ mod tests {
     }
 
     // --- resolve_github_token tests ---
-    // Note: env var tests use unsafe because Rust 2024 edition requires it.
-    // These tests modify process-global env state, so they must not run in parallel
-    // with other tests that read GH_TOKEN/GITHUB_TOKEN.
+    // All env var scenarios in a single test to avoid parallel race conditions
+    // (env vars are process-global state).
 
     #[test]
-    fn test_resolve_github_token_from_gh_token_env() {
-        unsafe {
-            std::env::set_var("GH_TOKEN", "test-token-123");
-            std::env::remove_var("GITHUB_TOKEN");
-        }
-        let token = resolve_github_token();
-        assert_eq!(token, Some("test-token-123".to_string()));
-        unsafe { std::env::remove_var("GH_TOKEN"); }
-    }
-
-    #[test]
-    fn test_resolve_github_token_from_github_token_env() {
-        unsafe {
-            std::env::remove_var("GH_TOKEN");
-            std::env::set_var("GITHUB_TOKEN", "github-token-456");
-        }
-        let token = resolve_github_token();
-        assert_eq!(token, Some("github-token-456".to_string()));
-        unsafe { std::env::remove_var("GITHUB_TOKEN"); }
-    }
-
-    #[test]
-    fn test_resolve_github_token_gh_takes_priority() {
+    fn test_resolve_github_token_env_priority() {
+        // Scenario 1: GH_TOKEN takes priority
         unsafe {
             std::env::set_var("GH_TOKEN", "gh-wins");
             std::env::set_var("GITHUB_TOKEN", "github-loses");
         }
-        let token = resolve_github_token();
-        assert_eq!(token, Some("gh-wins".to_string()));
+        assert_eq!(resolve_github_token(), Some("gh-wins".to_string()));
+
+        // Scenario 2: Falls back to GITHUB_TOKEN when GH_TOKEN absent
         unsafe {
             std::env::remove_var("GH_TOKEN");
-            std::env::remove_var("GITHUB_TOKEN");
+            std::env::set_var("GITHUB_TOKEN", "github-token-456");
         }
-    }
+        assert_eq!(resolve_github_token(), Some("github-token-456".to_string()));
 
-    #[test]
-    fn test_resolve_github_token_empty_env_skipped() {
+        // Scenario 3: Empty GH_TOKEN is skipped, falls back to GITHUB_TOKEN
         unsafe {
             std::env::set_var("GH_TOKEN", "");
             std::env::set_var("GITHUB_TOKEN", "fallback");
         }
-        let token = resolve_github_token();
-        assert_eq!(token, Some("fallback".to_string()));
+        assert_eq!(resolve_github_token(), Some("fallback".to_string()));
+
+        // Cleanup
         unsafe {
             std::env::remove_var("GH_TOKEN");
             std::env::remove_var("GITHUB_TOKEN");
