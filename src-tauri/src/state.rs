@@ -735,7 +735,7 @@ mod tests {
         let state = make_test_app_state();
         let config = state.config.read().unwrap();
         assert_eq!(config.font_family, "JetBrains Mono");
-        assert_eq!(config.theme, "tokyo-night");
+        assert_eq!(config.theme, "vscode-dark");
         assert!(!config.mcp_server_enabled);
     }
 

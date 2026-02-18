@@ -213,7 +213,7 @@ impl Default for AppConfig {
             shell: None,
             font_family: "JetBrains Mono".to_string(),
             font_size: 14,
-            theme: "tokyo-night".to_string(),
+            theme: "vscode-dark".to_string(),
             worktree_dir: None,
             mcp_server_enabled: false,
             ide: String::new(),
