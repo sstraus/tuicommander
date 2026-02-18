@@ -1,8 +1,6 @@
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -20,55 +18,15 @@ pub(crate) struct HeadChangedPayload {
 }
 
 /// Resolve the actual HEAD file path for a repo, handling linked worktrees.
-///
-/// - Normal repo: `<repo>/.git/HEAD`
-/// - Linked worktree: `<repo>/.git` is a file containing `gitdir: <path>`,
-///   follow that to find the real HEAD.
 fn resolve_head_path(repo_path: &Path) -> Option<PathBuf> {
-    let git_entry = repo_path.join(".git");
-    if git_entry.is_dir() {
-        // Normal repo — HEAD is inside .git/
-        let head = git_entry.join("HEAD");
-        if head.exists() {
-            return Some(head);
-        }
-    } else if git_entry.is_file() {
-        // Linked worktree — .git is a file with `gitdir: <path>`
-        let content = fs::read_to_string(&git_entry).ok()?;
-        let gitdir = content.strip_prefix("gitdir: ")?.trim();
-        let gitdir_path = if Path::new(gitdir).is_absolute() {
-            PathBuf::from(gitdir)
-        } else {
-            repo_path.join(gitdir)
-        };
-        let head = gitdir_path.join("HEAD");
-        if head.exists() {
-            return Some(head);
-        }
-    }
-    None
+    let git_dir = crate::git::resolve_git_dir(repo_path)?;
+    let head = git_dir.join("HEAD");
+    if head.exists() { Some(head) } else { None }
 }
 
-/// Read the current branch name for a repo using `git rev-parse`.
+/// Read the current branch from .git/HEAD (no subprocess).
 fn read_current_branch(repo_path: &Path) -> Option<String> {
-    let output = Command::new("git")
-        .current_dir(repo_path)
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    // "HEAD" means detached — don't emit an update for that
-    if branch == "HEAD" {
-        return None;
-    }
-
-    Some(branch)
+    crate::git::read_branch_from_head(repo_path)
 }
 
 /// Start watching .git/HEAD for a repository. Emits `"head-changed"` when the branch changes.

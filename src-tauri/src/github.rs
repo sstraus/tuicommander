@@ -389,18 +389,9 @@ query RepoPRs($owner: String!, $repo: String!, $first: Int!) {
 "#;
 
 /// Get the remote URL for a repo, if it has a GitHub origin.
+/// Reads directly from .git/config (no subprocess).
 fn get_github_remote_url(repo_path: &PathBuf) -> Option<String> {
-    let output = Command::new("git")
-        .current_dir(repo_path)
-        .args(["remote", "get-url", "origin"])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let url = crate::git::read_remote_url(repo_path)?;
     if url.contains("github.com") {
         Some(url)
     } else {
@@ -471,19 +462,8 @@ pub(crate) fn get_github_status(path: String) -> GitHubStatus {
 
     let has_remote = get_github_remote_url(&repo_path).is_some();
 
-    // Get current branch
-    let current_branch = Command::new("git")
-        .current_dir(&repo_path)
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        })
+    // Read current branch from .git/HEAD (no subprocess)
+    let current_branch = crate::git::read_branch_from_head(&repo_path)
         .unwrap_or_default();
 
     if !has_remote {

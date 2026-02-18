@@ -1,11 +1,86 @@
 use serde::Serialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use tauri::State;
 
 use crate::state::{AppState, GIT_CACHE_TTL};
+
+// --- File-based git helpers (no subprocess) ---
+
+/// Resolve the .git directory for a repo, handling linked worktrees.
+///
+/// - Normal repo: `<repo>/.git/` (a directory)
+/// - Linked worktree: `<repo>/.git` is a file containing `gitdir: <path>`
+pub(crate) fn resolve_git_dir(repo_path: &Path) -> Option<PathBuf> {
+    let git_entry = repo_path.join(".git");
+    if git_entry.is_dir() {
+        Some(git_entry)
+    } else if git_entry.is_file() {
+        let content = fs::read_to_string(&git_entry).ok()?;
+        let gitdir = content.strip_prefix("gitdir: ")?.trim();
+        let gitdir_path = if Path::new(gitdir).is_absolute() {
+            PathBuf::from(gitdir)
+        } else {
+            repo_path.join(gitdir)
+        };
+        if gitdir_path.is_dir() {
+            Some(gitdir_path)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+/// Read the current branch name from .git/HEAD (file I/O, no subprocess).
+/// Returns None for detached HEAD or if the file can't be read.
+pub(crate) fn read_branch_from_head(repo_path: &Path) -> Option<String> {
+    let git_dir = resolve_git_dir(repo_path)?;
+    let head_content = fs::read_to_string(git_dir.join("HEAD")).ok()?;
+    let trimmed = head_content.trim();
+    // HEAD is either "ref: refs/heads/<branch>" or a raw commit hash (detached)
+    let ref_prefix = "ref: refs/heads/";
+    if let Some(branch) = trimmed.strip_prefix(ref_prefix) {
+        if !branch.is_empty() {
+            return Some(branch.to_string());
+        }
+    }
+    None // detached HEAD
+}
+
+/// Read the origin remote URL from .git/config (file I/O, no subprocess).
+/// Parses the `[remote "origin"]` section for the `url` key.
+pub(crate) fn read_remote_url(repo_path: &Path) -> Option<String> {
+    let git_dir = resolve_git_dir(repo_path)?;
+    let config_content = fs::read_to_string(git_dir.join("config")).ok()?;
+    parse_git_config_remote_url(&config_content, "origin")
+}
+
+/// Parse a git config string for a remote's URL.
+fn parse_git_config_remote_url(config: &str, remote_name: &str) -> Option<String> {
+    let section_header = format!("[remote \"{remote_name}\"]");
+    let mut in_section = false;
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_section = trimmed == section_header;
+            continue;
+        }
+        if in_section {
+            if let Some(rest) = trimmed.strip_prefix("url") {
+                let rest = rest.trim_start();
+                if let Some(value) = rest.strip_prefix('=') {
+                    return Some(value.trim().to_string());
+                }
+            }
+        }
+    }
+    None
+}
 
 /// Repository info for sidebar display
 #[derive(Clone, Serialize)]
@@ -53,19 +128,8 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
         };
     }
 
-    // Get branch name
-    let branch = Command::new("git")
-        .current_dir(&repo_path)
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        })
+    // Read branch from .git/HEAD (no subprocess)
+    let branch = read_branch_from_head(&repo_path)
         .unwrap_or_else(|| "unknown".to_string());
 
     // Get status
@@ -567,5 +631,134 @@ mod tests {
     #[test]
     fn get_repo_initials_consecutive_separators() {
         assert_eq!(get_repo_initials("my--repo"), "MR");
+    }
+
+    // --- parse_git_config_remote_url unit tests ---
+
+    #[test]
+    fn test_parse_config_remote_url_basic() {
+        let config = r#"
+[core]
+	repositoryformatversion = 0
+[remote "origin"]
+	url = git@github.com:owner/repo.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+	remote = origin
+"#;
+        assert_eq!(
+            parse_git_config_remote_url(config, "origin"),
+            Some("git@github.com:owner/repo.git".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_config_remote_url_https() {
+        let config = "[remote \"origin\"]\n\turl = https://github.com/owner/repo.git\n";
+        assert_eq!(
+            parse_git_config_remote_url(config, "origin"),
+            Some("https://github.com/owner/repo.git".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_config_remote_url_no_origin() {
+        let config = "[remote \"upstream\"]\n\turl = git@github.com:other/repo.git\n";
+        assert_eq!(parse_git_config_remote_url(config, "origin"), None);
+    }
+
+    #[test]
+    fn test_parse_config_remote_url_multiple_remotes() {
+        let config = r#"
+[remote "upstream"]
+	url = git@github.com:upstream/repo.git
+[remote "origin"]
+	url = git@github.com:fork/repo.git
+"#;
+        assert_eq!(
+            parse_git_config_remote_url(config, "origin"),
+            Some("git@github.com:fork/repo.git".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_config_remote_url_spaces_around_equals() {
+        let config = "[remote \"origin\"]\n\turl   =   git@github.com:owner/repo.git  \n";
+        assert_eq!(
+            parse_git_config_remote_url(config, "origin"),
+            Some("git@github.com:owner/repo.git".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_config_empty() {
+        assert_eq!(parse_git_config_remote_url("", "origin"), None);
+    }
+
+    // --- Integration tests: compare file I/O vs git subprocess ---
+    // These run against the actual tui-commander repo to validate correctness.
+
+    #[test]
+    fn test_read_branch_matches_git_rev_parse() {
+        // Find the repo root (this file lives in src-tauri/src/)
+        let manifest_dir = env!("CARGO_MANIFEST_DIR"); // src-tauri/
+        let repo_root = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
+
+        // File I/O approach
+        let file_branch = read_branch_from_head(&repo_root);
+
+        // Subprocess approach (ground truth)
+        let git_branch = Command::new("git")
+            .current_dir(&repo_root)
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    let b = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    if b == "HEAD" { None } else { Some(b) }
+                } else {
+                    None
+                }
+            });
+
+        assert_eq!(file_branch, git_branch,
+            "read_branch_from_head() must match `git rev-parse --abbrev-ref HEAD`");
+    }
+
+    #[test]
+    fn test_read_remote_url_matches_git_remote() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let repo_root = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
+
+        // File I/O approach
+        let file_url = read_remote_url(&repo_root);
+
+        // Subprocess approach (ground truth)
+        let git_url = Command::new("git")
+            .current_dir(&repo_root)
+            .args(["remote", "get-url", "origin"])
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else {
+                    None
+                }
+            });
+
+        assert_eq!(file_url, git_url,
+            "read_remote_url() must match `git remote get-url origin`");
+    }
+
+    #[test]
+    fn test_resolve_git_dir_for_local_repo() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let repo_root = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
+
+        let git_dir = resolve_git_dir(&repo_root);
+        assert!(git_dir.is_some(), "Should resolve .git dir for this repo");
+        assert!(git_dir.unwrap().join("HEAD").exists(), ".git dir should contain HEAD");
     }
 }
