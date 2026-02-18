@@ -273,7 +273,9 @@ export async function initApp(deps: AppInitDeps) {
   // Restore active repo/branch from persisted state
   const repoPaths = repositoriesStore.getPaths();
   if (repoPaths.length > 0) {
-    const firstPath = repoPaths[0];
+    // Use persisted active repo, falling back to first
+    const persistedActive = repositoriesStore.state.activeRepoPath;
+    const firstPath = (persistedActive && repoPaths.includes(persistedActive)) ? persistedActive : repoPaths[0];
     const firstRepo = repositoriesStore.get(firstPath);
     repositoriesStore.setActive(firstPath);
     deps.setCurrentRepoPath(firstPath);

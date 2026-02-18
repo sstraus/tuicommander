@@ -44,7 +44,7 @@ export function isMainBranch(branchName: string): boolean {
 const SAVE_DEBOUNCE_MS = 500;
 
 /** Persist repos to Rust backend (fire-and-forget, terminals excluded) */
-function saveReposImmediate(repositories: Record<string, RepositoryState>, repoOrder: string[]): void {
+function saveReposImmediate(repositories: Record<string, RepositoryState>, repoOrder: string[], activeRepoPath?: string | null): void {
   const serializable: Record<string, RepositoryState> = {};
   for (const [path, repo] of Object.entries(repositories)) {
     const branches: Record<string, BranchState> = {};
@@ -54,18 +54,18 @@ function saveReposImmediate(repositories: Record<string, RepositoryState>, repoO
     serializable[path] = { ...repo, branches };
   }
   invoke("save_repositories", {
-    config: { repos: serializable, repoOrder },
+    config: { repos: serializable, repoOrder, activeRepoPath: activeRepoPath ?? null },
   }).catch((err) => console.debug("Failed to save repos:", err));
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Debounced save — coalesces rapid mutations into a single IPC call */
-function saveRepos(repositories: Record<string, RepositoryState>, repoOrder: string[]): void {
+function saveRepos(repositories: Record<string, RepositoryState>, repoOrder: string[], activeRepoPath?: string | null): void {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    saveReposImmediate(repositories, repoOrder);
+    saveReposImmediate(repositories, repoOrder, activeRepoPath);
   }, SAVE_DEBOUNCE_MS);
 }
 
@@ -91,7 +91,7 @@ function createRepositoriesStore() {
           localStorage.removeItem(LEGACY_STORAGE_KEY);
         }
 
-        const loaded = await invoke<{ repos?: Record<string, RepositoryState>; repoOrder?: string[] }>("load_repositories");
+        const loaded = await invoke<{ repos?: Record<string, RepositoryState>; repoOrder?: string[]; activeRepoPath?: string | null }>("load_repositories");
         const repos = loaded?.repos;
         if (repos) {
           // Migration: add collapsed/expanded fields, clear stale terminal IDs
@@ -120,6 +120,11 @@ function createRepositoriesStore() {
           const validOrder = savedOrder.filter((p) => p in repos);
           const missing = repoPaths.filter((p) => !validOrder.includes(p));
           setState("repoOrder", [...validOrder, ...missing]);
+
+          // Restore active repo
+          if (loaded.activeRepoPath && loaded.activeRepoPath in repos) {
+            setState("activeRepoPath", loaded.activeRepoPath);
+          }
         }
       } catch (err) {
         console.debug("Failed to hydrate repositories:", err);
@@ -140,7 +145,7 @@ function createRepositoriesStore() {
       if (!state.repoOrder.includes(repo.path)) {
         setState("repoOrder", [...state.repoOrder, repo.path]);
       }
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Remove a repository */
@@ -154,31 +159,32 @@ function createRepositoriesStore() {
           }
         })
       );
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Set active repository */
     setActive(path: string | null): void {
       setState("activeRepoPath", path);
+      saveRepos(state.repositories, state.repoOrder, path);
     },
 
     /** Update the display name of a repository */
     setDisplayName(path: string, displayName: string): void {
       if (!state.repositories[path]) return;
       setState("repositories", path, "displayName", displayName);
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Toggle repository expanded state */
     toggleExpanded(path: string): void {
       setState("repositories", path, "expanded", (e) => !e);
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Toggle repository collapsed state */
     toggleCollapsed(path: string): void {
       setState("repositories", path, "collapsed", (c) => !c);
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Add or update a branch */
@@ -201,7 +207,7 @@ function createRepositoriesStore() {
           ...data,
         });
       }
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Set active branch for a repo */
@@ -217,7 +223,7 @@ function createRepositoriesStore() {
         if (!branch.hadTerminals) {
           setState("repositories", repoPath, "branches", branchName, "hadTerminals", true);
         }
-        saveRepos(state.repositories, state.repoOrder);
+        saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
       }
     },
 
@@ -226,7 +232,7 @@ function createRepositoriesStore() {
       setState("repositories", repoPath, "branches", branchName, "terminals", (t) =>
         t.filter((id) => id !== terminalId)
       );
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Set run command for a branch */
@@ -234,7 +240,7 @@ function createRepositoriesStore() {
       const branch = state.repositories[repoPath]?.branches[branchName];
       if (branch) {
         setState("repositories", repoPath, "branches", branchName, "runCommand", command);
-        saveRepos(state.repositories, state.repoOrder);
+        saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
       }
     },
 
@@ -263,7 +269,7 @@ function createRepositoriesStore() {
           }
         })
       );
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Rename a branch in a repository */
@@ -296,7 +302,7 @@ function createRepositoriesStore() {
           }
         })
       );
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Get repository by path */
@@ -322,7 +328,7 @@ function createRepositoriesStore() {
         result.splice(toIndex, 0, moved);
         return result;
       });
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Get ordered repo paths */
@@ -340,7 +346,7 @@ function createRepositoriesStore() {
         result.splice(toIndex, 0, moved);
         return result;
       });
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Get terminals for current active branch */
@@ -366,7 +372,36 @@ function createRepositoriesStore() {
         })
       );
       // Flush immediately (not debounced) — app is about to exit
-      saveReposImmediate(state.repositories, state.repoOrder);
+      saveReposImmediate(state.repositories, state.repoOrder, state.activeRepoPath);
+    },
+
+    /** Update savedTerminals from live terminal state (called on terminal add/remove) */
+    updateSavedTerminals(getTerminal: (id: string) => { name: string; cwd: string | null; fontSize: number; agentType: string | null } | undefined): void {
+      setState(
+        produce((s) => {
+          for (const repo of Object.values(s.repositories)) {
+            for (const branch of Object.values(repo.branches)) {
+              if (branch.terminals.length === 0) {
+                branch.savedTerminals = [];
+                continue;
+              }
+              const saved: SavedTerminal[] = [];
+              for (const termId of branch.terminals) {
+                const t = getTerminal(termId);
+                if (!t) continue;
+                saved.push({
+                  name: t.name,
+                  cwd: t.cwd,
+                  fontSize: t.fontSize,
+                  agentType: t.agentType as SavedTerminal["agentType"],
+                });
+              }
+              branch.savedTerminals = saved;
+            }
+          }
+        })
+      );
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Clear savedTerminals from all branches (consume-once after restore) */
@@ -380,7 +415,7 @@ function createRepositoriesStore() {
           }
         })
       );
-      saveRepos(state.repositories, state.repoOrder);
+      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
     },
 
     /** Check if empty */

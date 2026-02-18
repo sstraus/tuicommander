@@ -15,6 +15,7 @@ import { StatusBar } from "./components/StatusBar";
 import { DiffPanel } from "./components/DiffPanel";
 import { DiffTab } from "./components/DiffTab";
 import { MarkdownPanel } from "./components/MarkdownPanel";
+import { NotesPanel } from "./components/NotesPanel";
 import { MarkdownTab } from "./components/MarkdownTab";
 import { PromptOverlay } from "./components/PromptOverlay";
 import { PromptDrawer } from "./components/PromptDrawer";
@@ -39,6 +40,7 @@ import { notificationsStore } from "./stores/notifications";
 import { errorHandlingStore } from "./stores/errorHandling";
 import { agentFallbackStore } from "./stores/agentFallback";
 import { repoSettingsStore } from "./stores/repoSettings";
+import { notesStore } from "./stores/notes";
 import { usePty } from "./hooks/usePty";
 import { useRepository } from "./hooks/useRepository";
 import { useKeyboardRedirect } from "./hooks/useKeyboardRedirect";
@@ -170,6 +172,7 @@ const App: Component = () => {
             agentFallbackStore.hydrate(),
             repoSettingsStore.hydrate(),
             promptLibraryStore.hydrate(),
+            notesStore.hydrate(),
           ]);
           const failures = results.filter((r) => r.status === "rejected");
           if (failures.length > 0) {
@@ -195,6 +198,19 @@ const App: Component = () => {
     onCleanup(() => githubStore.stopPolling());
   });
 
+
+  // Keep savedTerminals in sync with live terminal state (persists across restarts)
+  createEffect(() => {
+    // Subscribe to terminal IDs — triggers on add/remove
+    const ids = terminalsStore.getIds();
+    if (ids.length >= 0) {
+      repositoriesStore.updateSavedTerminals((id) => {
+        const t = terminalsStore.get(id);
+        if (!t) return undefined;
+        return { name: t.name, cwd: t.cwd, fontSize: t.fontSize, agentType: t.agentType };
+      });
+    }
+  });
 
   // Apply the active theme to the entire app chrome (sidebar, tabs, toolbar, etc.)
   createEffect(() => applyAppTheme(settingsStore.state.theme));
@@ -324,6 +340,7 @@ const App: Component = () => {
       toggleTaskQueue: () => setTaskQueueVisible((v) => !v),
       toggleGitOpsPanel: () => setGitOpsPanelVisible((v) => !v),
       toggleHelpPanel: () => setHelpPanelVisible((v) => !v),
+      toggleNotesPanel: uiStore.toggleNotesPanel,
     });
     onCleanup(cleanup);
   });
@@ -372,6 +389,7 @@ const App: Component = () => {
         case "zoom-reset": terminalLifecycle.zoomReset(); break;
         case "diff-panel": uiStore.toggleDiffPanel(); break;
         case "markdown-panel": uiStore.toggleMarkdownPanel(); break;
+        case "notes-panel": uiStore.toggleNotesPanel(); break;
 
         // Go
         case "next-tab": terminalLifecycle.navigateTab("next"); break;
@@ -700,6 +718,16 @@ const App: Component = () => {
             onClose={() => uiStore.toggleMarkdownPanel()}
           />
 
+          {/* Notes panel */}
+          <NotesPanel
+            visible={uiStore.state.notesPanelVisible}
+            onClose={() => uiStore.toggleNotesPanel()}
+            onSendToTerminal={(text) => {
+              const active = terminalsStore.getActive();
+              if (active?.ref) active.ref.write(`${text}\r`);
+            }}
+          />
+
           {/* Diff panel */}
           <DiffPanel
             visible={uiStore.state.diffPanelVisible}
@@ -716,6 +744,7 @@ const App: Component = () => {
           quickSwitcherActive={quickSwitcherVisible()}
           onToggleDiff={() => uiStore.toggleDiffPanel()}
           onToggleMarkdown={() => uiStore.toggleMarkdownPanel()}
+          onToggleNotes={() => uiStore.toggleNotesPanel()}
           onDictationStart={dictation.handleDictationStart}
           onDictationStop={dictation.handleDictationStop}
           currentRepoPath={gitOps.currentRepoPath()}
