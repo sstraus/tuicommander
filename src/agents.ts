@@ -115,7 +115,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "OpenCode",
     binary: "opencode",
     description: "OpenAI-based coding assistant",
-    resumeCommand: null,
+    resumeCommand: "opencode -c",
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = [];
       if (options.model) args.push("--model", options.model);
@@ -146,7 +146,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Aider",
     binary: "aider",
     description: "AI pair programming in terminal",
-    resumeCommand: "aider",
+    resumeCommand: "aider --restore-chat-history",
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = ["--yes-always"];
       if (options.model) args.push("--model", options.model);
