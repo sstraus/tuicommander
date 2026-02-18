@@ -104,10 +104,14 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 
   // Fetch CI check details (Story 060)
   const fetchCiChecks = async () => {
-    if (!props.currentRepoPath) return;
+    const prData = activePrData();
+    if (!props.currentRepoPath || !prData) return;
     setCiLoading(true);
     try {
-      const checks = await invoke<CiCheckDetail[]>("get_ci_checks", { path: props.currentRepoPath });
+      const checks = await invoke<CiCheckDetail[]>("get_ci_checks", {
+        path: props.currentRepoPath,
+        prNumber: prData.number,
+      });
       setCiChecks(checks);
     } catch (err) {
       console.error("Failed to fetch CI checks:", err);

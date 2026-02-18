@@ -638,75 +638,118 @@ pub(crate) fn get_github_status(path: String) -> GitHubStatus {
     }
 }
 
-/// Get CI check details for a repository (Story 060)
+const PR_CHECKS_QUERY: &str = r#"
+query PRChecks($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      commits(last: 1) {
+        nodes {
+          commit {
+            statusCheckRollup {
+              contexts(first: 50) {
+                nodes {
+                  __typename
+                  ... on CheckRun { name status conclusion detailsUrl }
+                  ... on StatusContext { context state targetUrl }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+
+/// Parse GraphQL PR check contexts into frontend-compatible CiCheckDetail objects.
+fn parse_pr_check_contexts(data: &serde_json::Value) -> Vec<serde_json::Value> {
+    let nodes = &data["data"]["repository"]["pullRequest"]["commits"]["nodes"];
+    let contexts = match nodes.as_array().and_then(|a| a.first()) {
+        Some(node) => &node["commit"]["statusCheckRollup"]["contexts"]["nodes"],
+        None => return vec![],
+    };
+
+    let context_nodes = match contexts.as_array() {
+        Some(arr) => arr,
+        None => return vec![],
+    };
+
+    context_nodes.iter().map(|ctx| {
+        let typename = ctx["__typename"].as_str().unwrap_or("");
+        if typename == "CheckRun" {
+            serde_json::json!({
+                "name": ctx["name"].as_str().unwrap_or(""),
+                "status": ctx["status"].as_str().unwrap_or("").to_lowercase(),
+                "conclusion": ctx["conclusion"].as_str().unwrap_or("").to_lowercase(),
+                "html_url": ctx["detailsUrl"].as_str().unwrap_or(""),
+            })
+        } else {
+            // StatusContext
+            let state = ctx["state"].as_str().unwrap_or("").to_lowercase();
+            let conclusion = match state.as_str() {
+                "success" => "success",
+                "failure" | "error" => "failure",
+                "pending" | "expected" => "",
+                _ => "",
+            };
+            serde_json::json!({
+                "name": ctx["context"].as_str().unwrap_or(""),
+                "status": if conclusion.is_empty() { "in_progress" } else { "completed" },
+                "conclusion": conclusion,
+                "html_url": ctx["targetUrl"].as_str().unwrap_or(""),
+            })
+        }
+    }).collect()
+}
+
+/// Core logic for fetching CI check details via GitHub GraphQL API (no caching).
+pub(crate) fn get_ci_checks_impl(
+    path: &str,
+    pr_number: i64,
+    client: &reqwest::blocking::Client,
+    token: Option<&str>,
+) -> Vec<serde_json::Value> {
+    let repo_path = PathBuf::from(path);
+
+    let token = match token {
+        Some(t) => t,
+        None => return vec![],
+    };
+
+    let remote_url = match get_github_remote_url(&repo_path) {
+        Some(url) => url,
+        None => return vec![],
+    };
+
+    let (owner, repo) = match parse_remote_url(&remote_url) {
+        Some(pair) => pair,
+        None => return vec![],
+    };
+
+    let variables = serde_json::json!({
+        "owner": owner,
+        "repo": repo,
+        "number": pr_number,
+    });
+
+    match graphql_request(client, token, PR_CHECKS_QUERY, variables) {
+        Ok(data) => parse_pr_check_contexts(&data),
+        Err(e) => {
+            eprintln!("[github] GraphQL PR checks query failed: {}", e);
+            vec![]
+        }
+    }
+}
+
+/// Get CI check details for a PR via GitHub GraphQL API (Story 060)
 #[tauri::command]
-pub(crate) fn get_ci_checks(path: String) -> Vec<serde_json::Value> {
-    let repo_path = PathBuf::from(&path);
-
-    // Get current branch
-    let current_branch = Command::new("git")
-        .current_dir(&repo_path)
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default();
-
-    if current_branch.is_empty() {
-        return vec![];
-    }
-
-    // Get CI check runs using gh CLI, extract individual jobs
-    let runs: Vec<serde_json::Value> = Command::new("gh")
-        .current_dir(&repo_path)
-        .args([
-            "run", "list",
-            "--branch", &current_branch,
-            "--limit", "1",
-            "--json", "status,conclusion,workflowName,jobs",
-        ])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                let json_str = String::from_utf8_lossy(&o.stdout);
-                serde_json::from_str::<Vec<serde_json::Value>>(&json_str).ok()
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default();
-
-    // Extract jobs from runs into flat check details matching frontend CiCheckDetail
-    let mut checks = Vec::new();
-    for run in &runs {
-        if let Some(jobs) = run["jobs"].as_array() {
-            for job in jobs {
-                checks.push(serde_json::json!({
-                    "name": job["name"].as_str().unwrap_or(""),
-                    "status": job["status"].as_str().unwrap_or(""),
-                    "conclusion": job["conclusion"].as_str().unwrap_or(""),
-                    "html_url": job["url"].as_str().unwrap_or(""),
-                }));
-            }
-        }
-        // Fallback: if no jobs, show the run itself
-        if checks.is_empty() {
-            checks.push(serde_json::json!({
-                "name": run["workflowName"].as_str().unwrap_or("CI"),
-                "status": run["status"].as_str().unwrap_or(""),
-                "conclusion": run["conclusion"].as_str().unwrap_or(""),
-                "html_url": "",
-            }));
-        }
-    }
-    checks
+pub(crate) fn get_ci_checks(
+    path: String,
+    pr_number: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Vec<serde_json::Value> {
+    get_ci_checks_impl(&path, pr_number, &state.http_client, state.github_token.as_deref())
 }
 
 #[cfg(test)]
@@ -1577,5 +1620,119 @@ mod tests {
             std::env::remove_var("GH_TOKEN");
             std::env::remove_var("GITHUB_TOKEN");
         }
+    }
+
+    // --- parse_pr_check_contexts tests ---
+
+    #[test]
+    fn test_parse_pr_check_contexts_check_runs() {
+        let data = serde_json::json!({
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "commits": {
+                            "nodes": [{
+                                "commit": {
+                                    "statusCheckRollup": {
+                                        "contexts": {
+                                            "nodes": [
+                                                {
+                                                    "__typename": "CheckRun",
+                                                    "name": "build",
+                                                    "status": "COMPLETED",
+                                                    "conclusion": "SUCCESS",
+                                                    "detailsUrl": "https://github.com/runs/1"
+                                                },
+                                                {
+                                                    "__typename": "CheckRun",
+                                                    "name": "test",
+                                                    "status": "COMPLETED",
+                                                    "conclusion": "FAILURE",
+                                                    "detailsUrl": "https://github.com/runs/2"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }]
+                        }
+                    }
+                }
+            }
+        });
+
+        let result = parse_pr_check_contexts(&data);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["name"], "build");
+        assert_eq!(result[0]["conclusion"], "success");
+        assert_eq!(result[0]["html_url"], "https://github.com/runs/1");
+        assert_eq!(result[1]["name"], "test");
+        assert_eq!(result[1]["conclusion"], "failure");
+    }
+
+    #[test]
+    fn test_parse_pr_check_contexts_status_contexts() {
+        let data = serde_json::json!({
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "commits": {
+                            "nodes": [{
+                                "commit": {
+                                    "statusCheckRollup": {
+                                        "contexts": {
+                                            "nodes": [
+                                                {
+                                                    "__typename": "StatusContext",
+                                                    "context": "ci/circleci",
+                                                    "state": "SUCCESS",
+                                                    "targetUrl": "https://circleci.com/build/1"
+                                                },
+                                                {
+                                                    "__typename": "StatusContext",
+                                                    "context": "ci/jenkins",
+                                                    "state": "PENDING",
+                                                    "targetUrl": "https://jenkins.io/build/2"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }]
+                        }
+                    }
+                }
+            }
+        });
+
+        let result = parse_pr_check_contexts(&data);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["name"], "ci/circleci");
+        assert_eq!(result[0]["conclusion"], "success");
+        assert_eq!(result[0]["status"], "completed");
+        assert_eq!(result[0]["html_url"], "https://circleci.com/build/1");
+        assert_eq!(result[1]["name"], "ci/jenkins");
+        assert_eq!(result[1]["conclusion"], "");
+        assert_eq!(result[1]["status"], "in_progress");
+    }
+
+    #[test]
+    fn test_parse_pr_check_contexts_empty() {
+        let data = serde_json::json!({
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "commits": { "nodes": [] }
+                    }
+                }
+            }
+        });
+        assert_eq!(parse_pr_check_contexts(&data).len(), 0);
+    }
+
+    #[test]
+    fn test_parse_pr_check_contexts_no_data() {
+        let data = serde_json::json!({});
+        assert_eq!(parse_pr_check_contexts(&data).len(), 0);
     }
 }

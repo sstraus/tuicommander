@@ -182,7 +182,7 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
     case "get_git_branches":
       return { method: "GET", path: `/repo/branches?path=${p("path")}` };
     case "get_ci_checks":
-      return { method: "GET", path: `/repo/ci?path=${p("path")}` };
+      return { method: "GET", path: `/repo/ci?path=${p("path")}&pr_number=${p("prNumber")}` };
     case "rename_branch":
       return {
         method: "POST",

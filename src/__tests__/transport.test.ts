@@ -187,10 +187,10 @@ describe("transport", () => {
       expect(result.path).toBe("/repo/branches?path=%2Fmy%2Frepo");
     });
 
-    it("maps get_ci_checks to GET /repo/ci?path=", () => {
-      const result = mapCommandToHttp("get_ci_checks", { path: "/my/repo" });
+    it("maps get_ci_checks to GET /repo/ci?path=&pr_number=", () => {
+      const result = mapCommandToHttp("get_ci_checks", { path: "/my/repo", prNumber: 42 });
       expect(result.method).toBe("GET");
-      expect(result.path).toBe("/repo/ci?path=%2Fmy%2Frepo");
+      expect(result.path).toBe("/repo/ci?path=%2Fmy%2Frepo&pr_number=42");
     });
   });
 
