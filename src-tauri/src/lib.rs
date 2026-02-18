@@ -320,6 +320,8 @@ pub fn run() {
             config::save_repositories,
             config::load_prompt_library,
             config::save_prompt_library,
+            config::load_notes,
+            config::save_notes,
             prompt::extract_prompt_variables,
             prompt::process_prompt_content,
             error_classification::classify_error_message,

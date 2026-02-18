@@ -37,6 +37,7 @@ function createMockHandlers(): ShortcutHandlers {
     toggleTaskQueue: vi.fn(),
     toggleGitOpsPanel: vi.fn(),
     toggleHelpPanel: vi.fn(),
+    toggleNotesPanel: vi.fn(),
   };
 }
 
@@ -188,6 +189,11 @@ describe("useKeyboardShortcuts", () => {
     it("Cmd+? toggles help", () => {
       fireKeydown("?", { metaKey: true });
       expect(handlers.toggleHelpPanel).toHaveBeenCalled();
+    });
+
+    it("Cmd+N toggles notes panel", () => {
+      fireKeydown("n", { metaKey: true });
+      expect(handlers.toggleNotesPanel).toHaveBeenCalled();
     });
 
     it("Cmd+Shift+G toggles git ops panel", () => {

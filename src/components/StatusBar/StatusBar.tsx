@@ -27,6 +27,7 @@ export interface StatusBarProps {
   quickSwitcherActive?: boolean;
   onToggleDiff: () => void;
   onToggleMarkdown: () => void;
+  onToggleNotes?: () => void;
   onDictationStart: () => void;
   onDictationStop: () => void;
   currentRepoPath?: string;
@@ -251,6 +252,10 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         <button id="md-toggle" class="toggle-btn" onClick={props.onToggleMarkdown} title={`Toggle Markdown Panel (${getModifierSymbol()}M)`} style={{ position: "relative" }}>
           MD
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}M</span>
+        </button>
+        <button id="notes-toggle" class="toggle-btn" onClick={() => props.onToggleNotes?.()} title={`Toggle Notes Panel (${getModifierSymbol()}N)`} style={{ position: "relative" }}>
+          Notes
+          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}N</span>
         </button>
         <button id="diff-toggle" class="toggle-btn" onClick={props.onToggleDiff} title={`Toggle Diff Panel (${getModifierSymbol()}D)`} style={{ position: "relative" }}>
           Diff

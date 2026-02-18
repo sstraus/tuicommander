@@ -442,6 +442,7 @@ const UI_PREFS_FILE: &str = "ui-prefs.json";
 const REPO_SETTINGS_FILE: &str = "repo-settings.json";
 const PROMPT_LIBRARY_FILE: &str = "prompt-library.json";
 const REPOSITORIES_FILE: &str = "repositories.json";
+const NOTES_FILE: &str = "notes.json";
 
 // App config
 #[tauri::command]
@@ -524,6 +525,17 @@ pub(crate) fn load_prompt_library() -> PromptLibraryConfig {
 #[tauri::command]
 pub(crate) fn save_prompt_library(config: PromptLibraryConfig) -> Result<(), String> {
     save_json_config(PROMPT_LIBRARY_FILE, &config)
+}
+
+// Notes (opaque JSON — schema owned by frontend)
+#[tauri::command]
+pub(crate) fn load_notes() -> serde_json::Value {
+    load_json_config(NOTES_FILE)
+}
+
+#[tauri::command]
+pub(crate) fn save_notes(config: serde_json::Value) -> Result<(), String> {
+    save_json_config(NOTES_FILE, &config)
 }
 
 // ---------------------------------------------------------------------------

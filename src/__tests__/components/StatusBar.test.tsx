@@ -508,7 +508,7 @@ describe("StatusBar", () => {
   it("shows hotkey hints on toggle buttons", () => {
     const { container } = render(() => <StatusBar {...defaultProps} />);
     const hints = container.querySelectorAll(".hotkey-hint");
-    expect(hints.length).toBe(2);
+    expect(hints.length).toBe(3);
   });
 
   it("opens PR detail popover when PrBadge is clicked", () => {

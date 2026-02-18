@@ -84,6 +84,11 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
             "Markdown Panel",
             "CmdOrCtrl+M"
         ))
+        .item(&item!(
+            "notes-panel",
+            "Notes Panel",
+            "CmdOrCtrl+N"
+        ))
         .build()?;
 
     // ---------- Go ----------

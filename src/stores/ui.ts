@@ -19,6 +19,7 @@ interface UIStoreState {
   // Panel visibility
   diffPanelVisible: boolean;
   markdownPanelVisible: boolean;
+  notesPanelVisible: boolean;
 
   // Diff panel state
   currentDiffRepo: string | null;
@@ -51,6 +52,7 @@ function createUIStore() {
     sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
     diffPanelVisible: false,
     markdownPanelVisible: false,
+    notesPanelVisible: false,
     currentDiffRepo: null,
     ideDropdownVisible: false,
     fontDropdownVisible: false,
@@ -106,6 +108,14 @@ function createUIStore() {
 
     setMarkdownPanelVisible(visible: boolean): void {
       setState("markdownPanelVisible", visible);
+    },
+
+    toggleNotesPanel(): void {
+      setState("notesPanelVisible", (v) => !v);
+    },
+
+    setNotesPanelVisible(visible: boolean): void {
+      setState("notesPanelVisible", visible);
     },
 
     // Diff repo selection
