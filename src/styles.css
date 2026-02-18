@@ -3221,6 +3221,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 100px;
 }
 
 .dictation-progress-bar {

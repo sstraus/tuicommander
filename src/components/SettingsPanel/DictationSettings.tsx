@@ -19,9 +19,11 @@ const ModelRow: Component<{ model: ModelInfo }> = (props) => {
         <span class="dictation-model-name">{props.model.display_name}</span>
         <span class="dictation-model-size">{sizeLabel()}</span>
       </div>
-      <span class={`dictation-model-badge${props.model.downloaded ? " downloaded" : ""}`}>
-        {props.model.downloaded ? "Downloaded" : "Not downloaded"}
-      </span>
+      <Show when={!isDownloading()}>
+        <span class={`dictation-model-badge${props.model.downloaded ? " downloaded" : ""}`}>
+          {props.model.downloaded ? "Downloaded" : "Not downloaded"}
+        </span>
+      </Show>
       <div class="dictation-model-actions">
         <Show when={props.model.downloaded && !isSelected()}>
           <button
