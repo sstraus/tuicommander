@@ -1,6 +1,7 @@
 import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
+import { invoke, listen } from "../invoke";
 
 /** Dependencies injected into initApp */
 export interface AppInitDeps {
@@ -78,6 +79,34 @@ export async function initApp(deps: AppInitDeps) {
   } catch {
     deps.setStatusInfo("Warning: 1 store(s) failed to load");
   }
+
+  // Start HEAD file watchers for all known repos and listen for branch changes
+  for (const repoPath of repositoriesStore.getPaths()) {
+    invoke("start_head_watcher", { repoPath }).catch((err) =>
+      console.warn(`[HeadWatcher] Failed to start for ${repoPath}:`, err),
+    );
+  }
+
+  listen<{ repo_path: string; branch: string }>("head-changed", (event) => {
+    const { repo_path, branch } = event.payload;
+    const repo = repositoriesStore.get(repo_path);
+    if (!repo) return;
+
+    // Only update if branch actually changed
+    if (repo.activeBranch === branch) return;
+
+    console.log(`[HeadWatcher] ${repo_path}: branch changed to ${branch}`);
+
+    // Ensure the branch exists in the store
+    if (!repo.branches[branch]) {
+      repositoriesStore.setBranch(repo_path, branch, { name: branch });
+    }
+
+    repositoriesStore.setActiveBranch(repo_path, branch);
+
+    // Invalidate caches so next poll fetches fresh data
+    invoke("clear_caches").catch(() => {});
+  }).catch(() => {});
 
   // Check for surviving PTY sessions (persists across Vite HMR reloads)
   const survivingSessions = await deps.pty.listActiveSessions();

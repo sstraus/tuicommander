@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { createSignal, createEffect, onCleanup, onMount } from "solid-js";
 import { invoke } from "../invoke";
 import type { GitHubStatus } from "../types";
 
@@ -77,6 +77,17 @@ export function useGitHub(getRepoPath: () => string | undefined) {
     }
     scheduleNext();
   }
+
+  // Refresh immediately when the repo path changes (clears stale branch from previous repo)
+  createEffect(() => {
+    const path = getRepoPath();
+    if (path) {
+      setStatus(null);
+      refresh();
+    } else {
+      setStatus(null);
+    }
+  });
 
   // Auto-start polling on mount
   onMount(() => {

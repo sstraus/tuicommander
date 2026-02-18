@@ -368,6 +368,8 @@ pub(crate) struct RepoSettingsEntry {
     pub(crate) setup_script: String,
     #[serde(default)]
     pub(crate) run_script: String,
+    #[serde(default)]
+    pub(crate) color: String,
 }
 
 impl Default for RepoSettingsEntry {
@@ -380,6 +382,7 @@ impl Default for RepoSettingsEntry {
             copy_untracked_files: false,
             setup_script: String::new(),
             run_script: String::new(),
+            color: String::new(),
         }
     }
 }
@@ -396,6 +399,7 @@ impl RepoSettingsEntry {
             || self.copy_untracked_files
             || !self.setup_script.is_empty()
             || !self.run_script.is_empty()
+            || !self.color.is_empty()
     }
 }
 
@@ -674,6 +678,7 @@ mod tests {
                 copy_untracked_files: false,
                 setup_script: "npm install".to_string(),
                 run_script: "npm start".to_string(),
+                color: String::new(),
             },
         );
         let loaded: RepoSettingsMap =
@@ -813,6 +818,15 @@ mod tests {
     fn has_custom_settings_true_when_run_script_set() {
         let entry = RepoSettingsEntry {
             run_script: "npm start".to_string(),
+            ..RepoSettingsEntry::default()
+        };
+        assert!(entry.has_custom_settings());
+    }
+
+    #[test]
+    fn has_custom_settings_true_when_color_set() {
+        let entry = RepoSettingsEntry {
+            color: "#ff0000".to_string(),
             ..RepoSettingsEntry::default()
         };
         assert!(entry.has_custom_settings());

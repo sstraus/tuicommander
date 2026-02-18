@@ -1,4 +1,4 @@
-import { Component, For } from "solid-js";
+import { Component, For, Show } from "solid-js";
 import type { RepoSettings } from "../../../stores/repoSettings";
 
 export interface RepoTabProps {
@@ -27,6 +27,36 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
           placeholder="Repository name"
         />
         <p class="settings-hint">Name shown in sidebar and tabs</p>
+      </div>
+
+      <div class="settings-group">
+        <label>Sidebar Color</label>
+        <div class="color-picker-row">
+          <label class="color-picker-swatch">
+            <input
+              type="color"
+              value={props.settings.color || "#999999"}
+              onInput={(e) => props.onUpdate("color", e.currentTarget.value)}
+            />
+            <span
+              class="color-picker-preview"
+              style={{ background: props.settings.color || "var(--fg-muted)" }}
+            />
+          </label>
+          <span class="color-picker-value">
+            {props.settings.color || "Default"}
+          </span>
+          <Show when={props.settings.color}>
+            <button
+              class="color-picker-reset"
+              onClick={() => props.onUpdate("color", "")}
+              title="Reset to default color"
+            >
+              Reset
+            </button>
+          </Show>
+        </div>
+        <p class="settings-hint">Custom color for repository name in sidebar</p>
       </div>
 
       <h3>Worktree Configuration</h3>

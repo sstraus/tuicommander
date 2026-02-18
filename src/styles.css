@@ -514,8 +514,21 @@ html, body {
   font-size: var(--font-md);
 }
 
+.repo-section.dragging {
+  opacity: 0.5;
+}
+
+.repo-section.drag-over-top {
+  border-top: 2px solid var(--accent);
+}
+
+.repo-section.drag-over-bottom {
+  border-bottom: 2px solid var(--accent);
+}
+
 .repo-branches {
   padding-left: 16px;
+  padding-top: 1px;
 }
 
 .repo-empty {
@@ -1329,7 +1342,8 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .status-controls {
@@ -1372,6 +1386,9 @@ html, body {
   margin-left: 12px;
   padding-left: 12px;
   border-left: 1px solid var(--border);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 #github-status.hidden {
@@ -1386,11 +1403,16 @@ html, body {
   border-radius: var(--radius-md);
   font-size: var(--font-xs);
   font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-badge.branch {
   background: var(--bg-tertiary);
   color: var(--fg-secondary);
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .status-badge.branch.ahead {
@@ -1444,7 +1466,6 @@ html, body {
   cursor: pointer;
   padding: 1px 6px;
   border-radius: var(--radius-sm);
-  max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2644,6 +2665,66 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   margin-top: 4px;
   font-size: var(--font-sm);
   color: var(--fg-muted);
+}
+
+.color-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.color-picker-swatch {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.color-picker-swatch input[type="color"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.color-picker-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  transition: border-color 0.15s;
+}
+
+.color-picker-swatch:hover .color-picker-preview {
+  border-color: var(--accent);
+}
+
+.color-picker-value {
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+  min-width: 60px;
+}
+
+.color-picker-reset {
+  padding: 4px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.color-picker-reset:hover {
+  background: var(--bg-highlight);
+  border-color: var(--accent);
+  color: var(--fg-primary);
 }
 
 .settings-info {

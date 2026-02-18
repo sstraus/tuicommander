@@ -78,6 +78,7 @@ describe("SettingsPanel — repo context", () => {
       copyUntrackedFiles: false,
       setupScript: "",
       runScript: "",
+      color: "",
     };
     vi.mocked(repoSettingsStore.getOrCreate).mockReturnValue(mockSettings);
   });

@@ -10,6 +10,7 @@ export interface RepoSettings {
   copyUntrackedFiles: boolean;
   setupScript: string;
   runScript: string;
+  color: string;
 }
 
 /** Default repository settings — used only for creating new entries */
@@ -19,6 +20,7 @@ const DEFAULT_REPO_SETTINGS: Omit<RepoSettings, "path" | "displayName"> = {
   copyUntrackedFiles: false,
   setupScript: "",
   runScript: "",
+  color: "",
 };
 
 /** Repository settings store state */

@@ -66,7 +66,8 @@ export function cleanOscTitle(title: string): string {
   // Paths: extract last segment (status bar shows the full path)
   if (cleaned.startsWith("/") || cleaned.startsWith("~")) {
     const basename = cleaned.replace(/\/+$/, "").split("/").pop() || "";
-    return basename === "~" ? "~" : basename;
+    // Bare "~" (home dir) is not useful as a tab title — return empty to keep original name
+    return basename === "~" ? "" : basename;
   }
   // Strip flags and their values, keep command + subcommands (bare words before first flag)
   if (cleaned) {

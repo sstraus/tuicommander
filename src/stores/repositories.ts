@@ -29,6 +29,7 @@ export interface RepositoryState {
 /** Repositories store state */
 interface RepositoriesStoreState {
   repositories: Record<string, RepositoryState>;
+  repoOrder: string[];
   activeRepoPath: string | null;
 }
 
@@ -41,7 +42,7 @@ export function isMainBranch(branchName: string): boolean {
 const SAVE_DEBOUNCE_MS = 500;
 
 /** Persist repos to Rust backend (fire-and-forget, terminals excluded) */
-function saveReposImmediate(repositories: Record<string, RepositoryState>): void {
+function saveReposImmediate(repositories: Record<string, RepositoryState>, repoOrder: string[]): void {
   const serializable: Record<string, RepositoryState> = {};
   for (const [path, repo] of Object.entries(repositories)) {
     const branches: Record<string, BranchState> = {};
@@ -51,18 +52,18 @@ function saveReposImmediate(repositories: Record<string, RepositoryState>): void
     serializable[path] = { ...repo, branches };
   }
   invoke("save_repositories", {
-    config: { repos: serializable },
+    config: { repos: serializable, repoOrder },
   }).catch((err) => console.debug("Failed to save repos:", err));
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Debounced save — coalesces rapid mutations into a single IPC call */
-function saveRepos(repositories: Record<string, RepositoryState>): void {
+function saveRepos(repositories: Record<string, RepositoryState>, repoOrder: string[]): void {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    saveReposImmediate(repositories);
+    saveReposImmediate(repositories, repoOrder);
   }, SAVE_DEBOUNCE_MS);
 }
 
@@ -70,6 +71,7 @@ function saveRepos(repositories: Record<string, RepositoryState>): void {
 function createRepositoriesStore() {
   const [state, setState] = createStore<RepositoriesStoreState>({
     repositories: {},
+    repoOrder: [],
     activeRepoPath: null,
   });
 
@@ -87,10 +89,11 @@ function createRepositoriesStore() {
           localStorage.removeItem(LEGACY_STORAGE_KEY);
         }
 
-        const loaded = await invoke<{ repos?: Record<string, RepositoryState> }>("load_repositories");
-        if (loaded?.repos) {
+        const loaded = await invoke<{ repos?: Record<string, RepositoryState>; repoOrder?: string[] }>("load_repositories");
+        const repos = loaded?.repos;
+        if (repos) {
           // Migration: add collapsed/expanded fields, clear stale terminal IDs
-          Object.values(loaded.repos).forEach((repo) => {
+          Object.values(repos).forEach((repo) => {
             if (repo.collapsed === undefined) {
               repo.collapsed = false;
             }
@@ -104,7 +107,14 @@ function createRepositoriesStore() {
               }
             }
           });
-          setState("repositories", loaded.repos);
+          setState("repositories", repos);
+
+          // Hydrate repoOrder: use saved order, falling back to Object.keys for repos not yet in the order
+          const repoPaths = Object.keys(repos);
+          const savedOrder = loaded.repoOrder ?? [];
+          const validOrder = savedOrder.filter((p) => p in repos);
+          const missing = repoPaths.filter((p) => !validOrder.includes(p));
+          setState("repoOrder", [...validOrder, ...missing]);
         }
       } catch (err) {
         console.debug("Failed to hydrate repositories:", err);
@@ -122,7 +132,10 @@ function createRepositoriesStore() {
         branches: {},
         activeBranch: null,
       });
-      saveRepos(state.repositories);
+      if (!state.repoOrder.includes(repo.path)) {
+        setState("repoOrder", [...state.repoOrder, repo.path]);
+      }
+      saveRepos(state.repositories, state.repoOrder);
     },
 
     /** Remove a repository */
@@ -130,12 +143,13 @@ function createRepositoriesStore() {
       setState(
         produce((s) => {
           delete s.repositories[path];
+          s.repoOrder = s.repoOrder.filter((p) => p !== path);
           if (s.activeRepoPath === path) {
             s.activeRepoPath = null;
           }
         })
       );
-      saveRepos(state.repositories);
+      saveRepos(state.repositories, state.repoOrder);
     },
 
     /** Set active repository */
@@ -143,16 +157,23 @@ function createRepositoriesStore() {
       setState("activeRepoPath", path);
     },
 
+    /** Update the display name of a repository */
+    setDisplayName(path: string, displayName: string): void {
+      if (!state.repositories[path]) return;
+      setState("repositories", path, "displayName", displayName);
+      saveRepos(state.repositories, state.repoOrder);
+    },
+
     /** Toggle repository expanded state */
     toggleExpanded(path: string): void {
       setState("repositories", path, "expanded", (e) => !e);
-      saveRepos(state.repositories);
+      saveRepos(state.repositories, state.repoOrder);
     },
 
     /** Toggle repository collapsed state */
     toggleCollapsed(path: string): void {
       setState("repositories", path, "collapsed", (c) => !c);
-      saveRepos(state.repositories);
+      saveRepos(state.repositories, state.repoOrder);
     },
 
     /** Add or update a branch */
@@ -175,7 +196,7 @@ function createRepositoriesStore() {
           ...data,
         });
       }
-      saveRepos(state.repositories);
+      saveRepos(state.repositories, state.repoOrder);
     },
 
     /** Set active branch for a repo */
@@ -191,7 +212,7 @@ function createRepositoriesStore() {
         if (!branch.hadTerminals) {
           setState("repositories", repoPath, "branches", branchName, "hadTerminals", true);
         }
-        saveRepos(state.repositories);
+        saveRepos(state.repositories, state.repoOrder);
       }
     },
 
@@ -200,7 +221,7 @@ function createRepositoriesStore() {
       setState("repositories", repoPath, "branches", branchName, "terminals", (t) =>
         t.filter((id) => id !== terminalId)
       );
-      saveRepos(state.repositories);
+      saveRepos(state.repositories, state.repoOrder);
     },
 
     /** Set run command for a branch */
@@ -208,7 +229,7 @@ function createRepositoriesStore() {
       const branch = state.repositories[repoPath]?.branches[branchName];
       if (branch) {
         setState("repositories", repoPath, "branches", branchName, "runCommand", command);
-        saveRepos(state.repositories);
+        saveRepos(state.repositories, state.repoOrder);
       }
     },
 
@@ -237,7 +258,7 @@ function createRepositoriesStore() {
           }
         })
       );
-      saveRepos(state.repositories);
+      saveRepos(state.repositories, state.repoOrder);
     },
 
     /** Rename a branch in a repository */
@@ -270,7 +291,7 @@ function createRepositoriesStore() {
           }
         })
       );
-      saveRepos(state.repositories);
+      saveRepos(state.repositories, state.repoOrder);
     },
 
     /** Get repository by path */
@@ -288,6 +309,24 @@ function createRepositoriesStore() {
       return Object.keys(state.repositories);
     },
 
+    /** Reorder repositories in the sidebar */
+    reorderRepo(fromIndex: number, toIndex: number): void {
+      setState("repoOrder", (order) => {
+        const result = [...order];
+        const [moved] = result.splice(fromIndex, 1);
+        result.splice(toIndex, 0, moved);
+        return result;
+      });
+      saveRepos(state.repositories, state.repoOrder);
+    },
+
+    /** Get ordered repo paths */
+    getOrderedRepos(): RepositoryState[] {
+      return state.repoOrder
+        .map((path) => state.repositories[path])
+        .filter(Boolean);
+    },
+
     /** Reorder terminals within the active branch */
     reorderTerminals(repoPath: string, branchName: string, fromIndex: number, toIndex: number): void {
       setState("repositories", repoPath, "branches", branchName, "terminals", (terminals) => {
@@ -296,7 +335,7 @@ function createRepositoriesStore() {
         result.splice(toIndex, 0, moved);
         return result;
       });
-      saveRepos(state.repositories);
+      saveRepos(state.repositories, state.repoOrder);
     },
 
     /** Get terminals for current active branch */

@@ -1,4 +1,5 @@
 use dashmap::DashMap;
+use notify_debouncer_mini::Debouncer;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -372,6 +373,8 @@ pub struct AppState {
     pub(crate) repo_info_cache: DashMap<String, (crate::git::RepoInfo, Instant)>,
     /// TTL cache for get_repo_pr_statuses results, keyed by repo path
     pub(crate) github_status_cache: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
+    /// File watchers for .git/HEAD per repo (keyed by repo path)
+    pub(crate) head_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
 }
 
 impl AppState {
@@ -727,6 +730,7 @@ mod tests {
             config: std::sync::RwLock::new(crate::config::AppConfig::default()),
             repo_info_cache: dashmap::DashMap::new(),
             github_status_cache: dashmap::DashMap::new(),
+            head_watchers: dashmap::DashMap::new(),
         }
     }
 

@@ -5,6 +5,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { githubStore } from "../../stores/github";
 import { settingsStore } from "../../stores/settings";
 import { uiStore } from "../../stores/ui";
+import { repoSettingsStore } from "../../stores/repoSettings";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
@@ -81,6 +82,9 @@ const PrStateBadge: Component<{
 /** Repository section component */
 const RepoSection: Component<{
   repo: RepositoryState;
+  nameColor?: string;
+  isDragging?: boolean;
+  dragOverClass?: string;
   quickSwitcherActive?: boolean;
   branchShortcutStart: number;
   onBranchSelect: (branchName: string) => void;
@@ -93,6 +97,10 @@ const RepoSection: Component<{
   onRemove: () => void;
   onToggle: () => void;
   onToggleCollapsed: () => void;
+  onDragStart: (e: DragEvent) => void;
+  onDragOver: (e: DragEvent) => void;
+  onDrop: (e: DragEvent) => void;
+  onDragEnd: () => void;
 }> = (props) => {
   const repoMenu = createContextMenu();
 
@@ -125,7 +133,14 @@ const RepoSection: Component<{
   };
 
   return (
-    <div class={`repo-section ${props.repo.collapsed ? "collapsed" : ""}`}>
+    <div
+      class={`repo-section ${props.repo.collapsed ? "collapsed" : ""} ${props.isDragging ? "dragging" : ""} ${props.dragOverClass || ""}`}
+      draggable={true}
+      onDragStart={props.onDragStart}
+      onDragOver={props.onDragOver}
+      onDrop={props.onDrop}
+      onDragEnd={props.onDragEnd}
+    >
       {/* Repo header */}
       <div class="repo-header" onClick={props.onToggle} onContextMenu={repoMenu.open}>
         <Show when={props.repo.collapsed}>
@@ -141,7 +156,7 @@ const RepoSection: Component<{
           </span>
         </Show>
         <Show when={!props.repo.collapsed}>
-          <span class="repo-name">{props.repo.displayName}</span>
+          <span class="repo-name" style={props.nameColor ? { color: props.nameColor } : undefined}>{props.repo.displayName}</span>
           <div class="repo-actions">
               <button
                 class="repo-action-btn"
@@ -174,6 +189,7 @@ const RepoSection: Component<{
                 branch={branch}
                 repoPath={props.repo.path}
                 isActive={repositoriesStore.state.activeRepoPath === props.repo.path && props.repo.activeBranch === branch.name}
+                canRemove={sortedBranches().length > 1}
                 shortcutIndex={props.quickSwitcherActive ? props.branchShortcutStart + index() : undefined}
                 onSelect={() => props.onBranchSelect(branch.name)}
                 onAddTerminal={() => props.onAddTerminal(branch.name)}
@@ -204,6 +220,7 @@ const BranchItem: Component<{
   branch: BranchState;
   repoPath: string;
   isActive: boolean;
+  canRemove: boolean;
   shortcutIndex?: number;
   onSelect: () => void;
   onAddTerminal: () => void;
@@ -240,7 +257,7 @@ const BranchItem: Component<{
       { label: "Add Terminal", action: props.onAddTerminal },
       { label: "Rename Branch", action: props.onRename },
     ];
-    if (!props.branch.isMain && props.branch.worktreePath) {
+    if (!props.branch.isMain && props.branch.worktreePath && props.canRemove) {
       items.push({ label: "Delete Worktree", action: props.onRemove, separator: true });
     }
     return items;
@@ -294,7 +311,7 @@ const BranchItem: Component<{
           >
             +
           </button>
-          <Show when={!props.branch.isMain && props.branch.worktreePath}>
+          <Show when={!props.branch.isMain && props.branch.worktreePath && props.canRemove}>
             <button
               class="branch-remove-btn"
               onClick={(e) => {
@@ -322,7 +339,68 @@ const BranchItem: Component<{
 };
 
 export const Sidebar: Component<SidebarProps> = (props) => {
-  const repos = createMemo(() => Object.values(repositoriesStore.state.repositories));
+  const repos = createMemo(() => repositoriesStore.getOrderedRepos());
+
+  // Drag-and-drop state for repo reordering
+  const [draggedRepoPath, setDraggedRepoPath] = createSignal<string | null>(null);
+  const [dragOverRepoPath, setDragOverRepoPath] = createSignal<string | null>(null);
+  const [dragOverSide, setDragOverSide] = createSignal<"top" | "bottom" | null>(null);
+
+  const resetRepoDragState = () => {
+    setDraggedRepoPath(null);
+    setDragOverRepoPath(null);
+    setDragOverSide(null);
+  };
+
+  const handleRepoDragStart = (e: DragEvent, path: string) => {
+    if (!e.dataTransfer) return;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", path);
+    try {
+      const el = e.currentTarget as HTMLElement;
+      e.dataTransfer.setDragImage(el, el.offsetWidth / 2, el.offsetHeight / 2);
+    } catch { /* not supported in all envs */ }
+    setDraggedRepoPath(path);
+  };
+
+  const handleRepoDragOver = (e: DragEvent, path: string) => {
+    e.preventDefault();
+    if (!e.dataTransfer) return;
+    e.dataTransfer.dropEffect = "move";
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    setDragOverRepoPath(path);
+    setDragOverSide(e.clientY < midpoint ? "top" : "bottom");
+  };
+
+  const handleRepoDrop = (e: DragEvent, targetPath: string) => {
+    e.preventDefault();
+    const sourcePath = e.dataTransfer?.getData("text/plain");
+    if (!sourcePath || sourcePath === targetPath) {
+      resetRepoDragState();
+      return;
+    }
+
+    const order = repositoriesStore.state.repoOrder;
+    const fromIndex = order.indexOf(sourcePath);
+    const toIndex = order.indexOf(targetPath);
+
+    if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
+      let adjustedTo = toIndex;
+      const side = dragOverSide();
+      if (side === "top" && fromIndex < toIndex) {
+        adjustedTo = toIndex - 1;
+      } else if (side === "bottom" && fromIndex > toIndex) {
+        adjustedTo = toIndex + 1;
+      }
+      const clampedTo = Math.max(0, Math.min(adjustedTo, order.length - 1));
+      if (fromIndex !== clampedTo) {
+        repositoriesStore.reorderRepo(fromIndex, clampedTo);
+      }
+    }
+
+    resetRepoDragState();
+  };
 
   // PR detail popover state
   const [prDetailTarget, setPrDetailTarget] = createSignal<{ repoPath: string; branch: string } | null>(null);
@@ -402,6 +480,13 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               {(repo) => (
                 <RepoSection
                   repo={repo}
+                  nameColor={repoSettingsStore.get(repo.path)?.color || undefined}
+                  isDragging={draggedRepoPath() === repo.path}
+                  dragOverClass={
+                    dragOverRepoPath() === repo.path && draggedRepoPath() !== repo.path
+                      ? `drag-over-${dragOverSide()}`
+                      : undefined
+                  }
                   quickSwitcherActive={props.quickSwitcherActive}
                   branchShortcutStart={repoShortcutStarts()[repo.path]}
                   onBranchSelect={(branch) => props.onBranchSelect(repo.path, branch)}
@@ -414,6 +499,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   onRemove={() => props.onRemoveRepo(repo.path)}
                   onToggle={() => repositoriesStore.toggleExpanded(repo.path)}
                   onToggleCollapsed={() => repositoriesStore.toggleCollapsed(repo.path)}
+                  onDragStart={(e) => handleRepoDragStart(e, repo.path)}
+                  onDragOver={(e) => handleRepoDragOver(e, repo.path)}
+                  onDrop={(e) => handleRepoDrop(e, repo.path)}
+                  onDragEnd={resetRepoDragState}
                 />
               )}
             </For>

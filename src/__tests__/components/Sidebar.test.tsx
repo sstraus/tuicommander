@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent } from "@solidjs/testing-library";
 import "../mocks/tauri";
 
-const { mockToggleExpanded, mockToggleCollapsed, mockGetActive, mockTerminalsGet, mockGetCheckSummary, mockGetPrStatus } = vi.hoisted(() => ({
+const { mockToggleExpanded, mockToggleCollapsed, mockGetActive, mockGetOrderedRepos, mockReorderRepo, mockTerminalsGet, mockGetCheckSummary, mockGetPrStatus } = vi.hoisted(() => ({
   mockToggleExpanded: vi.fn(),
   mockToggleCollapsed: vi.fn(),
   mockGetActive: vi.fn<() => any>(() => null),
+  mockGetOrderedRepos: vi.fn<() => any[]>(() => []),
+  mockReorderRepo: vi.fn(),
   mockTerminalsGet: vi.fn<() => any>(() => null),
   mockGetCheckSummary: vi.fn<() => any>(() => null),
   mockGetPrStatus: vi.fn<(...args: unknown[]) => unknown>(() => null),
@@ -16,10 +18,20 @@ vi.mock("../../stores/repositories", () => ({
   repositoriesStore: {
     state: {
       repositories: {} as Record<string, unknown>,
+      repoOrder: [] as string[],
+      activeRepoPath: null as string | null,
     },
     getActive: mockGetActive,
+    getOrderedRepos: mockGetOrderedRepos,
+    reorderRepo: mockReorderRepo,
     toggleExpanded: mockToggleExpanded,
     toggleCollapsed: mockToggleCollapsed,
+  },
+}));
+
+vi.mock("../../stores/repoSettings", () => ({
+  repoSettingsStore: {
+    get: vi.fn(() => undefined),
   },
 }));
 
@@ -86,6 +98,7 @@ function makeRepo(overrides: Record<string, any> = {}) {
 function setRepos(repos: Record<string, any>, activeRepoPath?: string) {
   (repositoriesStore.state as { repositories: Record<string, unknown> }).repositories = repos;
   (repositoriesStore.state as { activeRepoPath: string | null }).activeRepoPath = activeRepoPath ?? Object.keys(repos)[0] ?? null;
+  mockGetOrderedRepos.mockReturnValue(Object.values(repos));
 }
 
 describe("Sidebar", () => {

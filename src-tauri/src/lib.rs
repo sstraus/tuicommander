@@ -4,6 +4,7 @@ mod dictation;
 pub(crate) mod error_classification;
 pub(crate) mod git;
 pub(crate) mod github;
+pub(crate) mod head_watcher;
 pub(crate) mod mcp_http;
 mod menu;
 mod output_parser;
@@ -177,6 +178,7 @@ pub fn run() {
         config: std::sync::RwLock::new(config.clone()),
         repo_info_cache: DashMap::new(),
         github_status_cache: DashMap::new(),
+        head_watchers: DashMap::new(),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled
@@ -226,6 +228,18 @@ pub fn run() {
             app.on_menu_event(|app_handle, event| {
                 let _ = app_handle.emit("menu-action", event.id().0.as_str());
             });
+
+            // Auto-start HEAD watchers for known repositories
+            let repos_json = config::load_repositories();
+            if let Some(repos) = repos_json.get("repos").and_then(|r| r.as_object()) {
+                let handle = app.handle().clone();
+                for repo_path in repos.keys() {
+                    if let Err(e) = head_watcher::start_watching(repo_path, &handle) {
+                        eprintln!("[HeadWatcher] Failed to watch {repo_path}: {e}");
+                    }
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -302,7 +316,9 @@ pub fn run() {
             prompt::extract_prompt_variables,
             prompt::process_prompt_content,
             error_classification::classify_error_message,
-            error_classification::calculate_backoff_delay_cmd
+            error_classification::calculate_backoff_delay_cmd,
+            head_watcher::start_head_watcher,
+            head_watcher::stop_head_watcher
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

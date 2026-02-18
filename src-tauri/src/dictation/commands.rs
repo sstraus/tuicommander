@@ -181,7 +181,10 @@ pub fn stop_dictation_and_transcribe(
         .as_ref()
         .ok_or("Transcriber not loaded")?;
 
-    let raw_text = transcriber.transcribe(&audio_data, None)?;
+    // Pass configured language (None = auto-detect if "auto")
+    let config = get_dictation_config();
+    let lang = if config.language == "auto" { None } else { Some(config.language.as_str()) };
+    let raw_text = transcriber.transcribe(&audio_data, lang)?;
 
     // Apply corrections
     let corrected = dictation.corrections.lock().correct(&raw_text);

@@ -181,9 +181,9 @@ describe("cleanOscTitle", () => {
     expect(cleanOscTitle("~/Gits/CC_Playground/abrowser")).toBe("abrowser");
   });
 
-  it("returns ~ for home directory", () => {
-    expect(cleanOscTitle("~")).toBe("~");
-    expect(cleanOscTitle("~/")).toBe("~");
+  it("returns empty for home directory (preserves original tab name)", () => {
+    expect(cleanOscTitle("~")).toBe("");
+    expect(cleanOscTitle("~/")).toBe("");
   });
 
   it("keeps subcommands but strips flags", () => {

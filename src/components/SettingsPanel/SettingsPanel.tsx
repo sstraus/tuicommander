@@ -1,5 +1,6 @@
 import { Component, Show, createEffect, createSignal } from "solid-js";
 import { repoSettingsStore, type RepoSettings } from "../../stores/repoSettings";
+import { repositoriesStore } from "../../stores/repositories";
 import { SettingsShell } from "./SettingsShell";
 import type { SettingsShellTab } from "./SettingsShell";
 import { DictationSettings } from "./DictationSettings";
@@ -74,8 +75,11 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
 
   const updateRepoSetting = <K extends keyof RepoSettings>(key: K, value: RepoSettings[K]) => {
     const c = ctx();
-    if (c.kind === "repo") {
-      repoSettingsStore.update(c.repoPath, { [key]: value });
+    if (c.kind !== "repo") return;
+    repoSettingsStore.update(c.repoPath, { [key]: value });
+    // displayName lives in both stores — keep repositoriesStore in sync
+    if (key === "displayName") {
+      repositoriesStore.setDisplayName(c.repoPath, value as string);
     }
   };
 
