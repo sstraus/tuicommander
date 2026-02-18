@@ -189,23 +189,22 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
             behind={github.status()!.behind}
             onClick={() => setShowBranchPopover(true)}
           />
-          <Show when={github.status()!.pr_status}>
+          <Show when={activePrData()}>
             <PrBadge
-              number={github.status()!.pr_status!.number}
-              title={github.status()!.pr_status!.title}
-              state={github.status()!.pr_status!.state}
-              mergeable={activePrData()?.mergeable}
-              mergeStateStatus={activePrData()?.merge_state_status}
+              number={activePrData()!.number}
+              title={activePrData()!.title}
+              state={activePrData()!.state}
+              mergeable={activePrData()!.mergeable}
+              mergeStateStatus={activePrData()!.merge_state_status}
               onClick={() => setShowPrDetailPopover(true)}
             />
           </Show>
-          {/* Show terminal-detected PR if no GitHub API PR and we have terminal detection */}
-          <Show when={github.status()!.ci_status}>
+          <Show when={activePrData()?.checks?.total}>
             <span onClick={handleCiBadgeClick} style={{ cursor: "pointer" }}>
               <CiBadge
-                status={github.status()!.ci_status!.status}
-                conclusion={github.status()!.ci_status!.conclusion}
-                workflowName={github.status()!.ci_status!.workflow_name}
+                status={activePrData()!.checks.failed > 0 ? "completed" : activePrData()!.checks.pending > 0 ? "in_progress" : "completed"}
+                conclusion={activePrData()!.checks.failed > 0 ? "failure" : activePrData()!.checks.pending > 0 ? null : "success"}
+                workflowName="CI"
               />
             </span>
           </Show>

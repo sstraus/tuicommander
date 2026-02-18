@@ -95,30 +95,13 @@ pub(crate) fn graphql_request(
     Ok(json)
 }
 
-/// GitHub integration types
+/// Git remote + branch status (no PR/CI — those come from githubStore via batch query)
 #[derive(Clone, Serialize)]
 pub(crate) struct GitHubStatus {
     has_remote: bool,
     current_branch: String,
-    pr_status: Option<PrStatus>,
-    ci_status: Option<CiStatus>,
     ahead: i32,
     behind: i32,
-}
-
-#[derive(Clone, Serialize)]
-pub(crate) struct PrStatus {
-    number: i32,
-    title: String,
-    state: String, // "OPEN", "MERGED", "CLOSED"
-    url: String,
-}
-
-#[derive(Clone, Serialize)]
-pub(crate) struct CiStatus {
-    status: String, // "success", "failure", "pending", "queued"
-    conclusion: Option<String>,
-    workflow_name: String,
 }
 
 /// Summary of CI check states for a PR
@@ -594,21 +577,14 @@ pub(crate) fn get_repo_pr_statuses(state: State<'_, Arc<AppState>>, path: String
     statuses
 }
 
-/// Get GitHub status for a repository
+/// Get git remote + branch status for a repository.
+/// PR and CI data now comes from the batch githubStore (GraphQL),
+/// so this only returns has_remote, current_branch, ahead, and behind.
 #[tauri::command]
 pub(crate) fn get_github_status(path: String) -> GitHubStatus {
     let repo_path = PathBuf::from(&path);
 
-    // Check if repo has GitHub remote
-    let remote_output = Command::new("git")
-        .current_dir(&repo_path)
-        .args(["remote", "get-url", "origin"])
-        .output();
-
-    let has_remote = remote_output
-        .as_ref()
-        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("github.com"))
-        .unwrap_or(false);
+    let has_remote = get_github_remote_url(&repo_path).is_some();
 
     // Get current branch
     let current_branch = Command::new("git")
@@ -629,8 +605,6 @@ pub(crate) fn get_github_status(path: String) -> GitHubStatus {
         return GitHubStatus {
             has_remote: false,
             current_branch,
-            pr_status: None,
-            ci_status: None,
             ahead: 0,
             behind: 0,
         };
@@ -656,56 +630,9 @@ pub(crate) fn get_github_status(path: String) -> GitHubStatus {
         })
         .unwrap_or((0, 0));
 
-    // Get PR status using gh CLI
-    let pr_status = Command::new("gh")
-        .current_dir(&repo_path)
-        .args(["pr", "view", "--json", "number,title,state,url"])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                let json_str = String::from_utf8_lossy(&o.stdout);
-                serde_json::from_str::<serde_json::Value>(&json_str).ok().map(|v| {
-                    PrStatus {
-                        number: v["number"].as_i64().unwrap_or(0) as i32,
-                        title: v["title"].as_str().unwrap_or("").to_string(),
-                        state: v["state"].as_str().unwrap_or("").to_string(),
-                        url: v["url"].as_str().unwrap_or("").to_string(),
-                    }
-                })
-            } else {
-                None
-            }
-        });
-
-    // Get CI status using gh CLI
-    let ci_status = Command::new("gh")
-        .current_dir(&repo_path)
-        .args(["run", "list", "--branch", &current_branch, "--limit", "1", "--json", "status,conclusion,workflowName"])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                let json_str = String::from_utf8_lossy(&o.stdout);
-                serde_json::from_str::<Vec<serde_json::Value>>(&json_str).ok().and_then(|arr| {
-                    arr.first().map(|v| {
-                        CiStatus {
-                            status: v["status"].as_str().unwrap_or("").to_string(),
-                            conclusion: v["conclusion"].as_str().map(std::string::ToString::to_string),
-                            workflow_name: v["workflowName"].as_str().unwrap_or("").to_string(),
-                        }
-                    })
-                })
-            } else {
-                None
-            }
-        });
-
     GitHubStatus {
         has_remote,
         current_branch,
-        pr_status,
-        ci_status,
         ahead,
         behind,
     }

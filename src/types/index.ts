@@ -73,29 +73,12 @@ export interface IPty {
 export type PtyDataHandler = (data: PtyOutput) => void;
 export type PtyExitHandler = (data: PtyExit) => void;
 
-/** GitHub status information */
+/** Git remote + branch status (PR/CI data comes from githubStore via batch query) */
 export interface GitHubStatus {
   has_remote: boolean;
   current_branch: string;
-  pr_status: PrStatus | null;
-  ci_status: CiStatus | null;
   ahead: number;
   behind: number;
-}
-
-/** Pull request status */
-export interface PrStatus {
-  number: number;
-  title: string;
-  state: string;
-  url: string;
-}
-
-/** CI pipeline status */
-export interface CiStatus {
-  status: string;
-  conclusion: string | null;
-  workflow_name: string;
 }
 
 /** CI check summary counts */

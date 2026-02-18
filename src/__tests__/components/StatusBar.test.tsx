@@ -8,10 +8,12 @@ const {
   mockGitHubStatus,
   mockGitHubRefresh,
   mockGetActive,
+  mockGetBranchPrData,
 } = vi.hoisted(() => ({
   mockGitHubStatus: vi.fn<() => any>(() => null),
   mockGitHubRefresh: vi.fn(),
   mockGetActive: vi.fn<() => any>(() => null),
+  mockGetBranchPrData: vi.fn<() => any>(() => null),
 }));
 
 vi.mock("../../hooks/useGitHub", () => ({
@@ -39,7 +41,7 @@ vi.mock("../../hooks/useRepository", () => ({
 
 vi.mock("../../stores/github", () => ({
   githubStore: {
-    getBranchPrData: vi.fn(() => null),
+    getBranchPrData: mockGetBranchPrData,
     getCheckSummary: vi.fn(() => null),
     getCheckDetails: vi.fn(() => []),
   },
@@ -62,6 +64,34 @@ vi.mock("../../stores/dictation", () => ({
 }));
 
 import { StatusBar } from "../../components/StatusBar/StatusBar";
+
+/** Build a mock BranchPrStatus for testing */
+function makePrData(overrides: Record<string, unknown> = {}) {
+  return {
+    branch: "main",
+    number: 42,
+    title: "Fix bug",
+    state: "OPEN",
+    url: "https://github.com/test/pr/42",
+    additions: 10,
+    deletions: 5,
+    checks: { passed: 3, failed: 0, pending: 0, total: 3 },
+    check_details: [],
+    author: "alice",
+    commits: 1,
+    mergeable: "MERGEABLE",
+    merge_state_status: "CLEAN",
+    review_decision: "APPROVED",
+    labels: [],
+    is_draft: false,
+    base_ref_name: "main",
+    created_at: "2025-01-01T00:00:00Z",
+    updated_at: "2025-01-02T00:00:00Z",
+    merge_state_label: null,
+    review_state_label: null,
+    ...overrides,
+  };
+}
 
 /** Find the CI badge wrapper span (the one with the onClick handler) */
 function findCiBadgeWrapper(container: HTMLElement): HTMLElement {
@@ -86,6 +116,7 @@ describe("StatusBar", () => {
     vi.clearAllMocks();
     mockGitHubStatus.mockReturnValue(null);
     mockGetActive.mockReturnValue(null);
+    mockGetBranchPrData.mockReturnValue(null);
     mockDictationState.enabled = false;
     mockDictationState.recording = false;
     mockDictationState.processing = false;
@@ -152,47 +183,46 @@ describe("StatusBar", () => {
       current_branch: "feature/test",
       ahead: 2,
       behind: 1,
-      pr_status: null,
-      ci_status: null,
     });
     const { container } = render(() => <StatusBar {...defaultProps} />);
     const githubStatus = container.querySelector("#github-status");
     expect(githubStatus).not.toBeNull();
-    // BranchBadge renders a StatusBadge with branch name
     const badge = githubStatus!.querySelector(".status-badge");
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toContain("feature/test");
-    // Should show ahead/behind counts
     expect(badge!.textContent).toContain("\u21912");
     expect(badge!.textContent).toContain("\u21931");
   });
 
-  it("shows PrBadge when pr_status exists", () => {
+  it("shows PrBadge when githubStore has PR data for active branch", () => {
     mockGitHubStatus.mockReturnValue({
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: { number: 42, title: "Fix bug", state: "open", url: "https://github.com/test/pr/42" },
-      ci_status: null,
     });
-    const { container } = render(() => <StatusBar {...defaultProps} />);
+    mockGetBranchPrData.mockReturnValue(makePrData());
+    const { container } = render(() => (
+      <StatusBar {...defaultProps} currentRepoPath="/repo" />
+    ));
     const githubStatus = container.querySelector("#github-status");
     expect(githubStatus).not.toBeNull();
-    // PrBadge renders "PR #42"
     const badges = githubStatus!.querySelectorAll(".status-badge");
     const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
     expect(prBadge).toBeDefined();
   });
 
-  it("shows CiBadge when ci_status exists", () => {
+  it("shows CiBadge when githubStore has checks with total > 0", () => {
     mockGitHubStatus.mockReturnValue({
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: { status: "completed", conclusion: "success", workflow_name: "CI" },
     });
-    const { container } = render(() => <StatusBar {...defaultProps} />);
+    mockGetBranchPrData.mockReturnValue(makePrData({
+      checks: { passed: 3, failed: 0, pending: 0, total: 3 },
+    }));
+    const { container } = render(() => (
+      <StatusBar {...defaultProps} currentRepoPath="/repo" />
+    ));
     const githubStatus = container.querySelector("#github-status");
     expect(githubStatus).not.toBeNull();
     const badges = githubStatus!.querySelectorAll(".status-badge");
@@ -205,9 +235,10 @@ describe("StatusBar", () => {
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: { status: "completed", conclusion: "success", workflow_name: "CI" },
     });
+    mockGetBranchPrData.mockReturnValue(makePrData({
+      checks: { passed: 3, failed: 0, pending: 0, total: 3 },
+    }));
     mockInvoke.mockResolvedValue([
       { name: "Build", status: "completed", conclusion: "success", html_url: "https://example.com/1" },
       { name: "Test", status: "completed", conclusion: "failure", html_url: "https://example.com/2" },
@@ -216,17 +247,14 @@ describe("StatusBar", () => {
       <StatusBar {...defaultProps} currentRepoPath="/repo" />
     ));
 
-    // Find the CI badge wrapper and click it
     const ciBadge = findCiBadgeWrapper(container);
     fireEvent.click(ciBadge);
 
-    // CI popover should appear
     await waitFor(() => {
       const popover = container.querySelector(".ci-popover");
       expect(popover).not.toBeNull();
     });
 
-    // Should show CI Checks header
     const header = container.querySelector(".ci-popover-header h4");
     expect(header).not.toBeNull();
     expect(header!.textContent).toBe("CI Checks");
@@ -237,9 +265,10 @@ describe("StatusBar", () => {
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: { status: "completed", conclusion: "success", workflow_name: "CI" },
     });
+    mockGetBranchPrData.mockReturnValue(makePrData({
+      checks: { passed: 3, failed: 0, pending: 0, total: 3 },
+    }));
     mockInvoke.mockResolvedValue([
       { name: "Build", status: "completed", conclusion: "success", html_url: "https://example.com/1" },
       { name: "Test", status: "completed", conclusion: "failure", html_url: "https://example.com/2" },
@@ -248,7 +277,6 @@ describe("StatusBar", () => {
       <StatusBar {...defaultProps} currentRepoPath="/repo" />
     ));
 
-    // Click CI badge to open popover
     const ciBadge = findCiBadgeWrapper(container);
     fireEvent.click(ciBadge);
 
@@ -257,17 +285,14 @@ describe("StatusBar", () => {
       expect(checkItems.length).toBe(2);
     });
 
-    // Verify check details
     const checkNames = container.querySelectorAll(".ci-check-name");
     expect(checkNames[0].textContent).toBe("Build");
     expect(checkNames[1].textContent).toBe("Test");
 
-    // Verify icons: success = checkmark, failure = cross
     const checkIcons = container.querySelectorAll(".ci-check-icon");
     expect(checkIcons[0].textContent).toBe("\u2713");
     expect(checkIcons[1].textContent).toBe("\u2717");
 
-    // Verify CSS classes
     expect(checkIcons[0].classList.contains("success")).toBe(true);
     expect(checkIcons[1].classList.contains("failure")).toBe(true);
   });
@@ -277,9 +302,10 @@ describe("StatusBar", () => {
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: { status: "completed", conclusion: "success", workflow_name: "CI" },
     });
+    mockGetBranchPrData.mockReturnValue(makePrData({
+      checks: { passed: 1, failed: 0, pending: 0, total: 1 },
+    }));
     mockInvoke.mockResolvedValue([]);
     const { container } = render(() => (
       <StatusBar {...defaultProps} currentRepoPath="/repo" />
@@ -300,9 +326,10 @@ describe("StatusBar", () => {
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: { status: "completed", conclusion: "success", workflow_name: "CI" },
     });
+    mockGetBranchPrData.mockReturnValue(makePrData({
+      checks: { passed: 1, failed: 0, pending: 0, total: 1 },
+    }));
     mockInvoke.mockResolvedValue([]);
     const { container } = render(() => (
       <StatusBar {...defaultProps} currentRepoPath="/repo" />
@@ -329,9 +356,10 @@ describe("StatusBar", () => {
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: { status: "completed", conclusion: "success", workflow_name: "CI" },
     });
+    mockGetBranchPrData.mockReturnValue(makePrData({
+      checks: { passed: 1, failed: 0, pending: 0, total: 1 },
+    }));
     mockInvoke.mockResolvedValue([]);
     const { container } = render(() => (
       <StatusBar {...defaultProps} currentRepoPath="/repo" />
@@ -358,10 +386,10 @@ describe("StatusBar", () => {
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: { status: "completed", conclusion: "failure", workflow_name: "CI" },
     });
-    // Simulate invoke failure
+    mockGetBranchPrData.mockReturnValue(makePrData({
+      checks: { passed: 0, failed: 1, pending: 0, total: 1 },
+    }));
     mockInvoke.mockRejectedValue(new Error("Network error"));
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { container } = render(() => (
@@ -381,27 +409,23 @@ describe("StatusBar", () => {
     consoleSpy.mockRestore();
   });
 
-  it("does not fetch CI checks when no currentRepoPath", async () => {
+  it("does not render CI badge when no currentRepoPath", () => {
     mockGitHubStatus.mockReturnValue({
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: { status: "completed", conclusion: "success", workflow_name: "CI" },
     });
+    // Even if githubStore has PR data, without currentRepoPath the activePrData memo returns null
+    mockGetBranchPrData.mockReturnValue(makePrData({
+      checks: { passed: 1, failed: 0, pending: 0, total: 1 },
+    }));
     const { container } = render(() => (
       <StatusBar {...defaultProps} />
     ));
 
-    const ciBadge = findCiBadgeWrapper(container);
-    fireEvent.click(ciBadge);
-
-    // Should open popover but not call invoke (no repo path)
-    await waitFor(() => {
-      expect(container.querySelector(".ci-popover")).not.toBeNull();
-    });
-    // invoke should not have been called for get_ci_checks
-    expect(mockInvoke).not.toHaveBeenCalledWith("get_ci_checks", expect.anything());
+    const badges = container.querySelectorAll("#github-status .status-badge");
+    const ciBadge = Array.from(badges).find((b) => b.textContent?.includes("CI"));
+    expect(ciBadge).toBeUndefined();
   });
 
   it("shows BranchPopover when BranchBadge is clicked", () => {
@@ -409,19 +433,15 @@ describe("StatusBar", () => {
       current_branch: "feature/test",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: null,
     });
     const { container } = render(() => (
       <StatusBar {...defaultProps} currentRepoPath="/repo" />
     ));
 
-    // Click on the branch badge
     const branchBadge = container.querySelector("#github-status .status-badge");
     expect(branchBadge).not.toBeNull();
     fireEvent.click(branchBadge!);
 
-    // BranchPopover should appear
     const popover = container.querySelector(".branch-popover");
     expect(popover).not.toBeNull();
   });
@@ -431,10 +451,13 @@ describe("StatusBar", () => {
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: { status: "completed", conclusion: "failure", workflow_name: "Tests" },
     });
-    const { container } = render(() => <StatusBar {...defaultProps} />);
+    mockGetBranchPrData.mockReturnValue(makePrData({
+      checks: { passed: 2, failed: 1, pending: 0, total: 3 },
+    }));
+    const { container } = render(() => (
+      <StatusBar {...defaultProps} currentRepoPath="/repo" />
+    ));
     const badges = container.querySelectorAll(".status-badge");
     const ciBadge = Array.from(badges).find((b) => b.textContent?.includes("CI failed"));
     expect(ciBadge).toBeDefined();
@@ -445,8 +468,6 @@ describe("StatusBar", () => {
       current_branch: "develop",
       ahead: 3,
       behind: 0,
-      pr_status: null,
-      ci_status: null,
     });
     const { container } = render(() => <StatusBar {...defaultProps} />);
     const badge = container.querySelector("#github-status .status-badge");
@@ -460,9 +481,10 @@ describe("StatusBar", () => {
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: { status: "in_progress", conclusion: "pending", workflow_name: "CI" },
     });
+    mockGetBranchPrData.mockReturnValue(makePrData({
+      checks: { passed: 0, failed: 0, pending: 1, total: 1 },
+    }));
     mockInvoke.mockResolvedValue([
       { name: "Lint", status: "in_progress", conclusion: "pending", html_url: "" },
     ]);
@@ -489,19 +511,19 @@ describe("StatusBar", () => {
     expect(hints.length).toBe(2);
   });
 
-  it("opens PR detail popover when PrBadge is clicked (github API)", () => {
+  it("opens PR detail popover when PrBadge is clicked", () => {
     mockGitHubStatus.mockReturnValue({
       current_branch: "main",
       ahead: 0,
       behind: 0,
-      pr_status: { number: 42, title: "Fix bug", state: "open", url: "https://github.com/test/pr/42" },
-      ci_status: null,
     });
-    const { container } = render(() => <StatusBar {...defaultProps} />);
+    mockGetBranchPrData.mockReturnValue(makePrData());
+    const { container } = render(() => (
+      <StatusBar {...defaultProps} currentRepoPath="/repo" />
+    ));
     const badges = container.querySelectorAll(".status-badge");
     const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"))!;
     fireEvent.click(prBadge);
-    // PrDetailPopover should open
     const popover = container.querySelector(".pr-detail-popover");
     expect(popover).not.toBeNull();
   });
@@ -511,26 +533,21 @@ describe("StatusBar", () => {
       current_branch: "feature/old",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: null,
     });
     const onBranchRenamed = vi.fn();
     const { container } = render(() => (
       <StatusBar {...defaultProps} currentRepoPath="/repo" onBranchRenamed={onBranchRenamed} />
     ));
 
-    // Open branch popover
     const branchBadge = container.querySelector("#github-status .status-badge")!;
     fireEvent.click(branchBadge);
 
     const popover = container.querySelector(".branch-popover");
     expect(popover).not.toBeNull();
 
-    // Type new branch name
     const input = popover!.querySelector("input")!;
     fireEvent.input(input, { target: { value: "feature/new" } });
 
-    // Click rename button
     const renameBtn = popover!.querySelector(".branch-popover-rename")!;
     fireEvent.click(renameBtn);
 
@@ -594,14 +611,10 @@ describe("StatusBar", () => {
       current_branch: "feature/test",
       ahead: 0,
       behind: 0,
-      pr_status: null,
-      ci_status: null,
     });
-    // No currentRepoPath passed - should use null for repoPath
     const { container } = render(() => (
       <StatusBar {...defaultProps} />
     ));
-    // Open branch popover
     const branchBadge = container.querySelector("#github-status .status-badge")!;
     fireEvent.click(branchBadge);
 
