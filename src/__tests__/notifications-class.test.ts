@@ -130,9 +130,12 @@ describe("NotificationManager", () => {
     });
 
     it("rate limits: does nothing within 500ms of last play for same sound", async () => {
+      // "question" sound has 2 notes, so each play() calls createOscillator twice
+      const notesPerPlay = 2;
+
       // Start first play (sets lastPlayTime to current fake time)
       const firstPlay = manager.play("question");
-      expect(mockAudioContext.createOscillator).toHaveBeenCalledTimes(1);
+      expect(mockAudioContext.createOscillator).toHaveBeenCalledTimes(notesPerPlay);
 
       // Immediately try again at the same fake time - should be rate-limited
       vi.clearAllMocks();
@@ -148,7 +151,7 @@ describe("NotificationManager", () => {
       vi.advanceTimersByTime(501);
       vi.clearAllMocks();
       await playAndFlush(manager, "question");
-      expect(mockAudioContext.createOscillator).toHaveBeenCalledTimes(1);
+      expect(mockAudioContext.createOscillator).toHaveBeenCalledTimes(notesPerPlay);
     });
 
     it("does not throw on invalid tone URL", async () => {

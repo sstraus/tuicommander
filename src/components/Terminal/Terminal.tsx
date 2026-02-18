@@ -48,16 +48,28 @@ export const FONT_FAMILIES: Record<string, string> = {
   Hack: '"Hack", monospace',
 };
 
+/** Shell control flow pattern — titles containing these are cryptic scripts, not useful names */
+const SHELL_SCRIPT_RE = /;|&&|\|\||\$\(|\bif\b|\bthen\b|\belse\b|\belif\b|\bfi\b|\bfor\b|\bwhile\b|\bdo\b|\bdone\b|\bcase\b|\besac\b/;
+
 /** Clean an OSC 0/2 title: strip user@host prefix, env var assignments, and command args.
- *  Returns empty string if the title is only a user@host pattern (no useful info). */
+ *  Returns empty string if the title is only a user@host pattern (no useful info),
+ *  or if it looks like a shell script (compound commands, control flow). */
 export function cleanOscTitle(title: string): string {
+  // Reject titles that look like shell scripts before any processing
+  if (SHELL_SCRIPT_RE.test(title)) return "";
+
   // Strip "user@host:" or bare "user@host" prefix
   let cleaned = title.replace(/^[^@\s]+@[^:\s]+(:\s*)?/, "");
-  // Strip leading env var assignments (KEY=value pairs)
-  cleaned = cleaned.replace(/^(\s*\w+=\S+\s+)+/, "");
+  // Strip leading env var assignments (KEY=value pairs, including empty values)
+  cleaned = cleaned.replace(/^(\s*\w+=\S*\s+)+/, "");
   cleaned = cleaned.trim();
+  // Paths: extract last segment (status bar shows the full path)
+  if (cleaned.startsWith("/") || cleaned.startsWith("~")) {
+    const basename = cleaned.replace(/\/+$/, "").split("/").pop() || "";
+    return basename === "~" ? "~" : basename;
+  }
   // Strip flags and their values, keep command + subcommands (bare words before first flag)
-  if (cleaned && !cleaned.startsWith("/") && !cleaned.startsWith("~")) {
+  if (cleaned) {
     const words = cleaned.split(/\s+/);
     const kept: string[] = [];
     for (const w of words) {

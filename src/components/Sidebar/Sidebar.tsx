@@ -127,7 +127,7 @@ const RepoSection: Component<{
   return (
     <div class={`repo-section ${props.repo.collapsed ? "collapsed" : ""}`}>
       {/* Repo header */}
-      <div class="repo-header" onClick={props.onToggle}>
+      <div class="repo-header" onClick={props.onToggle} onContextMenu={repoMenu.open}>
         <Show when={props.repo.collapsed}>
           <span
             class="repo-initials"

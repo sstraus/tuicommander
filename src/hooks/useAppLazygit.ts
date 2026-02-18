@@ -28,6 +28,9 @@ export function useAppLazygit(deps: AppLazygitDeps) {
     const active = terminalsStore.getActive();
     if (!active?.ref) return;
 
+    // Set tab name before writing — the complex shell one-liner would pollute the OSC title
+    terminalsStore.update(active.id, { name: "lazygit", nameIsCustom: true });
+
     const repoPath = deps.getCurrentRepoPath();
     if (repoPath && isValidPath(repoPath)) {
       active.ref.write(`${buildLazygitCmd(repoPath)}\r`);

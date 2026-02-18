@@ -151,8 +151,8 @@ describe("validateBranchName", () => {
 });
 
 describe("cleanOscTitle", () => {
-  it("strips user@host: prefix", () => {
-    expect(cleanOscTitle("user@myhost:~/projects")).toBe("~/projects");
+  it("strips user@host: prefix and extracts basename from path", () => {
+    expect(cleanOscTitle("user@myhost:~/projects")).toBe("projects");
   });
 
   it("strips single env var assignment", () => {
@@ -175,8 +175,15 @@ describe("cleanOscTitle", () => {
     expect(cleanOscTitle("user@host npm start")).toBe("npm start");
   });
 
-  it("leaves path-only titles unchanged", () => {
-    expect(cleanOscTitle("~/projects/foo")).toBe("~/projects/foo");
+  it("extracts basename from path titles", () => {
+    expect(cleanOscTitle("~/projects/foo")).toBe("foo");
+    expect(cleanOscTitle("/Users/me/projects/bar")).toBe("bar");
+    expect(cleanOscTitle("~/Gits/CC_Playground/abrowser")).toBe("abrowser");
+  });
+
+  it("returns ~ for home directory", () => {
+    expect(cleanOscTitle("~")).toBe("~");
+    expect(cleanOscTitle("~/")).toBe("~");
   });
 
   it("keeps subcommands but strips flags", () => {
@@ -205,5 +212,36 @@ describe("cleanOscTitle", () => {
 
   it("handles env var with path value", () => {
     expect(cleanOscTitle("PATH=/usr/bin:/bin node server.js")).toBe("node server.js");
+  });
+
+  it("rejects compound commands with semicolons", () => {
+    expect(cleanOscTitle('cfg= ; if [ "$cfg" = "yml" ]; then lazygit')).toBe("");
+    expect(cleanOscTitle("cd /foo; make")).toBe("");
+  });
+
+  it("rejects commands with && or ||", () => {
+    expect(cleanOscTitle("test -f file && echo yes")).toBe("");
+    expect(cleanOscTitle("cmd1 || cmd2")).toBe("");
+  });
+
+  it("rejects shell control flow keywords", () => {
+    expect(cleanOscTitle("if test -f foo")).toBe("");
+    expect(cleanOscTitle("for f in *.txt")).toBe("");
+    expect(cleanOscTitle("while true")).toBe("");
+    expect(cleanOscTitle("case $x in")).toBe("");
+  });
+
+  it("rejects subshell expressions", () => {
+    expect(cleanOscTitle("echo $(whoami)")).toBe("");
+  });
+
+  it("does not reject commands containing keyword substrings", () => {
+    expect(cleanOscTitle("docker compose up")).toBe("docker compose up");
+    expect(cleanOscTitle("ifort build.f90")).toBe("ifort build.f90");
+    expect(cleanOscTitle("terraform apply")).toBe("terraform apply");
+  });
+
+  it("strips env vars with empty values", () => {
+    expect(cleanOscTitle("FOO= bar")).toBe("bar");
   });
 });

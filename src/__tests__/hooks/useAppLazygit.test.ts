@@ -88,6 +88,27 @@ describe("useAppLazygit", () => {
       expect(mockWrite).toHaveBeenCalledWith("lazygit\r");
     });
 
+    it("sets tab name to lazygit with nameIsCustom before writing command", () => {
+      const mockWrite = vi.fn();
+      const id = terminalsStore.add({
+        sessionId: null,
+        fontSize: 14,
+        name: "Original",
+        cwd: null,
+        awaitingInput: null,
+      });
+      terminalsStore.setActive(id);
+      terminalsStore.update(id, {
+        ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), focus: vi.fn(), getSessionId: vi.fn() },
+      });
+
+      lazygit.spawnLazygit();
+
+      const term = terminalsStore.get(id);
+      expect(term?.name).toBe("lazygit");
+      expect(term?.nameIsCustom).toBe(true);
+    });
+
     it("does nothing when no active terminal", () => {
       lazygit.spawnLazygit();
       // No error thrown

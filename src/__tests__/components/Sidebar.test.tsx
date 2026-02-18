@@ -424,6 +424,20 @@ describe("Sidebar", () => {
       expect(container.querySelector(".context-menu")).toBeNull();
     });
 
+    it("repo header right-click opens context menu with Settings and Remove options", () => {
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const header = container.querySelector(".repo-header")!;
+      fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
+
+      const menu = container.querySelector(".context-menu");
+      expect(menu).not.toBeNull();
+
+      const menuItems = menu!.querySelectorAll(".context-menu-item");
+      expect(menuItems.length).toBe(2);
+      expect(menuItems[0].textContent).toContain("Repo Settings");
+      expect(menuItems[1].textContent).toContain("Remove Repository");
+    });
+
     it("repo header click calls toggleExpanded", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       const header = container.querySelector(".repo-header")!;

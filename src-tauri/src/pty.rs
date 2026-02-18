@@ -32,6 +32,10 @@ pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
     // Login shell flag is Unix-only; PowerShell/cmd.exe don't support -l
     #[cfg(not(windows))]
     cmd.arg("-l");
+    // Prevent macOS from sourcing /etc/zshrc_Apple_Terminal which prints
+    // a spurious "Restored session:" message on every new shell
+    #[cfg(target_os = "macos")]
+    cmd.env("TERM_PROGRAM", "tui-commander");
     cmd
 }
 

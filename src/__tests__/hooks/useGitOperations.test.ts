@@ -73,15 +73,27 @@ describe("useGitOperations", () => {
       expect(gitOps.currentBranch()).toBe("main");
     });
 
-    it("creates terminal when branch has none", async () => {
+    it("auto-spawns terminal on first branch select", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt" });
 
       await gitOps.handleBranchSelect("/repo", "feature");
 
-      // Should have created a terminal via handleAddTerminalToBranch
+      // First time → should auto-create a terminal
       const branch = repositoriesStore.get("/repo")?.branches["feature"];
       expect(branch?.terminals.length).toBeGreaterThan(0);
+      expect(branch?.hadTerminals).toBe(true);
+    });
+
+    it("does not auto-spawn after user closed all terminals", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt", hadTerminals: true });
+
+      await gitOps.handleBranchSelect("/repo", "feature");
+
+      // hadTerminals is true but no live terminals → show empty state, no spawn
+      const branch = repositoriesStore.get("/repo")?.branches["feature"];
+      expect(branch?.terminals.length).toBe(0);
     });
 
     it("activates existing terminal when branch has one", async () => {

@@ -9,6 +9,7 @@ export interface BranchState {
   isMain: boolean; // true for main/master/develop
   worktreePath: string | null; // Path to worktree directory (null for main branch)
   terminals: string[]; // terminal IDs belonging to this branch
+  hadTerminals: boolean; // true once a terminal has been created — suppresses auto-spawn after close-all
   additions: number;
   deletions: number;
   runCommand?: string; // Saved run command for this branch
@@ -98,6 +99,9 @@ function createRepositoriesStore() {
             }
             for (const branch of Object.values(repo.branches)) {
               branch.terminals = [];
+              if (branch.hadTerminals === undefined) {
+                branch.hadTerminals = false;
+              }
             }
           });
           setState("repositories", loaded.repos);
@@ -165,6 +169,7 @@ function createRepositoriesStore() {
           isMain: isMainBranch(branchName),
           worktreePath: null,
           terminals: [],
+          hadTerminals: false,
           additions: 0,
           deletions: 0,
           ...data,
@@ -183,6 +188,9 @@ function createRepositoriesStore() {
       const branch = state.repositories[repoPath]?.branches[branchName];
       if (branch && !branch.terminals.includes(terminalId)) {
         setState("repositories", repoPath, "branches", branchName, "terminals", (t) => [...t, terminalId]);
+        if (!branch.hadTerminals) {
+          setState("repositories", repoPath, "branches", branchName, "hadTerminals", true);
+        }
         saveRepos(state.repositories);
       }
     },

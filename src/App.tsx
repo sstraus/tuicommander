@@ -221,10 +221,36 @@ const App: Component = () => {
   };
 
   // Context menu items
+  const isSplit = () => terminalsStore.state.layout.direction !== "none" && terminalsStore.state.layout.panes.length === 2;
+
   const getContextMenuItems = (): ContextMenuItem[] => [
     { label: "Copy", shortcut: `${getModifierSymbol()}C`, action: terminalLifecycle.copyFromTerminal },
     { label: "Paste", shortcut: `${getModifierSymbol()}V`, action: terminalLifecycle.pasteToTerminal },
-    { label: "Clear", shortcut: `${getModifierSymbol()}L`, action: terminalLifecycle.clearTerminal, separator: true },
+    { label: "Split Right", shortcut: `${getModifierSymbol()}\\`, action: () => splitPanes.handleSplit("vertical"), disabled: isSplit() },
+    { label: "Split Left", action: () => splitPanes.handleSplit("vertical"), disabled: isSplit() },
+    { label: "Split Down", shortcut: `${getModifierSymbol()}${"\u2325"}\\`, action: () => splitPanes.handleSplit("horizontal"), disabled: isSplit() },
+    { label: "Split Up", action: () => splitPanes.handleSplit("horizontal"), disabled: isSplit(), separator: true },
+    { label: "Clear", shortcut: `${getModifierSymbol()}L`, action: terminalLifecycle.clearTerminal },
+    {
+      label: "Reset Terminal",
+      action: () => {
+        const activeId = terminalsStore.state.activeId;
+        if (activeId) terminalsStore.get(activeId)?.ref?.write("\x1bc");
+      },
+    },
+    {
+      label: "Change Title\u2026",
+      action: () => {
+        const activeId = terminalsStore.state.activeId;
+        if (!activeId) return;
+        const current = terminalsStore.get(activeId)?.name || "";
+        const newName = window.prompt("Terminal title:", current);
+        if (newName != null && newName !== current) {
+          terminalsStore.update(activeId, { name: newName, nameIsCustom: true });
+        }
+      },
+      separator: true,
+    },
     ...(lazygit.lazygitAvailable() ? [{ label: "Open Lazygit", shortcut: `${getModifierSymbol()}G`, action: lazygit.spawnLazygit, separator: true }] : []),
     {
       label: "Close Terminal",

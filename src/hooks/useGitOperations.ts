@@ -115,11 +115,13 @@ export function useGitOperations(deps: GitOperationsDeps) {
     const branch = repositoriesStore.get(repoPath)?.branches[branchName];
     const validTerminals = filterValidTerminals(branch?.terminals, terminalsStore.getIds());
 
-    if (validTerminals.length === 0) {
-      await handleAddTerminalToBranch(repoPath, branchName);
-    } else {
+    if (validTerminals.length > 0) {
       terminalsStore.setActive(validTerminals[0]);
+    } else if (!branch?.hadTerminals) {
+      // First time selecting this branch — auto-spawn a terminal
+      await handleAddTerminalToBranch(repoPath, branchName);
     }
+    // If hadTerminals && no valid terminals → user closed them all, show empty state
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
