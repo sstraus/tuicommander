@@ -187,6 +187,29 @@
   --text-on-error: #000000;
   --text-on-success: #000000;
 
+  /* Border radius scale */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-pill: 12px;
+  --radius-full: 50%;
+
+  /* Font size scale */
+  --font-2xs: 9px;
+  --font-xs: 10px;
+  --font-sm: 11px;
+  --font-md: 12px;
+  --font-base: 13px;
+  --font-lg: 14px;
+  --font-xl: 16px;
+
+  /* Elevation */
+  --shadow-popup: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-dropdown: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --shadow-bottom-anchor: 0 -4px 20px rgba(0, 0, 0, 0.4);
+
   --sidebar-width: 300px;
   --toolbar-height: 38px;
   --tab-bar-height: 33px;
