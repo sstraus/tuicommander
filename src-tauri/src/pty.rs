@@ -28,6 +28,7 @@ pub(crate) fn default_shell() -> String {
 
 /// Build a CommandBuilder for the given shell with platform-appropriate flags.
 pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
+    #[allow(unused_mut)]
     let mut cmd = CommandBuilder::new(shell);
     // Login shell flag is Unix-only; PowerShell/cmd.exe don't support -l
     #[cfg(not(windows))]
@@ -589,9 +590,17 @@ pub(crate) fn get_session_foreground_process(
 ) -> Option<String> {
     let entry = state.sessions.get(&session_id)?;
     let session = entry.value().lock();
-    let pgid = session.master.process_group_leader()?;
-    let name = process_name_from_pid(pgid as u32)?;
-    classify_agent(&name).map(|s| s.to_string())
+    #[cfg(not(windows))]
+    {
+        let pgid = session.master.process_group_leader()?;
+        let name = process_name_from_pid(pgid as u32)?;
+        classify_agent(&name).map(|s| s.to_string())
+    }
+    #[cfg(windows)]
+    {
+        let _ = session;
+        None
+    }
 }
 
 /// Get orchestrator stats

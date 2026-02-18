@@ -297,9 +297,17 @@ pub(super) async fn get_foreground_process(
     let agent = (|| -> Option<String> {
         let entry = state.sessions.get(&session_id)?;
         let session = entry.value().lock();
-        let pgid = session.master.process_group_leader()?;
-        let name = crate::pty::process_name_from_pid(pgid as u32)?;
-        crate::pty::classify_agent(&name).map(|s| s.to_string())
+        #[cfg(not(windows))]
+        {
+            let pgid = session.master.process_group_leader()?;
+            let name = crate::pty::process_name_from_pid(pgid as u32)?;
+            crate::pty::classify_agent(&name).map(|s| s.to_string())
+        }
+        #[cfg(windows)]
+        {
+            let _ = session;
+            None
+        }
     })();
 
     match agent {
