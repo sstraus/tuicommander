@@ -140,7 +140,7 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
     Ok(())
 }
 
-/// Adjective-animal worktree name generator (Story 063)
+/// Adjective + sci-fi character worktree name generator
 pub(crate) fn generate_worktree_name(existing: &[String]) -> String {
     let adjectives = [
         "brave", "calm", "dark", "eager", "fair", "glad", "happy", "keen",
@@ -150,12 +150,12 @@ pub(crate) fn generate_worktree_name(existing: &[String]) -> String {
         "pale", "red", "slim", "tidy", "ultra", "vivid", "wild", "zen",
     ];
 
-    let animals = [
-        "bear", "cat", "deer", "eagle", "fox", "goat", "hawk", "ibis",
-        "jay", "koala", "lion", "moose", "newt", "otter", "panda", "quail",
-        "robin", "seal", "tiger", "urchin", "viper", "wolf", "yak", "zebra",
-        "bat", "crab", "duck", "eel", "frog", "gull", "hare", "koi",
-        "lark", "mink", "owl", "pike", "ray", "swan", "toad", "wren",
+    let names = [
+        "neo", "ripley", "deckard", "morpheus", "trinity", "cypher", "nexus", "cortex",
+        "tron", "hal", "skynet", "muad", "atreides", "harkonnen", "seldon", "daneel",
+        "solaris", "neuro", "winter", "armitage", "molly", "case", "hiro", "kovacs",
+        "takeshi", "quell", "pris", "batty", "zhora", "gaff", "tyrell", "gibson",
+        "asimov", "vance", "rama", "ender", "bean", "valentine", "petra", "revan",
     ];
 
     // Simple PRNG using current time
@@ -166,9 +166,9 @@ pub(crate) fn generate_worktree_name(existing: &[String]) -> String {
 
     for attempt in 0..100u128 {
         let adj_idx = ((seed.wrapping_add(attempt.wrapping_mul(7))) % adjectives.len() as u128) as usize;
-        let animal_idx = ((seed.wrapping_add(attempt.wrapping_mul(13)).wrapping_add(3)) % animals.len() as u128) as usize;
+        let name_idx = ((seed.wrapping_add(attempt.wrapping_mul(13)).wrapping_add(3)) % names.len() as u128) as usize;
         let num = ((seed.wrapping_add(attempt.wrapping_mul(31))) % 1000) as u16;
-        let name = format!("{}-{}-{:03}", adjectives[adj_idx], animals[animal_idx], num);
+        let name = format!("{}-{}-{:03}", adjectives[adj_idx], names[name_idx], num);
         if !existing.contains(&name) {
             return name;
         }

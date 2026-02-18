@@ -626,7 +626,7 @@ html, body {
   font-size: var(--font-xs);
   font-weight: 600;
   font-family: var(--font-mono);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-pill);
   white-space: nowrap;
   cursor: pointer;
   flex-shrink: 0;
@@ -691,23 +691,23 @@ html, body {
   display: flex;
   flex-shrink: 0;
   gap: 4px;
-  width: 0;
+  max-width: 0;
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: width 0.15s ease, opacity 0.15s ease;
+  transition: max-width 0.15s ease, opacity 0.15s ease;
 }
 
 .branch-item:hover .branch-actions {
-  width: 22px;
+  max-width: 44px;
   opacity: 1;
   pointer-events: auto;
 }
 
 .branch-add-btn,
 .branch-remove-btn {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1649,7 +1649,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 0 6px;
   background: var(--accent);
   color: var(--text-on-accent);
-  border-radius: 9px;
+  border-radius: var(--radius-pill);
   font-size: var(--font-sm);
   font-weight: 600;
   line-height: 1;
@@ -2377,7 +2377,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   color: var(--fg-primary);
   font-size: var(--font-base);
 }
@@ -3268,7 +3268,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 6px 8px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   color: var(--fg-primary);
   font-size: var(--font-base);
 }
@@ -3391,7 +3391,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .branch-popover-content input {
   width: 100%;
-  padding: 10px 12px;
+  padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);

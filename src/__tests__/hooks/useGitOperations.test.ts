@@ -22,7 +22,7 @@ describe("useGitOperations", () => {
     removeWorktree: vi.fn().mockResolvedValue(undefined),
     createWorktree: vi.fn(),
     renameBranch: vi.fn().mockResolvedValue(undefined),
-    generateWorktreeName: vi.fn().mockResolvedValue("brave-bear-042"),
+    generateWorktreeName: vi.fn().mockResolvedValue("bold-nexus-042"),
   };
 
   const mockPty = {
@@ -351,11 +351,11 @@ describe("useGitOperations", () => {
     it("delegates name generation to backend", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
-      mockRepo.generateWorktreeName.mockResolvedValue("brave-bear-042");
+      mockRepo.generateWorktreeName.mockResolvedValue("bold-nexus-042");
       mockRepo.createWorktree.mockResolvedValue({
-        name: "brave-bear-042",
-        path: "/repo/.worktrees/brave-bear-042",
-        branch: "brave-bear-042",
+        name: "bold-nexus-042",
+        path: "/repo/.worktrees/bold-nexus-042",
+        branch: "bold-nexus-042",
         base_repo: "/repo",
       });
       mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
@@ -363,31 +363,31 @@ describe("useGitOperations", () => {
       await gitOps.handleAddWorktree("/repo");
 
       expect(mockRepo.generateWorktreeName).toHaveBeenCalledWith(["main"]);
-      expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "brave-bear-042");
-      expect(mockSetStatusInfo).toHaveBeenCalledWith("Created worktree brave-bear-042");
+      expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "bold-nexus-042");
+      expect(mockSetStatusInfo).toHaveBeenCalledWith("Created worktree bold-nexus-042");
     });
 
     it("passes existing branch names to name generator", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
       repositoriesStore.setBranch("/repo", "feature-1", { worktreePath: "/repo/wt1" });
-      mockRepo.generateWorktreeName.mockResolvedValue("calm-fox-007");
+      mockRepo.generateWorktreeName.mockResolvedValue("cool-ripley-007");
       mockRepo.createWorktree.mockResolvedValue({
-        name: "calm-fox-007",
-        path: "/repo/.worktrees/calm-fox-007",
-        branch: "calm-fox-007",
+        name: "cool-ripley-007",
+        path: "/repo/.worktrees/cool-ripley-007",
+        branch: "cool-ripley-007",
         base_repo: "/repo",
       });
 
       await gitOps.handleAddWorktree("/repo");
 
       expect(mockRepo.generateWorktreeName).toHaveBeenCalledWith(["main", "feature-1"]);
-      expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "calm-fox-007");
+      expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "cool-ripley-007");
     });
 
     it("reports error on worktree creation failure", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
-      mockRepo.generateWorktreeName.mockResolvedValue("brave-bear-042");
+      mockRepo.generateWorktreeName.mockResolvedValue("bold-nexus-042");
       mockRepo.createWorktree.mockRejectedValue(new Error("branch exists"));
 
       await gitOps.handleAddWorktree("/repo");
