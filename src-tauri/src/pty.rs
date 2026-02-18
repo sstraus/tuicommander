@@ -32,6 +32,9 @@ pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
     // Login shell flag is Unix-only; PowerShell/cmd.exe don't support -l
     #[cfg(not(windows))]
     cmd.arg("-l");
+    // Ensure color support: GUI-launched Tauri apps don't inherit TERM from a parent terminal
+    #[cfg(not(windows))]
+    cmd.env("TERM", "xterm-256color");
     // Prevent macOS from sourcing /etc/zshrc_Apple_Terminal which prints
     // a spurious "Restored session:" message on every new shell
     #[cfg(target_os = "macos")]
