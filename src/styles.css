@@ -584,6 +584,7 @@ html, body {
 }
 
 .branch-name {
+  display: block;
   font-size: var(--font-sm);
   font-weight: 500;
   color: var(--fg-secondary);

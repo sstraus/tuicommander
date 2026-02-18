@@ -257,7 +257,7 @@ const BranchItem: Component<{
         <span
           class="branch-name"
           onDblClick={handleDoubleClick}
-          title="Double-click to rename"
+          title={props.branch.name}
         >
           {props.branch.name}
         </span>
