@@ -14,6 +14,7 @@ import { compareBranches } from "../../utils/branchSort";
 
 export interface SidebarProps {
   quickSwitcherActive?: boolean;
+  creatingWorktreeRepos?: Set<string>;
   onBranchSelect: (repoPath: string, branchName: string) => void;
   onAddTerminal: (repoPath: string, branchName: string) => void;
   onRemoveBranch: (repoPath: string, branchName: string) => void;
@@ -85,6 +86,7 @@ const RepoSection: Component<{
   nameColor?: string;
   isDragging?: boolean;
   dragOverClass?: string;
+  isCreatingWorktree?: boolean;
   quickSwitcherActive?: boolean;
   branchShortcutStart: number;
   onBranchSelect: (branchName: string) => void;
@@ -167,13 +169,14 @@ const RepoSection: Component<{
               </button>
             <button
               class="repo-action-btn add-btn"
+              disabled={props.isCreatingWorktree}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onAddWorktree();
               }}
-              title="Add worktree"
+              title={props.isCreatingWorktree ? "Creating worktree…" : "Add worktree"}
             >
-              +
+              {props.isCreatingWorktree ? "…" : "+"}
             </button>
           </div>
           <span class={`repo-chevron ${props.repo.expanded ? "expanded" : ""}`}>{"\u203A"}</span>
@@ -482,6 +485,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   repo={repo}
                   nameColor={repoSettingsStore.get(repo.path)?.color || undefined}
                   isDragging={draggedRepoPath() === repo.path}
+                  isCreatingWorktree={props.creatingWorktreeRepos?.has(repo.path)}
                   dragOverClass={
                     dragOverRepoPath() === repo.path && draggedRepoPath() !== repo.path
                       ? `drag-over-${dragOverSide()}`

@@ -37,6 +37,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
   const [currentBranch, setCurrentBranch] = createSignal<string | null>(null);
   const [repoStatus, setRepoStatus] = createSignal<"clean" | "dirty" | "conflict" | "merge" | "unknown">("unknown");
   const [branchToRename, setBranchToRename] = createSignal<{ repoPath: string; branchName: string } | null>(null);
+  const [creatingWorktreeRepos, setCreatingWorktreeRepos] = createSignal<Set<string>>(new Set());
 
   const refreshAllBranchStats = async () => {
     await Promise.all(repositoriesStore.getPaths().map(async (repoPath) => {
@@ -265,6 +266,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
   };
 
   const handleAddWorktree = async (repoPath: string) => {
+    // Prevent concurrent creations for the same repo
+    if (creatingWorktreeRepos().has(repoPath)) return;
+
+    setCreatingWorktreeRepos((prev) => new Set([...prev, repoPath]));
+
     const repoState = repositoriesStore.get(repoPath);
     const existingBranches = repoState ? Object.keys(repoState.branches) : [];
 
@@ -288,6 +294,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
     } catch (err) {
       console.error("Failed to create worktree:", err);
       deps.setStatusInfo(`Failed to create worktree: ${err}`);
+    } finally {
+      setCreatingWorktreeRepos((prev) => {
+        const next = new Set(prev);
+        next.delete(repoPath);
+        return next;
+      });
     }
   };
 
@@ -382,6 +394,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     activeRunCommand,
     handleAddRepo,
     handleAddWorktree,
+    creatingWorktreeRepos,
     handleNewTab,
     handleRunCommand,
     executeRunCommand,

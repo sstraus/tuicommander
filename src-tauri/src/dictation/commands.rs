@@ -174,6 +174,7 @@ pub fn stop_dictation_and_transcribe(
         .take()
         .ok_or("No audio capture active")?;
     let audio_data = capture.stop();
+    eprintln!("[dictation] Captured {} samples ({:.1}s)", audio_data.len(), audio_data.len() as f64 / 16000.0);
 
     // Transcribe
     let transcriber_lock = dictation.transcriber.lock();
@@ -184,13 +185,16 @@ pub fn stop_dictation_and_transcribe(
     // Pass configured language (None = auto-detect if "auto")
     let config = get_dictation_config();
     let lang = if config.language == "auto" { None } else { Some(config.language.as_str()) };
+    eprintln!("[dictation] Language config: {:?}, using: {:?}", config.language, lang);
     let raw_text = transcriber.transcribe(&audio_data, lang)?;
+    eprintln!("[dictation] Transcribed text: {:?}", raw_text);
 
     // Apply corrections
     let corrected = dictation.corrections.lock().correct(&raw_text);
 
     // Replace newlines with spaces to prevent accidental command execution
     let final_text = corrected.replace('\n', " ");
+    eprintln!("[dictation] Final text to inject: {:?}", final_text);
 
     dictation.processing.store(false, Ordering::Relaxed);
 

@@ -478,6 +478,7 @@ const App: Component = () => {
             setRenameBranchDialogVisible(true);
           }}
           onAddWorktree={gitOps.handleAddWorktree}
+          creatingWorktreeRepos={gitOps.creatingWorktreeRepos()}
           onAddRepo={gitOps.handleAddRepo}
           onRepoSettings={(repoPath) => gitOps.handleRepoSettings(repoPath, (ctx) => {
             setSettingsContext(ctx);
