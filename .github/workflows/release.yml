@@ -15,10 +15,10 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
+            args: ''
             label: macOS-ARM
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
+          - platform: macos-13
+            args: ''
             label: macOS-Intel
           - platform: ubuntu-22.04
             args: ''
@@ -45,8 +45,6 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -57,7 +55,7 @@ jobs:
         run: npm ci
 
       - name: Import macOS signing certificate
-        if: matrix.platform == 'macos-latest'
+        if: startsWith(matrix.platform, 'macos-')
         env:
           DEVELOPER_ID_CERT_BASE64: ${{ secrets.DEVELOPER_ID_CERT_BASE64 }}
           DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
@@ -105,5 +103,5 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Cleanup macOS keychain
-        if: always() && matrix.platform == 'macos-latest'
+        if: always() && startsWith(matrix.platform, 'macos-')
         run: security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
