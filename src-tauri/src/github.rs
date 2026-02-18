@@ -487,39 +487,94 @@ pub(crate) fn parse_graphql_prs(response: &serde_json::Value) -> Vec<BranchPrSta
     nodes.iter().filter_map(|v| parse_pr_node(v)).collect()
 }
 
-/// Core logic for fetching PR statuses (no caching).
-pub(crate) fn get_repo_pr_statuses_impl(path: &str) -> Vec<BranchPrStatus> {
-    let repo_path = PathBuf::from(path);
+/// GraphQL query for batch PR data with CI check summary counts.
+/// Uses checkRunCountsByState for efficient aggregation (no per-check iteration).
+const BATCH_PR_QUERY: &str = r#"
+query RepoPRs($owner: String!, $repo: String!, $first: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequests(first: $first, states: [OPEN, CLOSED, MERGED],
+                 orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes {
+        number title state url headRefName baseRefName isDraft
+        additions deletions mergeable mergeStateStatus reviewDecision
+        createdAt updatedAt
+        author { login }
+        labels(first: 10) { nodes { name color } }
+        commits(last: 1) {
+          totalCount
+          nodes {
+            commit {
+              statusCheckRollup {
+                contexts {
+                  checkRunCountsByState { state count }
+                  statusContextCountsByState { state count }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"#;
 
-    // Check if repo has GitHub remote
-    let has_remote = Command::new("git")
-        .current_dir(&repo_path)
+/// Get the remote URL for a repo, if it has a GitHub origin.
+fn get_github_remote_url(repo_path: &PathBuf) -> Option<String> {
+    let output = Command::new("git")
+        .current_dir(repo_path)
         .args(["remote", "get-url", "origin"])
         .output()
-        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("github.com"))
-        .unwrap_or(false);
+        .ok()?;
 
-    if !has_remote {
-        return vec![];
+    if !output.status.success() {
+        return None;
     }
 
-    // Batch fetch all PRs (open, merged, closed) with CI rollup
-    let output = Command::new("gh")
-        .current_dir(&repo_path)
-        .args([
-            "pr", "list",
-            "--state", "all",
-            "--json", "number,title,state,url,headRefName,additions,deletions,statusCheckRollup,author,commits,mergeable,mergeStateStatus,reviewDecision,labels,isDraft,baseRefName,createdAt,updatedAt",
-            "--limit", "50",
-        ])
-        .output();
+    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if url.contains("github.com") {
+        Some(url)
+    } else {
+        None
+    }
+}
 
-    match output {
-        Ok(o) if o.status.success() => {
-            let json_str = String::from_utf8_lossy(&o.stdout);
-            parse_pr_list_json(&json_str)
+/// Core logic for fetching PR statuses via GitHub GraphQL API (no caching).
+pub(crate) fn get_repo_pr_statuses_impl(
+    path: &str,
+    client: &reqwest::blocking::Client,
+    token: Option<&str>,
+) -> Vec<BranchPrStatus> {
+    let repo_path = PathBuf::from(path);
+
+    let token = match token {
+        Some(t) => t,
+        None => return vec![], // No token = no GitHub API access
+    };
+
+    let remote_url = match get_github_remote_url(&repo_path) {
+        Some(url) => url,
+        None => return vec![],
+    };
+
+    let (owner, repo) = match parse_remote_url(&remote_url) {
+        Some(pair) => pair,
+        None => return vec![],
+    };
+
+    let variables = serde_json::json!({
+        "owner": owner,
+        "repo": repo,
+        "first": 50,
+    });
+
+    match graphql_request(client, token, BATCH_PR_QUERY, variables) {
+        Ok(response) => parse_graphql_prs(&response),
+        Err(e) => {
+            eprintln!("[github] GraphQL batch PR query failed: {e}");
+            vec![]
         }
-        _ => vec![],
     }
 }
 
@@ -530,7 +585,11 @@ pub(crate) fn get_repo_pr_statuses(state: State<'_, Arc<AppState>>, path: String
         return cached;
     }
 
-    let statuses = get_repo_pr_statuses_impl(&path);
+    let statuses = get_repo_pr_statuses_impl(
+        &path,
+        &state.http_client,
+        state.github_token.as_deref(),
+    );
     AppState::set_cached(&state.github_status_cache, path, statuses.clone());
     statuses
 }
