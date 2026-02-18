@@ -197,6 +197,15 @@ Features to test when TUI Commander is more usable.
 - [ ] Predefined Edit items (Copy/Paste/Undo/Redo) work correctly with native focus
 - [ ] HelpPanel shows note about system menu bar
 
+## Terminal Session Persistence
+- [ ] Open 2 repos, each with a branch and 2 terminals. Quit app, reopen → same terminals recreated
+- [ ] Run `claude` in a terminal, quit app, reopen → terminal auto-sends `claude --continue`
+- [ ] Run `gemini` in a terminal, quit app, reopen → terminal auto-sends `gemini --resume`
+- [ ] Plain shell terminal → restored without any agent command
+- [ ] HMR reload (Vite dev) → uses existing reconnect path, not the new restore
+- [ ] Delete a repo folder externally, reopen → skips that repo gracefully
+- [ ] `hadTerminals` logic still works (no auto-spawn after intentional close-all)
+
 ## Tab Title Improvements
 - [ ] Run AI agent → tab title updates with task name → process exits → title reverts to original
 - [ ] Rename tab → run agent → exit → custom name persists (not overwritten)

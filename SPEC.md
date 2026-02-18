@@ -46,7 +46,8 @@ App
 ├── Terminal Container
 │   ├── Terminal (xterm.js)
 │   ├── DiffPanel
-│   └── MarkdownPanel
+│   ├── MarkdownPanel
+│   └── NotesPanel
 ├── StatusBar
 ├── PromptOverlay
 └── PromptDrawer
@@ -255,6 +256,7 @@ Features:
 | Cmd+K | Open prompt library |
 | Cmd+D | Toggle diff panel |
 | Cmd+M | Toggle markdown panel |
+| Cmd+N | Toggle notes panel |
 | Cmd+1-9 | Switch to tab N |
 | Cmd++/- | Zoom in/out |
 | Cmd+0 | Reset zoom |
@@ -304,6 +306,7 @@ All stores persist to localStorage:
 - [x] Prompt library with variables
 - [x] Keyboard redirect to terminal
 - [x] Fallback agent chain
+- [x] Notes sidebar panel with send-to-terminal and delete actions
 
 ### Completed (Voice Dictation)
 - [x] Local Whisper inference via whisper-rs (Metal GPU acceleration)

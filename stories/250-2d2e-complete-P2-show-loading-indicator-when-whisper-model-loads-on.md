@@ -1,10 +1,10 @@
 ---
-id: "250-2d2e"
-title: "Show loading indicator when Whisper model loads on first use"
-status: pending
+id: 250-2d2e
+title: Show loading indicator when Whisper model loads on first use
+status: complete
 priority: P2
-created: 2026-02-18T16:42:55.039Z
-updated: 2026-02-18T16:42:55.039Z
+created: "2026-02-18T16:42:55.039Z"
+updated: "2026-02-18T22:04:56.358Z"
 dependencies: []
 ---
 
@@ -29,4 +29,6 @@ When the user clicks the microphone for the first time in a session, the UI free
 - src/hooks/useDictation.ts
 
 ## Work Log
+
+### 2026-02-18T22:04:56.289Z - All acceptance criteria already implemented: loading state in store, mic-loading CSS animation, status bar message, loading guard, tests in useDictation.test.ts
 
