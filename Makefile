@@ -21,7 +21,8 @@ export MACOSX_DEPLOYMENT_TARGET ?= 10.15
 # Distribution output
 DIST_DIR=dist-release
 
-.PHONY: all clean dev build build-dmg check sign verify-sign notarize release dist
+.PHONY: all clean dev build build-dmg check sign verify-sign notarize release dist \
+       build-github-release publish-github-release
 
 all: build sign
 
@@ -100,6 +101,29 @@ dist: build sign
 	@echo "Distributable: $(DIST_DIR)/$(BINARY_NAME)-$(VERSION).zip"
 	@echo "NOTE: Recipients must right-click > Open on first launch (not notarized)."
 	@ls -lh "$(DIST_DIR)/$(BINARY_NAME)-$(VERSION).zip"
+
+# --- GitHub Release workflow ---
+
+# Trigger a CI build by pushing current branch + tag.
+# Deletes and re-creates the tag so it points to HEAD, then pushes both.
+build-github-release:
+	@TAG=$$(git describe --tags --abbrev=0 2>/dev/null); \
+	if [ -z "$$TAG" ]; then echo "ERROR: no tag found. Create one first: git tag vX.Y.Z" && exit 1; fi; \
+	BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	echo "Triggering CI build for $$TAG on $$BRANCH..."; \
+	git tag -d "$$TAG" && git tag "$$TAG"; \
+	git push origin "$$BRANCH"; \
+	git push origin :"refs/tags/$$TAG" 2>/dev/null || true; \
+	git push origin "$$TAG"; \
+	echo "Pushed. Monitor at: gh run list --limit 1"
+
+# Publish a draft GitHub release (makes it visible to everyone).
+publish-github-release:
+	@TAG=$$(git describe --tags --abbrev=0 2>/dev/null); \
+	if [ -z "$$TAG" ]; then echo "ERROR: no tag found." && exit 1; fi; \
+	echo "Publishing draft release $$TAG..."; \
+	gh release edit "$$TAG" --draft=false; \
+	echo "Release $$TAG published: $$(gh release view $$TAG --json url --jq .url)"
 
 # Clean build artifacts
 clean:
