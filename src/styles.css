@@ -224,7 +224,7 @@ html, body {
   background: var(--bg-primary);
   color: var(--fg-primary);
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 #app {
@@ -301,7 +301,7 @@ html, body {
 
 .section-title {
   padding: 4px 16px;
-  font-size: 11px;
+  font-size: var(--font-sm);
   text-transform: uppercase;
   color: var(--fg-muted);
   letter-spacing: 0.05em;
@@ -326,9 +326,9 @@ html, body {
   padding: 10px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-secondary);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -357,9 +357,9 @@ html, body {
   justify-content: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-muted);
-  font-size: 14px;
+  font-size: var(--font-lg);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -384,9 +384,9 @@ html, body {
   padding: 8px 16px;
   background: var(--accent);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--text-on-accent);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
 }
 
@@ -411,8 +411,8 @@ html, body {
   align-items: center;
   justify-content: center;
   background: var(--accent);
-  border-radius: 4px;
-  font-size: 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-xs);
   font-weight: 600;
   color: var(--text-on-accent);
   cursor: pointer;
@@ -427,7 +427,7 @@ html, body {
 
 .repo-name {
   flex: 1;
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -456,7 +456,7 @@ html, body {
 }
 
 .repo-chevron {
-  font-size: 14px;
+  font-size: var(--font-lg);
   color: var(--fg-muted);
   transition: transform 150ms ease;
   transform: rotate(0deg);
@@ -476,9 +476,9 @@ html, body {
   justify-content: center;
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
   transition: all 0.1s;
 }
@@ -511,7 +511,7 @@ html, body {
 .repo-section.collapsed .repo-initials {
   width: 32px;
   height: 32px;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .repo-branches {
@@ -520,7 +520,7 @@ html, body {
 
 .repo-empty {
   padding: 8px 16px;
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
   font-style: italic;
 }
@@ -532,7 +532,7 @@ html, body {
   gap: 8px;
   padding: 4px 12px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   margin: 1px 8px 1px 0;
   transition: background 0.1s;
   position: relative;
@@ -549,7 +549,7 @@ html, body {
 }
 
 .branch-icon {
-  font-size: 12px;
+  font-size: var(--font-md);
   width: 18px;
   text-align: center;
   flex-shrink: 0;
@@ -584,7 +584,7 @@ html, body {
 }
 
 .branch-name {
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-weight: 500;
   color: var(--fg-secondary);
   white-space: nowrap;
@@ -599,11 +599,11 @@ html, body {
 .branch-stats {
   display: flex;
   gap: 4px;
-  font-size: 10px;
+  font-size: var(--font-xs);
   font-family: var(--font-mono);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   padding: 2px 6px;
   flex-shrink: 0;
   margin-left: auto;
@@ -623,10 +623,10 @@ html, body {
   align-items: center;
   padding: 1px 6px;
   margin-left: 4px;
-  font-size: 10px;
+  font-size: var(--font-xs);
   font-weight: 600;
   font-family: var(--font-mono);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   white-space: nowrap;
   cursor: pointer;
   flex-shrink: 0;
@@ -712,8 +712,8 @@ html, body {
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-md);
   font-weight: 600;
   cursor: pointer;
   transition: background 0.1s;
@@ -810,7 +810,7 @@ html, body {
   justify-content: center;
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-muted);
   font-size: 17px;
   cursor: pointer;
@@ -830,7 +830,7 @@ html, body {
 
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   font-family: inherit;
   transition: background 0.15s ease;
@@ -841,25 +841,25 @@ html, body {
 }
 
 .toolbar-branch-icon {
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-muted);
 }
 
 .toolbar-repo-name {
-  font-size: 12px;
+  font-size: var(--font-md);
   font-weight: 500;
   color: var(--fg-secondary);
   white-space: nowrap;
 }
 
 .toolbar-branch-separator {
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-muted);
   margin: 0 2px;
 }
 
 .toolbar-branch-name {
-  font-size: 12px;
+  font-size: var(--font-md);
   font-weight: 500;
   color: var(--fg-primary);
   white-space: nowrap;
@@ -930,7 +930,7 @@ html, body {
 }
 
 .tab-name {
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -945,9 +945,9 @@ html, body {
 .tab-name-input {
   background: var(--bg-secondary);
   border: 1px solid var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   color: var(--fg-primary);
-  font-size: 12px;
+  font-size: var(--font-md);
   font-family: inherit;
   padding: 0 4px;
   min-width: 40px;
@@ -959,7 +959,7 @@ html, body {
   background: none;
   border: none;
   color: var(--fg-muted);
-  font-size: 14px;
+  font-size: var(--font-lg);
   line-height: 1;
   cursor: pointer;
   width: 16px;
@@ -967,7 +967,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   transition: all 0.1s;
   opacity: 0;
   margin-left: auto;
@@ -992,7 +992,7 @@ html, body {
   background: transparent;
   border: none;
   color: var(--fg-muted);
-  font-size: 16px;
+  font-size: var(--font-xl);
   cursor: pointer;
   transition: all 0.15s;
   margin-left: auto;
@@ -1006,7 +1006,7 @@ html, body {
 
 #zoom-indicator {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
   min-width: 40px;
   text-align: center;
@@ -1024,10 +1024,10 @@ html, body {
   gap: 4px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 4px 8px;
   color: var(--fg-secondary);
-  font-size: 11px;
+  font-size: var(--font-sm);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -1045,9 +1045,9 @@ html, body {
   margin-top: 4px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   min-width: 140px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-dropdown);
   z-index: 100;
   overflow: hidden;
 }
@@ -1058,7 +1058,7 @@ html, body {
 
 .dropdown-item {
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-secondary);
   cursor: pointer;
   transition: background 0.1s;
@@ -1215,7 +1215,7 @@ html, body {
 }
 
 .terminal-pane .xterm .xterm-scrollable-element > .scrollbar.vertical .slider {
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 /* Also style the native fallback scrollbar on .xterm-viewport */
@@ -1229,7 +1229,7 @@ html, body {
 
 .terminal-pane .xterm-viewport::-webkit-scrollbar-thumb {
   background: var(--bg-highlight);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .terminal-pane .xterm-viewport::-webkit-scrollbar-thumb:hover {
@@ -1255,19 +1255,19 @@ html, body {
 .terminal-pane.awaiting-question {
   animation: pulse-question 2s ease-in-out infinite;
   border: 2px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .terminal-pane.awaiting-error {
   animation: pulse-error 2s ease-in-out infinite;
   border: 2px solid var(--error);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .terminal-pane.awaiting-confirmation {
   animation: pulse-confirmation 2s ease-in-out infinite;
   border: 2px solid var(--warning);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 /* Tab awaiting input badge */
@@ -1319,7 +1319,7 @@ html, body {
   display: flex;
   align-items: center;
   padding: 0 12px;
-  font-size: 11px;
+  font-size: var(--font-sm);
   gap: 8px;
   overflow: hidden;
 }
@@ -1344,8 +1344,8 @@ html, body {
   border: 1px solid var(--border);
   color: var(--fg-secondary);
   padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-xs);
   cursor: pointer;
   transition: all 0.15s;
   overflow: hidden;
@@ -1382,8 +1382,8 @@ html, body {
   align-items: center;
   gap: 4px;
   padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-xs);
   font-family: var(--font-mono);
 }
 
@@ -1439,10 +1439,10 @@ html, body {
 .status-cwd {
   color: var(--fg-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-sm);
   cursor: pointer;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1456,20 +1456,20 @@ html, body {
 
 .status-agent-badge {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-weight: 500;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
   white-space: nowrap;
 }
 
 .status-rate-limit {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-weight: 500;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: #ffd700;
   background: rgba(255, 215, 0, 0.1);
   white-space: nowrap;
@@ -1478,12 +1478,12 @@ html, body {
 
 #agent-stats {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-xs);
   color: var(--fg-muted);
   margin-right: 12px;
   padding: 2px 8px;
   background: var(--bg-tertiary);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 #agent-stats.hidden {
@@ -1522,7 +1522,7 @@ html, body {
 
 ::-webkit-scrollbar-thumb {
   background: var(--bg-highlight);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -1554,7 +1554,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 #diff-content {
   padding: 8px 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--font-md);
   line-height: 1.5;
 }
 
@@ -1606,7 +1606,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 6px 12px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .panel-header-left {
@@ -1624,10 +1624,10 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: none;
   border: none;
   color: var(--fg-muted);
-  font-size: 16px;
+  font-size: var(--font-xl);
   cursor: pointer;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .panel-close:hover {
@@ -1650,7 +1650,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: var(--accent);
   color: var(--text-on-accent);
   border-radius: 9px;
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-weight: 600;
   line-height: 1;
 }
@@ -1690,8 +1690,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: 3px;
-  font-size: 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
   font-weight: 700;
   font-family: var(--font-mono);
 }
@@ -1723,7 +1723,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .file-name {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--font-base);
   font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1732,7 +1732,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .file-stats {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-family: var(--font-mono);
   color: var(--fg-muted);
 }
@@ -1757,7 +1757,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .tab.diff-tab .tab-icon {
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 /* Diff Tab Content Pane */
@@ -1783,7 +1783,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .md-dir-header {
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--fg-secondary);
   text-transform: uppercase;
@@ -1802,8 +1802,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   gap: 8px;
   padding: 6px 12px;
   cursor: pointer;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-md);
   transition: background 0.15s;
 }
 
@@ -1812,7 +1812,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .md-file-item .file-icon {
-  font-size: 14px;
+  font-size: var(--font-lg);
   flex-shrink: 0;
 }
 
@@ -1857,7 +1857,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .tab.md-tab .tab-icon {
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 /* Markdown Tab Content Pane */
@@ -1880,7 +1880,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   font-family: var(--font-ui);
   color: var(--fg-primary);
   line-height: 1.6;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 #markdown-content h1,
@@ -1963,7 +1963,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   margin: 0;
   font-size: 85%;
   background-color: rgba(175, 184, 193, 0.2);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   font-family: var(--font-mono);
 }
 
@@ -1973,7 +1973,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   font-size: 85%;
   line-height: 1.45;
   background-color: var(--bg-secondary);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   margin-bottom: 16px;
 }
 
@@ -2064,7 +2064,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 #prompt-question {
   padding: 16px;
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--fg-secondary);
   line-height: 1.5;
 }
@@ -2080,7 +2080,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -2096,10 +2096,10 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .prompt-option-key {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-sm);
   padding: 2px 6px;
   background: var(--bg-tertiary);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
 }
 
@@ -2110,7 +2110,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .prompt-option-text {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 /* Prompt Library Drawer */
@@ -2130,7 +2130,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   max-width: 90vw;
   max-height: 70vh;
   background: var(--bg-secondary);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   border: 1px solid var(--border);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   display: flex;
@@ -2147,7 +2147,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .prompt-drawer-header h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 600;
 }
 
@@ -2158,7 +2158,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   font-size: 18px;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .prompt-drawer-close:hover {
@@ -2176,9 +2176,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-primary);
-  font-size: 13px;
+  font-size: var(--font-base);
   outline: none;
 }
 
@@ -2197,9 +2197,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 4px 12px;
   background: var(--bg-tertiary);
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
 }
 
@@ -2230,7 +2230,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 16px;
   background: var(--accent);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--text-on-accent);
   cursor: pointer;
 }
@@ -2258,7 +2258,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .prompt-item-name {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 500;
   color: var(--fg-primary);
   display: flex;
@@ -2271,15 +2271,15 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .prompt-shortcut {
-  font-size: 10px;
+  font-size: var(--font-xs);
   padding: 2px 6px;
   background: var(--bg-tertiary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--fg-muted);
 }
 
 .prompt-item-description {
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
   margin-top: 2px;
   white-space: nowrap;
@@ -2304,8 +2304,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   color: var(--fg-muted);
   cursor: pointer;
   padding: 4px 6px;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-md);
 }
 
 .prompt-item-actions button:hover {
@@ -2325,14 +2325,14 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 6px 12px;
   background: var(--accent);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--text-on-accent);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
 }
 
 .prompt-drawer-hint {
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
 }
 
@@ -2351,14 +2351,14 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   width: 400px;
   max-width: 90vw;
   background: var(--bg-secondary);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   border: 1px solid var(--border);
   padding: 16px;
 }
 
 .variable-dialog h4 {
   margin: 0 0 16px;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .variable-input {
@@ -2367,7 +2367,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .variable-input label {
   display: block;
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-muted);
   margin-bottom: 4px;
 }
@@ -2377,9 +2377,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .variable-dialog-actions {
@@ -2392,9 +2392,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   flex: 1;
   padding: 8px 12px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .variable-dialog-actions button:first-child {
@@ -2427,14 +2427,14 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   width: 500px;
   max-width: 90vw;
   background: var(--bg-secondary);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   border: 1px solid var(--border);
   padding: 16px;
 }
 
 .prompt-editor h4 {
   margin: 0 0 16px;
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .prompt-editor-field {
@@ -2443,7 +2443,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .prompt-editor-field label {
   display: block;
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-muted);
   margin-bottom: 4px;
 }
@@ -2454,9 +2454,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
-  font-size: 13px;
+  font-size: var(--font-base);
   font-family: inherit;
 }
 
@@ -2475,9 +2475,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .prompt-editor-actions button {
   padding: 8px 16px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .prompt-editor-actions button:first-child {
@@ -2506,9 +2506,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   max-width: 90vw;
   max-height: 80vh;
   background: var(--bg-secondary);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   border: 1px solid var(--border);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-popup);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2524,7 +2524,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .settings-header h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-xl);
   font-weight: 600;
 }
 
@@ -2535,7 +2535,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   font-size: 20px;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .settings-close:hover {
@@ -2555,9 +2555,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 16px;
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
-  font-size: 13px;
+  font-size: var(--font-base);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -2592,7 +2592,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .settings-section h3 {
   margin: 0 0 16px;
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--fg-primary);
 }
@@ -2603,7 +2603,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .settings-group label {
   display: block;
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--fg-secondary);
   margin-bottom: 8px;
 }
@@ -2615,9 +2615,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-primary);
-  font-size: 13px;
+  font-size: var(--font-base);
   box-sizing: border-box;
 }
 
@@ -2641,23 +2641,23 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .settings-hint {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
 }
 
 .settings-info {
   color: var(--fg-muted);
-  font-size: 13px;
+  font-size: var(--font-base);
   margin-bottom: 16px;
   line-height: 1.4;
 }
 
 .settings-warning {
   color: var(--warning);
-  font-size: 13px;
+  font-size: var(--font-base);
   padding: 12px;
   background: rgba(224, 175, 104, 0.1);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
 }
 
 .settings-slider {
@@ -2671,7 +2671,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   -webkit-appearance: none;
   height: 4px;
   background: var(--bg-tertiary);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .settings-slider input[type="range"]::-webkit-slider-thumb {
@@ -2679,14 +2679,14 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   width: 16px;
   height: 16px;
   background: var(--accent);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   cursor: pointer;
 }
 
 .settings-slider span {
   min-width: 40px;
   text-align: right;
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--fg-secondary);
   font-family: var(--font-mono);
 }
@@ -2723,7 +2723,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   width: 14px;
   height: 14px;
   background: var(--fg-muted);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   transition: transform 0.2s, background 0.2s;
 }
 
@@ -2738,7 +2738,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .settings-toggle span {
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--fg-secondary);
 }
 
@@ -2758,9 +2758,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 4px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
@@ -2782,9 +2782,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 16px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-secondary);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -2800,9 +2800,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-primary);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .settings-input:focus {
@@ -2824,9 +2824,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-secondary);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -2840,9 +2840,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 16px;
   background: var(--accent);
   border: 1px solid var(--accent);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--text-on-accent);
-  font-size: 12px;
+  font-size: var(--font-md);
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -2862,8 +2862,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-base);
   color: var(--fg-secondary);
   font-family: var(--font-mono);
 }
@@ -2886,14 +2886,14 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .settings-title--repo h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-xl);
   font-weight: 600;
   color: var(--fg-primary);
 }
 
 .settings-path--repo {
   margin: 4px 0 0;
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
   font-family: var(--font-mono);
 }
@@ -2910,9 +2910,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 16px;
   background: var(--bg-highlight);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -2926,9 +2926,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 20px;
   background: var(--accent);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--text-on-accent);
-  font-size: 12px;
+  font-size: var(--font-md);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
@@ -2948,7 +2948,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .mcp-status-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
 }
 
@@ -2962,24 +2962,24 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .mcp-status-text {
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--fg-secondary);
 }
 
 .mcp-status-port {
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-muted, #666);
   font-family: var(--font-mono, monospace);
   background: var(--bg-tertiary);
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .mcp-sessions-bar {
   position: relative;
   height: 24px;
   background: var(--bg-tertiary);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -2990,7 +2990,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   height: 100%;
   background: var(--accent);
   opacity: 0.3;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   transition: width 0.3s ease;
 }
 
@@ -3000,7 +3000,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   align-items: center;
   justify-content: center;
   height: 100%;
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-secondary);
   font-family: var(--font-mono, monospace);
 }
@@ -3010,7 +3010,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -3020,7 +3020,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   gap: 8px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .dictation-model-row:last-child {
@@ -3044,14 +3044,14 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .dictation-model-size {
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
 }
 
 .dictation-model-badge {
-  font-size: 11px;
+  font-size: var(--font-sm);
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
   color: var(--fg-muted);
   white-space: nowrap;
@@ -3073,10 +3073,10 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .dictation-model-download {
   padding: 4px 10px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: var(--bg-tertiary);
   color: var(--fg-secondary);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -3101,7 +3101,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   border: none;
   color: var(--fg-muted);
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--font-xl);
   padding: 0 2px;
   line-height: 1;
   transition: color 0.15s;
@@ -3112,7 +3112,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .dictation-model-active-label {
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--accent);
   font-weight: 500;
 }
@@ -3128,9 +3128,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: var(--accent);
   color: var(--text-on-accent);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-base);
   align-self: flex-start;
   transition: opacity 0.15s;
 }
@@ -3148,19 +3148,19 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .dictation-progress-bar {
   height: 6px;
   background: var(--bg-tertiary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
 .dictation-progress-fill {
   height: 100%;
   background: var(--accent);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   transition: width 0.3s ease;
 }
 
 .dictation-progress-text {
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-muted);
 }
 
@@ -3178,10 +3178,10 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 6px 16px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
   font-family: monospace;
-  font-size: 13px;
+  font-size: var(--font-base);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -3195,17 +3195,17 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 6px 12px;
   background: var(--bg-primary);
   border: 2px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
   font-family: monospace;
-  font-size: 13px;
+  font-size: var(--font-base);
   outline: none;
   width: 200px;
 }
 
 .dictation-corrections-table {
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   margin-bottom: 8px;
 }
@@ -3215,7 +3215,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   grid-template-columns: 1fr 1fr 32px;
   padding: 6px 8px;
   background: var(--bg-tertiary);
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--fg-muted);
   text-transform: uppercase;
@@ -3228,7 +3228,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 6px 8px;
   border-top: 1px solid var(--border);
   align-items: center;
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .dictation-corrections-row:hover {
@@ -3247,7 +3247,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   border: none;
   color: var(--fg-muted);
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--font-xl);
   padding: 0;
   line-height: 1;
   transition: color 0.15s;
@@ -3268,9 +3268,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 6px 8px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .dictation-correction-add input:focus {
@@ -3280,17 +3280,17 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .dictation-correction-arrow {
   color: var(--fg-muted);
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .dictation-correction-add-btn {
   padding: 6px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-secondary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-base);
   transition: all 0.15s;
 }
 
@@ -3359,8 +3359,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   width: 320px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-popup);
   overflow: hidden;
 }
 
@@ -3374,13 +3374,13 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .branch-popover-header .branch-icon {
-  font-size: 16px;
+  font-size: var(--font-xl);
   color: var(--accent);
 }
 
 .branch-popover-header h4 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--fg-primary);
 }
@@ -3394,9 +3394,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 10px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-primary);
-  font-size: 13px;
+  font-size: var(--font-base);
   font-family: var(--font-mono);
 }
 
@@ -3412,7 +3412,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .branch-popover-error {
   margin: 8px 0 0;
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--error);
 }
 
@@ -3428,8 +3428,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   flex: 1;
   padding: 8px 16px;
   border: none;
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-md);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
@@ -3476,7 +3476,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   color: var(--fg-secondary);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -3504,7 +3504,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .ide-launcher-icon {
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .ide-launcher-name {
@@ -3525,8 +3525,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   min-width: 180px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-dropdown);
   z-index: 100;
   overflow: hidden;
 }
@@ -3537,7 +3537,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .ide-launcher-section-title {
   padding: 4px 12px;
-  font-size: 10px;
+  font-size: var(--font-xs);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -3553,7 +3553,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: none;
   border: none;
   color: var(--fg-secondary);
-  font-size: 13px;
+  font-size: var(--font-base);
   cursor: pointer;
   text-align: left;
   transition: all 0.1s;
@@ -3580,7 +3580,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .ide-launcher-item-check {
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .ide-launcher-divider {
@@ -3604,7 +3604,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .run-command-description {
   margin: 0 0 12px;
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-muted);
   line-height: 1.4;
 }
@@ -3614,7 +3614,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .ide-launcher-shortcut {
-  font-size: 10px;
+  font-size: var(--font-xs);
   color: var(--fg-muted);
   margin-left: auto;
 }
@@ -3649,7 +3649,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .task-queue-header h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--fg-primary);
 }
@@ -3664,9 +3664,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 4px 10px;
   background: var(--bg-highlight);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -3687,7 +3687,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   color: var(--fg-muted);
   font-size: 18px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   transition: all 0.15s;
 }
 
@@ -3707,7 +3707,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .task-queue-section-title {
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -3726,13 +3726,13 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .task-queue-empty p:first-child {
-  font-size: 14px;
+  font-size: var(--font-lg);
   color: var(--fg-secondary);
   margin-bottom: 8px;
 }
 
 .task-queue-hint {
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-muted);
 }
 
@@ -3753,7 +3753,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 10px 12px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -3785,7 +3785,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .task-item-status {
-  font-size: 14px;
+  font-size: var(--font-lg);
   line-height: 1;
   flex-shrink: 0;
   margin-top: 2px;
@@ -3797,7 +3797,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .task-item-name {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 500;
   color: var(--fg-primary);
   white-space: nowrap;
@@ -3806,7 +3806,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .task-item-description {
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
   margin-top: 2px;
   white-space: nowrap;
@@ -3822,14 +3822,14 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .task-item-duration {
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .task-item-drag {
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: grab;
   user-select: none;
 }
@@ -3847,9 +3847,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: transparent;
   border: none;
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   transition: all 0.15s;
 }
 
@@ -3867,7 +3867,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   min-width: 180px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   padding: 4px;
   z-index: 1000;
@@ -3893,9 +3893,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
-  font-size: 13px;
+  font-size: var(--font-base);
   text-align: left;
   cursor: pointer;
   transition: background 0.1s;
@@ -3916,7 +3916,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .context-menu-shortcut {
   margin-left: 20px;
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
 }
 
@@ -3955,7 +3955,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .git-ops-header h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--fg-primary);
 }
@@ -3971,7 +3971,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   color: var(--fg-muted);
   font-size: 18px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   transition: all 0.15s;
 }
 
@@ -3993,19 +3993,19 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 12px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   margin-bottom: 16px;
 }
 
 .git-ops-branch {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 500;
   color: var(--fg-primary);
   flex: 1;
 }
 
 .git-ops-state {
-  font-size: 11px;
+  font-size: var(--font-sm);
   padding: 2px 8px;
   border-radius: 10px;
   text-transform: uppercase;
@@ -4038,7 +4038,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .git-ops-section-title {
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -4049,12 +4049,12 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .git-ops-merge-section {
   background: rgba(255, 100, 100, 0.1);
   border: 1px solid var(--error);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   padding: 12px;
 }
 
 .git-ops-warning {
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--error);
   margin-bottom: 12px;
 }
@@ -4072,9 +4072,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-primary);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -4090,7 +4090,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .git-ops-btn-icon {
-  font-size: 14px;
+  font-size: var(--font-lg);
 }
 
 .git-ops-branch-select {
@@ -4102,9 +4102,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-primary);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
 }
 
@@ -4122,7 +4122,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .branch-shortcut {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
   font-family: var(--font-mono);
   margin-left: auto;
@@ -4147,9 +4147,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   max-width: 90vw;
   max-height: 80vh;
   background: var(--bg-secondary);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   border: 1px solid var(--border);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-popup);
   display: flex;
   flex-direction: column;
 }
@@ -4164,7 +4164,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .help-header h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-xl);
   font-weight: 600;
 }
 
@@ -4175,7 +4175,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   font-size: 20px;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .help-close:hover {
@@ -4193,9 +4193,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--fg-primary);
-  font-size: 13px;
+  font-size: var(--font-base);
   outline: none;
 }
 
@@ -4211,7 +4211,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .help-menu-note {
   margin: 0 0 12px;
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--text-muted);
 }
 
@@ -4220,7 +4220,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .help-section-title {
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -4248,15 +4248,15 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 2px 8px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-secondary);
 }
 
 .help-desc {
   padding: 6px 8px;
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--fg-secondary);
 }
 
@@ -4314,20 +4314,20 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   width: 380px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-popup);
   padding: 20px;
 }
 
 .quit-dialog h3 {
   margin: 0 0 12px;
-  font-size: 16px;
+  font-size: var(--font-xl);
   font-weight: 600;
 }
 
 .quit-dialog p {
   margin: 0 0 20px;
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--fg-secondary);
   line-height: 1.5;
 }
@@ -4341,8 +4341,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .quit-dialog-actions button {
   padding: 8px 16px;
   border: none;
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-md);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
@@ -4385,8 +4385,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   max-height: 400px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-bottom-anchor);
   z-index: 1001;
   display: flex;
   flex-direction: column;
@@ -4404,7 +4404,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .ci-popover-header h4 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
 }
 
@@ -4412,10 +4412,10 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: none;
   border: none;
   color: var(--fg-muted);
-  font-size: 16px;
+  font-size: var(--font-xl);
   cursor: pointer;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .ci-popover-close:hover {
@@ -4434,7 +4434,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -4444,7 +4444,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .ci-check-icon {
-  font-size: 14px;
+  font-size: var(--font-lg);
   flex-shrink: 0;
 }
 
@@ -4454,7 +4454,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .ci-check-name {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -4462,9 +4462,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .ci-check-status {
-  font-size: 10px;
+  font-size: var(--font-xs);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   text-transform: capitalize;
 }
 
@@ -4487,7 +4487,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 20px;
   text-align: center;
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 /* ============================================================================
@@ -4508,8 +4508,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   max-height: 500px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-bottom-anchor);
   z-index: 1001;
   display: flex;
   flex-direction: column;
@@ -4527,8 +4527,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .pr-state-badge {
   padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-xs);
   font-weight: 700;
   text-transform: uppercase;
   flex-shrink: 0;
@@ -4566,8 +4566,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   display: inline-flex;
   align-items: center;
   padding: 1px 8px;
-  border-radius: 12px;
-  font-size: 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-xs);
   font-weight: 600;
   border: 1px solid;
   white-space: nowrap;
@@ -4579,7 +4579,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   align-items: center;
   gap: 6px;
   padding: 4px 12px;
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
 }
 
@@ -4587,8 +4587,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   font-family: var(--font-mono);
   background: rgba(255, 255, 255, 0.06);
   padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-xs);
 }
 
 .pr-arrow {
@@ -4601,7 +4601,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   align-items: center;
   gap: 4px;
   padding: 2px 12px;
-  font-size: 10px;
+  font-size: var(--font-xs);
   color: var(--fg-muted);
 }
 
@@ -4616,8 +4616,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .merge-state-badge {
   display: inline-flex;
   padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -4645,8 +4645,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .review-state-badge {
   display: inline-flex;
   padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -4668,7 +4668,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .pr-detail-title {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -4677,7 +4677,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .pr-detail-number {
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
   flex-shrink: 0;
 }
 
@@ -4694,10 +4694,10 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: none;
   border: none;
   color: var(--fg-muted);
-  font-size: 16px;
+  font-size: var(--font-xl);
   cursor: pointer;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   flex-shrink: 0;
 }
 
@@ -4711,7 +4711,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  font-size: 11px;
+  font-size: var(--font-sm);
   color: var(--fg-muted);
   border-bottom: 1px solid var(--border);
 }
@@ -4748,7 +4748,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .pr-detail-ci-text {
   display: flex;
   gap: 10px;
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .ci-count {
@@ -4770,7 +4770,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -4781,7 +4781,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .pr-detail-check-name {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--font-md);
   color: var(--fg-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -4792,13 +4792,13 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 20px;
   text-align: center;
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .pr-detail-open-github {
   padding: 8px 12px;
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--font-md);
   font-family: var(--font-ui);
   cursor: pointer;
   text-align: center;
@@ -4824,9 +4824,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 3px 7px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-xs);
   color: var(--fg-muted);
   white-space: nowrap;
   z-index: 50;
@@ -4843,7 +4843,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: var(--accent);
   color: var(--text-on-accent);
   border-color: var(--accent);
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-weight: 600;
   padding: 2px 6px;
 }
@@ -4857,9 +4857,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 1px 5px;
   background: var(--bg-tertiary);
   color: var(--fg-muted);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   z-index: 10;
   pointer-events: none;
@@ -4876,7 +4876,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .git-quick-actions-title {
-  font-size: 10px;
+  font-size: var(--font-xs);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -4897,9 +4897,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 4px 8px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-secondary);
-  font-size: 11px;
+  font-size: var(--font-sm);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -4921,7 +4921,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .git-quick-icon {
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 /* ============================================================================
@@ -4944,7 +4944,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 6px 12px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .lazygit-pane-title {
@@ -4959,10 +4959,10 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: none;
   border: none;
   color: var(--fg-muted);
-  font-size: 16px;
+  font-size: var(--font-xl);
   cursor: pointer;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .lazygit-pane-close:hover {
@@ -4990,7 +4990,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   height: 70%;
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
   z-index: 900;
   display: flex;
@@ -5006,7 +5006,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 6px 12px;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: move;
 }
 
@@ -5034,7 +5034,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .tab-progress-label {
-  font-size: 9px;
+  font-size: var(--font-2xs);
   color: var(--accent);
   font-family: var(--font-mono);
   margin-left: 4px;
