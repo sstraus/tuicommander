@@ -598,16 +598,12 @@ html, body {
 
 .branch-name {
   display: block;
-  font-size: var(--font-sm);
+  font-size: var(--font-md);
   font-weight: 500;
-  color: var(--fg-secondary);
+  color: var(--fg-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.branch-item.active .branch-name {
-  color: var(--fg-primary);
 }
 
 .branch-stats {
