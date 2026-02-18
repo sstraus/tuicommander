@@ -247,6 +247,9 @@ mod tests {
             config: std::sync::RwLock::new(crate::config::AppConfig::default()),
             repo_info_cache: DashMap::new(),
             github_status_cache: DashMap::new(),
+            head_watchers: DashMap::new(),
+            http_client: reqwest::blocking::Client::new(),
+            github_token: None,
         })
     }
 

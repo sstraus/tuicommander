@@ -6,6 +6,95 @@ use tauri::State;
 
 use crate::state::{AppState, GITHUB_CACHE_TTL};
 
+/// Resolve a GitHub API token from environment or gh CLI config.
+/// Order: GH_TOKEN env → GITHUB_TOKEN env → gh CLI config (~/.config/gh/hosts.yml).
+/// Returns None if no token is found (graceful degradation).
+pub(crate) fn resolve_github_token() -> Option<String> {
+    if let Ok(token) = std::env::var("GH_TOKEN") {
+        if !token.is_empty() {
+            return Some(token);
+        }
+    }
+    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+        if !token.is_empty() {
+            return Some(token);
+        }
+    }
+    gh_token::get().ok()
+}
+
+/// Parse a git remote URL into (owner, repo) for GitHub repos.
+/// Supports HTTPS (github.com/owner/repo.git) and SSH (git@github.com:owner/repo.git).
+pub(crate) fn parse_remote_url(url: &str) -> Option<(String, String)> {
+    let url = url.trim();
+
+    // SSH: git@github.com:owner/repo.git
+    if let Some(path) = url.strip_prefix("git@github.com:") {
+        let path = path.strip_suffix(".git").unwrap_or(path);
+        let parts: Vec<&str> = path.splitn(2, '/').collect();
+        if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+            return Some((parts[0].to_string(), parts[1].to_string()));
+        }
+    }
+
+    // HTTPS: https://github.com/owner/repo.git
+    if url.contains("github.com") {
+        // Strip protocol and host
+        let path = url
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_start_matches("github.com/");
+        let path = path.strip_suffix(".git").unwrap_or(path);
+        let parts: Vec<&str> = path.splitn(3, '/').collect();
+        if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+            return Some((parts[0].to_string(), parts[1].to_string()));
+        }
+    }
+
+    None
+}
+
+/// Execute a GraphQL query against the GitHub API.
+/// Returns the parsed JSON response or an error.
+pub(crate) fn graphql_request(
+    client: &reqwest::blocking::Client,
+    token: &str,
+    query: &str,
+    variables: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let body = serde_json::json!({
+        "query": query,
+        "variables": variables,
+    });
+
+    let response = client
+        .post("https://api.github.com/graphql")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "tui-commander")
+        .json(&body)
+        .send()
+        .map_err(|e| format!("GraphQL request failed: {e}"))?;
+
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .map_err(|e| format!("Failed to parse GraphQL response: {e}"))?;
+
+    if !status.is_success() {
+        let msg = json["message"].as_str().unwrap_or("Unknown error");
+        return Err(format!("GitHub API error ({status}): {msg}"));
+    }
+
+    if let Some(errors) = json["errors"].as_array() {
+        if !errors.is_empty() {
+            let msg = errors[0]["message"].as_str().unwrap_or("Unknown GraphQL error");
+            return Err(format!("GraphQL error: {msg}"));
+        }
+    }
+
+    Ok(json)
+}
+
 /// GitHub integration types
 #[derive(Clone, Serialize)]
 pub(crate) struct GitHubStatus {
@@ -1052,5 +1141,108 @@ mod tests {
         // Unknown — both None
         assert!(result[2].merge_state_label.is_none());
         assert!(result[2].review_state_label.is_none());
+    }
+
+    // --- parse_remote_url tests ---
+
+    #[test]
+    fn test_parse_remote_url_https() {
+        let result = parse_remote_url("https://github.com/owner/repo.git");
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
+    }
+
+    #[test]
+    fn test_parse_remote_url_https_no_git_suffix() {
+        let result = parse_remote_url("https://github.com/owner/repo");
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
+    }
+
+    #[test]
+    fn test_parse_remote_url_ssh() {
+        let result = parse_remote_url("git@github.com:owner/repo.git");
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
+    }
+
+    #[test]
+    fn test_parse_remote_url_ssh_no_git_suffix() {
+        let result = parse_remote_url("git@github.com:owner/repo");
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
+    }
+
+    #[test]
+    fn test_parse_remote_url_with_trailing_newline() {
+        let result = parse_remote_url("https://github.com/owner/repo.git\n");
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
+    }
+
+    #[test]
+    fn test_parse_remote_url_not_github() {
+        let result = parse_remote_url("https://gitlab.com/owner/repo.git");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_remote_url_empty() {
+        assert_eq!(parse_remote_url(""), None);
+    }
+
+    #[test]
+    fn test_parse_remote_url_malformed() {
+        assert_eq!(parse_remote_url("not-a-url"), None);
+    }
+
+    // --- resolve_github_token tests ---
+    // Note: env var tests use unsafe because Rust 2024 edition requires it.
+    // These tests modify process-global env state, so they must not run in parallel
+    // with other tests that read GH_TOKEN/GITHUB_TOKEN.
+
+    #[test]
+    fn test_resolve_github_token_from_gh_token_env() {
+        unsafe {
+            std::env::set_var("GH_TOKEN", "test-token-123");
+            std::env::remove_var("GITHUB_TOKEN");
+        }
+        let token = resolve_github_token();
+        assert_eq!(token, Some("test-token-123".to_string()));
+        unsafe { std::env::remove_var("GH_TOKEN"); }
+    }
+
+    #[test]
+    fn test_resolve_github_token_from_github_token_env() {
+        unsafe {
+            std::env::remove_var("GH_TOKEN");
+            std::env::set_var("GITHUB_TOKEN", "github-token-456");
+        }
+        let token = resolve_github_token();
+        assert_eq!(token, Some("github-token-456".to_string()));
+        unsafe { std::env::remove_var("GITHUB_TOKEN"); }
+    }
+
+    #[test]
+    fn test_resolve_github_token_gh_takes_priority() {
+        unsafe {
+            std::env::set_var("GH_TOKEN", "gh-wins");
+            std::env::set_var("GITHUB_TOKEN", "github-loses");
+        }
+        let token = resolve_github_token();
+        assert_eq!(token, Some("gh-wins".to_string()));
+        unsafe {
+            std::env::remove_var("GH_TOKEN");
+            std::env::remove_var("GITHUB_TOKEN");
+        }
+    }
+
+    #[test]
+    fn test_resolve_github_token_empty_env_skipped() {
+        unsafe {
+            std::env::set_var("GH_TOKEN", "");
+            std::env::set_var("GITHUB_TOKEN", "fallback");
+        }
+        let token = resolve_github_token();
+        assert_eq!(token, Some("fallback".to_string()));
+        unsafe {
+            std::env::remove_var("GH_TOKEN");
+            std::env::remove_var("GITHUB_TOKEN");
+        }
     }
 }

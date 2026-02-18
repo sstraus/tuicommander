@@ -375,6 +375,10 @@ pub struct AppState {
     pub(crate) github_status_cache: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
     /// File watchers for .git/HEAD per repo (keyed by repo path)
     pub(crate) head_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
+    /// Shared HTTP client for GitHub API requests
+    pub(crate) http_client: reqwest::blocking::Client,
+    /// Cached GitHub API token (resolved once at startup)
+    pub(crate) github_token: Option<String>,
 }
 
 impl AppState {
@@ -731,6 +735,8 @@ mod tests {
             repo_info_cache: dashmap::DashMap::new(),
             github_status_cache: dashmap::DashMap::new(),
             head_watchers: dashmap::DashMap::new(),
+            http_client: reqwest::blocking::Client::new(),
+            github_token: None,
         }
     }
 

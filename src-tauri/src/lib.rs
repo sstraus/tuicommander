@@ -168,6 +168,11 @@ pub fn run() {
 
     let config = config::load_app_config();
 
+    let github_token = crate::github::resolve_github_token();
+    if github_token.is_none() {
+        eprintln!("[github] No GitHub token found (checked GH_TOKEN, GITHUB_TOKEN, gh CLI config)");
+    }
+
     let state = Arc::new(AppState {
         sessions: DashMap::new(),
         worktrees_dir,
@@ -179,6 +184,8 @@ pub fn run() {
         repo_info_cache: DashMap::new(),
         github_status_cache: DashMap::new(),
         head_watchers: DashMap::new(),
+        http_client: reqwest::blocking::Client::new(),
+        github_token,
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled

@@ -47,6 +47,7 @@ tower-http = { version = "0.6.8", features = ["cors"] }
 rand = "0.9"
 notify = "7"
 notify-debouncer-mini = "0.5"
+gh-token = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.15", features = ["metal"] }
