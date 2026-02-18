@@ -20,13 +20,12 @@ jobs:
           - platform: macos-13
             args: ''
             label: macOS-Intel
-          # TODO: re-enable after macOS builds are green
-          # - platform: ubuntu-22.04
-          #   args: ''
-          #   label: Linux-x64
-          # - platform: windows-latest
-          #   args: ''
-          #   label: Windows-x64
+          - platform: ubuntu-22.04
+            args: ''
+            label: Linux-x64
+          - platform: windows-latest
+            args: ''
+            label: Windows-x64
 
     runs-on: ${{ matrix.platform }}
     steps:

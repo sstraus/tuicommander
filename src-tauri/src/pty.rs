@@ -38,7 +38,12 @@ pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
     {
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
-        cmd.env("LANG", "en_US.UTF-8");
+        if let Ok(lang) = std::env::var("LANG") {
+            cmd.env("LANG", lang);
+        } else {
+            // Fallback: ensure UTF-8 is available even when LANG is completely unset
+            cmd.env("LANG", "en_US.UTF-8");
+        }
     }
     // Prevent macOS from sourcing /etc/zshrc_Apple_Terminal which prints
     // a spurious "Restored session:" message on every new shell
