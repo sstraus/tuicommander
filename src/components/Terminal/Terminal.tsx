@@ -113,6 +113,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let activityFlagged = false; // Avoids redundant store updates per data chunk
   let busyFlagged = false;
+  let hasResumedAgent = false; // Ensures agent resume command fires only once
 
   // Reset activity flag when this terminal becomes active (store clears activity)
   createEffect(() => {
@@ -179,6 +180,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
     idleTimer = setTimeout(() => {
       busyFlagged = false;
       terminalsStore.update(props.id, { shellState: "idle" });
+
+      // Auto-resume agent on first shell idle after restore
+      if (!hasResumedAgent) {
+        const pending = terminalsStore.get(props.id)?.pendingResumeCommand;
+        if (pending && sessionId) {
+          hasResumedAgent = true;
+          terminalsStore.update(props.id, { pendingResumeCommand: null });
+          pty.write(sessionId, pending + "\r").catch(() => {});
+        }
+      }
     }, 500);
   };
 

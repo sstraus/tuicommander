@@ -10,6 +10,7 @@ export interface AgentConfig {
   name: string;
   binary: string;
   description: string;
+  resumeCommand: string | null;
   spawnArgs: (prompt: string, options?: AgentSpawnOptions) => string[];
   outputFormat: "text" | "jsonl" | "markdown";
   detectPatterns: {
@@ -43,6 +44,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Claude Code",
     binary: "claude",
     description: "Anthropic's Claude Code CLI",
+    resumeCommand: "claude --continue",
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = [];
       if (options.printMode) args.push("--print");
@@ -80,6 +82,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Gemini CLI",
     binary: "gemini",
     description: "Google's Gemini CLI",
+    resumeCommand: "gemini --resume",
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = [];
       if (options.model) args.push("--model", options.model);
@@ -112,6 +115,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "OpenCode",
     binary: "opencode",
     description: "OpenAI-based coding assistant",
+    resumeCommand: null,
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = [];
       if (options.model) args.push("--model", options.model);
@@ -142,6 +146,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Aider",
     binary: "aider",
     description: "AI pair programming in terminal",
+    resumeCommand: "aider",
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = ["--yes-always"];
       if (options.model) args.push("--model", options.model);
@@ -174,6 +179,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Codex CLI",
     binary: "codex",
     description: "OpenAI Codex CLI",
+    resumeCommand: "codex resume --last",
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = [];
       if (options.model) args.push("--model", options.model);

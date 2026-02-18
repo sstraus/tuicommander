@@ -1,5 +1,6 @@
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
+import type { SavedTerminal } from "../types";
 
 const LEGACY_STORAGE_KEY = "tui-commander-repos";
 
@@ -13,6 +14,7 @@ export interface BranchState {
   additions: number;
   deletions: number;
   runCommand?: string; // Saved run command for this branch
+  savedTerminals?: SavedTerminal[]; // Persisted terminal metadata for session restore
 }
 
 /** Repository with branches */
@@ -104,6 +106,9 @@ function createRepositoriesStore() {
               branch.terminals = [];
               if (branch.hadTerminals === undefined) {
                 branch.hadTerminals = false;
+              }
+              if (branch.savedTerminals === undefined) {
+                branch.savedTerminals = [];
               }
             }
           });
@@ -343,6 +348,39 @@ function createRepositoriesStore() {
       const repo = actions.getActive();
       if (!repo || !repo.activeBranch) return [];
       return repo.branches[repo.activeBranch]?.terminals || [];
+    },
+
+    /** Snapshot terminal metadata into each branch for persistence (called at quit time) */
+    snapshotTerminals(snapshots: Map<string, Map<string, SavedTerminal[]>>): void {
+      setState(
+        produce((s) => {
+          for (const [repoPath, branches] of snapshots) {
+            const repo = s.repositories[repoPath];
+            if (!repo) continue;
+            for (const [branchName, terminals] of branches) {
+              const branch = repo.branches[branchName];
+              if (!branch) continue;
+              branch.savedTerminals = terminals;
+            }
+          }
+        })
+      );
+      // Flush immediately (not debounced) — app is about to exit
+      saveReposImmediate(state.repositories, state.repoOrder);
+    },
+
+    /** Clear savedTerminals from all branches (consume-once after restore) */
+    clearSavedTerminals(): void {
+      setState(
+        produce((s) => {
+          for (const repo of Object.values(s.repositories)) {
+            for (const branch of Object.values(repo.branches)) {
+              branch.savedTerminals = [];
+            }
+          }
+        })
+      );
+      saveRepos(state.repositories, state.repoOrder);
     },
 
     /** Check if empty */

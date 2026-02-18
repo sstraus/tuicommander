@@ -161,6 +161,7 @@ export interface SavedTerminal {
   name: string;
   cwd: string | null;
   fontSize: number;
+  agentType: import("../agents").AgentType | null;
 }
 
 /** Orchestrator stats from backend */
