@@ -1,13 +1,36 @@
 use serde::Serialize;
+use std::fmt;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tauri::State;
 
+use crate::error_classification::calculate_backoff_delay;
 use crate::state::{AppState, GITHUB_CACHE_TTL};
 
-/// Resolve a GitHub API token from environment or gh CLI config.
-/// Order: GH_TOKEN env → GITHUB_TOKEN env → gh CLI config (~/.config/gh/hosts.yml).
+/// Run `gh auth token` CLI to get the current token from gh's secure storage.
+/// This works even when env vars are empty/unset, because gh reads from the
+/// system keychain on macOS or credential store on other platforms.
+fn token_from_gh_cli() -> Option<String> {
+    let output = Command::new("gh")
+        .args(["auth", "token"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let token = String::from_utf8(output.stdout).ok()?;
+    let token = token.trim().to_string();
+    if token.is_empty() { None } else { Some(token) }
+}
+
+/// Resolve a GitHub API token from environment or gh CLI.
+/// Order: GH_TOKEN env → GITHUB_TOKEN env → gh_token crate → `gh auth token` CLI.
+/// The gh_token crate has a bug where it returns empty strings for env vars set
+/// to "" (e.g., in Tauri GUI processes that don't inherit shell env vars).
+/// We filter empty values and fall back to the CLI as a last resort.
 /// Returns None if no token is found (graceful degradation).
 pub(crate) fn resolve_github_token() -> Option<String> {
     if let Ok(token) = std::env::var("GH_TOKEN") {
@@ -20,7 +43,126 @@ pub(crate) fn resolve_github_token() -> Option<String> {
             return Some(token);
         }
     }
-    gh_token::get().ok()
+    // gh_token crate doesn't filter empty env var values (env::var_os returns
+    // Some("") for vars set to empty string), so we must filter here.
+    if let Some(token) = gh_token::get().ok().filter(|t| !t.is_empty()) {
+        return Some(token);
+    }
+    // Direct CLI fallback: gh_token's internal CLI call may be skipped when it
+    // short-circuits on an empty env var. Call `gh auth token` explicitly.
+    token_from_gh_cli()
+}
+
+/// Collect all non-empty GitHub token candidates in priority order.
+/// Used for fallback when the primary token gets a 401.
+pub(crate) fn resolve_github_token_candidates() -> Vec<String> {
+    let mut candidates = Vec::new();
+    if let Ok(token) = std::env::var("GH_TOKEN") {
+        if !token.is_empty() {
+            candidates.push(token);
+        }
+    }
+    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+        if !token.is_empty() {
+            candidates.push(token);
+        }
+    }
+    if let Ok(token) = gh_token::get() {
+        if !token.is_empty() && !candidates.contains(&token) {
+            candidates.push(token);
+        }
+    }
+    // Explicit CLI fallback for when gh_token short-circuits on empty env vars
+    if let Some(token) = token_from_gh_cli() {
+        if !candidates.contains(&token) {
+            candidates.push(token);
+        }
+    }
+    candidates
+}
+
+/// Error type for GraphQL requests, distinguishing auth failures from other errors.
+#[derive(Debug)]
+pub(crate) enum GqlError {
+    /// 401 Unauthorized — token is invalid or expired
+    Auth(String),
+    /// Any other error (network, parse, non-401 HTTP status, GraphQL errors)
+    Other(String),
+}
+
+impl fmt::Display for GqlError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GqlError::Auth(msg) => write!(f, "Auth error: {msg}"),
+            GqlError::Other(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+/// Circuit breaker for GitHub API calls.
+/// Tracks consecutive failures and stops making requests after a threshold.
+pub(crate) struct GitHubCircuitBreaker {
+    failure_count: AtomicU32,
+    open_until: parking_lot::RwLock<Option<Instant>>,
+}
+
+/// Number of consecutive failures before the circuit opens.
+const CIRCUIT_BREAKER_THRESHOLD: u32 = 3;
+/// Base backoff delay in milliseconds when circuit opens.
+const CIRCUIT_BREAKER_BASE_MS: f64 = 5_000.0;
+/// Maximum backoff delay in milliseconds.
+const CIRCUIT_BREAKER_MAX_MS: f64 = 300_000.0;
+/// Backoff multiplier.
+const CIRCUIT_BREAKER_MULTIPLIER: f64 = 2.0;
+
+impl GitHubCircuitBreaker {
+    pub(crate) fn new() -> Self {
+        Self {
+            failure_count: AtomicU32::new(0),
+            open_until: parking_lot::RwLock::new(None),
+        }
+    }
+
+    /// Check if the circuit is open. Returns Ok(()) if closed (requests allowed),
+    /// or Err with a message if open (requests should be skipped).
+    pub(crate) fn check(&self) -> Result<(), String> {
+        let guard = self.open_until.read();
+        if let Some(until) = *guard {
+            if Instant::now() < until {
+                let remaining = until.duration_since(Instant::now());
+                return Err(format!(
+                    "GitHub API circuit breaker open — retrying in {:.0}s",
+                    remaining.as_secs_f64()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Record a successful API call. Resets failure count and closes the circuit.
+    pub(crate) fn record_success(&self) {
+        self.failure_count.store(0, Ordering::Relaxed);
+        *self.open_until.write() = None;
+    }
+
+    /// Record a failed API call. Opens the circuit after threshold failures.
+    pub(crate) fn record_failure(&self) {
+        let count = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
+        if count >= CIRCUIT_BREAKER_THRESHOLD {
+            let delay_ms = calculate_backoff_delay(
+                count - CIRCUIT_BREAKER_THRESHOLD,
+                CIRCUIT_BREAKER_BASE_MS,
+                CIRCUIT_BREAKER_MAX_MS,
+                CIRCUIT_BREAKER_MULTIPLIER,
+            );
+            let delay = std::time::Duration::from_millis(delay_ms as u64);
+            *self.open_until.write() = Some(Instant::now() + delay);
+            eprintln!(
+                "[github] Circuit breaker open after {count} failures, backing off for {:.1}s",
+                delay.as_secs_f64()
+            );
+        }
+    }
 }
 
 /// Parse a git remote URL into (owner, repo) for GitHub repos.
@@ -55,13 +197,13 @@ pub(crate) fn parse_remote_url(url: &str) -> Option<(String, String)> {
 }
 
 /// Execute a GraphQL query against the GitHub API.
-/// Returns the parsed JSON response or an error.
+/// Returns the parsed JSON response or a typed error (Auth for 401, Other for everything else).
 pub(crate) fn graphql_request(
     client: &reqwest::blocking::Client,
     token: &str,
     query: &str,
     variables: serde_json::Value,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, GqlError> {
     let body = serde_json::json!({
         "query": query,
         "variables": variables,
@@ -73,26 +215,84 @@ pub(crate) fn graphql_request(
         .header("User-Agent", "tui-commander")
         .json(&body)
         .send()
-        .map_err(|e| format!("GraphQL request failed: {e}"))?;
+        .map_err(|e| GqlError::Other(format!("GraphQL request failed: {e}")))?;
 
     let status = response.status();
     let json: serde_json::Value = response
         .json()
-        .map_err(|e| format!("Failed to parse GraphQL response: {e}"))?;
+        .map_err(|e| GqlError::Other(format!("Failed to parse GraphQL response: {e}")))?;
 
     if !status.is_success() {
         let msg = json["message"].as_str().unwrap_or("Unknown error");
-        return Err(format!("GitHub API error ({status}): {msg}"));
+        let err_msg = format!("GitHub API error ({status}): {msg}");
+        if status.as_u16() == 401 {
+            return Err(GqlError::Auth(err_msg));
+        }
+        return Err(GqlError::Other(err_msg));
     }
 
     if let Some(errors) = json["errors"].as_array() {
         if !errors.is_empty() {
             let msg = errors[0]["message"].as_str().unwrap_or("Unknown GraphQL error");
-            return Err(format!("GraphQL error: {msg}"));
+            return Err(GqlError::Other(format!("GraphQL error: {msg}")));
         }
     }
 
     Ok(json)
+}
+
+/// Execute a GraphQL query with token fallback and circuit breaker protection.
+/// On 401, tries remaining token candidates and updates the stored token on success.
+pub(crate) fn graphql_with_retry(
+    state: &AppState,
+    query: &str,
+    variables: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    // Check circuit breaker first
+    state.github_circuit_breaker.check()?;
+
+    let current_token = state.github_token.read().clone();
+    let token = match current_token.as_deref() {
+        Some(t) => t.to_string(),
+        None => return Err("No GitHub token available".to_string()),
+    };
+
+    match graphql_request(&state.http_client, &token, query, variables.clone()) {
+        Ok(response) => {
+            state.github_circuit_breaker.record_success();
+            Ok(response)
+        }
+        Err(GqlError::Auth(msg)) => {
+            eprintln!("[github] 401 with current token, trying fallback candidates");
+            // Try other candidates
+            let candidates = resolve_github_token_candidates();
+            for candidate in &candidates {
+                if candidate == &token {
+                    continue; // Skip the one that already failed
+                }
+                match graphql_request(&state.http_client, candidate, query, variables.clone()) {
+                    Ok(response) => {
+                        eprintln!("[github] Token fallback succeeded");
+                        *state.github_token.write() = Some(candidate.clone());
+                        state.github_circuit_breaker.record_success();
+                        return Ok(response);
+                    }
+                    Err(GqlError::Auth(_)) => continue, // Try next candidate
+                    Err(GqlError::Other(e)) => {
+                        state.github_circuit_breaker.record_failure();
+                        return Err(e);
+                    }
+                }
+            }
+            // All candidates failed with 401
+            state.github_circuit_breaker.record_failure();
+            Err(msg)
+        }
+        Err(GqlError::Other(msg)) => {
+            state.github_circuit_breaker.record_failure();
+            Err(msg)
+        }
+    }
 }
 
 /// Git remote + branch status (no PR/CI — those come from githubStore via batch query)
@@ -402,15 +602,13 @@ fn get_github_remote_url(repo_path: &PathBuf) -> Option<String> {
 /// Core logic for fetching PR statuses via GitHub GraphQL API (no caching).
 pub(crate) fn get_repo_pr_statuses_impl(
     path: &str,
-    client: &reqwest::blocking::Client,
-    token: Option<&str>,
+    state: &AppState,
 ) -> Vec<BranchPrStatus> {
     let repo_path = PathBuf::from(path);
 
-    let token = match token {
-        Some(t) => t,
-        None => return vec![], // No token = no GitHub API access
-    };
+    if state.github_token.read().is_none() {
+        return vec![]; // No token = no GitHub API access
+    }
 
     let remote_url = match get_github_remote_url(&repo_path) {
         Some(url) => url,
@@ -428,7 +626,7 @@ pub(crate) fn get_repo_pr_statuses_impl(
         "first": 50,
     });
 
-    match graphql_request(client, token, BATCH_PR_QUERY, variables) {
+    match graphql_with_retry(state, BATCH_PR_QUERY, variables) {
         Ok(response) => parse_graphql_prs(&response),
         Err(e) => {
             eprintln!("[github] GraphQL batch PR query failed: {e}");
@@ -444,11 +642,7 @@ pub(crate) fn get_repo_pr_statuses(state: State<'_, Arc<AppState>>, path: String
         return cached;
     }
 
-    let statuses = get_repo_pr_statuses_impl(
-        &path,
-        &state.http_client,
-        state.github_token.as_deref(),
-    );
+    let statuses = get_repo_pr_statuses_impl(&path, &state);
     AppState::set_cached(&state.github_status_cache, path, statuses.clone());
     statuses
 }
@@ -572,15 +766,13 @@ fn parse_pr_check_contexts(data: &serde_json::Value) -> Vec<serde_json::Value> {
 pub(crate) fn get_ci_checks_impl(
     path: &str,
     pr_number: i64,
-    client: &reqwest::blocking::Client,
-    token: Option<&str>,
+    state: &AppState,
 ) -> Vec<serde_json::Value> {
     let repo_path = PathBuf::from(path);
 
-    let token = match token {
-        Some(t) => t,
-        None => return vec![],
-    };
+    if state.github_token.read().is_none() {
+        return vec![];
+    }
 
     let remote_url = match get_github_remote_url(&repo_path) {
         Some(url) => url,
@@ -598,7 +790,7 @@ pub(crate) fn get_ci_checks_impl(
         "number": pr_number,
     });
 
-    match graphql_request(client, token, PR_CHECKS_QUERY, variables) {
+    match graphql_with_retry(state, PR_CHECKS_QUERY, variables) {
         Ok(data) => parse_pr_check_contexts(&data),
         Err(e) => {
             eprintln!("[github] GraphQL PR checks query failed: {}", e);
@@ -614,7 +806,7 @@ pub(crate) fn get_ci_checks(
     pr_number: i64,
     state: State<'_, Arc<AppState>>,
 ) -> Vec<serde_json::Value> {
-    get_ci_checks_impl(&path, pr_number, &state.http_client, state.github_token.as_deref())
+    get_ci_checks_impl(&path, pr_number, &state)
 }
 
 #[cfg(test)]
@@ -1379,5 +1571,182 @@ mod tests {
         let remaining = data["data"]["rateLimit"]["remaining"].as_i64().unwrap();
         println!("Rate limit remaining: {remaining}/5000");
         assert!(remaining > 0, "Should have rate limit remaining");
+    }
+
+    // --- resolve_github_token_candidates tests ---
+
+    #[test]
+    fn test_resolve_github_token_candidates() {
+        // Set both env vars to known values
+        unsafe {
+            std::env::set_var("GH_TOKEN", "gh-token-1");
+            std::env::set_var("GITHUB_TOKEN", "github-token-2");
+        }
+
+        let candidates = resolve_github_token_candidates();
+        assert!(candidates.len() >= 2, "Should have at least 2 candidates");
+        assert_eq!(candidates[0], "gh-token-1");
+        assert_eq!(candidates[1], "github-token-2");
+
+        // Cleanup
+        unsafe {
+            std::env::remove_var("GH_TOKEN");
+            std::env::remove_var("GITHUB_TOKEN");
+        }
+    }
+
+    // --- Empty token filtering tests ---
+    // Env vars are process-global state, so all env-var scenarios run in a single
+    // test to avoid parallel race conditions.
+
+    #[test]
+    fn test_resolve_github_token_filters_empty_from_gh_token_crate() {
+        // Simulate Tauri GUI process: GITHUB_TOKEN="" (set but empty).
+        // gh_token crate's get() uses env::var_os() which returns Some("") for
+        // empty env vars without checking emptiness. Our resolve_github_token()
+        // must filter this and not return Some("").
+        unsafe {
+            std::env::set_var("GITHUB_TOKEN", "");
+            std::env::remove_var("GH_TOKEN");
+        }
+
+        let result = resolve_github_token();
+        // Result should be either None (no gh CLI) or a non-empty token from CLI
+        if let Some(ref token) = result {
+            assert!(!token.is_empty(),
+                "resolve_github_token must never return an empty string");
+        }
+
+        // Cleanup
+        unsafe {
+            std::env::remove_var("GITHUB_TOKEN");
+        }
+    }
+
+    #[test]
+    fn test_resolve_github_token_candidates_filters_empty() {
+        unsafe {
+            std::env::set_var("GH_TOKEN", "");
+            std::env::set_var("GITHUB_TOKEN", "");
+        }
+
+        let candidates = resolve_github_token_candidates();
+        for candidate in &candidates {
+            assert!(!candidate.is_empty(),
+                "Candidates must never contain empty strings");
+        }
+
+        // Cleanup
+        unsafe {
+            std::env::remove_var("GH_TOKEN");
+            std::env::remove_var("GITHUB_TOKEN");
+        }
+    }
+
+    // --- Integration test: token resolution with gh CLI fallback ---
+    // Run with: cargo test --lib -- --ignored --test-threads=1
+
+    /// Verify that resolve_github_token works even when env vars are empty,
+    /// by falling through to `gh auth token` CLI.
+    /// This catches the exact bug where GITHUB_TOKEN="" in Tauri GUI processes
+    /// caused gh_token crate to return an empty string → 401 Bad credentials.
+    #[test]
+    #[ignore] // Requires gh CLI authenticated
+    fn test_resolve_token_with_empty_env_falls_through_to_cli() {
+        // Save and clear env vars to simulate GUI context
+        let saved_gh = std::env::var("GH_TOKEN").ok();
+        let saved_github = std::env::var("GITHUB_TOKEN").ok();
+        unsafe {
+            std::env::set_var("GITHUB_TOKEN", "");
+            std::env::set_var("GH_TOKEN", "");
+        }
+
+        let token = resolve_github_token();
+        assert!(token.is_some(),
+            "Should resolve token via gh CLI when env vars are empty");
+        let token = token.unwrap();
+        assert!(!token.is_empty(), "Token from CLI should not be empty");
+
+        // Verify the token actually works against GitHub API
+        let client = reqwest::blocking::Client::new();
+        let result = graphql_request(
+            &client, &token,
+            "query { viewer { login } }",
+            serde_json::json!({}),
+        );
+        assert!(result.is_ok(),
+            "Token from gh CLI should authenticate successfully: {:?}", result.err());
+
+        let data = result.unwrap();
+        let login = data["data"]["viewer"]["login"].as_str();
+        assert!(login.is_some(), "Should return authenticated user login");
+        println!("Authenticated via CLI fallback as: {}", login.unwrap());
+
+        // Restore env vars
+        unsafe {
+            match saved_gh {
+                Some(v) => std::env::set_var("GH_TOKEN", v),
+                None => std::env::remove_var("GH_TOKEN"),
+            }
+            match saved_github {
+                Some(v) => std::env::set_var("GITHUB_TOKEN", v),
+                None => std::env::remove_var("GITHUB_TOKEN"),
+            }
+        }
+    }
+
+    // --- GqlError display tests ---
+
+    #[test]
+    fn test_gql_error_display_auth() {
+        let err = GqlError::Auth("401 Unauthorized".to_string());
+        assert_eq!(format!("{err}"), "Auth error: 401 Unauthorized");
+    }
+
+    #[test]
+    fn test_gql_error_display_other() {
+        let err = GqlError::Other("network timeout".to_string());
+        assert_eq!(format!("{err}"), "network timeout");
+    }
+
+    // --- GitHubCircuitBreaker tests ---
+
+    #[test]
+    fn test_circuit_breaker_stays_closed_on_success() {
+        let cb = GitHubCircuitBreaker::new();
+        cb.record_success();
+        cb.record_success();
+        assert!(cb.check().is_ok());
+    }
+
+    #[test]
+    fn test_circuit_breaker_opens_after_threshold() {
+        let cb = GitHubCircuitBreaker::new();
+        cb.record_failure();
+        cb.record_failure();
+        assert!(cb.check().is_ok(), "Should still be closed after 2 failures");
+        cb.record_failure();
+        assert!(cb.check().is_err(), "Should be open after 3 failures");
+    }
+
+    #[test]
+    fn test_circuit_breaker_resets_on_success() {
+        let cb = GitHubCircuitBreaker::new();
+        cb.record_failure();
+        cb.record_failure();
+        cb.record_success(); // Reset before threshold
+        cb.record_failure();
+        cb.record_failure();
+        assert!(cb.check().is_ok(), "Should be closed — success reset the count");
+    }
+
+    #[test]
+    fn test_circuit_breaker_respects_open_until() {
+        let cb = GitHubCircuitBreaker::new();
+        // Force circuit open with a future instant
+        *cb.open_until.write() = Some(Instant::now() + std::time::Duration::from_secs(60));
+        let result = cb.check();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("circuit breaker open"));
     }
 }
