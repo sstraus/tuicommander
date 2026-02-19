@@ -1,0 +1,77 @@
+src-tauri/src/output_parser.rs
+  0ab84ff25f16f0aa 36-41,88-92,256-280,543-583
+src-tauri/src/mcp_http/mcp_transport.rs
+  b4dd9120430e2aa1 426
+src-tauri/src/state.rs
+  b4dd9120430e2aa1 380-383
+SPEC.md
+  0ab84ff25f16f0aa 3-4,50,259,309-316
+src/stores/terminals.ts
+  0ab84ff25f16f0aa 35,80,83
+README.md
+  0ab84ff25f16f0aa 23-28,37-41,50-52,59,61-62,67-69,74,81-85,87-92,94-99,107,114-115,133,182
+src-tauri/Cargo.toml
+  0ab84ff25f16f0aa 3
+src/components/Terminal/Terminal.tsx
+  0ab84ff25f16f0aa 22,293-297
+src-tauri/tauri.conf.json
+  0ab84ff25f16f0aa 4
+CHANGELOG.md
+  0ab84ff25f16f0aa 14-43
+src/components/StatusBar/StatusBar.tsx
+  0ab84ff25f16f0aa 180-193
+package.json
+  0ab84ff25f16f0aa 4
+src-tauri/src/sleep_prevention.rs
+  2379a93fcfd36d3b 1-51
+src/styles.css
+  0ab84ff25f16f0aa 1485-1506
+.gitignore
+  0ab84ff25f16f0aa 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "e393997dfdec69d44f64e611a8c78c001d34b620",
+  "prompts": {
+    "0ab84ff25f16f0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45d73e90-6d26-4793-aa16-63971bd2504a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 219,
+      "total_deletions": 31,
+      "accepted_lines": 211,
+      "overriden_lines": 0
+    },
+    "2379a93fcfd36d3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "901f7f94-a422-4db0-93f2-9955efe5860c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 51,
+      "overriden_lines": 0
+    },
+    "b4dd9120430e2aa1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "213a384e-2b20-485c-b9ed-4b1bb2ae4ecd",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 10,
+      "overriden_lines": 0
+    }
+  }
+}
