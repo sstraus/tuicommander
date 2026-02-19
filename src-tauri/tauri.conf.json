@@ -46,7 +46,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1MEM3NkIyREQzNDMwMDMKUldRRE1EVGRzbllNNWMxR2xrSFpzblI5clZHd1hCZEV0TGg4WlFaNVp2QjY2bWlUQ1R6Mkt3cWcK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENFRUIyQ0U3QTE0NTY2RDgKUldUWVprV2g1eXpyemlya3YwWWdiaXd1bGpEME92blQ0elFjMnFNTU9WRjJ2WWRUWTJ0UU5tcmIK",
       "endpoints": [
         "https://github.com/sstraus/tui-commander/releases/latest/download/latest.json"
       ],
