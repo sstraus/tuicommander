@@ -22,7 +22,7 @@ export MACOSX_DEPLOYMENT_TARGET ?= 10.15
 DIST_DIR=dist-release
 
 .PHONY: all clean dev build build-dmg check sign verify-sign notarize release dist \
-       build-github-release publish-github-release
+       build-github-release publish-github-release github-release
 
 all: build sign
 
@@ -124,6 +124,29 @@ publish-github-release:
 	echo "Publishing draft release $$TAG..."; \
 	gh release edit "$$TAG" --draft=false; \
 	echo "Release $$TAG published: $$(gh release view $$TAG --json url --jq .url)"
+
+# Full GitHub release: tag from package.json, push, wait for CI, publish.
+# Usage: make github-release
+github-release:
+	@VER=$$(node -p "require('./package.json').version"); \
+	TAG="v$$VER"; \
+	BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	echo "==> Releasing $$TAG from $$BRANCH"; \
+	echo "--- Tagging and pushing..."; \
+	git tag -d "$$TAG" 2>/dev/null || true; \
+	git tag "$$TAG"; \
+	git push origin "$$BRANCH"; \
+	git push origin :"refs/tags/$$TAG" 2>/dev/null || true; \
+	git push origin "$$TAG"; \
+	echo "--- Waiting for CI build..."; \
+	sleep 5; \
+	RUN_ID=$$(gh run list --branch "$$TAG" --limit 1 --json databaseId --jq '.[0].databaseId'); \
+	if [ -z "$$RUN_ID" ]; then echo "ERROR: no CI run found" && exit 1; fi; \
+	echo "--- Watching run $$RUN_ID (Ctrl+C to detach)..."; \
+	gh run watch "$$RUN_ID" --exit-status; \
+	echo "--- Publishing release $$TAG..."; \
+	gh release edit "$$TAG" --draft=false; \
+	echo "==> Released: $$(gh release view $$TAG --json url --jq .url)"
 
 # Clean build artifacts
 clean:
