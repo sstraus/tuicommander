@@ -59,7 +59,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
     <div id="notes-panel" class={props.visible ? "" : "hidden"}>
       <div class="panel-header">
         <div class="panel-header-left">
-          <span class="panel-title">Notes</span>
+          <span class="panel-title">💡 Ideas</span>
           <Show when={notesStore.count() > 0}>
             <span class="file-count-badge">{notesStore.count()}</span>
           </Show>
@@ -71,7 +71,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
 
       <div class="panel-content notes-list">
         <Show when={notesStore.state.notes.length === 0}>
-          <div class="notes-empty">No notes yet. Add one below.</div>
+          <div class="notes-empty">No ideas yet. Add one below.</div>
         </Show>
         <For each={notesStore.state.notes}>
           {(note) => (
@@ -113,7 +113,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
           ref={textareaRef}
           class="note-input"
           rows={5}
-          placeholder="Type a note and press Enter..."
+          placeholder="Type an idea and press Enter..."
           value={inputText()}
           onInput={(e) => setInputText(e.currentTarget.value)}
           onKeyDown={handleKeyDown}

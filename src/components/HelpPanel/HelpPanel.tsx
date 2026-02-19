@@ -45,7 +45,7 @@ function getShortcutSections(): ShortcutSection[] {
       { keys: `${mod},`, description: "Open settings" },
       { keys: `${mod}J`, description: "Toggle task queue" },
       { keys: `${mod}K`, description: "Prompt library" },
-      { keys: `${mod}N`, description: "Toggle notes panel" },
+      { keys: `${mod}N`, description: "Toggle ideas panel" },
       { keys: `${mod}?`, description: "Toggle help panel" },
     ],
   },

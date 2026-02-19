@@ -268,8 +268,8 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           MD
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}M</span>
         </button>
-        <button id="notes-toggle" class="toggle-btn" onClick={() => props.onToggleNotes?.()} title={`Toggle Notes Panel (${getModifierSymbol()}N)`} style={{ position: "relative" }}>
-          Notes
+        <button id="notes-toggle" class="toggle-btn" onClick={() => props.onToggleNotes?.()} title={`Toggle Ideas Panel (${getModifierSymbol()}N)`} style={{ position: "relative" }}>
+          💡
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}N</span>
         </button>
         <button id="diff-toggle" class="toggle-btn" onClick={props.onToggleDiff} title={`Toggle Diff Panel (${getModifierSymbol()}D)`} style={{ position: "relative" }}>
