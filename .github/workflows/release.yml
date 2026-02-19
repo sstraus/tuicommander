@@ -101,8 +101,9 @@ jobs:
           APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
           APPLE_API_ISSUER: ${{ secrets.NOTARIZE_ISSUER_ID }}
           APPLE_API_KEY: ${{ secrets.NOTARIZE_KEY_ID }}
-          # Updater artifact signing (key has no password)
+          # Updater artifact signing
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # whisper.cpp build flags per platform:
           # - macOS: override -march to avoid i8mm detection mismatch on M-series < M4
           # - Linux: -fPIC required for whisper-rs-sys static linking
