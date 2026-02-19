@@ -15,11 +15,8 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            args: ''
+            args: '--target aarch64-apple-darwin'
             label: macOS-ARM
-          - platform: macos-13
-            args: ''
-            label: macOS-Intel
           - platform: ubuntu-22.04
             args: ''
             label: Linux-x64
@@ -107,10 +104,13 @@ jobs:
           # Updater artifact signing
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # whisper.cpp: override -march on ARM CI runners to avoid i8mm feature
+          # whisper.cpp: override -march on macOS to avoid i8mm feature
           # detection mismatch (clang supports it but M-series chips < M4 don't)
           CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || '' }}
           CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || '' }}
+          # Linux: whisper-rs-sys needs -fPIC for position-independent code
+          CFLAGS: ${{ matrix.label == 'Linux-x64' && '-fPIC' || '' }}
+          CXXFLAGS: ${{ matrix.label == 'Linux-x64' && '-fPIC' || '' }}
         with:
           tagName: v__VERSION__
           releaseName: 'TUI Commander v__VERSION__'
