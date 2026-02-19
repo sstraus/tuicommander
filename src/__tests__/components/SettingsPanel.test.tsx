@@ -140,13 +140,15 @@ describe("SettingsPanel", () => {
       <SettingsPanel visible={true} onClose={() => {}} />
     ));
 
-    // Default tab is General (includes confirmations and appearance settings)
+    // Default tab is General (includes confirmations, power, updates, git, appearance)
     const headings = container.querySelectorAll(".settings-section h3");
-    expect(headings.length).toBeGreaterThanOrEqual(4);
+    expect(headings.length).toBeGreaterThanOrEqual(6);
     expect(headings[0]!.textContent).toBe("General");
     expect(headings[1]!.textContent).toBe("Confirmations");
-    expect(headings[2]!.textContent).toBe("Git Integration");
-    expect(headings[3]!.textContent).toBe("Appearance");
+    expect(headings[2]!.textContent).toBe("Power Management");
+    expect(headings[3]!.textContent).toBe("Updates");
+    expect(headings[4]!.textContent).toBe("Git Integration");
+    expect(headings[5]!.textContent).toBe("Appearance");
 
     // Click Notifications tab
     const tabs = container.querySelectorAll(".settings-tab");

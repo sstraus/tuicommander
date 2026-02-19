@@ -1482,6 +1482,28 @@ html, body {
   white-space: nowrap;
 }
 
+.status-usage-limit {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  color: #59a8dd;
+  background: rgba(89, 168, 221, 0.15);
+  white-space: nowrap;
+}
+
+.status-usage-limit.usage-warning {
+  color: #dcdcaa;
+  background: rgba(220, 220, 170, 0.2);
+}
+
+.status-usage-limit.usage-critical {
+  color: #f48771;
+  background: rgba(244, 135, 113, 0.2);
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+
 .status-rate-limit {
   font-family: var(--font-mono);
   font-size: var(--font-sm);

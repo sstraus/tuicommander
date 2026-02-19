@@ -177,6 +177,20 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
             );
           }}
         </Show>
+        <Show when={terminalsStore.getActive()?.usageLimit}>
+          {(ul) => (
+            <span
+              class="status-usage-limit"
+              classList={{
+                "usage-warning": ul().percentage >= 70 && ul().percentage < 90,
+                "usage-critical": ul().percentage >= 90,
+              }}
+              title={`Claude Code ${ul().limitType} limit: ${ul().percentage}% used`}
+            >
+              {ul().percentage}% {ul().limitType}
+            </span>
+          )}
+        </Show>
         <Show when={rateLimitWarning()}>
           {(rl) => (
             <span class="status-rate-limit" title={`${rl().count} session(s) rate limited`}>
@@ -269,7 +283,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}M</span>
         </button>
         <button id="notes-toggle" class="toggle-btn" onClick={() => props.onToggleNotes?.()} title={`Toggle Ideas Panel (${getModifierSymbol()}N)`} style={{ position: "relative" }}>
-          💡
+          <span style={{ filter: "grayscale(1) brightness(1.5)", "font-style": "normal" }}>💡</span>
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}N</span>
         </button>
         <button id="diff-toggle" class="toggle-btn" onClick={props.onToggleDiff} title={`Toggle Diff Panel (${getModifierSymbol()}D)`} style={{ position: "relative" }}>

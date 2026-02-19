@@ -237,6 +237,12 @@ mod tests {
     use crate::MAX_CONCURRENT_SESSIONS;
 
     fn test_state() -> Arc<AppState> {
+        // Create blocking client on a separate OS thread because
+        // reqwest::blocking::Client::new() creates an internal tokio runtime
+        // which panics when constructed inside an existing async context (#[tokio::test]).
+        let http_client = std::thread::spawn(|| reqwest::blocking::Client::new())
+            .join()
+            .expect("blocking client construction thread panicked");
         Arc::new(AppState {
             sessions: DashMap::new(),
             worktrees_dir: std::path::PathBuf::from("/tmp/test-worktrees"),
@@ -248,8 +254,9 @@ mod tests {
             repo_info_cache: DashMap::new(),
             github_status_cache: DashMap::new(),
             head_watchers: DashMap::new(),
-            http_client: reqwest::blocking::Client::new(),
-            github_token: None,
+            http_client: std::mem::ManuallyDrop::new(http_client),
+            github_token: parking_lot::RwLock::new(None),
+            github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
         })
     }
 

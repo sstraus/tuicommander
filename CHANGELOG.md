@@ -11,6 +11,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.3.0] - 2026-02-19
+
+### Added
+- **Auto-update** - Check for updates on startup via tauri-plugin-updater, download progress badge in status bar, one-click install and relaunch
+- **Prevent system sleep** - keepawake integration prevents sleep while agents are working (configurable in Settings)
+- **Usage limit badge** - Detects Claude Code "You've used X% of your weekly/session limit" messages and displays a color-coded badge in status bar (blue < 70%, yellow 70-89%, red pulsing >= 90%)
+- **Ideas panel** - Renamed Notes to Ideas with lightbulb icon, send-to-terminal and delete actions
+- **Terminal session persistence** - Terminal sessions survive app restarts, with activeRepoPath live-sync
+- **GitHub GraphQL API** - Replaced `gh pr list` CLI with direct GraphQL for PR statuses, CI checks, and token resolution
+- **HEAD file watcher** - Watches `.git/HEAD` for branch changes instead of polling
+- **Build & release targets** - Makefile targets for `build-github-release` and `publish-github-release`
+
+### Changed
+- **Git status via file reads** - Read branch and remote URL from `.git` files instead of subprocess for better performance
+- **Status bar overflow** - Handles long content gracefully
+- **Color picker** - Added to settings for theme customization
+- **Default theme** - Changed to VS Code Dark, reordered theme lists
+
+### Fixed
+- **Empty GitHub token** - Filter empty strings from `gh_token` crate, fall back to `gh auth token` CLI
+- **Agent resume commands** - Updated resume commands for OpenCode and Aider
+- **Download progress bar** - Fixed layout in Dictation Settings
+- **PTY environment** - Set `TERM=xterm-256color`, `COLORTERM`, and `LANG` for proper color and UTF-8 support
+- **Branch name overflow** - Text ellipsis on long branch names in sidebar
+- **Branch name styling** - Font size and color consistency
+- **Worktree button** - Disabled during creation to prevent double-clicks
+- **CI builds** - Linux `libasound2-dev` dependency, macOS notarization, Windows process group guard
+
+---
+
 ## [0.2.0] - 2026-02-18
 
 ### Added

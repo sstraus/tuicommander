@@ -1,10 +1,10 @@
 ---
-id: "257-0abb"
-title: "Auto-update with Tauri updater plugin"
-status: pending
+id: 257-0abb
+title: Auto-update with Tauri updater plugin
+status: complete
 priority: P2
-created: 2026-02-18T22:16:38.245Z
-updated: 2026-02-18T22:16:38.245Z
+created: "2026-02-18T22:16:38.245Z"
+updated: "2026-02-19T11:51:26.756Z"
 dependencies: []
 ---
 
@@ -34,4 +34,6 @@ When a new version of TUI Commander is released, users have no way to know about
 - src/components/SettingsPanel/GeneralSettings.tsx
 
 ## Work Log
+
+### 2026-02-19T11:51:26.691Z - Implemented auto-update: tauri-plugin-updater integrated, updater store with check/download/install/relaunch, 10s timeout on check, progress tracking, StatusBar badge, Settings toggle, signing keypair generated and pubkey configured in tauri.conf.json
 

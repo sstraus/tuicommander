@@ -18,7 +18,8 @@ type ParsedEvent =
   | { type: "status-line"; task_name: string; full_line: string; time_info: string | null; token_info: string | null }
   | { type: "pr-url"; number: number; url: string; platform: string }
   | { type: "progress"; state: number; value: number }
-  | { type: "question"; prompt_text: string };
+  | { type: "question"; prompt_text: string }
+  | { type: "usage-limit"; percentage: number; limit_type: string };
 
 export interface TerminalProps {
   id: string;
@@ -268,6 +269,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
           case "rate-limit": {
             const detectedAgent = terminalsStore.get(props.id)?.agentType;
+            console.debug(`[RateLimit DEBUG] pattern=${parsed.pattern_name} matched="${parsed.matched_text}" agent=${detectedAgent ?? "none"} sessionId=${targetSessionId}`);
             if (detectedAgent) {
               const info = {
                 agentType: detectedAgent,
@@ -287,6 +289,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
             if (terminalsStore.state.activeId !== props.id) {
               notificationsStore.playQuestion();
             }
+            break;
+          case "usage-limit":
+            terminalsStore.update(props.id, {
+              usageLimit: { percentage: parsed.percentage, limitType: parsed.limit_type },
+            });
             break;
           case "pr-url":
             break;

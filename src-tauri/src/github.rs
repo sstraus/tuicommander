@@ -106,13 +106,13 @@ pub(crate) struct GitHubCircuitBreaker {
     open_until: parking_lot::RwLock<Option<Instant>>,
 }
 
-/// Number of consecutive failures before the circuit opens.
+/// Consecutive failures before the circuit opens (tolerates occasional transient errors).
 const CIRCUIT_BREAKER_THRESHOLD: u32 = 3;
-/// Base backoff delay in milliseconds when circuit opens.
+/// Initial backoff when the circuit opens (5 seconds).
 const CIRCUIT_BREAKER_BASE_MS: f64 = 5_000.0;
-/// Maximum backoff delay in milliseconds.
+/// Maximum backoff cap so the circuit eventually retries (5 minutes).
 const CIRCUIT_BREAKER_MAX_MS: f64 = 300_000.0;
-/// Backoff multiplier.
+/// Exponential backoff multiplier (doubles each failure beyond threshold).
 const CIRCUIT_BREAKER_MULTIPLIER: f64 = 2.0;
 
 impl GitHubCircuitBreaker {
@@ -202,7 +202,7 @@ pub(crate) fn graphql_request(
     client: &reqwest::blocking::Client,
     token: &str,
     query: &str,
-    variables: serde_json::Value,
+    variables: &serde_json::Value,
 ) -> Result<serde_json::Value, GqlError> {
     let body = serde_json::json!({
         "query": query,
@@ -257,7 +257,7 @@ pub(crate) fn graphql_with_retry(
         None => return Err("No GitHub token available".to_string()),
     };
 
-    match graphql_request(&state.http_client, &token, query, variables.clone()) {
+    match graphql_request(&state.http_client, &token, query, &variables) {
         Ok(response) => {
             state.github_circuit_breaker.record_success();
             Ok(response)
@@ -270,7 +270,7 @@ pub(crate) fn graphql_with_retry(
                 if candidate == &token {
                     continue; // Skip the one that already failed
                 }
-                match graphql_request(&state.http_client, candidate, query, variables.clone()) {
+                match graphql_request(&state.http_client, candidate, query, &variables) {
                     Ok(response) => {
                         eprintln!("[github] Token fallback succeeded");
                         *state.github_token.write() = Some(candidate.clone());
@@ -388,19 +388,27 @@ pub(crate) fn classify_review_state(review_decision: Option<&str>) -> Option<Sta
     }
 }
 
-/// Convert a 6-char hex color to an rgba() CSS string with the given alpha
-pub(crate) fn hex_to_rgba(hex: &str, alpha: f64) -> String {
+/// Parse r/g/b from a 6-char hex color string, returning (0,0,0) for invalid input
+fn parse_hex_rgb(hex: &str) -> (u8, u8, u8) {
+    if hex.len() < 6 {
+        return (0, 0, 0);
+    }
     let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
     let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
     let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+    (r, g, b)
+}
+
+/// Convert a 6-char hex color to an rgba() CSS string with the given alpha
+pub(crate) fn hex_to_rgba(hex: &str, alpha: f64) -> String {
+    let (r, g, b) = parse_hex_rgb(hex);
     format!("rgba({r}, {g}, {b}, {alpha})")
 }
 
 /// Determine if a hex color is light (needs dark text) using BT.601 luma
 pub(crate) fn is_light_color(hex: &str) -> bool {
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as u32;
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as u32;
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as u32;
+    let (r, g, b) = parse_hex_rgb(hex);
+    let (r, g, b) = (r as u32, g as u32, b as u32);
     (r * 299 + g * 587 + b * 114) / 1000 > 128
 }
 
@@ -635,24 +643,32 @@ pub(crate) fn get_repo_pr_statuses_impl(
     }
 }
 
-/// Get all open PR statuses for a repository (cached, 30s TTL)
+/// Get all open PR statuses for a repository (cached, 30s TTL).
+/// Runs on a blocking thread to avoid freezing the UI on focus.
 #[tauri::command]
-pub(crate) fn get_repo_pr_statuses(state: State<'_, Arc<AppState>>, path: String) -> Vec<BranchPrStatus> {
-    if let Some(cached) = AppState::get_cached(&state.github_status_cache, &path, GITHUB_CACHE_TTL) {
-        return cached;
-    }
+pub(crate) async fn get_repo_pr_statuses(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+) -> Result<Vec<BranchPrStatus>, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        if let Some(cached) = AppState::get_cached(&state.github_status_cache, &path, GITHUB_CACHE_TTL) {
+            return cached;
+        }
 
-    let statuses = get_repo_pr_statuses_impl(&path, &state);
-    AppState::set_cached(&state.github_status_cache, path, statuses.clone());
-    statuses
+        let statuses = get_repo_pr_statuses_impl(&path, &state);
+        AppState::set_cached(&state.github_status_cache, path, statuses.clone());
+        statuses
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))
 }
 
-/// Get git remote + branch status for a repository.
+/// Get git remote + branch status for a repository (implementation).
 /// PR and CI data now comes from the batch githubStore (GraphQL),
 /// so this only returns has_remote, current_branch, ahead, and behind.
-#[tauri::command]
-pub(crate) fn get_github_status(path: String) -> GitHubStatus {
-    let repo_path = PathBuf::from(&path);
+pub(crate) fn get_github_status_impl(path: &str) -> GitHubStatus {
+    let repo_path = PathBuf::from(path);
 
     let has_remote = get_github_remote_url(&repo_path).is_some();
 
@@ -695,6 +711,14 @@ pub(crate) fn get_github_status(path: String) -> GitHubStatus {
         ahead,
         behind,
     }
+}
+
+/// Tauri command wrapper — runs on a blocking thread to avoid freezing the UI.
+#[tauri::command]
+pub(crate) async fn get_github_status(path: String) -> Result<GitHubStatus, String> {
+    tokio::task::spawn_blocking(move || get_github_status_impl(&path))
+        .await
+        .map_err(|e| format!("Task failed: {e}"))
 }
 
 const PR_CHECKS_QUERY: &str = r#"
@@ -799,14 +823,20 @@ pub(crate) fn get_ci_checks_impl(
     }
 }
 
-/// Get CI check details for a PR via GitHub GraphQL API (Story 060)
+/// Get CI check details for a PR via GitHub GraphQL API (Story 060).
+/// Runs on a blocking thread to avoid freezing the UI on focus.
 #[tauri::command]
-pub(crate) fn get_ci_checks(
+pub(crate) async fn get_ci_checks(
     path: String,
     pr_number: i64,
     state: State<'_, Arc<AppState>>,
-) -> Vec<serde_json::Value> {
-    get_ci_checks_impl(&path, pr_number, &state)
+) -> Result<Vec<serde_json::Value>, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        get_ci_checks_impl(&path, pr_number, &state)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))
 }
 
 #[cfg(test)]
@@ -1473,7 +1503,7 @@ mod tests {
             "repo": repo,
             "first": 50,
         });
-        let graphql_result = graphql_request(&client, &token, BATCH_PR_QUERY, variables);
+        let graphql_result = graphql_request(&client, &token, BATCH_PR_QUERY, &variables);
         assert!(graphql_result.is_ok(), "GraphQL request failed: {:?}", graphql_result.err());
 
         let data = graphql_result.unwrap();
@@ -1558,7 +1588,7 @@ mod tests {
         let result = graphql_request(
             &client, &token,
             "query { viewer { login } rateLimit { remaining resetAt } }",
-            serde_json::json!({}),
+            &serde_json::json!({}),
         );
 
         assert!(result.is_ok(), "Auth failed: {:?}", result.err());
@@ -1672,7 +1702,7 @@ mod tests {
         let result = graphql_request(
             &client, &token,
             "query { viewer { login } }",
-            serde_json::json!({}),
+            &serde_json::json!({}),
         );
         assert!(result.is_ok(),
             "Token from gh CLI should authenticate successfully: {:?}", result.err());

@@ -1,7 +1,7 @@
 # TUI Commander Specification
 
-**Version:** 0.1.0
-**Last Updated:** 2026-02-04
+**Version:** 0.3.0
+**Last Updated:** 2026-02-19
 
 ## Overview
 
@@ -47,7 +47,7 @@ App
 │   ├── Terminal (xterm.js)
 │   ├── DiffPanel
 │   ├── MarkdownPanel
-│   └── NotesPanel
+│   └── IdeasPanel
 ├── StatusBar
 ├── PromptOverlay
 └── PromptDrawer
@@ -256,7 +256,7 @@ Features:
 | Cmd+K | Open prompt library |
 | Cmd+D | Toggle diff panel |
 | Cmd+M | Toggle markdown panel |
-| Cmd+N | Toggle notes panel |
+| Cmd+N | Toggle Ideas panel |
 | Cmd+1-9 | Switch to tab N |
 | Cmd++/- | Zoom in/out |
 | Cmd+0 | Reset zoom |
@@ -306,7 +306,14 @@ All stores persist to localStorage:
 - [x] Prompt library with variables
 - [x] Keyboard redirect to terminal
 - [x] Fallback agent chain
-- [x] Notes sidebar panel with send-to-terminal and delete actions
+- [x] Ideas panel (formerly Notes) with send-to-terminal and delete actions
+- [x] Terminal session persistence across app restarts
+- [x] GitHub GraphQL API (replaces gh CLI for PR/CI data)
+- [x] Auto-update via tauri-plugin-updater with progress badge
+- [x] Prevent system sleep while agents are working (keepawake)
+- [x] Usage limit detection for Claude Code (weekly/session) with status bar badge
+- [x] HEAD file watcher for branch change detection
+- [x] Git status via .git file reads (no subprocess)
 
 ### Completed (Voice Dictation)
 - [x] Local Whisper inference via whisper-rs (Metal GPU acceleration)
@@ -323,20 +330,16 @@ All stores persist to localStorage:
 - [ ] Task completion detection
 - [ ] Error handling strategy config
 - [ ] Audio notification when agent awaits input
-- [ ] Centralized settings panel
-- [ ] Branch management popover
 - [ ] IDE launcher with app icons
 
 ### Pending (P3)
 - [ ] Markdown rendering in terminal
 - [ ] Agent stats display
-- [ ] Session save/restore
 - [ ] Config file support
 - [ ] Task queue UI
 - [ ] lazygit integration
 - [ ] Advanced keyboard shortcuts
 - [ ] TypeScript PTY wrapper
-- [ ] Context menu with right-click
 
 ## Future Considerations
 

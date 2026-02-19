@@ -33,6 +33,12 @@ pub enum ParsedEvent {
     Question {
         prompt_text: String,
     },
+    /// Claude Code usage limit: "You've used X% of your weekly/session limit"
+    #[serde(rename = "usage-limit")]
+    UsageLimit {
+        percentage: u8,
+        limit_type: String, // "weekly" or "session"
+    },
 }
 
 /// OutputParser: detects structured events in PTY output text.
@@ -79,6 +85,11 @@ impl OutputParser {
             events.push(evt);
         }
 
+        // Usage limit detection (must run before rate limit to avoid false positives)
+        if let Some(evt) = parse_usage_limit(text) {
+            events.push(evt);
+        }
+
         // Question/attention detection
         if let Some(evt) = parse_question(text) {
             events.push(evt);
@@ -90,6 +101,8 @@ impl OutputParser {
     fn parse_rate_limit(&self, text: &str) -> Option<ParsedEvent> {
         for pattern in &self.rate_limit_patterns {
             if let Some(m) = pattern.regex.find(text) {
+                eprintln!("[RateLimit DEBUG] pattern={} matched=\"{}\" in text=\"{}\"",
+                    pattern.name, m.as_str(), &text[..text.len().min(200)]);
                 let retry_after_ms = if pattern.has_retry_capture {
                     pattern.regex.captures(text).and_then(|caps| {
                         caps.get(1).and_then(|g| {
@@ -235,6 +248,31 @@ fn parse_status_line(text: &str) -> Option<ParsedEvent> {
                     token_info,
                 });
             }
+        }
+    }
+    None
+}
+
+/// Detect Claude Code usage limit messages:
+/// "You've used 78% of your weekly limit" or "You've used 45% of your session limit"
+fn parse_usage_limit(text: &str) -> Option<ParsedEvent> {
+    let clean = strip_ansi(text);
+    // Fast path
+    if !clean.contains("% of your") {
+        return None;
+    }
+    lazy_static::lazy_static! {
+        static ref USAGE_LIMIT_RE: regex::Regex =
+            regex::Regex::new(r"(?i)You['\u{2019}]ve used (\d{1,3})% of your (weekly|session) limit").unwrap();
+    }
+    for line in clean.lines() {
+        if let Some(caps) = USAGE_LIMIT_RE.captures(line) {
+            let percentage: u8 = caps[1].parse().unwrap_or(0).min(100);
+            let limit_type = caps[2].to_lowercase();
+            return Some(ParsedEvent::UsageLimit {
+                percentage,
+                limit_type,
+            });
         }
     }
     None
@@ -501,5 +539,46 @@ mod tests {
         // Normal terminal output should produce no events
         let events = parser.parse("ls -la\ntotal 42\ndrwxr-xr-x  5 user staff 160 Jan 1 00:00 .\n");
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_usage_limit_weekly() {
+        let parser = OutputParser::new();
+        let events = parser.parse("You've used 78% of your weekly limit · resets Feb 21 at 9am (Europe/Madrid)");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { percentage: 78, .. })));
+        match events.iter().find(|e| matches!(e, ParsedEvent::UsageLimit { .. })) {
+            Some(ParsedEvent::UsageLimit { percentage, limit_type }) => {
+                assert_eq!(*percentage, 78);
+                assert_eq!(limit_type, "weekly");
+            }
+            _ => panic!("Expected UsageLimit event"),
+        }
+    }
+
+    #[test]
+    fn test_usage_limit_session() {
+        let parser = OutputParser::new();
+        let events = parser.parse("You've used 45% of your session limit");
+        match events.iter().find(|e| matches!(e, ParsedEvent::UsageLimit { .. })) {
+            Some(ParsedEvent::UsageLimit { percentage, limit_type }) => {
+                assert_eq!(*percentage, 45);
+                assert_eq!(limit_type, "session");
+            }
+            _ => panic!("Expected UsageLimit event"),
+        }
+    }
+
+    #[test]
+    fn test_usage_limit_with_ansi() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\x1b[33mYou've used 90% of your weekly limit\x1b[0m");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { percentage: 90, .. })));
+    }
+
+    #[test]
+    fn test_usage_limit_smart_quote() {
+        let parser = OutputParser::new();
+        let events = parser.parse("You\u{2019}ve used 50% of your weekly limit");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { percentage: 50, .. })));
     }
 }

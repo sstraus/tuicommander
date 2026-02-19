@@ -65,7 +65,8 @@ impl Utf8ReadBuffer {
             self.remainder.extend_from_slice(&combined[valid_up_to..]);
         }
 
-        // Safety: we verified this is valid UTF-8 up to valid_up_to
+        // SAFETY: `combined[..valid_up_to]` was verified as valid UTF-8 above via
+        // `std::str::from_utf8` / `Utf8Error::valid_up_to`, so `from_utf8_unchecked` is sound.
         unsafe { String::from_utf8_unchecked(combined[..valid_up_to].to_vec()) }
     }
 
@@ -375,10 +376,15 @@ pub struct AppState {
     pub(crate) github_status_cache: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
     /// File watchers for .git/HEAD per repo (keyed by repo path)
     pub(crate) head_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
-    /// Shared HTTP client for GitHub API requests
-    pub(crate) http_client: reqwest::blocking::Client,
-    /// Cached GitHub API token (resolved once at startup)
-    pub(crate) github_token: Option<String>,
+    /// Shared HTTP client for GitHub API requests.
+    /// Wrapped in ManuallyDrop because reqwest::blocking::Client owns an internal
+    /// tokio runtime that panics on drop inside another runtime (e.g. #[tokio::test]).
+    /// The client lives for the app's lifetime, so never dropping it is harmless.
+    pub(crate) http_client: std::mem::ManuallyDrop<reqwest::blocking::Client>,
+    /// GitHub API token — updated on fallback when a 401 triggers candidate rotation
+    pub(crate) github_token: parking_lot::RwLock<Option<String>>,
+    /// Circuit breaker for GitHub API calls
+    pub(crate) github_circuit_breaker: crate::github::GitHubCircuitBreaker,
 }
 
 impl AppState {
@@ -735,8 +741,9 @@ mod tests {
             repo_info_cache: dashmap::DashMap::new(),
             github_status_cache: dashmap::DashMap::new(),
             head_watchers: dashmap::DashMap::new(),
-            http_client: reqwest::blocking::Client::new(),
-            github_token: None,
+            http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
+            github_token: parking_lot::RwLock::new(None),
+            github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
         }
     }
 

@@ -59,7 +59,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
     <div id="notes-panel" class={props.visible ? "" : "hidden"}>
       <div class="panel-header">
         <div class="panel-header-left">
-          <span class="panel-title">💡 Ideas</span>
+          <span class="panel-title"><span style={{ filter: "grayscale(1) brightness(1.5)", "font-style": "normal" }}>💡</span> Ideas</span>
           <Show when={notesStore.count() > 0}>
             <span class="file-count-badge">{notesStore.count()}</span>
           </Show>

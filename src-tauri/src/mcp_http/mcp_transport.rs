@@ -412,7 +412,7 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
                 None => return serde_json::json!({"error": "missing path"}),
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
-            let status = crate::github::get_github_status(path);
+            let status = crate::github::get_github_status_impl(&path);
             serde_json::to_value(status).unwrap_or_default()
         }
         "get_pr_statuses" => {
@@ -423,8 +423,7 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             let statuses = crate::github::get_repo_pr_statuses_impl(
                 &path,
-                &state.http_client,
-                state.github_token.as_deref(),
+                &state,
             );
             serde_json::to_value(statuses).unwrap_or_default()
         }

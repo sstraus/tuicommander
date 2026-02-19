@@ -32,6 +32,7 @@ export interface TerminalData {
   shellState: ShellState;
   agentType: AgentType | null; // Detected foreground agent process (e.g. "claude")
   pendingResumeCommand: string | null; // Set at restore time, consumed on first shell idle
+  usageLimit: { percentage: number; limitType: string } | null; // Claude Code usage limit
 }
 
 /** Terminal component ref interface */
@@ -76,10 +77,10 @@ function createTerminalsStore() {
 
   const actions = {
     /** Add a new terminal */
-    add(data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand">): string {
+    add(data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "usageLimit">): string {
       const id = `term-${state.counter + 1}`;
       setState("counter", (c) => c + 1);
-      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, ...data });
+      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, ...data });
       return id;
     },
 

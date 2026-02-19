@@ -30,7 +30,10 @@ function createUpdaterStore() {
       if (state.checking || state.downloading) return;
       setState({ checking: true, error: null });
       try {
-        const update = await check();
+        const update = await Promise.race([
+          check(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000)),
+        ]);
         if (update) {
           pendingUpdate = update;
           setState({

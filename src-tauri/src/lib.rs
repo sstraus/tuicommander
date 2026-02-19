@@ -185,7 +185,7 @@ pub fn run() {
         repo_info_cache: DashMap::new(),
         github_status_cache: DashMap::new(),
         head_watchers: DashMap::new(),
-        http_client: reqwest::blocking::Client::new(),
+        http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
         github_token: parking_lot::RwLock::new(github_token),
         github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
     });

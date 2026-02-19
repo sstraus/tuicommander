@@ -1,6 +1,6 @@
 [package]
 name = "tui-commander"
-version = "0.2.0"
+version = "0.3.0"
 description = "TUI Commander - Multi-agent terminal orchestrator"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"

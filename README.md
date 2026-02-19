@@ -20,6 +20,12 @@
 
 ---
 
+<p align="center">
+  <img src="assets/tui-screenshot.png" alt="TUI Commander — multiple agents, split panes, sidebar with repos" width="900" />
+</p>
+
+---
+
 Manage **Claude Code, Gemini CLI, Aider, OpenCode, and Codex** side by side — each in its own terminal with independent zoom, git worktree isolation, and automatic rate limit recovery.
 
 ## Why TUI Commander?
@@ -28,8 +34,11 @@ Running multiple AI agents across repos means juggling terminals, losing track o
 
 - **50+ terminals** with tab navigation and per-pane zoom
 - **Git worktree isolation** — each task gets its own branch without stashing
-- **Rate limit detection** — knows when an agent is throttled and can auto-fallback
-- **Audio alerts** — hear when an agent needs your attention
+- **Rate limit & usage limit tracking** — see when agents are throttled and how much quota remains
+- **Voice dictation** — talk to your agents via local Whisper inference, no cloud required
+- **Auto-update** — one-click updates with download progress
+- **Session persistence** — terminals survive app restarts
+- **Audio alerts + dock badge** — hear and see when an agent needs your attention
 - **Prompt library** — save, search, and reuse prompts with variable substitution
 
 ## Features
@@ -38,34 +47,56 @@ Running multiple AI agents across repos means juggling terminals, losing track o
 - Tabbed terminals with `Cmd+1-9` quick switch, `Cmd+T` to open, `Cmd+W` to close
 - Per-pane font zoom (`Cmd+Plus/Minus/0`) — read one terminal at 20px while keeping others at 14px
 - Reopen accidentally closed tabs with `Cmd+Shift+T`
-- Tab context menu with close and rename operations
+- Split panes — vertical or horizontal split for side-by-side terminals
+- Tab context menu with close, rename, split, and reset operations
+- Session persistence — terminals and their sessions survive app restarts
 - WebGL-accelerated rendering via xterm.js
 
 ### Multi-Agent Orchestration
 - **5 agents supported:** Claude Code, Gemini CLI, OpenCode, Aider, Codex
 - Automatic agent detection from terminal output
 - Rate limit detection with provider-specific patterns (API limits, 429s, quota errors)
+- **Usage limit badges** — detects Claude Code weekly/session limit messages and shows a color-coded percentage badge in the status bar (blue < 70%, yellow 70-89%, red pulsing >= 90%)
 - Configurable fallback chains — when one agent hits a limit, switch to the next
-- Error handling strategies with retry logic
+- Question/prompt detection — knows when an agent is waiting for input, shows indicator in sidebar and dock badge (macOS)
+- **Prevent system sleep** — keeps your machine awake while agents are working (configurable)
 
 ### Git Integration
 - Repository sidebar with branch status and CI indicators
 - Git worktree management — spin up isolated workspaces per task
+- **GitHub GraphQL API** — direct API calls for PR statuses, CI checks (no `gh` CLI dependency for data)
+- **HEAD file watcher** — instant branch change detection without polling
+- Branch and remote URL read from `.git` files for fast, subprocess-free status
 - Built-in diff viewer with syntax highlighting
 - Markdown file viewer for docs and READMEs
 - Git operations panel (`Cmd+Shift+G`) for common git workflows
 - Branch rename dialog and quick branch switcher (`Cmd+Ctrl+1-9`)
-- PR detail popover with status checks and review info
+- PR detail popover with merge state, status checks, and review info
 
 ### Prompt Library
 - Save prompts with categories, favorites, and search (`Cmd+K`)
 - Variable substitution with `{variableName}` syntax
 - Keyboard-driven: navigate with arrows, insert with Enter
 
+### Ideas Panel
+- Capture ideas and notes alongside your terminals (`Cmd+N`)
+- Send any idea directly to the active terminal with one click
+- Delete completed ideas to keep the list clean
+
 ### Voice Dictation
-- Speech-to-text via Whisper integration
+- Local speech-to-text via Whisper — runs entirely on-device, no cloud API needed
+- Metal GPU acceleration on macOS for fast inference
+- Push-to-talk with configurable global hotkey — dictate directly into whichever agent is running
+- Transcribed text injected into the active terminal via PTY (works with any CLI tool)
+- Auto-downloads models from HuggingFace (large-v3-turbo)
+- Text correction map for domain-specific vocabulary (code terms, project names)
 - Configurable model selection and language
-- Global hotkey support
+
+### Auto-Update
+- Checks for updates on startup via Tauri updater
+- Non-intrusive status bar badge when an update is available
+- Download progress indicator during update
+- One-click install and relaunch
 
 ### Settings & Customization
 - Centralized settings panel (`Cmd+,`) with tabs for appearance, agents, notifications, dictation, and services
@@ -73,13 +104,15 @@ Running multiple AI agents across repos means juggling terminals, losing track o
 - Audio notifications with per-event volume control (question, error, completion, warning)
 - IDE launcher integration (VS Code, Cursor, Zed, Neovim, and more)
 - Window position remembered across launches
+- Prevent system sleep toggle for long-running agent sessions
 
 ### Extras
 - lazygit integration (`Cmd+G`) with split-pane mode
 - Run saved shell commands per worktree (`Cmd+R`)
 - Task queue panel (`Cmd+J`)
 - Searchable help panel (`Cmd+?`)
-- MCP (Model Context Protocol) server bridge
+- MCP (Model Context Protocol) server bridge — expose terminal actions and repo data to external AI tools via HTTP
+- Branded splash screen on app start
 
 ## Keyboard Shortcuts
 
@@ -97,6 +130,7 @@ Running multiple AI agents across repos means juggling terminals, losing track o
 | `Cmd+R` | Run saved command |
 | `Cmd+D` | Toggle diff panel |
 | `Cmd+M` | Toggle markdown panel |
+| `Cmd+N` | Toggle Ideas panel |
 | `Cmd+G` | Open lazygit |
 | `Cmd+Shift+G` | Git operations panel |
 | `Cmd+J` | Task queue |
@@ -145,7 +179,7 @@ See [docs/](docs/) for architecture documentation.
 
 | Agent | Binary | Detection |
 |-------|--------|-----------|
-| Claude Code | `claude` | API rate limits, overloaded errors |
+| Claude Code | `claude` | API rate limits, overloaded errors, weekly/session usage % |
 | Gemini CLI | `gemini` | 429 errors, quota exceeded, RESOURCE_EXHAUSTED |
 | OpenCode | `opencode` | Rate limit patterns |
 | Aider | `aider` | Rate limit patterns |

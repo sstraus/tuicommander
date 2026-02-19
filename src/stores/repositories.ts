@@ -104,9 +104,10 @@ function createRepositoriesStore() {
             }
             for (const branch of Object.values(repo.branches)) {
               branch.terminals = [];
-              if (branch.hadTerminals === undefined) {
-                branch.hadTerminals = false;
-              }
+              // Reset hadTerminals on startup: the flag only suppresses auto-spawn
+              // within a session (after user closes all terminals). Across restarts,
+              // auto-spawn should work unless savedTerminals will restore them.
+              branch.hadTerminals = branch.savedTerminals?.length ? true : false;
               if (branch.savedTerminals === undefined) {
                 branch.savedTerminals = [];
               }
@@ -244,8 +245,9 @@ function createRepositoriesStore() {
       }
     },
 
-    /** Update branch stats (additions/deletions) */
+    /** Update branch stats (additions/deletions) — only if branch already exists */
     updateBranchStats(repoPath: string, branchName: string, additions: number, deletions: number): void {
+      if (!state.repositories[repoPath]?.branches[branchName]) return;
       setState("repositories", repoPath, "branches", branchName, { additions, deletions });
     },
 
