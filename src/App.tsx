@@ -41,6 +41,7 @@ import { errorHandlingStore } from "./stores/errorHandling";
 import { agentFallbackStore } from "./stores/agentFallback";
 import { repoSettingsStore } from "./stores/repoSettings";
 import { notesStore } from "./stores/notes";
+import { updaterStore } from "./stores/updater";
 import { usePty } from "./hooks/usePty";
 import { useRepository } from "./hooks/useRepository";
 import { useKeyboardRedirect } from "./hooks/useKeyboardRedirect";
@@ -195,6 +196,12 @@ const App: Component = () => {
         getCurrentWindow().onCloseRequested(async (event) => handler(event));
       },
     });
+
+    // Check for updates after hydration (non-blocking)
+    if (settingsStore.state.autoUpdateEnabled) {
+      updaterStore.checkForUpdate().catch(() => {});
+    }
+
     onCleanup(() => githubStore.stopPolling());
   });
 
@@ -214,6 +221,23 @@ const App: Component = () => {
 
   // Apply the active theme to the entire app chrome (sidebar, tabs, toolbar, etc.)
   createEffect(() => applyAppTheme(settingsStore.state.theme));
+
+  // Prevent system sleep while any terminal is busy (Story 258)
+  createEffect(() => {
+    const enabled = settingsStore.state.preventSleepWhenBusy;
+    const terminals = terminalsStore.state.terminals;
+    const anyBusy = Object.values(terminals).some((t) => t.shellState === "busy");
+
+    if (enabled && anyBusy) {
+      invoke("block_sleep").catch((err) =>
+        console.error("Failed to block sleep:", err),
+      );
+    } else {
+      invoke("unblock_sleep").catch((err) =>
+        console.error("Failed to unblock sleep:", err),
+      );
+    }
+  });
 
   // Clear dock badge when window gains focus
   window.addEventListener("focus", () => notificationsStore.clearBadge());

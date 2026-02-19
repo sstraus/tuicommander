@@ -10,6 +10,7 @@ mod menu;
 mod output_parser;
 pub(crate) mod prompt;
 pub(crate) mod pty;
+pub(crate) mod sleep_prevention;
 pub(crate) mod state;
 pub(crate) mod worktree;
 
@@ -185,7 +186,8 @@ pub fn run() {
         github_status_cache: DashMap::new(),
         head_watchers: DashMap::new(),
         http_client: reqwest::blocking::Client::new(),
-        github_token,
+        github_token: parking_lot::RwLock::new(github_token),
+        github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled
@@ -208,6 +210,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(
@@ -222,6 +225,7 @@ pub fn run() {
         )
         .manage(state)
         .manage(dictation::DictationState::new())
+        .manage(sleep_prevention::SleepBlocker::new())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // Focus existing window when another instance is launched (Story 065)
             if let Some(window) = app.get_webview_window("main") {
@@ -230,6 +234,9 @@ pub fn run() {
             }
         }))
         .setup(|app| {
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+
             let m = menu::build_menu(app)?;
             app.set_menu(m)?;
             app.on_menu_event(|app_handle, event| {
@@ -327,7 +334,9 @@ pub fn run() {
             error_classification::classify_error_message,
             error_classification::calculate_backoff_delay_cmd,
             head_watcher::start_head_watcher,
-            head_watcher::stop_head_watcher
+            head_watcher::stop_head_watcher,
+            sleep_prevention::block_sleep,
+            sleep_prevention::unblock_sleep
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

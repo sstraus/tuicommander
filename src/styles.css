@@ -1494,6 +1494,27 @@ html, body {
   animation: pulse-opacity 2s ease-in-out infinite;
 }
 
+.status-update-badge {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  color: #4ec9b0;
+  background: rgba(78, 201, 176, 0.15);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.status-update-badge:hover {
+  background: rgba(78, 201, 176, 0.3);
+}
+
+.status-update-badge.downloading {
+  cursor: default;
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+
 #agent-stats {
   font-family: var(--font-mono);
   font-size: var(--font-xs);

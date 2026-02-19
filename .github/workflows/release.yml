@@ -104,6 +104,9 @@ jobs:
           APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
           APPLE_API_ISSUER: ${{ secrets.NOTARIZE_ISSUER_ID }}
           APPLE_API_KEY: ${{ secrets.NOTARIZE_KEY_ID }}
+          # Updater artifact signing
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # whisper.cpp: override -march on ARM CI runners to avoid i8mm feature
           # detection mismatch (clang supports it but M-series chips < M4 don't)
           CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || '' }}
@@ -114,6 +117,7 @@ jobs:
           releaseBody: 'Download the appropriate installer for your platform.'
           releaseDraft: true
           prerelease: false
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
 
       - name: Cleanup macOS keychain

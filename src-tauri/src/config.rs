@@ -193,6 +193,12 @@ pub(crate) struct AppConfig {
     /// Auto-show PR detail popover when a branch has PR data
     #[serde(default = "default_true")]
     pub(crate) auto_show_pr_popover: bool,
+    /// Prevent system sleep while any terminal session is busy
+    #[serde(default)]
+    pub(crate) prevent_sleep_when_busy: bool,
+    /// Automatically check for app updates on startup
+    #[serde(default = "default_true")]
+    pub(crate) auto_update_enabled: bool,
 }
 
 fn default_font_size() -> u16 {
@@ -227,6 +233,8 @@ impl Default for AppConfig {
             max_tab_name_length: default_max_tab_name_length(),
             split_tab_mode: SplitTabMode::default(),
             auto_show_pr_popover: true,
+            prevent_sleep_when_busy: false,
+            auto_update_enabled: true,
         }
     }
 }
@@ -583,6 +591,8 @@ mod tests {
             max_tab_name_length: 40,
             split_tab_mode: SplitTabMode::Unified,
             auto_show_pr_popover: true,
+            prevent_sleep_when_busy: true,
+            auto_update_enabled: false,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -598,6 +608,8 @@ mod tests {
         assert!(loaded.confirm_before_closing_tab);
         assert_eq!(loaded.max_tab_name_length, 40);
         assert_eq!(loaded.split_tab_mode, SplitTabMode::Unified);
+        assert!(loaded.prevent_sleep_when_busy);
+        assert!(!loaded.auto_update_enabled);
     }
 
     #[test]
@@ -619,6 +631,8 @@ mod tests {
         assert!(loaded.confirm_before_closing_tab);
         assert_eq!(loaded.max_tab_name_length, 25);
         assert_eq!(loaded.split_tab_mode, SplitTabMode::Separate);
+        assert!(!loaded.prevent_sleep_when_busy);
+        assert!(loaded.auto_update_enabled);
     }
 
     #[test]

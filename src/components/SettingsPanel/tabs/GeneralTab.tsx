@@ -1,5 +1,6 @@
-import { Component, For } from "solid-js";
+import { Component, For, Show } from "solid-js";
 import { settingsStore, IDE_NAMES, FONT_FAMILIES } from "../../../stores/settings";
+import { updaterStore } from "../../../stores/updater";
 import { THEME_NAMES } from "../../../themes";
 import type { IdeType, FontType } from "../../../stores/settings";
 
@@ -80,6 +81,57 @@ export const GeneralTab: Component = () => {
           <span>Confirm before closing tab</span>
         </div>
         <p class="settings-hint">Ask before closing a terminal tab</p>
+      </div>
+
+      <h3>Power Management</h3>
+
+      <div class="settings-group">
+        <div class="settings-toggle">
+          <input
+            type="checkbox"
+            checked={settingsStore.state.preventSleepWhenBusy}
+            onChange={(e) => settingsStore.setPreventSleepWhenBusy(e.currentTarget.checked)}
+          />
+          <span>Prevent sleep while agents are working</span>
+        </div>
+        <p class="settings-hint">Keep the system awake when any terminal session is busy (similar to caffeinate on macOS)</p>
+      </div>
+
+      <h3>Updates</h3>
+
+      <div class="settings-group">
+        <div class="settings-toggle">
+          <input
+            type="checkbox"
+            checked={settingsStore.state.autoUpdateEnabled}
+            onChange={(e) => settingsStore.setAutoUpdateEnabled(e.currentTarget.checked)}
+          />
+          <span>Check for updates automatically</span>
+        </div>
+        <p class="settings-hint">Silently check for new versions on app startup</p>
+      </div>
+
+      <div class="settings-group">
+        <button
+          class="settings-test-btn"
+          onClick={() => updaterStore.checkForUpdate()}
+          disabled={updaterStore.state.checking || updaterStore.state.downloading}
+        >
+          {updaterStore.state.checking ? "Checking..." : "Check Now"}
+        </button>
+        <Show when={updaterStore.state.available && updaterStore.state.version}>
+          <p class="settings-hint" style={{ color: "var(--accent-green, #4ec9b0)" }}>
+            Version {updaterStore.state.version} is available.
+          </p>
+        </Show>
+        <Show when={!updaterStore.state.available && !updaterStore.state.checking && !updaterStore.state.error}>
+          <p class="settings-hint">You're on the latest version.</p>
+        </Show>
+        <Show when={updaterStore.state.error}>
+          <p class="settings-hint" style={{ color: "var(--accent-red, #f44747)" }}>
+            {updaterStore.state.error}
+          </p>
+        </Show>
       </div>
 
       <h3>Git Integration</h3>

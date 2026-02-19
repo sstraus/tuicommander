@@ -24,6 +24,8 @@ interface RustAppConfig {
   max_tab_name_length: number;
   split_tab_mode: string;
   auto_show_pr_popover: boolean;
+  prevent_sleep_when_busy: boolean;
+  auto_update_enabled: boolean;
 }
 
 // Default values
@@ -220,6 +222,8 @@ interface SettingsStoreState {
   maxTabNameLength: number;
   splitTabMode: SplitTabMode;
   autoShowPrPopover: boolean;
+  preventSleepWhenBusy: boolean;
+  autoUpdateEnabled: boolean;
 }
 
 /** Create the settings store */
@@ -236,6 +240,8 @@ function createSettingsStore() {
     maxTabNameLength: 25,
     splitTabMode: "separate",
     autoShowPrPopover: true,
+    preventSleepWhenBusy: false,
+    autoUpdateEnabled: true,
   });
 
   const actions = {
@@ -271,6 +277,8 @@ function createSettingsStore() {
         setState("maxTabNameLength", config.max_tab_name_length || 25);
         setState("splitTabMode", config.split_tab_mode === "unified" ? "unified" : "separate");
         setState("autoShowPrPopover", config.auto_show_pr_popover ?? true);
+        setState("preventSleepWhenBusy", config.prevent_sleep_when_busy ?? false);
+        setState("autoUpdateEnabled", config.auto_update_enabled ?? true);
 
         // Agent stored separately in agent-config
         if (!migrated && !legacyAgent) {
@@ -418,6 +426,34 @@ function createSettingsStore() {
       } catch (err) {
         console.error("Failed to persist autoShowPrPopover:", err);
         setState("autoShowPrPopover", prevValue);
+      }
+    },
+
+    /** Set prevent-sleep-when-busy preference */
+    async setPreventSleepWhenBusy(enabled: boolean): Promise<void> {
+      const prevValue = state.preventSleepWhenBusy;
+      setState("preventSleepWhenBusy", enabled);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.prevent_sleep_when_busy = enabled;
+        await invoke("save_config", { config });
+      } catch (err) {
+        console.error("Failed to persist preventSleepWhenBusy:", err);
+        setState("preventSleepWhenBusy", prevValue);
+      }
+    },
+
+    /** Set auto-update-enabled preference */
+    async setAutoUpdateEnabled(enabled: boolean): Promise<void> {
+      const prevValue = state.autoUpdateEnabled;
+      setState("autoUpdateEnabled", enabled);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.auto_update_enabled = enabled;
+        await invoke("save_config", { config });
+      } catch (err) {
+        console.error("Failed to persist autoUpdateEnabled:", err);
+        setState("autoUpdateEnabled", prevValue);
       }
     },
 

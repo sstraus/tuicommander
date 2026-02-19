@@ -10,6 +10,7 @@ import { githubStore } from "../../stores/github";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { formatWaitTime } from "../../rate-limit";
 import { dictationStore } from "../../stores/dictation";
+import { updaterStore } from "../../stores/updater";
 import { getModifierSymbol } from "../../platform";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
@@ -182,6 +183,20 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
               ⚠ Rate limited ({rl().remaining})
             </span>
           )}
+        </Show>
+        <Show when={updaterStore.state.available && !updaterStore.state.downloading}>
+          <span
+            class="status-update-badge"
+            title={`Update to v${updaterStore.state.version}`}
+            onClick={() => updaterStore.downloadAndInstall()}
+          >
+            Update v{updaterStore.state.version}
+          </span>
+        </Show>
+        <Show when={updaterStore.state.downloading}>
+          <span class="status-update-badge downloading" title="Downloading update...">
+            Updating {updaterStore.state.progress}%
+          </span>
         </Show>
       </div>
 
