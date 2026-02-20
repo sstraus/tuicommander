@@ -466,7 +466,7 @@ describe("repositoriesStore", () => {
 
     it("createGroup() adds a group and returns its ID", () => {
       createRoot((dispose) => {
-        const id = store.createGroup("Work");
+        const id = store.createGroup("Work")!;
         expect(id).toBeTruthy();
         expect(store.state.groups[id]).toBeDefined();
         expect(store.state.groups[id].name).toBe("Work");
