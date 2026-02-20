@@ -1,0 +1,25 @@
+src/components/ContextMenu/ContextMenu.tsx
+  cf3511a9344cf85d 9,20-68,129
+src/__tests__/components/ContextMenu.test.tsx
+  cf3511a9344cf85d 205-288
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "b9bca1c75a934e401340f718f92a7d4fb9997dde",
+  "prompts": {
+    "cf3511a9344cf85d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "021dbf18-253b-46e7-9b2c-e510c9dda86e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 2011,
+      "total_deletions": 202,
+      "accepted_lines": 1895,
+      "overriden_lines": 0
+    }
+  }
+}
