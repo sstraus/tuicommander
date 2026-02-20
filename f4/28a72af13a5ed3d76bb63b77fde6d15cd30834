@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "f428a72af13a5ed3d76bb63b77fde6d15cd30834",
+  "prompts": {
+    "cf3511a9344cf85d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "021dbf18-253b-46e7-9b2c-e510c9dda86e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 9,
+      "total_deletions": 0,
+      "accepted_lines": 9,
+      "overriden_lines": 0
+    }
+  }
+}
