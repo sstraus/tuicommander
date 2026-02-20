@@ -1076,8 +1076,8 @@ html, body {
 }
 
 .toolbar-branch-icon {
-  font-size: var(--font-md);
   color: var(--fg-muted);
+  flex-shrink: 0;
 }
 
 .toolbar-repo-name {

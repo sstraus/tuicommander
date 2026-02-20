@@ -167,7 +167,7 @@ describe("Toolbar", () => {
     const { container } = render(() => <Toolbar />);
     const icon = container.querySelector(".toolbar-branch-icon");
     expect(icon).not.toBeNull();
-    expect(icon!.textContent).toBe("Y");
+    expect(icon!.tagName.toLowerCase()).toBe("svg");
   });
 
   it("IdeLauncher receives worktreePath from active branch", () => {
