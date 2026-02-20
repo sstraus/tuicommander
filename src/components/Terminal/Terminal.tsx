@@ -317,7 +317,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const existingSessionId = terminalsStore.get(props.id)?.sessionId;
   if (existingSessionId) {
     sessionId = existingSessionId;
-    attachSessionListeners(existingSessionId);
+    attachSessionListeners(existingSessionId).catch((err) =>
+      console.error("[Terminal] Failed to attach session listeners:", err),
+    );
   }
 
   /** Initialize PTY session and event listeners */

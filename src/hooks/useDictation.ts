@@ -55,8 +55,13 @@ export function useDictation(deps: DictationDeps) {
     if (text && text.trim()) {
       const active = terminalsStore.getActive();
       if (active?.sessionId) {
-        await deps.pty.write(active.sessionId, text.trim());
-        deps.setStatusInfo("Ready");
+        try {
+          await deps.pty.write(active.sessionId, text.trim());
+          deps.setStatusInfo("Ready");
+        } catch (err) {
+          console.error("[Dictation] Failed to write to terminal:", err);
+          deps.setStatusInfo("Dictation: failed to write to terminal");
+        }
       } else {
         deps.setStatusInfo("Dictation: no active terminal");
       }

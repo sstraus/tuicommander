@@ -180,7 +180,7 @@ function createGitHubStore() {
     if (document.hidden) {
       clearScheduled();
     } else {
-      pollAll();
+      pollAll().catch((err) => console.error("[GitHub] Poll failed on visibility change:", err));
       scheduleNext();
     }
   }
@@ -189,7 +189,7 @@ function createGitHubStore() {
   function startPolling(): void {
     pollingActive = true;
     document.addEventListener("visibilitychange", onVisibilityChange);
-    pollAll();
+    pollAll().catch((err) => console.error("[GitHub] Initial poll failed:", err));
     scheduleNext();
   }
 

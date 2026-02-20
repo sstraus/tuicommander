@@ -35,7 +35,8 @@ export function useRepository() {
   async function getDiffStats(path: string, scope?: string): Promise<{ additions: number; deletions: number }> {
     try {
       return await invoke<{ additions: number; deletions: number }>("get_diff_stats", { path, scope });
-    } catch {
+    } catch (err) {
+      console.debug("Failed to get diff stats:", { path, err });
       return { additions: 0, deletions: 0 };
     }
   }

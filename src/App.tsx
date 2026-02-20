@@ -208,7 +208,7 @@ const App: Component = () => {
 
     // Check for updates after hydration (non-blocking)
     if (settingsStore.state.autoUpdateEnabled) {
-      updaterStore.checkForUpdate().catch(() => {});
+      updaterStore.checkForUpdate().catch((err) => console.debug("[Updater] Auto-check failed:", err));
     }
 
     onCleanup(() => githubStore.stopPolling());
@@ -266,7 +266,7 @@ const App: Component = () => {
       const sessionIds = terminalsStore.getIds()
         .map((id) => terminalsStore.get(id)?.sessionId)
         .filter((sid): sid is string => sid != null);
-      await Promise.all(sessionIds.map((sid) => pty.close(sid).catch(() => {})));
+      await Promise.all(sessionIds.map((sid) => pty.close(sid).catch((err) => console.warn(`Failed to close PTY ${sid} on quit:`, err))));
     } catch { /* ignore */ }
 
     clearTimeout(destroyTimer);
@@ -323,7 +323,9 @@ const App: Component = () => {
         uiStore.setMarkdownPanelVisible(true);
       }
     } else {
-      invoke("open_in_app", { path: absolutePath, app: settingsStore.state.ide, line, col });
+      invoke("open_in_app", { path: absolutePath, app: settingsStore.state.ide, line, col }).catch((err) =>
+        console.error("Failed to open in app:", err),
+      );
     }
   };
 
@@ -448,7 +450,7 @@ const App: Component = () => {
 
         // Help
         case "help-panel": setHelpPanelVisible((v) => !v); break;
-        case "check-for-updates": updaterStore.checkForUpdate(); break;
+        case "check-for-updates": updaterStore.checkForUpdate().catch((err) => console.warn("[Updater] Manual check failed:", err)); break;
         case "about": /* handled by PredefinedMenuItem on macOS; no-op here */ break;
 
         default: {
@@ -462,7 +464,7 @@ const App: Component = () => {
           break;
         }
       }
-    }).then((fn) => { unlisten = fn; });
+    }).then((fn) => { unlisten = fn; }).catch((err) => console.error("[Menu] Failed to register menu-action listener:", err));
 
     onCleanup(() => unlisten?.());
   });
