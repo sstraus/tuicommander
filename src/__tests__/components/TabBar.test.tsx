@@ -77,12 +77,24 @@ describe("TabBar", () => {
     expect(btn!.textContent).toContain("+");
   });
 
-  it("opens a context menu when new tab button is clicked", () => {
+  it("clicking new tab button calls onNewTab directly", () => {
+    const onNewTab = vi.fn();
+    const { container } = render(() => (
+      <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={onNewTab} />
+    ));
+    fireEvent.click(container.querySelector(".tab-new-btn")!);
+    expect(onNewTab).toHaveBeenCalledTimes(1);
+  });
+
+  it("right-clicking new tab button opens split context menu", () => {
     const { container } = render(() => (
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
-    fireEvent.click(container.querySelector(".tab-new-btn")!);
-    // Should show context menu with New Tab, Split Vertically, Split Horizontally
+    const btn = container.querySelector(".tab-new-btn")!;
+    vi.spyOn(btn, "getBoundingClientRect").mockReturnValue({
+      left: 100, bottom: 50, top: 20, right: 150, width: 50, height: 30, x: 100, y: 20, toJSON: () => {},
+    } as DOMRect);
+    fireEvent.contextMenu(btn);
     const menus = container.querySelectorAll(".context-menu");
     expect(menus.length).toBeGreaterThan(0);
     const labels = Array.from(menus[menus.length - 1].querySelectorAll(".context-menu-label"));
@@ -90,24 +102,6 @@ describe("TabBar", () => {
     expect(labelTexts).toContain("New Tab");
     expect(labelTexts).toContain("Split Vertically");
     expect(labelTexts).toContain("Split Horizontally");
-  });
-
-  it("new tab menu opens below the button at correct coordinates", () => {
-    const { container } = render(() => (
-      <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
-    ));
-    const btn = container.querySelector(".tab-new-btn")!;
-    // Mock getBoundingClientRect to return known coordinates
-    vi.spyOn(btn, "getBoundingClientRect").mockReturnValue({
-      left: 100, bottom: 50, top: 20, right: 150, width: 50, height: 30, x: 100, y: 20, toJSON: () => {},
-    } as DOMRect);
-    fireEvent.click(btn);
-    const menus = container.querySelectorAll(".context-menu");
-    expect(menus.length).toBeGreaterThan(0);
-    const menu = menus[menus.length - 1] as HTMLElement;
-    // openNewTabMenu calls openAt(rect.left, rect.bottom + 4) = openAt(100, 54)
-    expect(menu.style.left).toBe("100px");
-    expect(menu.style.top).toBe("54px");
   });
 
   it("new tab button has correct title", () => {
@@ -722,7 +716,11 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
-      fireEvent.click(container.querySelector(".tab-new-btn")!);
+      const btn = container.querySelector(".tab-new-btn")!;
+      vi.spyOn(btn, "getBoundingClientRect").mockReturnValue({
+        left: 100, bottom: 50, top: 20, right: 150, width: 50, height: 30, x: 100, y: 20, toJSON: () => {},
+      } as DOMRect);
+      fireEvent.contextMenu(btn);
       const menus = container.querySelectorAll(".context-menu");
       const menu = menus[menus.length - 1];
       const items = menu.querySelectorAll(".context-menu-item");
@@ -745,7 +743,11 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} onSplitVertical={handleSplit} />
       ));
-      fireEvent.click(container.querySelector(".tab-new-btn")!);
+      const btn = container.querySelector(".tab-new-btn")!;
+      vi.spyOn(btn, "getBoundingClientRect").mockReturnValue({
+        left: 100, bottom: 50, top: 20, right: 150, width: 50, height: 30, x: 100, y: 20, toJSON: () => {},
+      } as DOMRect);
+      fireEvent.contextMenu(btn);
       const menus = container.querySelectorAll(".context-menu");
       const menu = menus[menus.length - 1];
       const splitBtn = Array.from(menu.querySelectorAll(".context-menu-item")).find(

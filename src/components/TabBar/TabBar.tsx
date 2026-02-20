@@ -375,8 +375,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
         }}
       </For>
 
-      {/* New Tab button */}
-      <button class="tab-new-btn" onClick={openNewTabMenu} title={`New Tab (${mod}T)`} style={{ position: "relative" }}>
+      {/* New Tab button: click = new tab, right-click = split menu */}
+      <button class="tab-new-btn" onClick={() => props.onNewTab()} onContextMenu={openNewTabMenu} title={`New Tab (${mod}T)`} style={{ position: "relative" }}>
         +
         <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{mod}T</span>
       </button>
