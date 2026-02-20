@@ -1,0 +1,23 @@
+src/components/PromptDialog/PromptDialog.tsx
+  eb060815803905d2 1,52-53,56-57,86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "ef577e7cecfd170debc5f72eb2df3167a0e620b5",
+  "prompts": {
+    "eb060815803905d2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a95bd28-7d64-4eb7-bae8-1e0f1b7dda61",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 34,
+      "total_deletions": 34,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}
