@@ -3,6 +3,7 @@ pub(crate) mod cli;
 pub(crate) mod config;
 mod dictation;
 pub(crate) mod error_classification;
+pub(crate) mod fs;
 pub(crate) mod git;
 pub(crate) mod github;
 pub(crate) mod head_watcher;
@@ -399,7 +400,13 @@ pub fn run() {
             repo_watcher::start_repo_watcher,
             repo_watcher::stop_repo_watcher,
             sleep_prevention::block_sleep,
-            sleep_prevention::unblock_sleep
+            sleep_prevention::unblock_sleep,
+            fs::list_directory,
+            fs::fs_read_file,
+            fs::write_file,
+            fs::create_directory,
+            fs::delete_path,
+            fs::rename_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
