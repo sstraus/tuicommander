@@ -14,6 +14,9 @@ import { TabBar } from "./components/TabBar";
 import { StatusBar } from "./components/StatusBar";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileBrowserPanel } from "./components/FileBrowserPanel";
+import { CodeEditorPanel } from "./components/CodeEditorPanel";
+import { codeEditorStore } from "./stores/codeEditor";
+import { useFileBrowser } from "./hooks/useFileBrowser";
 import { DiffTab } from "./components/DiffTab";
 import { MarkdownPanel } from "./components/MarkdownPanel";
 import { NotesPanel } from "./components/NotesPanel";
@@ -152,6 +155,7 @@ const App: Component = () => {
   });
 
   const splitPanes = useSplitPanes();
+  const fileBrowser = useFileBrowser();
 
   // Poll active terminal for foreground agent detection
   useAgentPolling();
@@ -747,8 +751,27 @@ const App: Component = () => {
             repoPath={gitOps.currentRepoPath() || null}
             onClose={() => uiStore.toggleFileBrowserPanel()}
             onFileOpen={(repoPath, filePath) => {
-              // Will connect to code editor in Phase 4
-              console.log("Open file:", repoPath, filePath);
+              codeEditorStore.openFile(repoPath, filePath);
+              uiStore.setCodeEditorPanelVisible(true);
+            }}
+          />
+
+          {/* Code editor panel */}
+          <CodeEditorPanel
+            visible={uiStore.state.codeEditorPanelVisible}
+            onClose={() => {
+              uiStore.setCodeEditorPanelVisible(false);
+              codeEditorStore.closeFile();
+            }}
+            onSave={async () => {
+              const { repoPath, filePath, content } = codeEditorStore.state;
+              if (!repoPath || !filePath) return;
+              try {
+                await fileBrowser.writeFile(repoPath, filePath, content);
+                codeEditorStore.markSaved();
+              } catch (err) {
+                console.error("Failed to save file:", err);
+              }
             }}
           />
 

@@ -46,7 +46,6 @@ function getShortcutSections(): ShortcutSection[] {
       { keys: `${mod}J`, description: "Toggle task queue" },
       { keys: `${mod}K`, description: "Prompt library" },
       { keys: `${mod}N`, description: "Toggle ideas panel" },
-      { keys: `${mod}E`, description: "Toggle file browser" },
       { keys: `${mod}?`, description: "Toggle help panel" },
     ],
   },
@@ -77,6 +76,16 @@ function getShortcutSections(): ShortcutSection[] {
       { keys: "Drag repo", description: "Reorder repos or move between groups" },
       { keys: "Drag group", description: "Reorder groups" },
       { keys: "Right-click group", description: "Rename, change color, delete" },
+    ],
+  },
+  {
+    title: "File Browser & Editor",
+    shortcuts: [
+      { keys: `${mod}E`, description: "Toggle file browser panel" },
+      { keys: "↑/↓", description: "Navigate file list (when focused)" },
+      { keys: "Enter", description: "Open file or enter directory" },
+      { keys: "Backspace", description: "Go to parent directory" },
+      { keys: `${mod}S`, description: "Save file (when editor focused)" },
     ],
   },
   {

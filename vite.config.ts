@@ -19,6 +19,9 @@ export default defineConfig(async () => ({
       safelist: [
         // xterm.js classes (generated at runtime by the library)
         /^xterm/,
+        // CodeMirror 6 classes (generated at runtime by the library)
+        /^cm-/,
+        /^ͼ/,
         // Dynamic classList patterns used via SolidJS classList={{}}
         /^split-/,
         /^awaiting-/,
@@ -35,6 +38,14 @@ export default defineConfig(async () => ({
       include: Features.Nesting,
       exclude: Features.VendorPrefixes,
     },
+  },
+  optimizeDeps: {
+    include: [
+      "@codemirror/state",
+      "@codemirror/view",
+      "@codemirror/language",
+      "@codemirror/language-data",
+    ],
   },
   build: {
     target: "esnext",
