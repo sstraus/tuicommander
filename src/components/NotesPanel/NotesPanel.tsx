@@ -1,6 +1,7 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import { notesStore } from "../../stores/notes";
 import { getModifierSymbol } from "../../platform";
+import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 
 export interface NotesPanelProps {
   visible: boolean;
@@ -57,6 +58,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
 
   return (
     <div id="notes-panel" class={props.visible ? "" : "hidden"}>
+      <PanelResizeHandle panelId="notes-panel" />
       <div class="panel-header">
         <div class="panel-header-left">
           <span class="panel-title"><span style={{ filter: "grayscale(1) brightness(1.5)", "font-style": "normal" }}>💡</span> Ideas</span>

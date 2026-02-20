@@ -4,6 +4,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { getModifierSymbol } from "../../platform";
 import { globToRegex } from "../../utils";
+import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 
 /** Markdown file entry from Rust backend */
 interface MdFileEntry {
@@ -98,12 +99,19 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 
   return (
     <div id="markdown-panel" class={props.visible ? "" : "hidden"}>
+      <PanelResizeHandle panelId="markdown-panel" />
       <div class="panel-header">
         <div class="panel-header-left">
           <span class="panel-title">Markdown Files</span>
           <Show when={!loading() && filteredFiles().length > 0}>
             <span class="file-count-badge">{filteredFiles().length}</span>
           </Show>
+          <span class="panel-header-sep" />
+          <div class="fb-legend">
+            <span class="fb-legend-item" title="Modified (unstaged changes)"><span class="fb-status-dot fb-status-modified" /> mod</span>
+            <span class="fb-legend-item" title="Staged for commit"><span class="fb-status-dot fb-status-staged" /> staged</span>
+            <span class="fb-legend-item" title="Untracked (new file)"><span class="fb-status-dot fb-status-untracked" /> new</span>
+          </div>
         </div>
         <button class="panel-close" onClick={props.onClose} title={`Close (${getModifierSymbol()}M)`}>
           &times;

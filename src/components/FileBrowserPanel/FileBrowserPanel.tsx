@@ -5,6 +5,7 @@ import { getModifierSymbol } from "../../platform";
 import { globToRegex } from "../../utils";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { PromptDialog } from "../PromptDialog";
+import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import type { DirEntry } from "../../types/fs";
 
 export interface FileBrowserPanelProps {
@@ -326,12 +327,14 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
   return (
     <div id="file-browser-panel" class={props.visible ? "" : "hidden"} tabIndex={-1}>
+      <PanelResizeHandle panelId="file-browser-panel" />
       <div class="panel-header">
         <div class="panel-header-left">
           <span class="panel-title">Files</span>
           <Show when={!loading() && entries().length > 0}>
             <span class="file-count-badge">{entries().length}</span>
           </Show>
+          <span class="panel-header-sep" />
           <div class="fb-legend">
             <span class="fb-legend-item" title="Modified (unstaged changes)"><span class="fb-status-dot fb-status-modified" /> mod</span>
             <span class="fb-legend-item" title="Staged for commit"><span class="fb-status-dot fb-status-staged" /> staged</span>

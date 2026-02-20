@@ -3,6 +3,7 @@ import { useRepository, type ChangedFile } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { getModifierSymbol } from "../../platform";
+import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 
 /** Recent commit info from Rust */
 interface RecentCommit {
@@ -108,6 +109,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
 
   return (
     <div id="diff-panel" class={props.visible ? "" : "hidden"}>
+      <PanelResizeHandle panelId="diff-panel" />
       <div class="panel-header">
         <div class="panel-header-left">
           <span class="panel-title">Changes</span>

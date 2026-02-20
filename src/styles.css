@@ -613,7 +613,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 12px;
+  padding: 4px 8px;
   cursor: pointer;
   border-radius: var(--radius-md);
   margin: 1px 0 1px 0;
@@ -628,7 +628,7 @@ html, body {
 .branch-item.active {
   background: var(--bg-highlight);
   border-left: 2px solid var(--accent);
-  padding-left: 10px;
+  padding-left: 6px;
 }
 
 .branch-icon {
@@ -1392,6 +1392,22 @@ html, body {
   border-top: 2px solid var(--accent);
 }
 
+/* Panel resize handle (right-side panels) */
+.panel-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+.panel-resize-handle:hover {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
 /* Split resize handle */
 .split-resize-handle {
   flex: 0 0 8px;
@@ -1788,6 +1804,7 @@ html, body {
 
 /* Markdown Panel */
 #markdown-panel {
+  position: relative;
   width: 400px;
   min-width: 300px;
   max-width: 50%;
@@ -1804,6 +1821,7 @@ html, body {
 
 /* Notes Panel */
 #notes-panel {
+  position: relative;
   width: 400px;
   min-width: 300px;
   max-width: 50%;
@@ -1988,6 +2006,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 /* Git Diff Panel */
 #diff-panel {
+  position: relative;
   width: 400px;
   min-width: 300px;
   max-width: 50%;
@@ -2092,6 +2111,14 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .panel-title {
   color: var(--fg-secondary);
   font-weight: 500;
+}
+
+.panel-header-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--fg-muted);
+  opacity: 0.4;
+  flex-shrink: 0;
 }
 
 .panel-close {
@@ -2254,6 +2281,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 /* File Browser Panel */
 #file-browser-panel {
+  position: relative;
   width: 300px;
   min-width: 200px;
   max-width: 50%;
