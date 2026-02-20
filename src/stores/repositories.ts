@@ -62,6 +62,9 @@ export function isMainBranch(branchName: string): boolean {
 
 const SAVE_DEBOUNCE_MS = 500;
 
+/** Guard: prevent saves before hydrate completes to avoid nuking persisted data */
+let hydrated = false;
+
 /** Persist repos to Rust backend (fire-and-forget, terminals excluded) */
 function saveReposImmediate(
   repositories: Record<string, RepositoryState>,
@@ -70,6 +73,10 @@ function saveReposImmediate(
   groups: Record<string, RepoGroup>,
   groupOrder: string[],
 ): void {
+  if (!hydrated) {
+    console.warn("[Repositories] Save blocked — hydrate not yet complete");
+    return;
+  }
   const serializable: Record<string, RepositoryState> = {};
   for (const [path, repo] of Object.entries(repositories)) {
     const branches: Record<string, BranchState> = {};
@@ -188,8 +195,10 @@ function createRepositoriesStore() {
             setState("activeRepoPath", loaded.activeRepoPath);
           }
         }
+        hydrated = true;
       } catch (err) {
         console.debug("Failed to hydrate repositories:", err);
+        // hydrated stays false — saves are blocked to prevent data loss
       }
     },
 
@@ -656,7 +665,12 @@ function createRepositoriesStore() {
     },
   };
 
-  return { state, ...actions };
+  return {
+    state,
+    ...actions,
+    /** Test-only: set hydrated flag to enable saves in tests that skip hydrate */
+    _testSetHydrated(value: boolean): void { hydrated = value; },
+  };
 }
 
 export const repositoriesStore = createRepositoriesStore();

@@ -21,6 +21,7 @@ describe("repositoriesStore", () => {
     }));
 
     store = (await import("../../stores/repositories")).repositoriesStore;
+    store._testSetHydrated(true);
   });
 
   afterEach(() => {
@@ -733,6 +734,37 @@ describe("repositoriesStore", () => {
         expect(layout.groups[0].repos[0].path).toBe("/b");
         expect(layout.groups[1].group.name).toBe("Second");
         expect(layout.groups[1].repos[0].path).toBe("/a");
+        dispose();
+      });
+    });
+  });
+
+  describe("hydrate guard", () => {
+    it("blocks saves before hydrate completes", () => {
+      createRoot((dispose) => {
+        store._testSetHydrated(false);
+        store.add({ path: "/repo", displayName: "test" });
+        vi.advanceTimersByTime(500);
+
+        const saveCalls = mockInvoke.mock.calls.filter(
+          (c: unknown[]) => c[0] === "save_repositories"
+        ).length;
+        expect(saveCalls).toBe(0);
+
+        store._testSetHydrated(true);
+        dispose();
+      });
+    });
+
+    it("allows saves after hydrate completes", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo", displayName: "test" });
+        vi.advanceTimersByTime(500);
+
+        const saveCalls = mockInvoke.mock.calls.filter(
+          (c: unknown[]) => c[0] === "save_repositories"
+        ).length;
+        expect(saveCalls).toBe(1);
         dispose();
       });
     });
