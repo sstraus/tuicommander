@@ -1421,6 +1421,9 @@ html, body {
 }
 
 .toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   color: var(--fg-secondary);
