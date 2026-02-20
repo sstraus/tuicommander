@@ -423,7 +423,7 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             let statuses = crate::github::get_repo_pr_statuses_impl(
                 &path,
-                &state,
+                state,
             );
             serde_json::to_value(statuses).unwrap_or_default()
         }

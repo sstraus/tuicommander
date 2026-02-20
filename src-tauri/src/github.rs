@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -33,15 +33,15 @@ fn token_from_gh_cli() -> Option<String> {
 /// We filter empty values and fall back to the CLI as a last resort.
 /// Returns None if no token is found (graceful degradation).
 pub(crate) fn resolve_github_token() -> Option<String> {
-    if let Ok(token) = std::env::var("GH_TOKEN") {
-        if !token.is_empty() {
-            return Some(token);
-        }
+    if let Ok(token) = std::env::var("GH_TOKEN")
+        && !token.is_empty()
+    {
+        return Some(token);
     }
-    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-        if !token.is_empty() {
-            return Some(token);
-        }
+    if let Ok(token) = std::env::var("GITHUB_TOKEN")
+        && !token.is_empty()
+    {
+        return Some(token);
     }
     // gh_token crate doesn't filter empty env var values (env::var_os returns
     // Some("") for vars set to empty string), so we must filter here.
@@ -57,26 +57,26 @@ pub(crate) fn resolve_github_token() -> Option<String> {
 /// Used for fallback when the primary token gets a 401.
 pub(crate) fn resolve_github_token_candidates() -> Vec<String> {
     let mut candidates = Vec::new();
-    if let Ok(token) = std::env::var("GH_TOKEN") {
-        if !token.is_empty() {
-            candidates.push(token);
-        }
+    if let Ok(token) = std::env::var("GH_TOKEN")
+        && !token.is_empty()
+    {
+        candidates.push(token);
     }
-    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-        if !token.is_empty() {
-            candidates.push(token);
-        }
+    if let Ok(token) = std::env::var("GITHUB_TOKEN")
+        && !token.is_empty()
+    {
+        candidates.push(token);
     }
-    if let Ok(token) = gh_token::get() {
-        if !token.is_empty() && !candidates.contains(&token) {
-            candidates.push(token);
-        }
+    if let Ok(token) = gh_token::get()
+        && !token.is_empty() && !candidates.contains(&token)
+    {
+        candidates.push(token);
     }
     // Explicit CLI fallback for when gh_token short-circuits on empty env vars
-    if let Some(token) = token_from_gh_cli() {
-        if !candidates.contains(&token) {
-            candidates.push(token);
-        }
+    if let Some(token) = token_from_gh_cli()
+        && !candidates.contains(&token)
+    {
+        candidates.push(token);
     }
     candidates
 }
@@ -127,14 +127,14 @@ impl GitHubCircuitBreaker {
     /// or Err with a message if open (requests should be skipped).
     pub(crate) fn check(&self) -> Result<(), String> {
         let guard = self.open_until.read();
-        if let Some(until) = *guard {
-            if Instant::now() < until {
-                let remaining = until.duration_since(Instant::now());
-                return Err(format!(
-                    "GitHub API circuit breaker open — retrying in {:.0}s",
-                    remaining.as_secs_f64()
-                ));
-            }
+        if let Some(until) = *guard
+            && Instant::now() < until
+        {
+            let remaining = until.duration_since(Instant::now());
+            return Err(format!(
+                "GitHub API circuit breaker open — retrying in {:.0}s",
+                remaining.as_secs_f64()
+            ));
         }
         Ok(())
     }
@@ -231,11 +231,11 @@ pub(crate) fn graphql_request(
         return Err(GqlError::Other(err_msg));
     }
 
-    if let Some(errors) = json["errors"].as_array() {
-        if !errors.is_empty() {
-            let msg = errors[0]["message"].as_str().unwrap_or("Unknown GraphQL error");
-            return Err(GqlError::Other(format!("GraphQL error: {msg}")));
-        }
+    if let Some(errors) = json["errors"].as_array()
+        && !errors.is_empty()
+    {
+        let msg = errors[0]["message"].as_str().unwrap_or("Unknown GraphQL error");
+        return Err(GqlError::Other(format!("GraphQL error: {msg}")));
     }
 
     Ok(json)
@@ -560,7 +560,7 @@ pub(crate) fn parse_graphql_prs(response: &serde_json::Value) -> Vec<BranchPrSta
         None => return vec![],
     };
 
-    nodes.iter().filter_map(|v| parse_pr_node(v)).collect()
+    nodes.iter().filter_map(parse_pr_node).collect()
 }
 
 /// GraphQL query for batch PR data with CI check summary counts.
@@ -598,7 +598,7 @@ query RepoPRs($owner: String!, $repo: String!, $first: Int!) {
 
 /// Get the remote URL for a repo, if it has a GitHub origin.
 /// Reads directly from .git/config (no subprocess).
-fn get_github_remote_url(repo_path: &PathBuf) -> Option<String> {
+fn get_github_remote_url(repo_path: &Path) -> Option<String> {
     let url = crate::git::read_remote_url(repo_path)?;
     if url.contains("github.com") {
         Some(url)

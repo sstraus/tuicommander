@@ -111,11 +111,11 @@ impl SilenceState {
         if self.question_already_emitted {
             return None;
         }
-        if let Some(ref line) = self.pending_question_line {
-            if self.last_output_at.elapsed() >= SILENCE_QUESTION_THRESHOLD {
-                self.question_already_emitted = true;
-                return Some(line.clone());
-            }
+        if let Some(ref line) = self.pending_question_line
+            && self.last_output_at.elapsed() >= SILENCE_QUESTION_THRESHOLD
+        {
+            self.question_already_emitted = true;
+            return Some(line.clone());
         }
         None
     }

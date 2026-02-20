@@ -164,10 +164,8 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
 
     // Validate the subdir is within the repo
     let dir_to_read = if subdir.is_empty() || subdir == "." {
-        let canonical = repo
-            .canonicalize()
-            .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
-        canonical
+        repo.canonicalize()
+            .map_err(|e| format!("Failed to resolve repo path: {e}"))?
     } else {
         let (_canonical_repo, canonical_dir) = validate_path(&repo_path, &subdir)?;
         canonical_dir
@@ -394,22 +392,20 @@ pub fn strip_line_col_suffix(candidate: &str) -> &str {
     let mut end = bytes.len();
 
     // Try stripping `:col` (rightmost numeric segment)
-    if let Some(colon_pos) = candidate[..end].rfind(':') {
-        if candidate[colon_pos + 1..end].chars().all(|c| c.is_ascii_digit())
-            && colon_pos + 1 < end
-        {
-            end = colon_pos;
+    if let Some(colon_pos) = candidate[..end].rfind(':')
+        && candidate[colon_pos + 1..end].chars().all(|c| c.is_ascii_digit())
+        && colon_pos + 1 < end
+    {
+        end = colon_pos;
 
-            // Try stripping `:line` (second rightmost numeric segment)
-            if let Some(colon_pos2) = candidate[..end].rfind(':') {
-                if candidate[colon_pos2 + 1..end]
-                    .chars()
-                    .all(|c| c.is_ascii_digit())
-                    && colon_pos2 + 1 < end
-                {
-                    end = colon_pos2;
-                }
-            }
+        // Try stripping `:line` (second rightmost numeric segment)
+        if let Some(colon_pos2) = candidate[..end].rfind(':')
+            && candidate[colon_pos2 + 1..end]
+                .chars()
+                .all(|c| c.is_ascii_digit())
+            && colon_pos2 + 1 < end
+        {
+            end = colon_pos2;
         }
     }
 

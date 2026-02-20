@@ -44,10 +44,10 @@ pub(crate) fn read_branch_from_head(repo_path: &Path) -> Option<String> {
     let trimmed = head_content.trim();
     // HEAD is either "ref: refs/heads/<branch>" or a raw commit hash (detached)
     let ref_prefix = "ref: refs/heads/";
-    if let Some(branch) = trimmed.strip_prefix(ref_prefix) {
-        if !branch.is_empty() {
-            return Some(branch.to_string());
-        }
+    if let Some(branch) = trimmed.strip_prefix(ref_prefix)
+        && !branch.is_empty()
+    {
+        return Some(branch.to_string());
     }
     None // detached HEAD
 }
@@ -70,12 +70,12 @@ fn parse_git_config_remote_url(config: &str, remote_name: &str) -> Option<String
             in_section = trimmed == section_header;
             continue;
         }
-        if in_section {
-            if let Some(rest) = trimmed.strip_prefix("url") {
-                let rest = rest.trim_start();
-                if let Some(value) = rest.strip_prefix('=') {
-                    return Some(value.trim().to_string());
-                }
+        if in_section
+            && let Some(rest) = trimmed.strip_prefix("url")
+        {
+            let rest = rest.trim_start();
+            if let Some(value) = rest.strip_prefix('=') {
+                return Some(value.trim().to_string());
             }
         }
     }
