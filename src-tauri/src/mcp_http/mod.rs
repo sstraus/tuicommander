@@ -245,7 +245,7 @@ mod tests {
             .expect("blocking client construction thread panicked");
         Arc::new(AppState {
             sessions: DashMap::new(),
-            worktrees_dir: std::path::PathBuf::from("/tmp/test-worktrees"),
+            worktrees_dir: std::env::temp_dir().join("test-worktrees"),
             metrics: crate::SessionMetrics::new(),
             output_buffers: DashMap::new(),
             mcp_sse_sessions: DashMap::new(),

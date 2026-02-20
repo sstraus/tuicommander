@@ -734,7 +734,7 @@ mod tests {
     fn make_test_app_state() -> AppState {
         AppState {
             sessions: dashmap::DashMap::new(),
-            worktrees_dir: PathBuf::from("/tmp/test-worktrees"),
+            worktrees_dir: std::env::temp_dir().join("test-worktrees"),
             metrics: SessionMetrics::new(),
             output_buffers: dashmap::DashMap::new(),
             mcp_sse_sessions: dashmap::DashMap::new(),

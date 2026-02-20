@@ -53,9 +53,9 @@ fn extra_bin_dirs() -> Vec<String> {
 /// desktop-launched apps don't have on PATH.
 fn resolve_cli(name: &str) -> String {
     for dir in &extra_bin_dirs() {
-        let candidate = format!("{dir}/{name}");
-        if std::path::Path::new(&candidate).exists() {
-            return candidate;
+        let candidate = std::path::Path::new(dir).join(name);
+        if candidate.exists() {
+            return candidate.to_string_lossy().to_string();
         }
     }
     name.to_string()
@@ -260,14 +260,28 @@ pub(crate) fn detect_agent_binary(binary: String) -> AgentBinaryDetection {
     ];
 
     #[cfg(windows)]
-    let candidates = vec![
-        format!("{}\\.cargo\\bin\\{}.exe", home, binary),
-        format!("{}\\go\\bin\\{}.exe", home, binary),
-        format!("{}\\AppData\\Local\\Programs\\{}\\{}.exe", home, binary, binary),
-        format!("{}\\AppData\\Local\\Microsoft\\WinGet\\Packages\\**\\{}.exe", home, binary),
-        format!("{}\\scoop\\shims\\{}.exe", home, binary),
-        format!("C:\\Program Files\\{}\\{}.exe", binary, binary),
-    ];
+    let candidates = {
+        let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
+        let mut v = vec![
+            format!("{}\\.cargo\\bin\\{}.exe", home, binary),
+            format!("{}\\go\\bin\\{}.exe", home, binary),
+            format!("{}\\AppData\\Local\\Programs\\{}\\{}.exe", home, binary, binary),
+            format!("{}\\scoop\\shims\\{}.exe", home, binary),
+            format!("{}\\{}.exe", program_files, binary),
+            format!("{}\\{}\\{}.exe", program_files, binary, binary),
+        ];
+        // Scan WinGet packages directory for matching binaries
+        let winget_dir = format!("{}\\AppData\\Local\\Microsoft\\WinGet\\Packages", home);
+        if let Ok(entries) = std::fs::read_dir(&winget_dir) {
+            for entry in entries.flatten() {
+                let exe = entry.path().join(format!("{}.exe", binary));
+                if exe.exists() {
+                    v.push(exe.to_string_lossy().to_string());
+                }
+            }
+        }
+        v
+    };
 
     // Use platform-appropriate PATH lookup (which on Unix, where on Windows)
     let checker = if cfg!(target_os = "windows") { "where" } else { "which" };
