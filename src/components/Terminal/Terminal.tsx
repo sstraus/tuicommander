@@ -176,6 +176,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
     if (!busyFlagged) {
       busyFlagged = true;
       terminalsStore.update(props.id, { shellState: "busy" });
+      // New output after idle means the user answered any pending prompt
+      if (terminalsStore.get(props.id)?.awaitingInput) {
+        terminalsStore.clearAwaitingInput(props.id);
+      }
     }
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
@@ -366,7 +370,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       theme: currentTheme(),
       cursorBlink: true,
       allowProposedApi: true,
-      macOptionIsMeta: true,
+      macOptionIsMeta: false,
     });
 
     fitAddon = new FitAddon();

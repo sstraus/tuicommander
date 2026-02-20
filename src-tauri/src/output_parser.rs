@@ -125,24 +125,26 @@ impl OutputParser {
 }
 
 fn build_rate_limit_patterns() -> Vec<RateLimitPattern> {
+    // Patterns are checked in order; first match wins.
+    // Only match structured error output (API error codes, HTTP status lines, error class names).
+    // NEVER match plain English phrases — agents discuss rate limits in conversational output.
     vec![
-        // Claude
-        rl("claude-http-429", r"(?i)rate_limit_error|429.*Too Many Requests", Some(60000), false),
+        // Claude: specific API error codes (snake_case identifiers)
+        rl("claude-http-429", r"(?i)rate_limit_error", Some(60000), false),
         rl("claude-overloaded", r"(?i)overloaded_error", Some(30000), false),
-        rl("claude-retry-after", r"(?i)retry[- ]?after[:\s]*(\d+)", None, true),
-        rl("claude-token-limit", r"(?i)rate limit.*token|tokens.*exceeded", Some(60000), false),
-        // OpenAI/Codex
-        rl("openai-http-429", r"(?i)RateLimitError|429.*rate limit", Some(60000), false),
-        rl("openai-retry-after", r"(?i)Retry after (\d+) seconds?", None, true),
-        rl("openai-tpm-limit", r"(?i)TPM|tokens per minute.*limit", Some(60000), false),
-        rl("openai-rpm-limit", r"(?i)RPM|requests per minute.*limit", Some(60000), false),
-        // Gemini
-        rl("gemini-resource-exhausted", r"(?i)RESOURCE_EXHAUSTED|quota exceeded", Some(60000), false),
-        // Generic
-        rl("http-429", r"(?i)HTTP\s*429|429\s*Too Many Requests", Some(60000), false),
-        rl("rate-limit-keyword", r"(?i)rate[- ]?limit(?:ed|ing)?", Some(60000), false),
-        rl("too-many-requests", r"(?i)too many requests", Some(60000), false),
+        // OpenAI: specific error class names (PascalCase/structured)
+        rl("openai-http-429", r"RateLimitError", Some(60000), false),
+        // Gemini: gRPC error code (UPPER_SNAKE_CASE)
+        rl("gemini-resource-exhausted", r"RESOURCE_EXHAUSTED", Some(60000), false),
+        // HTTP status line — requires "429" adjacent to HTTP-like context
+        rl("http-429", r"(?i)\b429\b.{0,20}Too Many Requests|HTTP[/ ]\S*\s*429", Some(60000), false),
+        // Retry-After HTTP header (colon-separated, very specific format)
         rl("retry-after-header", r"(?i)Retry-After:\s*(\d+)", None, true),
+        // OpenAI structured retry message (requires "Retry after N seconds" exact phrasing)
+        rl("openai-retry-after", r"Retry after (\d+) seconds?", None, true),
+        // Token/request limit errors — require structured error context (quotes, colons, or error prefix)
+        rl("openai-tpm-limit", r"(?i)tokens per minute.*limit|TPM limit", Some(60000), false),
+        rl("openai-rpm-limit", r"(?i)requests per minute.*limit|RPM limit", Some(60000), false),
     ]
 }
 
@@ -581,5 +583,59 @@ mod tests {
         let parser = OutputParser::new();
         let events = parser.parse("You\u{2019}ve used 50% of your weekly limit");
         assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { percentage: 50, .. })));
+    }
+
+    // --- False positive prevention tests ---
+
+    fn has_rate_limit(events: &[ParsedEvent]) -> bool {
+        events.iter().any(|e| matches!(e, ParsedEvent::RateLimit { .. }))
+    }
+
+    #[test]
+    fn test_no_false_positive_conversational_rate_limit() {
+        let parser = OutputParser::new();
+        // Agent discussing rate limits in prose should NOT trigger detection
+        assert!(!has_rate_limit(&parser.parse("The rate limit detection was triggering false positives")));
+        assert!(!has_rate_limit(&parser.parse("I fixed the rate-limited pattern matching")));
+        assert!(!has_rate_limit(&parser.parse("We should handle too many requests gracefully")));
+        assert!(!has_rate_limit(&parser.parse("The rate limiting logic needs improvement")));
+    }
+
+    #[test]
+    fn test_no_false_positive_code_output() {
+        let parser = OutputParser::new();
+        // Code snippets mentioning rate limits should NOT trigger
+        assert!(!has_rate_limit(&parser.parse("rl(\"rate-limit-keyword\", r\"rate[- ]?limit\", Some(60000))")));
+        assert!(!has_rate_limit(&parser.parse("// Handle too many requests from the API")));
+        assert!(!has_rate_limit(&parser.parse("fn handle_rate_limit(retry_after: u64) {")));
+    }
+
+    #[test]
+    fn test_no_false_positive_tpm_rpm_acronyms() {
+        let parser = OutputParser::new();
+        // TPM/RPM in non-rate-limit context should NOT trigger
+        assert!(!has_rate_limit(&parser.parse("TPM 2.0 module detected")));
+        assert!(!has_rate_limit(&parser.parse("RPM package manager installed")));
+        assert!(!has_rate_limit(&parser.parse("The disk spins at 7200 RPM")));
+    }
+
+    #[test]
+    fn test_http_429_real_errors_still_detected() {
+        let parser = OutputParser::new();
+        // Real HTTP 429 errors should still be detected
+        assert!(has_rate_limit(&parser.parse("HTTP/1.1 429 Too Many Requests")));
+        assert!(has_rate_limit(&parser.parse("429 Too Many Requests")));
+        assert!(has_rate_limit(&parser.parse("HTTP 429")));
+    }
+
+    #[test]
+    fn test_real_api_errors_still_detected() {
+        let parser = OutputParser::new();
+        // Real API error codes should still be detected
+        assert!(has_rate_limit(&parser.parse("Error: rate_limit_error")));
+        assert!(has_rate_limit(&parser.parse("overloaded_error: service busy")));
+        assert!(has_rate_limit(&parser.parse("RateLimitError: exceeded quota")));
+        assert!(has_rate_limit(&parser.parse("RESOURCE_EXHAUSTED")));
+        assert!(has_rate_limit(&parser.parse("Retry-After: 60")));
     }
 }
