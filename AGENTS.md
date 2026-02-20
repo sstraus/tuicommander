@@ -31,6 +31,8 @@ When implementing minor features, add test items to `to-test.md` instead of test
 
 **All UI work MUST follow [`docs/frontend/STYLE_GUIDE.md`](docs/frontend/STYLE_GUIDE.md).** This defines the color palette, typography, spacing, component patterns, animations, and anti-patterns. Read it before any visual/CSS/layout change.
 
+**Icons MUST be monochrome inline SVGs.** Never use emoji for UI icons — they render inconsistently across platforms and break the visual style. Use `<svg>` elements with `fill="currentColor"` so they inherit the text color.
+
 ## Visual Verification
 
 **IMPORTANT:** After EVERY visual/CSS/layout change to the TUI, you MUST take a screenshot to verify the result. You cannot reliably judge rendering from code alone.

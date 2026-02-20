@@ -4655,8 +4655,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .plan-button-icon {
-  font-size: 12px;
-  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0.8;
 }
 
 .plan-button-name {
