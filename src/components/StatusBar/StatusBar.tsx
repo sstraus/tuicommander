@@ -3,6 +3,7 @@ import { invoke } from "../../invoke";
 import { ZoomIndicator, BranchBadge, PrBadge, CiBadge } from "../ui";
 import { terminalsStore } from "../../stores/terminals";
 import { AGENT_DISPLAY } from "../../agents";
+import { AgentIcon } from "../ui/AgentIcon";
 import { BranchPopover } from "../BranchPopover";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { useGitHub } from "../../hooks/useGitHub";
@@ -166,7 +167,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
                 style={{ color: display().color }}
                 title={`Agent: ${agentType()}`}
               >
-                {display().icon} {agentType()}
+                <AgentIcon agent={agentType()} size={12} /> {agentType()}
               </span>
             );
           }}
