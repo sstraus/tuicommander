@@ -4,6 +4,7 @@ import { repositoriesStore } from "../stores/repositories";
 import { open } from "@tauri-apps/plugin-dialog";
 import { findOrphanTerminals } from "../utils/terminalOrphans";
 import { filterValidTerminals } from "../utils/terminalFilter";
+import { AGENTS } from "../agents";
 
 /** Dependencies injected into useGitOperations */
 export interface GitOperationsDeps {
@@ -118,6 +119,31 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
     if (validTerminals.length > 0) {
       terminalsStore.setActive(validTerminals[0]);
+    } else if (branch?.savedTerminals && branch.savedTerminals.length > 0) {
+      // Lazy restore: create terminals from persisted session state
+      let firstId: string | null = null;
+      for (const terminal of branch.savedTerminals) {
+        const id = terminalsStore.add({
+          sessionId: null,
+          fontSize: terminal.fontSize,
+          name: terminal.name,
+          cwd: terminal.cwd,
+          awaitingInput: null,
+        });
+        repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
+
+        if (terminal.agentType) {
+          const agentConfig = AGENTS[terminal.agentType];
+          if (agentConfig?.resumeCommand) {
+            terminalsStore.update(id, { pendingResumeCommand: agentConfig.resumeCommand });
+          }
+        }
+
+        if (!firstId) firstId = id;
+      }
+      // Clear savedTerminals for this branch (consume-once)
+      repositoriesStore.setBranch(repoPath, branchName, { savedTerminals: [] });
+      if (firstId) terminalsStore.setActive(firstId);
     } else if (!branch?.hadTerminals) {
       // First time selecting this branch — auto-spawn a terminal
       await handleAddTerminalToBranch(repoPath, branchName);

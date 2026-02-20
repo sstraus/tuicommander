@@ -2,7 +2,6 @@ import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
 import { invoke, listen } from "../invoke";
-import { AGENTS } from "../agents";
 import type { SavedTerminal } from "../types";
 
 /** Dependencies injected into initApp */
@@ -18,7 +17,6 @@ export interface AppInitDeps {
   setCurrentBranch: (branch: string | null) => void;
   handleBranchSelect: (repoPath: string, branchName: string) => Promise<void>;
   refreshAllBranchStats: () => void;
-  createNewTerminal: () => Promise<string | undefined>;
   getDefaultFontSize: () => number;
   stores: {
     hydrate: () => Promise<void>;
@@ -65,67 +63,6 @@ function collectTerminalSnapshots(): Map<string, Map<string, SavedTerminal[]>> {
   }
 
   return snapshots;
-}
-
-/** Restore terminal sessions from persisted savedTerminals in each branch */
-async function restoreTerminalSessions(deps: AppInitDeps): Promise<boolean> {
-  let restoredAny = false;
-  let firstTerminalId: string | null = null;
-  let firstRepoPath: string | null = null;
-  let firstBranchName: string | null = null;
-
-  for (const repoPath of repositoriesStore.getPaths()) {
-    const repo = repositoriesStore.get(repoPath);
-    if (!repo) continue;
-
-    for (const [branchName, branch] of Object.entries(repo.branches)) {
-      const saved = branch.savedTerminals;
-      if (!saved || saved.length === 0) continue;
-
-      for (const terminal of saved) {
-        const id = terminalsStore.add({
-          sessionId: null,
-          fontSize: terminal.fontSize,
-          name: terminal.name,
-          cwd: terminal.cwd,
-          awaitingInput: null,
-        });
-
-        repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
-
-        // Set pending resume command if this was an agent terminal
-        if (terminal.agentType) {
-          const agentConfig = AGENTS[terminal.agentType];
-          if (agentConfig?.resumeCommand) {
-            terminalsStore.update(id, { pendingResumeCommand: agentConfig.resumeCommand });
-          }
-        }
-
-        if (!firstTerminalId) {
-          firstTerminalId = id;
-          firstRepoPath = repoPath;
-          firstBranchName = branchName;
-        }
-        restoredAny = true;
-      }
-    }
-  }
-
-  // Consume-once: clear savedTerminals so they don't re-restore on crash
-  if (restoredAny) {
-    repositoriesStore.clearSavedTerminals();
-  }
-
-  // Activate the first restored terminal and its repo/branch
-  if (firstTerminalId && firstRepoPath && firstBranchName) {
-    terminalsStore.setActive(firstTerminalId);
-    repositoriesStore.setActive(firstRepoPath);
-    deps.setCurrentRepoPath(firstRepoPath);
-    deps.setCurrentBranch(firstBranchName);
-    repositoriesStore.setActiveBranch(firstRepoPath, firstBranchName);
-  }
-
-  return restoredAny;
 }
 
 /** App initialization: hydrate stores, reconnect PTY sessions, restore state */
@@ -304,21 +241,14 @@ export async function initApp(deps: AppInitDeps) {
           await deps.handleBranchSelect(firstPath, firstRepo.activeBranch);
         }
       } else {
-        // Try to restore terminals from saved state before creating new ones
-        const restored = await restoreTerminalSessions(deps);
-        if (!restored) {
-          await deps.handleBranchSelect(firstPath, firstRepo.activeBranch);
-        }
+        // Lazy restore: don't create terminals on startup.
+        // savedTerminals stay in the branch store and will be restored
+        // when the user clicks the branch in the sidebar.
       }
       return;
     }
   }
 
-  // Create first terminal only if repos exist but no surviving sessions and no restored sessions
-  if (repoPaths.length > 0 && survivingSessions.length === 0) {
-    const restored = await restoreTerminalSessions(deps);
-    if (!restored) {
-      await deps.createNewTerminal();
-    }
-  }
+  // Lazy restore: don't create terminals on startup.
+  // Terminals are restored when user clicks a branch in the sidebar.
 }

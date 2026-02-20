@@ -96,6 +96,75 @@ describe("useGitOperations", () => {
       expect(branch?.terminals.length).toBe(0);
     });
 
+    it("restores terminals from savedTerminals on branch click", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature", {
+        worktreePath: "/repo/wt",
+        hadTerminals: true,
+        savedTerminals: [
+          { name: "Terminal 1", cwd: "/repo/wt", fontSize: 14, agentType: null },
+          { name: "Agent", cwd: "/repo/wt", fontSize: 12, agentType: null },
+        ],
+      });
+
+      await gitOps.handleBranchSelect("/repo", "feature");
+
+      const branch = repositoriesStore.get("/repo")?.branches["feature"];
+      expect(branch?.terminals.length).toBe(2);
+      // savedTerminals should be consumed
+      expect(branch?.savedTerminals?.length).toBe(0);
+      // First restored terminal should be active
+      expect(terminalsStore.state.activeId).toBe(branch?.terminals[0]);
+    });
+
+    it("preserves terminal metadata during lazy restore", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature", {
+        worktreePath: "/repo/wt",
+        hadTerminals: true,
+        savedTerminals: [
+          { name: "My Terminal", cwd: "/custom/path", fontSize: 16, agentType: null },
+        ],
+      });
+
+      await gitOps.handleBranchSelect("/repo", "feature");
+
+      const branch = repositoriesStore.get("/repo")?.branches["feature"];
+      const termId = branch?.terminals[0];
+      const terminal = termId ? terminalsStore.get(termId) : undefined;
+      expect(terminal?.name).toBe("My Terminal");
+      expect(terminal?.cwd).toBe("/custom/path");
+      expect(terminal?.fontSize).toBe(16);
+      expect(terminal?.sessionId).toBeNull();
+    });
+
+    it("does not restore savedTerminals when live terminals exist", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", {
+        worktreePath: "/repo",
+        savedTerminals: [
+          { name: "Saved", cwd: "/repo", fontSize: 14, agentType: null },
+        ],
+      });
+
+      // Add a live terminal
+      const id = terminalsStore.add({
+        sessionId: "sess-1",
+        fontSize: 14,
+        name: "Live",
+        cwd: "/repo",
+        awaitingInput: null,
+      });
+      repositoriesStore.addTerminalToBranch("/repo", "main", id);
+
+      await gitOps.handleBranchSelect("/repo", "main");
+
+      // Should activate the live terminal, not restore from saved
+      expect(terminalsStore.state.activeId).toBe(id);
+      const branch = repositoriesStore.get("/repo")?.branches["main"];
+      expect(branch?.terminals.length).toBe(1);
+    });
+
     it("activates existing terminal when branch has one", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });

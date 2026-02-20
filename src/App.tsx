@@ -160,7 +160,6 @@ const App: Component = () => {
       setCurrentBranch: gitOps.setCurrentBranch,
       handleBranchSelect: gitOps.handleBranchSelect,
       refreshAllBranchStats: gitOps.refreshAllBranchStats,
-      createNewTerminal: terminalLifecycle.createNewTerminal,
       getDefaultFontSize,
       stores: {
         hydrate: async () => {

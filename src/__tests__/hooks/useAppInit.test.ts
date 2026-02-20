@@ -26,7 +26,6 @@ function createMockDeps(overrides: Partial<AppInitDeps> = {}): AppInitDeps {
     setCurrentBranch: vi.fn(),
     handleBranchSelect: vi.fn().mockResolvedValue(undefined),
     refreshAllBranchStats: vi.fn(),
-    createNewTerminal: vi.fn().mockResolvedValue("term-1"),
     getDefaultFontSize: () => 14,
     stores: {
       hydrate: vi.fn().mockResolvedValue(undefined),
@@ -114,7 +113,7 @@ describe("initApp", () => {
     expect(branch?.terminals.length).toBe(1);
   });
 
-  it("restores active repo/branch from persisted state", async () => {
+  it("restores active repo/branch visual state without creating terminals", async () => {
     repositoriesStore.add({ path: "/repo", displayName: "Repo" });
     repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
     repositoriesStore.setActiveBranch("/repo", "main");
@@ -124,17 +123,20 @@ describe("initApp", () => {
 
     expect(deps.setCurrentRepoPath).toHaveBeenCalledWith("/repo");
     expect(deps.setCurrentBranch).toHaveBeenCalledWith("main");
-    expect(deps.handleBranchSelect).toHaveBeenCalledWith("/repo", "main");
+    // Lazy restore: no terminals created on startup, no handleBranchSelect called
+    expect(deps.handleBranchSelect).not.toHaveBeenCalled();
+    expect(terminalsStore.getCount()).toBe(0);
   });
 
-  it("creates fallback terminal when repos exist but no active branch", async () => {
+  it("does not create terminals when repos exist but no active branch (lazy restore)", async () => {
     repositoriesStore.add({ path: "/repo", displayName: "Repo" });
     // No setBranch/setActiveBranch, so activeBranch is undefined
 
     const deps = createMockDeps();
     await initApp(deps);
 
-    expect(deps.createNewTerminal).toHaveBeenCalled();
+    // Lazy restore: no terminals created on startup
+    expect(terminalsStore.getCount()).toBe(0);
   });
 
   it("reports hydration failures in status", async () => {
