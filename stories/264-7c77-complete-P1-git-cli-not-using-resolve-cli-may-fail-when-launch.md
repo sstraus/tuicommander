@@ -1,10 +1,10 @@
 ---
-id: "264-7c77"
-title: "git CLI not using resolve_cli - may fail when launched from GUI"
-status: pending
+id: 264-7c77
+title: git CLI not using resolve_cli - may fail when launched from GUI
+status: complete
 priority: P1
-created: 2026-02-20T07:38:38.167Z
-updated: 2026-02-20T07:38:38.167Z
+created: "2026-02-20T07:38:38.167Z"
+updated: "2026-02-20T22:48:48.956Z"
 dependencies: []
 ---
 
@@ -27,4 +27,6 @@ git.rs, worktree.rs, and lib.rs call Command::new("git") at ~15 call sites witho
 - src-tauri/src/lib.rs
 
 ## Work Log
+
+### 2026-02-20T22:48:43.610Z - Verified: already resolved in a previous session. Code reviewed and confirmed fix is in place.
 

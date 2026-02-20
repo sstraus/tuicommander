@@ -1,10 +1,10 @@
 ---
-id: "259-0966"
-title: "Shell commands assume bash/sh syntax - broken on Windows"
-status: pending
+id: 259-0966
+title: Shell commands assume bash/sh syntax - broken on Windows
+status: complete
 priority: P1
-created: 2026-02-20T07:38:38.163Z
-updated: 2026-02-20T07:38:38.163Z
+created: "2026-02-20T07:38:38.163Z"
+updated: "2026-02-20T22:48:48.824Z"
 dependencies: []
 ---
 
@@ -28,4 +28,6 @@ useAppLazygit.ts and GitOperationsPanel.tsx write bash-syntax commands to the PT
 - src/utils/shell.ts
 
 ## Work Log
+
+### 2026-02-20T22:48:43.264Z - Verified: already resolved in a previous session. Code reviewed and confirmed fix is in place.
 

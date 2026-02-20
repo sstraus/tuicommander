@@ -1,10 +1,10 @@
 ---
-id: "267-419e"
-title: "Incomplete Windows terminal and IDE handlers in open_in_app"
-status: pending
+id: 267-419e
+title: Incomplete Windows terminal and IDE handlers in open_in_app
+status: complete
 priority: P2
-created: 2026-02-20T07:38:38.168Z
-updated: 2026-02-20T07:38:38.168Z
+created: "2026-02-20T07:38:38.168Z"
+updated: "2026-02-20T22:48:48.973Z"
 dependencies: []
 ---
 
@@ -25,4 +25,6 @@ On Windows, open_in_app only handles terminal (cmd.exe) and finder (explorer). m
 - src-tauri/src/agent.rs
 
 ## Work Log
+
+### 2026-02-20T22:48:43.817Z - Verified: already resolved in a previous session. Code reviewed and confirmed fix is in place.
 

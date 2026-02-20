@@ -1,10 +1,10 @@
 ---
-id: "261-e62d"
-title: "resolve_cli and open_in_app have no Windows IDE support"
-status: pending
+id: 261-e62d
+title: resolve_cli and open_in_app have no Windows IDE support
+status: complete
 priority: P1
-created: 2026-02-20T07:38:38.165Z
-updated: 2026-02-20T07:38:38.165Z
+created: "2026-02-20T07:38:38.165Z"
+updated: "2026-02-20T22:48:48.934Z"
 dependencies: []
 ---
 
@@ -25,4 +25,6 @@ extra_bin_dirs() returns empty Vec on Windows so resolve_cli always falls back t
 - src-tauri/src/agent.rs
 
 ## Work Log
+
+### 2026-02-20T22:48:43.413Z - Verified: already resolved in a previous session. Code reviewed and confirmed fix is in place.
 

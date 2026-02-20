@@ -1,10 +1,10 @@
 ---
-id: "263-e70b"
-title: "gh CLI not using resolve_cli - fails when launched from GUI"
-status: pending
+id: 263-e70b
+title: gh CLI not using resolve_cli - fails when launched from GUI
+status: complete
 priority: P1
-created: 2026-02-20T07:38:38.166Z
-updated: 2026-02-20T07:38:38.166Z
+created: "2026-02-20T07:38:38.166Z"
+updated: "2026-02-20T22:48:48.951Z"
 dependencies: []
 ---
 
@@ -25,4 +25,6 @@ github.rs calls Command::new("gh") directly without resolve_cli(). When TUI Comm
 - src-tauri/src/github.rs
 
 ## Work Log
+
+### 2026-02-20T22:48:43.545Z - Verified: already resolved in a previous session. Code reviewed and confirmed fix is in place.
 

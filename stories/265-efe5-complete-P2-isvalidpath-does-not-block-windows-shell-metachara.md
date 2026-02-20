@@ -1,10 +1,10 @@
 ---
-id: "265-efe5"
-title: "isValidPath does not block Windows shell metacharacters"
-status: pending
+id: 265-efe5
+title: isValidPath does not block Windows shell metacharacters
+status: complete
 priority: P2
-created: 2026-02-20T07:38:38.167Z
-updated: 2026-02-20T07:38:38.167Z
+created: "2026-02-20T07:38:38.167Z"
+updated: "2026-02-20T22:48:48.963Z"
 dependencies: []
 ---
 
@@ -24,4 +24,6 @@ shell.ts isValidPath does not reject Windows shell metacharacters like % (cmd.ex
 - src/utils/shell.ts
 
 ## Work Log
+
+### 2026-02-20T22:48:43.675Z - Verified: already resolved in a previous session. Code reviewed and confirmed fix is in place.
 

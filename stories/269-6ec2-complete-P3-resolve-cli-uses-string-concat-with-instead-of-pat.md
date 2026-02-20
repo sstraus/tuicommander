@@ -1,10 +1,10 @@
 ---
-id: "269-6ec2"
+id: 269-6ec2
 title: "resolve_cli uses string concat with / instead of Path::join"
-status: pending
+status: complete
 priority: P3
-created: 2026-02-20T07:38:38.175Z
-updated: 2026-02-20T07:38:38.175Z
+created: "2026-02-20T07:38:38.175Z"
+updated: "2026-02-20T22:48:48.982Z"
 dependencies: []
 ---
 
@@ -24,4 +24,6 @@ agent.rs resolve_cli builds candidate paths with format!("{dir}/{name}") using a
 - src-tauri/src/agent.rs
 
 ## Work Log
+
+### 2026-02-20T22:48:43.883Z - Verified: already resolved in a previous session. Code reviewed and confirmed fix is in place.
 

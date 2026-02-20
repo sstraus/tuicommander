@@ -1,10 +1,10 @@
 ---
-id: "271-8216"
-title: "WinGet glob pattern in detect_agent_binary never matches"
-status: pending
+id: 271-8216
+title: WinGet glob pattern in detect_agent_binary never matches
+status: complete
 priority: P3
-created: 2026-02-20T07:38:38.183Z
-updated: 2026-02-20T07:38:38.183Z
+created: "2026-02-20T07:38:38.183Z"
+updated: "2026-02-20T22:48:48.994Z"
 dependencies: []
 ---
 
@@ -25,4 +25,6 @@ agent.rs detect_agent_binary Windows candidates include a path with ** glob (App
 - src-tauri/src/agent.rs
 
 ## Work Log
+
+### 2026-02-20T22:48:44.019Z - Verified: already resolved in a previous session. Code reviewed and confirmed fix is in place.
 

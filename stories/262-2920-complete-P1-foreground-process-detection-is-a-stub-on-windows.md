@@ -1,10 +1,10 @@
 ---
-id: "262-2920"
-title: "Foreground process detection is a stub on Windows"
-status: pending
+id: 262-2920
+title: Foreground process detection is a stub on Windows
+status: complete
 priority: P1
-created: 2026-02-20T07:38:38.165Z
-updated: 2026-02-20T07:38:38.165Z
+created: "2026-02-20T07:38:38.165Z"
+updated: "2026-02-20T22:48:48.943Z"
 dependencies: []
 ---
 
@@ -25,4 +25,6 @@ process_name_from_pid returns None on Windows. This breaks agent detection (clau
 - src-tauri/src/pty.rs
 
 ## Work Log
+
+### 2026-02-20T22:48:43.478Z - Verified: already resolved in a previous session. Code reviewed and confirmed fix is in place.
 
