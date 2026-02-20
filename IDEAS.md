@@ -459,6 +459,17 @@ Mac (Tauri running)
 
 ---
 
+## Multi-Instance Support
+
+**Status:** `rejected`
+**Source:** Boss request (Feb 2026)
+
+**What:** Allow running multiple TUI Commander instances simultaneously.
+
+**Why rejected:** TUI Commander is already a multi-repo, multi-tab (50+) multiplexer. There's no use case that requires a second instance — everything can be managed within the single window. The complexity of shared state (mcp-port, config files, file watchers) far outweighs any benefit.
+
+---
+
 ## Notes
 
 ### Deferred improvements
