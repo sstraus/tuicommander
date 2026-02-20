@@ -1,10 +1,10 @@
 ---
 id: 307-695a
 title: "Fix performance: updateSavedTerminals hot path and ServicesTab interval placement"
-status: in_progress
+status: complete
 priority: P2
 created: "2026-02-20T19:25:07.616Z"
-updated: "2026-02-20T20:00:14.562Z"
+updated: "2026-02-20T20:03:03.502Z"
 dependencies: []
 ---
 
@@ -29,4 +29,6 @@ createEffect in App.tsx:219 triggers O(repos x branches x terminals) updateSaved
 - src/stores/repositories.ts
 
 ## Work Log
+
+### 2026-02-20T20:03:01.301Z - Removed hot-path createEffect for updateSavedTerminals in App.tsx (was O(repos*branches*terminals) on every mutation). Moved ServicesTab setInterval into onMount. Fixed orphaned mockInvoke import in StatusBar.test.tsx. All 1607 tests pass.
 

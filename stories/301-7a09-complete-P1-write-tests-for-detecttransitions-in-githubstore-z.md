@@ -1,10 +1,10 @@
 ---
 id: 301-7a09
 title: Write tests for detectTransitions() in githubStore (zero coverage)
-status: in_progress
+status: complete
 priority: P1
 created: "2026-02-20T19:23:06.084Z"
-updated: "2026-02-20T19:44:56.659Z"
+updated: "2026-02-20T19:46:47.683Z"
 dependencies: []
 ---
 
@@ -34,4 +34,6 @@ detectTransitions() is the core engine mapping PR state changes to user notifica
 - src/__tests__/stores/github.test.ts
 
 ## Work Log
+
+### 2026-02-20T19:46:47.607Z - Added 15 tests to github.test.ts covering all 6 transition types (merged, closed, blocked, ci_failed, changes_requested, ready) plus edge cases: no-emit on unchanged state, no-emit on first update, already-conflicting, already-failing CI, and OPEN-only transitions. All 36 tests pass.
 
