@@ -1,0 +1,25 @@
+src-tauri/src/agent.rs
+  87f045589290b05c 15-30,33,35-40,43,46,49,52-53,55,64-74
+AGENTS.md
+  87f045589290b05c 42-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "34ad8df20a110cdbb68e12390601dbac8fe7b47a",
+  "prompts": {
+    "87f045589290b05c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bfe3673a-6762-4c6e-becc-7ab0f4ef0bcd",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 49,
+      "total_deletions": 38,
+      "accepted_lines": 49,
+      "overriden_lines": 0
+    }
+  }
+}
