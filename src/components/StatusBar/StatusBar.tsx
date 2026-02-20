@@ -246,16 +246,16 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style={{ "vertical-align": "middle" }}><path d="M9 21c0 .5.4 1 1 1h4c.6 0 1-.5 1-1v-1H9v1zm3-19C8.1 2 5 5.1 5 9c0 2.4 1.2 4.5 3 5.7V17c0 .5.4 1 1 1h6c.6 0 1-.5 1-1v-2.3c1.8-1.3 3-3.4 3-5.7 0-3.9-3.1-7-7-7z"/></svg>
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}N</span>
         </button>
-        <button id="fb-toggle" class="toggle-btn" onClick={() => props.onToggleFileBrowser?.()} title={`Toggle File Browser (${getModifierSymbol()}E)`} style={{ position: "relative" }}>
-          FB
+        <button id="fb-toggle" class="toggle-btn" onClick={() => props.onToggleFileBrowser?.()} title={`File Browser (${getModifierSymbol()}E)`} style={{ position: "relative" }}>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style={{ "vertical-align": "middle" }}><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}E</span>
         </button>
-        <button id="md-toggle" class="toggle-btn" onClick={props.onToggleMarkdown} title={`Toggle Markdown Panel (${getModifierSymbol()}M)`} style={{ position: "relative" }}>
-          MD
+        <button id="md-toggle" class="toggle-btn" onClick={props.onToggleMarkdown} title={`Markdown (${getModifierSymbol()}M)`} style={{ position: "relative" }}>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style={{ "vertical-align": "middle" }}><path d="M20.56 18H3.44C2.65 18 2 17.37 2 16.59V7.41C2 6.63 2.65 6 3.44 6h17.12c.79 0 1.44.63 1.44 1.41v9.18c0 .78-.65 1.41-1.44 1.41zM6 15.5l2.5-3 1.5 2 2.5-3.5L16 15.5"/><path d="M3.5 13.5V9l2 2.5L7.5 9v4.5" opacity=".7"/></svg>
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}M</span>
         </button>
-        <button id="diff-toggle" class="toggle-btn" onClick={props.onToggleDiff} title={`Toggle Diff Panel (${getModifierSymbol()}D)`} style={{ position: "relative" }}>
-          Diff
+        <button id="diff-toggle" class="toggle-btn" onClick={props.onToggleDiff} title={`Diff (${getModifierSymbol()}D)`} style={{ position: "relative" }}>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style={{ "vertical-align": "middle" }}><path d="M9 7H7v2H5v2h2v2h2v-2h2V9H9V7zm7 2h4v2h-4V9zm0 4h4v2h-4v-2zM5 19h14v2H5v-2zM5 3h14v2H5V3z"/></svg>
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}D</span>
         </button>
 
