@@ -585,7 +585,7 @@ html, body {
 }
 
 .group-repos {
-  padding-left: 4px;
+  padding-left: 0;
 }
 
 .group-empty-hint {
