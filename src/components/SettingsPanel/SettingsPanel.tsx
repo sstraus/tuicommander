@@ -26,8 +26,6 @@ export interface SettingsPanelProps {
   context?: SettingsContext;
 }
 
-/** Legacy type alias for backward compatibility with App.tsx */
-export type SettingsTab = "general" | "notifications" | "dictation" | "services";
 
 const GLOBAL_TABS: SettingsShellTab[] = [
   { key: "general", label: "General" },

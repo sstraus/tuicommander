@@ -881,24 +881,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           </button>
           <button
             class="sidebar-footer-action"
-            title="Notifications"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M8 1.5L1.5 13h13L8 1.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
-              <path d="M8 6v3.5M8 11.5v.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-            </svg>
-          </button>
-          <button
-            class="sidebar-footer-action"
-            title="Tasks"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/>
-              <path d="M5 8h6M5 5.5h6M5 10.5h4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
-            </svg>
-          </button>
-          <button
-            class="sidebar-footer-action"
             onClick={props.onOpenSettings}
             title="Settings"
           >

@@ -1,6 +1,4 @@
 import { terminalsStore } from "../stores/terminals";
-import type { SettingsTab } from "../components/SettingsPanel";
-
 /** Dependencies injected into useDictation */
 export interface DictationDeps {
   pty: {
@@ -19,7 +17,7 @@ export interface DictationDeps {
     stopRecording: () => Promise<string | null>;
   };
   setStatusInfo: (msg: string) => void;
-  openSettings: (tab?: SettingsTab) => void;
+  openSettings: (tab?: string) => void;
 }
 
 /** Dictation: start/stop recording, transcription, and terminal injection */

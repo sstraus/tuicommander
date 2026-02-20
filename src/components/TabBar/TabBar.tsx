@@ -33,7 +33,9 @@ export const TabBar: Component<TabBarProps> = (props) => {
 
   // Context menu for new tab + button
   const newTabMenu = createContextMenu();
-  const isSplitActive = () => terminalsStore.state.layout.direction !== "none";
+  const layout = () => terminalsStore.state.layout;
+  const isSplitActive = () => layout().direction !== "none";
+  const isUnifiedMode = () => settingsStore.state.splitTabMode === "unified" && layout().direction !== "none";
   const mod = getModifierSymbol();
 
   const getNewTabMenuItems = (): ContextMenuItem[] => [
@@ -194,10 +196,6 @@ export const TabBar: Component<TabBarProps> = (props) => {
   return (
     <div id="tabs">
       {/* Terminal tabs */}
-      {(() => {
-        const layout = () => terminalsStore.state.layout;
-        const isUnifiedMode = () => settingsStore.state.splitTabMode === "unified" && layout().direction !== "none";
-        return (
       <For each={activeTerminals()}>
         {(id, index) => {
           const terminal = () => terminalsStore.get(id);
@@ -309,8 +307,6 @@ export const TabBar: Component<TabBarProps> = (props) => {
           );
         }}
       </For>
-        );
-      })()}
 
       {/* Diff tabs */}
       <For each={diffTabsStore.getIds()}>

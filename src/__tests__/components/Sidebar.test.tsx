@@ -191,12 +191,10 @@ describe("Sidebar", () => {
       expect(onOpenHelp).toHaveBeenCalledOnce();
     });
 
-    it("renders Notifications and Tasks buttons in footer", () => {
+    it("does not render unimplemented Notifications and Tasks buttons", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const notifBtn = container.querySelector('.sidebar-footer-action[title="Notifications"]');
-      const tasksBtn = container.querySelector('.sidebar-footer-action[title="Tasks"]');
-      expect(notifBtn).not.toBeNull();
-      expect(tasksBtn).not.toBeNull();
+      expect(container.querySelector('.sidebar-footer-action[title="Notifications"]')).toBeNull();
+      expect(container.querySelector('.sidebar-footer-action[title="Tasks"]')).toBeNull();
     });
   });
 

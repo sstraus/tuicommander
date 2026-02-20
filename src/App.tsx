@@ -23,7 +23,7 @@ import { NotesPanel } from "./components/NotesPanel";
 import { MarkdownTab } from "./components/MarkdownTab";
 import { PromptOverlay } from "./components/PromptOverlay";
 import { PromptDrawer } from "./components/PromptDrawer";
-import { SettingsPanel, type SettingsTab, type SettingsContext } from "./components/SettingsPanel";
+import { SettingsPanel, type SettingsContext } from "./components/SettingsPanel";
 import { TaskQueuePanel } from "./components/TaskQueuePanel";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "./components/ContextMenu";
 import { GitOperationsPanel } from "./components/GitOperationsPanel";
@@ -80,10 +80,10 @@ const getMaxTabNameLength = () => settingsStore.state.maxTabNameLength;
 const App: Component = () => {
   const [statusInfo, setStatusInfo] = createSignal("Ready");
   const [settingsPanelVisible, setSettingsPanelVisible] = createSignal(false);
-  const [settingsInitialTab, setSettingsInitialTab] = createSignal<SettingsTab | undefined>(undefined);
+  const [settingsInitialTab, setSettingsInitialTab] = createSignal<string | undefined>(undefined);
   const [settingsContext, setSettingsContext] = createSignal<SettingsContext>({ kind: "global" });
 
-  const openSettings = (tab?: SettingsTab) => {
+  const openSettings = (tab?: string) => {
     setSettingsContext({ kind: "global" });
     setSettingsInitialTab(tab);
     setSettingsPanelVisible(true);

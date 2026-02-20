@@ -254,41 +254,45 @@ describe("uiStore", () => {
   });
 
   describe("dropdowns", () => {
-    it("toggleIdeDropdown toggles and closes others", () => {
+    it("toggleIdeDropdown sets activeDropdown to ide", () => {
       createRoot((dispose) => {
         store.toggleIdeDropdown();
-        expect(store.state.ideDropdownVisible).toBe(true);
-        expect(store.state.fontDropdownVisible).toBe(false);
-        expect(store.state.agentDropdownVisible).toBe(false);
+        expect(store.state.activeDropdown).toBe("ide");
         dispose();
       });
     });
 
-    it("toggleFontDropdown toggles and closes others", () => {
+    it("toggleFontDropdown replaces active dropdown", () => {
       createRoot((dispose) => {
         store.toggleIdeDropdown();
         store.toggleFontDropdown();
-        expect(store.state.fontDropdownVisible).toBe(true);
-        expect(store.state.ideDropdownVisible).toBe(false);
+        expect(store.state.activeDropdown).toBe("font");
         dispose();
       });
     });
 
-    it("toggleAgentDropdown toggles and closes others", () => {
+    it("toggleAgentDropdown sets activeDropdown to agent", () => {
       createRoot((dispose) => {
         store.toggleAgentDropdown();
-        expect(store.state.agentDropdownVisible).toBe(true);
+        expect(store.state.activeDropdown).toBe("agent");
         dispose();
       });
     });
 
-    it("closeAllDropdowns closes all", () => {
+    it("toggling the same dropdown again closes it", () => {
+      createRoot((dispose) => {
+        store.toggleIdeDropdown();
+        store.toggleIdeDropdown();
+        expect(store.state.activeDropdown).toBeNull();
+        dispose();
+      });
+    });
+
+    it("closeAllDropdowns sets activeDropdown to null", () => {
       createRoot((dispose) => {
         store.toggleIdeDropdown();
         store.closeAllDropdowns();
-        expect(store.state.ideDropdownVisible).toBe(false);
-        expect(store.state.fontDropdownVisible).toBe(false);
-        expect(store.state.agentDropdownVisible).toBe(false);
+        expect(store.state.activeDropdown).toBeNull();
         dispose();
       });
     });

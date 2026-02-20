@@ -25,10 +25,8 @@ interface UIStoreState {
   // Diff panel state
   currentDiffRepo: string | null;
 
-  // Dropdown visibility
-  ideDropdownVisible: boolean;
-  fontDropdownVisible: boolean;
-  agentDropdownVisible: boolean;
+  // Active dropdown (mutually exclusive)
+  activeDropdown: "ide" | "font" | "agent" | null;
 
   // Loading states
   isLoading: boolean;
@@ -59,9 +57,7 @@ function createUIStore() {
     notesPanelVisible: false,
     fileBrowserPanelVisible: false,
     currentDiffRepo: null,
-    ideDropdownVisible: false,
-    fontDropdownVisible: false,
-    agentDropdownVisible: false,
+    activeDropdown: null,
     isLoading: false,
     loadingMessage: "",
     planFilePath: null,
@@ -166,30 +162,19 @@ function createUIStore() {
 
     // Dropdown management
     toggleIdeDropdown(): void {
-      setState("ideDropdownVisible", (v) => !v);
-      // Close others
-      setState("fontDropdownVisible", false);
-      setState("agentDropdownVisible", false);
+      setState("activeDropdown", (v) => (v === "ide" ? null : "ide"));
     },
 
     toggleFontDropdown(): void {
-      setState("fontDropdownVisible", (v) => !v);
-      // Close others
-      setState("ideDropdownVisible", false);
-      setState("agentDropdownVisible", false);
+      setState("activeDropdown", (v) => (v === "font" ? null : "font"));
     },
 
     toggleAgentDropdown(): void {
-      setState("agentDropdownVisible", (v) => !v);
-      // Close others
-      setState("ideDropdownVisible", false);
-      setState("fontDropdownVisible", false);
+      setState("activeDropdown", (v) => (v === "agent" ? null : "agent"));
     },
 
     closeAllDropdowns(): void {
-      setState("ideDropdownVisible", false);
-      setState("fontDropdownVisible", false);
-      setState("agentDropdownVisible", false);
+      setState("activeDropdown", null);
     },
 
     // Sidebar visibility
