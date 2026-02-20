@@ -299,16 +299,6 @@ html, body {
   margin-bottom: 16px;
 }
 
-.section-title {
-  padding: 4px 16px;
-  font-size: var(--font-sm);
-  text-transform: uppercase;
-  color: var(--fg-muted);
-  letter-spacing: 0.05em;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
 
 .sidebar-footer {
   padding: 8px 12px;
@@ -845,10 +835,6 @@ html, body {
   cursor: default;
 }
 
-#toolbar * {
-  -webkit-user-select: none;
-  user-select: none;
-}
 
 .toolbar-left,
 .toolbar-center,
@@ -1256,25 +1242,6 @@ html, body {
   margin-right: 12px;
 }
 
-#ide-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 4px 8px;
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-#ide-btn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-  border-color: var(--accent);
-}
 
 .dropdown {
   position: absolute;
@@ -1290,9 +1257,6 @@ html, body {
   overflow: hidden;
 }
 
-.dropdown.hidden {
-  display: none;
-}
 
 .dropdown-top {
   top: auto;
@@ -1655,9 +1619,6 @@ html, body {
   overflow: hidden;
 }
 
-#github-status.hidden {
-  display: none;
-}
 
 .status-badge {
   display: inline-flex;
@@ -1805,23 +1766,6 @@ html, body {
   animation: pulse-opacity 2s ease-in-out infinite;
 }
 
-#agent-stats {
-  font-family: var(--font-mono);
-  font-size: var(--font-xs);
-  color: var(--fg-muted);
-  margin-right: 12px;
-  padding: 2px 8px;
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-md);
-}
-
-#agent-stats.hidden {
-  display: none;
-}
-
-#agent-stats .stat-value {
-  color: var(--accent);
-}
 
 /* Markdown Panel */
 #markdown-panel {
@@ -3497,11 +3441,6 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   color: var(--fg-muted);
 }
 
-.color-picker-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
 
 .color-picker-swatch {
   position: relative;
@@ -3520,42 +3459,8 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   cursor: pointer;
 }
 
-.color-picker-preview {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  transition: border-color 0.15s;
-}
 
-.color-picker-swatch:hover .color-picker-preview {
-  border-color: var(--accent);
-}
 
-.color-picker-value {
-  font-size: var(--font-sm);
-  font-family: var(--font-mono);
-  color: var(--fg-muted);
-  min-width: 60px;
-}
-
-.color-picker-reset {
-  padding: 4px 10px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--fg-secondary);
-  font-size: var(--font-xs);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.color-picker-reset:hover {
-  background: var(--bg-highlight);
-  border-color: var(--accent);
-  color: var(--fg-primary);
-}
 
 .settings-info {
   color: var(--fg-muted);
@@ -4177,11 +4082,6 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   font-weight: 500;
 }
 
-.dictation-model-action {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
 
 .settings-download-btn {
   padding: 8px 16px;
@@ -4225,9 +4125,6 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   color: var(--fg-muted);
 }
 
-.dictation-model-ready {
-  color: var(--success, #4ade80);
-}
 
 .dictation-hotkey-row {
   display: flex;
@@ -4605,7 +4502,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 .ide-launcher-section-title {
   padding: 3px 10px;
-  font-size: var(--font-xxs, 9px);
+  font-size: var(--font-2xs);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--fg-muted);

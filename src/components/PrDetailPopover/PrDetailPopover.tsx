@@ -77,7 +77,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                 <span class="pr-detail-title">{pr().title}</span>
                 <span
                   class="pr-detail-number pr-detail-link"
-                  onClick={() => pr().url && openUrl(pr().url).catch(() => {})}
+                  onClick={() => pr().url && openUrl(pr().url).catch((err) => console.error("Failed to open URL:", err))}
                   title="Open PR on GitHub"
                 >
                   #{pr().number}
@@ -202,7 +202,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
               <Show when={pr().url}>
                 <div
                   class="pr-detail-open-github"
-                  onClick={() => openUrl(pr().url).catch(() => {})}
+                  onClick={() => openUrl(pr().url).catch((err) => console.error("Failed to open URL:", err))}
                 >
                   Open on GitHub {"\u2197"}
                 </div>

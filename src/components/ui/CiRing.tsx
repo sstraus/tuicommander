@@ -34,7 +34,6 @@ export const CiRing: Component<CiRingProps> = (props) => {
         width={SIZE}
         height={SIZE}
         viewBox={`0 0 ${SIZE} ${SIZE}`}
-        class="ci-ring"
         style={{ cursor: props.onClick ? "pointer" : "default", "flex-shrink": "0" }}
         onClick={props.onClick}
       >
@@ -59,7 +58,6 @@ export const CiRing: Component<CiRingProps> = (props) => {
             stroke-dasharray={seg.dashArray}
             stroke-dashoffset={seg.dashOffset}
             stroke-linecap="butt"
-            class={seg.className}
             transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
           />
         ))}

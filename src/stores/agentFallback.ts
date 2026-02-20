@@ -1,6 +1,11 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
 import type { AgentType } from "../agents";
+import { AGENTS } from "../agents";
+
+function isAgentType(value: string): value is AgentType {
+  return value in AGENTS;
+}
 import { rateLimitStore } from "./ratelimit";
 
 /** Fallback chain configuration */
@@ -94,8 +99,10 @@ function createAgentFallbackStore() {
         }>("load_agent_config");
 
         if (loaded) {
-          const primary = (loaded.primary_agent || "claude") as AgentType;
-          const fallbacks = (loaded.fallback_chain || DEFAULT_FALLBACK_CHAIN.filter((a) => a !== primary)) as AgentType[];
+          const rawPrimary = loaded.primary_agent || "claude";
+          const primary: AgentType = isAgentType(rawPrimary) ? rawPrimary : "claude";
+          const rawFallbacks = loaded.fallback_chain || DEFAULT_FALLBACK_CHAIN.filter((a) => a !== primary);
+          const fallbacks: AgentType[] = rawFallbacks.filter(isAgentType);
           const recoveryMs = loaded.recovery_interval_ms || DEFAULT_RECOVERY_INTERVAL;
           const autoRecovery = loaded.auto_recovery ?? true;
 

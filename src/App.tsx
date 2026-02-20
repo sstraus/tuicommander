@@ -3,6 +3,7 @@ import {
   For,
   Show,
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -263,7 +264,7 @@ const App: Component = () => {
   // Context menu items
   const isSplit = () => terminalsStore.state.layout.direction !== "none" && terminalsStore.state.layout.panes.length === 2;
 
-  const getContextMenuItems = (): ContextMenuItem[] => [
+  const getContextMenuItems = createMemo((): ContextMenuItem[] => [
     { label: "Copy", shortcut: `${getModifierSymbol()}C`, action: terminalLifecycle.copyFromTerminal },
     { label: "Paste", shortcut: `${getModifierSymbol()}V`, action: terminalLifecycle.pasteToTerminal },
     { label: "Split Right", shortcut: `${getModifierSymbol()}\\`, action: () => splitPanes.handleSplit("vertical"), disabled: isSplit() },
@@ -299,7 +300,7 @@ const App: Component = () => {
       },
       separator: true,
     },
-  ];
+  ]);
 
   /** Open a file path from terminal output — .md/.mdx in MD viewer, others in IDE */
   const handleOpenFilePath = (absolutePath: string, line?: number, col?: number) => {

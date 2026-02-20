@@ -19,7 +19,6 @@ describe("computeCiRingSegments", () => {
     const result = computeCiRingSegments(5, 0, 0, CIRCUMFERENCE, COLORS);
     expect(result).toHaveLength(1);
     expect(result[0].color).toBe(COLORS.failed);
-    expect(result[0].className).toBe("ci-ring-failed");
     expect(result[0].dashOffset).toBe(0);
     expect(result[0].dashArray).toBe(`${CIRCUMFERENCE} 0`);
   });
@@ -28,7 +27,6 @@ describe("computeCiRingSegments", () => {
     const result = computeCiRingSegments(0, 0, 3, CIRCUMFERENCE, COLORS);
     expect(result).toHaveLength(1);
     expect(result[0].color).toBe(COLORS.passed);
-    expect(result[0].className).toBe("ci-ring-passed");
     expect(result[0].dashOffset).toBe(0);
   });
 
@@ -36,16 +34,15 @@ describe("computeCiRingSegments", () => {
     const result = computeCiRingSegments(0, 4, 0, CIRCUMFERENCE, COLORS);
     expect(result).toHaveLength(1);
     expect(result[0].color).toBe(COLORS.pending);
-    expect(result[0].className).toBe("ci-ring-pending");
     expect(result[0].dashOffset).toBe(0);
   });
 
   it("returns segments in order: failed, pending, passed", () => {
     const result = computeCiRingSegments(1, 1, 1, CIRCUMFERENCE, COLORS);
     expect(result).toHaveLength(3);
-    expect(result[0].className).toBe("ci-ring-failed");
-    expect(result[1].className).toBe("ci-ring-pending");
-    expect(result[2].className).toBe("ci-ring-passed");
+    expect(result[0].color).toBe(COLORS.failed);
+    expect(result[1].color).toBe(COLORS.pending);
+    expect(result[2].color).toBe(COLORS.passed);
   });
 
   it("computes correct proportions for mixed counts", () => {
@@ -75,8 +72,8 @@ describe("computeCiRingSegments", () => {
     // Only failed and passed, no pending
     const result = computeCiRingSegments(3, 0, 7, CIRCUMFERENCE, COLORS);
     expect(result).toHaveLength(2);
-    expect(result[0].className).toBe("ci-ring-failed");
-    expect(result[1].className).toBe("ci-ring-passed");
+    expect(result[0].color).toBe(COLORS.failed);
+    expect(result[1].color).toBe(COLORS.passed);
 
     const failedLen = (3 / 10) * CIRCUMFERENCE;
     expect(result[1].dashOffset).toBe(-failedLen);
