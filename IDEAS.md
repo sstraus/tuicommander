@@ -470,6 +470,153 @@ Mac (Tauri running)
 
 ---
 
+## Structured Agent Output Protocol
+
+**Status:** `concept`
+**Source:** Discussion about ML vs heuristics for output parsing (Feb 2026)
+
+**What:** Instead of parsing raw text output with regex to detect questions, errors, and rate limits, agents would emit structured events alongside their text output. TUI Commander would consume these events directly — no guessing required.
+
+**Why it matters:**
+- Current regex-based `output_parser.rs` works but produces false positives (e.g. `extract_last_question_line` returning questions buried mid-paragraph)
+- Every new agent format or phrasing requires a new regex pattern — maintenance scales linearly with agent diversity
+- ML was evaluated and rejected as over-engineering for this problem, but the underlying issue remains: reverse-engineering intent from text is fragile
+- A cooperative protocol eliminates the problem at the source
+
+**How it could work:**
+
+Option A — **Inline escape sequences** (like iTerm2/OSC):
+```
+\x1b]1337;event=question;text=Do you want to continue?\x07
+```
+- Agents emit OSC-style escape codes that terminals can parse
+- Falls back gracefully — terminals that don't understand OSC codes ignore them
+- No changes needed to stdout/stderr plumbing
+
+Option B — **Sideband JSON on stderr**:
+```json
+{"tui_event": "question", "text": "Do you want to continue?"}
+{"tui_event": "rate_limit", "retry_after_ms": 30000}
+```
+- Agents write structured events to stderr (or a dedicated fd)
+- TUI Commander parses JSON lines from stderr alongside terminal output
+- Risk: stderr pollution for tools that log there
+
+Option C — **MCP-native events** (for MCP-connected agents):
+```json
+{"jsonrpc": "2.0", "method": "notification", "params": {"type": "awaiting_input", "prompt": "Continue?"}}
+```
+- Leverages existing MCP transport — no new protocol needed
+- Only works for agents connected via MCP, not raw PTY sessions
+
+**Event types to standardize:**
+| Event | Current detection | Structured alternative |
+|-------|-------------------|----------------------|
+| Question/prompt | Regex on `?` + silence timer | `{"event": "awaiting_input", "prompt": "..."}` |
+| Rate limit | Regex on error phrases | `{"event": "rate_limit", "retry_after_ms": N}` |
+| Task complete | Not detected | `{"event": "task_complete", "summary": "..."}` |
+| Error | Regex on patterns | `{"event": "error", "message": "...", "recoverable": bool}` |
+| Progress | Not detected | `{"event": "progress", "percent": N, "label": "..."}` |
+
+**Adoption reality:**
+- We don't control agent output formats — Claude Code, Codex, Gemini CLI all have their own output
+- This would require upstream adoption or a wrapper layer
+- Most realistic path: propose as an extension to MCP (Option C) since Anthropic controls both CC and MCP
+- Until then, regex heuristics remain necessary as fallback
+
+**Recommendation:**
+- Keep as `concept` — this is a long-term direction, not something to build speculatively
+- Monitor MCP spec evolution for structured notification support
+- If we build the Agent Teams tmux shim, that IPC layer could carry structured events for teammate agents (our own protocol for agents we spawn)
+- Continue improving regex heuristics for agents we don't control
+
+**Open questions:**
+- Would Anthropic accept an MCP extension for agent status events?
+- Should we prototype Option A (OSC codes) with our own spawned agents to validate the approach?
+- Is there prior art in other agent orchestrators (Cursor, Windsurf, Cline)?
+
+---
+
+## Project File Browser
+
+**Status:** `concept`
+**Source:** Discussion Feb 2026
+
+**What:** A project-oriented file browser panel — single pane by default, expandable to split view for cross-project file operations. Not a general-purpose file manager, but a focused tool for navigating and managing files within repositories.
+
+**Core design:**
+- **Single pane** default view scoped to the active repo's working directory
+- **Split pane** mode for moving/copying files between projects (two repos side by side)
+- **Project-oriented** — understands .gitignore, highlights modified/untracked files, respects repo boundaries
+- Basic file I/O: create, rename, copy, move, delete, mkdir
+- Keyboard-driven navigation (vim-style optional)
+- Quick preview for text files (via CodeMirror, see below) and images
+
+**Architecture:**
+- All file I/O operations in Rust (`#[tauri::command]` handlers using `tokio::fs`)
+- Progress reporting for large copies via Tauri Channels
+- UI rendering in SolidJS with `@solid-primitives/virtual` for large directories (10k+ files)
+- Cross-filesystem move detection: try `std::fs::rename` first (atomic), fall back to copy+delete
+- Security: Tauri capability scoped to `$HOME/**`, destructive ops require confirmation dialog
+
+**Integration with TUI Commander:**
+- Open files in configured IDE (reuse existing IDE launcher)
+- Reveal in Finder/Explorer
+- Cd terminal to selected directory
+- Drag file path into agent terminal
+- Git-aware: show file status (modified/staged/untracked) via existing repo watcher
+
+**Expandable to:**
+- Archive browsing (zip/tar via `async_zip` crate)
+- File search with streaming results
+- Bulk operations with progress
+- Bookmarked locations
+
+**Key reference:** ZManager (Rust dual-pane file manager sharing core between TUI and GUI) for the Rust command/core split pattern.
+
+---
+
+## Integrated Code Editor (CodeMirror 6)
+
+**Status:** `concept`
+**Source:** Discussion Feb 2026 — evaluated Monaco Editor, rejected in favor of CodeMirror 6
+
+**What:** Embedded code editor for viewing and editing files directly within TUI Commander, using CodeMirror 6 instead of Monaco Editor.
+
+**Why CodeMirror 6 over Monaco:**
+
+| Dimension | Monaco | CodeMirror 6 |
+|---|---|---|
+| Bundle size | 4-6 MB (not tree-shakeable) | ~150-300 KB core (fully modular) |
+| CSP impact | Requires `unsafe-eval` + `blob:` worker-src | None |
+| Tauri workers | Known failures on Windows, UI jank fallback | No workers needed |
+| SolidJS wrapper | `solid-monaco` — dormant since Oct 2023 | `solid-codemirror` — active, production-tested |
+| Vite config | Needs plugin + worker setup + PurgeCSS safelist | Zero config changes |
+
+Monaco's only advantage is full TypeScript IntelliSense — unnecessary for our use case (config editing, script editing, file preview).
+
+Sourcegraph migrated from Monaco to CodeMirror 6 and cut JS bundle from 6 MB to 3.4 MB. Replit also switched from Ace to CodeMirror.
+
+**Integration plan:**
+- Use `solid-codemirror` (riccardoperra) — actively maintained, powers CodeImage production app
+- Language support via `@codemirror/lang-*` packages (load on demand per file type)
+- Theme matching TUI Commander's dark palette via CodeMirror theme API
+- Read-only mode for file preview in file browser, editable mode for script editing
+- File I/O through Rust backend (same commands as file browser)
+
+**Use cases in TUI Commander:**
+- Edit repo scripts (currently in Settings → Scripts tab as a textarea)
+- Preview files in file browser panel
+- View/edit config files (.env, package.json, tsconfig, etc.)
+- Potential: inline diff view (CodeMirror has `@codemirror/merge` extension)
+
+**Dependencies:**
+- `solid-codemirror` + `@codemirror/lang-*` (per language)
+- `@codemirror/theme-one-dark` or custom theme
+- No Vite plugin changes, no CSP changes, no PurgeCSS changes
+
+---
+
 ## Notes
 
 ### Deferred improvements
