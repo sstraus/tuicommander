@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Windows compatibility** - Full cross-platform support: platform-aware shell escaping (cmd.exe vs POSIX), Windows foreground process detection via `CreateToolhelp32Snapshot`, Windows paths in `resolve_cli`, IDE detection/launch for Windows, `if exist` syntax for lazygit config detection
+- **Repository groups context menu** - Right-click any repo to "Move to Group" with "New Group..." option that creates and assigns in one step
+- **PromptDialog component** - Reusable native dialog replacing `window.prompt()` which doesn't work in Tauri's webview; used for terminal rename and group creation
+- **Lazy terminal restore** - Terminal sessions no longer eagerly restore on app startup; they materialize only when clicking the branch in the sidebar
+- **Check for Updates menu** - "Check for Updates" item in both app menu and Help menu, wired to the updater store
+- **Repo watcher** - Shared file watcher for automatic GitOperationsPanel refresh when repository files change
+- **Context menu submenus** - ContextMenu component now supports nested children for submenu rendering
+- **`github-release` Makefile target** - One-command releases via `make publish-github-release`
+
+### Changed
+- **CLI resolution via `resolve_cli`** - All `git` and `gh` command invocations now route through `resolve_cli()` for reliable PATH resolution in desktop-launched apps
+- **Tab creation UX** - `+` button creates new tab on click; split options on right-click only
+- **Data persistence guard** - `save()` now blocks before `hydrate()` completes to prevent nuking persisted `repositories.json`
+
+### Fixed
+- **Window-state corruption** - Guard against zero-dimension or off-screen windows from persisted state causing PTY garbage output
+- **IDE detection in release builds** - `resolve_cli` probes well-known directories when tools aren't on PATH
+- **Multi-byte UTF-8 panic** - Fixed panic on multi-byte chars in rate-limit debug output
+- **International keyboard support** - Terminal now handles intl keyboard input correctly; reduced rate-limit false positives
+- **Tab drag-and-drop** - Fixed broken DnD caused by Tauri's internal drag handler
+- **Updater error message** - Friendly message when no published releases exist instead of raw error
+- **Drag-over visual feedback** - Added visual indicators when dragging repos over group sections
+
 ### Planned
 - **Tab scoping per worktree** - Each worktree/branch will have its own isolated set of tabs instead of sharing a global tab list
 

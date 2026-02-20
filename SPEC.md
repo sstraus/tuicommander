@@ -315,6 +315,11 @@ All stores persist to localStorage:
 - [x] Repository groups with accordion UI (named, colored, collapsible, drag-and-drop)
 - [x] HEAD file watcher for branch change detection
 - [x] Git status via .git file reads (no subprocess)
+- [x] Lazygit integration (inline, split pane, floating window)
+- [x] Lazy terminal restore (sessions materialize on branch click, not app startup)
+- [x] Windows compatibility (shell escaping, process detection, resolve_cli, IDE detection)
+- [x] Repo watcher for automatic GitOperationsPanel refresh
+- [x] Context menu submenus and "New Group..." via PromptDialog
 
 ### Completed (Voice Dictation)
 - [x] Local Whisper inference via whisper-rs (Metal GPU acceleration)
@@ -338,7 +343,6 @@ All stores persist to localStorage:
 - [ ] Agent stats display
 - [ ] Config file support
 - [ ] Task queue UI
-- [ ] lazygit integration
 - [ ] Advanced keyboard shortcuts
 - [ ] TypeScript PTY wrapper
 
