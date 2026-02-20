@@ -13,7 +13,7 @@ pub(super) async fn repo_info(Query(q): Query<PathQuery>) -> Response {
 
 pub(super) async fn repo_diff(Query(q): Query<PathQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
-    match crate::git::get_git_diff(q.path) {
+    match crate::git::get_git_diff(q.path, None) {
         Ok(diff) => (StatusCode::OK, Json(serde_json::json!({"diff": diff}))).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -24,12 +24,12 @@ pub(super) async fn repo_diff(Query(q): Query<PathQuery>) -> Response {
 
 pub(super) async fn repo_diff_stats(Query(q): Query<PathQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
-    Json(crate::git::get_diff_stats(q.path)).into_response()
+    Json(crate::git::get_diff_stats(q.path, None)).into_response()
 }
 
 pub(super) async fn repo_changed_files(Query(q): Query<PathQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
-    match crate::git::get_changed_files(q.path) {
+    match crate::git::get_changed_files(q.path, None) {
         Ok(files) => (StatusCode::OK, Json(serde_json::json!(files))).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -51,7 +51,7 @@ pub(super) async fn repo_branches(Query(q): Query<PathQuery>) -> Response {
 
 pub(super) async fn get_file_diff_http(Query(q): Query<FileQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
-    match crate::git::get_file_diff(q.path, q.file) {
+    match crate::git::get_file_diff(q.path, q.file, None) {
         Ok(diff) => (StatusCode::OK, Json(serde_json::json!(diff))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }

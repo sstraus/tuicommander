@@ -7,6 +7,7 @@ export interface DiffTabData {
   filePath: string;
   fileName: string; // Display name (basename of filePath)
   status: string; // "M" | "A" | "D" | "R"
+  scope?: string; // "working" (default) or "committed" (HEAD~1)
 }
 
 /** Diff tabs store state */
@@ -25,11 +26,11 @@ function createDiffTabsStore() {
   });
 
   const actions = {
-    /** Add a new diff tab (or return existing if same file already open) */
-    add(repoPath: string, filePath: string, status: string): string {
-      // Check if tab for this file already exists
+    /** Add a new diff tab (or return existing if same file+scope already open) */
+    add(repoPath: string, filePath: string, status: string, scope?: string): string {
+      // Check if tab for this file+scope already exists
       const existing = Object.values(state.tabs).find(
-        (tab) => tab.repoPath === repoPath && tab.filePath === filePath
+        (tab) => tab.repoPath === repoPath && tab.filePath === filePath && tab.scope === scope
       );
       if (existing) {
         setState("activeId", existing.id);
@@ -40,7 +41,7 @@ function createDiffTabsStore() {
       const id = `diff-${state.counter + 1}`;
       const fileName = filePath.split("/").pop() || filePath;
       setState("counter", (c) => c + 1);
-      setState("tabs", id, { id, repoPath, filePath, fileName, status });
+      setState("tabs", id, { id, repoPath, filePath, fileName, status, scope });
       setState("activeId", id);
       return id;
     },

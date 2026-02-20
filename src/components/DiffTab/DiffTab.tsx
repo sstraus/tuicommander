@@ -5,6 +5,7 @@ import { useRepository } from "../../hooks/useRepository";
 export interface DiffTabProps {
   repoPath: string;
   filePath: string;
+  scope?: string;
   onClose?: () => void;
 }
 
@@ -18,6 +19,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
   createEffect(() => {
     const repoPath = props.repoPath;
     const filePath = props.filePath;
+    const scope = props.scope;
 
     if (!repoPath || !filePath) {
       setDiff("");
@@ -29,7 +31,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 
     (async () => {
       try {
-        const diffContent = await repo.getFileDiff(repoPath, filePath);
+        const diffContent = await repo.getFileDiff(repoPath, filePath, scope);
         setDiff(diffContent);
       } catch (err) {
         setError(String(err));

@@ -229,14 +229,27 @@ pub(crate) fn rename_branch(state: State<'_, Arc<AppState>>, path: String, old_n
     Ok(())
 }
 
+/// Build the base git diff args for the given scope.
+/// "committed" compares HEAD~1..HEAD; anything else compares working tree.
+fn diff_base_args(scope: &Option<String>) -> Vec<&'static str> {
+    if scope.as_deref() == Some("committed") {
+        vec!["diff", "HEAD~1", "HEAD"]
+    } else {
+        vec!["diff"]
+    }
+}
+
 /// Get git diff for a repository
 #[tauri::command]
-pub(crate) fn get_git_diff(path: String) -> Result<String, String> {
+pub(crate) fn get_git_diff(path: String, scope: Option<String>) -> Result<String, String> {
     let repo_path = PathBuf::from(&path);
+
+    let mut args = diff_base_args(&scope);
+    args.push("--color=never");
 
     let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
-        .args(["diff", "--color=never"])
+        .args(&args)
         .output()
         .map_err(|e| format!("Failed to execute git diff: {e}"))?;
 
@@ -250,12 +263,15 @@ pub(crate) fn get_git_diff(path: String) -> Result<String, String> {
 
 /// Get diff stats (additions/deletions) for a repository
 #[tauri::command]
-pub(crate) fn get_diff_stats(path: String) -> DiffStats {
+pub(crate) fn get_diff_stats(path: String, scope: Option<String>) -> DiffStats {
     let repo_path = PathBuf::from(&path);
+
+    let mut args = diff_base_args(&scope);
+    args.push("--shortstat");
 
     let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
-        .args(["diff", "--shortstat"])
+        .args(&args)
         .output();
 
     if let Ok(output) = output
@@ -285,13 +301,16 @@ pub(crate) fn get_diff_stats(path: String) -> DiffStats {
 
 /// Get list of changed files with status and stats
 #[tauri::command]
-pub(crate) fn get_changed_files(path: String) -> Result<Vec<ChangedFile>, String> {
+pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<Vec<ChangedFile>, String> {
     let repo_path = PathBuf::from(&path);
 
     // Get file status (M, A, D, R)
+    let mut status_args = diff_base_args(&scope);
+    status_args.push("--name-status");
+
     let status_output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
-        .args(["diff", "--name-status"])
+        .args(&status_args)
         .output()
         .map_err(|e| format!("Failed to execute git diff --name-status: {e}"))?;
 
@@ -301,9 +320,12 @@ pub(crate) fn get_changed_files(path: String) -> Result<Vec<ChangedFile>, String
     }
 
     // Get per-file stats (additions/deletions)
+    let mut stats_args = diff_base_args(&scope);
+    stats_args.push("--numstat");
+
     let stats_output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
-        .args(["diff", "--numstat"])
+        .args(&stats_args)
         .output()
         .map_err(|e| format!("Failed to execute git diff --numstat: {e}"))?;
 
@@ -348,12 +370,17 @@ pub(crate) fn get_changed_files(path: String) -> Result<Vec<ChangedFile>, String
 
 /// Get diff for a single file
 #[tauri::command]
-pub(crate) fn get_file_diff(path: String, file: String) -> Result<String, String> {
+pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>) -> Result<String, String> {
     let repo_path = PathBuf::from(&path);
+
+    let mut args = diff_base_args(&scope);
+    args.push("--color=never");
+    args.push("--");
 
     let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
-        .args(["diff", "--color=never", "--", &file])
+        .args(&args)
+        .arg(&file)
         .output()
         .map_err(|e| format!("Failed to execute git diff for file: {e}"))?;
 

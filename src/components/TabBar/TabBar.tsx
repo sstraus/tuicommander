@@ -331,7 +331,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 title={diffTab()?.filePath}
               >
                 <span class="tab-icon">📄</span>
-                <span class="tab-name">{diffTab()?.fileName}</span>
+                <span class="tab-name">{diffTab()?.fileName}{diffTab()?.scope === "committed" ? " (HEAD~1)" : ""}</span>
                 <button
                   class="tab-close"
                   title="Close"

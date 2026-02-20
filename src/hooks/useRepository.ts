@@ -17,8 +17,8 @@ export function useRepository() {
   }
 
   /** Get git diff for a repository */
-  async function getDiff(path: string): Promise<string> {
-    return await invoke<string>("get_git_diff", { path });
+  async function getDiff(path: string, scope?: string): Promise<string> {
+    return await invoke<string>("get_git_diff", { path, scope });
   }
 
   /** Open a path in an application, optionally at a specific line/col */
@@ -32,9 +32,9 @@ export function useRepository() {
   }
 
   /** Get diff stats (additions/deletions) for a repository */
-  async function getDiffStats(path: string): Promise<{ additions: number; deletions: number }> {
+  async function getDiffStats(path: string, scope?: string): Promise<{ additions: number; deletions: number }> {
     try {
-      return await invoke<{ additions: number; deletions: number }>("get_diff_stats", { path });
+      return await invoke<{ additions: number; deletions: number }>("get_diff_stats", { path, scope });
     } catch {
       return { additions: 0, deletions: 0 };
     }
@@ -65,9 +65,9 @@ export function useRepository() {
   }
 
   /** Get list of changed files with status and stats */
-  async function getChangedFiles(path: string): Promise<ChangedFile[]> {
+  async function getChangedFiles(path: string, scope?: string): Promise<ChangedFile[]> {
     try {
-      return await invoke<ChangedFile[]>("get_changed_files", { path });
+      return await invoke<ChangedFile[]>("get_changed_files", { path, scope });
     } catch (err) {
       console.error("Failed to get changed files:", err);
       return [];
@@ -75,9 +75,9 @@ export function useRepository() {
   }
 
   /** Get diff for a single file */
-  async function getFileDiff(path: string, file: string): Promise<string> {
+  async function getFileDiff(path: string, file: string, scope?: string): Promise<string> {
     try {
-      return await invoke<string>("get_file_diff", { path, file });
+      return await invoke<string>("get_file_diff", { path, file, scope });
     } catch (err) {
       console.error("Failed to get file diff:", err);
       return "";

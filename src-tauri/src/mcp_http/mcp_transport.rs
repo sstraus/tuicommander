@@ -390,7 +390,7 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
                 None => return serde_json::json!({"error": "missing path"}),
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
-            match crate::git::get_git_diff(path) {
+            match crate::git::get_git_diff(path, None) {
                 Ok(diff) => serde_json::json!({"diff": diff}),
                 Err(e) => serde_json::json!({"error": e}),
             }
@@ -401,7 +401,7 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
                 None => return serde_json::json!({"error": "missing path"}),
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
-            match crate::git::get_changed_files(path) {
+            match crate::git::get_changed_files(path, None) {
                 Ok(files) => serde_json::to_value(files).unwrap_or_default(),
                 Err(e) => serde_json::json!({"error": e}),
             }

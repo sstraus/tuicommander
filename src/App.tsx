@@ -680,6 +680,7 @@ const App: Component = () => {
                       <DiffTab
                         repoPath={diffTab.repoPath}
                         filePath={diffTab.filePath}
+                        scope={diffTab.scope}
                         onClose={() => terminalLifecycle.closeTerminal(id)}
                       />
                     )}

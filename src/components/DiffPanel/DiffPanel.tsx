@@ -14,12 +14,14 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
   const [files, setFiles] = createSignal<ChangedFile[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [scope, setScope] = createSignal<string | undefined>(undefined); // undefined = working tree
   const repo = useRepository();
 
-  // Load changed files when visible, repo changes, or repo content changes
+  // Load changed files when visible, repo changes, scope changes, or repo content changes
   createEffect(() => {
     const visible = props.visible;
     const repoPath = props.repoPath;
+    const currentScope = scope();
     // Track repo revision so this effect re-runs on git operations
     void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 
@@ -33,7 +35,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
 
     (async () => {
       try {
-        const changedFiles = await repo.getChangedFiles(repoPath);
+        const changedFiles = await repo.getChangedFiles(repoPath, currentScope);
         setFiles(changedFiles);
       } catch (err) {
         setError(String(err));
@@ -47,7 +49,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
   // Handle file click - open diff in new tab
   const handleFileClick = (file: ChangedFile) => {
     if (!props.repoPath) return;
-    diffTabsStore.add(props.repoPath, file.path, file.status);
+    diffTabsStore.add(props.repoPath, file.path, file.status, scope());
   };
 
   // Get status badge color and label
@@ -82,6 +84,20 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
           <Show when={!loading() && files().length > 0}>
             <span class="file-count-badge">{files().length}</span>
           </Show>
+          <div class="diff-scope-toggle">
+            <button
+              class="diff-scope-btn"
+              classList={{ "diff-scope-active": !scope() }}
+              onClick={() => setScope(undefined)}
+              title="Uncommitted working tree changes"
+            >Working</button>
+            <button
+              class="diff-scope-btn"
+              classList={{ "diff-scope-active": scope() === "committed" }}
+              onClick={() => setScope("committed")}
+              title="Changes in last commit (HEAD~1)"
+            >Last Commit</button>
+          </div>
         </div>
         <button class="panel-close" onClick={props.onClose} title={`Close (${getModifierSymbol()}D)`}>
           &times;
@@ -99,7 +115,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
 
         <Show when={!loading() && !error() && files().length === 0}>
           <div class="diff-empty">
-            {props.repoPath ? "No changes" : "No repository selected"}
+            {!props.repoPath ? "No repository selected" : scope() === "committed" ? "No commits yet" : "No changes"}
           </div>
         </Show>
 
