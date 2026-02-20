@@ -104,7 +104,7 @@ pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<String>, Stri
     let mut md_files = Vec::new();
 
     // Use git ls-files to list tracked .md files (faster and respects .gitignore)
-    let output = Command::new("git")
+    let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
         .args(["ls-files", "*.md", "**/*.md"])
         .output()

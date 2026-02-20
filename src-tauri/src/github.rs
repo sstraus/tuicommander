@@ -14,7 +14,7 @@ use crate::state::{AppState, GITHUB_CACHE_TTL};
 /// This works even when env vars are empty/unset, because gh reads from the
 /// system keychain on macOS or credential store on other platforms.
 fn token_from_gh_cli() -> Option<String> {
-    let output = Command::new("gh")
+    let output = Command::new(crate::agent::resolve_cli("gh"))
         .args(["auth", "token"])
         .output()
         .ok()?;
@@ -686,7 +686,7 @@ pub(crate) fn get_github_status_impl(path: &str) -> GitHubStatus {
     }
 
     // Get ahead/behind counts
-    let (ahead, behind) = Command::new("git")
+    let (ahead, behind) = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
         .args(["rev-list", "--left-right", "--count", &format!("origin/{current_branch}...HEAD")])
         .output()
@@ -1524,7 +1524,7 @@ mod tests {
         println!("GraphQL returned {} PRs", graphql_prs.len());
 
         // 6. Compare with gh CLI (if available)
-        let gh_output = Command::new("gh")
+        let gh_output = Command::new(crate::agent::resolve_cli("gh"))
             .current_dir(&repo_root)
             .args([
                 "pr", "list", "--state", "all", "--limit", "50",

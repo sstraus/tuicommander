@@ -66,7 +66,7 @@ fn extra_bin_dirs() -> Vec<String> {
 
 /// Resolve a CLI binary to its full path, probing well-known directories that
 /// desktop-launched apps don't have on PATH.
-fn resolve_cli(name: &str) -> String {
+pub(crate) fn resolve_cli(name: &str) -> String {
     for dir in &extra_bin_dirs() {
         let candidate = std::path::Path::new(dir).join(name);
         if candidate.exists() {

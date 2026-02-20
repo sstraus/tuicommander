@@ -59,7 +59,7 @@ pub(crate) fn create_worktree_internal(
         .map_err(|e| format!("Failed to create worktrees directory: {e}"))?;
 
     // Build git worktree add command
-    let mut cmd = Command::new("git");
+    let mut cmd = Command::new(crate::agent::resolve_cli("git"));
     cmd.current_dir(&config.base_repo);
     cmd.arg("worktree").arg("add");
 
@@ -104,7 +104,7 @@ pub(crate) fn create_worktree_internal(
 /// Remove a git worktree
 pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), String> {
     // First, run git worktree remove
-    let output = Command::new("git")
+    let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&worktree.base_repo)
         .arg("worktree")
         .arg("remove")
@@ -128,7 +128,7 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
     }
 
     // Prune worktrees (non-fatal: stale entries are harmless)
-    if let Err(e) = Command::new("git")
+    if let Err(e) = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&worktree.base_repo)
         .arg("worktree")
         .arg("prune")
@@ -214,7 +214,7 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str) -> R
     let base_repo = PathBuf::from(repo_path);
 
     // List worktrees to find the path for this branch
-    let output = Command::new("git")
+    let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&base_repo)
         .args(["worktree", "list", "--porcelain"])
         .output()
@@ -257,7 +257,7 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str) -> R
     remove_worktree_internal(&worktree)?;
 
     // Also delete the local branch (non-fatal: branch may still be useful)
-    if let Err(e) = Command::new("git")
+    if let Err(e) = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&worktree.base_repo)
         .args(["branch", "-d", branch_name])
         .output()
@@ -281,7 +281,7 @@ pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String
 pub(crate) fn get_worktree_paths(repo_path: String) -> Result<HashMap<String, String>, String> {
     let base_repo = PathBuf::from(&repo_path);
 
-    let output = Command::new("git")
+    let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&base_repo)
         .args(["worktree", "list", "--porcelain"])
         .output()
@@ -326,31 +326,31 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let repo_path = temp_dir.path();
 
-        Command::new("git")
+        Command::new(crate::agent::resolve_cli("git"))
             .current_dir(repo_path)
             .args(["init"])
             .output()
             .expect("Failed to init git repo");
 
-        Command::new("git")
+        Command::new(crate::agent::resolve_cli("git"))
             .current_dir(repo_path)
             .args(["config", "user.email", "test@test.com"])
             .output()
             .expect("Failed to config git");
 
-        Command::new("git")
+        Command::new(crate::agent::resolve_cli("git"))
             .current_dir(repo_path)
             .args(["config", "user.name", "Test"])
             .output()
             .expect("Failed to config git");
 
         fs::write(repo_path.join("README.md"), "# Test").expect("Failed to write file");
-        Command::new("git")
+        Command::new(crate::agent::resolve_cli("git"))
             .current_dir(repo_path)
             .args(["add", "."])
             .output()
             .expect("Failed to git add");
-        Command::new("git")
+        Command::new(crate::agent::resolve_cli("git"))
             .current_dir(repo_path)
             .args(["commit", "-m", "Initial commit"])
             .output()

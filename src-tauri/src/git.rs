@@ -133,7 +133,7 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
         .unwrap_or_else(|| "unknown".to_string());
 
     // Get status
-    let status = Command::new("git")
+    let status = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
         .args(["status", "--porcelain"])
         .output()
@@ -201,7 +201,7 @@ pub(crate) fn rename_branch_impl(path: &str, old_name: &str, new_name: &str) -> 
     }
 
     // Execute git branch -m oldname newname
-    let output = Command::new("git")
+    let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
         .args(["branch", "-m", old_name, new_name])
         .output()
@@ -234,7 +234,7 @@ pub(crate) fn rename_branch(state: State<'_, Arc<AppState>>, path: String, old_n
 pub(crate) fn get_git_diff(path: String) -> Result<String, String> {
     let repo_path = PathBuf::from(&path);
 
-    let output = Command::new("git")
+    let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
         .args(["diff", "--color=never"])
         .output()
@@ -253,7 +253,7 @@ pub(crate) fn get_git_diff(path: String) -> Result<String, String> {
 pub(crate) fn get_diff_stats(path: String) -> DiffStats {
     let repo_path = PathBuf::from(&path);
 
-    let output = Command::new("git")
+    let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
         .args(["diff", "--shortstat"])
         .output();
@@ -289,7 +289,7 @@ pub(crate) fn get_changed_files(path: String) -> Result<Vec<ChangedFile>, String
     let repo_path = PathBuf::from(&path);
 
     // Get file status (M, A, D, R)
-    let status_output = Command::new("git")
+    let status_output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
         .args(["diff", "--name-status"])
         .output()
@@ -301,7 +301,7 @@ pub(crate) fn get_changed_files(path: String) -> Result<Vec<ChangedFile>, String
     }
 
     // Get per-file stats (additions/deletions)
-    let stats_output = Command::new("git")
+    let stats_output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
         .args(["diff", "--numstat"])
         .output()
@@ -351,7 +351,7 @@ pub(crate) fn get_changed_files(path: String) -> Result<Vec<ChangedFile>, String
 pub(crate) fn get_file_diff(path: String, file: String) -> Result<String, String> {
     let repo_path = PathBuf::from(&path);
 
-    let output = Command::new("git")
+    let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
         .args(["diff", "--color=never", "--", &file])
         .output()
@@ -426,7 +426,7 @@ pub(crate) fn sort_branches(branches: &mut [serde_json::Value]) {
 pub(crate) fn get_git_branches(path: String) -> Result<Vec<serde_json::Value>, String> {
     let repo_path = PathBuf::from(&path);
 
-    let output = Command::new("git")
+    let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
         .args(["branch", "-a", "--format=%(refname:short) %(HEAD)"])
         .output()
@@ -708,7 +708,7 @@ mod tests {
         let file_branch = read_branch_from_head(&repo_root);
 
         // Subprocess approach (ground truth)
-        let git_branch = Command::new("git")
+        let git_branch = Command::new(crate::agent::resolve_cli("git"))
             .current_dir(&repo_root)
             .args(["rev-parse", "--abbrev-ref", "HEAD"])
             .output()
@@ -735,7 +735,7 @@ mod tests {
         let file_url = read_remote_url(&repo_root);
 
         // Subprocess approach (ground truth)
-        let git_url = Command::new("git")
+        let git_url = Command::new(crate::agent::resolve_cli("git"))
             .current_dir(&repo_root)
             .args(["remote", "get-url", "origin"])
             .output()
