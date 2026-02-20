@@ -24,6 +24,7 @@ import { TaskQueuePanel } from "./components/TaskQueuePanel";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "./components/ContextMenu";
 import { GitOperationsPanel } from "./components/GitOperationsPanel";
 import { RenameBranchDialog } from "./components/RenameBranchDialog";
+import { PromptDialog } from "./components/PromptDialog";
 import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
 import noTuiOpenImg from "./assets/no-tui-open.png";
@@ -99,6 +100,10 @@ const App: Component = () => {
 
   // Run command dialog state
   const [runCommandDialogVisible, setRunCommandDialogVisible] = createSignal(false);
+
+  // Terminal rename prompt state
+  const [termRenamePromptVisible, setTermRenamePromptVisible] = createSignal(false);
+  const [termRenameDefault, setTermRenameDefault] = createSignal("");
 
   // Context menu state
   const contextMenu = createContextMenu();
@@ -283,10 +288,8 @@ const App: Component = () => {
         const activeId = terminalsStore.state.activeId;
         if (!activeId) return;
         const current = terminalsStore.get(activeId)?.name || "";
-        const newName = window.prompt("Terminal title:", current);
-        if (newName != null && newName !== current) {
-          terminalsStore.update(activeId, { name: newName, nameIsCustom: true });
-        }
+        setTermRenameDefault(current);
+        setTermRenamePromptVisible(true);
       },
       separator: true,
     },
@@ -856,6 +859,22 @@ const App: Component = () => {
         onSaveAndRun={(command) => {
           setRunCommandDialogVisible(false);
           gitOps.executeRunCommand(command);
+        }}
+      />
+
+      {/* Terminal rename prompt */}
+      <PromptDialog
+        visible={termRenamePromptVisible()}
+        title="Terminal Title"
+        placeholder="Enter title"
+        defaultValue={termRenameDefault()}
+        confirmLabel="Rename"
+        onClose={() => setTermRenamePromptVisible(false)}
+        onConfirm={(newName) => {
+          const activeId = terminalsStore.state.activeId;
+          if (activeId && newName !== termRenameDefault()) {
+            terminalsStore.update(activeId, { name: newName, nameIsCustom: true });
+          }
         }}
       />
 

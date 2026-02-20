@@ -9,6 +9,7 @@ import { repoSettingsStore } from "../../stores/repoSettings";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
+import { PromptDialog } from "../PromptDialog";
 import { getModifierSymbol } from "../../platform";
 import { compareBranches } from "../../utils/branchSort";
 
@@ -105,6 +106,7 @@ const RepoSection: Component<{
   onDragEnd: () => void;
 }> = (props) => {
   const repoMenu = createContextMenu();
+  const [groupPromptVisible, setGroupPromptVisible] = createSignal(false);
 
   const branches = createMemo(() => Object.values(props.repo.branches));
   const sortedBranches = createMemo(() => {
@@ -140,14 +142,7 @@ const RepoSection: Component<{
     children.push({
       separator: children.length > 0,
       label: "New Group\u2026",
-      action: () => {
-        const name = window.prompt("Group name:");
-        if (!name?.trim()) return;
-        const groupId = repositoriesStore.createGroup(name.trim());
-        if (groupId) {
-          repositoriesStore.addRepoToGroup(props.repo.path, groupId);
-        }
-      },
+      action: () => setGroupPromptVisible(true),
     });
     items.push({ label: "Move to Group", action: () => {}, children });
 
@@ -246,6 +241,19 @@ const RepoSection: Component<{
         y={repoMenu.position().y}
         visible={repoMenu.visible()}
         onClose={repoMenu.close}
+      />
+      <PromptDialog
+        visible={groupPromptVisible()}
+        title="New Group"
+        placeholder="Group name"
+        confirmLabel="Create"
+        onClose={() => setGroupPromptVisible(false)}
+        onConfirm={(name) => {
+          const groupId = repositoriesStore.createGroup(name);
+          if (groupId) {
+            repositoriesStore.addRepoToGroup(props.repo.path, groupId);
+          }
+        }}
       />
     </div>
   );
