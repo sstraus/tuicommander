@@ -46,8 +46,12 @@ function createUpdaterStore() {
           setState({ available: false, version: null, body: null });
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error("Update check failed:", message);
+        const raw = err instanceof Error ? err.message : String(err);
+        console.error("Update check failed:", raw);
+        // Friendly message when no release exists yet
+        const message = /fetch|valid release|404|not found/i.test(raw)
+          ? "No published releases found yet"
+          : raw;
         setState({ error: message });
       } finally {
         setState({ checking: false });
