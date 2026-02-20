@@ -2,12 +2,23 @@
  * Shell escaping utilities to prevent command injection
  */
 
+import { isWindows } from "../platform";
+
 /**
  * Escape a string for safe use in a shell command.
- * Uses single quotes and escapes embedded single quotes.
+ * On POSIX (macOS/Linux): uses single quotes with escaped embedded single quotes.
+ * On Windows: uses double quotes with escaped embedded double quotes and carets.
  */
 export function escapeShellArg(arg: string): string {
-  // Replace single quotes with '\'' (end quote, escaped quote, start quote)
+  if (isWindows()) {
+    // cmd.exe: wrap in double quotes, escape internal double quotes and special chars
+    // Caret (^) is the cmd.exe escape character; double quotes need doubling
+    const escaped = arg
+      .replace(/"/g, '""')
+      .replace(/([%^&<>|])/g, "^$1");
+    return `"${escaped}"`;
+  }
+  // POSIX: replace single quotes with '\'' (end quote, escaped quote, start quote)
   return `'${arg.replace(/'/g, "'\\''")}'`;
 }
 
@@ -39,8 +50,15 @@ export function isValidPath(path: string): boolean {
   // Check for null bytes
   if (path.includes('\0')) return false;
 
-  // Path should start with / or alphanumeric (not shell special chars)
+  // Common injection: path starts with shell operator
   if (/^[;&|`$]/.test(path)) return false;
+
+  // Windows: reject cmd.exe metacharacters that could cause variable expansion or escaping
+  if (isWindows()) {
+    // % triggers env var expansion in cmd.exe (e.g. %PATH%)
+    // ^ is the cmd.exe escape character
+    if (/[%^]/.test(path)) return false;
+  }
 
   return true;
 }
