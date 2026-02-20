@@ -537,6 +537,47 @@ Option C — **MCP-native events** (for MCP-connected agents):
 
 ---
 
+## Clickable File Paths in Terminal Output
+
+**Status:** `validated`
+**Source:** Discussion Feb 2026
+
+**What:** Detect file paths in terminal output and make them clickable to open in the configured IDE. Covers URLs, absolute paths, relative paths, and local dotfile paths.
+
+**What we already have:**
+- `WebLinksAddon` handles HTTP/HTTPS URLs (clickable, opens browser)
+- Custom `registerLinkProvider` for `.md` files (opens in MarkdownPanel) — `Terminal.tsx:383`
+- IDE launcher infrastructure (Settings → editor selection, `open_in_editor` Tauri command)
+
+**Path types to detect:**
+
+| Type | Example | Resolution |
+|------|---------|------------|
+| URLs | `https://github.com/...` | Already handled by `WebLinksAddon` |
+| Absolute paths | `/Users/stefano/.claude/plans/file.rs` | Use as-is |
+| Relative paths | `./src/lib.rs`, `src/agent.rs:42` | Resolve against terminal CWD |
+| Local dotpaths | `.claude/plans/`, `.github/ISSUE_TEMPLATE/` | Resolve against terminal CWD |
+| Path with line number | `src/lib.rs:42` or `src/lib.rs:42:10` | Open at line (and column) |
+
+**Design decisions:**
+- **Replace** the existing `.md`-only link provider with a generalized one (`.md` click could still open MarkdownPanel as special case)
+- **Validate paths on disk** before showing them as clickable — call Rust backend to check existence. Eliminates false positives from random text containing `/`. xterm.js `provideLinks` supports async callbacks, so this is feasible
+- **Regex strategy**: match known patterns (starts with `/`, `./`, `../`, or contains `/` with known extensions), not arbitrary words
+- **Recognized coding extensions**: `.rs`, `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.py`, `.go`, `.java`, `.kt`, `.kts`, `.swift`, `.c`, `.h`, `.cpp`, `.hpp`, `.cc`, `.cs`, `.rb`, `.php`, `.lua`, `.zig`, `.nim`, `.ex`, `.exs`, `.erl`, `.hs`, `.ml`, `.mli`, `.fs`, `.fsx`, `.scala`, `.clj`, `.cljs`, `.r`, `.R`, `.jl`, `.dart`, `.v`, `.sv`, `.vhdl`, `.sol`, `.move`, `.css`, `.scss`, `.sass`, `.less`, `.html`, `.htm`, `.vue`, `.svelte`, `.astro`, `.json`, `.jsonc`, `.json5`, `.yaml`, `.yml`, `.toml`, `.ini`, `.cfg`, `.conf`, `.env`, `.xml`, `.plist`, `.csv`, `.tsv`, `.sql`, `.graphql`, `.gql`, `.proto`, `.thrift`, `.avsc`, `.md`, `.mdx`, `.txt`, `.rst`, `.tex`, `.adoc`, `.org`, `.sh`, `.bash`, `.zsh`, `.fish`, `.ps1`, `.psm1`, `.bat`, `.cmd`, `.dockerfile`, `.containerfile`, `.tf`, `.tfvars`, `.hcl`, `.nix`, `.cmake`, `.make`, `.mk`, `.gradle`, `.sbt`, `.cabal`, `.gemspec`, `.podspec`, `.lock`, `.sum`, `.mod`, `.workspace`, `.editorconfig`, `.gitignore`, `.gitattributes`, `.dockerignore`, `.eslintrc`, `.prettierrc`, `.babelrc`, `.nvmrc`, `.tool-versions`
+- **Line number parsing**: extract `:line` or `:line:col` suffix, pass to IDE open command
+
+**Implementation scope:**
+- Single link provider in `Terminal.tsx` replacing the `.md`-specific one
+- One new Tauri command: `resolve_file_path(cwd: String, candidate: String) -> Option<String>` — checks if path exists, returns absolute path
+- IDE open command extended with optional line/column args
+
+**Risks:**
+- False positives from paths in stack traces, logs, or config output that exist but aren't interesting to edit
+- Performance if every line triggers a filesystem check (mitigate: only check on hover/render of visible lines — xterm.js already does this)
+- Terminal CWD tracking must be accurate (we track it via OSC 7 already)
+
+---
+
 ## Project File Browser
 
 **Status:** `concept`
@@ -614,6 +655,33 @@ Sourcegraph migrated from Monaco to CodeMirror 6 and cut JS bundle from 6 MB to 
 - `solid-codemirror` + `@codemirror/lang-*` (per language)
 - `@codemirror/theme-one-dark` or custom theme
 - No Vite plugin changes, no CSP changes, no PurgeCSS changes
+
+---
+
+## Cross-Repo Semantic Search (mdkb Integration)
+
+**Status:** `concept` — blocked on mdkb enhancements
+**Source:** Discussion Feb 2026
+**Plan:** [`plans/cross-repo-mcp-with-mdkb.md`](plans/cross-repo-mcp-with-mdkb.md)
+**mdkb enhancement proposal:** [`plans/mdkb-enhancements-for-tui-commander.md`](plans/mdkb-enhancements-for-tui-commander.md)
+
+**What:** Expose repository groups via MCP and provide cross-repo semantic search powered by mdkb. Claude Code calls `list_repo_groups` to discover groups, `group_search` to search docs/code across all repos in a group, and `group_reindex` to update indexes.
+
+**Why it matters:**
+- Claude Code only sees the repo it's launched in — no awareness of related repos in the same project
+- TUI Commander already has repo groups in the sidebar — exposing them via MCP is a natural extension
+- Semantic search (not just grep) finds results even when terminology differs across repos
+
+**Current blocker:** mdkb is a CLI-only tool. The integration plan works around this with subprocess spawning, binary detection, Settings UI for path configuration, and JSON parsing — all complexity that a `mdkb-core` Rust library crate would eliminate. We've written a proposal for mdkb enhancements (library crate, single-process multi-index daemon, incremental indexing, progress reporting, staleness metadata).
+
+**Decision:** Wait for mdkb to ship a library crate before implementing. The CLI-wrapping approach works but adds significant accidental complexity. Once `mdkb-core` is available, the implementation simplifies dramatically — no binary detection, no subprocess management, no Settings UI for paths, no status bar errors for missing binaries.
+
+**Key design decisions already made:**
+- Synchronous reindex (blocks until done, explicit only via `group_reindex`)
+- No auto-reindex on file changes
+- Simple status bar indicator during reindex ("Indexing: {group}...")
+- mdkb collections map 1:1 to repos in a group
+- Per-group index directories in `~/.tui-commander/group-indexes/`
 
 ---
 

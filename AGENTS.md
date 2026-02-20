@@ -69,6 +69,25 @@ createEffect(() => {
 
 **All business logic, data transformation, and parsing MUST be implemented in Rust (backend), NOT in the UI layer (TypeScript/SolidJS stores or components).** The frontend should only handle rendering and user interaction — never data reshaping or computation.
 
+## Release & Tag Checklist
+
+When Boss asks to tag a release:
+
+1. **Update version** in `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`
+2. **Update SPEC.md** header version and date
+3. **Update CHANGELOG.md** — move Unreleased items under the new version heading
+4. **Commit** with message `chore: bump version to vX.Y.Z`
+5. **Tag** with `git tag vX.Y.Z`
+6. **GitHub release** — create via `gh release create vX.Y.Z --generate-notes`
+7. **Milestone** — close the matching milestone if one exists, create the next one
+
+### GitHub Issue Management
+
+- **Labels**: Use `type:`, `P0-P3:`, `area:`, `effort:` prefixes. Apply `needs triage` to new issues.
+- **Milestones**: Assign issues to version milestones (v0.4.0, v1.0.0, etc.)
+- **Issue templates**: Bug reports and feature requests use `.github/ISSUE_TEMPLATE/*.yml` forms
+- **Token for project ops**: Use `GH_TOKEN=$GH_STRAUS gh ...` when commands need the `project` scope (the default `gh auth` token only has `repo` + `workflow`)
+
 ## Ideas Tracker
 
 **`IDEAS.md`** is a shared memory for feature concepts under evaluation. Ideas live here until we validate and promote them to SPEC.md for implementation.
