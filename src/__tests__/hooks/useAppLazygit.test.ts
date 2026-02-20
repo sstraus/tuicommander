@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import "../mocks/tauri";
 import { terminalsStore } from "../../stores/terminals";
 import { useAppLazygit } from "../../hooks/useAppLazygit";
+import * as platform from "../../platform";
+
+const isWindowsSpy = vi.spyOn(platform, "isWindows");
 
 function resetStores() {
   for (const id of terminalsStore.getIds()) {
@@ -19,6 +22,7 @@ describe("useAppLazygit", () => {
   beforeEach(() => {
     resetStores();
     vi.clearAllMocks();
+    isWindowsSpy.mockReturnValue(false);
 
     lazygit = useAppLazygit({
       pty: mockPty,
@@ -27,8 +31,9 @@ describe("useAppLazygit", () => {
     });
   });
 
-  describe("buildLazygitCmd", () => {
+  describe("buildLazygitCmd (POSIX)", () => {
     it("builds command with escaped repo path", () => {
+      isWindowsSpy.mockReturnValue(false);
       const cmd = lazygit.buildLazygitCmd("/my/repo");
       expect(cmd).toContain("lazygit -p '/my/repo'");
       expect(cmd).toContain(".lazygit.yml");
@@ -36,8 +41,41 @@ describe("useAppLazygit", () => {
     });
 
     it("handles repo path with spaces", () => {
+      isWindowsSpy.mockReturnValue(false);
       const cmd = lazygit.buildLazygitCmd("/my repo/path");
       expect(cmd).toContain("'/my repo/path'");
+    });
+
+    it("uses bash test -f syntax", () => {
+      isWindowsSpy.mockReturnValue(false);
+      const cmd = lazygit.buildLazygitCmd("/repo");
+      expect(cmd).toContain("test -f");
+      expect(cmd).toContain("cfg=$(");
+    });
+  });
+
+  describe("buildLazygitCmd (Windows)", () => {
+    it("uses cmd.exe if exist syntax", () => {
+      isWindowsSpy.mockReturnValue(true);
+      const cmd = lazygit.buildLazygitCmd("C:\\Users\\me\\repo");
+      expect(cmd).toContain("if exist");
+      expect(cmd).not.toContain("test -f");
+      expect(cmd).not.toContain("cfg=$(");
+    });
+
+    it("builds command with escaped repo path", () => {
+      isWindowsSpy.mockReturnValue(true);
+      const cmd = lazygit.buildLazygitCmd("C:\\Users\\me\\repo");
+      expect(cmd).toContain("lazygit -p");
+      expect(cmd).toContain(".lazygit.yml");
+      expect(cmd).toContain(".lazygit.yaml");
+    });
+
+    it("uses backslash path separators for config files", () => {
+      isWindowsSpy.mockReturnValue(true);
+      const cmd = lazygit.buildLazygitCmd("C:\\repo");
+      expect(cmd).toContain("\\.lazygit.yml");
+      expect(cmd).toContain("\\.lazygit.yaml");
     });
   });
 

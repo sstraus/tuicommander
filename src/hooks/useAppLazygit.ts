@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import { terminalsStore } from "../stores/terminals";
 import { escapeShellArg, isValidPath } from "../utils";
+import { isWindows } from "../platform";
 
 /** Dependencies injected into useAppLazygit */
 export interface AppLazygitDeps {
@@ -20,6 +21,17 @@ export function useAppLazygit(deps: AppLazygitDeps) {
 
   const buildLazygitCmd = (repoPath: string): string => {
     const base = `lazygit -p ${escapeShellArg(repoPath)}`;
+
+    if (isWindows()) {
+      // cmd.exe: use "if exist" for config file detection
+      const ymlPath = escapeShellArg(repoPath + "\\.lazygit.yml");
+      const yamlPath = escapeShellArg(repoPath + "\\.lazygit.yaml");
+      const ymlConfig = escapeShellArg(repoPath + "\\.lazygit.yml");
+      const yamlConfig = escapeShellArg(repoPath + "\\.lazygit.yaml");
+      return `if exist ${ymlPath} (lazygit -p ${escapeShellArg(repoPath)} --use-config-file ${ymlConfig}) else if exist ${yamlPath} (lazygit -p ${escapeShellArg(repoPath)} --use-config-file ${yamlConfig}) else ${base}`;
+    }
+
+    // POSIX (macOS/Linux): bash subshell with test -f
     const configCheck = `test -f ${escapeShellArg(repoPath + "/.lazygit.yml")} && echo yml || (test -f ${escapeShellArg(repoPath + "/.lazygit.yaml")} && echo yaml || echo none)`;
     return `cfg=$(${configCheck}); if [ "$cfg" = "yml" ]; then lazygit -p ${escapeShellArg(repoPath)} --use-config-file ${escapeShellArg(repoPath + "/.lazygit.yml")}; elif [ "$cfg" = "yaml" ]; then lazygit -p ${escapeShellArg(repoPath)} --use-config-file ${escapeShellArg(repoPath + "/.lazygit.yaml")}; else ${base}; fi`;
   };
