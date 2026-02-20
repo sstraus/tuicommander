@@ -323,9 +323,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
             <span class="file-count-badge">{entries().length}</span>
           </Show>
           <div class="fb-legend">
-            <span class="fb-legend-item"><span class="fb-status-dot fb-status-modified" /> M</span>
-            <span class="fb-legend-item"><span class="fb-status-dot fb-status-staged" /> S</span>
-            <span class="fb-legend-item"><span class="fb-status-dot fb-status-untracked" /> U</span>
+            <span class="fb-legend-item" title="Modified (unstaged changes)"><span class="fb-status-dot fb-status-modified" /> mod</span>
+            <span class="fb-legend-item" title="Staged for commit"><span class="fb-status-dot fb-status-staged" /> staged</span>
+            <span class="fb-legend-item" title="Untracked (new file)"><span class="fb-status-dot fb-status-untracked" /> new</span>
           </div>
         </div>
         <button class="panel-close" onClick={props.onClose} title={`Close (${getModifierSymbol()}E)`}>
