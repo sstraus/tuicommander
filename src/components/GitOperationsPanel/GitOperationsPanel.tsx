@@ -1,6 +1,7 @@
 import { Component, Show, For, createSignal, createEffect } from "solid-js";
 import { invoke } from "../../invoke";
 import { terminalsStore } from "../../stores/terminals";
+import { repositoriesStore } from "../../stores/repositories";
 import { escapeShellArg, isValidBranchName, isValidPath } from "../../utils";
 
 export interface GitOperationsPanelProps {
@@ -125,6 +126,8 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
 
   // Fetch branches when panel opens
   createEffect(() => {
+    // Track repo revision so branch list refreshes on git operations
+    void (props.repoPath ? repositoriesStore.getRevision(props.repoPath) : 0);
     if (props.visible && props.repoPath) {
       fetchBranches();
     }
