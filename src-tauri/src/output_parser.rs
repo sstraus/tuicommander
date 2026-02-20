@@ -101,8 +101,9 @@ impl OutputParser {
     fn parse_rate_limit(&self, text: &str) -> Option<ParsedEvent> {
         for pattern in &self.rate_limit_patterns {
             if let Some(m) = pattern.regex.find(text) {
+                let truncated = &text[..text.floor_char_boundary(200)];
                 eprintln!("[RateLimit DEBUG] pattern={} matched=\"{}\" in text=\"{}\"",
-                    pattern.name, m.as_str(), &text[..text.len().min(200)]);
+                    pattern.name, m.as_str(), truncated);
                 let retry_after_ms = if pattern.has_retry_capture {
                     pattern.regex.captures(text).and_then(|caps| {
                         caps.get(1).and_then(|g| {
