@@ -14,7 +14,7 @@ export interface IdeLauncherProps {
 
 /** IDE icon component - renders the SVG icon at specified size */
 const IdeIcon: Component<{ ide: IdeType; size?: number }> = (props) => {
-  const size = () => props.size ?? 16;
+  const size = () => props.size ?? 14;
   return (
     <img
       class="ide-launcher-icon"
