@@ -12,6 +12,7 @@ import { agentFallbackStore } from "../stores/agentFallback";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { notificationsStore } from "../stores/notifications";
+import { prNotificationsStore, type PrNotificationType } from "../stores/prNotifications";
 import { uiStore } from "../stores/ui";
 import { PRESETS, buildPrStatus, type PrOverride } from "./presets";
 
@@ -136,6 +137,39 @@ const simulator = {
     console.log(`[tuic] Notification triggered: ${options.sound}`);
   },
 
+  /** Simulate PR state notification (toolbar bell) */
+  prNotif(options?: { type?: PrNotificationType; branch?: string; pr?: number; title?: string }): void {
+    const { repoPath } = ensureRepo();
+    const type = options?.type ?? "merged";
+    const branch = options?.branch ?? "feature/sim";
+    const prNumber = options?.pr ?? 42;
+    const title = options?.title ?? `Simulated ${type} notification`;
+    prNotificationsStore.add({ repoPath, branch, prNumber, title, type });
+    console.log(`[tuic] PR notification: ${type} for #${prNumber} on ${branch}`);
+  },
+
+  /** Simulate multiple PR notifications at once */
+  prNotifMulti(): void {
+    const { repoPath } = ensureRepo();
+    const scenarios: Array<{ type: PrNotificationType; branch: string; prNumber: number; title: string }> = [
+      { type: "merged", branch: "feature/auth", prNumber: 99, title: "feat: add OAuth2 flow" },
+      { type: "ci_failed", branch: "fix/payments", prNumber: 101, title: "fix: payment webhook" },
+      { type: "ready", branch: "feature/dashboard", prNumber: 103, title: "feat: new dashboard" },
+      { type: "changes_requested", branch: "refactor/api", prNumber: 105, title: "refactor: API layer" },
+      { type: "blocked", branch: "feature/export", prNumber: 107, title: "feat: CSV export" },
+    ];
+    for (const s of scenarios) {
+      prNotificationsStore.add({ repoPath, ...s });
+    }
+    console.log(`[tuic] Injected ${scenarios.length} PR notifications`);
+  },
+
+  /** Clear all PR notifications */
+  prNotifClear(): void {
+    prNotificationsStore.clearAll();
+    console.log("[tuic] Cleared all PR notifications");
+  },
+
   /** Apply a named preset scenario */
   scenario(name: string): void {
     const preset = PRESETS[name];
@@ -168,6 +202,13 @@ const simulator = {
     }
   },
 
+  /** Simulate a plan file detection */
+  plan(path?: string): void {
+    const planPath = path ?? "plans/example-feature.md";
+    uiStore.setPlanFilePath(planPath);
+    console.log(`[tuic] Plan file set: ${planPath}`);
+  },
+
   /** Toggle a panel for testing */
   panel(name: "diff" | "markdown" | "files" | "notes"): void {
     switch (name) {
@@ -193,6 +234,7 @@ const simulator = {
   /** Clear all mocks and resume polling */
   reset(): void {
     rateLimitStore.clearAll();
+    prNotificationsStore.clearAll();
     agentFallbackStore.forceResetToPrimary();
 
     // Clean up sim repo if it was created
@@ -251,6 +293,16 @@ const simulator = {
   __tuic.notification({ sound: 'completion' })
   __tuic.notification({ sound: 'warning' })
 
+── PR State Notifications (toolbar bell) ──────────────────────
+  __tuic.prNotif()                                   Merged notification
+  __tuic.prNotif({ type: 'ci_failed' })              CI failed notification
+  __tuic.prNotif({ type: 'blocked' })                Conflicts notification
+  __tuic.prNotif({ type: 'changes_requested' })      Changes requested
+  __tuic.prNotif({ type: 'ready' })                  Ready to merge
+  __tuic.prNotif({ type: 'closed' })                 PR closed
+  __tuic.prNotifMulti()                              Multiple notifications at once
+  __tuic.prNotifClear()                              Clear all PR notifications
+
 ── Presets (combined scenarios) ────────────────────────────────
   __tuic.scenario('pr-ready')      Open PR, approved, all CI green
   __tuic.scenario('pr-conflict')   Merge conflict, changes requested, CI failing
@@ -260,6 +312,10 @@ const simulator = {
   __tuic.scenario('rate-limited')  Claude rate limited, Gemini fallback
   __tuic.scenario('all-down')      All agents rate limited
   __tuic.presets()                 List all presets
+
+── Plan Button ────────────────────────────────────────────────
+  __tuic.plan()                              Show plan button (default path)
+  __tuic.plan('plans/my-feature.md')         Show plan button (custom path)
 
 ── Panels ─────────────────────────────────────────────────────
   __tuic.panel('diff')             Toggle diff panel

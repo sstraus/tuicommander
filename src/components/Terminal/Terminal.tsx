@@ -10,6 +10,7 @@ import { getTerminalTheme } from "../../themes";
 import { terminalsStore } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { notificationsStore } from "../../stores/notifications";
+import { uiStore } from "../../stores/ui";
 import { invoke } from "../../invoke";
 
 
@@ -20,7 +21,8 @@ type ParsedEvent =
   | { type: "pr-url"; number: number; url: string; platform: string }
   | { type: "progress"; state: number; value: number }
   | { type: "question"; prompt_text: string }
-  | { type: "usage-limit"; percentage: number; limit_type: string };
+  | { type: "usage-limit"; percentage: number; limit_type: string }
+  | { type: "plan-file"; path: string };
 
 export interface TerminalProps {
   id: string;
@@ -301,6 +303,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
             });
             break;
           case "pr-url":
+            break;
+          case "plan-file":
+            uiStore.setPlanFilePath(parsed.path);
             break;
         }
       });

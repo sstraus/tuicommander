@@ -882,6 +882,155 @@ html, body {
   gap: 8px;
 }
 
+/* PR Notification Bell */
+.pr-notif-wrapper {
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.pr-notif-bell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.pr-notif-bell:hover {
+  background: var(--bg-highlight);
+  border-color: var(--accent);
+  color: var(--fg-primary);
+}
+
+.pr-notif-count {
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-radius: 7px;
+}
+
+.pr-notif-popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 240px;
+  max-width: 320px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-dropdown);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.pr-notif-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pr-notif-title {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pr-notif-dismiss-all {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.pr-notif-dismiss-all:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.pr-notif-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+}
+
+.pr-notif-item:last-child {
+  border-bottom: none;
+}
+
+.pr-notif-icon {
+  font-size: var(--font-md);
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.pr-notif-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pr-notif-pr {
+  font-size: var(--font-md);
+  font-weight: 500;
+  color: var(--fg-primary);
+}
+
+.pr-notif-branch {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-notif-close {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-lg);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.pr-notif-close:hover {
+  color: var(--fg-primary);
+}
+
+/* Notification type colors */
+.notif-merged .pr-notif-icon { color: #a371f7; }
+.notif-closed .pr-notif-icon { color: var(--fg-muted); }
+.notif-blocked .pr-notif-icon { color: #f85149; }
+.notif-ci-failed .pr-notif-icon { color: #f85149; }
+.notif-changes .pr-notif-icon { color: #d29922; }
+.notif-ready .pr-notif-icon { color: #3fb950; }
+
 .toolbar-sidebar-toggle {
   width: 28px;
   height: 28px;
@@ -4463,6 +4612,69 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   font-size: var(--font-xs);
   color: var(--fg-muted);
   margin-left: auto;
+}
+
+
+/* ============================================================================
+   Plan Button (toolbar)
+   ============================================================================ */
+
+.plan-button-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-right: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.plan-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  border: none;
+  cursor: pointer;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.plan-button:hover {
+  background: var(--bg-hover);
+}
+
+.plan-button-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.plan-button-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-button-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 5px;
+  background: var(--bg-secondary);
+  color: var(--fg-muted);
+  border: none;
+  border-left: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.plan-button-close:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
 }
 
 

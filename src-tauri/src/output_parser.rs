@@ -39,6 +39,11 @@ pub enum ParsedEvent {
         percentage: u8,
         limit_type: String, // "weekly" or "session"
     },
+    /// Plan file detected in terminal output (e.g. plans/foo.md, .claude/plans/bar.md)
+    #[serde(rename = "plan-file")]
+    PlanFile {
+        path: String,
+    },
 }
 
 /// OutputParser: detects structured events in PTY output text.
@@ -92,6 +97,11 @@ impl OutputParser {
 
         // Question/attention detection
         if let Some(evt) = parse_question(text) {
+            events.push(evt);
+        }
+
+        // Plan file detection
+        if let Some(evt) = parse_plan_file(text) {
             events.push(evt);
         }
 
@@ -339,6 +349,29 @@ pub(crate) fn extract_last_question_line(text: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Detect plan file paths in terminal output.
+/// Matches paths like `plans/foo.md`, `.claude/plans/bar.md`, absolute paths ending in plans/*.md
+fn parse_plan_file(text: &str) -> Option<ParsedEvent> {
+    // Fast path: must contain "plans/" and ".md"
+    if !text.contains("plans/") || !text.contains(".md") {
+        return None;
+    }
+    let clean = strip_ansi(text);
+    lazy_static::lazy_static! {
+        // Match plan file paths: optional leading path, then plans/<name>.md(x)
+        // Captures the full path including any prefix directory
+        static ref PLAN_RE: regex::Regex =
+            regex::Regex::new(r#"(?:^|[\s'":])(/?(?:[^\s'"]+/)?plans/[^\s'"]+\.mdx?)"#).unwrap();
+    }
+    for line in clean.lines() {
+        if let Some(caps) = PLAN_RE.captures(line) {
+            let path = caps[1].to_string();
+            return Some(ParsedEvent::PlanFile { path });
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -653,6 +686,58 @@ mod tests {
             extract_last_question_line("Ready?\n\n\n"),
             Some("Ready?".to_string())
         );
+    }
+
+    // --- Plan file detection tests ---
+
+    fn get_plan_path(events: &[ParsedEvent]) -> Option<String> {
+        events.iter().find_map(|e| match e {
+            ParsedEvent::PlanFile { path } => Some(path.clone()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn test_plan_file_relative() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Plan saved to plans/my-feature.md");
+        assert_eq!(get_plan_path(&events), Some("plans/my-feature.md".to_string()));
+    }
+
+    #[test]
+    fn test_plan_file_dot_claude() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Writing plan: .claude/plans/auth-flow.md");
+        assert_eq!(get_plan_path(&events), Some(".claude/plans/auth-flow.md".to_string()));
+    }
+
+    #[test]
+    fn test_plan_file_absolute() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Created /Users/dev/project/plans/refactor.md");
+        assert_eq!(get_plan_path(&events), Some("/Users/dev/project/plans/refactor.md".to_string()));
+    }
+
+    #[test]
+    fn test_plan_file_claude_private() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Plan: .claude-private/plans/serene-waterfall.md");
+        assert_eq!(get_plan_path(&events), Some(".claude-private/plans/serene-waterfall.md".to_string()));
+    }
+
+    #[test]
+    fn test_plan_file_no_match() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Building project... done");
+        assert!(get_plan_path(&events).is_none());
+    }
+
+    #[test]
+    fn test_plan_file_not_md() {
+        let parser = OutputParser::new();
+        // "plans/foo.ts" should NOT match (not a markdown file)
+        let events = parser.parse("Reading plans/foo.ts");
+        assert!(get_plan_path(&events).is_none());
     }
 
     // --- False positive prevention tests ---

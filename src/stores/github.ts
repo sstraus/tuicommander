@@ -1,6 +1,7 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
 import { repositoriesStore } from "./repositories";
+import { prNotificationsStore, type PrNotificationType } from "./prNotifications";
 import type { BranchPrStatus, CheckSummary, CheckDetail } from "../types";
 
 const BASE_INTERVAL = 30000; // 30 seconds
@@ -28,6 +29,53 @@ function createGitHubStore() {
   let consecutiveErrors = 0;
   let pollingActive = false;
 
+  /** Detect significant PR state transitions and emit notifications */
+  function detectTransitions(repoPath: string, oldPr: BranchPrStatus, newPr: BranchPrStatus): void {
+    const oldState = oldPr.state?.toUpperCase();
+    const newState = newPr.state?.toUpperCase();
+
+    let type: PrNotificationType | null = null;
+
+    // Terminal state transitions
+    if (oldState !== "MERGED" && newState === "MERGED") {
+      type = "merged";
+    } else if (oldState !== "CLOSED" && newState === "CLOSED") {
+      type = "closed";
+    }
+    // Actionable state transitions (only for open PRs)
+    else if (newState === "OPEN") {
+      // Became blocked (conflicts)
+      if (oldPr.mergeable !== "CONFLICTING" && newPr.mergeable === "CONFLICTING") {
+        type = "blocked";
+      }
+      // CI failed
+      else if ((oldPr.checks?.failed ?? 0) === 0 && (newPr.checks?.failed ?? 0) > 0) {
+        type = "ci_failed";
+      }
+      // Changes requested
+      else if (oldPr.review_decision !== "CHANGES_REQUESTED" && newPr.review_decision === "CHANGES_REQUESTED") {
+        type = "changes_requested";
+      }
+      // Became ready to merge
+      else if (
+        (oldPr.mergeable !== "MERGEABLE" || oldPr.review_decision !== "APPROVED" || (oldPr.checks?.failed ?? 0) > 0) &&
+        newPr.mergeable === "MERGEABLE" && newPr.review_decision === "APPROVED" && (newPr.checks?.failed ?? 0) === 0
+      ) {
+        type = "ready";
+      }
+    }
+
+    if (type) {
+      prNotificationsStore.add({
+        repoPath,
+        branch: newPr.branch,
+        prNumber: newPr.number,
+        title: newPr.title,
+        type,
+      });
+    }
+  }
+
   /** Update repo data from a batch poll result (only updates changed branches) */
   function updateRepoData(repoPath: string, prStatuses: BranchPrStatus[]): void {
     const branches: Record<string, BranchPrStatus> = {};
@@ -41,6 +89,17 @@ function createGitHubStore() {
       return;
     }
 
+    // Detect state transitions before updating
+    const existing = state.repos[repoPath]?.branches;
+    if (existing) {
+      for (const pr of prStatuses) {
+        const oldPr = existing[pr.branch];
+        if (oldPr) {
+          detectTransitions(repoPath, oldPr, pr);
+        }
+      }
+    }
+
     // Update lastPolled separately so branch data comparisons are granular
     setState("repos", repoPath, "lastPolled", Date.now());
 
@@ -50,7 +109,6 @@ function createGitHubStore() {
     }
 
     // Remove branches no longer present in poll results
-    const existing = state.repos[repoPath]?.branches;
     if (existing) {
       for (const key of Object.keys(existing)) {
         if (!(key in branches)) {

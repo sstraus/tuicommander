@@ -22,6 +22,7 @@ export interface AppInitDeps {
     hydrate: () => Promise<void>;
     startPolling: () => void;
     stopPolling: () => void;
+    startPrNotificationTimer: () => void;
     loadFontFromConfig: () => void;
     refreshDictationConfig: () => Promise<void>;
   };
@@ -213,6 +214,9 @@ export async function initApp(deps: AppInitDeps) {
 
   // Start batch PR/CI polling for all repos
   deps.stores.startPolling();
+
+  // Start PR notification focus timer (auto-dismiss after 5 min focused)
+  deps.stores.startPrNotificationTimer();
 
   // Load font preference from Rust config (single source of truth)
   deps.stores.loadFontFromConfig();

@@ -45,6 +45,7 @@ import { errorHandlingStore } from "./stores/errorHandling";
 import { agentFallbackStore } from "./stores/agentFallback";
 import { repoSettingsStore } from "./stores/repoSettings";
 import { notesStore } from "./stores/notes";
+import { prNotificationsStore } from "./stores/prNotifications";
 import { updaterStore } from "./stores/updater";
 import { usePty } from "./hooks/usePty";
 import { useRepository } from "./hooks/useRepository";
@@ -190,6 +191,7 @@ const App: Component = () => {
         },
         startPolling: githubStore.startPolling,
         stopPolling: githubStore.stopPolling,
+        startPrNotificationTimer: prNotificationsStore.startFocusTimer,
         loadFontFromConfig: settingsStore.loadFontFromConfig,
         refreshDictationConfig: () => dictationStore.refreshConfig().then(() => {
           if (dictationStore.state.enabled) {
@@ -518,6 +520,7 @@ const App: Component = () => {
           }
         }}
         onRun={(shiftKey) => gitOps.handleRunCommand(shiftKey, () => setRunCommandDialogVisible(true))}
+        onOpenPlan={(path) => handleOpenFilePath(path)}
       />
 
       {/* Body: sidebar + main content side by side */}
