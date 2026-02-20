@@ -312,6 +312,7 @@ All stores persist to localStorage:
 - [x] Auto-update via tauri-plugin-updater with progress badge
 - [x] Prevent system sleep while agents are working (keepawake)
 - [x] Usage limit detection for Claude Code (weekly/session) with status bar badge
+- [x] Repository groups with accordion UI (named, colored, collapsible, drag-and-drop)
 - [x] HEAD file watcher for branch change detection
 - [x] Git status via .git file reads (no subprocess)
 

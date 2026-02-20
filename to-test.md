@@ -206,6 +206,27 @@ Features to test when TUI Commander is more usable.
 - [ ] Delete a repo folder externally, reopen → skips that repo gracefully
 - [ ] `hadTerminals` logic still works (no auto-spawn after intentional close-all)
 
+## Repository Groups (Accordion UI)
+- [ ] Create group from Settings > Groups tab
+- [ ] Rename group (double-click name in settings)
+- [ ] Delete group — repos move to ungrouped
+- [ ] Assign color preset to group (5 presets + clear)
+- [ ] Group appears as accordion section in sidebar
+- [ ] Click group header toggles collapse/expand
+- [ ] Group color dot visible when color set
+- [ ] Drag repo within same group reorders
+- [ ] Drag repo onto group header assigns to group
+- [ ] Drag repo from group to ungrouped area removes from group
+- [ ] Drag repo between groups moves correctly
+- [ ] Drag group header to reorder groups
+- [ ] Right-click group header shows Rename/Color/Delete
+- [ ] Right-click repo shows "Move to Group" submenu
+- [ ] Quick switcher force-expands collapsed groups
+- [ ] Existing repos auto-migrate (all start ungrouped)
+- [ ] Color inheritance: repo color > group color > default
+- [ ] Empty group shows "Drag repos here" hint
+- [ ] Group name uniqueness enforced (case-insensitive)
+
 ## Tab Title Improvements
 - [ ] Run AI agent → tab title updates with task name → process exits → title reverts to original
 - [ ] Rename tab → run agent → exit → custom name persists (not overwritten)
