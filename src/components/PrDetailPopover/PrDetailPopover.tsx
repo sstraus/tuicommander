@@ -185,25 +185,27 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
               </div>
 
               {/* CI summary */}
-              <Show when={checkSummary() && checkSummary()!.total > 0}>
-                <div class="pr-detail-ci-summary">
-                  <CiRing
-                    passed={checkSummary()!.passed}
-                    failed={checkSummary()!.failed}
-                    pending={checkSummary()!.pending}
-                  />
-                  <span class="pr-detail-ci-text">
-                    <Show when={checkSummary()!.failed > 0}>
-                      <span class="ci-count failure">{checkSummary()!.failed} failed</span>
-                    </Show>
-                    <Show when={checkSummary()!.pending > 0}>
-                      <span class="ci-count pending">{checkSummary()!.pending} pending</span>
-                    </Show>
-                    <Show when={checkSummary()!.passed > 0}>
-                      <span class="ci-count success">{checkSummary()!.passed} passed</span>
-                    </Show>
-                  </span>
-                </div>
+              <Show when={checkSummary()?.total ? checkSummary() : null}>
+                {(cs) => (
+                  <div class="pr-detail-ci-summary">
+                    <CiRing
+                      passed={cs().passed}
+                      failed={cs().failed}
+                      pending={cs().pending}
+                    />
+                    <span class="pr-detail-ci-text">
+                      <Show when={cs().failed > 0}>
+                        <span class="ci-count failure">{cs().failed} failed</span>
+                      </Show>
+                      <Show when={cs().pending > 0}>
+                        <span class="ci-count pending">{cs().pending} pending</span>
+                      </Show>
+                      <Show when={cs().passed > 0}>
+                        <span class="ci-count success">{cs().passed} passed</span>
+                      </Show>
+                    </span>
+                  </div>
+                )}
               </Show>
 
               {/* Check list */}

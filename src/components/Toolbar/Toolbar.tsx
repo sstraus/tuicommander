@@ -194,12 +194,14 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 
       {/* PR detail popover triggered from notification click */}
       <Show when={prDetailTarget()}>
-        <PrDetailPopover
-          repoPath={prDetailTarget()!.repoPath}
-          branch={prDetailTarget()!.branch}
-          anchor="top"
-          onClose={() => setPrDetailTarget(null)}
-        />
+        {(target) => (
+          <PrDetailPopover
+            repoPath={target().repoPath}
+            branch={target().branch}
+            anchor="top"
+            onClose={() => setPrDetailTarget(null)}
+          />
+        )}
       </Show>
     </div>
   );

@@ -211,33 +211,41 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 
       {/* GitHub status section */}
       <Show when={github.status()}>
-        <div id="github-status" class="status-section">
-          <BranchBadge
-            branch={github.status()!.current_branch}
-            ahead={github.status()!.ahead}
-            behind={github.status()!.behind}
-            onClick={() => setShowBranchPopover(true)}
-          />
-          <Show when={activePrData()}>
-            <PrBadge
-              number={activePrData()!.number}
-              title={activePrData()!.title}
-              state={activePrData()!.state}
-              mergeable={activePrData()!.mergeable}
-              mergeStateStatus={activePrData()!.merge_state_status}
-              onClick={() => setShowPrDetailPopover(true)}
+        {(gs) => (
+          <div id="github-status" class="status-section">
+            <BranchBadge
+              branch={gs().current_branch}
+              ahead={gs().ahead}
+              behind={gs().behind}
+              onClick={() => setShowBranchPopover(true)}
             />
-          </Show>
-          <Show when={activePrData()?.checks?.total}>
-            <span onClick={handleCiBadgeClick} style={{ cursor: "pointer" }}>
-              <CiBadge
-                status={activePrData()!.checks.failed > 0 ? "completed" : activePrData()!.checks.pending > 0 ? "in_progress" : "completed"}
-                conclusion={activePrData()!.checks.failed > 0 ? "failure" : activePrData()!.checks.pending > 0 ? null : "success"}
-                workflowName="CI"
-              />
-            </span>
-          </Show>
-        </div>
+            <Show when={activePrData()}>
+              {(pr) => (
+                <PrBadge
+                  number={pr().number}
+                  title={pr().title}
+                  state={pr().state}
+                  mergeable={pr().mergeable}
+                  mergeStateStatus={pr().merge_state_status}
+                  onClick={() => setShowPrDetailPopover(true)}
+                />
+              )}
+            </Show>
+            <Show when={activePrData()?.checks}>
+              {(checks) => (
+                <Show when={checks().total > 0}>
+                  <span onClick={handleCiBadgeClick} style={{ cursor: "pointer" }}>
+                    <CiBadge
+                      status={checks().failed > 0 ? "completed" : checks().pending > 0 ? "in_progress" : "completed"}
+                      conclusion={checks().failed > 0 ? "failure" : checks().pending > 0 ? null : "success"}
+                      workflowName="CI"
+                    />
+                  </span>
+                </Show>
+              )}
+            </Show>
+          </div>
+        )}
       </Show>
 
       {/* Right section - controls */}
@@ -292,16 +300,18 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
       </div>
 
       {/* Branch rename popover */}
-      <Show when={showBranchPopover() && github.status()}>
-        <BranchPopover
-          branch={github.status()!.current_branch}
-          repoPath={props.currentRepoPath || null}
-          onClose={() => setShowBranchPopover(false)}
-          onBranchRenamed={(oldName, newName) => {
-            github.refresh();
-            props.onBranchRenamed?.(oldName, newName);
-          }}
-        />
+      <Show when={showBranchPopover() ? github.status() : null}>
+        {(gs) => (
+          <BranchPopover
+            branch={gs().current_branch}
+            repoPath={props.currentRepoPath || null}
+            onClose={() => setShowBranchPopover(false)}
+            onBranchRenamed={(oldName, newName) => {
+              github.refresh();
+              props.onBranchRenamed?.(oldName, newName);
+            }}
+          />
+        )}
       </Show>
 
       {/* Rich PR detail popover (Story 093) */}
