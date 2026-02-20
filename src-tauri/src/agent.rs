@@ -12,34 +12,87 @@ use crate::state::{
     AgentConfig, AppState, OutputRingBuffer, PtyConfig, PtySession, OUTPUT_RING_BUFFER_CAPACITY,
 };
 
-/// Check if a CLI tool exists on PATH
+/// Check if a CLI tool exists on PATH.
+/// On macOS, also searches common Homebrew/shell paths that Finder-launched
+/// apps don't inherit (the shell PATH includes them, but `open`-launched
+/// .app bundles only get a minimal system PATH).
 fn has_cli(name: &str) -> bool {
-    let checker = if cfg!(target_os = "windows") { "where" } else { "which" };
-    Command::new(checker).arg(name).output()
+    if cfg!(target_os = "windows") {
+        return Command::new("where").arg(name).output()
+            .map(|o| o.status.success()).unwrap_or(false);
+    }
+
+    // Try standard `which` first (works in dev / terminal-launched)
+    if Command::new("which").arg(name).output()
         .map(|o| o.status.success()).unwrap_or(false)
+    {
+        return true;
+    }
+
+    // Fallback: probe well-known paths that Finder-launched apps miss
+    #[cfg(not(target_os = "windows"))]
+    {
+        let extra_dirs = [
+            "/usr/local/bin",
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            &format!("{}/.cargo/bin", std::env::var("HOME").unwrap_or_default()),
+        ];
+        for dir in &extra_dirs {
+            let candidate = format!("{dir}/{name}");
+            if std::path::Path::new(&candidate).exists() {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Resolve a CLI binary name to a full path, probing well-known directories
+/// that Finder-launched apps don't have on PATH.
+#[cfg(not(target_os = "windows"))]
+fn resolve_cli(name: &str) -> String {
+    let extra_dirs = [
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+    ];
+    for dir in &extra_dirs {
+        let candidate = format!("{dir}/{name}");
+        if std::path::Path::new(&candidate).exists() {
+            return candidate;
+        }
+    }
+    name.to_string()
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_cli(name: &str) -> String {
+    name.to_string()
 }
 
 /// Open a path in an IDE or application
 #[tauri::command]
 pub(crate) fn open_in_app(path: String, app: String) -> Result<(), String> {
     let mut cmd = match app.as_str() {
-        // CLI-based editors (cross-platform)
-        "vscode" => { let mut c = Command::new("code"); c.arg(&path); c }
-        "cursor" => { let mut c = Command::new("cursor"); c.arg(&path); c }
-        "zed" => { let mut c = Command::new("zed"); c.arg(&path); c }
-        "windsurf" => { let mut c = Command::new("windsurf"); c.arg(&path); c }
-        "neovim" => { let mut c = Command::new("nvim"); c.arg(&path); c }
-        "smerge" => { let mut c = Command::new("smerge"); c.arg(&path); c }
+        // CLI-based editors (cross-platform, with path resolution)
+        "vscode" => { let mut c = Command::new(resolve_cli("code")); c.arg(&path); c }
+        "cursor" => { let mut c = Command::new(resolve_cli("cursor")); c.arg(&path); c }
+        "zed" => { let mut c = Command::new(resolve_cli("zed")); c.arg(&path); c }
+        "windsurf" => { let mut c = Command::new(resolve_cli("windsurf")); c.arg(&path); c }
+        "neovim" => { let mut c = Command::new(resolve_cli("nvim")); c.arg(&path); c }
+        "smerge" => { let mut c = Command::new(resolve_cli("smerge")); c.arg(&path); c }
 
         // Terminal emulators with CLI (cross-platform)
-        "kitty" => { let mut c = Command::new("kitty"); c.arg("--directory").arg(&path); c }
+        "kitty" => { let mut c = Command::new(resolve_cli("kitty")); c.arg("--directory").arg(&path); c }
         "wezterm" if has_cli("wezterm") => {
-            let mut c = Command::new("wezterm");
+            let mut c = Command::new(resolve_cli("wezterm"));
             c.arg("start").arg("--cwd").arg(&path);
             c
         }
         "alacritty" if has_cli("alacritty") => {
-            let mut c = Command::new("alacritty");
+            let mut c = Command::new(resolve_cli("alacritty"));
             c.arg("--working-directory").arg(&path);
             c
         }
@@ -123,10 +176,15 @@ pub(crate) fn detect_installed_ides() -> Vec<String> {
         }
     }
 
-    // macOS: .app bundle detection
+    // macOS: .app bundle detection (includes editors whose CLI symlinks may
+    // not be on PATH when the app is launched from Finder)
     #[cfg(target_os = "macos")]
     {
         let app_bundles: &[(&str, &str)] = &[
+            ("vscode", "/Applications/Visual Studio Code.app"),
+            ("cursor", "/Applications/Cursor.app"),
+            ("zed", "/Applications/Zed.app"),
+            ("windsurf", "/Applications/Windsurf.app"),
             ("xcode", "/Applications/Xcode.app"),
             ("sourcetree", "/Applications/Sourcetree.app"),
             ("github-desktop", "/Applications/GitHub Desktop.app"),
