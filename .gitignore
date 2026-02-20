@@ -25,6 +25,7 @@ coverage
 *.sln
 *.sw?
 plans
+IDEAS.md
 .claude
 benchmarks
 CLAUDE.md
