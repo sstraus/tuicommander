@@ -101,9 +101,6 @@ impl OutputParser {
     fn parse_rate_limit(&self, text: &str) -> Option<ParsedEvent> {
         for pattern in &self.rate_limit_patterns {
             if let Some(m) = pattern.regex.find(text) {
-                let truncated = &text[..text.floor_char_boundary(200)];
-                eprintln!("[RateLimit DEBUG] pattern={} matched=\"{}\" in text=\"{}\"",
-                    pattern.name, m.as_str(), truncated);
                 let retry_after_ms = if pattern.has_retry_capture {
                     pattern.regex.captures(text).and_then(|caps| {
                         caps.get(1).and_then(|g| {
@@ -207,7 +204,7 @@ fn parse_pr_url(text: &str) -> Option<ParsedEvent> {
 
 /// Strip ANSI escape sequences from text using the strip-ansi-escapes crate.
 /// Handles all ANSI escape types: CSI, OSC, SGR, and simple escapes.
-fn strip_ansi(text: &str) -> String {
+pub(crate) fn strip_ansi(text: &str) -> String {
     let stripped = strip_ansi_escapes::strip(text);
     String::from_utf8(stripped).unwrap_or_else(|_| text.to_string())
 }
@@ -322,6 +319,22 @@ fn parse_question(text: &str) -> Option<ParsedEvent> {
             return Some(ParsedEvent::Question {
                 prompt_text: trimmed.to_string(),
             });
+        }
+    }
+    None
+}
+
+/// Extract the last non-empty line ending with `?` from a chunk of text.
+/// Used by the silence-based question detector: if an agent prints a line ending
+/// with `?` and then goes silent for 5 seconds, it's likely waiting for input.
+/// Returns None if no line ends with `?`.
+pub(crate) fn extract_last_question_line(text: &str) -> Option<String> {
+    let clean = strip_ansi(text);
+    // Walk lines in reverse, return the first (i.e. last in original order) that ends with '?'
+    for line in clean.lines().rev() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() && trimmed.ends_with('?') {
+            return Some(trimmed.to_string());
         }
     }
     None
@@ -583,6 +596,55 @@ mod tests {
         let parser = OutputParser::new();
         let events = parser.parse("You\u{2019}ve used 50% of your weekly limit");
         assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { percentage: 50, .. })));
+    }
+
+    // --- extract_last_question_line tests ---
+
+    #[test]
+    fn test_extract_question_line_simple() {
+        assert_eq!(
+            extract_last_question_line("Do you want to continue?"),
+            Some("Do you want to continue?".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_question_line_multiple_lines_returns_last() {
+        let text = "First question?\nSecond line\nThird question?";
+        assert_eq!(
+            extract_last_question_line(text),
+            Some("Third question?".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_question_line_no_question() {
+        assert_eq!(extract_last_question_line("Normal output here"), None);
+    }
+
+    #[test]
+    fn test_extract_question_line_ansi_wrapped() {
+        assert_eq!(
+            extract_last_question_line("\x1b[33mContinue?\x1b[0m"),
+            Some("Continue?".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_question_line_url_with_query_not_matched() {
+        // A URL with ? in the middle of a line, but the line itself doesn't end with ?
+        assert_eq!(
+            extract_last_question_line("Fetching https://example.com/api?foo=bar done"),
+            None,
+        );
+    }
+
+    #[test]
+    fn test_extract_question_line_empty_lines_skipped() {
+        assert_eq!(
+            extract_last_question_line("Ready?\n\n\n"),
+            Some("Ready?".to_string())
+        );
     }
 
     // --- False positive prevention tests ---

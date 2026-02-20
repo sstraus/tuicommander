@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
-use crate::output_parser::OutputParser;
+use crate::output_parser::{extract_last_question_line, OutputParser, ParsedEvent};
 use crate::state::{
     AppState, EscapeAwareBuffer, OrchestratorStats, OutputRingBuffer, PtyConfig, PtyOutput,
     PtySession, Utf8ReadBuffer, MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY,
@@ -58,6 +58,69 @@ pub(crate) fn resolve_shell(override_shell: Option<String>) -> String {
     override_shell.unwrap_or_else(default_shell)
 }
 
+/// How long the agent must be silent after printing a `?`-ending line before
+/// we treat it as a question waiting for input.
+const SILENCE_QUESTION_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// How often the timer thread wakes up to check for silence.
+const SILENCE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Shared state between the PTY reader thread and the silence-detection timer thread.
+pub(crate) struct SilenceState {
+    /// When the last chunk of output was received from the PTY.
+    pub(crate) last_output_at: std::time::Instant,
+    /// The last line ending with `?` that hasn't been resolved yet.
+    pub(crate) pending_question_line: Option<String>,
+    /// Whether a Question event has already been emitted for the current pending line
+    /// (either by the instant regex detector or by the silence timer).
+    pub(crate) question_already_emitted: bool,
+}
+
+impl SilenceState {
+    fn new() -> Self {
+        Self {
+            last_output_at: std::time::Instant::now(),
+            pending_question_line: None,
+            question_already_emitted: false,
+        }
+    }
+
+    /// Called by the reader thread after each chunk.
+    /// `regex_found_question`: true if `parse()` already emitted a Question event.
+    /// `last_question_line`: the last `?`-ending line in the chunk, if any.
+    pub(crate) fn on_chunk(&mut self, regex_found_question: bool, last_question_line: Option<String>) {
+        self.last_output_at = std::time::Instant::now();
+
+        if regex_found_question {
+            // The instant detector already fired — suppress the silence timer.
+            self.pending_question_line = None;
+            self.question_already_emitted = true;
+        } else if let Some(line) = last_question_line {
+            // New candidate for silence-based detection.
+            self.pending_question_line = Some(line);
+            self.question_already_emitted = false;
+        } else {
+            // The agent printed more output that doesn't end with `?` — it moved on.
+            self.pending_question_line = None;
+        }
+    }
+
+    /// Called by the timer thread. Returns the question text if the silence
+    /// threshold has been reached and we haven't emitted yet.
+    pub(crate) fn check_silence(&mut self) -> Option<String> {
+        if self.question_already_emitted {
+            return None;
+        }
+        if let Some(ref line) = self.pending_question_line {
+            if self.last_output_at.elapsed() >= SILENCE_QUESTION_THRESHOLD {
+                self.question_already_emitted = true;
+                return Some(line.clone());
+            }
+        }
+        None
+    }
+}
+
 /// Spawn a reader thread that reads from a PTY, emits Tauri events, and writes to the ring buffer.
 /// Shared by `create_pty`, `create_pty_with_worktree`, and `spawn_agent` to avoid duplication.
 pub(crate) fn spawn_reader_thread(
@@ -67,6 +130,32 @@ pub(crate) fn spawn_reader_thread(
     app: AppHandle,
     state: Arc<AppState>,
 ) {
+    let silence = Arc::new(Mutex::new(SilenceState::new()));
+    let running = Arc::new(AtomicBool::new(true));
+
+    // Spawn silence-detection timer thread
+    {
+        let silence = silence.clone();
+        let running = running.clone();
+        let app = app.clone();
+        let session_id = session_id.clone();
+        std::thread::spawn(move || {
+            while running.load(Ordering::Relaxed) {
+                std::thread::sleep(SILENCE_CHECK_INTERVAL);
+                if !running.load(Ordering::Relaxed) {
+                    break;
+                }
+                let question = silence.lock().check_silence();
+                if let Some(prompt_text) = question {
+                    let _ = app.emit(
+                        &format!("pty-parsed-{session_id}"),
+                        &ParsedEvent::Question { prompt_text },
+                    );
+                }
+            }
+        });
+    }
+
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut utf8_buf = Utf8ReadBuffer::new();
@@ -93,12 +182,18 @@ pub(crate) fn spawn_reader_thread(
                         }
                         // Emit parsed events before raw output
                         let events = parser.parse(&data);
-                        for event in events {
+                        let regex_found_question = events.iter().any(|e| matches!(e, ParsedEvent::Question { .. }));
+                        for event in &events {
                             let _ = app.emit(
                                 &format!("pty-parsed-{session_id}"),
-                                &event,
+                                event,
                             );
                         }
+
+                        // Update silence state for fallback question detection
+                        let last_q_line = extract_last_question_line(&data);
+                        silence.lock().on_chunk(regex_found_question, last_q_line);
+
                         let _ = app.emit(
                             &format!("pty-output-{session_id}"),
                             PtyOutput {
@@ -111,6 +206,9 @@ pub(crate) fn spawn_reader_thread(
                 Err(_) => break,
             }
         }
+        // Signal timer thread to stop
+        running.store(false, Ordering::Relaxed);
+
         // Flush both buffers at EOF
         let utf8_tail = utf8_buf.flush();
         let mut remaining = if utf8_tail.is_empty() {
@@ -579,6 +677,11 @@ pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
     };
     use windows_sys::Win32::Foundation::CloseHandle;
 
+    // SAFETY: CreateToolhelp32Snapshot/Process32First/Process32Next are Windows API
+    // functions that operate on a process snapshot handle. We zero-initialize the
+    // PROCESSENTRY32 struct and set dwSize before use (required by the API). The
+    // snapshot handle is closed via CloseHandle before returning. All pointer
+    // arguments point to stack-local owned memory with valid lifetimes.
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if snapshot == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
@@ -599,11 +702,12 @@ pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
                         .take_while(|&&b| b != 0)
                         .map(|&b| b as u8)
                         .collect();
-                    if let Ok(name) = String::from_utf8(name_bytes) {
-                        // Strip .exe suffix for consistent matching with classify_agent
-                        let name = name.strip_suffix(".exe").unwrap_or(&name).to_string();
-                        found = Some(name);
-                    }
+                    // Use from_utf8_lossy to handle non-ASCII process names
+                    // (e.g. apps with accented characters) instead of silently dropping them
+                    let name = String::from_utf8_lossy(&name_bytes);
+                    // Strip .exe suffix for consistent matching with classify_agent
+                    let name = name.strip_suffix(".exe").unwrap_or(&name).to_string();
+                    found = Some(name);
                     break;
                 }
                 if Process32Next(snapshot, &mut entry) == 0 {
@@ -628,20 +732,27 @@ fn deepest_descendant_pid(root_pid: u32) -> Option<u32> {
     };
     use windows_sys::Win32::Foundation::CloseHandle;
 
+    // SAFETY: Same API contract as process_name_from_pid above. We take a full
+    // process snapshot, iterate it to collect (pid, parent_pid) pairs into owned
+    // Vecs, then close the handle. The PROCESSENTRY32 struct is zero-initialized
+    // with dwSize set before the first call, satisfying the API precondition.
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if snapshot == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
             return None;
         }
 
-        // Collect all (pid, parent_pid) pairs
-        let mut processes = Vec::new();
+        // Collect all (pid, parent_pid) pairs and build parent->children map
+        let mut children_map: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
         let mut entry: PROCESSENTRY32 = std::mem::zeroed();
         entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
 
         if Process32First(snapshot, &mut entry) != 0 {
             loop {
-                processes.push((entry.th32ProcessID, entry.th32ParentProcessID));
+                children_map
+                    .entry(entry.th32ParentProcessID)
+                    .or_default()
+                    .push(entry.th32ProcessID);
                 if Process32Next(snapshot, &mut entry) == 0 {
                     break;
                 }
@@ -649,17 +760,11 @@ fn deepest_descendant_pid(root_pid: u32) -> Option<u32> {
         }
         CloseHandle(snapshot);
 
-        // Walk from root_pid to the deepest single child
+        // Walk from root_pid to the deepest single child — O(depth) via HashMap
         let mut current = root_pid;
         loop {
-            let children: Vec<u32> = processes
-                .iter()
-                .filter(|(_, ppid)| *ppid == current)
-                .map(|(pid, _)| *pid)
-                .collect();
-
-            match children.len() {
-                1 => current = children[0],
+            match children_map.get(&current).map(Vec::as_slice) {
+                Some([only_child]) => current = *only_child,
                 _ => break, // 0 children (leaf) or multiple children (ambiguous)
             }
         }
@@ -792,5 +897,68 @@ mod tests {
         assert_eq!(classify_agent("node"), None);
         assert_eq!(classify_agent("python"), None);
         assert_eq!(classify_agent("vim"), None);
+    }
+
+    // --- SilenceState tests ---
+
+    #[test]
+    fn test_silence_state_no_pending_returns_none() {
+        let mut s = SilenceState::new();
+        assert!(s.check_silence().is_none());
+    }
+
+    #[test]
+    fn test_silence_state_pending_but_too_soon() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Continue?".to_string()));
+        // Just set — not enough time has passed
+        assert!(s.check_silence().is_none());
+    }
+
+    #[test]
+    fn test_silence_state_pending_after_threshold() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Continue?".to_string()));
+        // Simulate time passing by backdating last_output_at
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(s.check_silence(), Some("Continue?".to_string()));
+    }
+
+    #[test]
+    fn test_silence_state_no_double_emission() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Continue?".to_string()));
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert!(s.check_silence().is_some());
+        // Second check should return None (already emitted)
+        assert!(s.check_silence().is_none());
+    }
+
+    #[test]
+    fn test_silence_state_regex_suppresses_timer() {
+        let mut s = SilenceState::new();
+        // regex_found_question = true means instant detection already fired
+        s.on_chunk(true, Some("Would you like to proceed?".to_string()));
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert!(s.check_silence().is_none());
+    }
+
+    #[test]
+    fn test_silence_state_new_output_clears_pending() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Continue?".to_string()));
+        // Agent prints more non-question output — it moved past the question
+        s.on_chunk(false, None);
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert!(s.check_silence().is_none());
+    }
+
+    #[test]
+    fn test_silence_state_new_question_replaces_old() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("First question?".to_string()));
+        s.on_chunk(false, Some("Second question?".to_string()));
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(s.check_silence(), Some("Second question?".to_string()));
     }
 }
