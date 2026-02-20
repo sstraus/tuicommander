@@ -1,4 +1,5 @@
 pub(crate) mod agent;
+pub(crate) mod cli;
 pub(crate) mod config;
 mod dictation;
 pub(crate) mod error_classification;
@@ -40,8 +41,11 @@ fn ensure_window_visible(window: &WebviewWindow) {
     let size_invalid = size.width < MIN_WIDTH || size.height < MIN_HEIGHT;
 
     // Check whether the window center is on any available monitor
-    let center_x = pos.x + (size.width as i32 / 2);
-    let center_y = pos.y + (size.height as i32 / 2);
+    // Use saturating conversion to avoid arithmetic overflow on corrupted dimensions
+    let half_w = i32::try_from(size.width / 2).unwrap_or(i32::MAX);
+    let half_h = i32::try_from(size.height / 2).unwrap_or(i32::MAX);
+    let center_x = pos.x.saturating_add(half_w);
+    let center_y = pos.y.saturating_add(half_h);
     let on_screen = window
         .available_monitors()
         .unwrap_or_default()
@@ -60,9 +64,15 @@ fn ensure_window_visible(window: &WebviewWindow) {
             "[WindowGuard] Invalid window state ({}x{} at {},{}) — resetting to defaults",
             size.width, size.height, pos.x, pos.y
         );
-        let _ = window.set_size(tauri::PhysicalSize::new(1200u32, 800u32));
-        let _ = window.set_position(PhysicalPosition::new(100i32, 100i32));
-        let _ = window.center();
+        if let Err(e) = window.set_size(tauri::PhysicalSize::new(1200u32, 800u32)) {
+            eprintln!("[WindowGuard] Failed to reset size: {e}");
+        }
+        if let Err(e) = window.set_position(PhysicalPosition::new(100i32, 100i32)) {
+            eprintln!("[WindowGuard] Failed to reset position: {e}");
+        }
+        if let Err(e) = window.center() {
+            eprintln!("[WindowGuard] Failed to center window: {e}");
+        }
     }
 }
 

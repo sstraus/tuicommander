@@ -330,14 +330,15 @@ fn parse_question(text: &str) -> Option<ParsedEvent> {
 /// Returns None if no line ends with `?`.
 pub(crate) fn extract_last_question_line(text: &str) -> Option<String> {
     let clean = strip_ansi(text);
-    // Walk lines in reverse, return the first (i.e. last in original order) that ends with '?'
-    for line in clean.lines().rev() {
-        let trimmed = line.trim();
-        if !trimmed.is_empty() && trimmed.ends_with('?') {
-            return Some(trimmed.to_string());
-        }
+    // Only check the last non-empty line — a question buried mid-output
+    // with more content after it is not an unanswered prompt.
+    let last = clean.lines().rev().find(|l| !l.trim().is_empty())?;
+    let trimmed = last.trim();
+    if trimmed.ends_with('?') {
+        Some(trimmed.to_string())
+    } else {
+        None
     }
-    None
 }
 
 #[cfg(test)]
@@ -609,12 +610,19 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_question_line_multiple_lines_returns_last() {
-        let text = "First question?\nSecond line\nThird question?";
+    fn test_extract_question_line_last_line_is_question() {
+        let text = "First line\nSecond line\nThird question?";
         assert_eq!(
             extract_last_question_line(text),
             Some("Third question?".to_string())
         );
+    }
+
+    #[test]
+    fn test_extract_question_line_question_mid_output_ignored() {
+        // Question buried mid-output with non-question content after — not a prompt
+        let text = "Do you want to continue?\n- [ ] Task 1\n- [ ] Task 2";
+        assert_eq!(extract_last_question_line(text), None);
     }
 
     #[test]

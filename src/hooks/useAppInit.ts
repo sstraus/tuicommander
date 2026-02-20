@@ -57,7 +57,8 @@ function collectTerminalSnapshots(): Map<string, Map<string, SavedTerminal[]>> {
         if (!snapshots.has(repoPath)) {
           snapshots.set(repoPath, new Map());
         }
-        snapshots.get(repoPath)!.set(branchName, saved);
+        const branchMap = snapshots.get(repoPath);
+        if (branchMap) branchMap.set(branchName, saved);
       }
     }
   }

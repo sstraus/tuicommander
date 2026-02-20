@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal, createEffect } from "solid-js";
+import { Component, For, Show, createMemo, createSignal, createEffect, type JSX } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
 import type { RepositoryState, BranchState, RepoGroup } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
@@ -12,6 +12,7 @@ import type { ContextMenuItem } from "../ContextMenu";
 import { PromptDialog } from "../PromptDialog";
 import { getModifierSymbol } from "../../platform";
 import { compareBranches } from "../../utils/branchSort";
+import { escapeShellArg } from "../../utils";
 
 export interface SidebarProps {
   quickSwitcherActive?: boolean;
@@ -396,7 +397,7 @@ const GroupSection: Component<{
   onHeaderDragOver?: (e: DragEvent) => void;
   onHeaderDrop?: (e: DragEvent) => void;
   dragOverClass?: string;
-  children: any;
+  children: JSX.Element;
 }> = (props) => {
   const groupMenu = createContextMenu();
 
@@ -552,12 +553,18 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       // Dragged from group to ungrouped area — remove from group
       repositoriesStore.removeRepoFromGroup(sourcePath);
     } else {
-      // Dragged to different group — move between groups
-      const targetGroupObj = repositoriesStore.state.groups[targetGroupId];
-      const targetIndex = targetGroupObj ? targetGroupObj.repoOrder.indexOf(targetPath) : 0;
-      let insertIndex = targetIndex;
-      if (side === "bottom") insertIndex = targetIndex + 1;
-      repositoriesStore.moveRepoBetweenGroups(sourcePath, sourceGroupId ?? "", targetGroupId, insertIndex);
+      // Dragged to different group
+      if (sourceGroupId) {
+        // Between two groups — preserves insert position
+        const targetGroupObj = repositoriesStore.state.groups[targetGroupId];
+        const targetIndex = targetGroupObj ? targetGroupObj.repoOrder.indexOf(targetPath) : 0;
+        let insertIndex = targetIndex;
+        if (side === "bottom") insertIndex = targetIndex + 1;
+        repositoriesStore.moveRepoBetweenGroups(sourcePath, sourceGroupId, targetGroupId, insertIndex);
+      } else {
+        // From ungrouped into a group
+        repositoriesStore.addRepoToGroup(sourcePath, targetGroupId);
+      }
     }
 
     resetRepoDragState();
@@ -638,7 +645,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   });
 
   // Sync CSS variable so toolbar-left matches sidebar width
-  document.documentElement.style.setProperty("--sidebar-width", `${uiStore.state.sidebarWidth}px`);
+  createEffect(() => {
+    document.documentElement.style.setProperty("--sidebar-width", `${uiStore.state.sidebarWidth}px`);
+  });
 
   const handleResizeStart = (e: MouseEvent) => {
     e.preventDefault();
@@ -694,13 +703,16 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     return starts;
   });
 
-  // Placeholder handlers for group rename and color change (will be fleshed out in settings tab)
-  const handleGroupRename = (_groupId: string) => {
-    // TODO: inline rename or open rename dialog
+  // Group rename and color change via PromptDialog
+  const [renameGroupTarget, setRenameGroupTarget] = createSignal<string | null>(null);
+  const [colorGroupTarget, setColorGroupTarget] = createSignal<string | null>(null);
+
+  const handleGroupRename = (groupId: string) => {
+    setRenameGroupTarget(groupId);
   };
 
-  const handleGroupColorChange = (_groupId: string) => {
-    // TODO: open color picker
+  const handleGroupColorChange = (groupId: string) => {
+    setColorGroupTarget(groupId);
   };
 
   /** Render a single RepoSection with all its props */
@@ -800,7 +812,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               class="git-quick-btn"
               onClick={() => {
                 const repo = repositoriesStore.getActive();
-                if (repo) props.onGitCommand?.(`cd ${repo.path} && git pull`);
+                if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git pull`);
               }}
               title="Pull latest changes"
             >
@@ -810,7 +822,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               class="git-quick-btn"
               onClick={() => {
                 const repo = repositoriesStore.getActive();
-                if (repo) props.onGitCommand?.(`cd ${repo.path} && git push`);
+                if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git push`);
               }}
               title="Push commits"
             >
@@ -820,7 +832,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               class="git-quick-btn"
               onClick={() => {
                 const repo = repositoriesStore.getActive();
-                if (repo) props.onGitCommand?.(`cd ${repo.path} && git fetch --all`);
+                if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git fetch --all`);
               }}
               title="Fetch from all remotes"
             >
@@ -830,7 +842,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               class="git-quick-btn"
               onClick={() => {
                 const repo = repositoriesStore.getActive();
-                if (repo) props.onGitCommand?.(`cd ${repo.path} && git stash`);
+                if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git stash`);
               }}
               title="Stash changes"
             >
@@ -901,6 +913,34 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           />
         )}
       </Show>
+
+      {/* Group rename dialog */}
+      <PromptDialog
+        visible={renameGroupTarget() !== null}
+        title="Rename Group"
+        placeholder="New group name"
+        confirmLabel="Rename"
+        onClose={() => setRenameGroupTarget(null)}
+        onConfirm={(name) => {
+          const groupId = renameGroupTarget();
+          if (groupId) repositoriesStore.renameGroup(groupId, name);
+          setRenameGroupTarget(null);
+        }}
+      />
+
+      {/* Group color dialog */}
+      <PromptDialog
+        visible={colorGroupTarget() !== null}
+        title="Group Color"
+        placeholder="#ff6b6b"
+        confirmLabel="Apply"
+        onClose={() => setColorGroupTarget(null)}
+        onConfirm={(color) => {
+          const groupId = colorGroupTarget();
+          if (groupId) repositoriesStore.setGroupColor(groupId, color);
+          setColorGroupTarget(null);
+        }}
+      />
 
       {/* Drag handle for resizing */}
       <div class="sidebar-resize-handle" onMouseDown={handleResizeStart} />

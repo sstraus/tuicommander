@@ -93,7 +93,7 @@ function saveReposImmediate(
       groups,
       groupOrder,
     },
-  }).catch((err) => console.debug("Failed to save repos:", err));
+  }).catch((err) => console.error("Failed to save repos:", err));
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -197,7 +197,7 @@ function createRepositoriesStore() {
         }
         hydrated = true;
       } catch (err) {
-        console.debug("Failed to hydrate repositories:", err);
+        console.error("Failed to hydrate repositories:", err);
         // hydrated stays false — saves are blocked to prevent data loss
       }
     },
@@ -603,7 +603,12 @@ function createRepositoriesStore() {
 
     /** Find which group a repo belongs to (or undefined if ungrouped) */
     getGroupForRepo(repoPath: string): RepoGroup | undefined {
-      return Object.values(state.groups).find((g) => g.repoOrder.includes(repoPath));
+      // Direct lookup via group iteration with early return — O(groups) worst case
+      // instead of O(groups * repos_per_group) with Array.includes
+      for (const group of Object.values(state.groups)) {
+        if (group.repoOrder.indexOf(repoPath) !== -1) return group;
+      }
+      return undefined;
     },
 
     // ── Group reordering ──

@@ -5673,6 +5673,7 @@ dependencies = [
  "tower-http",
  "uuid",
  "whisper-rs",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

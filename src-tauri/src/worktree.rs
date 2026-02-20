@@ -257,12 +257,19 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str) -> R
     remove_worktree_internal(&worktree)?;
 
     // Also delete the local branch (non-fatal: branch may still be useful)
-    if let Err(e) = Command::new(crate::agent::resolve_cli("git"))
+    match Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&worktree.base_repo)
         .args(["branch", "-d", branch_name])
         .output()
     {
-        eprintln!("Warning: git branch -d {branch_name} failed: {e}");
+        Ok(output) if !output.status.success() => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("Warning: git branch -d {branch_name} exited with {}: {stderr}", output.status);
+        }
+        Err(e) => {
+            eprintln!("Warning: git branch -d {branch_name} failed to spawn: {e}");
+        }
+        _ => {}
     }
 
     Ok(())

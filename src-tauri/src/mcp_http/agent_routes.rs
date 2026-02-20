@@ -64,6 +64,19 @@ pub(super) async fn spawn_agent_session(
 
     // Determine binary path
     let binary_path = if let Some(ref path) = body.binary_path {
+        let p = std::path::Path::new(path);
+        if !p.is_absolute() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "binary_path must be an absolute path"})),
+            );
+        }
+        if !p.is_file() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "binary_path does not point to an existing file"})),
+            );
+        }
         path.clone()
     } else if let Some(ref agent_type) = body.agent_type {
         let detection = crate::agent::detect_agent_binary(agent_type.clone());

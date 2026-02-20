@@ -12,82 +12,9 @@ use crate::state::{
     AgentConfig, AppState, OutputRingBuffer, PtyConfig, PtySession, OUTPUT_RING_BUFFER_CAPACITY,
 };
 
-/// Well-known directories where CLI tools live but that desktop-launched apps
-/// (Finder on macOS, desktop launchers on Linux) don't have on PATH.
-fn extra_bin_dirs() -> Vec<String> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_default();
-
-    let mut dirs = Vec::new();
-
-    #[cfg(target_os = "macos")]
-    {
-        dirs.extend([
-            "/usr/local/bin".to_string(),
-            "/opt/homebrew/bin".to_string(),
-            "/opt/homebrew/sbin".to_string(),
-        ]);
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        dirs.extend([
-            "/usr/local/bin".to_string(),
-            format!("{home}/.local/bin"),
-            "/snap/bin".to_string(),
-            "/var/lib/flatpak/exports/bin".to_string(),
-        ]);
-    }
-
-    // Common across Unix-like systems
-    #[cfg(not(target_os = "windows"))]
-    {
-        dirs.push(format!("{home}/.cargo/bin"));
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
-        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| format!("{home}\\AppData\\Local"));
-        dirs.extend([
-            format!("{home}\\.cargo\\bin"),
-            format!("{local_app_data}\\Programs\\Microsoft VS Code\\bin"),
-            format!("{local_app_data}\\Programs\\cursor\\resources\\app\\bin"),
-            format!("{program_files}\\Microsoft VS Code\\bin"),
-            format!("{local_app_data}\\Programs\\windsurf\\resources\\app\\bin"),
-            format!("{home}\\scoop\\shims"),
-            format!("{home}\\AppData\\Roaming\\npm"),
-        ]);
-    }
-
-    dirs
-}
-
-/// Resolve a CLI binary to its full path, probing well-known directories that
-/// desktop-launched apps don't have on PATH.
-pub(crate) fn resolve_cli(name: &str) -> String {
-    for dir in &extra_bin_dirs() {
-        let candidate = std::path::Path::new(dir).join(name);
-        if candidate.exists() {
-            return candidate.to_string_lossy().to_string();
-        }
-    }
-    name.to_string()
-}
-
-/// Check if a CLI tool exists on PATH or in well-known directories.
-fn has_cli(name: &str) -> bool {
-    let checker = if cfg!(target_os = "windows") { "where" } else { "which" };
-    if Command::new(checker).arg(name).output()
-        .map(|o| o.status.success()).unwrap_or(false)
-    {
-        return true;
-    }
-
-    // Fallback: probe well-known paths that desktop-launched apps miss
-    resolve_cli(name) != name
-}
+// resolve_cli and has_cli are now in crate::cli — re-export for backwards compatibility
+pub(crate) use crate::cli::resolve_cli;
+use crate::cli::has_cli;
 
 /// Open a path in an IDE or application
 #[tauri::command]
@@ -440,6 +367,13 @@ pub(crate) async fn spawn_agent(
 ) -> Result<String, String> {
     // Determine binary path - use provided path, detect by type, or fall back to claude
     let binary_path = if let Some(ref path) = agent_config.binary_path {
+        let p = std::path::Path::new(path);
+        if !p.is_absolute() {
+            return Err("binary_path must be an absolute path".to_string());
+        }
+        if !p.is_file() {
+            return Err("binary_path does not point to an existing file".to_string());
+        }
         path.clone()
     } else if let Some(ref agent_type) = agent_config.agent_type {
         let detection = detect_agent_binary(agent_type.clone());
@@ -554,6 +488,8 @@ pub(crate) fn detect_lazygit_binary() -> AgentBinaryDetection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // resolve_cli and extra_bin_dirs tests are now in cli.rs
 
     #[test]
     fn test_detect_claude_binary() {
