@@ -78,15 +78,13 @@ export function useGitHub(getRepoPath: () => string | undefined) {
     scheduleNext();
   }
 
-  // Refresh immediately when the repo path changes (clears stale branch from previous repo)
+  // Refresh when the repo path changes with a debounce to avoid flooding on rapid tab switches
   createEffect(() => {
     const path = getRepoPath();
-    if (path) {
-      setStatus(null);
-      refresh();
-    } else {
-      setStatus(null);
-    }
+    setStatus(null);
+    if (!path) return;
+    const timer = setTimeout(() => refresh(), 200);
+    onCleanup(() => clearTimeout(timer));
   });
 
   // Auto-start polling on mount

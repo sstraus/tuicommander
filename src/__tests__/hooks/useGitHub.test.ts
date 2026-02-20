@@ -130,8 +130,8 @@ describe("useGitHub", () => {
 
         useGitHub(() => "/repos/my-repo");
 
-        // Let onMount fire
-        await vi.advanceTimersByTimeAsync(0);
+        // Let onMount fire and flush the initial 200ms debounce
+        await vi.advanceTimersByTimeAsync(200);
 
         // Simulate tab becoming hidden
         Object.defineProperty(document, "hidden", { value: true, writable: true, configurable: true });

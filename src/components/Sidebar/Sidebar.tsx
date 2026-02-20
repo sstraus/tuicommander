@@ -112,13 +112,18 @@ const RepoSection: Component<{
   const [groupPromptVisible, setGroupPromptVisible] = createSignal(false);
 
   const branches = createMemo(() => Object.values(props.repo.branches));
+  // Pre-compute PR statuses once per poll cycle; avoids calling getPrStatus inside sort comparator
+  const prStatuses = createMemo(() => {
+    const map = new Map<string, ReturnType<typeof githubStore.getPrStatus>>();
+    for (const b of branches()) {
+      map.set(b.name, githubStore.getPrStatus(props.repo.path, b.name));
+    }
+    return map;
+  });
   const sortedBranches = createMemo(() => {
+    const statuses = prStatuses();
     return [...branches()].sort((a, b) =>
-      compareBranches(
-        a, b,
-        githubStore.getPrStatus(props.repo.path, a.name),
-        githubStore.getPrStatus(props.repo.path, b.name),
-      ),
+      compareBranches(a, b, statuses.get(a.name), statuses.get(b.name)),
     );
   });
 
