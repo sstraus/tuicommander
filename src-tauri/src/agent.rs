@@ -12,53 +12,47 @@ use crate::state::{
     AgentConfig, AppState, OutputRingBuffer, PtyConfig, PtySession, OUTPUT_RING_BUFFER_CAPACITY,
 };
 
-/// Check if a CLI tool exists on PATH.
-/// On macOS, also searches common Homebrew/shell paths that Finder-launched
-/// apps don't inherit (the shell PATH includes them, but `open`-launched
-/// .app bundles only get a minimal system PATH).
-fn has_cli(name: &str) -> bool {
-    if cfg!(target_os = "windows") {
-        return Command::new("where").arg(name).output()
-            .map(|o| o.status.success()).unwrap_or(false);
-    }
+/// Well-known directories where CLI tools live but that desktop-launched apps
+/// (Finder on macOS, desktop launchers on Linux) don't have on PATH.
+fn extra_bin_dirs() -> Vec<String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
 
-    // Try standard `which` first (works in dev / terminal-launched)
-    if Command::new("which").arg(name).output()
-        .map(|o| o.status.success()).unwrap_or(false)
+    let mut dirs = Vec::new();
+
+    #[cfg(target_os = "macos")]
     {
-        return true;
+        dirs.extend([
+            "/usr/local/bin".to_string(),
+            "/opt/homebrew/bin".to_string(),
+            "/opt/homebrew/sbin".to_string(),
+        ]);
     }
 
-    // Fallback: probe well-known paths that Finder-launched apps miss
+    #[cfg(target_os = "linux")]
+    {
+        dirs.extend([
+            "/usr/local/bin".to_string(),
+            format!("{home}/.local/bin"),
+            "/snap/bin".to_string(),
+            "/var/lib/flatpak/exports/bin".to_string(),
+        ]);
+    }
+
+    // Common across Unix-like systems
     #[cfg(not(target_os = "windows"))]
     {
-        let extra_dirs = [
-            "/usr/local/bin",
-            "/opt/homebrew/bin",
-            "/opt/homebrew/sbin",
-            &format!("{}/.cargo/bin", std::env::var("HOME").unwrap_or_default()),
-        ];
-        for dir in &extra_dirs {
-            let candidate = format!("{dir}/{name}");
-            if std::path::Path::new(&candidate).exists() {
-                return true;
-            }
-        }
+        dirs.push(format!("{home}/.cargo/bin"));
     }
 
-    false
+    dirs
 }
 
-/// Resolve a CLI binary name to a full path, probing well-known directories
-/// that Finder-launched apps don't have on PATH.
-#[cfg(not(target_os = "windows"))]
+/// Resolve a CLI binary to its full path, probing well-known directories that
+/// desktop-launched apps don't have on PATH.
 fn resolve_cli(name: &str) -> String {
-    let extra_dirs = [
-        "/usr/local/bin",
-        "/opt/homebrew/bin",
-        "/opt/homebrew/sbin",
-    ];
-    for dir in &extra_dirs {
+    for dir in &extra_bin_dirs() {
         let candidate = format!("{dir}/{name}");
         if std::path::Path::new(&candidate).exists() {
             return candidate;
@@ -67,9 +61,17 @@ fn resolve_cli(name: &str) -> String {
     name.to_string()
 }
 
-#[cfg(target_os = "windows")]
-fn resolve_cli(name: &str) -> String {
-    name.to_string()
+/// Check if a CLI tool exists on PATH or in well-known directories.
+fn has_cli(name: &str) -> bool {
+    let checker = if cfg!(target_os = "windows") { "where" } else { "which" };
+    if Command::new(checker).arg(name).output()
+        .map(|o| o.status.success()).unwrap_or(false)
+    {
+        return true;
+    }
+
+    // Fallback: probe well-known paths that desktop-launched apps miss
+    resolve_cli(name) != name
 }
 
 /// Open a path in an IDE or application

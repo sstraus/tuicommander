@@ -1,0 +1,62 @@
+# TUI Commander - Project Instructions
+
+## Documentation Sync Reminder
+
+**IMPORTANT:** When implementing new features or keyboard shortcuts, you MUST update the HelpPanel component to keep documentation in sync.
+
+### Files to update:
+- `src/components/HelpPanel/HelpPanel.tsx` - Add new shortcuts/features to the help content
+- `SPEC.md` - Update feature status
+
+### What to document:
+1. **Keyboard shortcuts** - All Cmd/Ctrl combinations
+2. **Git operations** - Available git commands and their triggers
+3. **Terminal features** - Zoom, clear, copy/paste, tabs
+4. **Sidebar interactions** - Repository management, branch operations
+5. **Panel toggles** - Diff, Markdown, Settings, Help
+
+### Checklist for new features:
+- [ ] Feature works correctly
+- [ ] Keyboard shortcut added (if applicable)
+- [ ] HelpPanel updated with new shortcut/feature
+- [ ] SPEC.md feature status updated
+
+## Testing Tracker
+
+**`to-test.md`** contains features awaiting manual testing when TUI is more usable.
+
+When implementing minor features, add test items to `to-test.md` instead of testing immediately.
+
+## Visual Verification
+
+**IMPORTANT:** After EVERY visual/CSS/layout change to the TUI, you MUST take a screenshot to verify the result. You cannot reliably judge rendering from code alone.
+
+## Branch Management
+
+**NEVER create branches autonomously.** Boss works with multiple windows simultaneously and autonomous branch creation causes conflicts. Only create/switch branches when explicitly asked.
+
+## Cross-Platform
+
+**This app targets macOS, Windows, and Linux.** Always design and implement features for all three platforms. Use Cmd/Ctrl abstractions, avoid platform-specific APIs without fallbacks, and use Tauri's cross-platform primitives (menus, dialogs, shortcuts, etc.).
+
+### Release-build environment differences
+
+**CRITICAL:** Code that works in `tauri dev` may fail in compiled release builds. Release builds launched from Finder/Explorer/desktop have a minimal environment — they do NOT inherit the user's shell PATH, environment variables, or locale settings. Every feature MUST be tested against these constraints:
+
+- **Never assume CLI tools are on PATH.** Use `resolve_cli()` (in `agent.rs`) to probe well-known directories, or detect apps via `.app` bundles / registry entries instead of `which`/`where`.
+- **Never assume environment variables exist.** `$EDITOR`, `$SHELL`, `$HOME` etc. may be absent or different. Always provide fallbacks.
+- **Never assume window dimensions are valid.** Persisted window state can contain 0x0 or off-screen positions. Always validate and clamp to sane defaults.
+- **Test features in release mode** (`cargo tauri build`) before considering them complete, not just `tauri dev`.
+
+## Architecture Rule: Logic in Rust
+
+**All business logic, data transformation, and parsing MUST be implemented in Rust (backend), NOT in the UI layer (TypeScript/SolidJS stores or components).** The frontend should only handle rendering and user interaction — never data reshaping or computation.
+
+## Ideas Tracker
+
+**`IDEAS.md`** is a shared memory for feature concepts under evaluation. Ideas live here until we validate and promote them to SPEC.md for implementation.
+
+- When proposing new features, check IDEAS.md first to avoid duplicating discussion
+- When validating an idea, update its status (`concept` -> `validated` -> `designed` -> `moved`)
+- When rejecting an idea, mark it `rejected` with reasoning - don't delete it
+- When implementing an idea, move it to SPEC.md and mark it `moved` in IDEAS.md
