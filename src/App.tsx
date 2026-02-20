@@ -13,6 +13,7 @@ import { Toolbar } from "./components/Toolbar";
 import { TabBar } from "./components/TabBar";
 import { StatusBar } from "./components/StatusBar";
 import { DiffPanel } from "./components/DiffPanel";
+import { FileBrowserPanel } from "./components/FileBrowserPanel";
 import { DiffTab } from "./components/DiffTab";
 import { MarkdownPanel } from "./components/MarkdownPanel";
 import { NotesPanel } from "./components/NotesPanel";
@@ -367,6 +368,7 @@ const App: Component = () => {
       toggleGitOpsPanel: () => setGitOpsPanelVisible((v) => !v),
       toggleHelpPanel: () => setHelpPanelVisible((v) => !v),
       toggleNotesPanel: uiStore.toggleNotesPanel,
+      toggleFileBrowserPanel: uiStore.toggleFileBrowserPanel,
     });
     onCleanup(cleanup);
   });
@@ -416,6 +418,7 @@ const App: Component = () => {
         case "diff-panel": uiStore.toggleDiffPanel(); break;
         case "markdown-panel": uiStore.toggleMarkdownPanel(); break;
         case "notes-panel": uiStore.toggleNotesPanel(); break;
+        case "file-browser": uiStore.toggleFileBrowserPanel(); break;
 
         // Go
         case "next-tab": terminalLifecycle.navigateTab("next"); break;
@@ -738,6 +741,17 @@ const App: Component = () => {
             </div>
           </Show>
 
+          {/* File browser panel */}
+          <FileBrowserPanel
+            visible={uiStore.state.fileBrowserPanelVisible}
+            repoPath={gitOps.currentRepoPath() || null}
+            onClose={() => uiStore.toggleFileBrowserPanel()}
+            onFileOpen={(repoPath, filePath) => {
+              // Will connect to code editor in Phase 4
+              console.log("Open file:", repoPath, filePath);
+            }}
+          />
+
           {/* Markdown panel */}
           <MarkdownPanel
             visible={uiStore.state.markdownPanelVisible}
@@ -772,6 +786,7 @@ const App: Component = () => {
           onToggleDiff={() => uiStore.toggleDiffPanel()}
           onToggleMarkdown={() => uiStore.toggleMarkdownPanel()}
           onToggleNotes={() => uiStore.toggleNotesPanel()}
+          onToggleFileBrowser={() => uiStore.toggleFileBrowserPanel()}
           onDictationStart={dictation.handleDictationStart}
           onDictationStop={dictation.handleDictationStop}
           currentRepoPath={gitOps.currentRepoPath()}

@@ -30,6 +30,7 @@ export interface ShortcutHandlers {
   toggleGitOpsPanel: () => void;
   toggleHelpPanel: () => void;
   toggleNotesPanel: () => void;
+  toggleFileBrowserPanel: () => void;
 }
 
 /** Register keyboard shortcuts. Returns cleanup function. */
@@ -136,6 +137,11 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
     if (isMeta && e.key === "n") {
       e.preventDefault();
       handlers.toggleNotesPanel();
+      return;
+    }
+    if (isMeta && e.key === "e") {
+      e.preventDefault();
+      handlers.toggleFileBrowserPanel();
       return;
     }
 

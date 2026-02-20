@@ -29,6 +29,7 @@ export interface StatusBarProps {
   onToggleDiff: () => void;
   onToggleMarkdown: () => void;
   onToggleNotes?: () => void;
+  onToggleFileBrowser?: () => void;
   onDictationStart: () => void;
   onDictationStop: () => void;
   currentRepoPath?: string;
@@ -271,6 +272,10 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         </Show>
 
         {/* Toggle buttons */}
+        <button id="fb-toggle" class="toggle-btn" onClick={() => props.onToggleFileBrowser?.()} title={`Toggle File Browser (${getModifierSymbol()}E)`} style={{ position: "relative" }}>
+          FB
+          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}E</span>
+        </button>
         <button id="md-toggle" class="toggle-btn" onClick={props.onToggleMarkdown} title={`Toggle Markdown Panel (${getModifierSymbol()}M)`} style={{ position: "relative" }}>
           MD
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}M</span>

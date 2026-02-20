@@ -20,6 +20,8 @@ interface UIStoreState {
   diffPanelVisible: boolean;
   markdownPanelVisible: boolean;
   notesPanelVisible: boolean;
+  fileBrowserPanelVisible: boolean;
+  codeEditorPanelVisible: boolean;
 
   // Diff panel state
   currentDiffRepo: string | null;
@@ -53,6 +55,8 @@ function createUIStore() {
     diffPanelVisible: false,
     markdownPanelVisible: false,
     notesPanelVisible: false,
+    fileBrowserPanelVisible: false,
+    codeEditorPanelVisible: false,
     currentDiffRepo: null,
     ideDropdownVisible: false,
     fontDropdownVisible: false,
@@ -116,6 +120,22 @@ function createUIStore() {
 
     setNotesPanelVisible(visible: boolean): void {
       setState("notesPanelVisible", visible);
+    },
+
+    toggleFileBrowserPanel(): void {
+      setState("fileBrowserPanelVisible", (v) => !v);
+    },
+
+    setFileBrowserPanelVisible(visible: boolean): void {
+      setState("fileBrowserPanelVisible", visible);
+    },
+
+    toggleCodeEditorPanel(): void {
+      setState("codeEditorPanelVisible", (v) => !v);
+    },
+
+    setCodeEditorPanelVisible(visible: boolean): void {
+      setState("codeEditorPanelVisible", visible);
     },
 
     // Diff repo selection
