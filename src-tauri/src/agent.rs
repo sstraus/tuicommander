@@ -46,6 +46,21 @@ fn extra_bin_dirs() -> Vec<String> {
         dirs.push(format!("{home}/.cargo/bin"));
     }
 
+    #[cfg(target_os = "windows")]
+    {
+        let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| format!("{home}\\AppData\\Local"));
+        dirs.extend([
+            format!("{home}\\.cargo\\bin"),
+            format!("{local_app_data}\\Programs\\Microsoft VS Code\\bin"),
+            format!("{local_app_data}\\Programs\\cursor\\resources\\app\\bin"),
+            format!("{program_files}\\Microsoft VS Code\\bin"),
+            format!("{local_app_data}\\Programs\\windsurf\\resources\\app\\bin"),
+            format!("{home}\\scoop\\shims"),
+            format!("{home}\\AppData\\Roaming\\npm"),
+        ]);
+    }
+
     dirs
 }
 
@@ -142,11 +157,40 @@ pub(crate) fn open_in_app(path: String, app: String) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         "finder" => { let mut c = Command::new("xdg-open"); c.arg(&path); c }
 
-        // Windows: system terminal + file manager
+        // Windows: system terminal, file manager, and app launchers
         #[cfg(target_os = "windows")]
-        "terminal" => { let mut c = Command::new("cmd"); c.args(["/c", "start", "cmd", "/k", "cd", "/d", &path]); c }
+        "terminal" => {
+            // Prefer Windows Terminal (wt.exe) over cmd.exe
+            if has_cli("wt") {
+                let mut c = Command::new("wt");
+                c.args(["-d", &path]);
+                c
+            } else {
+                let mut c = Command::new("cmd");
+                c.args(["/c", "start", "cmd", "/k", "cd", "/d", &path]);
+                c
+            }
+        }
         #[cfg(target_os = "windows")]
         "finder" => { let mut c = Command::new("explorer"); c.arg(&path); c }
+        #[cfg(target_os = "windows")]
+        app_name if matches!(app_name, "sourcetree" | "github-desktop" | "fork" | "gitkraken") => {
+            let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+            let exe = match app_name {
+                "sourcetree" => format!("{}\\Atlassian\\SourceTree\\SourceTree.exe", local_app_data),
+                "github-desktop" => format!("{}\\GitHubDesktop\\GitHubDesktop.exe", local_app_data),
+                "fork" => format!("{}\\Fork\\Fork.exe", local_app_data),
+                "gitkraken" => format!("{}\\gitkraken\\gitkraken.exe", local_app_data),
+                _ => unreachable!(),
+            };
+            if std::path::Path::new(&exe).exists() {
+                let mut c = Command::new(&exe);
+                c.arg(&path);
+                c
+            } else {
+                return Err(format!("{app_name} not found at {exe}"));
+            }
+        }
 
         _ => return Err(format!("Unknown app: {app}")),
     };
@@ -214,6 +258,44 @@ pub(crate) fn detect_installed_ides() -> Vec<String> {
         ];
         for (id, bin) in linux_tools {
             if has_cli(bin) && !installed.contains(&id.to_string()) {
+                installed.push(id.to_string());
+            }
+        }
+    }
+
+    // Windows: detect apps installed in standard locations
+    #[cfg(target_os = "windows")]
+    {
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        let program_files = std::env::var("ProgramFiles").unwrap_or_default();
+        let win_apps: &[(&str, Vec<String>)] = &[
+            ("vscode", vec![
+                format!("{}\\Programs\\Microsoft VS Code\\Code.exe", local_app_data),
+                format!("{}\\Microsoft VS Code\\Code.exe", program_files),
+            ]),
+            ("cursor", vec![
+                format!("{}\\Programs\\cursor\\Cursor.exe", local_app_data),
+            ]),
+            ("windsurf", vec![
+                format!("{}\\Programs\\windsurf\\Windsurf.exe", local_app_data),
+            ]),
+            ("sourcetree", vec![
+                format!("{}\\Atlassian\\SourceTree\\SourceTree.exe", local_app_data),
+            ]),
+            ("github-desktop", vec![
+                format!("{}\\GitHubDesktop\\GitHubDesktop.exe", local_app_data),
+            ]),
+            ("fork", vec![
+                format!("{}\\Fork\\Fork.exe", local_app_data),
+            ]),
+            ("gitkraken", vec![
+                format!("{}\\gitkraken\\gitkraken.exe", local_app_data),
+            ]),
+        ];
+        for (id, paths) in win_apps {
+            if !installed.contains(&id.to_string())
+                && paths.iter().any(|p| std::path::Path::new(p).exists())
+            {
                 installed.push(id.to_string());
             }
         }
