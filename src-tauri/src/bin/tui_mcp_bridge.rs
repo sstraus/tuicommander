@@ -574,6 +574,10 @@ fn read_port() -> Result<u16, String> {
         .map_err(|e| format!("Invalid port in {}: {}", port_file.display(), e))
 }
 
+/// Write a JSON-RPC response to stdout.
+/// Uses LF (\n) line endings on all platforms — this is intentional.
+/// JSON-RPC 2.0 over stdio uses \n as the message delimiter; MCP clients
+/// (Claude Code, Cursor, etc.) expect \n even on Windows.
 fn send_response(resp: &JsonRpcResponse) {
     let json = match serde_json::to_string(resp) {
         Ok(j) => j,
