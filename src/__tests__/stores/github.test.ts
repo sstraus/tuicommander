@@ -227,6 +227,236 @@ describe("githubStore", () => {
     });
   });
 
+  describe("detectTransitions()", () => {
+    let notifStore: typeof import("../../stores/prNotifications").prNotificationsStore;
+
+    beforeEach(async () => {
+      // Import prNotificationsStore from the same module registry created by outer beforeEach
+      notifStore = (await import("../../stores/prNotifications")).prNotificationsStore;
+      notifStore.clearAll();
+    });
+
+    afterEach(() => {
+      notifStore.clearAll();
+    });
+
+    /** Seed initial branch state and then update to trigger detectTransitions */
+    function transition(
+      oldOverrides: Partial<BranchPrStatus>,
+      newOverrides: Partial<BranchPrStatus>,
+    ) {
+      store.updateRepoData("/repo1", [makePrStatus(oldOverrides)]);
+      store.updateRepoData("/repo1", [makePrStatus(newOverrides)]);
+    }
+
+    it("emits 'merged' when OPEN → MERGED", () => {
+      createRoot((dispose) => {
+        transition({ state: "OPEN" }, { state: "MERGED" });
+        const active = notifStore.getActive();
+        expect(active).toHaveLength(1);
+        expect(active[0].type).toBe("merged");
+        expect(active[0].prNumber).toBe(42);
+        dispose();
+      });
+    });
+
+    it("emits 'merged' when CLOSED → MERGED", () => {
+      createRoot((dispose) => {
+        transition({ state: "CLOSED" }, { state: "MERGED" });
+        const active = notifStore.getActive();
+        expect(active).toHaveLength(1);
+        expect(active[0].type).toBe("merged");
+        dispose();
+      });
+    });
+
+    it("emits 'closed' when OPEN → CLOSED", () => {
+      createRoot((dispose) => {
+        transition({ state: "OPEN" }, { state: "CLOSED" });
+        const active = notifStore.getActive();
+        expect(active).toHaveLength(1);
+        expect(active[0].type).toBe("closed");
+        dispose();
+      });
+    });
+
+    it("emits 'blocked' when mergeable becomes CONFLICTING on open PR", () => {
+      createRoot((dispose) => {
+        transition(
+          { state: "OPEN", mergeable: "MERGEABLE" },
+          { state: "OPEN", mergeable: "CONFLICTING" },
+        );
+        const active = notifStore.getActive();
+        expect(active).toHaveLength(1);
+        expect(active[0].type).toBe("blocked");
+        dispose();
+      });
+    });
+
+    it("emits 'ci_failed' when failed checks go from 0 to >0 on open PR", () => {
+      createRoot((dispose) => {
+        transition(
+          { state: "OPEN", checks: { passed: 2, failed: 0, pending: 0, total: 2 } },
+          { state: "OPEN", checks: { passed: 1, failed: 1, pending: 0, total: 2 } },
+        );
+        const active = notifStore.getActive();
+        expect(active).toHaveLength(1);
+        expect(active[0].type).toBe("ci_failed");
+        dispose();
+      });
+    });
+
+    it("emits 'changes_requested' when review_decision becomes CHANGES_REQUESTED", () => {
+      createRoot((dispose) => {
+        transition(
+          { state: "OPEN", review_decision: "" },
+          { state: "OPEN", review_decision: "CHANGES_REQUESTED" },
+        );
+        const active = notifStore.getActive();
+        expect(active).toHaveLength(1);
+        expect(active[0].type).toBe("changes_requested");
+        dispose();
+      });
+    });
+
+    it("emits 'ready' when PR becomes mergeable+approved+no-failures", () => {
+      createRoot((dispose) => {
+        // Old: mergeable but not approved, so not 'ready'
+        transition(
+          {
+            state: "OPEN",
+            mergeable: "MERGEABLE",
+            review_decision: "",
+            checks: { passed: 2, failed: 0, pending: 0, total: 2 },
+          },
+          {
+            state: "OPEN",
+            mergeable: "MERGEABLE",
+            review_decision: "APPROVED",
+            checks: { passed: 2, failed: 0, pending: 0, total: 2 },
+          },
+        );
+        const active = notifStore.getActive();
+        expect(active).toHaveLength(1);
+        expect(active[0].type).toBe("ready");
+        dispose();
+      });
+    });
+
+    it("emits 'ready' when PR goes from conflicting to mergeable+approved", () => {
+      createRoot((dispose) => {
+        transition(
+          {
+            state: "OPEN",
+            mergeable: "CONFLICTING",
+            review_decision: "APPROVED",
+            checks: { passed: 2, failed: 0, pending: 0, total: 2 },
+          },
+          {
+            state: "OPEN",
+            mergeable: "MERGEABLE",
+            review_decision: "APPROVED",
+            checks: { passed: 2, failed: 0, pending: 0, total: 2 },
+          },
+        );
+        const active = notifStore.getActive();
+        expect(active).toHaveLength(1);
+        expect(active[0].type).toBe("ready");
+        dispose();
+      });
+    });
+
+    it("emits 'ready' when CI failures are resolved and PR is otherwise ready", () => {
+      createRoot((dispose) => {
+        transition(
+          {
+            state: "OPEN",
+            mergeable: "MERGEABLE",
+            review_decision: "APPROVED",
+            checks: { passed: 1, failed: 1, pending: 0, total: 2 },
+          },
+          {
+            state: "OPEN",
+            mergeable: "MERGEABLE",
+            review_decision: "APPROVED",
+            checks: { passed: 2, failed: 0, pending: 0, total: 2 },
+          },
+        );
+        const active = notifStore.getActive();
+        expect(active).toHaveLength(1);
+        expect(active[0].type).toBe("ready");
+        dispose();
+      });
+    });
+
+    it("does not emit when state is unchanged", () => {
+      createRoot((dispose) => {
+        transition({ state: "OPEN" }, { state: "OPEN" });
+        expect(notifStore.getActive()).toHaveLength(0);
+        dispose();
+      });
+    });
+
+    it("does not emit on first update (no prior data)", () => {
+      createRoot((dispose) => {
+        // Only one updateRepoData call — no prior data, no transitions
+        store.updateRepoData("/repo1", [makePrStatus({ state: "MERGED" })]);
+        expect(notifStore.getActive()).toHaveLength(0);
+        dispose();
+      });
+    });
+
+    it("does not emit 'blocked' when already CONFLICTING", () => {
+      createRoot((dispose) => {
+        transition(
+          { state: "OPEN", mergeable: "CONFLICTING" },
+          { state: "OPEN", mergeable: "CONFLICTING" },
+        );
+        expect(notifStore.getActive()).toHaveLength(0);
+        dispose();
+      });
+    });
+
+    it("does not emit 'ci_failed' when already had failures", () => {
+      createRoot((dispose) => {
+        transition(
+          { state: "OPEN", checks: { passed: 1, failed: 1, pending: 0, total: 2 } },
+          { state: "OPEN", checks: { passed: 0, failed: 2, pending: 0, total: 2 } },
+        );
+        expect(notifStore.getActive()).toHaveLength(0);
+        dispose();
+      });
+    });
+
+    it("does not emit 'blocked' or other OPEN transitions for closed PRs", () => {
+      createRoot((dispose) => {
+        transition(
+          { state: "OPEN", mergeable: "MERGEABLE" },
+          { state: "CLOSED", mergeable: "CONFLICTING" },
+        );
+        // 'closed' is emitted, but NOT 'blocked' (since PR is not OPEN in new state)
+        const active = notifStore.getActive();
+        expect(active).toHaveLength(1);
+        expect(active[0].type).toBe("closed");
+        dispose();
+      });
+    });
+
+    it("includes correct branch and title in notification", () => {
+      createRoot((dispose) => {
+        transition(
+          { state: "OPEN", branch: "my/feature", title: "My Feature PR" },
+          { state: "MERGED", branch: "my/feature", title: "My Feature PR" },
+        );
+        const active = notifStore.getActive();
+        expect(active[0].branch).toBe("my/feature");
+        expect(active[0].title).toBe("My Feature PR");
+        expect(active[0].repoPath).toBe("/repo1");
+        dispose();
+      });
+    });
+  });
+
   describe("polling", () => {
     it("polls repos on startPolling", async () => {
       mockInvoke.mockResolvedValue([makePrStatus()]);
