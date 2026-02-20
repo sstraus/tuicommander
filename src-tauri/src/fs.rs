@@ -69,7 +69,7 @@ fn validate_path_for_creation(repo_path: &str, relative: &str) -> Result<(PathBu
 }
 
 /// Parse `git status --porcelain -z` output into a map of relative_path -> status string.
-fn parse_git_status(repo_path: &str, subdir: &str) -> std::collections::HashMap<String, String> {
+pub(crate) fn parse_git_status(repo_path: &str, subdir: &str) -> std::collections::HashMap<String, String> {
     let mut statuses = std::collections::HashMap::new();
 
     let git = crate::cli::resolve_cli("git");
@@ -379,6 +379,67 @@ pub fn copy_path(
     Ok(())
 }
 
+/// Result of resolving a terminal path candidate.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedFilePath {
+    pub absolute_path: String,
+    pub is_directory: bool,
+}
+
+/// Strip trailing `:line` or `:line:col` suffix from a path candidate.
+/// Returns the path portion only.
+pub fn strip_line_col_suffix(candidate: &str) -> &str {
+    // Match `:digits` or `:digits:digits` at the end
+    let bytes = candidate.as_bytes();
+    let mut end = bytes.len();
+
+    // Try stripping `:col` (rightmost numeric segment)
+    if let Some(colon_pos) = candidate[..end].rfind(':') {
+        if candidate[colon_pos + 1..end].chars().all(|c| c.is_ascii_digit())
+            && colon_pos + 1 < end
+        {
+            end = colon_pos;
+
+            // Try stripping `:line` (second rightmost numeric segment)
+            if let Some(colon_pos2) = candidate[..end].rfind(':') {
+                if candidate[colon_pos2 + 1..end]
+                    .chars()
+                    .all(|c| c.is_ascii_digit())
+                    && colon_pos2 + 1 < end
+                {
+                    end = colon_pos2;
+                }
+            }
+        }
+    }
+
+    &candidate[..end]
+}
+
+/// Validate a path candidate from terminal output against the filesystem.
+/// Strips `:line:col` suffixes, resolves relative paths against `cwd`,
+/// and checks existence.
+#[tauri::command]
+pub fn resolve_terminal_path(cwd: String, candidate: String) -> Option<ResolvedFilePath> {
+    let path_str = strip_line_col_suffix(&candidate);
+    let path = PathBuf::from(path_str);
+
+    let absolute = if path.is_absolute() {
+        path
+    } else {
+        PathBuf::from(&cwd).join(&path)
+    };
+
+    // Canonicalize to resolve symlinks and verify existence
+    match absolute.canonicalize() {
+        Ok(canonical) => Some(ResolvedFilePath {
+            absolute_path: canonical.to_string_lossy().to_string(),
+            is_directory: canonical.is_dir(),
+        }),
+        Err(_) => None,
+    }
+}
+
 /// Append a path pattern to the repo's .gitignore file.
 #[tauri::command]
 pub fn add_to_gitignore(repo_path: String, pattern: String) -> Result<(), String> {
@@ -619,5 +680,119 @@ mod tests {
         for entry in &root_entries {
             assert!(!entry.path.contains('\\'), "Path should use / not \\: {}", entry.path);
         }
+    }
+
+    // --- strip_line_col_suffix tests ---
+
+    #[test]
+    fn test_strip_no_suffix() {
+        assert_eq!(strip_line_col_suffix("src/lib.rs"), "src/lib.rs");
+        assert_eq!(strip_line_col_suffix("/usr/bin/test"), "/usr/bin/test");
+    }
+
+    #[test]
+    fn test_strip_line_only() {
+        assert_eq!(strip_line_col_suffix("src/lib.rs:42"), "src/lib.rs");
+    }
+
+    #[test]
+    fn test_strip_line_and_col() {
+        assert_eq!(strip_line_col_suffix("src/lib.rs:42:10"), "src/lib.rs");
+    }
+
+    #[test]
+    fn test_strip_preserves_non_numeric_colons() {
+        // Windows-style C: drive prefix should be preserved
+        assert_eq!(strip_line_col_suffix("C:\\Users\\file.rs"), "C:\\Users\\file.rs");
+        // Colon followed by non-digits should be preserved
+        assert_eq!(strip_line_col_suffix("src/lib.rs:abc"), "src/lib.rs:abc");
+    }
+
+    #[test]
+    fn test_strip_empty_after_colon() {
+        assert_eq!(strip_line_col_suffix("src/lib.rs:"), "src/lib.rs:");
+    }
+
+    // --- resolve_terminal_path tests ---
+
+    #[test]
+    fn test_resolve_absolute_existing_file() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("hello.rs");
+        fs::write(&file, "fn main() {}").unwrap();
+
+        let result = resolve_terminal_path(
+            dir.path().to_string_lossy().to_string(),
+            file.to_string_lossy().to_string(),
+        );
+        assert!(result.is_some());
+        let resolved = result.unwrap();
+        assert!(!resolved.is_directory);
+        assert!(resolved.absolute_path.ends_with("hello.rs"));
+    }
+
+    #[test]
+    fn test_resolve_relative_existing_file() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/lib.rs"), "pub fn hello() {}").unwrap();
+
+        let result = resolve_terminal_path(
+            dir.path().to_string_lossy().to_string(),
+            "src/lib.rs".to_string(),
+        );
+        assert!(result.is_some());
+        let resolved = result.unwrap();
+        assert!(!resolved.is_directory);
+        assert!(resolved.absolute_path.ends_with("src/lib.rs"));
+    }
+
+    #[test]
+    fn test_resolve_with_line_suffix() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
+
+        let result = resolve_terminal_path(
+            dir.path().to_string_lossy().to_string(),
+            "main.rs:42".to_string(),
+        );
+        assert!(result.is_some());
+        assert!(result.unwrap().absolute_path.ends_with("main.rs"));
+    }
+
+    #[test]
+    fn test_resolve_with_line_col_suffix() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
+
+        let result = resolve_terminal_path(
+            dir.path().to_string_lossy().to_string(),
+            "main.rs:42:10".to_string(),
+        );
+        assert!(result.is_some());
+        assert!(result.unwrap().absolute_path.ends_with("main.rs"));
+    }
+
+    #[test]
+    fn test_resolve_nonexistent_returns_none() {
+        let dir = TempDir::new().unwrap();
+        let result = resolve_terminal_path(
+            dir.path().to_string_lossy().to_string(),
+            "does_not_exist.rs".to_string(),
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_resolve_directory() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir(dir.path().join("src")).unwrap();
+
+        let result = resolve_terminal_path(
+            dir.path().to_string_lossy().to_string(),
+            "src".to_string(),
+        );
+        assert!(result.is_some());
+        assert!(result.unwrap().is_directory);
     }
 }

@@ -16,16 +16,57 @@ use crate::state::{
 pub(crate) use crate::cli::resolve_cli;
 use crate::cli::has_cli;
 
-/// Open a path in an IDE or application
+/// Format a path with line/col for --goto style editors (vscode, cursor, windsurf)
+fn format_goto_arg(path: &str, line: Option<u32>, col: Option<u32>) -> String {
+    match (line, col) {
+        (Some(l), Some(c)) => format!("{path}:{l}:{c}"),
+        (Some(l), None) => format!("{path}:{l}"),
+        _ => path.to_string(),
+    }
+}
+
+/// Open a path in an IDE or application.
+/// `line` and `col` are optional and only used by editors that support them.
 #[tauri::command]
-pub(crate) fn open_in_app(path: String, app: String) -> Result<(), String> {
+pub(crate) fn open_in_app(
+    path: String,
+    app: String,
+    line: Option<u32>,
+    col: Option<u32>,
+) -> Result<(), String> {
     let mut cmd = match app.as_str() {
-        // CLI-based editors (cross-platform, with path resolution)
-        "vscode" => { let mut c = Command::new(resolve_cli("code")); c.arg(&path); c }
-        "cursor" => { let mut c = Command::new(resolve_cli("cursor")); c.arg(&path); c }
-        "zed" => { let mut c = Command::new(resolve_cli("zed")); c.arg(&path); c }
-        "windsurf" => { let mut c = Command::new(resolve_cli("windsurf")); c.arg(&path); c }
-        "neovim" => { let mut c = Command::new(resolve_cli("nvim")); c.arg(&path); c }
+        // CLI-based editors with --goto support (cross-platform, with path resolution)
+        "vscode" => {
+            let mut c = Command::new(resolve_cli("code"));
+            if line.is_some() { c.arg("--goto"); }
+            c.arg(format_goto_arg(&path, line, col));
+            c
+        }
+        "cursor" => {
+            let mut c = Command::new(resolve_cli("cursor"));
+            if line.is_some() { c.arg("--goto"); }
+            c.arg(format_goto_arg(&path, line, col));
+            c
+        }
+        "windsurf" => {
+            let mut c = Command::new(resolve_cli("windsurf"));
+            if line.is_some() { c.arg("--goto"); }
+            c.arg(format_goto_arg(&path, line, col));
+            c
+        }
+        // Zed uses path:line natively
+        "zed" => {
+            let mut c = Command::new(resolve_cli("zed"));
+            c.arg(format_goto_arg(&path, line, col));
+            c
+        }
+        // Neovim uses +line
+        "neovim" => {
+            let mut c = Command::new(resolve_cli("nvim"));
+            if let Some(l) = line { c.arg(format!("+{l}")); }
+            c.arg(&path);
+            c
+        }
         "smerge" => { let mut c = Command::new(resolve_cli("smerge")); c.arg(&path); c }
 
         // Terminal emulators with CLI (cross-platform)
@@ -58,6 +99,7 @@ pub(crate) fn open_in_app(path: String, app: String) -> Result<(), String> {
                 "editor" => {
                     if let Ok(editor) = std::env::var("EDITOR") {
                         let mut c = Command::new(&editor);
+                        if let Some(l) = line { c.arg(format!("+{l}")); }
                         c.arg(&path);
                         c
                     } else {

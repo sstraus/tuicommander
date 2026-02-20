@@ -308,12 +308,17 @@ const App: Component = () => {
     },
   ];
 
-  /** Open a .md file from terminal output in the MD viewer */
-  const handleOpenMdFile = (filePath: string) => {
-    const repoPath = repositoriesStore.state.activeRepoPath;
-    if (!repoPath) return;
-    mdTabsStore.add(repoPath, filePath);
-    uiStore.setMarkdownPanelVisible(true);
+  /** Open a file path from terminal output — .md/.mdx in MD viewer, others in IDE */
+  const handleOpenFilePath = (absolutePath: string, line?: number, col?: number) => {
+    if (absolutePath.endsWith(".md") || absolutePath.endsWith(".mdx")) {
+      const repoPath = repositoriesStore.state.activeRepoPath;
+      if (repoPath) {
+        mdTabsStore.add(repoPath, absolutePath);
+        uiStore.setMarkdownPanelVisible(true);
+      }
+    } else {
+      invoke("open_in_app", { path: absolutePath, app: settingsStore.state.ide, line, col });
+    }
   };
 
 
@@ -612,7 +617,7 @@ const App: Component = () => {
                       cwd={terminal?.cwd || null}
                       onFocus={terminalLifecycle.handleTerminalFocus}
                       onSessionCreated={() => {}}
-                      onOpenMdFile={handleOpenMdFile}
+                      onOpenFilePath={handleOpenFilePath}
                     />
                   </div>
                 );

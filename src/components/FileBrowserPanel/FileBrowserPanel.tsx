@@ -2,6 +2,7 @@ import { Component, createEffect, createSignal, For, Show, onCleanup } from "sol
 import { repositoriesStore } from "../../stores/repositories";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { getModifierSymbol } from "../../platform";
+import { globToRegex } from "../../utils";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { PromptDialog } from "../PromptDialog";
 import type { DirEntry } from "../../types/fs";
@@ -28,6 +29,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   const [currentSubdir, setCurrentSubdir] = createSignal(".");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [refreshTrigger, setRefreshTrigger] = createSignal(0);
+  const [searchQuery, setSearchQuery] = createSignal("");
   const fb = useFileBrowser();
   const contextMenu = createContextMenu();
 
@@ -75,6 +77,14 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     void props.repoPath;
     setCurrentSubdir(".");
   });
+
+  /** Entries filtered by search query (supports glob wildcards) */
+  const filteredEntries = () => {
+    const q = searchQuery().trim();
+    if (!q) return entries();
+    const re = globToRegex(q);
+    return entries().filter((e) => re.test(e.name) || re.test(e.path));
+  };
 
   const refresh = () => setRefreshTrigger((n) => n + 1);
 
@@ -265,7 +275,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       if (!panel?.contains(document.activeElement) && document.activeElement !== panel) return;
 
       const isMeta = e.metaKey || e.ctrlKey;
-      const list = entries();
+      const list = filteredEntries();
 
       // Copy/Cut/Paste shortcuts (work even with empty list for paste)
       if (isMeta && e.key === "c" && list.length > 0) {
@@ -333,6 +343,23 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         </button>
       </div>
 
+      {/* Search filter */}
+      <div class="panel-search">
+        <input
+          type="text"
+          class="panel-search-input"
+          placeholder="Filter... (*, ** wildcards)"
+          value={searchQuery()}
+          onInput={(e) => {
+            setSearchQuery(e.currentTarget.value);
+            setSelectedIndex(0);
+          }}
+        />
+        <Show when={searchQuery()}>
+          <button class="panel-search-clear" onClick={() => { setSearchQuery(""); setSelectedIndex(0); }}>&times;</button>
+        </Show>
+      </div>
+
       {/* Breadcrumb navigation */}
       <Show when={breadcrumbs().length > 0}>
         <div class="fb-breadcrumb">
@@ -365,13 +392,13 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
           <div class="fb-empty fb-error">Error: {error()}</div>
         </Show>
 
-        <Show when={!loading() && !error() && entries().length === 0}>
+        <Show when={!loading() && !error() && filteredEntries().length === 0}>
           <div class="fb-empty">
-            {props.repoPath ? "Empty directory" : "No repository selected"}
+            {!props.repoPath ? "No repository selected" : searchQuery() ? "No matches" : "Empty directory"}
           </div>
         </Show>
 
-        <Show when={!loading() && !error() && entries().length > 0}>
+        <Show when={!loading() && !error() && filteredEntries().length > 0}>
           {/* Go up entry when in a subdirectory */}
           <Show when={currentSubdir() !== "." && currentSubdir() !== ""}>
             <div class="fb-entry fb-entry-up" onClick={navigateUp}>
@@ -380,7 +407,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
             </div>
           </Show>
 
-          <For each={entries()}>
+          <For each={filteredEntries()}>
             {(entry, index) => (
               <div
                 class="fb-entry"

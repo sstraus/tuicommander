@@ -2,11 +2,16 @@ import { Component, For, Show, createSignal, onCleanup, createEffect, onMount } 
 import { invoke } from "../../invoke";
 import { settingsStore, IDE_NAMES, IDE_ICON_PATHS, IDE_CATEGORIES } from "../../stores/settings";
 import type { IdeType } from "../../stores/settings";
+
+/** Code editors that can open individual files (as opposed to terminals, git clients, etc.) */
+const FILE_CAPABLE_IDES = new Set<string>(IDE_CATEGORIES.editors);
 import { useRepository } from "../../hooks/useRepository";
 import { getModifierSymbol } from "../../platform";
 
 export interface IdeLauncherProps {
   repoPath?: string;
+  /** Absolute path of the focused file (editor/MD tab). Code editors open this file; other apps open repoPath. */
+  focusedFilePath?: string;
   runCommand?: string;
   onOpenInIde?: (ide: IdeType) => void;
   onRun?: (shiftKey: boolean) => void;
@@ -84,14 +89,23 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
     onCleanup(() => document.removeEventListener("keydown", handleKeydown));
   });
 
+  /** Resolve the path to open: focused file for code editors, repo root for everything else */
+  const launchPathFor = (ide: IdeType): string | undefined => {
+    if (props.focusedFilePath && FILE_CAPABLE_IDES.has(ide)) {
+      return props.focusedFilePath;
+    }
+    return props.repoPath;
+  };
+
   const handleOpenIn = async (ide: IdeType) => {
-    if (!props.repoPath) return;
+    const target = launchPathFor(ide);
+    if (!target) return;
 
     settingsStore.setIde(ide);
     setIsOpen(false);
 
     try {
-      await repo.openInApp(props.repoPath, ide);
+      await repo.openInApp(target, ide);
       props.onOpenInIde?.(ide);
     } catch (err) {
       console.error("Failed to open in IDE:", err);
@@ -99,10 +113,11 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
   };
 
   const handleLaunchCurrent = async () => {
-    if (!props.repoPath) return;
+    const target = launchPathFor(currentIde());
+    if (!target) return;
 
     try {
-      await repo.openInApp(props.repoPath, currentIde());
+      await repo.openInApp(target, currentIde());
       props.onOpenInIde?.(currentIde());
     } catch (err) {
       console.error("Failed to open in IDE:", err);

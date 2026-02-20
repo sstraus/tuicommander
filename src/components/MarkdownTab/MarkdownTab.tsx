@@ -1,6 +1,7 @@
 import { Component, createEffect, createSignal } from "solid-js";
 import { MarkdownRenderer } from "../ui";
 import { useRepository } from "../../hooks/useRepository";
+import { repositoriesStore } from "../../stores/repositories";
 import { mdTabsStore } from "../../stores/mdTabs";
 
 export interface MarkdownTabProps {
@@ -15,10 +16,12 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const [error, setError] = createSignal<string | null>(null);
   const repo = useRepository();
 
-  // Load file content when props change
+  // Load file content when props change or repo content changes
   createEffect(() => {
     const repoPath = props.repoPath;
     const filePath = props.filePath;
+    // Re-run on git changes (file may have been modified externally)
+    void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 
     if (!repoPath || !filePath) {
       setContent("");

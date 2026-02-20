@@ -6,6 +6,7 @@ import { bracketMatching, indentOnInput } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import type { LanguageSupport } from "@codemirror/language";
 import { editorTabsStore } from "../../stores/editorTabs";
+import { repositoriesStore } from "../../stores/repositories";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { codeEditorTheme } from "./theme";
 import { detectLanguage } from "./languageDetection";
@@ -27,6 +28,8 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [isReadOnly, setIsReadOnly] = createSignal(false);
+  /** True when the file changed on disk while editor has unsaved changes */
+  const [diskConflict, setDiskConflict] = createSignal(false);
   const fb = useFileBrowser();
 
   const isDirty = () => code() !== savedContent();
@@ -60,6 +63,51 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
       },
     ),
   );
+
+  // Re-check file content on git changes (revision signal)
+  createEffect(() => {
+    const repoPath = props.repoPath;
+    if (!repoPath) return;
+    const rev = repositoriesStore.getRevision(repoPath);
+    // Skip the initial load (rev 0 or first render when savedContent is empty)
+    if (rev === 0 || !savedContent()) return;
+
+    (async () => {
+      try {
+        const diskContent = await fb.readFile(repoPath, props.filePath);
+        // File hasn't changed from what we last saved/loaded
+        if (diskContent === savedContent()) return;
+
+        if (isDirty()) {
+          // Editor has unsaved changes AND file changed on disk — conflict
+          setDiskConflict(true);
+        } else {
+          // Editor is clean — silently reload
+          setCode(diskContent);
+          setSavedContent(diskContent);
+        }
+      } catch {
+        // File may have been deleted — ignore
+      }
+    })();
+  });
+
+  /** Reload content from disk, discarding local changes */
+  const handleReloadFromDisk = async () => {
+    try {
+      const diskContent = await fb.readFile(props.repoPath, props.filePath);
+      setCode(diskContent);
+      setSavedContent(diskContent);
+      setDiskConflict(false);
+    } catch (err) {
+      console.error("Failed to reload file:", err);
+    }
+  };
+
+  /** Keep local changes, dismiss the conflict banner (next save will overwrite disk) */
+  const handleKeepLocal = () => {
+    setDiskConflict(false);
+  };
 
   const { ref, editorView, createExtension } = createCodeMirror({
     onValueChange: (value) => {
@@ -157,6 +205,14 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
           </button>
         </Show>
       </div>
+
+      <Show when={diskConflict()}>
+        <div class="editor-conflict-banner">
+          <span>File changed on disk.</span>
+          <button class="editor-btn" onClick={handleReloadFromDisk}>Reload</button>
+          <button class="editor-btn" onClick={handleKeepLocal}>Keep mine</button>
+        </div>
+      </Show>
 
       <Show when={loading()}>
         <div class="editor-empty">Loading...</div>

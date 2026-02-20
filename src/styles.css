@@ -1933,6 +1933,47 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   overflow: auto;
 }
 
+.panel-search {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-search-input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+  padding: 3px 6px;
+  outline: none;
+}
+
+.panel-search-input:focus {
+  border-color: var(--accent);
+}
+
+.panel-search-input::placeholder {
+  color: var(--fg-muted);
+}
+
+.panel-search-clear {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-md);
+  cursor: pointer;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+
+.panel-search-clear:hover {
+  color: var(--fg-primary);
+}
+
 .file-count-badge {
   display: inline-flex;
   align-items: center;
@@ -2258,6 +2299,17 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 20px;
   text-align: center;
   color: var(--fg-muted);
+}
+
+.editor-conflict-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: rgba(255, 183, 77, 0.15);
+  border-bottom: 1px solid rgba(255, 183, 77, 0.4);
+  font-size: var(--font-sm);
+  color: #ffb74d;
 }
 
 /* Diff Tabs (in main tab bar) */

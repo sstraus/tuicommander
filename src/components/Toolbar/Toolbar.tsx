@@ -1,6 +1,8 @@
 import { Component, Show } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
 import { uiStore } from "../../stores/ui";
+import { editorTabsStore } from "../../stores/editorTabs";
+import { mdTabsStore } from "../../stores/mdTabs";
 import { getModifierSymbol } from "../../platform";
 import { IdeLauncher } from "../IdeLauncher";
 
@@ -32,6 +34,20 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 
   // Use the branch's worktree path (falls back to repo path)
   const launchPath = () => activeBranch()?.worktreePath || props.repoPath;
+
+  // Absolute path of the focused file in editor or MD tab (if any)
+  const focusedFilePath = (): string | undefined => {
+    const editTab = editorTabsStore.getActive();
+    if (editTab) {
+      // filePath is relative to repoPath — join them
+      return `${editTab.repoPath}/${editTab.filePath}`;
+    }
+    const mdTab = mdTabsStore.getActive();
+    if (mdTab) {
+      return `${mdTab.repoPath}/${mdTab.filePath}`;
+    }
+    return undefined;
+  };
 
   return (
     <div id="toolbar" data-tauri-drag-region>
@@ -68,7 +84,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
       </div>
 
       <div class="toolbar-right">
-        <IdeLauncher repoPath={launchPath()} runCommand={props.runCommand} onRun={props.onRun} />
+        <IdeLauncher repoPath={launchPath()} focusedFilePath={focusedFilePath()} runCommand={props.runCommand} onRun={props.onRun} />
       </div>
     </div>
   );

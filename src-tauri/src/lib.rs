@@ -19,7 +19,6 @@ pub(crate) mod worktree;
 
 use dashmap::DashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State, WebviewWindow};
 
@@ -104,67 +103,71 @@ fn clear_caches(state: State<'_, Arc<AppState>>) {
 }
 
 
-/// List all markdown files in a repository recursively (shared logic)
-pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<String>, String> {
+/// A markdown file with its git status
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct MarkdownFileEntry {
+    pub path: String,
+    /// Git status: "modified", "staged", "untracked", or "" (clean/ignored).
+    pub git_status: String,
+}
+
+/// List all markdown files in a repository recursively, with git status (shared logic)
+pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<MarkdownFileEntry>, String> {
     let repo_path = PathBuf::from(&path);
 
     if !repo_path.exists() {
         return Err(format!("Path does not exist: {path}"));
     }
 
-    let mut md_files = Vec::new();
+    // Walk the filesystem to find all .md files (fast, skips heavy dirs).
+    // We avoid `git ls-files --others` which is extremely slow on large repos.
+    fn walk_dir(dir: &Path, base: &Path, md_paths: &mut Vec<String>) -> std::io::Result<()> {
+        if dir.is_dir() {
+            for entry in std::fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
 
-    // Use git ls-files to list tracked .md files (faster and respects .gitignore)
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(["ls-files", "*.md", "**/*.md"])
-        .output()
-        .map_err(|e| format!("Failed to execute git ls-files: {e}"))?;
+                // Skip hidden directories and common ignore patterns
+                if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                    && (name.starts_with('.') || name == "node_modules" || name == "target") {
+                        continue;
+                    }
 
-    if output.status.success() {
-        let files_text = String::from_utf8_lossy(&output.stdout);
-        for line in files_text.lines() {
-            let trimmed = line.trim();
-            if !trimmed.is_empty() {
-                md_files.push(trimmed.to_string());
+                if path.is_dir() {
+                    walk_dir(&path, base, md_paths)?;
+                } else if path.extension().and_then(|s| s.to_str()) == Some("md")
+                    && let Ok(relative) = path.strip_prefix(base) {
+                        md_paths.push(relative.to_string_lossy().replace('\\', "/"));
+                    }
             }
         }
-    } else {
-        // Fallback: manually walk the directory if git fails
-        fn walk_dir(dir: &Path, base: &Path, md_files: &mut Vec<String>) -> std::io::Result<()> {
-            if dir.is_dir() {
-                for entry in std::fs::read_dir(dir)? {
-                    let entry = entry?;
-                    let path = entry.path();
-
-                    // Skip hidden directories and common ignore patterns
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str())
-                        && (name.starts_with('.') || name == "node_modules" || name == "target") {
-                            continue;
-                        }
-
-                    if path.is_dir() {
-                        walk_dir(&path, base, md_files)?;
-                    } else if path.extension().and_then(|s| s.to_str()) == Some("md")
-                        && let Ok(relative) = path.strip_prefix(base) {
-                            md_files.push(relative.to_string_lossy().to_string());
-                        }
-                }
-            }
-            Ok(())
-        }
-
-        walk_dir(&repo_path, &repo_path, &mut md_files)
-            .map_err(|e| format!("Failed to walk directory: {e}"))?;
+        Ok(())
     }
 
+    let mut md_paths = Vec::new();
+    walk_dir(&repo_path, &repo_path, &mut md_paths)
+        .map_err(|e| format!("Failed to walk directory: {e}"))?;
+
+    // Get git statuses for .md files only (reuses the same logic as FileBrowser)
+    // Passing "" scans whole repo but parse_git_status is fast (single git status call)
+    let git_statuses = fs::parse_git_status(&path, "");
+
+    // Build entries with status
+    let mut entries: Vec<MarkdownFileEntry> = md_paths
+        .into_iter()
+        .map(|p| {
+            let git_status = git_statuses.get(&p).cloned().unwrap_or_default();
+            MarkdownFileEntry { path: p, git_status }
+        })
+        .collect();
+
     // Sort files alphabetically
-    md_files.sort();
-    Ok(md_files)
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(entries)
 }
 
 #[tauri::command]
-fn list_markdown_files(path: String) -> Result<Vec<String>, String> {
+fn list_markdown_files(path: String) -> Result<Vec<MarkdownFileEntry>, String> {
     list_markdown_files_impl(path)
 }
 
@@ -401,6 +404,7 @@ pub fn run() {
             repo_watcher::stop_repo_watcher,
             sleep_prevention::block_sleep,
             sleep_prevention::unblock_sleep,
+            fs::resolve_terminal_path,
             fs::list_directory,
             fs::fs_read_file,
             fs::write_file,

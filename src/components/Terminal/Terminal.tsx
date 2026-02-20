@@ -10,6 +10,7 @@ import { getTerminalTheme } from "../../themes";
 import { terminalsStore } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { notificationsStore } from "../../stores/notifications";
+import { invoke } from "../../invoke";
 
 
 /** Structured events parsed by Rust OutputParser, received via pty-parsed-{sessionId} */
@@ -28,8 +29,8 @@ export interface TerminalProps {
   onSessionCreated?: (id: string, sessionId: string) => void;
   onSessionExit?: (id: string) => void;
   onRateLimit?: (id: string, sessionId: string, retryAfterMs: number | null) => void;
-  /** Called when a .md file path is clicked in terminal output */
-  onOpenMdFile?: (filePath: string) => void;
+  /** Called when a file path is clicked in terminal output */
+  onOpenFilePath?: (absolutePath: string, line?: number, col?: number) => void;
 }
 
 /** Get current theme from settings, with scrollbar defaults */
@@ -377,30 +378,77 @@ export const Terminal: Component<TerminalProps> = (props) => {
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(new WebLinksAddon());
 
-    // Register link provider for .md file paths (clickable to open in MD viewer)
-    if (props.onOpenMdFile) {
-      const mdPathRegex = /(?:^|\s)((?:\.\/|\.\.\/|[\w-]+\/)*[\w.-]+\.md)(?:\s|$|[):,])/g;
+    // Register link provider for file paths (clickable to open in IDE or MD viewer)
+    if (props.onOpenFilePath) {
+      // Matches paths starting with /, ./, ../, or relative paths containing / with known extensions.
+      // Optional :line or :line:col suffix.
+      const CODING_EXT = "rs|ts|tsx|js|jsx|mjs|cjs|py|go|java|kt|kts|swift|c|h|cpp|hpp|cc|cs|rb|php|lua|zig|nim|ex|exs|erl|hs|ml|mli|fs|fsx|scala|clj|cljs|r|R|jl|dart|v|sv|vhdl|sol|move|css|scss|sass|less|html|htm|vue|svelte|astro|json|jsonc|json5|yaml|yml|toml|ini|cfg|conf|env|xml|plist|csv|tsv|sql|graphql|gql|proto|thrift|avsc|md|mdx|txt|rst|tex|adoc|org|sh|bash|zsh|fish|ps1|psm1|bat|cmd|dockerfile|containerfile|tf|tfvars|hcl|nix|cmake|make|mk|gradle|sbt|cabal|gemspec|podspec|lock|sum|mod|workspace|editorconfig|gitignore|gitattributes|dockerignore|eslintrc|prettierrc|babelrc|nvmrc|tool-versions";
+      const filePathRegex = new RegExp(
+        `(?:^|[\\s"'\`(\\[{])` +                                    // boundary
+        `((?:/|\\.\\.?/|[\\w@.-]+/)` +                              // path start: /, ./, ../, or word/
+        `[\\w./@-]*` +                                               // middle segments
+        `\\.(?:${CODING_EXT})` +                                     // .ext
+        `(?::\\d+(?::\\d+)?)?)` +                                    // optional :line:col
+        `(?=[\\s"'\`),;\\]}>]|$)`,                                   // boundary
+        "g",
+      );
+
+      const onOpenFilePath = props.onOpenFilePath; // capture for closure
+
       terminal.registerLinkProvider({
         provideLinks(bufferLineNumber: number, callback: (links: import("@xterm/xterm").ILink[] | undefined) => void) {
-          const line = terminal!.buffer.active.getLine(bufferLineNumber - 1);
-          if (!line) { callback(undefined); return; }
-          const lineText = line.translateToString();
-          const links: import("@xterm/xterm").ILink[] = [];
+          const bufLine = terminal!.buffer.active.getLine(bufferLineNumber - 1);
+          if (!bufLine) { callback(undefined); return; }
+          const lineText = bufLine.translateToString();
+          const matches: { text: string; index: number }[] = [];
           let match: RegExpExecArray | null;
-          mdPathRegex.lastIndex = 0;
-          while ((match = mdPathRegex.exec(lineText)) !== null) {
-            const filePath = match[1];
-            const startCol = lineText.indexOf(filePath, match.index) + 1; // 1-based
-            links.push({
-              range: {
-                start: { x: startCol, y: bufferLineNumber },
-                end: { x: startCol + filePath.length - 1, y: bufferLineNumber },
-              },
-              text: filePath,
-              activate: () => props.onOpenMdFile!(filePath),
-            });
+          filePathRegex.lastIndex = 0;
+          while ((match = filePathRegex.exec(lineText)) !== null) {
+            matches.push({ text: match[1], index: lineText.indexOf(match[1], match.index) });
           }
-          callback(links.length > 0 ? links : undefined);
+          if (matches.length === 0) { callback(undefined); return; }
+
+          // Get cwd from the terminal's PTY session
+          const termData = terminalsStore.get(props.id);
+          const cwd = termData?.cwd || "";
+
+          // Validate all candidates via Rust IPC
+          Promise.all(
+            matches.map(async (m) => {
+              try {
+                const resolved = await invoke<{ absolute_path: string; is_directory: boolean } | null>(
+                  "resolve_terminal_path",
+                  { cwd, candidate: m.text },
+                );
+                return resolved ? { ...m, resolved } : null;
+              } catch {
+                return null;
+              }
+            }),
+          ).then((results) => {
+            const links: import("@xterm/xterm").ILink[] = [];
+            for (const r of results) {
+              if (!r) continue;
+              const startCol = r.index + 1; // 1-based
+              // Parse line:col from the candidate text
+              let line: number | undefined;
+              let col: number | undefined;
+              const lineColMatch = r.text.match(/:(\d+)(?::(\d+))?$/);
+              if (lineColMatch) {
+                line = parseInt(lineColMatch[1], 10);
+                if (lineColMatch[2]) col = parseInt(lineColMatch[2], 10);
+              }
+              links.push({
+                range: {
+                  start: { x: startCol, y: bufferLineNumber },
+                  end: { x: startCol + r.text.length - 1, y: bufferLineNumber },
+                },
+                text: r.text,
+                activate: () => onOpenFilePath(r.resolved.absolute_path, line, col),
+              });
+            }
+            callback(links.length > 0 ? links : undefined);
+          });
         },
       });
     }

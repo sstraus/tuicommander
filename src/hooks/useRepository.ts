@@ -21,9 +21,9 @@ export function useRepository() {
     return await invoke<string>("get_git_diff", { path });
   }
 
-  /** Open a path in an application */
-  async function openInApp(path: string, app: string): Promise<void> {
-    await invoke("open_in_app", { path, app });
+  /** Open a path in an application, optionally at a specific line/col */
+  async function openInApp(path: string, app: string, line?: number, col?: number): Promise<void> {
+    await invoke("open_in_app", { path, app, line, col });
   }
 
   /** Rename a git branch */
@@ -84,10 +84,16 @@ export function useRepository() {
     }
   }
 
-  /** List all markdown files in repository */
-  async function listMarkdownFiles(path: string): Promise<string[]> {
+  /** Markdown file entry with git status */
+  interface MarkdownFileEntry {
+    path: string;
+    git_status: string; // "modified" | "staged" | "untracked" | ""
+  }
+
+  /** List all markdown files in repository with git status */
+  async function listMarkdownFiles(path: string): Promise<MarkdownFileEntry[]> {
     try {
-      return await invoke<string[]>("list_markdown_files", { path });
+      return await invoke<MarkdownFileEntry[]>("list_markdown_files", { path });
     } catch (err) {
       console.error("Failed to list markdown files:", err);
       return [];
