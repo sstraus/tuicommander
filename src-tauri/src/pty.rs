@@ -572,8 +572,100 @@ pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
 }
 
 #[cfg(windows)]
-pub(crate) fn process_name_from_pid(_pid: u32) -> Option<String> {
-    None
+pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32First, Process32Next,
+        PROCESSENTRY32, TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::Foundation::CloseHandle;
+
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+            return None;
+        }
+
+        let mut entry: PROCESSENTRY32 = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
+
+        let mut found = None;
+        if Process32First(snapshot, &mut entry) != 0 {
+            loop {
+                if entry.th32ProcessID == pid {
+                    // szExeFile is a [i8; 260] (MAX_PATH) null-terminated C string
+                    let name_bytes: Vec<u8> = entry
+                        .szExeFile
+                        .iter()
+                        .take_while(|&&b| b != 0)
+                        .map(|&b| b as u8)
+                        .collect();
+                    if let Ok(name) = String::from_utf8(name_bytes) {
+                        // Strip .exe suffix for consistent matching with classify_agent
+                        let name = name.strip_suffix(".exe").unwrap_or(&name).to_string();
+                        found = Some(name);
+                    }
+                    break;
+                }
+                if Process32Next(snapshot, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+
+        CloseHandle(snapshot);
+        found
+    }
+}
+
+/// Walk the process tree from `root_pid` and return the deepest descendant PID.
+/// On Windows, this finds the "foreground" process in a PTY session by following
+/// the chain: shell → agent CLI (e.g. claude.exe).
+#[cfg(windows)]
+fn deepest_descendant_pid(root_pid: u32) -> Option<u32> {
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32First, Process32Next,
+        PROCESSENTRY32, TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::Foundation::CloseHandle;
+
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+            return None;
+        }
+
+        // Collect all (pid, parent_pid) pairs
+        let mut processes = Vec::new();
+        let mut entry: PROCESSENTRY32 = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
+
+        if Process32First(snapshot, &mut entry) != 0 {
+            loop {
+                processes.push((entry.th32ProcessID, entry.th32ParentProcessID));
+                if Process32Next(snapshot, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snapshot);
+
+        // Walk from root_pid to the deepest single child
+        let mut current = root_pid;
+        loop {
+            let children: Vec<u32> = processes
+                .iter()
+                .filter(|(_, ppid)| *ppid == current)
+                .map(|(pid, _)| *pid)
+                .collect();
+
+            match children.len() {
+                1 => current = children[0],
+                _ => break, // 0 children (leaf) or multiple children (ambiguous)
+            }
+        }
+
+        Some(current)
+    }
 }
 
 /// Map a process name to a known agent type, or None for non-agent processes.
@@ -606,8 +698,12 @@ pub(crate) fn get_session_foreground_process(
     }
     #[cfg(windows)]
     {
-        let _ = session;
-        None
+        // On Windows, walk the process tree from the shell child to find the
+        // deepest descendant — the equivalent of the "foreground process".
+        let child_pid = session._child.process_id()?;
+        let leaf = deepest_descendant_pid(child_pid)?;
+        let name = process_name_from_pid(leaf)?;
+        classify_agent(&name).map(|s| s.to_string())
     }
 }
 
