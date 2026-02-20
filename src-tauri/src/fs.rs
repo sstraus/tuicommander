@@ -215,13 +215,29 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
             .to_string_lossy()
             .replace('\\', "/");
 
-        // Look up git status — for dirs, check if any child has status
+        // Look up git status — for dirs, propagate the most relevant child status
         let git_status = if is_dir {
-            let has_changes = git_statuses
-                .keys()
-                .any(|p| p.starts_with(&format!("{relative}/")));
-            if has_changes {
+            let prefix = format!("{relative}/");
+            let mut has_staged = false;
+            let mut has_modified = false;
+            let mut has_untracked = false;
+            for (p, s) in &git_statuses {
+                if p.starts_with(&prefix) {
+                    match s.as_str() {
+                        "staged" => has_staged = true,
+                        "modified" => has_modified = true,
+                        "untracked" => has_untracked = true,
+                        _ => {}
+                    }
+                }
+            }
+            // Priority: staged > modified > untracked
+            if has_staged {
+                "staged".to_string()
+            } else if has_modified {
                 "modified".to_string()
+            } else if has_untracked {
+                "untracked".to_string()
             } else {
                 String::new()
             }

@@ -2171,6 +2171,20 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: #9ca3af;
 }
 
+.fb-legend {
+  display: flex;
+  gap: 8px;
+  margin-left: 8px;
+}
+
+.fb-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+}
+
 /* Code Editor Tab Content */
 .editor-tab-content {
   width: 100%;
