@@ -1,0 +1,25 @@
+src/components/TabBar/TabBar.tsx
+  87f045589290b05c 378-379
+src/__tests__/components/TabBar.test.tsx
+  87f045589290b05c 80-81,83,86,89,97,100-104,719-723,746-750
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "f13f2fabf088066dfc1a0631e0baf53464a693f6",
+  "prompts": {
+    "87f045589290b05c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bfe3673a-6762-4c6e-becc-7ab0f4ef0bcd",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 23,
+      "total_deletions": 21,
+      "accepted_lines": 23,
+      "overriden_lines": 0
+    }
+  }
+}
