@@ -235,7 +235,7 @@ describe("Sidebar", () => {
       expect(branchName!.textContent).toBe("main");
     });
 
-    it("shows star icon for main branch and Y for feature branch", () => {
+    it("shows SVG icons for main and feature branches", () => {
       setRepos({
         "/repo1": makeRepo({
           branches: {
@@ -251,7 +251,7 @@ describe("Sidebar", () => {
       const mainIcon = Array.from(icons).find((i) => i.classList.contains("main"));
       const featureIcon = Array.from(icons).find((i) => i.classList.contains("feature"));
       expect(mainIcon).toBeDefined();
-      expect(mainIcon!.textContent).toContain("\u2605");
+      expect(mainIcon!.querySelector("svg")).not.toBeNull();
       expect(featureIcon).toBeDefined();
       expect(featureIcon!.querySelector("svg")).not.toBeNull();
     });
