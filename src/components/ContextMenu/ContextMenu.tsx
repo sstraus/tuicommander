@@ -6,6 +6,7 @@ export interface ContextMenuItem {
   action: () => void;
   separator?: boolean;
   disabled?: boolean;
+  children?: ContextMenuItem[];
 }
 
 export interface ContextMenuProps {
@@ -15,6 +16,55 @@ export interface ContextMenuProps {
   visible: boolean;
   onClose: () => void;
 }
+
+/** Single menu item — handles both leaf items and items with submenus */
+const MenuItem: Component<{
+  item: ContextMenuItem;
+  onClose: () => void;
+}> = (props) => {
+  const [submenuOpen, setSubmenuOpen] = createSignal(false);
+  const hasChildren = () => !!(props.item.children && props.item.children.length > 0);
+
+  return (
+    <>
+      <Show when={props.item.separator}>
+        <div class="context-menu-separator" />
+      </Show>
+      <div
+        class="context-menu-item-wrap"
+        onMouseEnter={() => hasChildren() && setSubmenuOpen(true)}
+        onMouseLeave={() => setSubmenuOpen(false)}
+      >
+        <button
+          class={`context-menu-item ${props.item.disabled ? "disabled" : ""} ${hasChildren() ? "has-children" : ""}`}
+          onClick={() => {
+            if (props.item.disabled || hasChildren()) return;
+            props.item.action();
+            props.onClose();
+          }}
+          disabled={props.item.disabled}
+        >
+          <span class="context-menu-label">{props.item.label}</span>
+          <Show when={props.item.shortcut}>
+            <span class="context-menu-shortcut">{props.item.shortcut}</span>
+          </Show>
+          <Show when={hasChildren()}>
+            <span class="context-menu-arrow">{"\u203A"}</span>
+          </Show>
+        </button>
+        <Show when={submenuOpen() && props.item.children}>
+          <div class="context-submenu">
+            <For each={props.item.children}>
+              {(child) => (
+                <MenuItem item={child} onClose={props.onClose} />
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
+    </>
+  );
+};
 
 export const ContextMenu: Component<ContextMenuProps> = (props) => {
   let menuRef: HTMLDivElement | undefined;
@@ -76,28 +126,7 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
         }}
       >
         <For each={props.items}>
-          {(item) => (
-            <>
-              <Show when={item.separator}>
-                <div class="context-menu-separator" />
-              </Show>
-              <button
-                class={`context-menu-item ${item.disabled ? "disabled" : ""}`}
-                onClick={() => {
-                  if (!item.disabled) {
-                    item.action();
-                    props.onClose();
-                  }
-                }}
-                disabled={item.disabled}
-              >
-                <span class="context-menu-label">{item.label}</span>
-                <Show when={item.shortcut}>
-                  <span class="context-menu-shortcut">{item.shortcut}</span>
-                </Show>
-              </button>
-            </>
-          )}
+          {(item) => <MenuItem item={item} onClose={props.onClose} />}
         </For>
       </div>
     </Show>

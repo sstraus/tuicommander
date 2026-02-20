@@ -202,6 +202,90 @@ describe("ContextMenu", () => {
   });
 });
 
+describe("ContextMenu submenus", () => {
+  it("items with children render submenu arrow indicator", () => {
+    const items: ContextMenuItem[] = [
+      { label: "Normal", action: vi.fn() },
+      {
+        label: "Move to Group",
+        action: vi.fn(),
+        children: [
+          { label: "Work", action: vi.fn() },
+          { label: "Personal", action: vi.fn() },
+        ],
+      },
+    ];
+    const { container } = render(() => (
+      <ContextMenu items={items} x={0} y={0} visible={true} onClose={() => {}} />
+    ));
+    const arrows = container.querySelectorAll(".context-menu-arrow");
+    expect(arrows.length).toBe(1);
+  });
+
+  it("hovering parent shows submenu", async () => {
+    const items: ContextMenuItem[] = [
+      {
+        label: "Move to Group",
+        action: vi.fn(),
+        children: [
+          { label: "Work", action: vi.fn() },
+        ],
+      },
+    ];
+    const { container } = render(() => (
+      <ContextMenu items={items} x={0} y={0} visible={true} onClose={() => {}} />
+    ));
+    const parentWrap = container.querySelector(".context-menu-item-wrap")!;
+    fireEvent.mouseEnter(parentWrap);
+    const submenu = container.querySelector(".context-submenu");
+    expect(submenu).not.toBeNull();
+  });
+
+  it("clicking submenu item fires action and closes all menus", () => {
+    const childAction = vi.fn();
+    const handleClose = vi.fn();
+    const items: ContextMenuItem[] = [
+      {
+        label: "Move to Group",
+        action: vi.fn(),
+        children: [
+          { label: "Work", action: childAction },
+        ],
+      },
+    ];
+    const { container } = render(() => (
+      <ContextMenu items={items} x={0} y={0} visible={true} onClose={handleClose} />
+    ));
+    // Show submenu
+    const parentWrap = container.querySelector(".context-menu-item-wrap")!;
+    fireEvent.mouseEnter(parentWrap);
+    // Click submenu item
+    const submenuItem = container.querySelector(".context-submenu .context-menu-item")!;
+    fireEvent.click(submenuItem);
+    expect(childAction).toHaveBeenCalledOnce();
+    expect(handleClose).toHaveBeenCalledOnce();
+  });
+
+  it("clicking parent item with children does not fire parent action", () => {
+    const parentAction = vi.fn();
+    const items: ContextMenuItem[] = [
+      {
+        label: "Move to Group",
+        action: parentAction,
+        children: [
+          { label: "Work", action: vi.fn() },
+        ],
+      },
+    ];
+    const { container } = render(() => (
+      <ContextMenu items={items} x={0} y={0} visible={true} onClose={() => {}} />
+    ));
+    const parentItem = container.querySelector(".context-menu-item")!;
+    fireEvent.click(parentItem);
+    expect(parentAction).not.toHaveBeenCalled();
+  });
+});
+
 describe("createContextMenu", () => {
   it("initializes with visible=false", () => {
     createRoot((dispose) => {
