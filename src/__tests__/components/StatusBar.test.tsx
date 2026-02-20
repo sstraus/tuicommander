@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import "../mocks/tauri";
-import { mockInvoke } from "../mocks/tauri";
 import { render, fireEvent, waitFor } from "@solidjs/testing-library";
 
 // Use vi.hoisted so these are available to vi.mock factories (which are hoisted)

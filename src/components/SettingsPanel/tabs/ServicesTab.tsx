@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, onCleanup } from "solid-js";
+import { Component, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { rpc } from "../../../transport";
 
 interface McpStatus {
@@ -57,11 +57,12 @@ export const ServicesTab: Component = () => {
     }
   };
 
-  // Load on mount
-  refreshStatus();
-  loadRemoteConfig();
-  const interval = setInterval(refreshStatus, 3000);
-  onCleanup(() => clearInterval(interval));
+  onMount(() => {
+    refreshStatus();
+    loadRemoteConfig();
+    const interval = setInterval(refreshStatus, 3000);
+    onCleanup(() => clearInterval(interval));
+  });
 
   const toggleMcp = async (enabled: boolean) => {
     setSaving(true);

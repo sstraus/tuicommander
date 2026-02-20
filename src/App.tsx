@@ -215,19 +215,6 @@ const App: Component = () => {
   });
 
 
-  // Keep savedTerminals in sync with live terminal state (persists across restarts)
-  createEffect(() => {
-    // Subscribe to terminal IDs — triggers on add/remove
-    const ids = terminalsStore.getIds();
-    if (ids.length >= 0) {
-      repositoriesStore.updateSavedTerminals((id) => {
-        const t = terminalsStore.get(id);
-        if (!t) return undefined;
-        return { name: t.name, cwd: t.cwd, fontSize: t.fontSize, agentType: t.agentType };
-      });
-    }
-  });
-
   // Apply the active theme to the entire app chrome (sidebar, tabs, toolbar, etc.)
   createEffect(() => applyAppTheme(settingsStore.state.theme));
 
