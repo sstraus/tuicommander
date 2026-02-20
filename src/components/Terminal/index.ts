@@ -1,2 +1,2 @@
-export { Terminal, FONT_FAMILIES } from "./Terminal";
+export { Terminal } from "./Terminal";
 export type { TerminalProps } from "./Terminal";

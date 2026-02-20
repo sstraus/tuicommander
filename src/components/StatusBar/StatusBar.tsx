@@ -14,6 +14,7 @@ import { dictationStore } from "../../stores/dictation";
 import { updaterStore } from "../../stores/updater";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { getCiIcon, getCiClass } from "../../utils/ciDisplay";
 
 interface CiCheckDetail {
   name: string;
@@ -122,23 +123,6 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
     setShowCiPopover(true);
     fetchCiChecks();
   };
-
-  const getCiIcon = (conclusion: string) => {
-    switch (conclusion) {
-      case "success": return "\u2713";
-      case "failure": return "\u2717";
-      default: return "\u25CF";
-    }
-  };
-
-  const getCiClass = (conclusion: string) => {
-    switch (conclusion) {
-      case "success": return "success";
-      case "failure": return "failure";
-      default: return "pending";
-    }
-  };
-
 
   return (
     <div id="status-bar">

@@ -5,7 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { isTauri, subscribePty, type Unsubscribe } from "../../transport";
 import { usePty } from "../../hooks/usePty";
-import { settingsStore } from "../../stores/settings";
+import { settingsStore, FONT_FAMILIES } from "../../stores/settings";
 import { getTerminalTheme } from "../../themes";
 import { terminalsStore } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
@@ -46,12 +46,6 @@ function currentTheme() {
 }
 
 // Font families mapping
-export const FONT_FAMILIES: Record<string, string> = {
-  "JetBrains Mono": '"JetBrains Mono", monospace',
-  "Fira Code": '"Fira Code", monospace',
-  Hack: '"Hack", monospace',
-};
-
 /** Shell control flow pattern — titles containing these are cryptic scripts, not useful names */
 const SHELL_SCRIPT_RE = /;|&&|\|\||\$\(|\bif\b|\bthen\b|\belse\b|\belif\b|\bfi\b|\bfor\b|\bwhile\b|\bdo\b|\bdone\b|\bcase\b|\besac\b/;
 

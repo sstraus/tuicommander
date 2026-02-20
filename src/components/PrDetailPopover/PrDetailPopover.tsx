@@ -3,6 +3,7 @@ import { githubStore } from "../../stores/github";
 import { CiRing } from "../ui/CiRing";
 import { relativeTime } from "../../utils/time";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { getCiIcon, getCiClass } from "../../utils/ciDisplay";
 
 export interface PrDetailPopoverProps {
   repoPath: string;
@@ -59,36 +60,6 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
   const stateLabel = () => {
     if (prData()?.is_draft) return "Draft";
     return prData()?.state || "";
-  };
-
-  const getCiIcon = (state: string) => {
-    switch (state) {
-      case "SUCCESS":
-      case "success":
-        return "\u2713";
-      case "FAILURE":
-      case "failure":
-      case "ERROR":
-      case "error":
-        return "\u2717";
-      default:
-        return "\u25CF";
-    }
-  };
-
-  const getCiClass = (state: string) => {
-    switch (state) {
-      case "SUCCESS":
-      case "success":
-        return "success";
-      case "FAILURE":
-      case "failure":
-      case "ERROR":
-      case "error":
-        return "failure";
-      default:
-        return "pending";
-    }
   };
 
   return (
