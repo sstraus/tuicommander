@@ -1,0 +1,27 @@
+src/components/Terminal/Terminal.tsx
+  87f045589290b05c 480-482,491-493
+src-tauri/src/lib.rs
+  87f045589290b05c 21,27-67,281-285
+src-tauri/src/pty.rs
+  87f045589290b05c 222-225,330-333,336
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "44a71925148748eef1f3bbf248a85fc4e58cb34c",
+  "prompts": {
+    "87f045589290b05c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bfe3673a-6762-4c6e-becc-7ab0f4ef0bcd",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 65,
+      "total_deletions": 6,
+      "accepted_lines": 62,
+      "overriden_lines": 0
+    }
+  }
+}
