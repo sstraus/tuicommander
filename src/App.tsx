@@ -430,6 +430,7 @@ const App: Component = () => {
 
         // Help
         case "help-panel": setHelpPanelVisible((v) => !v); break;
+        case "check-for-updates": updaterStore.checkForUpdate(); break;
         case "about": /* handled by PredefinedMenuItem on macOS; no-op here */ break;
 
         default: {
