@@ -134,14 +134,14 @@ describe("StatusBar", () => {
     const { container } = render(() => <StatusBar {...defaultProps} />);
     const mdBtn = container.querySelector("#md-toggle");
     expect(mdBtn).not.toBeNull();
-    expect(mdBtn!.textContent).toContain("MD");
+    expect(mdBtn!.getAttribute("title")).toContain("Markdown");
   });
 
   it("renders Diff toggle button", () => {
     const { container } = render(() => <StatusBar {...defaultProps} />);
     const diffBtn = container.querySelector("#diff-toggle");
     expect(diffBtn).not.toBeNull();
-    expect(diffBtn!.textContent).toContain("Diff");
+    expect(diffBtn!.getAttribute("title")).toContain("Diff");
   });
 
   it("calls onToggleMarkdown when MD button clicked", () => {

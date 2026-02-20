@@ -1891,37 +1891,27 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   color: var(--error);
 }
 
-/* Diff scope toggle (Working / Last Commit) */
-.diff-scope-toggle {
-  display: flex;
-  gap: 0;
+/* Diff scope selector (Working tree / commit dropdown) */
+.diff-scope-bar {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-scope-select {
+  width: 100%;
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.diff-scope-btn {
-  background: none;
-  border: none;
-  color: var(--fg-muted);
+  padding: 3px 6px;
   font-size: var(--font-xs);
-  padding: 2px 8px;
+  font-family: var(--font-mono);
   cursor: pointer;
-  white-space: nowrap;
 }
 
-.diff-scope-btn:not(:last-child) {
-  border-right: 1px solid var(--border);
-}
-
-.diff-scope-btn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.diff-scope-btn.diff-scope-active {
-  background: var(--accent);
-  color: var(--bg-primary);
+.diff-scope-select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* Shared Panel Styles (DiffPanel, MarkdownPanel) */

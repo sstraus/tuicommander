@@ -4,6 +4,13 @@ import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { getModifierSymbol } from "../../platform";
 
+/** Recent commit info from Rust */
+interface RecentCommit {
+  hash: string;
+  short_hash: string;
+  subject: string;
+}
+
 export interface DiffPanelProps {
   visible: boolean;
   repoPath: string | null;
@@ -14,8 +21,26 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
   const [files, setFiles] = createSignal<ChangedFile[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const [scope, setScope] = createSignal<string | undefined>(undefined); // undefined = working tree
+  const [scope, setScope] = createSignal<string | undefined>(undefined); // undefined = working tree, hash = specific commit
+  const [commits, setCommits] = createSignal<RecentCommit[]>([]);
   const repo = useRepository();
+
+  // Load recent commits when panel becomes visible or repo changes
+  createEffect(() => {
+    const visible = props.visible;
+    const repoPath = props.repoPath;
+    void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
+
+    if (!visible || !repoPath) {
+      setCommits([]);
+      return;
+    }
+
+    (async () => {
+      const recent = await repo.getRecentCommits(repoPath, 5);
+      setCommits(recent);
+    })();
+  });
 
   // Load changed files when visible, repo changes, scope changes, or repo content changes
   createEffect(() => {
@@ -76,6 +101,11 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     return parts.join(" ");
   };
 
+  const handleScopeChange = (e: Event) => {
+    const value = (e.target as HTMLSelectElement).value;
+    setScope(value === "" ? undefined : value);
+  };
+
   return (
     <div id="diff-panel" class={props.visible ? "" : "hidden"}>
       <div class="panel-header">
@@ -84,24 +114,24 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
           <Show when={!loading() && files().length > 0}>
             <span class="file-count-badge">{files().length}</span>
           </Show>
-          <div class="diff-scope-toggle">
-            <button
-              class="diff-scope-btn"
-              classList={{ "diff-scope-active": !scope() }}
-              onClick={() => setScope(undefined)}
-              title="Uncommitted working tree changes"
-            >Working</button>
-            <button
-              class="diff-scope-btn"
-              classList={{ "diff-scope-active": scope() === "committed" }}
-              onClick={() => setScope("committed")}
-              title="Changes in last commit (HEAD~1)"
-            >Last Commit</button>
-          </div>
         </div>
         <button class="panel-close" onClick={props.onClose} title={`Close (${getModifierSymbol()}D)`}>
           &times;
         </button>
+      </div>
+
+      {/* Scope selector: Working tree or a recent commit */}
+      <div class="diff-scope-bar">
+        <select class="diff-scope-select" value={scope() ?? ""} onChange={handleScopeChange}>
+          <option value="">Working tree</option>
+          <For each={commits()}>
+            {(commit) => (
+              <option value={commit.hash}>
+                {commit.short_hash} {commit.subject}
+              </option>
+            )}
+          </For>
+        </select>
       </div>
 
       <div class="panel-content">
@@ -115,7 +145,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
 
         <Show when={!loading() && !error() && files().length === 0}>
           <div class="diff-empty">
-            {!props.repoPath ? "No repository selected" : scope() === "committed" ? "No commits yet" : "No changes"}
+            {!props.repoPath ? "No repository selected" : scope() ? "No changes in this commit" : "No changes"}
           </div>
         </Show>
 

@@ -605,7 +605,7 @@ describe("Sidebar", () => {
       const buttons = container.querySelectorAll(".git-quick-btn");
       const pullBtn = Array.from(buttons).find((b) => b.textContent?.includes("Pull"))!;
       fireEvent.click(pullBtn);
-      expect(onGitCommand).toHaveBeenCalledWith("cd /repo1 && git pull");
+      expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git pull');
     });
 
     it("Push button calls onGitCommand with push command", () => {
@@ -617,7 +617,7 @@ describe("Sidebar", () => {
       const buttons = container.querySelectorAll(".git-quick-btn");
       const pushBtn = Array.from(buttons).find((b) => b.textContent?.includes("Push"))!;
       fireEvent.click(pushBtn);
-      expect(onGitCommand).toHaveBeenCalledWith("cd /repo1 && git push");
+      expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git push');
     });
 
     it("Fetch button calls onGitCommand with fetch command", () => {
@@ -629,7 +629,7 @@ describe("Sidebar", () => {
       const buttons = container.querySelectorAll(".git-quick-btn");
       const fetchBtn = Array.from(buttons).find((b) => b.textContent?.includes("Fetch"))!;
       fireEvent.click(fetchBtn);
-      expect(onGitCommand).toHaveBeenCalledWith("cd /repo1 && git fetch --all");
+      expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git fetch --all');
     });
 
     it("Stash button calls onGitCommand with stash command", () => {
@@ -641,7 +641,7 @@ describe("Sidebar", () => {
       const buttons = container.querySelectorAll(".git-quick-btn");
       const stashBtn = Array.from(buttons).find((b) => b.textContent?.includes("Stash"))!;
       fireEvent.click(stashBtn);
-      expect(onGitCommand).toHaveBeenCalledWith("cd /repo1 && git stash");
+      expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git stash');
     });
   });
 

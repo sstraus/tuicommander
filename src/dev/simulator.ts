@@ -12,6 +12,7 @@ import { agentFallbackStore } from "../stores/agentFallback";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { notificationsStore } from "../stores/notifications";
+import { uiStore } from "../stores/ui";
 import { PRESETS, buildPrStatus, type PrOverride } from "./presets";
 
 const SIM_REPO_PATH = "/sim/repo";
@@ -167,6 +168,28 @@ const simulator = {
     }
   },
 
+  /** Toggle a panel for testing */
+  panel(name: "diff" | "markdown" | "files" | "notes"): void {
+    switch (name) {
+      case "diff":
+        uiStore.toggleDiffPanel();
+        break;
+      case "markdown":
+        uiStore.toggleMarkdownPanel();
+        break;
+      case "files":
+        uiStore.toggleFileBrowserPanel();
+        break;
+      case "notes":
+        uiStore.toggleNotesPanel();
+        break;
+      default:
+        console.error(`[tuic] Unknown panel: "${name}". Options: diff, markdown, files, notes`);
+        return;
+    }
+    console.log(`[tuic] Toggled panel: ${name}`);
+  },
+
   /** Clear all mocks and resume polling */
   reset(): void {
     rateLimitStore.clearAll();
@@ -237,6 +260,12 @@ const simulator = {
   __tuic.scenario('rate-limited')  Claude rate limited, Gemini fallback
   __tuic.scenario('all-down')      All agents rate limited
   __tuic.presets()                 List all presets
+
+── Panels ─────────────────────────────────────────────────────
+  __tuic.panel('diff')             Toggle diff panel
+  __tuic.panel('markdown')         Toggle markdown panel
+  __tuic.panel('files')            Toggle file browser panel
+  __tuic.panel('notes')            Toggle notes/ideas panel
 
 ── Control ────────────────────────────────────────────────────
   __tuic.reset()                   Clear all mocks, resume polling

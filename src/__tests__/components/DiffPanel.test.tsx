@@ -13,6 +13,9 @@ vi.mock("../../hooks/useRepository", () => ({
     removeWorktree: vi.fn(),
     createWorktree: vi.fn(),
     getWorktreePaths: vi.fn(),
+    getChangedFiles: vi.fn().mockResolvedValue([]),
+    getFileDiff: vi.fn().mockResolvedValue(""),
+    getRecentCommits: vi.fn().mockResolvedValue([]),
   }),
 }));
 

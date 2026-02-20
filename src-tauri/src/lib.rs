@@ -336,6 +336,7 @@ pub fn run() {
             git::get_diff_stats,
             git::get_changed_files,
             git::get_file_diff,
+            git::get_recent_commits,
             list_markdown_files,
             read_file,
             github::get_github_status,

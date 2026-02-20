@@ -115,6 +115,23 @@ export function useRepository() {
     return await invoke<string>("generate_worktree_name_cmd", { existingNames });
   }
 
+  /** Recent commit entry */
+  interface RecentCommit {
+    hash: string;
+    short_hash: string;
+    subject: string;
+  }
+
+  /** Get recent commits for a repository */
+  async function getRecentCommits(path: string, count?: number): Promise<RecentCommit[]> {
+    try {
+      return await invoke<RecentCommit[]>("get_recent_commits", { path, count });
+    } catch (err) {
+      console.error("Failed to get recent commits:", err);
+      return [];
+    }
+  }
+
   return {
     getInfo,
     getDiff,
@@ -129,5 +146,6 @@ export function useRepository() {
     listMarkdownFiles,
     readFile,
     generateWorktreeName,
+    getRecentCommits,
   };
 }

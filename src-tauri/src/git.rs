@@ -229,13 +229,59 @@ pub(crate) fn rename_branch(state: State<'_, Arc<AppState>>, path: String, old_n
     Ok(())
 }
 
+/// A recent commit entry for the dropdown
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct RecentCommit {
+    pub hash: String,
+    pub short_hash: String,
+    pub subject: String,
+}
+
+/// Get the N most recent commits
+#[tauri::command]
+pub(crate) fn get_recent_commits(path: String, count: Option<u32>) -> Result<Vec<RecentCommit>, String> {
+    let repo_path = PathBuf::from(&path);
+    let n = count.unwrap_or(5).min(20).to_string();
+
+    let output = Command::new(crate::agent::resolve_cli("git"))
+        .current_dir(&repo_path)
+        .args(["log", "--format=%H%x00%h%x00%s", "-n", &n])
+        .output()
+        .map_err(|e| format!("Failed to execute git log: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git log failed: {stderr}"));
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let commits = text
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(3, '\0').collect();
+            if parts.len() == 3 {
+                Some(RecentCommit {
+                    hash: parts[0].to_string(),
+                    short_hash: parts[1].to_string(),
+                    subject: parts[2].to_string(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(commits)
+}
+
 /// Build the base git diff args for the given scope.
-/// "committed" compares HEAD~1..HEAD; anything else compares working tree.
-fn diff_base_args(scope: &Option<String>) -> Vec<&'static str> {
-    if scope.as_deref() == Some("committed") {
-        vec!["diff", "HEAD~1", "HEAD"]
-    } else {
-        vec!["diff"]
+/// A commit hash compares `<hash>..HEAD`; empty/None compares working tree.
+fn diff_base_args(scope: &Option<String>) -> Vec<String> {
+    match scope.as_deref() {
+        Some(hash) if !hash.is_empty() => {
+            vec!["diff".into(), format!("{hash}^"), hash.into()]
+        }
+        _ => vec!["diff".into()],
     }
 }
 
@@ -245,7 +291,7 @@ pub(crate) fn get_git_diff(path: String, scope: Option<String>) -> Result<String
     let repo_path = PathBuf::from(&path);
 
     let mut args = diff_base_args(&scope);
-    args.push("--color=never");
+    args.push("--color=never".into());
 
     let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
@@ -267,7 +313,7 @@ pub(crate) fn get_diff_stats(path: String, scope: Option<String>) -> DiffStats {
     let repo_path = PathBuf::from(&path);
 
     let mut args = diff_base_args(&scope);
-    args.push("--shortstat");
+    args.push("--shortstat".into());
 
     let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
@@ -306,7 +352,7 @@ pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<V
 
     // Get file status (M, A, D, R)
     let mut status_args = diff_base_args(&scope);
-    status_args.push("--name-status");
+    status_args.push("--name-status".into());
 
     let status_output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
@@ -321,7 +367,7 @@ pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<V
 
     // Get per-file stats (additions/deletions)
     let mut stats_args = diff_base_args(&scope);
-    stats_args.push("--numstat");
+    stats_args.push("--numstat".into());
 
     let stats_output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
@@ -374,8 +420,8 @@ pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>) -
     let repo_path = PathBuf::from(&path);
 
     let mut args = diff_base_args(&scope);
-    args.push("--color=never");
-    args.push("--");
+    args.push("--color=never".into());
+    args.push("--".into());
 
     let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(&repo_path)
