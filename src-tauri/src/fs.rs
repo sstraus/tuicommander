@@ -339,6 +339,30 @@ pub fn rename_path(
         .map_err(|e| format!("Failed to rename: {e}"))
 }
 
+/// Copy a file within a repository.
+#[tauri::command]
+pub fn copy_path(
+    repo_path: String,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    let (_canonical_repo, canonical_from) = validate_path(&repo_path, &from)?;
+    let (_, canonical_to) = if PathBuf::from(&repo_path).join(&to).exists() {
+        validate_path(&repo_path, &to)?
+    } else {
+        validate_path_for_creation(&repo_path, &to)?
+    };
+
+    if canonical_from.is_dir() {
+        return Err("Cannot copy directories. Only files can be copied.".to_string());
+    }
+
+    std::fs::copy(&canonical_from, &canonical_to)
+        .map_err(|e| format!("Failed to copy file: {e}"))?;
+
+    Ok(())
+}
+
 /// Append a path pattern to the repo's .gitignore file.
 #[tauri::command]
 pub fn add_to_gitignore(repo_path: String, pattern: String) -> Result<(), String> {

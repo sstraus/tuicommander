@@ -35,6 +35,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   const [renameDialogVisible, setRenameDialogVisible] = createSignal(false);
   const [renameTarget, setRenameTarget] = createSignal<DirEntry | null>(null);
 
+  // File clipboard state for copy/cut/paste
+  const [clipboard, setClipboard] = createSignal<{ entry: DirEntry; mode: "copy" | "cut" } | null>(null);
+
   // Load entries when visible, repo changes, subdir changes, or repo content changes
   createEffect(() => {
     const visible = props.visible;
@@ -149,6 +152,37 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     }
   };
 
+  const handleCopy = (entry: DirEntry) => {
+    setClipboard({ entry, mode: "copy" });
+  };
+
+  const handleCut = (entry: DirEntry) => {
+    setClipboard({ entry, mode: "cut" });
+  };
+
+  const handlePaste = async () => {
+    const clip = clipboard();
+    if (!clip || !props.repoPath) return;
+    const destDir = currentSubdir() === "." ? "" : `${currentSubdir()}/`;
+    const destPath = `${destDir}${clip.entry.name}`;
+
+    // Avoid pasting onto itself
+    if (destPath === clip.entry.path) return;
+
+    try {
+      if (clip.mode === "copy") {
+        await fb.copyPath(props.repoPath, clip.entry.path, destPath);
+      } else {
+        // Cut = rename (move)
+        await fb.renamePath(props.repoPath, clip.entry.path, destPath);
+        setClipboard(null);
+      }
+      refresh();
+    } catch (err) {
+      console.error(`Failed to ${clip.mode === "copy" ? "copy" : "move"}:`, err);
+    }
+  };
+
   const handleRenameConfirm = async (newName: string) => {
     const entry = renameTarget();
     if (!entry || !props.repoPath) return;
@@ -165,12 +199,34 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   };
 
   const getContextMenuItems = (entry: DirEntry): ContextMenuItem[] => {
-    const items: ContextMenuItem[] = [
-      {
-        label: "Rename\u2026",
-        action: () => handleRename(entry),
-      },
-    ];
+    const mod = getModifierSymbol();
+    const items: ContextMenuItem[] = [];
+
+    if (!entry.is_dir) {
+      items.push({
+        label: "Copy",
+        shortcut: `${mod}C`,
+        action: () => handleCopy(entry),
+      });
+      items.push({
+        label: "Cut",
+        shortcut: `${mod}X`,
+        action: () => handleCut(entry),
+      });
+    }
+
+    items.push({
+      label: "Paste",
+      shortcut: `${mod}V`,
+      action: handlePaste,
+      disabled: !clipboard(),
+      separator: true,
+    });
+
+    items.push({
+      label: "Rename\u2026",
+      action: () => handleRename(entry),
+    });
 
     if (!entry.is_dir) {
       items.push({
@@ -208,7 +264,28 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       const panel = document.getElementById("file-browser-panel");
       if (!panel?.contains(document.activeElement) && document.activeElement !== panel) return;
 
+      const isMeta = e.metaKey || e.ctrlKey;
       const list = entries();
+
+      // Copy/Cut/Paste shortcuts (work even with empty list for paste)
+      if (isMeta && e.key === "c" && list.length > 0) {
+        e.preventDefault();
+        const selected = list[selectedIndex()];
+        if (selected && !selected.is_dir) handleCopy(selected);
+        return;
+      }
+      if (isMeta && e.key === "x" && list.length > 0) {
+        e.preventDefault();
+        const selected = list[selectedIndex()];
+        if (selected && !selected.is_dir) handleCut(selected);
+        return;
+      }
+      if (isMeta && e.key === "v") {
+        e.preventDefault();
+        handlePaste();
+        return;
+      }
+
       if (list.length === 0) return;
 
       switch (e.key) {
@@ -306,6 +383,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
                   "fb-entry-dir": entry.is_dir,
                   "fb-entry-selected": selectedIndex() === index(),
                   "fb-entry-ignored": entry.is_ignored,
+                  "fb-entry-cut": clipboard()?.mode === "cut" && clipboard()?.entry.path === entry.path,
                 }}
                 onClick={() => {
                   setSelectedIndex(index());

@@ -27,6 +27,10 @@ export function useFileBrowser() {
     await invoke("rename_path", { repoPath, from, to });
   }
 
+  async function copyPath(repoPath: string, from: string, to: string): Promise<void> {
+    await invoke("copy_path", { repoPath, from, to });
+  }
+
   async function addToGitignore(repoPath: string, pattern: string): Promise<void> {
     await invoke("add_to_gitignore", { repoPath, pattern });
   }
@@ -38,6 +42,7 @@ export function useFileBrowser() {
     createDirectory,
     deletePath,
     renamePath,
+    copyPath,
     addToGitignore,
   };
 }

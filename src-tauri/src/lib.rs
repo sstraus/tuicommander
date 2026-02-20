@@ -407,6 +407,7 @@ pub fn run() {
             fs::create_directory,
             fs::delete_path,
             fs::rename_path,
+            fs::copy_path,
             fs::add_to_gitignore
         ])
         .run(tauri::generate_context!())

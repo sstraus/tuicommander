@@ -2115,6 +2115,11 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   opacity: 0.4;
 }
 
+.fb-entry-cut {
+  opacity: 0.5;
+  font-style: italic;
+}
+
 .fb-entry-up {
   color: var(--fg-muted);
   font-style: italic;
