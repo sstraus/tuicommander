@@ -379,6 +379,7 @@ const GroupSection: Component<{
   onDragEnd?: () => void;
   onHeaderDragOver?: (e: DragEvent) => void;
   onHeaderDrop?: (e: DragEvent) => void;
+  dragOverClass?: string;
   children: any;
 }> = (props) => {
   const groupMenu = createContextMenu();
@@ -391,7 +392,7 @@ const GroupSection: Component<{
 
   return (
     <div
-      class="group-section"
+      class={`group-section ${props.dragOverClass || ""}`}
       draggable={true}
       onDragStart={props.onDragStart}
       onDragOver={props.onDragOver}
@@ -746,6 +747,13 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   onDragEnd={resetRepoDragState}
                   onHeaderDragOver={(e) => handleGroupDragOver(e, entry.group.id)}
                   onHeaderDrop={(e) => handleGroupDrop(e, entry.group.id)}
+                  dragOverClass={
+                    dragOverGroupId() === entry.group.id && dragPayload()?.type !== "repo"
+                      ? `drag-over-${dragOverGroupSide()}`
+                      : dragOverGroupId() === entry.group.id && dragPayload()?.type === "repo"
+                        ? "drag-over-target"
+                        : undefined
+                  }
                 >
                   <For each={entry.repos}>
                     {(repo) => renderRepoSection(repo)}
