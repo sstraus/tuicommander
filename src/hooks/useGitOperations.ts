@@ -218,7 +218,14 @@ export function useGitOperations(deps: GitOperationsDeps) {
     const branch = branchToRename();
     if (!branch) return;
 
-    await deps.repo.renameBranch(branch.repoPath, oldName, newName);
+    try {
+      await deps.repo.renameBranch(branch.repoPath, oldName, newName);
+    } catch (err) {
+      console.error("Failed to rename branch:", err);
+      deps.setStatusInfo(`Failed to rename branch: ${err}`);
+      return;
+    }
+
     repositoriesStore.renameBranch(branch.repoPath, oldName, newName);
 
     if (currentBranch() === oldName) {

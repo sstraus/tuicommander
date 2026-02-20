@@ -249,7 +249,11 @@ const App: Component = () => {
   });
 
   // Clear dock badge when window gains focus
-  window.addEventListener("focus", () => notificationsStore.clearBadge());
+  onMount(() => {
+    const handleFocus = () => notificationsStore.clearBadge();
+    window.addEventListener("focus", handleFocus);
+    onCleanup(() => window.removeEventListener("focus", handleFocus));
+  });
 
   // Force quit - close all sessions and exit (Story 057)
   const forceQuit = async () => {

@@ -59,7 +59,8 @@ export function useRepository() {
   async function getWorktreePaths(repoPath: string): Promise<Record<string, string>> {
     try {
       return await invoke<Record<string, string>>("get_worktree_paths", { repoPath });
-    } catch {
+    } catch (err) {
+      console.error("Failed to get worktree paths:", { repoPath, err });
       return {};
     }
   }

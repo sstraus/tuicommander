@@ -112,7 +112,9 @@ export async function initApp(deps: AppInitDeps) {
     for (const id of terminalsStore.getIds()) {
       const t = terminalsStore.get(id);
       if (t?.sessionId) {
-        deps.pty.close(t.sessionId).catch(() => {});
+        deps.pty.close(t.sessionId).catch((err) =>
+      console.warn(`Failed to close PTY session ${t.sessionId} on unload:`, err),
+    );
       }
     }
   });
@@ -152,17 +154,25 @@ export async function initApp(deps: AppInitDeps) {
     repositoriesStore.setActiveBranch(repo_path, branch);
 
     // Invalidate caches so next poll fetches fresh data
-    invoke("clear_caches").catch(() => {});
-  }).catch(() => {});
+    invoke("clear_caches").catch((err) =>
+      console.debug("[Cache] Failed to clear caches:", err),
+    );
+  }).catch((err) =>
+    console.error("[HeadWatcher] Failed to register head-changed listener:", err),
+  );
 
   // Listen for .git/ directory changes (index, refs, etc.) to refresh panels
   listen<{ repo_path: string }>("repo-changed", (event) => {
     const { repo_path } = event.payload;
     // Invalidate caches so panels fetch fresh data
-    invoke("clear_caches").catch(() => {});
+    invoke("clear_caches").catch((err) =>
+      console.debug("[Cache] Failed to clear caches:", err),
+    );
     // Bump revision counter — panels tracking this signal will re-fetch
     repositoriesStore.bumpRevision(repo_path);
-  }).catch(() => {});
+  }).catch((err) =>
+    console.error("[RepoWatcher] Failed to register repo-changed listener:", err),
+  );
 
   // Check for surviving PTY sessions (persists across Vite HMR reloads)
   const survivingSessions = await deps.pty.listActiveSessions();
