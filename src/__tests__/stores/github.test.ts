@@ -598,5 +598,54 @@ describe("githubStore", () => {
         dispose();
       });
     });
+
+    it("updates store state from successful poll response", async () => {
+      const prStatus = makePrStatus({ branch: "main", state: "OPEN", number: 7 });
+      mockInvoke.mockResolvedValue([prStatus]);
+
+      await createRoot(async (dispose) => {
+        store.startPolling();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // State should reflect the polled data
+        const data = store.getBranchPrData("/repo1", "main");
+        expect(data).not.toBeNull();
+        expect(data!.number).toBe(7);
+        expect(data!.state).toBe("OPEN");
+
+        store.stopPolling();
+        dispose();
+      });
+    });
+
+    it("continues polling at base interval even when per-repo errors occur", async () => {
+      // Per-repo errors are caught inside pollAll() — they do NOT trigger backoff.
+      // The outer catch (backoff logic) is only reachable if Promise.all itself throws,
+      // which can't happen when each path's error is caught individually.
+      mockInvoke.mockRejectedValue(new Error("network error"));
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      // BASE = 30s — should stay at this interval regardless of per-repo errors
+      await createRoot(async (dispose) => {
+        store.startPolling();
+
+        await vi.advanceTimersByTimeAsync(0);
+        const after0 = mockInvoke.mock.calls.length; // 1 (initial poll)
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        const after30 = mockInvoke.mock.calls.length; // 2 (one more at 30s)
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        const after60 = mockInvoke.mock.calls.length; // 3 (one more at 60s)
+
+        expect(after0).toBe(1);
+        expect(after30).toBe(2);
+        expect(after60).toBe(3);
+
+        consoleSpy.mockRestore();
+        store.stopPolling();
+        dispose();
+      });
+    });
   });
 });

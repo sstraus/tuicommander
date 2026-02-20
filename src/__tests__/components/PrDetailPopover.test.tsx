@@ -680,4 +680,26 @@ describe("PrDetailPopover", () => {
     expect(stateBadge!.textContent).toBe("MERGED");
     expect(stateBadge!.classList.contains("merged")).toBe(true);
   });
+
+  it("shows closed state badge with 'closed' CSS class", () => {
+    mockGetBranchPrData.mockReturnValue({
+      branch: "feature/x",
+      number: 42,
+      title: "Closed PR",
+      state: "CLOSED",
+      url: "",
+      additions: 0,
+      deletions: 0,
+      author: "alice",
+      commits: 1,
+      checks: { passed: 0, failed: 0, pending: 0, total: 0 },
+      check_details: [],
+    });
+
+    const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+    const stateBadge = container.querySelector(".pr-state-badge");
+    expect(stateBadge).not.toBeNull();
+    expect(stateBadge!.textContent).toBe("CLOSED");
+    expect(stateBadge!.classList.contains("closed")).toBe(true);
+  });
 });
