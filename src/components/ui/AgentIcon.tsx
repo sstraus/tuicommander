@@ -1,4 +1,4 @@
-import { Component, JSX } from "solid-js";
+import { Component, JSX, Show } from "solid-js";
 import type { AgentType } from "../../agents";
 
 export interface AgentIconProps {
@@ -6,8 +6,8 @@ export interface AgentIconProps {
   size?: number;
 }
 
-/** SVG path data for each agent's brand icon */
-const AGENT_PATHS: Record<AgentType, { viewBox: string; d: string }> = {
+/** SVG path data for agents with official brand icons */
+const AGENT_PATHS: Partial<Record<AgentType, { viewBox: string; d: string }>> = {
   // Anthropic "A" lettermark (source: simpleicons.org)
   claude: {
     viewBox: "0 0 24 24",
@@ -23,11 +23,6 @@ const AGENT_PATHS: Record<AgentType, { viewBox: string; d: string }> = {
     viewBox: "0 0 24 24",
     d: "M18 19.5H6V4.5H18V19.5ZM15 7.5H9V16.5H15V7.5Z",
   },
-  // Aider: terminal prompt icon (no official SVG exists — uses >_ motif)
-  aider: {
-    viewBox: "0 0 24 24",
-    d: "M4 6l8 6-8 6V6zm10 12h6v2h-6v-2z",
-  },
   // OpenAI hexagonal knot (source: simpleicons.org)
   codex: {
     viewBox: "0 0 24 24",
@@ -35,20 +30,27 @@ const AGENT_PATHS: Record<AgentType, { viewBox: string; d: string }> = {
   },
 };
 
-/** Renders the brand icon for a given AI agent */
+/** Renders the brand icon for a given AI agent. Falls back to a capital letter when no SVG exists. */
 export const AgentIcon: Component<AgentIconProps> = (props): JSX.Element => {
   const size = () => props.size ?? 14;
   const icon = () => AGENT_PATHS[props.agent];
 
   return (
-    <svg
-      viewBox={icon().viewBox}
-      width={size()}
-      height={size()}
-      fill="currentColor"
-      style={{ "vertical-align": "middle", "flex-shrink": "0" }}
+    <Show
+      when={icon()}
+      fallback={<span style={{ "font-weight": "700" }}>{props.agent[0].toUpperCase()}</span>}
     >
-      <path d={icon().d} />
-    </svg>
+      {(svg) => (
+        <svg
+          viewBox={svg().viewBox}
+          width={size()}
+          height={size()}
+          fill="currentColor"
+          style={{ "vertical-align": "middle", "flex-shrink": "0" }}
+        >
+          <path d={svg().d} />
+        </svg>
+      )}
+    </Show>
   );
 };
