@@ -477,7 +477,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
     });
   };
 
-  /** Fit terminal only when container has valid dimensions, retrying if needed */
+  /** Fit terminal only when container has valid dimensions, retrying if needed.
+   *  If all retries are exhausted, proceed anyway so the PTY still initializes
+   *  (Rust backend clamps rows/cols to sane minimums). */
   const safeFit = (onReady?: () => void, retries = 10) => {
     const tryFit = (remaining: number) => {
       requestAnimationFrame(() => {
@@ -486,6 +488,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
           onReady?.();
         } else if (remaining > 0) {
           tryFit(remaining - 1);
+        } else {
+          console.warn('[Terminal] Container has zero dimensions after retries, proceeding with defaults');
+          onReady?.();
         }
       });
     };

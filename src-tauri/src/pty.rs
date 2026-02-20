@@ -219,6 +219,10 @@ pub(crate) async fn create_pty(
 
     let shell = resolve_shell(config.shell);
 
+    // Guard against invalid dimensions from zero-sized windows
+    let rows = config.rows.max(24);
+    let cols = config.cols.max(80);
+
     // Retry PTY spawn up to 3 times with increasing delay (Story 059)
     let max_retries = 3;
     let mut last_err = String::new();
@@ -226,8 +230,8 @@ pub(crate) async fn create_pty(
 
     for attempt in 0..max_retries {
         let pair = match pty_system.openpty(PtySize {
-            rows: config.rows,
-            cols: config.cols,
+            rows,
+            cols,
             pixel_width: 0,
             pixel_height: 0,
         }) {
@@ -323,10 +327,14 @@ pub(crate) async fn create_pty_with_worktree(
         let session_id = Uuid::new_v4().to_string();
         let pty_system = native_pty_system();
 
+        // Guard against invalid dimensions from zero-sized windows
+        let rows = pty_config.rows.max(24);
+        let cols = pty_config.cols.max(80);
+
         let pair = pty_system
             .openpty(PtySize {
-                rows: pty_config.rows,
-                cols: pty_config.cols,
+                rows,
+                cols,
                 pixel_width: 0,
                 pixel_height: 0,
             })

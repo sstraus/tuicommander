@@ -18,11 +18,52 @@ use dashmap::DashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, Manager, State, WebviewWindow};
 
 // Re-export shared types from state module
 pub(crate) use state::{AppState, OutputRingBuffer, PtySession};
 pub(crate) use state::{SessionMetrics, MAX_CONCURRENT_SESSIONS};
+
+/// Ensure the window has valid dimensions and is positioned on a visible monitor.
+/// The window-state plugin can persist invalid state (e.g. width/height 0, or
+/// positions off-screen) which causes downstream failures like PTY garbage output.
+fn ensure_window_visible(window: &WebviewWindow) {
+    use tauri::PhysicalPosition;
+
+    const MIN_WIDTH: u32 = 800;
+    const MIN_HEIGHT: u32 = 600;
+
+    let size = window.outer_size().unwrap_or_default();
+    let pos = window.outer_position().unwrap_or_default();
+
+    let size_invalid = size.width < MIN_WIDTH || size.height < MIN_HEIGHT;
+
+    // Check whether the window center is on any available monitor
+    let center_x = pos.x + (size.width as i32 / 2);
+    let center_y = pos.y + (size.height as i32 / 2);
+    let on_screen = window
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .any(|m| {
+            let mp = m.position();
+            let ms = m.size();
+            center_x >= mp.x
+                && center_x < mp.x + ms.width as i32
+                && center_y >= mp.y
+                && center_y < mp.y + ms.height as i32
+        });
+
+    if size_invalid || !on_screen {
+        eprintln!(
+            "[WindowGuard] Invalid window state ({}x{} at {},{}) — resetting to defaults",
+            size.width, size.height, pos.x, pos.y
+        );
+        let _ = window.set_size(tauri::PhysicalSize::new(1200u32, 800u32));
+        let _ = window.set_position(PhysicalPosition::new(100i32, 100i32));
+        let _ = window.center();
+    }
+}
 
 /// Load configuration from cached AppState
 #[tauri::command]
@@ -236,6 +277,11 @@ pub fn run() {
         .setup(|app| {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            // Guard against corrupted window-state (0x0 dimensions, off-screen position)
+            if let Some(window) = app.get_webview_window("main") {
+                ensure_window_visible(&window);
+            }
 
             let m = menu::build_menu(app)?;
             app.set_menu(m)?;
