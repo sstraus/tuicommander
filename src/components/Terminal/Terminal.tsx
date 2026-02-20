@@ -12,6 +12,7 @@ import { rateLimitStore } from "../../stores/ratelimit";
 import { notificationsStore } from "../../stores/notifications";
 import { uiStore } from "../../stores/ui";
 import { invoke } from "../../invoke";
+import { isMacOS } from "../../platform";
 
 
 /** Structured events parsed by Rust OutputParser, received via pty-parsed-{sessionId} */
@@ -369,7 +370,58 @@ export const Terminal: Component<TerminalProps> = (props) => {
       theme: currentTheme(),
       cursorBlink: true,
       allowProposedApi: true,
-      macOptionIsMeta: false,
+      macOptionIsMeta: false, // Right Option keeps macOS composition (π, ∑, @…)
+    });
+
+    // iTerm2-style Option key split (macOS only):
+    // Left Option → Meta (sends ESC + char for readline/emacs/vi keybindings)
+    // Right Option → macOS composition (π, ∑, @ etc.) — handled by xterm natively
+    //
+    // On Windows/Linux the Alt key already sends escape sequences natively;
+    // this handler is a no-op on those platforms.
+    //
+    // event.key is already composed to "π" on macOS and is useless here.
+    // We reconstruct the base character from event.code instead.
+    terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      if (!isMacOS()) return true; // Windows/Linux: xterm handles Alt natively
+      if (event.type !== "keydown") return true;
+      if (event.metaKey || event.ctrlKey) return true; // Cmd+Alt or AltGr: pass through
+      // DOM_KEY_LOCATION_LEFT = 1: left Option only; right Option keeps macOS composition
+      if (!event.altKey || event.location !== 1) return true;
+
+      const code = event.code;
+      let seq: string | null = null;
+
+      if (code.startsWith("Key")) {
+        const ch = code.slice(3).toLowerCase();
+        seq = "\x1b" + (event.shiftKey ? ch.toUpperCase() : ch);
+      } else if (code.startsWith("Digit")) {
+        seq = "\x1b" + code.slice(5);
+      } else {
+        switch (code) {
+          case "Backspace":    seq = "\x1b\x7f"; break; // Alt+Backspace = backward-kill-word
+          case "Space":        seq = "\x1b ";    break;
+          case "Period":       seq = "\x1b.";    break; // Alt+. = insert-last-argument
+          case "Comma":        seq = "\x1b,";    break;
+          case "Slash":        seq = "\x1b/";    break;
+          case "Minus":        seq = "\x1b-";    break;
+          case "Equal":        seq = "\x1b=";    break;
+          case "Semicolon":    seq = "\x1b;";    break;
+          case "Quote":        seq = "\x1b'";    break;
+          case "BracketLeft":  seq = "\x1b[";    break;
+          case "BracketRight": seq = "\x1b]";    break;
+          case "Backslash":    seq = "\x1b\\";   break;
+          case "Backquote":    seq = "\x1b`";    break;
+          case "ArrowLeft":    seq = "\x1b[1;3D"; break; // word backward
+          case "ArrowRight":   seq = "\x1b[1;3C"; break; // word forward
+          case "ArrowUp":      seq = "\x1b[1;3A"; break;
+          case "ArrowDown":    seq = "\x1b[1;3B"; break;
+        }
+      }
+
+      if (seq === null) return true; // unknown key: let xterm handle
+      terminal!.input(seq, true);
+      return false; // suppress xterm's default alt-key processing
     });
 
     fitAddon = new FitAddon();
