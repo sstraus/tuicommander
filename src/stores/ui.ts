@@ -95,21 +95,39 @@ function createUIStore() {
       }
     },
 
-    // Panel toggles
+    // Panel toggles — FB, MD, Diff are mutually exclusive
     toggleDiffPanel(): void {
-      setState("diffPanelVisible", (v) => !v);
+      const next = !state.diffPanelVisible;
+      setState("diffPanelVisible", next);
+      if (next) {
+        setState("markdownPanelVisible", false);
+        setState("fileBrowserPanelVisible", false);
+      }
     },
 
     toggleMarkdownPanel(): void {
-      setState("markdownPanelVisible", (v) => !v);
+      const next = !state.markdownPanelVisible;
+      setState("markdownPanelVisible", next);
+      if (next) {
+        setState("diffPanelVisible", false);
+        setState("fileBrowserPanelVisible", false);
+      }
     },
 
     setDiffPanelVisible(visible: boolean): void {
       setState("diffPanelVisible", visible);
+      if (visible) {
+        setState("markdownPanelVisible", false);
+        setState("fileBrowserPanelVisible", false);
+      }
     },
 
     setMarkdownPanelVisible(visible: boolean): void {
       setState("markdownPanelVisible", visible);
+      if (visible) {
+        setState("diffPanelVisible", false);
+        setState("fileBrowserPanelVisible", false);
+      }
     },
 
     toggleNotesPanel(): void {
@@ -121,11 +139,20 @@ function createUIStore() {
     },
 
     toggleFileBrowserPanel(): void {
-      setState("fileBrowserPanelVisible", (v) => !v);
+      const next = !state.fileBrowserPanelVisible;
+      setState("fileBrowserPanelVisible", next);
+      if (next) {
+        setState("diffPanelVisible", false);
+        setState("markdownPanelVisible", false);
+      }
     },
 
     setFileBrowserPanelVisible(visible: boolean): void {
       setState("fileBrowserPanelVisible", visible);
+      if (visible) {
+        setState("diffPanelVisible", false);
+        setState("markdownPanelVisible", false);
+      }
     },
 
     // Diff repo selection
