@@ -241,7 +241,25 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 
       {/* Right section - controls */}
       <div class="status-section status-controls">
-        {/* Mic button - hold to talk */}
+        {/* Toggle buttons */}
+        <button id="notes-toggle" class="toggle-btn" onClick={() => props.onToggleNotes?.()} title={`Toggle Ideas Panel (${getModifierSymbol()}N)`} style={{ position: "relative" }}>
+          <span style={{ filter: "grayscale(1) brightness(1.5)", "font-style": "normal" }}>💡</span>
+          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}N</span>
+        </button>
+        <button id="fb-toggle" class="toggle-btn" onClick={() => props.onToggleFileBrowser?.()} title={`Toggle File Browser (${getModifierSymbol()}E)`} style={{ position: "relative" }}>
+          FB
+          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}E</span>
+        </button>
+        <button id="md-toggle" class="toggle-btn" onClick={props.onToggleMarkdown} title={`Toggle Markdown Panel (${getModifierSymbol()}M)`} style={{ position: "relative" }}>
+          MD
+          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}M</span>
+        </button>
+        <button id="diff-toggle" class="toggle-btn" onClick={props.onToggleDiff} title={`Toggle Diff Panel (${getModifierSymbol()}D)`} style={{ position: "relative" }}>
+          Diff
+          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}D</span>
+        </button>
+
+        {/* Mic button - hold to talk (rightmost) */}
         <Show when={dictationStore.state.enabled}>
           <button
             id="mic-toggle"
@@ -270,24 +288,6 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
             <span class="hotkey-hint">{dictationStore.state.hotkey}</span>
           </button>
         </Show>
-
-        {/* Toggle buttons */}
-        <button id="fb-toggle" class="toggle-btn" onClick={() => props.onToggleFileBrowser?.()} title={`Toggle File Browser (${getModifierSymbol()}E)`} style={{ position: "relative" }}>
-          FB
-          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}E</span>
-        </button>
-        <button id="md-toggle" class="toggle-btn" onClick={props.onToggleMarkdown} title={`Toggle Markdown Panel (${getModifierSymbol()}M)`} style={{ position: "relative" }}>
-          MD
-          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}M</span>
-        </button>
-        <button id="notes-toggle" class="toggle-btn" onClick={() => props.onToggleNotes?.()} title={`Toggle Ideas Panel (${getModifierSymbol()}N)`} style={{ position: "relative" }}>
-          <span style={{ filter: "grayscale(1) brightness(1.5)", "font-style": "normal" }}>💡</span>
-          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}N</span>
-        </button>
-        <button id="diff-toggle" class="toggle-btn" onClick={props.onToggleDiff} title={`Toggle Diff Panel (${getModifierSymbol()}D)`} style={{ position: "relative" }}>
-          Diff
-          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}D</span>
-        </button>
       </div>
 
       {/* Branch rename popover */}
