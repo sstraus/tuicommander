@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect, onCleanup } from "solid-js";
+import { Component, Show, createSignal, createEffect, onCleanup } from "solid-js";
 
 export interface PromptDialogProps {
   visible: boolean;
@@ -48,42 +48,42 @@ export const PromptDialog: Component<PromptDialogProps> = (props) => {
     onCleanup(() => document.removeEventListener("keydown", handleKeydown));
   });
 
-  if (!props.visible) return null;
-
   return (
-    <div class="branch-popover-overlay" onClick={props.onClose}>
-      <div class="branch-popover" onClick={(e) => e.stopPropagation()}>
-        <div class="branch-popover-header">
-          <h4>{props.title}</h4>
-        </div>
-        <div class="branch-popover-content">
-          <input
-            ref={inputRef}
-            type="text"
-            value={value()}
-            onInput={(e) => setValue((e.target as HTMLInputElement).value)}
-            placeholder={props.placeholder ?? ""}
-          />
-        </div>
-        <div class="branch-popover-actions">
-          <button class="branch-popover-cancel" onClick={props.onClose}>
-            Cancel
-          </button>
-          <button
-            class="branch-popover-rename"
-            onClick={() => {
-              if (value().trim()) {
-                props.onConfirm(value().trim());
-                props.onClose();
-              }
-            }}
-            disabled={!value().trim()}
-          >
-            {props.confirmLabel ?? "OK"}
-          </button>
+    <Show when={props.visible}>
+      <div class="branch-popover-overlay" onClick={props.onClose}>
+        <div class="branch-popover" onClick={(e) => e.stopPropagation()}>
+          <div class="branch-popover-header">
+            <h4>{props.title}</h4>
+          </div>
+          <div class="branch-popover-content">
+            <input
+              ref={inputRef}
+              type="text"
+              value={value()}
+              onInput={(e) => setValue((e.target as HTMLInputElement).value)}
+              placeholder={props.placeholder ?? ""}
+            />
+          </div>
+          <div class="branch-popover-actions">
+            <button class="branch-popover-cancel" onClick={props.onClose}>
+              Cancel
+            </button>
+            <button
+              class="branch-popover-rename"
+              onClick={() => {
+                if (value().trim()) {
+                  props.onConfirm(value().trim());
+                  props.onClose();
+                }
+              }}
+              disabled={!value().trim()}
+            >
+              {props.confirmLabel ?? "OK"}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </Show>
   );
 };
 
