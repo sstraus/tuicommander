@@ -376,6 +376,8 @@ pub struct AppState {
     pub(crate) github_status_cache: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
     /// File watchers for .git/HEAD per repo (keyed by repo path)
     pub(crate) head_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
+    /// File watchers for .git/ directory per repo (keyed by repo path)
+    pub(crate) repo_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
     /// Shared HTTP client for GitHub API requests.
     /// Wrapped in ManuallyDrop because reqwest::blocking::Client owns an internal
     /// tokio runtime that panics on drop inside another runtime (e.g. #[tokio::test]).
@@ -741,6 +743,7 @@ mod tests {
             repo_info_cache: dashmap::DashMap::new(),
             github_status_cache: dashmap::DashMap::new(),
             head_watchers: dashmap::DashMap::new(),
+            repo_watchers: dashmap::DashMap::new(),
             http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),

@@ -33,6 +33,8 @@ interface RepositoriesStoreState {
   repositories: Record<string, RepositoryState>;
   repoOrder: string[];
   activeRepoPath: string | null;
+  /** Per-repo monotonic revision counter, bumped by repo-changed events */
+  revisions: Record<string, number>;
 }
 
 /** Check if branch is a main branch */
@@ -75,6 +77,7 @@ function createRepositoriesStore() {
     repositories: {},
     repoOrder: [],
     activeRepoPath: null,
+    revisions: {},
   });
 
   const actions = {
@@ -418,6 +421,16 @@ function createRepositoriesStore() {
         })
       );
       saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+    },
+
+    /** Bump the revision counter for a repo (signals panels to re-fetch) */
+    bumpRevision(repoPath: string): void {
+      setState("revisions", repoPath, (n) => (n ?? 0) + 1);
+    },
+
+    /** Get the current revision counter for a repo (reactive — tracks in effects) */
+    getRevision(repoPath: string): number {
+      return state.revisions[repoPath] ?? 0;
     },
 
     /** Check if empty */

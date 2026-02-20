@@ -254,6 +254,7 @@ mod tests {
             repo_info_cache: DashMap::new(),
             github_status_cache: DashMap::new(),
             head_watchers: DashMap::new(),
+            repo_watchers: DashMap::new(),
             http_client: std::mem::ManuallyDrop::new(http_client),
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),

@@ -27,6 +27,10 @@
 
 When implementing minor features, add test items to `to-test.md` instead of testing immediately.
 
+## Visual Style Guide
+
+**All UI work MUST follow [`docs/frontend/STYLE_GUIDE.md`](docs/frontend/STYLE_GUIDE.md).** This defines the color palette, typography, spacing, component patterns, animations, and anti-patterns. Read it before any visual/CSS/layout change.
+
 ## Visual Verification
 
 **IMPORTANT:** After EVERY visual/CSS/layout change to the TUI, you MUST take a screenshot to verify the result. You cannot reliably judge rendering from code alone.
@@ -47,6 +51,19 @@ When implementing minor features, add test items to `to-test.md` instead of test
 - **Never assume environment variables exist.** `$EDITOR`, `$SHELL`, `$HOME` etc. may be absent or different. Always provide fallbacks.
 - **Never assume window dimensions are valid.** Persisted window state can contain 0x0 or off-screen positions. Always validate and clamp to sane defaults.
 - **Test features in release mode** (`cargo tauri build`) before considering them complete, not just `tauri dev`.
+
+## Panel Refresh Pattern
+
+**All panels that display repo-dependent data MUST subscribe to the `revision` signal from `repositoriesStore.getRevision(repoPath)` inside their `createEffect`.** The Rust `repo_watcher` monitors `.git/` for changes (index, refs, HEAD, merge state) and emits `"repo-changed"` events, which bump the revision counter via `repositoriesStore.bumpRevision()`. Do NOT implement per-panel file watchers or polling.
+
+Example:
+```typescript
+createEffect(() => {
+  const repoPath = props.repoPath;
+  const _rev = repoPath ? repositoriesStore.getRevision(repoPath) : 0;
+  // ... fetch logic re-runs when revision bumps
+});
+```
 
 ## Architecture Rule: Logic in Rust
 

@@ -185,10 +185,13 @@ export async function initApp(deps: AppInitDeps) {
     deps.setStatusInfo("Warning: 1 store(s) failed to load");
   }
 
-  // Start HEAD file watchers for all known repos and listen for branch changes
+  // Start HEAD and repo file watchers for all known repos
   for (const repoPath of repositoriesStore.getPaths()) {
     invoke("start_head_watcher", { repoPath }).catch((err) =>
       console.warn(`[HeadWatcher] Failed to start for ${repoPath}:`, err),
+    );
+    invoke("start_repo_watcher", { repoPath }).catch((err) =>
+      console.warn(`[RepoWatcher] Failed to start for ${repoPath}:`, err),
     );
   }
 
@@ -211,6 +214,15 @@ export async function initApp(deps: AppInitDeps) {
 
     // Invalidate caches so next poll fetches fresh data
     invoke("clear_caches").catch(() => {});
+  }).catch(() => {});
+
+  // Listen for .git/ directory changes (index, refs, etc.) to refresh panels
+  listen<{ repo_path: string }>("repo-changed", (event) => {
+    const { repo_path } = event.payload;
+    // Invalidate caches so panels fetch fresh data
+    invoke("clear_caches").catch(() => {});
+    // Bump revision counter — panels tracking this signal will re-fetch
+    repositoriesStore.bumpRevision(repo_path);
   }).catch(() => {});
 
   // Check for surviving PTY sessions (persists across Vite HMR reloads)

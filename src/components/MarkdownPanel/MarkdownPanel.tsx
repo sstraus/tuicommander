@@ -1,5 +1,6 @@
 import { Component, createEffect, createSignal, For, Show } from "solid-js";
 import { useRepository } from "../../hooks/useRepository";
+import { repositoriesStore } from "../../stores/repositories";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { getModifierSymbol } from "../../platform";
 
@@ -15,10 +16,12 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
   const [error, setError] = createSignal<string | null>(null);
   const repo = useRepository();
 
-  // Load markdown files when visible and repo changes
+  // Load markdown files when visible, repo changes, or repo content changes
   createEffect(() => {
     const visible = props.visible;
     const repoPath = props.repoPath;
+    // Track repo revision so this effect re-runs on git operations
+    void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 
     if (!visible || !repoPath) {
       setFiles([]);
