@@ -230,7 +230,7 @@ describe("StatusBar", () => {
     expect(ciBadge).toBeDefined();
   });
 
-  it("CI popover opens on CiBadge click", async () => {
+  it("CI badge click opens PrDetailPopover", async () => {
     mockGitHubStatus.mockReturnValue({
       current_branch: "main",
       ahead: 0,
@@ -239,10 +239,6 @@ describe("StatusBar", () => {
     mockGetBranchPrData.mockReturnValue(makePrData({
       checks: { passed: 3, failed: 0, pending: 0, total: 3 },
     }));
-    mockInvoke.mockResolvedValue([
-      { name: "Build", status: "completed", conclusion: "success", html_url: "https://example.com/1" },
-      { name: "Test", status: "completed", conclusion: "failure", html_url: "https://example.com/2" },
-    ]);
     const { container } = render(() => (
       <StatusBar {...defaultProps} currentRepoPath="/repo" />
     ));
@@ -251,162 +247,9 @@ describe("StatusBar", () => {
     fireEvent.click(ciBadge);
 
     await waitFor(() => {
-      const popover = container.querySelector(".ci-popover");
+      const popover = container.querySelector(".pr-detail-popover");
       expect(popover).not.toBeNull();
     });
-
-    const header = container.querySelector(".ci-popover-header h4");
-    expect(header).not.toBeNull();
-    expect(header!.textContent).toBe("CI Checks");
-  });
-
-  it("CI popover shows check items after loading", async () => {
-    mockGitHubStatus.mockReturnValue({
-      current_branch: "main",
-      ahead: 0,
-      behind: 0,
-    });
-    mockGetBranchPrData.mockReturnValue(makePrData({
-      checks: { passed: 3, failed: 0, pending: 0, total: 3 },
-    }));
-    mockInvoke.mockResolvedValue([
-      { name: "Build", status: "completed", conclusion: "success", html_url: "https://example.com/1" },
-      { name: "Test", status: "completed", conclusion: "failure", html_url: "https://example.com/2" },
-    ]);
-    const { container } = render(() => (
-      <StatusBar {...defaultProps} currentRepoPath="/repo" />
-    ));
-
-    const ciBadge = findCiBadgeWrapper(container);
-    fireEvent.click(ciBadge);
-
-    await waitFor(() => {
-      const checkItems = container.querySelectorAll(".ci-check-item");
-      expect(checkItems.length).toBe(2);
-    });
-
-    const checkNames = container.querySelectorAll(".ci-check-name");
-    expect(checkNames[0].textContent).toBe("Build");
-    expect(checkNames[1].textContent).toBe("Test");
-
-    const checkIcons = container.querySelectorAll(".ci-check-icon");
-    expect(checkIcons[0].textContent).toBe("\u2713");
-    expect(checkIcons[1].textContent).toBe("\u2717");
-
-    expect(checkIcons[0].classList.contains("success")).toBe(true);
-    expect(checkIcons[1].classList.contains("failure")).toBe(true);
-  });
-
-  it("CI popover shows empty state when no checks found", async () => {
-    mockGitHubStatus.mockReturnValue({
-      current_branch: "main",
-      ahead: 0,
-      behind: 0,
-    });
-    mockGetBranchPrData.mockReturnValue(makePrData({
-      checks: { passed: 1, failed: 0, pending: 0, total: 1 },
-    }));
-    mockInvoke.mockResolvedValue([]);
-    const { container } = render(() => (
-      <StatusBar {...defaultProps} currentRepoPath="/repo" />
-    ));
-
-    const ciBadge = findCiBadgeWrapper(container);
-    fireEvent.click(ciBadge);
-
-    await waitFor(() => {
-      const empty = container.querySelector(".ci-popover-empty");
-      expect(empty).not.toBeNull();
-      expect(empty!.textContent).toBe("No CI checks found");
-    });
-  });
-
-  it("CI popover closes on close button click", async () => {
-    mockGitHubStatus.mockReturnValue({
-      current_branch: "main",
-      ahead: 0,
-      behind: 0,
-    });
-    mockGetBranchPrData.mockReturnValue(makePrData({
-      checks: { passed: 1, failed: 0, pending: 0, total: 1 },
-    }));
-    mockInvoke.mockResolvedValue([]);
-    const { container } = render(() => (
-      <StatusBar {...defaultProps} currentRepoPath="/repo" />
-    ));
-
-    const ciBadge = findCiBadgeWrapper(container);
-    fireEvent.click(ciBadge);
-
-    await waitFor(() => {
-      expect(container.querySelector(".ci-popover")).not.toBeNull();
-    });
-
-    const closeBtn = container.querySelector(".ci-popover-close");
-    expect(closeBtn).not.toBeNull();
-    fireEvent.click(closeBtn!);
-
-    await waitFor(() => {
-      expect(container.querySelector(".ci-popover")).toBeNull();
-    });
-  });
-
-  it("CI popover closes on overlay click", async () => {
-    mockGitHubStatus.mockReturnValue({
-      current_branch: "main",
-      ahead: 0,
-      behind: 0,
-    });
-    mockGetBranchPrData.mockReturnValue(makePrData({
-      checks: { passed: 1, failed: 0, pending: 0, total: 1 },
-    }));
-    mockInvoke.mockResolvedValue([]);
-    const { container } = render(() => (
-      <StatusBar {...defaultProps} currentRepoPath="/repo" />
-    ));
-
-    const ciBadge = findCiBadgeWrapper(container);
-    fireEvent.click(ciBadge);
-
-    await waitFor(() => {
-      expect(container.querySelector(".ci-popover")).not.toBeNull();
-    });
-
-    const overlay = container.querySelector(".ci-popover-overlay");
-    expect(overlay).not.toBeNull();
-    fireEvent.click(overlay!);
-
-    await waitFor(() => {
-      expect(container.querySelector(".ci-popover")).toBeNull();
-    });
-  });
-
-  it("CI popover handles fetch error gracefully", async () => {
-    mockGitHubStatus.mockReturnValue({
-      current_branch: "main",
-      ahead: 0,
-      behind: 0,
-    });
-    mockGetBranchPrData.mockReturnValue(makePrData({
-      checks: { passed: 0, failed: 1, pending: 0, total: 1 },
-    }));
-    mockInvoke.mockRejectedValue(new Error("Network error"));
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { container } = render(() => (
-      <StatusBar {...defaultProps} currentRepoPath="/repo" />
-    ));
-
-    const ciBadge = findCiBadgeWrapper(container);
-    fireEvent.click(ciBadge);
-
-    await waitFor(() => {
-      const empty = container.querySelector(".ci-popover-empty");
-      expect(empty).not.toBeNull();
-      expect(empty!.textContent).toBe("No CI checks found");
-    });
-
-    expect(consoleSpy).toHaveBeenCalledWith("Failed to fetch CI checks:", expect.any(Error));
-    consoleSpy.mockRestore();
   });
 
   it("does not render CI badge when no currentRepoPath", () => {
@@ -474,35 +317,6 @@ describe("StatusBar", () => {
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toContain("develop");
     expect(badge!.textContent).toContain("\u21913");
-  });
-
-  it("CI check item with pending conclusion shows bullet icon", async () => {
-    mockGitHubStatus.mockReturnValue({
-      current_branch: "main",
-      ahead: 0,
-      behind: 0,
-    });
-    mockGetBranchPrData.mockReturnValue(makePrData({
-      checks: { passed: 0, failed: 0, pending: 1, total: 1 },
-    }));
-    mockInvoke.mockResolvedValue([
-      { name: "Lint", status: "in_progress", conclusion: "pending", html_url: "" },
-    ]);
-    const { container } = render(() => (
-      <StatusBar {...defaultProps} currentRepoPath="/repo" />
-    ));
-
-    const ciBadge = findCiBadgeWrapper(container);
-    fireEvent.click(ciBadge);
-
-    await waitFor(() => {
-      const checkItems = container.querySelectorAll(".ci-check-item");
-      expect(checkItems.length).toBe(1);
-    });
-
-    const icon = container.querySelector(".ci-check-icon");
-    expect(icon!.textContent).toBe("\u25CF"); // bullet for pending
-    expect(icon!.classList.contains("pending")).toBe(true);
   });
 
   it("shows hotkey hints on toggle buttons", () => {

@@ -1,5 +1,4 @@
-import { Component, Show, For, createSignal, createMemo, onCleanup } from "solid-js";
-import { invoke } from "../../invoke";
+import { Component, Show, createSignal, createMemo, onCleanup } from "solid-js";
 import { ZoomIndicator, BranchBadge, PrBadge, CiBadge } from "../ui";
 import { terminalsStore } from "../../stores/terminals";
 import { AGENT_DISPLAY } from "../../agents";
@@ -13,15 +12,6 @@ import { formatWaitTime } from "../../rate-limit";
 import { dictationStore } from "../../stores/dictation";
 import { updaterStore } from "../../stores/updater";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { getCiIcon, getCiClass } from "../../utils/ciDisplay";
-
-interface CiCheckDetail {
-  name: string;
-  status: string;
-  conclusion: string;
-  html_url: string;
-}
 
 export interface StatusBarProps {
   fontSize: number;
@@ -41,10 +31,7 @@ export interface StatusBarProps {
 
 export const StatusBar: Component<StatusBarProps> = (props) => {
   const [showBranchPopover, setShowBranchPopover] = createSignal(false);
-  const [showCiPopover, setShowCiPopover] = createSignal(false);
   const [showPrDetailPopover, setShowPrDetailPopover] = createSignal(false);
-  const [ciChecks, setCiChecks] = createSignal<CiCheckDetail[]>([]);
-  const [ciLoading, setCiLoading] = createSignal(false);
   const [cwdCopied, setCwdCopied] = createSignal(false);
 
   // Rate limit countdown — tick every second while any rate limit is active
@@ -100,28 +87,8 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
     return githubStore.getBranchPrData(repoPath, branch);
   });
 
-  // Fetch CI check details (Story 060)
-  const fetchCiChecks = async () => {
-    const prData = activePrData();
-    if (!props.currentRepoPath || !prData) return;
-    setCiLoading(true);
-    try {
-      const checks = await invoke<CiCheckDetail[]>("get_ci_checks", {
-        path: props.currentRepoPath,
-        prNumber: prData.number,
-      });
-      setCiChecks(checks);
-    } catch (err) {
-      console.error("Failed to fetch CI checks:", err);
-      setCiChecks([]);
-    } finally {
-      setCiLoading(false);
-    }
-  };
-
   const handleCiBadgeClick = () => {
-    setShowCiPopover(true);
-    fetchCiChecks();
+    setShowPrDetailPopover(true);
   };
 
   return (
@@ -307,46 +274,6 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         />
       </Show>
 
-      {/* CI checks popover - fallback (Story 060) */}
-      <Show when={showCiPopover()}>
-        <div class="ci-popover-overlay" onClick={() => setShowCiPopover(false)} />
-        <div class="ci-popover">
-          <div class="ci-popover-header">
-            <h4>CI Checks</h4>
-            <button class="ci-popover-close" onClick={() => setShowCiPopover(false)}>
-              &times;
-            </button>
-          </div>
-          <div class="ci-popover-content">
-            <Show when={ciLoading()}>
-              <div class="ci-popover-empty">Loading checks...</div>
-            </Show>
-            <Show when={!ciLoading() && ciChecks().length === 0}>
-              <div class="ci-popover-empty">No CI checks found</div>
-            </Show>
-            <Show when={!ciLoading() && ciChecks().length > 0}>
-              <For each={ciChecks()}>
-                {(check) => (
-                  <div
-                    class="ci-check-item"
-                    onClick={() => check.html_url && openUrl(check.html_url).catch(() => {})}
-                  >
-                    <span class={`ci-check-icon ${getCiClass(check.conclusion)}`}>
-                      {getCiIcon(check.conclusion)}
-                    </span>
-                    <span class="ci-check-name" title={check.name}>
-                      {check.name}
-                    </span>
-                    <span class={`ci-check-status ${getCiClass(check.conclusion)}`}>
-                      {check.conclusion || check.status}
-                    </span>
-                  </div>
-                )}
-              </For>
-            </Show>
-          </div>
-        </div>
-      </Show>
     </div>
   );
 };

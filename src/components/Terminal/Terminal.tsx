@@ -18,7 +18,6 @@ import { invoke } from "../../invoke";
 type ParsedEvent =
   | { type: "rate-limit"; pattern_name: string; matched_text: string; retry_after_ms: number | null }
   | { type: "status-line"; task_name: string; full_line: string; time_info: string | null; token_info: string | null }
-  | { type: "pr-url"; number: number; url: string; platform: string }
   | { type: "progress"; state: number; value: number }
   | { type: "question"; prompt_text: string }
   | { type: "usage-limit"; percentage: number; limit_type: string }
@@ -295,8 +294,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
             terminalsStore.update(props.id, {
               usageLimit: { percentage: parsed.percentage, limitType: parsed.limit_type },
             });
-            break;
-          case "pr-url":
             break;
           case "plan-file":
             uiStore.setPlanFilePath(parsed.path);

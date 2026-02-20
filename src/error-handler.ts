@@ -196,6 +196,3 @@ export class ErrorHandler {
     this.retryCounters.clear();
   }
 }
-
-/** Create a global error handler instance */
-export const globalErrorHandler = new ErrorHandler();
