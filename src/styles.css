@@ -973,6 +973,12 @@ html, body {
   gap: 8px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border-subtle, var(--border));
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.pr-notif-item:hover {
+  background: var(--bg-highlight);
 }
 
 .pr-notif-item:last-child {

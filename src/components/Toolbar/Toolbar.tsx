@@ -6,6 +6,7 @@ import { mdTabsStore } from "../../stores/mdTabs";
 import { prNotificationsStore, type PrNotificationType } from "../../stores/prNotifications";
 import { getModifierSymbol } from "../../platform";
 import { IdeLauncher } from "../IdeLauncher";
+import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 
 const NOTIFICATION_LABELS: Record<PrNotificationType, { label: string; icon: string; cls: string }> = {
   merged: { label: "Merged", icon: "\u2714", cls: "notif-merged" },
@@ -35,6 +36,7 @@ export interface ToolbarProps {
 
 export const Toolbar: Component<ToolbarProps> = (props) => {
   const [showNotifPopover, setShowNotifPopover] = createSignal(false);
+  const [prDetailTarget, setPrDetailTarget] = createSignal<{ repoPath: string; branch: string } | null>(null);
   let notifRef: HTMLDivElement | undefined;
 
   // Close popover on outside click
@@ -162,13 +164,23 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                   {(notif) => {
                     const info = NOTIFICATION_LABELS[notif.type];
                     return (
-                      <div class={`pr-notif-item ${info.cls}`}>
+                      <div
+                        class={`pr-notif-item ${info.cls}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowNotifPopover(false);
+                          // Defer to next frame so the overlay doesn't catch this click
+                          requestAnimationFrame(() => {
+                            setPrDetailTarget({ repoPath: notif.repoPath, branch: notif.branch });
+                          });
+                        }}
+                      >
                         <span class="pr-notif-icon">{info.icon}</span>
                         <div class="pr-notif-details">
                           <span class="pr-notif-pr">#{notif.prNumber} {info.label}</span>
                           <span class="pr-notif-branch" title={notif.title}>{notif.branch}</span>
                         </div>
-                        <button class="pr-notif-close" onClick={() => prNotificationsStore.dismiss(notif.id)}>&times;</button>
+                        <button class="pr-notif-close" onClick={(e) => { e.stopPropagation(); prNotificationsStore.dismiss(notif.id); }}>&times;</button>
                       </div>
                     );
                   }}
@@ -179,6 +191,15 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
         </Show>
         <IdeLauncher repoPath={launchPath()} focusedFilePath={focusedFilePath()} runCommand={props.runCommand} onRun={props.onRun} />
       </div>
+
+      {/* PR detail popover triggered from notification click */}
+      <Show when={prDetailTarget()}>
+        <PrDetailPopover
+          repoPath={prDetailTarget()!.repoPath}
+          branch={prDetailTarget()!.branch}
+          onClose={() => setPrDetailTarget(null)}
+        />
+      </Show>
     </div>
   );
 };
