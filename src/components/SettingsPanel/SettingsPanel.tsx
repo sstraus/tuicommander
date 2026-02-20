@@ -1,6 +1,7 @@
 import { Component, Show, createEffect, createSignal } from "solid-js";
 import { repoSettingsStore, type RepoSettings } from "../../stores/repoSettings";
 import { repositoriesStore } from "../../stores/repositories";
+import { shortenHomePath } from "../../platform";
 import { SettingsShell } from "./SettingsShell";
 import type { SettingsShellTab } from "./SettingsShell";
 import { DictationSettings } from "./DictationSettings";
@@ -85,17 +86,20 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
     }
   };
 
-  const repoFooter = () => {
+  const footer = () => {
     const c = ctx();
-    if (c.kind !== "repo") return undefined;
     return (
       <div class="settings-footer">
-        <button
-          class="settings-footer-reset"
-          onClick={() => repoSettingsStore.reset(c.repoPath)}
-        >
-          Reset to Defaults
-        </button>
+        {c.kind === "repo" ? (
+          <button
+            class="settings-footer-reset"
+            onClick={() => repoSettingsStore.reset(c.repoPath)}
+          >
+            Reset to Defaults
+          </button>
+        ) : (
+          <span />
+        )}
         <button class="settings-footer-done" onClick={props.onClose}>
           Done
         </button>
@@ -108,12 +112,12 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
       visible={props.visible}
       onClose={props.onClose}
       title={ctx().kind === "repo" ? (ctx() as { displayName: string }).displayName : "Settings"}
-      subtitle={ctx().kind === "repo" ? (ctx() as { repoPath: string }).repoPath : undefined}
+      subtitle={ctx().kind === "repo" ? shortenHomePath((ctx() as { repoPath: string }).repoPath) : undefined}
       icon={ctx().kind === "repo" ? "📁" : undefined}
       tabs={tabs()}
       activeTab={activeTab()}
       onTabChange={setActiveTab}
-      footer={repoFooter()}
+      footer={footer()}
     >
       {/* Repo tabs */}
       <Show when={activeTab() === "repo-worktree" && repoSettings()}>

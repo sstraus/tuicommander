@@ -11,7 +11,7 @@ import { rateLimitStore } from "../../stores/ratelimit";
 import { formatWaitTime } from "../../rate-limit";
 import { dictationStore } from "../../stores/dictation";
 import { updaterStore } from "../../stores/updater";
-import { getModifierSymbol } from "../../platform";
+import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 interface CiCheckDetail {
@@ -82,14 +82,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   const shortenedCwd = () => {
     const cwd = props.cwd;
     if (!cwd) return null;
-    const home = "/Users/";
-    let display = cwd;
-    if (display.startsWith(home)) {
-      const afterHome = display.slice(home.length);
-      const slashIdx = afterHome.indexOf("/");
-      display = slashIdx >= 0 ? "~" + afterHome.slice(slashIdx) : "~";
-    }
-    return display;
+    return shortenHomePath(cwd);
   };
 
   // GitHub hook needs a getter function

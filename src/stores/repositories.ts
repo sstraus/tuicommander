@@ -662,7 +662,13 @@ function createRepositoriesStore() {
             .filter(Boolean),
         }));
 
+      // Collect all repo paths that belong to a group
+      const groupedPaths = new Set(
+        groups.flatMap((g) => g.group.repoOrder),
+      );
+
       const ungrouped = state.repoOrder
+        .filter((path) => !groupedPaths.has(path))
         .map((path) => state.repositories[path])
         .filter(Boolean);
 

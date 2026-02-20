@@ -1,5 +1,6 @@
 import { Component, For, Show } from "solid-js";
 import type { RepoSettings } from "../../../stores/repoSettings";
+import { PRESET_COLORS } from "./GroupsTab";
 
 export interface RepoTabProps {
   settings: RepoSettings;
@@ -31,30 +32,42 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
 
       <div class="settings-group">
         <label>Sidebar Color</label>
-        <div class="color-picker-row">
-          <label class="color-picker-swatch">
+        <div class="group-color-picker">
+          <For each={PRESET_COLORS}>
+            {(preset) => (
+              <button
+                class={`color-swatch ${props.settings.color === preset.hex ? "active" : ""}`}
+                style={{ background: preset.hex }}
+                onClick={() => props.onUpdate("color", preset.hex)}
+                title={preset.name}
+              />
+            )}
+          </For>
+          <label
+            class={`color-swatch custom ${props.settings.color && !PRESET_COLORS.some((p) => p.hex === props.settings.color) ? "active" : ""}`}
+            style={{
+              background: props.settings.color && !PRESET_COLORS.some((p) => p.hex === props.settings.color)
+                ? props.settings.color
+                : "var(--bg-tertiary)",
+            }}
+            title="Custom color"
+          >
             <input
               type="color"
               value={props.settings.color || "#999999"}
               onInput={(e) => props.onUpdate("color", e.currentTarget.value)}
             />
-            <span
-              class="color-picker-preview"
-              style={{ background: props.settings.color || "var(--fg-muted)" }}
-            />
+            <Show when={!props.settings.color || PRESET_COLORS.some((p) => p.hex === props.settings.color)}>
+              <span class="color-swatch-label">⋯</span>
+            </Show>
           </label>
-          <span class="color-picker-value">
-            {props.settings.color || "Default"}
-          </span>
-          <Show when={props.settings.color}>
-            <button
-              class="color-picker-reset"
-              onClick={() => props.onUpdate("color", "")}
-              title="Reset to default color"
-            >
-              Reset
-            </button>
-          </Show>
+          <button
+            class={`color-swatch clear ${!props.settings.color ? "active" : ""}`}
+            onClick={() => props.onUpdate("color", "")}
+            title="Default"
+          >
+            ×
+          </button>
         </div>
         <p class="settings-hint">Custom color for repository name in sidebar</p>
       </div>

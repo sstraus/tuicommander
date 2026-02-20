@@ -2792,9 +2792,10 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .settings-panel {
-  width: 600px;
+  width: 680px;
   max-width: 90vw;
-  max-height: 80vh;
+  height: 80vh;
+  max-height: 90vh;
   background: var(--bg-secondary);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border);
@@ -2839,10 +2840,13 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-tertiary);
+  overflow-x: auto;
+  flex-shrink: 0;
 }
 
 .settings-tab {
   padding: 8px 16px;
+  white-space: nowrap;
   background: transparent;
   border: none;
   border-radius: var(--radius-md);
@@ -3232,6 +3236,34 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 .color-swatch.active {
   border-color: var(--fg-primary);
   box-shadow: 0 0 0 2px var(--bg-primary);
+}
+
+.color-swatch.custom {
+  position: relative;
+  overflow: hidden;
+  border: 1px dashed var(--border);
+}
+
+.color-swatch.custom input[type="color"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.color-swatch.custom.active {
+  border-color: var(--fg-primary);
+  border-style: solid;
+}
+
+.color-swatch-label {
+  font-size: 16px;
+  line-height: 1;
+  pointer-events: none;
+  color: var(--fg-muted);
+  transform: translateY(1.5px);
 }
 
 .color-swatch.clear {

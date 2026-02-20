@@ -76,6 +76,21 @@ export function isQuickSwitcherRelease(e: KeyboardEvent): boolean {
 }
 
 /**
+ * Shorten a path for display by replacing the home directory with ~
+ * On macOS/Linux: /Users/name/foo → ~/foo, /home/name/foo → ~/foo
+ * On Windows: paths are returned unchanged (~ is not a shell convention)
+ */
+export function shortenHomePath(path: string): string {
+  if (isWindows()) return path;
+  // Match /Users/<name>/ (macOS) or /home/<name>/ (Linux)
+  const match = path.match(/^(\/(?:Users|home)\/[^/]+)(\/.*)?$/);
+  if (match) {
+    return "~" + (match[2] ?? "");
+  }
+  return path;
+}
+
+/**
  * Apply platform-specific CSS class to document root
  * Call this on app initialization
  */

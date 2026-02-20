@@ -2,13 +2,16 @@ import { Component, For, Show, createSignal } from "solid-js";
 import { repositoriesStore } from "../../../stores/repositories";
 import type { RepoGroup } from "../../../stores/repositories";
 
-/** Preset colors for groups */
-export const GROUP_PRESET_COLORS = [
+/** Preset colors for groups and sidebar */
+export const PRESET_COLORS = [
   { hex: "#4A9EFF", name: "Blue" },
   { hex: "#FF6B6B", name: "Red" },
   { hex: "#50C878", name: "Green" },
   { hex: "#FFB347", name: "Orange" },
   { hex: "#B19CD9", name: "Purple" },
+  { hex: "#FF85A2", name: "Pink" },
+  { hex: "#5BC0BE", name: "Teal" },
+  { hex: "#FFD93D", name: "Yellow" },
 ];
 
 /** Single group row in the settings list */
@@ -80,7 +83,7 @@ const GroupSettingsItem: Component<{
         <div class="group-name-error">{nameError()}</div>
       </Show>
       <div class="group-color-picker">
-        <For each={GROUP_PRESET_COLORS}>
+        <For each={PRESET_COLORS}>
           {(preset) => (
             <button
               class={`color-swatch ${props.group.color === preset.hex ? "active" : ""}`}
