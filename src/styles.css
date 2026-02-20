@@ -636,6 +636,9 @@ html, body {
   width: 18px;
   text-align: center;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .branch-icon.main {

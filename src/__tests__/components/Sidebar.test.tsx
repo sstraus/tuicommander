@@ -253,7 +253,7 @@ describe("Sidebar", () => {
       expect(mainIcon).toBeDefined();
       expect(mainIcon!.textContent).toContain("\u2605");
       expect(featureIcon).toBeDefined();
-      expect(featureIcon!.textContent).toContain("Y");
+      expect(featureIcon!.querySelector("svg")).not.toBeNull();
     });
 
     it("sorts branches with main first", () => {
