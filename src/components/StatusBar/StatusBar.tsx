@@ -251,7 +251,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}E</span>
         </button>
         <button id="md-toggle" class="toggle-btn" onClick={props.onToggleMarkdown} title={`Markdown (${getModifierSymbol()}M)`} style={{ position: "relative" }}>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style={{ "vertical-align": "middle" }}><path d="M20.56 18H3.44C2.65 18 2 17.37 2 16.59V7.41C2 6.63 2.65 6 3.44 6h17.12c.79 0 1.44.63 1.44 1.41v9.18c0 .78-.65 1.41-1.44 1.41zM6 15.5l2.5-3 1.5 2 2.5-3.5L16 15.5"/><path d="M3.5 13.5V9l2 2.5L7.5 9v4.5" opacity=".7"/></svg>
+          <svg viewBox="0 0 208 128" width="16" height="10" fill="currentColor" style={{ "vertical-align": "middle" }}><rect x="5" y="5" width="198" height="118" rx="12" fill="none" stroke="currentColor" stroke-width="12"/><path d="M30 98V30h20l20 25 20-25h20v68h-20V59L70 84 50 59v39H30zm125 0l-30-33h20V30h20v35h20l-30 33z"/></svg>
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}M</span>
         </button>
         <button id="diff-toggle" class="toggle-btn" onClick={props.onToggleDiff} title={`Diff (${getModifierSymbol()}D)`} style={{ position: "relative" }}>
