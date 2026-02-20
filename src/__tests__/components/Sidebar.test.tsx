@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent } from "@solidjs/testing-library";
 import "../mocks/tauri";
 
-const { mockToggleExpanded, mockToggleCollapsed, mockGetActive, mockGetOrderedRepos, mockReorderRepo, mockTerminalsGet, mockGetCheckSummary, mockGetPrStatus } = vi.hoisted(() => ({
+const { mockToggleExpanded, mockToggleCollapsed, mockGetActive, mockGetOrderedRepos, mockReorderRepo, mockTerminalsGet, mockGetCheckSummary, mockGetPrStatus, mockGetGroupedLayout, mockGetGroupForRepo, mockToggleGroupCollapsed, mockDeleteGroup, mockAddRepoToGroup, mockRemoveRepoFromGroup, mockCreateGroup, mockReorderRepoInGroup, mockMoveRepoBetweenGroups, mockReorderGroups } = vi.hoisted(() => ({
   mockToggleExpanded: vi.fn(),
   mockToggleCollapsed: vi.fn(),
   mockGetActive: vi.fn<() => any>(() => null),
@@ -11,6 +11,16 @@ const { mockToggleExpanded, mockToggleCollapsed, mockGetActive, mockGetOrderedRe
   mockTerminalsGet: vi.fn<() => any>(() => null),
   mockGetCheckSummary: vi.fn<() => any>(() => null),
   mockGetPrStatus: vi.fn<(...args: unknown[]) => unknown>(() => null),
+  mockGetGroupedLayout: vi.fn<() => any>(() => ({ groups: [], ungrouped: [] })),
+  mockGetGroupForRepo: vi.fn<(path: string) => any>(() => undefined),
+  mockToggleGroupCollapsed: vi.fn(),
+  mockDeleteGroup: vi.fn(),
+  mockAddRepoToGroup: vi.fn(),
+  mockRemoveRepoFromGroup: vi.fn(),
+  mockCreateGroup: vi.fn(() => "new-group-id"),
+  mockReorderRepoInGroup: vi.fn(),
+  mockMoveRepoBetweenGroups: vi.fn(),
+  mockReorderGroups: vi.fn(),
 }));
 
 // Mock stores before importing the component
@@ -20,12 +30,26 @@ vi.mock("../../stores/repositories", () => ({
       repositories: {} as Record<string, unknown>,
       repoOrder: [] as string[],
       activeRepoPath: null as string | null,
+      groups: {} as Record<string, unknown>,
+      groupOrder: [] as string[],
     },
     getActive: mockGetActive,
     getOrderedRepos: mockGetOrderedRepos,
     reorderRepo: mockReorderRepo,
     toggleExpanded: mockToggleExpanded,
     toggleCollapsed: mockToggleCollapsed,
+    getGroupedLayout: mockGetGroupedLayout,
+    getGroupForRepo: mockGetGroupForRepo,
+    toggleGroupCollapsed: mockToggleGroupCollapsed,
+    deleteGroup: mockDeleteGroup,
+    addRepoToGroup: mockAddRepoToGroup,
+    removeRepoFromGroup: mockRemoveRepoFromGroup,
+    createGroup: mockCreateGroup,
+    renameGroup: vi.fn(() => true),
+    setGroupColor: vi.fn(),
+    reorderRepoInGroup: mockReorderRepoInGroup,
+    moveRepoBetweenGroups: mockMoveRepoBetweenGroups,
+    reorderGroups: mockReorderGroups,
   },
 }));
 
@@ -98,7 +122,10 @@ function makeRepo(overrides: Record<string, any> = {}) {
 function setRepos(repos: Record<string, any>, activeRepoPath?: string) {
   (repositoriesStore.state as { repositories: Record<string, unknown> }).repositories = repos;
   (repositoriesStore.state as { activeRepoPath: string | null }).activeRepoPath = activeRepoPath ?? Object.keys(repos)[0] ?? null;
-  mockGetOrderedRepos.mockReturnValue(Object.values(repos));
+  const repoValues = Object.values(repos);
+  mockGetOrderedRepos.mockReturnValue(repoValues);
+  // Default grouped layout: all repos ungrouped (backward compatible)
+  mockGetGroupedLayout.mockReturnValue({ groups: [], ungrouped: repoValues });
 }
 
 describe("Sidebar", () => {
@@ -949,6 +976,452 @@ describe("Sidebar", () => {
       expect(items.length).toBe(4);
       const labels = Array.from(items).map((i) => i.querySelector(".context-menu-label")!.textContent);
       expect(labels).toContain("Delete Worktree");
+    });
+  });
+
+  describe("group sections", () => {
+    it("renders group headers with name and chevron", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] },
+          repos: [repo],
+        }],
+        ungrouped: [],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const header = container.querySelector(".group-header");
+      expect(header).not.toBeNull();
+      expect(container.querySelector(".group-name")!.textContent).toBe("Work");
+      expect(container.querySelector(".group-chevron")).not.toBeNull();
+    });
+
+    it("renders repos inside group", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] },
+          repos: [repo],
+        }],
+        ungrouped: [],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const groupSection = container.querySelector(".group-section");
+      expect(groupSection).not.toBeNull();
+      const repoSections = groupSection!.querySelectorAll(".repo-section");
+      expect(repoSections.length).toBe(1);
+    });
+
+    it("clicking group header toggles collapsed", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] },
+          repos: [repo],
+        }],
+        ungrouped: [],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const header = container.querySelector(".group-header")!;
+      fireEvent.click(header);
+      expect(mockToggleGroupCollapsed).toHaveBeenCalledWith("g1");
+    });
+
+    it("collapsed group hides repos", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "", collapsed: true, repoOrder: ["/repo1"] },
+          repos: [repo],
+        }],
+        ungrouped: [],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const groupRepos = container.querySelector(".group-repos");
+      expect(groupRepos).toBeNull();
+    });
+
+    it("group color dot renders when color is set", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "#4A9EFF", collapsed: false, repoOrder: ["/repo1"] },
+          repos: [repo],
+        }],
+        ungrouped: [],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const dot = container.querySelector(".group-color-dot");
+      expect(dot).not.toBeNull();
+    });
+
+    it("group color dot does not render when no color", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] },
+          repos: [repo],
+        }],
+        ungrouped: [],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const dot = container.querySelector(".group-color-dot");
+      expect(dot).toBeNull();
+    });
+
+    it("repo count badge shows correct number", () => {
+      const repo1 = makeRepo();
+      const repo2 = makeRepo({ path: "/repo2", displayName: "Repo Two", initials: "RT" });
+      setRepos({ "/repo1": repo1, "/repo2": repo2 });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1", "/repo2"] },
+          repos: [repo1, repo2],
+        }],
+        ungrouped: [],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const count = container.querySelector(".group-count");
+      expect(count).not.toBeNull();
+      expect(count!.textContent).toBe("2");
+    });
+
+    it("groups render before ungrouped repos", () => {
+      const repo1 = makeRepo();
+      const repo2 = makeRepo({ path: "/repo2", displayName: "Repo Two", initials: "RT" });
+      setRepos({ "/repo1": repo1, "/repo2": repo2 });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] },
+          repos: [repo1],
+        }],
+        ungrouped: [repo2],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const repoList = container.querySelector("#repo-list")!;
+      const groupSection = repoList.querySelector(".group-section");
+      const repoSections = repoList.querySelectorAll(":scope > .repo-section");
+      // Group section should exist
+      expect(groupSection).not.toBeNull();
+      // Ungrouped repo should render as direct child repo-section
+      expect(repoSections.length).toBe(1);
+    });
+
+    it("empty group shows placeholder text", () => {
+      setRepos({});
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Empty Group", color: "", collapsed: false, repoOrder: [] },
+          repos: [],
+        }],
+        ungrouped: [],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const hint = container.querySelector(".group-empty-hint");
+      expect(hint).not.toBeNull();
+    });
+
+    it("group header right-click shows Rename, Change Color, Delete", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] },
+          repos: [repo],
+        }],
+        ungrouped: [],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const header = container.querySelector(".group-header")!;
+      fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
+      const menu = container.querySelector(".context-menu");
+      expect(menu).not.toBeNull();
+      const labels = Array.from(menu!.querySelectorAll(".context-menu-label")).map((el) => el.textContent);
+      expect(labels).toContain("Rename Group");
+      expect(labels).toContain("Change Color");
+      expect(labels).toContain("Delete Group");
+    });
+
+    it("delete group calls deleteGroup()", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] },
+          repos: [repo],
+        }],
+        ungrouped: [],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const header = container.querySelector(".group-header")!;
+      fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
+      const menuItems = container.querySelectorAll(".context-menu .context-menu-item");
+      const deleteItem = Array.from(menuItems).find(
+        (el) => el.querySelector(".context-menu-label")?.textContent === "Delete Group"
+      )!;
+      fireEvent.click(deleteItem);
+      expect(mockDeleteGroup).toHaveBeenCalledWith("g1");
+    });
+
+    it("repo header right-click includes Move to Group with submenu", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: [] },
+          repos: [],
+        }],
+        ungrouped: [repo],
+      });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const header = container.querySelector(".repo-header")!;
+      fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
+      const labels = Array.from(container.querySelectorAll(".context-menu-label")).map((el) => el.textContent);
+      expect(labels).toContain("Move to Group");
+    });
+
+    it("no groups = flat list behavior (backward compatible)", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      // setRepos defaults to all ungrouped, which is correct here
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      // No group sections
+      expect(container.querySelector(".group-section")).toBeNull();
+      // But repos still render
+      expect(container.querySelectorAll(".repo-section").length).toBe(1);
+    });
+  });
+
+  describe("drag-and-drop", () => {
+    /** Helper: create a DataTransfer mock for drag events */
+    function makeDataTransfer(): DataTransfer {
+      const store: Record<string, string> = {};
+      return {
+        effectAllowed: "move",
+        dropEffect: "move",
+        setData: vi.fn((type: string, data: string) => { store[type] = data; }),
+        getData: vi.fn((type: string) => store[type] ?? ""),
+        setDragImage: vi.fn(),
+        clearData: vi.fn(),
+        items: [] as unknown,
+        types: [] as unknown,
+        files: [] as unknown,
+      } as unknown as DataTransfer;
+    }
+
+    it("drag repo within same group reorders", () => {
+      const group = { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1", "/repo2"] };
+      const repo1 = makeRepo();
+      const repo2 = makeRepo({ path: "/repo2", displayName: "Repo Two", initials: "RT" });
+      setRepos({ "/repo1": repo1, "/repo2": repo2 });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{ group, repos: [repo1, repo2] }],
+        ungrouped: [],
+      });
+      mockGetGroupForRepo.mockImplementation((path: string) =>
+        path === "/repo1" || path === "/repo2" ? group : undefined
+      );
+      // Store mock needs repoOrder for the handler
+      (repositoriesStore.state as any).groups = { g1: group };
+
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const repoSections = container.querySelectorAll(".repo-section");
+      expect(repoSections.length).toBe(2);
+
+      const dt = makeDataTransfer();
+
+      // Simulate drag start on repo1
+      fireEvent.dragStart(repoSections[0], { dataTransfer: dt });
+
+      // Simulate drag over repo2 (bottom half)
+      const rect = { top: 0, height: 40, bottom: 40, left: 0, right: 100, width: 100, x: 0, y: 0, toJSON: () => {} };
+      repoSections[1].getBoundingClientRect = () => rect as DOMRect;
+      fireEvent.dragOver(repoSections[1], { dataTransfer: dt, clientY: 30 });
+
+      // Simulate drop on repo2
+      fireEvent.drop(repoSections[1], { dataTransfer: dt });
+
+      // Should call reorderRepoInGroup for same-group reorder
+      expect(mockReorderRepoInGroup).toHaveBeenCalledWith("g1", 0, 1);
+    });
+
+    it("drag repo onto different group header assigns to group", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [
+          {
+            group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: [] },
+            repos: [],
+          },
+          {
+            group: { id: "g2", name: "Personal", color: "", collapsed: false, repoOrder: [] },
+            repos: [],
+          },
+        ],
+        ungrouped: [repo],
+      });
+      mockGetGroupForRepo.mockReturnValue(undefined);
+
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const repoSection = container.querySelector(".repo-section")!;
+      const groupHeaders = container.querySelectorAll(".group-header");
+      expect(groupHeaders.length).toBe(2);
+
+      const dt = makeDataTransfer();
+
+      // Simulate drag start on repo
+      fireEvent.dragStart(repoSection, { dataTransfer: dt });
+
+      // Simulate drop on first group header
+      fireEvent.dragOver(groupHeaders[0], { dataTransfer: dt });
+      fireEvent.drop(groupHeaders[0], { dataTransfer: dt });
+
+      // Should call addRepoToGroup
+      expect(mockAddRepoToGroup).toHaveBeenCalledWith("/repo1", "g1");
+    });
+
+    it("drag repo from group to ungrouped area removes from group", () => {
+      const repo1 = makeRepo();
+      const repo2 = makeRepo({ path: "/repo2", displayName: "Repo Two", initials: "RT" });
+      setRepos({ "/repo1": repo1, "/repo2": repo2 });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [{
+          group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] },
+          repos: [repo1],
+        }],
+        ungrouped: [repo2],
+      });
+      mockGetGroupForRepo.mockImplementation((path: string) =>
+        path === "/repo1"
+          ? { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] }
+          : undefined
+      );
+
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const groupRepoSections = container.querySelector(".group-repos")!.querySelectorAll(".repo-section");
+      const ungroupedRepoSections = container.querySelectorAll("#repo-list > .repo-section");
+
+      expect(groupRepoSections.length).toBe(1);
+      expect(ungroupedRepoSections.length).toBe(1);
+
+      const dt = makeDataTransfer();
+
+      // Simulate drag start on grouped repo1
+      fireEvent.dragStart(groupRepoSections[0], { dataTransfer: dt });
+
+      // Simulate drop on ungrouped repo2
+      const rect = { top: 0, height: 40, bottom: 40, left: 0, right: 100, width: 100, x: 0, y: 0, toJSON: () => {} };
+      ungroupedRepoSections[0].getBoundingClientRect = () => rect as DOMRect;
+      fireEvent.dragOver(ungroupedRepoSections[0], { dataTransfer: dt, clientY: 30 });
+      fireEvent.drop(ungroupedRepoSections[0], { dataTransfer: dt });
+
+      // Should call removeRepoFromGroup since target is ungrouped
+      expect(mockRemoveRepoFromGroup).toHaveBeenCalledWith("/repo1");
+    });
+
+    it("drag repo from group A to position in group B moves between groups", () => {
+      const g1 = { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] };
+      const g2 = { id: "g2", name: "Personal", color: "", collapsed: false, repoOrder: ["/repo2", "/repo3"] };
+      const repo1 = makeRepo();
+      const repo2 = makeRepo({ path: "/repo2", displayName: "Repo Two", initials: "RT" });
+      const repo3 = makeRepo({ path: "/repo3", displayName: "Repo Three", initials: "R3" });
+      setRepos({ "/repo1": repo1, "/repo2": repo2, "/repo3": repo3 });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [
+          { group: g1, repos: [repo1] },
+          { group: g2, repos: [repo2, repo3] },
+        ],
+        ungrouped: [],
+      });
+      mockGetGroupForRepo.mockImplementation((path: string) => {
+        if (path === "/repo1") return g1;
+        if (path === "/repo2" || path === "/repo3") return g2;
+        return undefined;
+      });
+      (repositoriesStore.state as any).groups = { g1, g2 };
+
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const groupSections = container.querySelectorAll(".group-section");
+      expect(groupSections.length).toBe(2);
+
+      const g1Repos = groupSections[0].querySelectorAll(".repo-section");
+      const g2Repos = groupSections[1].querySelectorAll(".repo-section");
+      expect(g1Repos.length).toBe(1);
+      expect(g2Repos.length).toBe(2);
+
+      const dt = makeDataTransfer();
+
+      // Drag repo1 from g1
+      fireEvent.dragStart(g1Repos[0], { dataTransfer: dt });
+
+      // Drop on repo2 in g2
+      fireEvent.dragOver(g2Repos[0], { dataTransfer: dt, clientY: 30 });
+      fireEvent.drop(g2Repos[0], { dataTransfer: dt });
+
+      // Should call moveRepoBetweenGroups (index 1 = after repo2, since JSDOM getBoundingClientRect returns zeros → "bottom" side)
+      expect(mockMoveRepoBetweenGroups).toHaveBeenCalledWith("/repo1", "g1", "g2", 1);
+    });
+
+    it("drag group header reorders groups", () => {
+      const g1 = { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] };
+      const g2 = { id: "g2", name: "Personal", color: "", collapsed: false, repoOrder: ["/repo2"] };
+      const repo1 = makeRepo();
+      const repo2 = makeRepo({ path: "/repo2", displayName: "Repo Two", initials: "RT" });
+      setRepos({ "/repo1": repo1, "/repo2": repo2 });
+      mockGetGroupedLayout.mockReturnValue({
+        groups: [
+          { group: g1, repos: [repo1] },
+          { group: g2, repos: [repo2] },
+        ],
+        ungrouped: [],
+      });
+      (repositoriesStore.state as any).groupOrder = ["g1", "g2"];
+
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const groupSections = container.querySelectorAll(".group-section");
+      expect(groupSections.length).toBe(2);
+
+      const dt = makeDataTransfer();
+
+      // Drag first group section
+      fireEvent.dragStart(groupSections[0], { dataTransfer: dt });
+
+      // Drop on second group section (bottom half)
+      const rect = { top: 0, height: 60, bottom: 60, left: 0, right: 200, width: 200, x: 0, y: 0, toJSON: () => {} };
+      groupSections[1].getBoundingClientRect = () => rect as DOMRect;
+      fireEvent.dragOver(groupSections[1], { dataTransfer: dt, clientY: 40 });
+      fireEvent.drop(groupSections[1], { dataTransfer: dt });
+
+      expect(mockReorderGroups).toHaveBeenCalledWith(0, 1);
+    });
+
+    it("drag same repo onto itself is a no-op", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const repoSection = container.querySelector(".repo-section")!;
+
+      const dt = makeDataTransfer();
+
+      fireEvent.dragStart(repoSection, { dataTransfer: dt });
+      const rect = { top: 0, height: 40, bottom: 40, left: 0, right: 100, width: 100, x: 0, y: 0, toJSON: () => {} };
+      repoSection.getBoundingClientRect = () => rect as DOMRect;
+      fireEvent.dragOver(repoSection, { dataTransfer: dt, clientY: 20 });
+      fireEvent.drop(repoSection, { dataTransfer: dt });
+
+      // No reorder actions should be called
+      expect(mockReorderRepo).not.toHaveBeenCalled();
+      expect(mockReorderRepoInGroup).not.toHaveBeenCalled();
+      expect(mockMoveRepoBetweenGroups).not.toHaveBeenCalled();
+      expect(mockAddRepoToGroup).not.toHaveBeenCalled();
+      expect(mockRemoveRepoFromGroup).not.toHaveBeenCalled();
     });
   });
 

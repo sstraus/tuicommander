@@ -28,13 +28,30 @@ export interface RepositoryState {
   activeBranch: string | null;
 }
 
+/** A named, colored group of repositories */
+export interface RepoGroup {
+  id: string;
+  name: string;
+  color: string;        // hex color or "" for default
+  collapsed: boolean;   // accordion state
+  repoOrder: string[];  // ordered repo paths in this group
+}
+
 /** Repositories store state */
 interface RepositoriesStoreState {
   repositories: Record<string, RepositoryState>;
-  repoOrder: string[];
+  repoOrder: string[];         // ungrouped repo order
   activeRepoPath: string | null;
   /** Per-repo monotonic revision counter, bumped by repo-changed events */
   revisions: Record<string, number>;
+  groups: Record<string, RepoGroup>;
+  groupOrder: string[];        // display order of group IDs
+}
+
+/** Grouped layout returned by getGroupedLayout() */
+export interface GroupedLayout {
+  groups: Array<{ group: RepoGroup; repos: RepositoryState[] }>;
+  ungrouped: RepositoryState[];
 }
 
 /** Check if branch is a main branch */
@@ -46,7 +63,13 @@ export function isMainBranch(branchName: string): boolean {
 const SAVE_DEBOUNCE_MS = 500;
 
 /** Persist repos to Rust backend (fire-and-forget, terminals excluded) */
-function saveReposImmediate(repositories: Record<string, RepositoryState>, repoOrder: string[], activeRepoPath?: string | null): void {
+function saveReposImmediate(
+  repositories: Record<string, RepositoryState>,
+  repoOrder: string[],
+  activeRepoPath: string | null | undefined,
+  groups: Record<string, RepoGroup>,
+  groupOrder: string[],
+): void {
   const serializable: Record<string, RepositoryState> = {};
   for (const [path, repo] of Object.entries(repositories)) {
     const branches: Record<string, BranchState> = {};
@@ -56,19 +79,36 @@ function saveReposImmediate(repositories: Record<string, RepositoryState>, repoO
     serializable[path] = { ...repo, branches };
   }
   invoke("save_repositories", {
-    config: { repos: serializable, repoOrder, activeRepoPath: activeRepoPath ?? null },
+    config: {
+      repos: serializable,
+      repoOrder,
+      activeRepoPath: activeRepoPath ?? null,
+      groups,
+      groupOrder,
+    },
   }).catch((err) => console.debug("Failed to save repos:", err));
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Debounced save — coalesces rapid mutations into a single IPC call */
-function saveRepos(repositories: Record<string, RepositoryState>, repoOrder: string[], activeRepoPath?: string | null): void {
+function saveRepos(
+  repositories: Record<string, RepositoryState>,
+  repoOrder: string[],
+  activeRepoPath: string | null | undefined,
+  groups: Record<string, RepoGroup>,
+  groupOrder: string[],
+): void {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    saveReposImmediate(repositories, repoOrder, activeRepoPath);
+    saveReposImmediate(repositories, repoOrder, activeRepoPath, groups, groupOrder);
   }, SAVE_DEBOUNCE_MS);
+}
+
+/** Generate a unique group ID */
+function generateGroupId(): string {
+  return `grp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
 /** Create the repositories store */
@@ -78,7 +118,15 @@ function createRepositoriesStore() {
     repoOrder: [],
     activeRepoPath: null,
     revisions: {},
+    groups: {},
+    groupOrder: [],
   });
+
+  /** Debounced save shorthand using current state */
+  const save = () => saveRepos(state.repositories, state.repoOrder, state.activeRepoPath, state.groups, state.groupOrder);
+
+  /** Immediate save shorthand using current state (for app exit) */
+  const saveNow = () => saveReposImmediate(state.repositories, state.repoOrder, state.activeRepoPath, state.groups, state.groupOrder);
 
   const actions = {
     /** Load repos from Rust backend; migrate from localStorage on first run */
@@ -94,7 +142,13 @@ function createRepositoriesStore() {
           localStorage.removeItem(LEGACY_STORAGE_KEY);
         }
 
-        const loaded = await invoke<{ repos?: Record<string, RepositoryState>; repoOrder?: string[]; activeRepoPath?: string | null }>("load_repositories");
+        const loaded = await invoke<{
+          repos?: Record<string, RepositoryState>;
+          repoOrder?: string[];
+          activeRepoPath?: string | null;
+          groups?: Record<string, RepoGroup>;
+          groupOrder?: string[];
+        }>("load_repositories");
         const repos = loaded?.repos;
         if (repos) {
           // Migration: add collapsed/expanded fields, clear stale terminal IDs
@@ -125,6 +179,10 @@ function createRepositoriesStore() {
           const missing = repoPaths.filter((p) => !validOrder.includes(p));
           setState("repoOrder", [...validOrder, ...missing]);
 
+          // Hydrate groups — migration: missing groups field initializes empty
+          setState("groups", loaded.groups ?? {});
+          setState("groupOrder", loaded.groupOrder ?? []);
+
           // Restore active repo
           if (loaded.activeRepoPath && loaded.activeRepoPath in repos) {
             setState("activeRepoPath", loaded.activeRepoPath);
@@ -149,7 +207,7 @@ function createRepositoriesStore() {
       if (!state.repoOrder.includes(repo.path)) {
         setState("repoOrder", [...state.repoOrder, repo.path]);
       }
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Remove a repository */
@@ -158,37 +216,41 @@ function createRepositoriesStore() {
         produce((s) => {
           delete s.repositories[path];
           s.repoOrder = s.repoOrder.filter((p) => p !== path);
+          // Clean up group membership
+          for (const group of Object.values(s.groups)) {
+            group.repoOrder = group.repoOrder.filter((p) => p !== path);
+          }
           if (s.activeRepoPath === path) {
             s.activeRepoPath = null;
           }
         })
       );
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Set active repository */
     setActive(path: string | null): void {
       setState("activeRepoPath", path);
-      saveRepos(state.repositories, state.repoOrder, path);
+      save();
     },
 
     /** Update the display name of a repository */
     setDisplayName(path: string, displayName: string): void {
       if (!state.repositories[path]) return;
       setState("repositories", path, "displayName", displayName);
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Toggle repository expanded state */
     toggleExpanded(path: string): void {
       setState("repositories", path, "expanded", (e) => !e);
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Toggle repository collapsed state */
     toggleCollapsed(path: string): void {
       setState("repositories", path, "collapsed", (c) => !c);
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Add or update a branch */
@@ -211,7 +273,7 @@ function createRepositoriesStore() {
           ...data,
         });
       }
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Set active branch for a repo */
@@ -227,7 +289,7 @@ function createRepositoriesStore() {
         if (!branch.hadTerminals) {
           setState("repositories", repoPath, "branches", branchName, "hadTerminals", true);
         }
-        saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+        save();
       }
     },
 
@@ -236,7 +298,7 @@ function createRepositoriesStore() {
       setState("repositories", repoPath, "branches", branchName, "terminals", (t) =>
         t.filter((id) => id !== terminalId)
       );
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Set run command for a branch */
@@ -244,7 +306,7 @@ function createRepositoriesStore() {
       const branch = state.repositories[repoPath]?.branches[branchName];
       if (branch) {
         setState("repositories", repoPath, "branches", branchName, "runCommand", command);
-        saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+        save();
       }
     },
 
@@ -274,7 +336,7 @@ function createRepositoriesStore() {
           }
         })
       );
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Rename a branch in a repository */
@@ -307,7 +369,7 @@ function createRepositoriesStore() {
           }
         })
       );
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Get repository by path */
@@ -333,7 +395,7 @@ function createRepositoriesStore() {
         result.splice(toIndex, 0, moved);
         return result;
       });
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Get ordered repo paths */
@@ -351,7 +413,7 @@ function createRepositoriesStore() {
         result.splice(toIndex, 0, moved);
         return result;
       });
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Get terminals for current active branch */
@@ -377,7 +439,7 @@ function createRepositoriesStore() {
         })
       );
       // Flush immediately (not debounced) — app is about to exit
-      saveReposImmediate(state.repositories, state.repoOrder, state.activeRepoPath);
+      saveNow();
     },
 
     /** Update savedTerminals from live terminal state (called on terminal add/remove) */
@@ -406,7 +468,7 @@ function createRepositoriesStore() {
           }
         })
       );
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Clear savedTerminals from all branches (consume-once after restore) */
@@ -420,7 +482,7 @@ function createRepositoriesStore() {
           }
         })
       );
-      saveRepos(state.repositories, state.repoOrder, state.activeRepoPath);
+      save();
     },
 
     /** Bump the revision counter for a repo (signals panels to re-fetch) */
@@ -436,6 +498,161 @@ function createRepositoriesStore() {
     /** Check if empty */
     isEmpty(): boolean {
       return Object.keys(state.repositories).length === 0;
+    },
+
+    // ── Group CRUD ──
+
+    /** Create a new group. Returns ID or null if name is duplicate (case-insensitive). */
+    createGroup(name: string): string | null {
+      const nameLower = name.toLowerCase();
+      const exists = Object.values(state.groups).some((g) => g.name.toLowerCase() === nameLower);
+      if (exists) return null;
+
+      const id = generateGroupId();
+      setState("groups", id, { id, name, color: "", collapsed: false, repoOrder: [] });
+      setState("groupOrder", [...state.groupOrder, id]);
+      save();
+      return id;
+    },
+
+    /** Delete a group — repos move to ungrouped */
+    deleteGroup(id: string): void {
+      const group = state.groups[id];
+      if (!group) return;
+      setState(
+        produce((s) => {
+          // Move repos to ungrouped order
+          const repos = s.groups[id]?.repoOrder ?? [];
+          s.repoOrder = [...s.repoOrder, ...repos];
+          delete s.groups[id];
+          s.groupOrder = s.groupOrder.filter((gid) => gid !== id);
+        })
+      );
+      save();
+    },
+
+    /** Rename a group. Returns false if name is duplicate (case-insensitive). */
+    renameGroup(id: string, newName: string): boolean {
+      const nameLower = newName.toLowerCase();
+      const exists = Object.values(state.groups).some(
+        (g) => g.id !== id && g.name.toLowerCase() === nameLower,
+      );
+      if (exists) return false;
+      setState("groups", id, "name", newName);
+      save();
+      return true;
+    },
+
+    /** Set group color */
+    setGroupColor(id: string, color: string): void {
+      if (!state.groups[id]) return;
+      setState("groups", id, "color", color);
+      save();
+    },
+
+    /** Toggle group collapsed/expanded */
+    toggleGroupCollapsed(id: string): void {
+      if (!state.groups[id]) return;
+      setState("groups", id, "collapsed", (c) => !c);
+      save();
+    },
+
+    // ── Group assignment ──
+
+    /** Add repo to a group (removes from ungrouped or previous group) */
+    addRepoToGroup(repoPath: string, groupId: string): void {
+      if (!state.groups[groupId]) return;
+      setState(
+        produce((s) => {
+          // Remove from ungrouped
+          s.repoOrder = s.repoOrder.filter((p) => p !== repoPath);
+          // Remove from any other group
+          for (const group of Object.values(s.groups)) {
+            group.repoOrder = group.repoOrder.filter((p) => p !== repoPath);
+          }
+          // Add to target group
+          s.groups[groupId].repoOrder = [...s.groups[groupId].repoOrder, repoPath];
+        })
+      );
+      save();
+    },
+
+    /** Remove repo from its group back to ungrouped */
+    removeRepoFromGroup(repoPath: string): void {
+      setState(
+        produce((s) => {
+          for (const group of Object.values(s.groups)) {
+            group.repoOrder = group.repoOrder.filter((p) => p !== repoPath);
+          }
+          if (!s.repoOrder.includes(repoPath)) {
+            s.repoOrder = [...s.repoOrder, repoPath];
+          }
+        })
+      );
+      save();
+    },
+
+    /** Find which group a repo belongs to (or undefined if ungrouped) */
+    getGroupForRepo(repoPath: string): RepoGroup | undefined {
+      return Object.values(state.groups).find((g) => g.repoOrder.includes(repoPath));
+    },
+
+    // ── Group reordering ──
+
+    /** Reorder a repo within its group */
+    reorderRepoInGroup(groupId: string, fromIndex: number, toIndex: number): void {
+      if (!state.groups[groupId]) return;
+      setState("groups", groupId, "repoOrder", (order) => {
+        const result = [...order];
+        const [moved] = result.splice(fromIndex, 1);
+        result.splice(toIndex, 0, moved);
+        return result;
+      });
+      save();
+    },
+
+    /** Move repo from one group to another at a specific index */
+    moveRepoBetweenGroups(repoPath: string, fromGroupId: string, toGroupId: string, toIndex: number): void {
+      if (!state.groups[fromGroupId] || !state.groups[toGroupId]) return;
+      setState(
+        produce((s) => {
+          s.groups[fromGroupId].repoOrder = s.groups[fromGroupId].repoOrder.filter((p) => p !== repoPath);
+          const target = [...s.groups[toGroupId].repoOrder];
+          target.splice(toIndex, 0, repoPath);
+          s.groups[toGroupId].repoOrder = target;
+        })
+      );
+      save();
+    },
+
+    /** Reorder groups in the display order */
+    reorderGroups(fromIndex: number, toIndex: number): void {
+      setState("groupOrder", (order) => {
+        const result = [...order];
+        const [moved] = result.splice(fromIndex, 1);
+        result.splice(toIndex, 0, moved);
+        return result;
+      });
+      save();
+    },
+
+    /** Get the grouped layout for rendering: ordered groups with their repos, plus ungrouped repos */
+    getGroupedLayout(): GroupedLayout {
+      const groups = state.groupOrder
+        .map((gid) => state.groups[gid])
+        .filter(Boolean)
+        .map((group) => ({
+          group,
+          repos: group.repoOrder
+            .map((path) => state.repositories[path])
+            .filter(Boolean),
+        }));
+
+      const ungrouped = state.repoOrder
+        .map((path) => state.repositories[path])
+        .filter(Boolean);
+
+      return { groups, ungrouped };
     },
   };
 

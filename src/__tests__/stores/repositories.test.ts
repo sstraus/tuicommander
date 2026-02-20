@@ -455,6 +455,289 @@ describe("repositoriesStore", () => {
     });
   });
 
+  describe("groups — CRUD", () => {
+    it("initializes with empty groups and groupOrder", () => {
+      createRoot((dispose) => {
+        expect(store.state.groups).toEqual({});
+        expect(store.state.groupOrder).toEqual([]);
+        dispose();
+      });
+    });
+
+    it("createGroup() adds a group and returns its ID", () => {
+      createRoot((dispose) => {
+        const id = store.createGroup("Work");
+        expect(id).toBeTruthy();
+        expect(store.state.groups[id]).toBeDefined();
+        expect(store.state.groups[id].name).toBe("Work");
+        expect(store.state.groups[id].color).toBe("");
+        expect(store.state.groups[id].collapsed).toBe(false);
+        expect(store.state.groups[id].repoOrder).toEqual([]);
+        expect(store.state.groupOrder).toContain(id);
+        dispose();
+      });
+    });
+
+    it("createGroup() enforces unique names (case-insensitive)", () => {
+      createRoot((dispose) => {
+        store.createGroup("Work");
+        expect(store.createGroup("work")).toBeNull();
+        expect(store.createGroup("WORK")).toBeNull();
+        dispose();
+      });
+    });
+
+    it("deleteGroup() removes group and moves repos to ungrouped", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo-a", displayName: "A" });
+        const id = store.createGroup("Work")!;
+        store.addRepoToGroup("/repo-a", id);
+        expect(store.state.repoOrder).not.toContain("/repo-a");
+        store.deleteGroup(id);
+        expect(store.state.groups[id]).toBeUndefined();
+        expect(store.state.groupOrder).not.toContain(id);
+        expect(store.state.repoOrder).toContain("/repo-a");
+        dispose();
+      });
+    });
+
+    it("renameGroup() updates name", () => {
+      createRoot((dispose) => {
+        const id = store.createGroup("Work")!;
+        expect(store.renameGroup(id, "Personal")).toBe(true);
+        expect(store.state.groups[id].name).toBe("Personal");
+        dispose();
+      });
+    });
+
+    it("renameGroup() rejects duplicate names", () => {
+      createRoot((dispose) => {
+        const id1 = store.createGroup("Work")!;
+        store.createGroup("Personal");
+        expect(store.renameGroup(id1, "personal")).toBe(false);
+        expect(store.state.groups[id1].name).toBe("Work");
+        dispose();
+      });
+    });
+
+    it("setGroupColor() updates color", () => {
+      createRoot((dispose) => {
+        const id = store.createGroup("Work")!;
+        store.setGroupColor(id, "#4A9EFF");
+        expect(store.state.groups[id].color).toBe("#4A9EFF");
+        dispose();
+      });
+    });
+
+    it("toggleGroupCollapsed() toggles collapsed flag", () => {
+      createRoot((dispose) => {
+        const id = store.createGroup("Work")!;
+        expect(store.state.groups[id].collapsed).toBe(false);
+        store.toggleGroupCollapsed(id);
+        expect(store.state.groups[id].collapsed).toBe(true);
+        store.toggleGroupCollapsed(id);
+        expect(store.state.groups[id].collapsed).toBe(false);
+        dispose();
+      });
+    });
+
+    it("hydrate() loads groups from backend", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        repos: {},
+        repoOrder: [],
+        groups: {
+          "g1": { id: "g1", name: "Work", color: "#4A9EFF", collapsed: false, repoOrder: [] },
+        },
+        groupOrder: ["g1"],
+      });
+      await createRoot(async (dispose) => {
+        await store.hydrate();
+        expect(store.state.groups["g1"]).toBeDefined();
+        expect(store.state.groups["g1"].name).toBe("Work");
+        expect(store.state.groupOrder).toEqual(["g1"]);
+        dispose();
+      });
+    });
+
+    it("hydrate() migration: missing groups field initializes empty", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        repos: {
+          "/repo": {
+            path: "/repo", displayName: "test", initials: "TE",
+            expanded: true, collapsed: false,
+            branches: { main: { name: "main", isMain: true, worktreePath: null, terminals: [], additions: 0, deletions: 0 } },
+            activeBranch: "main",
+          },
+        },
+        repoOrder: ["/repo"],
+        // No groups or groupOrder
+      });
+      await createRoot(async (dispose) => {
+        await store.hydrate();
+        expect(store.state.groups).toEqual({});
+        expect(store.state.groupOrder).toEqual([]);
+        expect(store.state.repoOrder).toEqual(["/repo"]);
+        dispose();
+      });
+    });
+
+    it("persists groups via save", () => {
+      createRoot((dispose) => {
+        const id = store.createGroup("Work")!;
+        vi.advanceTimersByTime(500);
+        const saveCalls = mockInvoke.mock.calls.filter(
+          (c: unknown[]) => c[0] === "save_repositories"
+        );
+        const lastCall = saveCalls[saveCalls.length - 1];
+        expect(lastCall[1].config.groups).toBeDefined();
+        expect(lastCall[1].config.groups[id].name).toBe("Work");
+        expect(lastCall[1].config.groupOrder).toContain(id);
+        dispose();
+      });
+    });
+  });
+
+  describe("groups — repo assignment", () => {
+    it("addRepoToGroup() moves repo from ungrouped to group", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo-a", displayName: "A" });
+        const gid = store.createGroup("Work")!;
+        store.addRepoToGroup("/repo-a", gid);
+        expect(store.state.groups[gid].repoOrder).toContain("/repo-a");
+        expect(store.state.repoOrder).not.toContain("/repo-a");
+        dispose();
+      });
+    });
+
+    it("addRepoToGroup() moves repo from one group to another", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo-a", displayName: "A" });
+        const g1 = store.createGroup("Work")!;
+        const g2 = store.createGroup("Personal")!;
+        store.addRepoToGroup("/repo-a", g1);
+        store.addRepoToGroup("/repo-a", g2);
+        expect(store.state.groups[g1].repoOrder).not.toContain("/repo-a");
+        expect(store.state.groups[g2].repoOrder).toContain("/repo-a");
+        dispose();
+      });
+    });
+
+    it("removeRepoFromGroup() moves repo to ungrouped", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo-a", displayName: "A" });
+        const gid = store.createGroup("Work")!;
+        store.addRepoToGroup("/repo-a", gid);
+        store.removeRepoFromGroup("/repo-a");
+        expect(store.state.groups[gid].repoOrder).not.toContain("/repo-a");
+        expect(store.state.repoOrder).toContain("/repo-a");
+        dispose();
+      });
+    });
+
+    it("remove() also cleans up group membership", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo-a", displayName: "A" });
+        const gid = store.createGroup("Work")!;
+        store.addRepoToGroup("/repo-a", gid);
+        store.remove("/repo-a");
+        expect(store.state.groups[gid].repoOrder).not.toContain("/repo-a");
+        dispose();
+      });
+    });
+
+    it("getGroupForRepo() returns correct group or undefined", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo-a", displayName: "A" });
+        store.add({ path: "/repo-b", displayName: "B" });
+        const gid = store.createGroup("Work")!;
+        store.addRepoToGroup("/repo-a", gid);
+        expect(store.getGroupForRepo("/repo-a")?.id).toBe(gid);
+        expect(store.getGroupForRepo("/repo-b")).toBeUndefined();
+        dispose();
+      });
+    });
+  });
+
+  describe("groups — reordering and layout", () => {
+    it("reorderRepoInGroup() reorders within group", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/a", displayName: "A" });
+        store.add({ path: "/b", displayName: "B" });
+        store.add({ path: "/c", displayName: "C" });
+        const gid = store.createGroup("Work")!;
+        store.addRepoToGroup("/a", gid);
+        store.addRepoToGroup("/b", gid);
+        store.addRepoToGroup("/c", gid);
+        store.reorderRepoInGroup(gid, 0, 2);
+        expect(store.state.groups[gid].repoOrder).toEqual(["/b", "/c", "/a"]);
+        dispose();
+      });
+    });
+
+    it("moveRepoBetweenGroups() moves with correct index", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/a", displayName: "A" });
+        store.add({ path: "/b", displayName: "B" });
+        const g1 = store.createGroup("Work")!;
+        const g2 = store.createGroup("Personal")!;
+        store.addRepoToGroup("/a", g1);
+        store.addRepoToGroup("/b", g2);
+        store.moveRepoBetweenGroups("/a", g1, g2, 0);
+        expect(store.state.groups[g1].repoOrder).toEqual([]);
+        expect(store.state.groups[g2].repoOrder).toEqual(["/a", "/b"]);
+        dispose();
+      });
+    });
+
+    it("reorderGroups() reorders group display order", () => {
+      createRoot((dispose) => {
+        const g1 = store.createGroup("A")!;
+        const g2 = store.createGroup("B")!;
+        const g3 = store.createGroup("C")!;
+        expect(store.state.groupOrder).toEqual([g1, g2, g3]);
+        store.reorderGroups(0, 2);
+        expect(store.state.groupOrder).toEqual([g2, g3, g1]);
+        dispose();
+      });
+    });
+
+    it("getGroupedLayout() returns groups + ungrouped split", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/a", displayName: "A" });
+        store.add({ path: "/b", displayName: "B" });
+        store.add({ path: "/c", displayName: "C" });
+        const gid = store.createGroup("Work")!;
+        store.addRepoToGroup("/a", gid);
+        store.addRepoToGroup("/b", gid);
+        const layout = store.getGroupedLayout();
+        expect(layout.groups).toHaveLength(1);
+        expect(layout.groups[0].group.id).toBe(gid);
+        expect(layout.groups[0].repos).toHaveLength(2);
+        expect(layout.groups[0].repos[0].path).toBe("/a");
+        expect(layout.ungrouped).toHaveLength(1);
+        expect(layout.ungrouped[0].path).toBe("/c");
+        dispose();
+      });
+    });
+
+    it("getGroupedLayout() respects groupOrder and per-group repoOrder", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/a", displayName: "A" });
+        store.add({ path: "/b", displayName: "B" });
+        const g1 = store.createGroup("First")!;
+        const g2 = store.createGroup("Second")!;
+        store.addRepoToGroup("/a", g2);
+        store.addRepoToGroup("/b", g1);
+        const layout = store.getGroupedLayout();
+        expect(layout.groups[0].group.name).toBe("First");
+        expect(layout.groups[0].repos[0].path).toBe("/b");
+        expect(layout.groups[1].group.name).toBe("Second");
+        expect(layout.groups[1].repos[0].path).toBe("/a");
+        dispose();
+      });
+    });
+  });
+
   describe("save debouncing", () => {
     it("coalesces rapid mutations into a single save call", () => {
       createRoot((dispose) => {

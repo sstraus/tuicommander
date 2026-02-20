@@ -1,6 +1,6 @@
 import { Component, For, Show, createMemo, createSignal, createEffect } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
-import type { RepositoryState, BranchState } from "../../stores/repositories";
+import type { RepositoryState, BranchState, RepoGroup } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 import { githubStore } from "../../stores/github";
 import { settingsStore } from "../../stores/settings";
@@ -117,10 +117,35 @@ const RepoSection: Component<{
     );
   });
 
-  const repoMenuItems = (): ContextMenuItem[] => [
-    { label: "Repo Settings", action: () => props.onSettings() },
-    { label: "Remove Repository", action: () => props.onRemove() },
-  ];
+  const repoMenuItems = (): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      { label: "Repo Settings", action: () => props.onSettings() },
+    ];
+
+    // "Move to Group" submenu — only show if groups exist
+    const layout = repositoriesStore.getGroupedLayout();
+    if (layout.groups.length > 0) {
+      const currentGroup = repositoriesStore.getGroupForRepo(props.repo.path);
+      const children: ContextMenuItem[] = layout.groups
+        .filter((entry) => entry.group.id !== currentGroup?.id)
+        .map((entry) => ({
+          label: entry.group.name,
+          action: () => repositoriesStore.addRepoToGroup(props.repo.path, entry.group.id),
+        }));
+      if (currentGroup) {
+        children.push({
+          label: "Ungrouped",
+          action: () => repositoriesStore.removeRepoFromGroup(props.repo.path),
+        });
+      }
+      if (children.length > 0) {
+        items.push({ label: "Move to Group", action: () => {}, children });
+      }
+    }
+
+    items.push({ label: "Remove Repository", action: () => props.onRemove() });
+    return items;
+  };
 
   const handleMenuToggle = (e: MouseEvent) => {
     e.stopPropagation();
@@ -138,9 +163,9 @@ const RepoSection: Component<{
     <div
       class={`repo-section ${props.repo.collapsed ? "collapsed" : ""} ${props.isDragging ? "dragging" : ""} ${props.dragOverClass || ""}`}
       draggable={true}
-      onDragStart={props.onDragStart}
-      onDragOver={props.onDragOver}
-      onDrop={props.onDrop}
+      onDragStart={(e) => { e.stopPropagation(); props.onDragStart(e); }}
+      onDragOver={(e) => { e.stopPropagation(); props.onDragOver(e); }}
+      onDrop={(e) => { e.stopPropagation(); props.onDrop(e); }}
       onDragEnd={props.onDragEnd}
     >
       {/* Repo header */}
@@ -341,29 +366,109 @@ const BranchItem: Component<{
   );
 };
 
+/** Group section component — accordion header with collapsible repo list */
+const GroupSection: Component<{
+  group: RepoGroup;
+  repos: RepositoryState[];
+  quickSwitcherActive?: boolean;
+  onRename: (groupId: string) => void;
+  onColorChange: (groupId: string) => void;
+  onDragStart?: (e: DragEvent) => void;
+  onDragOver?: (e: DragEvent) => void;
+  onDrop?: (e: DragEvent) => void;
+  onDragEnd?: () => void;
+  onHeaderDragOver?: (e: DragEvent) => void;
+  onHeaderDrop?: (e: DragEvent) => void;
+  children: any;
+}> = (props) => {
+  const groupMenu = createContextMenu();
+
+  const groupMenuItems = (): ContextMenuItem[] => [
+    { label: "Rename Group", action: () => props.onRename(props.group.id) },
+    { label: "Change Color", action: () => props.onColorChange(props.group.id) },
+    { label: "Delete Group", action: () => repositoriesStore.deleteGroup(props.group.id) },
+  ];
+
+  return (
+    <div
+      class="group-section"
+      draggable={true}
+      onDragStart={props.onDragStart}
+      onDragOver={props.onDragOver}
+      onDrop={props.onDrop}
+      onDragEnd={props.onDragEnd}
+    >
+      <div
+        class="group-header"
+        onClick={() => repositoriesStore.toggleGroupCollapsed(props.group.id)}
+        onContextMenu={groupMenu.open}
+        onDragOver={(e: DragEvent) => { e.stopPropagation(); props.onHeaderDragOver?.(e); }}
+        onDrop={(e: DragEvent) => { e.stopPropagation(); props.onHeaderDrop?.(e); }}
+      >
+        <Show when={props.group.color}>
+          <span class="group-color-dot" style={{ background: props.group.color }} />
+        </Show>
+        <span class="group-name">{props.group.name}</span>
+        <span class="group-count">{props.repos.length}</span>
+        <span class={`group-chevron ${props.group.collapsed ? "" : "expanded"}`}>{"\u203A"}</span>
+      </div>
+      <Show when={!props.group.collapsed || props.quickSwitcherActive}>
+        <div class="group-repos">
+          <Show when={props.repos.length === 0}>
+            <div class="group-empty-hint">Drag repos here</div>
+          </Show>
+          {props.children}
+        </div>
+      </Show>
+      <ContextMenu
+        items={groupMenuItems()}
+        x={groupMenu.position().x}
+        y={groupMenu.position().y}
+        visible={groupMenu.visible()}
+        onClose={groupMenu.close}
+      />
+    </div>
+  );
+};
+
 export const Sidebar: Component<SidebarProps> = (props) => {
   const repos = createMemo(() => repositoriesStore.getOrderedRepos());
+  const groupedLayout = createMemo(() => repositoriesStore.getGroupedLayout());
 
-  // Drag-and-drop state for repo reordering
-  const [draggedRepoPath, setDraggedRepoPath] = createSignal<string | null>(null);
+  // --- Typed drag-and-drop system ---
+  type DragPayload =
+    | { type: "repo"; path: string; fromGroupId: string | null }
+    | { type: "group"; groupId: string };
+
+  const [dragPayload, setDragPayload] = createSignal<DragPayload | null>(null);
   const [dragOverRepoPath, setDragOverRepoPath] = createSignal<string | null>(null);
   const [dragOverSide, setDragOverSide] = createSignal<"top" | "bottom" | null>(null);
+  const [dragOverGroupId, setDragOverGroupId] = createSignal<string | null>(null);
+  const [dragOverGroupSide, setDragOverGroupSide] = createSignal<"top" | "bottom" | null>(null);
+
+  const draggedRepoPath = () => {
+    const p = dragPayload();
+    return p?.type === "repo" ? p.path : null;
+  };
 
   const resetRepoDragState = () => {
-    setDraggedRepoPath(null);
+    setDragPayload(null);
     setDragOverRepoPath(null);
     setDragOverSide(null);
+    setDragOverGroupId(null);
+    setDragOverGroupSide(null);
   };
 
   const handleRepoDragStart = (e: DragEvent, path: string) => {
     if (!e.dataTransfer) return;
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", path);
+    e.dataTransfer.setData("text/plain", `repo:${path}`);
     try {
       const el = e.currentTarget as HTMLElement;
       e.dataTransfer.setDragImage(el, el.offsetWidth / 2, el.offsetHeight / 2);
     } catch { /* not supported in all envs */ }
-    setDraggedRepoPath(path);
+    const fromGroup = repositoriesStore.getGroupForRepo(path);
+    setDragPayload({ type: "repo", path, fromGroupId: fromGroup?.id ?? null });
   };
 
   const handleRepoDragOver = (e: DragEvent, path: string) => {
@@ -374,32 +479,123 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     const midpoint = rect.top + rect.height / 2;
     setDragOverRepoPath(path);
     setDragOverSide(e.clientY < midpoint ? "top" : "bottom");
+    // Clear group-level hover when hovering a repo
+    setDragOverGroupId(null);
+    setDragOverGroupSide(null);
   };
 
   const handleRepoDrop = (e: DragEvent, targetPath: string) => {
     e.preventDefault();
-    const sourcePath = e.dataTransfer?.getData("text/plain");
-    if (!sourcePath || sourcePath === targetPath) {
+    const payload = dragPayload();
+    if (!payload || payload.type !== "repo" || payload.path === targetPath) {
       resetRepoDragState();
       return;
     }
 
-    const order = repositoriesStore.state.repoOrder;
-    const fromIndex = order.indexOf(sourcePath);
-    const toIndex = order.indexOf(targetPath);
+    const sourcePath = payload.path;
+    const sourceGroupId = payload.fromGroupId;
+    const targetGroup = repositoriesStore.getGroupForRepo(targetPath);
+    const targetGroupId = targetGroup?.id ?? null;
+    const side = dragOverSide();
 
-    if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
-      let adjustedTo = toIndex;
-      const side = dragOverSide();
-      if (side === "top" && fromIndex < toIndex) {
-        adjustedTo = toIndex - 1;
-      } else if (side === "bottom" && fromIndex > toIndex) {
-        adjustedTo = toIndex + 1;
+    if (sourceGroupId === targetGroupId) {
+      // Same context (same group or both ungrouped) — reorder
+      if (sourceGroupId) {
+        // Reorder within group
+        const group = repositoriesStore.state.groups[sourceGroupId];
+        if (group) {
+          const fromIndex = group.repoOrder.indexOf(sourcePath);
+          const toIndex = group.repoOrder.indexOf(targetPath);
+          if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
+            let adjustedTo = toIndex;
+            if (side === "top" && fromIndex < toIndex) adjustedTo = toIndex - 1;
+            else if (side === "bottom" && fromIndex > toIndex) adjustedTo = toIndex + 1;
+            const clampedTo = Math.max(0, Math.min(adjustedTo, group.repoOrder.length - 1));
+            if (fromIndex !== clampedTo) {
+              repositoriesStore.reorderRepoInGroup(sourceGroupId, fromIndex, clampedTo);
+            }
+          }
+        }
+      } else {
+        // Reorder within ungrouped
+        const order = repositoriesStore.state.repoOrder;
+        const fromIndex = order.indexOf(sourcePath);
+        const toIndex = order.indexOf(targetPath);
+        if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
+          let adjustedTo = toIndex;
+          if (side === "top" && fromIndex < toIndex) adjustedTo = toIndex - 1;
+          else if (side === "bottom" && fromIndex > toIndex) adjustedTo = toIndex + 1;
+          const clampedTo = Math.max(0, Math.min(adjustedTo, order.length - 1));
+          if (fromIndex !== clampedTo) {
+            repositoriesStore.reorderRepo(fromIndex, clampedTo);
+          }
+        }
       }
-      const clampedTo = Math.max(0, Math.min(adjustedTo, order.length - 1));
-      if (fromIndex !== clampedTo) {
-        repositoriesStore.reorderRepo(fromIndex, clampedTo);
+    } else if (targetGroupId === null) {
+      // Dragged from group to ungrouped area — remove from group
+      repositoriesStore.removeRepoFromGroup(sourcePath);
+    } else {
+      // Dragged to different group — move between groups
+      const targetGroupObj = repositoriesStore.state.groups[targetGroupId];
+      const targetIndex = targetGroupObj ? targetGroupObj.repoOrder.indexOf(targetPath) : 0;
+      let insertIndex = targetIndex;
+      if (side === "bottom") insertIndex = targetIndex + 1;
+      repositoriesStore.moveRepoBetweenGroups(sourcePath, sourceGroupId ?? "", targetGroupId, insertIndex);
+    }
+
+    resetRepoDragState();
+  };
+
+  // --- Group-level drag handlers ---
+  const handleGroupDragStart = (e: DragEvent, groupId: string) => {
+    if (!e.dataTransfer) return;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", `group:${groupId}`);
+    try {
+      const el = e.currentTarget as HTMLElement;
+      e.dataTransfer.setDragImage(el, el.offsetWidth / 2, el.offsetHeight / 2);
+    } catch { /* not supported in all envs */ }
+    setDragPayload({ type: "group", groupId });
+  };
+
+  const handleGroupDragOver = (e: DragEvent, groupId: string) => {
+    e.preventDefault();
+    if (!e.dataTransfer) return;
+    e.dataTransfer.dropEffect = "move";
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    setDragOverGroupId(groupId);
+    setDragOverGroupSide(e.clientY < midpoint ? "top" : "bottom");
+  };
+
+  const handleGroupDrop = (e: DragEvent, targetGroupId: string) => {
+    e.preventDefault();
+    const payload = dragPayload();
+    if (!payload) {
+      resetRepoDragState();
+      return;
+    }
+
+    if (payload.type === "group") {
+      // Group-to-group reorder
+      if (payload.groupId !== targetGroupId) {
+        const order = repositoriesStore.state.groupOrder;
+        const fromIndex = order.indexOf(payload.groupId);
+        const toIndex = order.indexOf(targetGroupId);
+        if (fromIndex !== -1 && toIndex !== -1) {
+          let adjustedTo = toIndex;
+          const side = dragOverGroupSide();
+          if (side === "top" && fromIndex < toIndex) adjustedTo = toIndex - 1;
+          else if (side === "bottom" && fromIndex > toIndex) adjustedTo = toIndex + 1;
+          const clampedTo = Math.max(0, Math.min(adjustedTo, order.length - 1));
+          if (fromIndex !== clampedTo) {
+            repositoriesStore.reorderGroups(fromIndex, clampedTo);
+          }
+        }
       }
+    } else if (payload.type === "repo") {
+      // Repo dropped on group header — assign to group
+      repositoriesStore.addRepoToGroup(payload.path, targetGroupId);
     }
 
     resetRepoDragState();
@@ -461,16 +657,72 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     document.body.style.userSelect = "none";
   };
 
-  // Compute the starting shortcut index for each repo (1-based, cumulative across repos)
+  // Compute the starting shortcut index for each repo (1-based, cumulative across all groups then ungrouped)
   const repoShortcutStarts = createMemo(() => {
     const starts: Record<string, number> = {};
     let counter = 1;
-    for (const repo of repos()) {
+    const layout = groupedLayout();
+    // Groups first
+    for (const entry of layout.groups) {
+      for (const repo of entry.repos) {
+        starts[repo.path] = counter;
+        counter += Object.keys(repo.branches).length;
+      }
+    }
+    // Then ungrouped
+    for (const repo of layout.ungrouped) {
       starts[repo.path] = counter;
       counter += Object.keys(repo.branches).length;
     }
     return starts;
   });
+
+  // Placeholder handlers for group rename and color change (will be fleshed out in settings tab)
+  const handleGroupRename = (_groupId: string) => {
+    // TODO: inline rename or open rename dialog
+  };
+
+  const handleGroupColorChange = (_groupId: string) => {
+    // TODO: open color picker
+  };
+
+  /** Render a single RepoSection with all its props */
+  const renderRepoSection = (repo: RepositoryState) => {
+    // Color inheritance: repo color > group color > undefined
+    const repoColor = () => repoSettingsStore.get(repo.path)?.color;
+    const groupColor = () => repositoriesStore.getGroupForRepo(repo.path)?.color;
+    const nameColor = () => repoColor() || groupColor() || undefined;
+
+    return (
+      <RepoSection
+        repo={repo}
+        nameColor={nameColor()}
+        isDragging={draggedRepoPath() === repo.path}
+        isCreatingWorktree={props.creatingWorktreeRepos?.has(repo.path)}
+        dragOverClass={
+          dragOverRepoPath() === repo.path && draggedRepoPath() !== repo.path
+            ? `drag-over-${dragOverSide()}`
+            : undefined
+        }
+        quickSwitcherActive={props.quickSwitcherActive}
+        branchShortcutStart={repoShortcutStarts()[repo.path]}
+        onBranchSelect={(branch) => props.onBranchSelect(repo.path, branch)}
+        onAddTerminal={(branch) => props.onAddTerminal(repo.path, branch)}
+        onRemoveBranch={(branch) => props.onRemoveBranch(repo.path, branch)}
+        onRenameBranch={(branch) => props.onRenameBranch(repo.path, branch)}
+        onShowPrDetail={(branch) => setPrDetailTarget({ repoPath: repo.path, branch })}
+        onAddWorktree={() => props.onAddWorktree(repo.path)}
+        onSettings={() => props.onRepoSettings(repo.path)}
+        onRemove={() => props.onRemoveRepo(repo.path)}
+        onToggle={() => repositoriesStore.toggleExpanded(repo.path)}
+        onToggleCollapsed={() => repositoriesStore.toggleCollapsed(repo.path)}
+        onDragStart={(e) => handleRepoDragStart(e, repo.path)}
+        onDragOver={(e) => handleRepoDragOver(e, repo.path)}
+        onDrop={(e) => handleRepoDrop(e, repo.path)}
+        onDragEnd={resetRepoDragState}
+      />
+    );
+  };
 
   return (
     <aside id="sidebar">
@@ -479,36 +731,31 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         {/* Repository Section */}
         <div class="section">
           <div id="repo-list">
-            <For each={repos()}>
-              {(repo) => (
-                <RepoSection
-                  repo={repo}
-                  nameColor={repoSettingsStore.get(repo.path)?.color || undefined}
-                  isDragging={draggedRepoPath() === repo.path}
-                  isCreatingWorktree={props.creatingWorktreeRepos?.has(repo.path)}
-                  dragOverClass={
-                    dragOverRepoPath() === repo.path && draggedRepoPath() !== repo.path
-                      ? `drag-over-${dragOverSide()}`
-                      : undefined
-                  }
+            {/* Grouped repos */}
+            <For each={groupedLayout().groups}>
+              {(entry) => (
+                <GroupSection
+                  group={entry.group}
+                  repos={entry.repos}
                   quickSwitcherActive={props.quickSwitcherActive}
-                  branchShortcutStart={repoShortcutStarts()[repo.path]}
-                  onBranchSelect={(branch) => props.onBranchSelect(repo.path, branch)}
-                  onAddTerminal={(branch) => props.onAddTerminal(repo.path, branch)}
-                  onRemoveBranch={(branch) => props.onRemoveBranch(repo.path, branch)}
-                  onRenameBranch={(branch) => props.onRenameBranch(repo.path, branch)}
-                  onShowPrDetail={(branch) => setPrDetailTarget({ repoPath: repo.path, branch })}
-                  onAddWorktree={() => props.onAddWorktree(repo.path)}
-                  onSettings={() => props.onRepoSettings(repo.path)}
-                  onRemove={() => props.onRemoveRepo(repo.path)}
-                  onToggle={() => repositoriesStore.toggleExpanded(repo.path)}
-                  onToggleCollapsed={() => repositoriesStore.toggleCollapsed(repo.path)}
-                  onDragStart={(e) => handleRepoDragStart(e, repo.path)}
-                  onDragOver={(e) => handleRepoDragOver(e, repo.path)}
-                  onDrop={(e) => handleRepoDrop(e, repo.path)}
+                  onRename={handleGroupRename}
+                  onColorChange={handleGroupColorChange}
+                  onDragStart={(e) => handleGroupDragStart(e, entry.group.id)}
+                  onDragOver={(e) => handleGroupDragOver(e, entry.group.id)}
+                  onDrop={(e) => handleGroupDrop(e, entry.group.id)}
                   onDragEnd={resetRepoDragState}
-                />
+                  onHeaderDragOver={(e) => handleGroupDragOver(e, entry.group.id)}
+                  onHeaderDrop={(e) => handleGroupDrop(e, entry.group.id)}
+                >
+                  <For each={entry.repos}>
+                    {(repo) => renderRepoSection(repo)}
+                  </For>
+                </GroupSection>
               )}
+            </For>
+            {/* Ungrouped repos */}
+            <For each={groupedLayout().ungrouped}>
+              {(repo) => renderRepoSection(repo)}
             </For>
             <Show when={repos().length === 0}>
               <div class="sidebar-empty">

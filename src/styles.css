@@ -526,6 +526,76 @@ html, body {
   border-bottom: 2px solid var(--accent);
 }
 
+/* ── Group sections ── */
+.group-section {
+  margin-bottom: 2px;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--radius-md);
+  transition: background 0.1s;
+}
+
+.group-header:hover {
+  background: var(--bg-tertiary);
+}
+
+.group-color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.group-name {
+  flex: 1;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-count {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  opacity: 0.6;
+}
+
+.group-chevron {
+  font-size: var(--font-md);
+  color: var(--fg-muted);
+  transition: transform 150ms ease;
+  transform: rotate(0deg);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.group-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.group-repos {
+  padding-left: 4px;
+}
+
+.group-empty-hint {
+  padding: 8px 16px;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  opacity: 0.5;
+  font-style: italic;
+}
+
 .repo-branches {
   padding-left: 16px;
   padding-top: 1px;
@@ -3075,6 +3145,126 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   border-color: var(--accent);
 }
 
+/* ── Groups settings tab ── */
+.group-settings-item {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 8px;
+}
+
+.group-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-settings-name {
+  flex: 1;
+  font-size: var(--font-base);
+  color: var(--fg-primary);
+  cursor: default;
+}
+
+.group-settings-name-input {
+  flex: 1;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font-size: var(--font-base);
+  outline: none;
+}
+
+.group-delete-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  font-size: var(--font-md);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.group-delete-btn:hover {
+  background: var(--danger);
+  color: var(--text-on-accent);
+}
+
+.group-name-error {
+  font-size: var(--font-xs);
+  color: var(--danger);
+  margin-top: 4px;
+}
+
+.group-color-picker {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  padding: 0;
+}
+
+.color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.color-swatch.active {
+  border-color: var(--fg-primary);
+  box-shadow: 0 0 0 2px var(--bg-primary);
+}
+
+.color-swatch.clear {
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border);
+}
+
+.groups-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}
+
+.groups-add-btn {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: all 0.1s;
+  margin-top: 8px;
+}
+
+.groups-add-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
 .settings-input {
   width: 100%;
   padding: 8px 12px;
@@ -4210,6 +4400,29 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   height: 1px;
   background: var(--border);
   margin: 4px 8px;
+}
+
+.context-menu-item-wrap {
+  position: relative;
+}
+
+.context-menu-arrow {
+  margin-left: 8px;
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+}
+
+.context-submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  min-width: 160px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  z-index: 1001;
 }
 
 /* ============================================================================

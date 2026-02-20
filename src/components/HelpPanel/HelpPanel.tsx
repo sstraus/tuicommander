@@ -73,6 +73,9 @@ function getShortcutSections(): ShortcutSection[] {
       { keys: `${mod}[`, description: "Toggle sidebar" },
       { keys: `${mod}^1-9`, description: "Quick switch to branch" },
       { keys: `Hold ${mod}^`, description: "Show quick switcher" },
+      { keys: "Drag repo", description: "Reorder repos or move between groups" },
+      { keys: "Drag group", description: "Reorder groups" },
+      { keys: "Right-click group", description: "Rename, change color, delete" },
     ],
   },
   {

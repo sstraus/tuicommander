@@ -8,6 +8,7 @@ import {
   GeneralTab,
   NotificationsTab,
   ServicesTab,
+  GroupsTab,
   RepoWorktreeTab,
   RepoScriptsTab,
 } from "./tabs";
@@ -29,6 +30,7 @@ export type SettingsTab = "general" | "notifications" | "dictation" | "services"
 
 const GLOBAL_TABS: SettingsShellTab[] = [
   { key: "general", label: "General" },
+  { key: "groups", label: "Groups" },
   { key: "notifications", label: "Notifications" },
   { key: "dictation", label: "Dictation" },
   { key: "services", label: "Services" },
@@ -124,6 +126,9 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
       {/* Global tabs */}
       <Show when={activeTab() === "general"}>
         <GeneralTab />
+      </Show>
+      <Show when={activeTab() === "groups"}>
+        <GroupsTab />
       </Show>
       <Show when={activeTab() === "notifications"}>
         <NotificationsTab />
