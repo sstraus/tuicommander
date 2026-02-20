@@ -12,6 +12,8 @@ pub struct DirEntry {
     pub size: u64,
     /// Git status: "modified", "staged", "untracked", or "" (clean).
     pub git_status: String,
+    /// Whether the file is listed in .gitignore.
+    pub is_ignored: bool,
 }
 
 /// Validate that a resolved path is within the repo root.
@@ -127,6 +129,34 @@ fn parse_git_status(repo_path: &str, subdir: &str) -> std::collections::HashMap<
     statuses
 }
 
+/// Get a set of ignored paths within a directory using `git check-ignore`.
+fn get_ignored_paths(repo_path: &str, paths: &[String]) -> std::collections::HashSet<String> {
+    let mut ignored = std::collections::HashSet::new();
+    if paths.is_empty() {
+        return ignored;
+    }
+
+    let git = crate::cli::resolve_cli("git");
+    let mut cmd = Command::new(git);
+    cmd.current_dir(repo_path).arg("check-ignore");
+    for p in paths {
+        cmd.arg(p);
+    }
+
+    if let Ok(output) = cmd.output() {
+        // git check-ignore outputs one ignored path per line (exit code 0 = some ignored, 1 = none)
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                ignored.insert(trimmed.replace('\\', "/"));
+            }
+        }
+    }
+
+    ignored
+}
+
 /// List entries in a directory within a repository.
 #[tauri::command]
 pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>, String> {
@@ -205,7 +235,15 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
             is_dir,
             size,
             git_status,
+            is_ignored: false, // populated after collecting all entries
         });
+    }
+
+    // Detect gitignored paths
+    let all_relative_paths: Vec<String> = entries.iter().map(|e| e.path.clone()).collect();
+    let ignored_set = get_ignored_paths(&repo_path, &all_relative_paths);
+    for entry in &mut entries {
+        entry.is_ignored = ignored_set.contains(&entry.path);
     }
 
     // Sort: directories first, then alphabetical (case-insensitive)
@@ -299,6 +337,38 @@ pub fn rename_path(
 
     std::fs::rename(&canonical_from, &canonical_to)
         .map_err(|e| format!("Failed to rename: {e}"))
+}
+
+/// Append a path pattern to the repo's .gitignore file.
+#[tauri::command]
+pub fn add_to_gitignore(repo_path: String, pattern: String) -> Result<(), String> {
+    let repo = PathBuf::from(&repo_path);
+    let canonical_repo = repo
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
+
+    let gitignore = canonical_repo.join(".gitignore");
+    let mut content = if gitignore.exists() {
+        std::fs::read_to_string(&gitignore)
+            .map_err(|e| format!("Failed to read .gitignore: {e}"))?
+    } else {
+        String::new()
+    };
+
+    // Check if pattern already exists
+    if content.lines().any(|line| line.trim() == pattern.trim()) {
+        return Ok(()); // Already ignored
+    }
+
+    // Ensure trailing newline before appending
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content.push_str(pattern.trim());
+    content.push('\n');
+
+    std::fs::write(&gitignore, &content)
+        .map_err(|e| format!("Failed to write .gitignore: {e}"))
 }
 
 #[cfg(test)]

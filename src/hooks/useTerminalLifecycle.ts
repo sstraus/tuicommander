@@ -3,6 +3,7 @@ import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { diffTabsStore } from "../stores/diffTabs";
 import { mdTabsStore } from "../stores/mdTabs";
+import { editorTabsStore } from "../stores/editorTabs";
 import { settingsStore } from "../stores/settings";
 import { filterValidTerminals } from "../utils/terminalFilter";
 
@@ -75,6 +76,11 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       return;
     }
 
+    if (id.startsWith("edit-")) {
+      editorTabsStore.remove(id);
+      return;
+    }
+
     const terminal = terminalsStore.get(id);
     if (!terminal) return;
 
@@ -135,6 +141,14 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       handleTerminalSelect(keepId);
       return;
     }
+    if (keepId.startsWith("edit-")) {
+      for (const id of editorTabsStore.getIds()) {
+        if (id !== keepId) { editorTabsStore.remove(id); }
+      }
+      editorTabsStore.setActive(keepId);
+      handleTerminalSelect(keepId);
+      return;
+    }
     const ids = filterValidTerminals(repositoriesStore.getActiveTerminals(), terminalsStore.getIds());
     for (const id of ids) {
       if (id !== keepId) {
@@ -155,6 +169,12 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       const ids = mdTabsStore.getIds();
       const idx = ids.indexOf(afterId);
       for (const id of ids.slice(idx + 1)) { mdTabsStore.remove(id); }
+      return;
+    }
+    if (afterId.startsWith("edit-")) {
+      const ids = editorTabsStore.getIds();
+      const idx = ids.indexOf(afterId);
+      for (const id of ids.slice(idx + 1)) { editorTabsStore.remove(id); }
       return;
     }
     const ids = filterValidTerminals(repositoriesStore.getActiveTerminals(), terminalsStore.getIds());
@@ -249,15 +269,23 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     if (id.startsWith("diff-")) {
       diffTabsStore.setActive(id);
       mdTabsStore.setActive(null);
+      editorTabsStore.setActive(null);
       terminalsStore.setActive(null);
     } else if (id.startsWith("md-")) {
       mdTabsStore.setActive(id);
       diffTabsStore.setActive(null);
+      editorTabsStore.setActive(null);
+      terminalsStore.setActive(null);
+    } else if (id.startsWith("edit-")) {
+      editorTabsStore.setActive(id);
+      diffTabsStore.setActive(null);
+      mdTabsStore.setActive(null);
       terminalsStore.setActive(null);
     } else {
       terminalsStore.setActive(id);
       diffTabsStore.setActive(null);
       mdTabsStore.setActive(null);
+      editorTabsStore.setActive(null);
       const terminal = terminalsStore.get(id);
       terminal?.ref?.focus();
     }

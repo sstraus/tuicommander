@@ -406,7 +406,8 @@ pub fn run() {
             fs::write_file,
             fs::create_directory,
             fs::delete_path,
-            fs::rename_path
+            fs::rename_path,
+            fs::add_to_gitignore
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

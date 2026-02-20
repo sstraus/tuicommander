@@ -2,6 +2,8 @@ import { Component, createEffect, createSignal, For, Show, onCleanup } from "sol
 import { repositoriesStore } from "../../stores/repositories";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { getModifierSymbol } from "../../platform";
+import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
+import { PromptDialog } from "../PromptDialog";
 import type { DirEntry } from "../../types/fs";
 
 export interface FileBrowserPanelProps {
@@ -25,7 +27,13 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   const [error, setError] = createSignal<string | null>(null);
   const [currentSubdir, setCurrentSubdir] = createSignal(".");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
+  const [refreshTrigger, setRefreshTrigger] = createSignal(0);
   const fb = useFileBrowser();
+  const contextMenu = createContextMenu();
+
+  // Rename dialog state
+  const [renameDialogVisible, setRenameDialogVisible] = createSignal(false);
+  const [renameTarget, setRenameTarget] = createSignal<DirEntry | null>(null);
 
   // Load entries when visible, repo changes, subdir changes, or repo content changes
   createEffect(() => {
@@ -34,6 +42,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     const subdir = currentSubdir();
     // Subscribe to repo revision for auto-refresh on git changes
     void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
+    // Also subscribe to manual refresh trigger
+    void refreshTrigger();
 
     if (!visible || !repoPath) {
       setEntries([]);
@@ -62,6 +72,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     void props.repoPath;
     setCurrentSubdir(".");
   });
+
+  const refresh = () => setRefreshTrigger((n) => n + 1);
 
   const navigateInto = (entry: DirEntry) => {
     setCurrentSubdir(entry.path);
@@ -107,6 +119,84 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       case "untracked": return "fb-status-untracked";
       default: return "";
     }
+  };
+
+  // Context menu actions
+  const handleRename = (entry: DirEntry) => {
+    setRenameTarget(entry);
+    setRenameDialogVisible(true);
+  };
+
+  const handleDelete = async (entry: DirEntry) => {
+    if (!props.repoPath) return;
+    if (entry.is_dir) return; // Safety: only delete files
+    try {
+      await fb.deletePath(props.repoPath, entry.path);
+      refresh();
+    } catch (err) {
+      console.error("Failed to delete:", err);
+    }
+  };
+
+  const handleAddToGitignore = async (entry: DirEntry) => {
+    if (!props.repoPath) return;
+    const pattern = entry.is_dir ? `${entry.path}/` : entry.path;
+    try {
+      await fb.addToGitignore(props.repoPath, pattern);
+      refresh();
+    } catch (err) {
+      console.error("Failed to add to .gitignore:", err);
+    }
+  };
+
+  const handleRenameConfirm = async (newName: string) => {
+    const entry = renameTarget();
+    if (!entry || !props.repoPath) return;
+    // Build new path: same parent directory, new name
+    const parts = entry.path.split("/");
+    parts[parts.length - 1] = newName;
+    const newPath = parts.join("/");
+    try {
+      await fb.renamePath(props.repoPath, entry.path, newPath);
+      refresh();
+    } catch (err) {
+      console.error("Failed to rename:", err);
+    }
+  };
+
+  const getContextMenuItems = (entry: DirEntry): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      {
+        label: "Rename\u2026",
+        action: () => handleRename(entry),
+      },
+    ];
+
+    if (!entry.is_dir) {
+      items.push({
+        label: "Delete",
+        action: () => handleDelete(entry),
+      });
+    }
+
+    items.push({
+      label: "Add to .gitignore",
+      action: () => handleAddToGitignore(entry),
+      disabled: entry.is_ignored,
+      separator: true,
+    });
+
+    return items;
+  };
+
+  // Track which entry the context menu is for
+  const [contextEntry, setContextEntry] = createSignal<DirEntry | null>(null);
+
+  const handleContextMenu = (e: MouseEvent, entry: DirEntry) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextEntry(entry);
+    contextMenu.open(e);
   };
 
   // Keyboard navigation
@@ -215,11 +305,13 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
                 classList={{
                   "fb-entry-dir": entry.is_dir,
                   "fb-entry-selected": selectedIndex() === index(),
+                  "fb-entry-ignored": entry.is_ignored,
                 }}
                 onClick={() => {
                   setSelectedIndex(index());
                   handleEntryClick(entry);
                 }}
+                onContextMenu={(e) => handleContextMenu(e, entry)}
               >
                 <span class="fb-entry-icon">{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
                 <span class="fb-entry-name" title={entry.path}>{entry.name}</span>
@@ -234,6 +326,26 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
           </For>
         </Show>
       </div>
+
+      {/* Context menu */}
+      <ContextMenu
+        items={contextEntry() ? getContextMenuItems(contextEntry()!) : []}
+        x={contextMenu.position().x}
+        y={contextMenu.position().y}
+        visible={contextMenu.visible()}
+        onClose={contextMenu.close}
+      />
+
+      {/* Rename dialog */}
+      <PromptDialog
+        visible={renameDialogVisible()}
+        title="Rename"
+        placeholder="New name"
+        defaultValue={renameTarget()?.name || ""}
+        confirmLabel="Rename"
+        onClose={() => setRenameDialogVisible(false)}
+        onConfirm={handleRenameConfirm}
+      />
     </div>
   );
 };

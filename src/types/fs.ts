@@ -7,4 +7,6 @@ export interface DirEntry {
   size: number;
   /** Git status: "modified", "staged", "untracked", or "" (clean) */
   git_status: string;
+  /** Whether the file is listed in .gitignore */
+  is_ignored: boolean;
 }

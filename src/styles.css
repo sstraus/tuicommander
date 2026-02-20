@@ -2111,6 +2111,10 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.fb-entry-ignored {
+  opacity: 0.4;
+}
+
 .fb-entry-up {
   color: var(--fg-muted);
   font-style: italic;
@@ -2162,19 +2166,14 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: #9ca3af;
 }
 
-/* Code Editor Panel */
-#code-editor-panel {
-  flex: 1;
-  min-width: 300px;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border);
+/* Code Editor Tab Content */
+.editor-tab-content {
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-#code-editor-panel.hidden {
-  display: none;
+  background: var(--bg-primary);
 }
 
 .editor-header {
@@ -2264,6 +2263,34 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 
 /* Diff Tab Content Pane */
 .terminal-pane.diff-pane {
+  background: var(--bg-primary);
+}
+
+/* Editor Tabs (in main tab bar) */
+.tab.edit-tab {
+  background: linear-gradient(to bottom, rgba(122, 162, 247, 0.1), rgba(122, 162, 247, 0.05));
+  border-bottom: 2px solid rgba(122, 162, 247, 0.3);
+}
+
+.tab.edit-tab:hover {
+  background: linear-gradient(to bottom, rgba(122, 162, 247, 0.15), rgba(122, 162, 247, 0.08));
+}
+
+.tab.edit-tab.active {
+  background: linear-gradient(to bottom, rgba(122, 162, 247, 0.25), rgba(122, 162, 247, 0.15));
+  border-bottom-color: var(--accent);
+}
+
+.tab.edit-tab.active::before {
+  display: none;
+}
+
+.tab.edit-tab .tab-icon {
+  font-size: var(--font-lg);
+}
+
+/* Editor Tab Content Pane */
+.terminal-pane.edit-pane {
   background: var(--bg-primary);
 }
 

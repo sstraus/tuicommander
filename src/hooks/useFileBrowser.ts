@@ -27,6 +27,10 @@ export function useFileBrowser() {
     await invoke("rename_path", { repoPath, from, to });
   }
 
+  async function addToGitignore(repoPath: string, pattern: string): Promise<void> {
+    await invoke("add_to_gitignore", { repoPath, pattern });
+  }
+
   return {
     listDirectory,
     readFile,
@@ -34,5 +38,6 @@ export function useFileBrowser() {
     createDirectory,
     deletePath,
     renamePath,
+    addToGitignore,
   };
 }

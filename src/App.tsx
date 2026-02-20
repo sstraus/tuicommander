@@ -14,9 +14,8 @@ import { TabBar } from "./components/TabBar";
 import { StatusBar } from "./components/StatusBar";
 import { DiffPanel } from "./components/DiffPanel";
 import { FileBrowserPanel } from "./components/FileBrowserPanel";
-import { CodeEditorPanel } from "./components/CodeEditorPanel";
-import { codeEditorStore } from "./stores/codeEditor";
-import { useFileBrowser } from "./hooks/useFileBrowser";
+import { CodeEditorTab } from "./components/CodeEditorPanel";
+import { editorTabsStore } from "./stores/editorTabs";
 import { DiffTab } from "./components/DiffTab";
 import { MarkdownPanel } from "./components/MarkdownPanel";
 import { NotesPanel } from "./components/NotesPanel";
@@ -155,7 +154,6 @@ const App: Component = () => {
   });
 
   const splitPanes = useSplitPanes();
-  const fileBrowser = useFileBrowser();
 
   // Poll active terminal for foreground agent detection
   useAgentPolling();
@@ -571,7 +569,7 @@ const App: Component = () => {
         {/* Terminal container - render ALL terminals so they never unmount (preserves PTY sessions) */}
         <div id="terminal-container">
           {/* Empty state when no tabs are open */}
-          <Show when={!terminalsStore.state.activeId && !diffTabsStore.state.activeId && !mdTabsStore.state.activeId}>
+          <Show when={!terminalsStore.state.activeId && !diffTabsStore.state.activeId && !mdTabsStore.state.activeId && !editorTabsStore.state.activeId}>
             <div class="empty-terminal-state">
               <img src={noTuiOpenImg} alt="No TUI Open" class="empty-terminal-icon" />
             </div>
@@ -705,6 +703,28 @@ const App: Component = () => {
                 );
               }}
             </For>
+
+            {/* Editor tabs */}
+            <For each={editorTabsStore.getIds()}>
+              {(id) => {
+                const editTab = editorTabsStore.get(id);
+                return (
+                  <div
+                    class="terminal-pane edit-pane"
+                    classList={{ active: editorTabsStore.state.activeId === id }}
+                  >
+                    {editTab && (
+                      <CodeEditorTab
+                        id={id}
+                        repoPath={editTab.repoPath}
+                        filePath={editTab.filePath}
+                        onClose={() => terminalLifecycle.closeTerminal(id)}
+                      />
+                    )}
+                  </div>
+                );
+              }}
+            </For>
           </div>
 
           {/* Lazygit split pane / floating window (Story 047 / 051) */}
@@ -751,27 +771,8 @@ const App: Component = () => {
             repoPath={gitOps.currentRepoPath() || null}
             onClose={() => uiStore.toggleFileBrowserPanel()}
             onFileOpen={(repoPath, filePath) => {
-              codeEditorStore.openFile(repoPath, filePath);
-              uiStore.setCodeEditorPanelVisible(true);
-            }}
-          />
-
-          {/* Code editor panel */}
-          <CodeEditorPanel
-            visible={uiStore.state.codeEditorPanelVisible}
-            onClose={() => {
-              uiStore.setCodeEditorPanelVisible(false);
-              codeEditorStore.closeFile();
-            }}
-            onSave={async () => {
-              const { repoPath, filePath, content } = codeEditorStore.state;
-              if (!repoPath || !filePath) return;
-              try {
-                await fileBrowser.writeFile(repoPath, filePath, content);
-                codeEditorStore.markSaved();
-              } catch (err) {
-                console.error("Failed to save file:", err);
-              }
+              const tabId = editorTabsStore.add(repoPath, filePath);
+              terminalLifecycle.handleTerminalSelect(tabId);
             }}
           />
 

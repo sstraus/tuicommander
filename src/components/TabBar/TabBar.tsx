@@ -3,6 +3,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
+import { editorTabsStore } from "../../stores/editorTabs";
 import { settingsStore } from "../../stores/settings";
 import { getModifierSymbol } from "../../platform";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
@@ -68,6 +69,16 @@ export const TabBar: Component<TabBarProps> = (props) => {
       const idx = ids.indexOf(id);
       return [
         { label: "Close Tab", action: () => { mdTabsStore.remove(id); props.onTabClose(id); } },
+        { label: "Close Other Tabs", action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
+        { label: "Close Tabs to the Right", action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
+      ];
+    }
+
+    if (id.startsWith("edit-")) {
+      const ids = editorTabsStore.getIds();
+      const idx = ids.indexOf(id);
+      return [
+        { label: "Close Tab", action: () => { editorTabsStore.remove(id); props.onTabClose(id); } },
         { label: "Close Other Tabs", action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
         { label: "Close Tabs to the Right", action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
       ];
@@ -364,6 +375,43 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   onClick={(e) => {
                     e.stopPropagation();
                     mdTabsStore.remove(id);
+                    props.onTabClose(id);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            </Show>
+          );
+        }}
+      </For>
+
+      {/* Editor tabs */}
+      <For each={editorTabsStore.getIds()}>
+        {(id) => {
+          const editTab = () => editorTabsStore.get(id);
+          const isActive = () => editorTabsStore.state.activeId === id;
+
+          return (
+            <Show when={editTab()}>
+              <div
+                class={`tab edit-tab ${isActive() ? "active" : ""}`}
+                onClick={() => {
+                  editorTabsStore.setActive(id);
+                  props.onTabSelect(id);
+                }}
+                onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); editorTabsStore.remove(id); props.onTabClose(id); } }}
+                onContextMenu={(e) => openTabContextMenu(e, id)}
+                title={editTab()?.filePath}
+              >
+                <span class="tab-icon">{editTab()?.isDirty ? "●" : "✎"}</span>
+                <span class="tab-name">{editTab()?.fileName}</span>
+                <button
+                  class="tab-close"
+                  title="Close"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    editorTabsStore.remove(id);
                     props.onTabClose(id);
                   }}
                 >
