@@ -388,9 +388,10 @@ describe("Sidebar", () => {
       expect(menu).not.toBeNull();
 
       const menuItems = menu!.querySelectorAll(".context-menu-item");
-      expect(menuItems.length).toBe(2);
+      expect(menuItems.length).toBe(3);
       expect(menuItems[0].textContent).toContain("Repo Settings");
-      expect(menuItems[1].textContent).toContain("Remove Repository");
+      expect(menuItems[1].textContent).toContain("Move to Group");
+      expect(menuItems[2].textContent).toContain("Remove Repository");
     });
 
     it("repo menu Settings click calls onRepoSettings", () => {
@@ -415,9 +416,9 @@ describe("Sidebar", () => {
       const menuBtn = container.querySelector(".repo-action-btn")!;
       fireEvent.click(menuBtn);
 
-      // Click remove
+      // Click remove — index 2 (after "Repo Settings" and "Move to Group")
       const menuItems = container.querySelectorAll(".context-menu-item");
-      fireEvent.click(menuItems[1]);
+      fireEvent.click(menuItems[2]);
       expect(onRemoveRepo).toHaveBeenCalledWith("/repo1");
     });
 
@@ -473,9 +474,10 @@ describe("Sidebar", () => {
       expect(menu).not.toBeNull();
 
       const menuItems = menu!.querySelectorAll(".context-menu-item");
-      expect(menuItems.length).toBe(2);
+      expect(menuItems.length).toBe(3);
       expect(menuItems[0].textContent).toContain("Repo Settings");
-      expect(menuItems[1].textContent).toContain("Remove Repository");
+      expect(menuItems[1].textContent).toContain("Move to Group");
+      expect(menuItems[2].textContent).toContain("Remove Repository");
     });
 
     it("repo header click calls toggleExpanded", () => {

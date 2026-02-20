@@ -122,26 +122,34 @@ const RepoSection: Component<{
       { label: "Repo Settings", action: () => props.onSettings() },
     ];
 
-    // "Move to Group" submenu — only show if groups exist
+    // "Move to Group" submenu — always available (includes "New Group...")
     const layout = repositoriesStore.getGroupedLayout();
-    if (layout.groups.length > 0) {
-      const currentGroup = repositoriesStore.getGroupForRepo(props.repo.path);
-      const children: ContextMenuItem[] = layout.groups
-        .filter((entry) => entry.group.id !== currentGroup?.id)
-        .map((entry) => ({
-          label: entry.group.name,
-          action: () => repositoriesStore.addRepoToGroup(props.repo.path, entry.group.id),
-        }));
-      if (currentGroup) {
-        children.push({
-          label: "Ungrouped",
-          action: () => repositoriesStore.removeRepoFromGroup(props.repo.path),
-        });
-      }
-      if (children.length > 0) {
-        items.push({ label: "Move to Group", action: () => {}, children });
-      }
+    const currentGroup = repositoriesStore.getGroupForRepo(props.repo.path);
+    const children: ContextMenuItem[] = layout.groups
+      .filter((entry) => entry.group.id !== currentGroup?.id)
+      .map((entry) => ({
+        label: entry.group.name,
+        action: () => repositoriesStore.addRepoToGroup(props.repo.path, entry.group.id),
+      }));
+    if (currentGroup) {
+      children.push({
+        label: "Ungrouped",
+        action: () => repositoriesStore.removeRepoFromGroup(props.repo.path),
+      });
     }
+    children.push({
+      separator: children.length > 0,
+      label: "New Group\u2026",
+      action: () => {
+        const name = window.prompt("Group name:");
+        if (!name?.trim()) return;
+        const groupId = repositoriesStore.createGroup(name.trim());
+        if (groupId) {
+          repositoriesStore.addRepoToGroup(props.repo.path, groupId);
+        }
+      },
+    });
+    items.push({ label: "Move to Group", action: () => {}, children });
 
     items.push({ label: "Remove Repository", action: () => props.onRemove() });
     return items;
