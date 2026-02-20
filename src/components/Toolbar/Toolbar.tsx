@@ -197,6 +197,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
         <PrDetailPopover
           repoPath={prDetailTarget()!.repoPath}
           branch={prDetailTarget()!.branch}
+          anchor="top"
           onClose={() => setPrDetailTarget(null)}
         />
       </Show>

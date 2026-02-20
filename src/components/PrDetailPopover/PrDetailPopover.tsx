@@ -8,6 +8,8 @@ export interface PrDetailPopoverProps {
   repoPath: string;
   branch: string;
   onClose: () => void;
+  /** Anchor to top-right (toolbar) or bottom-right (status bar, default) */
+  anchor?: "top" | "bottom";
 }
 
 /** Rich PR detail popover showing PR metadata, diff stats, and CI checks */
@@ -92,7 +94,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
   return (
     <>
       <div class="pr-detail-overlay" onClick={props.onClose} />
-      <div class="pr-detail-popover">
+      <div class={`pr-detail-popover ${props.anchor === "top" ? "pr-detail-anchor-top" : ""}`}>
         <Show when={prData()} fallback={
           <div class="pr-detail-empty">No PR data available for {props.branch}</div>
         }>

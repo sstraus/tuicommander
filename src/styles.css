@@ -5603,6 +5603,11 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   overflow: hidden;
 }
 
+.pr-detail-popover.pr-detail-anchor-top {
+  bottom: auto;
+  top: calc(var(--toolbar-height, 38px) + 4px);
+}
+
 .pr-detail-header {
   display: flex;
   align-items: center;
