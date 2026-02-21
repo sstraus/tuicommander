@@ -5730,11 +5730,22 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   top: calc(var(--toolbar-height, 38px) + 4px);
 }
 
+.pr-detail-repo {
+  padding: 6px 14px 2px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-accent);
+  background: var(--bg-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pr-detail-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 6px 14px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-tertiary);
 }

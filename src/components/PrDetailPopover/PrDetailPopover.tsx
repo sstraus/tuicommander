@@ -1,9 +1,20 @@
 import { Component, Show, For, onMount, onCleanup } from "solid-js";
 import { githubStore } from "../../stores/github";
+import { repositoriesStore } from "../../stores/repositories";
+import { repoSettingsStore } from "../../stores/repoSettings";
 import { CiRing } from "../ui/CiRing";
 import { relativeTime } from "../../utils/time";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCiIcon, getCiClass } from "../../utils/ciDisplay";
+
+/** Extract "owner/repo" from a GitHub PR URL, e.g. https://github.com/owner/repo/pull/67 */
+function extractGithubRepo(url: string): string | null {
+  try {
+    const parts = new URL(url).pathname.split("/").filter(Boolean);
+    if (parts.length >= 2) return `${parts[0]}/${parts[1]}`;
+  } catch { /* ignore malformed URL */ }
+  return null;
+}
 
 export interface PrDetailPopoverProps {
   repoPath: string;
@@ -71,6 +82,20 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
         }>
           {(pr) => (
             <>
+              {/* Repo label: GitHub owner/repo (from PR url) with optional repo color */}
+              <div
+                class="pr-detail-repo"
+                style={(() => {
+                  const color = repoSettingsStore.get(props.repoPath)?.color
+                    || repositoriesStore.getGroupForRepo(props.repoPath)?.color;
+                  return color ? { color } : undefined;
+                })()}
+              >
+                {extractGithubRepo(pr().url)
+                  ?? repositoriesStore.get(props.repoPath)?.displayName
+                  ?? props.repoPath.split("/").pop()}
+              </div>
+
               {/* Header: state badge + title + number */}
               <div class="pr-detail-header">
                 <span class={`pr-state-badge ${stateClass()}`}>{stateLabel()}</span>

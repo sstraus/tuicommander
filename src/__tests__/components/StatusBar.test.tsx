@@ -29,6 +29,14 @@ vi.mock("../../hooks/useGitHub", () => ({
 vi.mock("../../stores/repositories", () => ({
   repositoriesStore: {
     getActive: mockGetActive,
+    get: vi.fn(() => undefined),
+    getGroupForRepo: vi.fn(() => undefined),
+  },
+}));
+
+vi.mock("../../stores/repoSettings", () => ({
+  repoSettingsStore: {
+    get: vi.fn(() => undefined),
   },
 }));
 
