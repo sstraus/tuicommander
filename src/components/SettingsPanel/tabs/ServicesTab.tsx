@@ -1,5 +1,6 @@
-import { Component, Show, createSignal, createResource, onMount, onCleanup } from "solid-js";
+import { Component, Show, createSignal, createResource, createMemo, createEffect, onMount, onCleanup } from "solid-js";
 import { rpc } from "../../../transport";
+import QRCode from "qrcode";
 
 interface McpStatus {
   enabled: boolean;
@@ -36,6 +37,28 @@ export const ServicesTab: Component = () => {
   const [raShowPassword, setRaShowPassword] = createSignal(false);
   const [raSaving, setRaSaving] = createSignal(false);
   const [raSaved, setRaSaved] = createSignal(false);
+  const [qrDataUrl, setQrDataUrl] = createSignal<string | null>(null);
+
+  /** URL to embed in QR: includes credentials if plaintext password is available */
+  const qrContent = createMemo(() => {
+    const ip = localIp();
+    if (!ip) return null;
+    const base = `http://${ip}:${raPort()}`;
+    const user = raUsername();
+    const pass = raPassword(); // only set if user typed it this session
+    if (user && pass) {
+      return `http://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${ip}:${raPort()}`;
+    }
+    return base;
+  });
+
+  createEffect(() => {
+    const content = qrContent();
+    if (!content) { setQrDataUrl(null); return; }
+    QRCode.toDataURL(content, { width: 160, margin: 2, color: { dark: "#ffffff", light: "#1e1e1e" } })
+      .then(setQrDataUrl)
+      .catch(() => setQrDataUrl(null));
+  });
 
   const refreshStatus = async () => {
     try {
@@ -247,10 +270,28 @@ export const ServicesTab: Component = () => {
 
         <Show when={status()?.running && status()?.port}>
           <div class="settings-group">
-            <label>Connection URL</label>
-            <code class="settings-url">
-              http://{localIp() ?? "&lt;your-ip&gt;"}:{raPort()}
-            </code>
+            <div class="settings-connection-row">
+              <div class="settings-connection-info">
+                <label>Connection URL</label>
+                <code class="settings-url">
+                  http://{localIp() ?? "&lt;your-ip&gt;"}:{raPort()}
+                </code>
+                <Show when={raUsername()}>
+                  <p class="settings-hint" style={{ "margin-top": "4px" }}>
+                    User: <strong>{raUsername()}</strong>
+                    {raPassword() ? "" : raHasPassword() ? " · password set" : ""}
+                  </p>
+                </Show>
+              </div>
+              <Show when={qrDataUrl()}>
+                {(url) => (
+                  <div class="settings-qr">
+                    <img src={url()} width={120} height={120} alt="QR code for remote access" title="Scan to open on tablet" />
+                    <span class="settings-qr-label">Scan to connect</span>
+                  </div>
+                )}
+              </Show>
+            </div>
           </div>
         </Show>
       </Show>
