@@ -989,6 +989,15 @@ html, body {
   gap: 1px;
 }
 
+.pr-notif-repo {
+  font-size: var(--font-xs);
+  color: var(--fg-accent);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pr-notif-pr {
   font-size: var(--font-md);
   font-weight: 500;

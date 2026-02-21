@@ -168,22 +168,34 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
       <div class="toolbar-right">
         {/* Last-item shortcut: shows the most recently added item from any source */}
         <Show when={lastItem()}>
-          {(src) => (
-            <button
-              class="activity-last-item-btn"
-              onClick={handleLastItemClick}
-              title={(() => { const s = src(); return s.kind === "activity" ? s.item.title : s.notif.branch; })()}
-            >
-              <Show when={src().kind === "activity"}>
-                <span class="activity-last-item-icon" innerHTML={(src() as { kind: "activity"; item: ActivityItem }).item.icon} />
-                <span class="activity-last-item-title">{(src() as { kind: "activity"; item: ActivityItem }).item.title}</span>
-              </Show>
-              <Show when={src().kind === "pr"}>
-                <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354Z"/></svg>
-                <span class="activity-last-item-title">{(src() as { kind: "pr"; notif: PrNotification }).notif.branch}</span>
-              </Show>
-            </button>
-          )}
+          {(src) => {
+            const activitySrc = () => src().kind === "activity" ? src() as { kind: "activity"; item: ActivityItem } : null;
+            const prSrc = () => src().kind === "pr" ? src() as { kind: "pr"; notif: PrNotification } : null;
+            return (
+              <button
+                class="activity-last-item-btn"
+                onClick={handleLastItemClick}
+                title={(() => { const s = src(); return s.kind === "activity" ? s.item.title : s.notif.branch; })()}
+              >
+                <Show when={activitySrc()} keyed>
+                  {(s) => (
+                    <>
+                      <span class="activity-last-item-icon" innerHTML={s.item.icon} />
+                      <span class="activity-last-item-title">{s.item.title}</span>
+                    </>
+                  )}
+                </Show>
+                <Show when={prSrc()} keyed>
+                  {(s) => (
+                    <>
+                      <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354Z"/></svg>
+                      <span class="activity-last-item-title">{s.notif.branch}</span>
+                    </>
+                  )}
+                </Show>
+              </button>
+            );
+          }}
         </Show>
 
         {/* Bell: aggregates PR notifications + activity store items */}
@@ -225,6 +237,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                         >
                           <span class="pr-notif-icon">{info.icon}</span>
                           <div class="pr-notif-details">
+                            <span class="pr-notif-repo">
+                              {repositoriesStore.get(notif.repoPath)?.displayName ?? notif.repoPath.split("/").pop()}
+                            </span>
                             <span class="pr-notif-pr">#{notif.prNumber} {info.label}</span>
                             <span class="pr-notif-branch" title={notif.title}>{notif.branch}</span>
                           </div>
