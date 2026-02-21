@@ -52,6 +52,36 @@ vi.mock("../../stores/ui", () => ({
   },
 }));
 
+vi.mock("../../stores/repositories", () => ({
+  repositoriesStore: {
+    state: {
+      repositories: {
+        "/repo/alpha": { path: "/repo/alpha", displayName: "Alpha" },
+        "/repo/beta": { path: "/repo/beta", displayName: "Beta" },
+      },
+      repoOrder: ["/repo/alpha", "/repo/beta"],
+    },
+    setDisplayName: vi.fn(),
+  },
+}));
+
+vi.mock("../../stores/repoSettings", () => ({
+  repoSettingsStore: {
+    getOrCreate: vi.fn().mockReturnValue({
+      path: "/repo/alpha",
+      displayName: "Alpha",
+      baseBranch: "automatic",
+      copyIgnoredFiles: false,
+      copyUntrackedFiles: false,
+      setupScript: "",
+      runScript: "",
+      color: "",
+    }),
+    update: vi.fn(),
+    reset: vi.fn(),
+  },
+}));
+
 import { SettingsPanel } from "../../components/SettingsPanel/SettingsPanel";
 
 describe("SettingsPanel", () => {
@@ -137,6 +167,78 @@ describe("SettingsPanel", () => {
     fireEvent.click(notificationsItem);
     const sectionTitle = container.querySelector(".settings-section h3");
     expect(sectionTitle!.textContent).toBe("Notification Settings");
+  });
+
+  it("shows repos as nav items in the sidebar", () => {
+    const { container } = render(() => (
+      <SettingsPanel visible={true} onClose={() => {}} />
+    ));
+    const repoItems = container.querySelectorAll(".settings-nav-item--repo");
+    const labels = Array.from(repoItems).map((n) => n.textContent);
+    expect(labels).toContain("Alpha");
+    expect(labels).toContain("Beta");
+  });
+
+  it("shows REPOSITORIES section label above repo items", () => {
+    const { container } = render(() => (
+      <SettingsPanel visible={true} onClose={() => {}} />
+    ));
+    const label = container.querySelector(".settings-nav-label");
+    expect(label).not.toBeNull();
+    expect(label!.textContent).toBe("REPOSITORIES");
+  });
+
+  it("opens on General when no context given", () => {
+    const { container } = render(() => (
+      <SettingsPanel visible={true} onClose={() => {}} />
+    ));
+    const activeItem = container.querySelector(".settings-nav-item.active");
+    expect(activeItem!.textContent).toBe("General");
+  });
+
+  it("opens directly on repo nav item when context is repo", () => {
+    const { container } = render(() => (
+      <SettingsPanel
+        visible={true}
+        onClose={() => {}}
+        context={{ kind: "repo", repoPath: "/repo/alpha" }}
+      />
+    ));
+    const activeItem = container.querySelector(".settings-nav-item.active");
+    expect(activeItem!.classList.contains("settings-nav-item--repo")).toBe(true);
+    expect(activeItem!.textContent).toBe("Alpha");
+  });
+
+  it("shows repo settings content when repo nav item is active", () => {
+    const { container } = render(() => (
+      <SettingsPanel
+        visible={true}
+        onClose={() => {}}
+        context={{ kind: "repo", repoPath: "/repo/alpha" }}
+      />
+    ));
+    // RepoWorktreeTab has a h3 "Repository"
+    const h3 = container.querySelector(".settings-section h3");
+    expect(h3!.textContent).toBe("Repository");
+  });
+
+  it("shows Reset to Defaults button only when repo nav item is active", () => {
+    const { container } = render(() => (
+      <SettingsPanel visible={true} onClose={() => {}} />
+    ));
+    // Global context → no Reset button
+    expect(container.querySelector(".settings-footer-reset")).toBeNull();
+  });
+
+  it("shows Reset to Defaults when repo nav item is active", () => {
+    const { container } = render(() => (
+      <SettingsPanel
+        visible={true}
+        onClose={() => {}}
+        context={{ kind: "repo", repoPath: "/repo/alpha" }}
+      />
+    ));
+    expect(container.querySelector(".settings-footer-reset")).not.toBeNull();
   });
 
   it("renders split layout with nav sidebar", () => {

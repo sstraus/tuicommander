@@ -109,6 +109,43 @@ describe("SettingsShell", () => {
     expect(onTabChange).toHaveBeenCalledWith("appearance");
   });
 
+  it("renders section label for __label__: keys", () => {
+    const tabsWithLabel = [
+      { key: "a", label: "A" },
+      { key: "__sep__", label: "─" },
+      { key: "__label__:Repositories", label: "REPOSITORIES" },
+      { key: "b", label: "B" },
+    ];
+    const { container } = render(() => (
+      <SettingsShell {...defaultProps} tabs={tabsWithLabel}>
+        <p>content</p>
+      </SettingsShell>
+    ));
+    const label = container.querySelector(".settings-nav-label");
+    expect(label).not.toBeNull();
+    expect(label!.textContent).toBe("REPOSITORIES");
+    // Label is not a button (not clickable)
+    expect(label!.tagName.toLowerCase()).not.toBe("button");
+    // Only actual nav items are buttons, not the label
+    const navItems = container.querySelectorAll(".settings-nav-item");
+    expect(navItems.length).toBe(2); // a and b, not the label
+  });
+
+  it("repo: prefixed nav items get --repo modifier class", () => {
+    const tabsWithRepo = [
+      { key: "general", label: "General" },
+      { key: "repo:/path/to/repo", label: "my-repo" },
+    ];
+    const { container } = render(() => (
+      <SettingsShell {...defaultProps} tabs={tabsWithRepo} activeTab="general">
+        <p>content</p>
+      </SettingsShell>
+    ));
+    const repoItem = container.querySelector(".settings-nav-item--repo");
+    expect(repoItem).not.toBeNull();
+    expect(repoItem!.textContent).toBe("my-repo");
+  });
+
   it("renders separator between nav groups", () => {
     const tabsWithSep = [
       { key: "a", label: "A" },

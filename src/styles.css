@@ -3392,6 +3392,26 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   background: var(--border);
 }
 
+/* Non-clickable section header (e.g. "REPOSITORIES") */
+.settings-nav-label {
+  padding: 8px 16px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--fg-tertiary);
+  text-transform: uppercase;
+  user-select: none;
+}
+
+/* Repo nav items are indented to distinguish from global sections */
+.settings-nav-item--repo {
+  padding-left: 24px;
+}
+
+.settings-nav-item--repo.active {
+  padding-left: 22px;
+}
+
 /* Drag handle on the right edge of nav sidebar */
 .settings-nav-resize-handle {
   position: absolute;

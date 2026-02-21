@@ -1,10 +1,10 @@
 ---
 id: 316-3cfb
 title: "Settings: repos as direct nav items with deep-link open"
-status: pending
+status: in_progress
 priority: P2
 created: "2026-02-21T09:17:54.233Z"
-updated: "2026-02-21T09:17:57.242Z"
+updated: "2026-02-21T09:31:44.060Z"
 dependencies: ["315"]
 ---
 

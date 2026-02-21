@@ -15,10 +15,10 @@ import {
   RepoScriptsTab,
 } from "./tabs";
 
-/** Context determines which tabs are shown */
+/** Context for initial selection when opening the panel */
 export type SettingsContext =
   | { kind: "global" }
-  | { kind: "repo"; repoPath: string; displayName: string };
+  | { kind: "repo"; repoPath: string };
 
 export interface SettingsPanelProps {
   visible: boolean;
@@ -26,7 +26,6 @@ export interface SettingsPanelProps {
   initialTab?: string;
   context?: SettingsContext;
 }
-
 
 const GLOBAL_TABS: SettingsShellTab[] = [
   { key: "general", label: "General" },
@@ -36,23 +35,29 @@ const GLOBAL_TABS: SettingsShellTab[] = [
   { key: "services", label: "Services" },
 ];
 
-const REPO_TABS: SettingsShellTab[] = [
-  { key: "repo-worktree", label: "Worktree" },
-  { key: "repo-scripts", label: "Scripts" },
-];
-
-/** Separator pseudo-tab rendered as a divider in the tab bar */
-const SEPARATOR: SettingsShellTab = { key: "__sep__", label: "─" };
-
-function buildTabs(ctx: SettingsContext): SettingsShellTab[] {
-  if (ctx.kind === "repo") {
-    return [...REPO_TABS, SEPARATOR, ...GLOBAL_TABS];
-  }
-  return GLOBAL_TABS;
+function defaultTab(ctx: SettingsContext): string {
+  if (ctx.kind === "repo") return `repo:${ctx.repoPath}`;
+  return "general";
 }
 
-function defaultTab(ctx: SettingsContext): string {
-  return ctx.kind === "repo" ? "repo-worktree" : "general";
+/** Build the full nav from global sections + configured repos */
+function buildNavItems(): SettingsShellTab[] {
+  const repos = repositoriesStore.state.repoOrder
+    .map((path) => repositoriesStore.state.repositories[path])
+    .filter(Boolean);
+
+  const items: SettingsShellTab[] = [...GLOBAL_TABS];
+
+  if (repos.length > 0) {
+    items.push({ key: "__sep__", label: "─" });
+    items.push({ key: "__label__:Repositories", label: "REPOSITORIES" });
+    for (const repo of repos) {
+      const label = repo.displayName || repo.path.split("/").pop() || repo.path;
+      items.push({ key: `repo:${repo.path}`, label });
+    }
+  }
+
+  return items;
 }
 
 export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
@@ -66,39 +71,38 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
     }
   });
 
-  const tabs = () => buildTabs(ctx());
-
-  // Repo settings helpers (only used when kind=repo)
-  const repoSettings = () => {
-    const c = ctx();
-    if (c.kind !== "repo") return null;
-    return repoSettingsStore.getOrCreate(c.repoPath, c.displayName);
+  /** Repo path if a repo nav item is currently active, null otherwise */
+  const activeRepoPath = (): string | null => {
+    const tab = activeTab();
+    return tab.startsWith("repo:") ? tab.slice(5) : null;
   };
 
-  const updateRepoSetting = <K extends keyof RepoSettings>(key: K, value: RepoSettings[K]) => {
-    const c = ctx();
-    if (c.kind !== "repo") return;
-    repoSettingsStore.update(c.repoPath, { [key]: value });
-    // displayName lives in both stores — keep repositoriesStore in sync
-    if (key === "displayName") {
-      repositoriesStore.setDisplayName(c.repoPath, value as string);
-    }
-  };
+  const repoSettings = (path: string) =>
+    repoSettingsStore.getOrCreate(path, shortenHomePath(path));
+
+  const updateRepoSetting =
+    (repoPath: string) =>
+    <K extends keyof RepoSettings>(key: K, value: RepoSettings[K]) => {
+      repoSettingsStore.update(repoPath, { [key]: value });
+      if (key === "displayName") {
+        repositoriesStore.setDisplayName(repoPath, value as string);
+      }
+    };
 
   const footer = () => {
-    const c = ctx();
+    const path = activeRepoPath();
     return (
       <div class="settings-footer">
-        {c.kind === "repo" ? (
-          <button
-            class="settings-footer-reset"
-            onClick={() => repoSettingsStore.reset(c.repoPath)}
-          >
-            Reset to Defaults
-          </button>
-        ) : (
-          <span />
-        )}
+        <Show when={path} fallback={<span />}>
+          {(p) => (
+            <button
+              class="settings-footer-reset"
+              onClick={() => repoSettingsStore.reset(p())}
+            >
+              Reset to Defaults
+            </button>
+          )}
+        </Show>
         <button class="settings-footer-done" onClick={props.onClose}>
           Done
         </button>
@@ -110,25 +114,29 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
     <SettingsShell
       visible={props.visible}
       onClose={props.onClose}
-      title={ctx().kind === "repo" ? (ctx() as { displayName: string }).displayName : "Settings"}
-      subtitle={ctx().kind === "repo" ? shortenHomePath((ctx() as { repoPath: string }).repoPath) : undefined}
-      icon={ctx().kind === "repo" ? "📁" : undefined}
-      tabs={tabs()}
+      title="Settings"
+      tabs={buildNavItems()}
       activeTab={activeTab()}
       onTabChange={setActiveTab}
       navWidth={uiStore.state.settingsNavWidth}
       onNavWidthChange={uiStore.setSettingsNavWidth}
       footer={footer()}
     >
-      {/* Repo tabs */}
-      <Show when={activeTab() === "repo-worktree" && repoSettings()}>
-        {(s) => <RepoWorktreeTab settings={s()} onUpdate={updateRepoSetting} />}
-      </Show>
-      <Show when={activeTab() === "repo-scripts" && repoSettings()}>
-        {(s) => <RepoScriptsTab settings={s()} onUpdate={updateRepoSetting} />}
+      {/* Repo settings (shown when a repo nav item is active) */}
+      <Show when={activeRepoPath()} keyed>
+        {(path) => {
+          const settings = repoSettings(path);
+          const onUpdate = updateRepoSetting(path);
+          return (
+            <>
+              <RepoWorktreeTab settings={settings} onUpdate={onUpdate} />
+              <RepoScriptsTab settings={settings} onUpdate={onUpdate} />
+            </>
+          );
+        }}
       </Show>
 
-      {/* Global tabs */}
+      {/* Global sections */}
       <Show when={activeTab() === "general"}>
         <GeneralTab />
       </Show>

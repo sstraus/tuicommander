@@ -608,7 +608,6 @@ describe("useGitOperations", () => {
       expect(openSettingsPanel).toHaveBeenCalledWith({
         kind: "repo",
         repoPath: "/repo",
-        displayName: "My Repo",
       });
     });
   });

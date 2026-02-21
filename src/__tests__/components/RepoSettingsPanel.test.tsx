@@ -26,6 +26,18 @@ vi.mock("../../stores/ui", () => ({
   },
 }));
 
+vi.mock("../../stores/repositories", () => ({
+  repositoriesStore: {
+    state: {
+      repositories: {
+        "/repo": { path: "/repo", displayName: "my-repo" },
+      },
+      repoOrder: ["/repo"],
+    },
+    setDisplayName: vi.fn(),
+  },
+}));
+
 vi.mock("../../stores/repoSettings", () => {
   const mockReset = vi.fn();
   const mockUpdate = vi.fn();
@@ -37,6 +49,7 @@ vi.mock("../../stores/repoSettings", () => {
     copyUntrackedFiles: false,
     setupScript: "",
     runScript: "",
+    color: "",
   });
 
   return {
@@ -53,7 +66,7 @@ import type { RepoSettings } from "../../stores/repoSettings";
 import { SettingsPanel } from "../../components/SettingsPanel/SettingsPanel";
 
 describe("SettingsPanel — repo context", () => {
-  const repoContext = { kind: "repo" as const, repoPath: "/repo", displayName: "my-repo" };
+  const repoContext = { kind: "repo" as const, repoPath: "/repo" };
 
   const defaultProps = {
     visible: true,
@@ -76,36 +89,32 @@ describe("SettingsPanel — repo context", () => {
     vi.mocked(repoSettingsStore.getOrCreate).mockReturnValue(mockSettings);
   });
 
-  it("shows display name in header", () => {
+  it("shows Settings title in header (unified panel)", () => {
     const { container } = render(() => (
       <SettingsPanel {...defaultProps} />
     ));
-    const heading = container.querySelector(".settings-title--repo h2");
-    expect(heading).not.toBeNull();
-    expect(heading!.textContent).toBe("my-repo");
+    const heading = container.querySelector(".settings-header h2");
+    expect(heading!.textContent).toBe("Settings");
   });
 
-  it("shows repo path as subtitle", () => {
+  it("opens with repo nav item active", () => {
     const { container } = render(() => (
       <SettingsPanel {...defaultProps} />
     ));
-    const pathEl = container.querySelector(".settings-path--repo");
-    expect(pathEl).not.toBeNull();
-    expect(pathEl!.textContent).toBe("/repo");
+    const activeItem = container.querySelector(".settings-nav-item.active");
+    expect(activeItem!.classList.contains("settings-nav-item--repo")).toBe(true);
+    expect(activeItem!.textContent).toBe("my-repo");
   });
 
-  it("shows repo tabs and global tabs", () => {
+  it("shows repo settings content when repo nav item is active", () => {
     const { container } = render(() => (
       <SettingsPanel {...defaultProps} />
     ));
-    const tabs = container.querySelectorAll(".settings-nav-item");
-    const tabLabels = Array.from(tabs).map((t) => t.textContent);
-    // Repo tabs
-    expect(tabLabels).toContain("Worktree");
-    expect(tabLabels).toContain("Scripts");
-    // Global tabs (also present)
-    expect(tabLabels).toContain("General");
-    expect(tabLabels).not.toContain("Agents");
+    // RepoWorktreeTab renders h3 "Repository"
+    const headings = Array.from(container.querySelectorAll(".settings-section h3")).map(h => h.textContent);
+    expect(headings).toContain("Repository");
+    // RepoScriptsTab renders h3 "Automation Scripts"
+    expect(headings).toContain("Automation Scripts");
   });
 
   it("Done button calls onClose", () => {
@@ -118,44 +127,26 @@ describe("SettingsPanel — repo context", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("reset button calls repoSettingsStore.reset", () => {
+  it("reset button calls repoSettingsStore.reset with correct path", () => {
     const { container } = render(() => (
       <SettingsPanel {...defaultProps} />
     ));
     const resetBtn = container.querySelector(".settings-footer-reset")!;
+    expect(resetBtn).not.toBeNull();
     fireEvent.click(resetBtn);
     expect(repoSettingsStore.reset).toHaveBeenCalledWith("/repo");
   });
 
-  it("switching to Worktree tab shows worktree content", () => {
-    const { container } = render(() => (
-      <SettingsPanel {...defaultProps} initialTab="repo-scripts" />
-    ));
-
-    const tabs = container.querySelectorAll(".settings-nav-item");
-    const worktreeTab = Array.from(tabs).find((t) => t.textContent === "Worktree")!;
-    fireEvent.click(worktreeTab);
-    const sectionTitle = container.querySelector(".settings-section h3");
-    expect(sectionTitle!.textContent).toBe("Repository");
-  });
-
-  it("switching to Scripts tab shows scripts content", () => {
+  it("clicking a global nav item switches to global content", () => {
     const { container } = render(() => (
       <SettingsPanel {...defaultProps} />
     ));
-
-    const tabs = container.querySelectorAll(".settings-nav-item");
-    const scriptsTab = Array.from(tabs).find((t) => t.textContent === "Scripts")!;
-    fireEvent.click(scriptsTab);
-    const sectionTitle = container.querySelector(".settings-section h3");
-    expect(sectionTitle!.textContent).toBe("Automation Scripts");
-  });
-
-  it("defaults to repo Worktree tab", () => {
-    const { container } = render(() => (
-      <SettingsPanel {...defaultProps} />
-    ));
-    const sectionTitle = container.querySelector(".settings-section h3");
-    expect(sectionTitle!.textContent).toBe("Repository");
+    const generalItem = Array.from(container.querySelectorAll(".settings-nav-item"))
+      .find((n) => n.textContent === "General")!;
+    fireEvent.click(generalItem);
+    const h3 = container.querySelector(".settings-section h3");
+    expect(h3!.textContent).toBe("General");
+    // Reset button gone when on global section
+    expect(container.querySelector(".settings-footer-reset")).toBeNull();
   });
 });

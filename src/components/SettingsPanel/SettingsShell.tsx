@@ -89,9 +89,11 @@ export const SettingsShell: Component<SettingsShellProps> = (props) => {
                 {(tab) =>
                   tab.key === "__sep__" ? (
                     <div class="settings-nav-separator" />
+                  ) : tab.key.startsWith("__label__:") ? (
+                    <div class="settings-nav-label">{tab.label}</div>
                   ) : (
                     <button
-                      class={`settings-nav-item${props.activeTab === tab.key ? " active" : ""}`}
+                      class={`settings-nav-item${tab.key.startsWith("repo:") ? " settings-nav-item--repo" : ""}${props.activeTab === tab.key ? " active" : ""}`}
                       onClick={() => props.onTabChange(tab.key)}
                     >
                       {tab.label}

@@ -399,12 +399,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
   const handleRepoSettings = (
     repoPath: string,
-    openSettingsPanel: (context: { kind: "repo"; repoPath: string; displayName: string }) => void,
+    openSettingsPanel: (context: { kind: "repo"; repoPath: string }) => void,
   ) => {
     setCurrentRepoPath(repoPath);
-    const repoState = repositoriesStore.get(repoPath);
-    const displayName = repoState?.displayName ?? repoPath.split("/").pop() ?? repoPath;
-    openSettingsPanel({ kind: "repo", repoPath, displayName });
+    openSettingsPanel({ kind: "repo", repoPath });
   };
 
   return {
