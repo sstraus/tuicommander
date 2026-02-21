@@ -205,7 +205,7 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
         transform: (data) => (data as { dir: string }).dir,
       };
     case "get_worktree_paths":
-      return { method: "GET", path: `/worktrees/paths?repoPath=${p("repoPath")}` };
+      return { method: "GET", path: `/worktrees/paths?path=${p("repoPath")}` };
     case "create_worktree":
       return {
         method: "POST",

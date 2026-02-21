@@ -230,8 +230,8 @@ html, body {
 #app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  width: 100vw;
+  height: 100dvh; /* dvh adapts to iOS Safari dynamic toolbar; falls back gracefully */
+  width: 100dvw;
 }
 
 #app-body {
@@ -860,10 +860,24 @@ html, body {
 .toolbar-left {
   width: var(--sidebar-width);
   flex: none;
+  position: relative;
   justify-content: flex-end;
   padding-right: 10px;
   gap: 8px;
   -webkit-app-region: drag;
+}
+
+.toolbar-app-name {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  user-select: none;
+}
+
+
+#app.sidebar-hidden .toolbar-app-name {
+  display: none;
 }
 
 .toolbar-center {
@@ -6158,8 +6172,14 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   gap: 2px;
 }
 
+.git-quick-label {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+  align-self: center;
+}
+
 .git-quick-actions-title {
-  display: none; /* label removed — buttons are self-explanatory */
+  display: none;
 }
 
 .git-quick-actions-btns {
