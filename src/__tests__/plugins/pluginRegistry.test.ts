@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { activityStore } from "../../stores/activityStore";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
-import type { TuiPlugin, PluginHost, OutputWatcher } from "../../plugins/types";
+import type { TuiPlugin, PluginHost } from "../../plugins/types";
 
 // ---------------------------------------------------------------------------
 // Helpers

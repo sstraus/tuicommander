@@ -1,10 +1,10 @@
 ---
 id: 327-1682
 title: "CSS: generic activity-* classes and two-line item layout"
-status: ready
+status: complete
 priority: P2
 created: "2026-02-21T09:35:32.591Z"
-updated: "2026-02-21T10:02:49.067Z"
+updated: "2026-02-21T10:31:33.973Z"
 dependencies: ["325-90ef"]
 ---
 
@@ -34,4 +34,6 @@ CSS classes are hardcoded for PR notifications (pr-notif-*) and plans (plan-butt
 - 325-90ef
 
 ## Work Log
+
+### 2026-02-21T10:31:30.671Z - Added activity-* CSS classes (section-header, item, last-item-btn), removed plan-button-* CSS. Fixed unused OutputWatcher import in pluginRegistry test. 1772/1772 green.
 

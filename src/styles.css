@@ -1026,6 +1026,159 @@ html, body {
 .notif-changes .pr-notif-icon { color: #d29922; }
 .notif-ready .pr-notif-icon { color: #3fb950; }
 
+/* ============================================================================
+   Activity Center — generic plugin sections
+   ============================================================================ */
+
+.activity-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+
+.activity-section-label {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.activity-dismiss-all {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.activity-dismiss-all:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.activity-item:hover {
+  background: var(--bg-highlight);
+}
+
+.activity-item:last-child {
+  border-bottom: none;
+}
+
+.activity-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-muted);
+}
+
+.activity-item-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.activity-item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.activity-item-title {
+  font-size: var(--font-md);
+  font-weight: 500;
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-item-subtitle {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-item-dismiss {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-lg);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.activity-item-dismiss:hover {
+  color: var(--fg-primary);
+}
+
+/* Last-item shortcut button — same visual weight as the former plan button */
+.activity-last-item-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  max-width: 180px;
+  margin-right: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.activity-last-item-btn:hover {
+  background: var(--bg-highlight);
+  border-color: var(--accent);
+}
+
+.activity-last-item-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.activity-last-item-icon svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+.activity-last-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .toolbar-sidebar-toggle {
   width: 28px;
   height: 28px;
@@ -4642,64 +4795,6 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 /* ============================================================================
    Plan Button (toolbar)
    ============================================================================ */
-
-.plan-button-group {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  margin-right: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.plan-button {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  background: var(--bg-secondary);
-  color: var(--fg-primary);
-  border: none;
-  cursor: pointer;
-  font-size: var(--font-xs);
-  font-family: var(--font-mono);
-  white-space: nowrap;
-  max-width: 180px;
-}
-
-.plan-button:hover {
-  background: var(--bg-highlight);
-}
-
-.plan-button-icon {
-  flex-shrink: 0;
-  opacity: 0.8;
-}
-
-.plan-button-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.plan-button-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 5px;
-  background: var(--bg-secondary);
-  color: var(--fg-muted);
-  border: none;
-  border-left: 1px solid var(--border);
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.plan-button-close:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
 
 
 /* ============================================================================
