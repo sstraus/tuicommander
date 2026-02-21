@@ -15,8 +15,12 @@ describe("mdTabsStore", () => {
         const id = store.add("/repo", "docs/README.md");
         expect(id).toBe("md-1");
         expect(store.state.activeId).toBe(id);
-        expect(store.get(id)?.filePath).toBe("docs/README.md");
-        expect(store.get(id)?.fileName).toBe("README.md");
+        const tab = store.get(id);
+        expect(tab?.type).toBe("file");
+        if (tab?.type === "file") {
+          expect(tab.filePath).toBe("docs/README.md");
+          expect(tab.fileName).toBe("README.md");
+        }
         dispose();
       });
     });
@@ -42,6 +46,57 @@ describe("mdTabsStore", () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Virtual tabs
+  // -------------------------------------------------------------------------
+  describe("addVirtual()", () => {
+    it("adds a virtual tab and sets it active", () => {
+      createRoot((dispose) => {
+        const id = store.addVirtual("Active Plan", "plan:file?path=/foo.md");
+        expect(store.state.activeId).toBe(id);
+        const tab = store.get(id);
+        expect(tab?.type).toBe("virtual");
+        if (tab?.type === "virtual") {
+          expect(tab.title).toBe("Active Plan");
+          expect(tab.contentUri).toBe("plan:file?path=/foo.md");
+        }
+        dispose();
+      });
+    });
+
+    it("deduplicates by contentUri", () => {
+      createRoot((dispose) => {
+        const id1 = store.addVirtual("Plan", "plan:file?path=/foo.md");
+        const id2 = store.addVirtual("Plan", "plan:file?path=/foo.md");
+        expect(id2).toBe(id1);
+        expect(store.getCount()).toBe(1);
+        dispose();
+      });
+    });
+
+    it("allows different contentUris as separate tabs", () => {
+      createRoot((dispose) => {
+        const id1 = store.addVirtual("Plan A", "plan:file?path=/a.md");
+        const id2 = store.addVirtual("Plan B", "plan:file?path=/b.md");
+        expect(id1).not.toBe(id2);
+        expect(store.getCount()).toBe(2);
+        dispose();
+      });
+    });
+
+    it("can coexist with file tabs", () => {
+      createRoot((dispose) => {
+        store.add("/repo", "a.md");
+        store.addVirtual("Stories", "stories:detail?id=1");
+        expect(store.getCount()).toBe(2);
+        dispose();
+      });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // remove()
+  // -------------------------------------------------------------------------
   describe("remove()", () => {
     it("removes a tab and selects another", () => {
       createRoot((dispose) => {
@@ -62,8 +117,20 @@ describe("mdTabsStore", () => {
         dispose();
       });
     });
+
+    it("removes virtual tabs correctly", () => {
+      createRoot((dispose) => {
+        const id = store.addVirtual("Plan", "plan:x");
+        store.remove(id);
+        expect(store.get(id)).toBeUndefined();
+        dispose();
+      });
+    });
   });
 
+  // -------------------------------------------------------------------------
+  // clearForRepo()
+  // -------------------------------------------------------------------------
   describe("clearForRepo()", () => {
     it("removes only tabs for specified repo", () => {
       createRoot((dispose) => {
@@ -95,13 +162,27 @@ describe("mdTabsStore", () => {
         dispose();
       });
     });
+
+    it("does not remove virtual tabs when clearing a repo", () => {
+      createRoot((dispose) => {
+        store.add("/repo1", "a.md");
+        const vId = store.addVirtual("Stories", "stories:x");
+        store.clearForRepo("/repo1");
+        expect(store.get(vId)).toBeDefined();
+        dispose();
+      });
+    });
   });
 
+  // -------------------------------------------------------------------------
+  // clearAll()
+  // -------------------------------------------------------------------------
   describe("clearAll()", () => {
-    it("removes all tabs", () => {
+    it("removes all tabs including virtual", () => {
       createRoot((dispose) => {
         store.add("/repo", "a.md");
         store.add("/repo", "b.md");
+        store.addVirtual("Plan", "plan:x");
         store.clearAll();
         expect(store.getCount()).toBe(0);
         expect(store.state.activeId).toBeNull();
@@ -110,12 +191,16 @@ describe("mdTabsStore", () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // getForRepo()
+  // -------------------------------------------------------------------------
   describe("getForRepo()", () => {
-    it("filters tabs by repo", () => {
+    it("filters tabs by repo, excludes virtual tabs", () => {
       createRoot((dispose) => {
         store.add("/repo1", "a.md");
         store.add("/repo1", "b.md");
         store.add("/repo2", "c.md");
+        store.addVirtual("Plan", "plan:x");
         expect(store.getForRepo("/repo1")).toHaveLength(2);
         expect(store.getForRepo("/repo2")).toHaveLength(1);
         dispose();

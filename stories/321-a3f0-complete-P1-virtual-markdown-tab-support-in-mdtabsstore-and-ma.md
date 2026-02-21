@@ -1,10 +1,10 @@
 ---
 id: 321-a3f0
 title: Virtual markdown tab support in mdTabsStore and MarkdownTab
-status: ready
+status: complete
 priority: P1
 created: "2026-02-21T09:34:29.891Z"
-updated: "2026-02-21T10:02:49.049Z"
+updated: "2026-02-21T10:15:07.221Z"
 dependencies: ["319-0595"]
 ---
 
@@ -37,4 +37,6 @@ Currently mdTabsStore only supports file-based tabs (repoPath + filePath). Plugi
 - 319-0595
 
 ## Work Log
+
+### 2026-02-21T10:15:07.148Z - Extended MdTabData to discriminated union FileTab|VirtualTab. Added addVirtual(title,contentUri) with dedup. clearForRepo/getForRepo skip virtual tabs. MarkdownTab now branches on tab.type: file→readFile, virtual→markdownProviderRegistry.resolve. 16/16 mdTabs tests + 1753 total tests green.
 

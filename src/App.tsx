@@ -43,6 +43,7 @@ import { githubStore } from "./stores/github";
 import { dictationStore } from "./stores/dictation";
 import { notificationsStore } from "./stores/notifications";
 import { repoSettingsStore } from "./stores/repoSettings";
+import { repoDefaultsStore } from "./stores/repoDefaults";
 import { notesStore } from "./stores/notes";
 import { prNotificationsStore } from "./stores/prNotifications";
 import { updaterStore } from "./stores/updater";
@@ -177,6 +178,7 @@ const App: Component = () => {
             settingsStore.hydrate(),
             notificationsStore.hydrate(),
             repoSettingsStore.hydrate(),
+            repoDefaultsStore.hydrate(),
             promptLibraryStore.hydrate(),
             notesStore.hydrate(),
           ]);
@@ -693,8 +695,7 @@ const App: Component = () => {
                   >
                     {mdTab && (
                       <MarkdownTab
-                        repoPath={mdTab.repoPath}
-                        filePath={mdTab.filePath}
+                        tab={mdTab}
                         onClose={() => terminalLifecycle.closeTerminal(id)}
                       />
                     )}
