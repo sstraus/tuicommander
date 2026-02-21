@@ -170,7 +170,7 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         "127.0.0.1:0".to_string()
     };
 
-    let app = build_router(state, remote_enabled, mcp_enabled);
+    let app = build_router(state.clone(), remote_enabled, mcp_enabled);
 
     let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
         Ok(l) => l,
@@ -262,6 +262,7 @@ mod tests {
             http_client: std::mem::ManuallyDrop::new(http_client),
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+            server_shutdown: parking_lot::Mutex::new(None),
         })
     }
 

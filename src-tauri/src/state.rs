@@ -749,6 +749,7 @@ mod tests {
             http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+            server_shutdown: parking_lot::Mutex::new(None),
         }
     }
 
