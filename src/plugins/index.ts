@@ -1,4 +1,5 @@
 import { pluginRegistry } from "./pluginRegistry";
+import { loadUserPlugins } from "./pluginLoader";
 import { planPlugin } from "./planPlugin";
 import { wizStoriesPlugin } from "./wizStoriesPlugin";
 import type { TuiPlugin } from "./types";
@@ -10,11 +11,12 @@ import type { TuiPlugin } from "./types";
 const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin, wizStoriesPlugin];
 
 /**
- * Register all built-in plugins with the plugin registry.
+ * Register all built-in plugins, then discover and load user plugins.
  * Call once at app startup.
  */
-export function initPlugins(): void {
+export async function initPlugins(): Promise<void> {
   for (const plugin of BUILTIN_PLUGINS) {
     pluginRegistry.register(plugin);
   }
+  await loadUserPlugins();
 }
