@@ -1,10 +1,10 @@
 ---
 id: 320-e879
 title: Plugin registry and PluginHost implementation
-status: ready
+status: complete
 priority: P1
 created: "2026-02-21T09:34:19.725Z"
-updated: "2026-02-21T10:02:49.047Z"
+updated: "2026-02-21T10:11:50.492Z"
 dependencies: ["318-d0e3", "319-0595"]
 ---
 
@@ -38,4 +38,6 @@ Need a central plugin registry that manages plugin lifecycle (Obsidian-style onl
 - 319-0595
 
 ## Work Log
+
+### 2026-02-21T10:11:50.414Z - Implemented pluginRegistry with full lifecycle management. Per-plugin Disposable aggregation ensures auto-cleanup on unregister. dispatchLine resets global regex lastIndex before each test, catches watcher exceptions. 23/23 tests green.
 
