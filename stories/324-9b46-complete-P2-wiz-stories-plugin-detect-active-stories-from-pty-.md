@@ -1,10 +1,10 @@
 ---
 id: 324-9b46
 title: "Wiz stories plugin: detect active stories from PTY output"
-status: ready
+status: complete
 priority: P2
 created: "2026-02-21T09:34:57.240Z"
-updated: "2026-02-21T10:02:49.052Z"
+updated: "2026-02-21T10:38:54.498Z"
 dependencies: ["320-e879"]
 ---
 
@@ -36,4 +36,8 @@ When wiz:work runs a story, TUI Commander should detect it from PTY output and s
 - 320-e879
 
 ## Work Log
+
+### 2026-02-21T10:32:14.059Z - Starting implementation
+
+### 2026-02-21T10:38:50.691Z - Implemented wizStoriesPlugin: STATUS and WORKLOG patterns, MarkdownProvider via list_markdown_files+read_file, factory for injectable storiesDir. 22 tests green.
 
