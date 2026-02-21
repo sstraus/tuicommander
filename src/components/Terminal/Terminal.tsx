@@ -377,17 +377,31 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Left Option → Meta (sends ESC + char for readline/emacs/vi keybindings)
     // Right Option → macOS composition (π, ∑, @ etc.) — handled by xterm natively
     //
-    // On Windows/Linux the Alt key already sends escape sequences natively;
-    // this handler is a no-op on those platforms.
+    // On Windows/Linux Alt already sends escape sequences natively; no-op there.
     //
-    // event.key is already composed to "π" on macOS and is useless here.
-    // We reconstruct the base character from event.code instead.
+    // Important: event.location on a regular key (e.g. P) is always 0 (standard),
+    // never 1 (left). We track left-Option state via keydown/keyup on AltLeft itself.
+    //
+    // We intercept both keydown (to inject ESC+char) and keypress (to suppress the
+    // macOS-composed character that xterm's third-level-shift pass-through would send).
+    let leftOptionHeld = false;
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
       if (!isMacOS()) return true; // Windows/Linux: xterm handles Alt natively
-      if (event.type !== "keydown") return true;
       if (event.metaKey || event.ctrlKey) return true; // Cmd+Alt or AltGr: pass through
-      // DOM_KEY_LOCATION_LEFT = 1: left Option only; right Option keeps macOS composition
-      if (!event.altKey || event.location !== 1) return true;
+      if (!event.altKey) return true;
+
+      // Track left vs right Option state via the modifier key itself (location=1 for left)
+      if (event.code === "AltLeft") {
+        if (event.type === "keydown") leftOptionHeld = true;
+        else if (event.type === "keyup") leftOptionHeld = false;
+        return true; // let xterm see the modifier keydown/keyup
+      }
+
+      // Regular key: only intercept when left Option is held
+      if (!leftOptionHeld) return true;
+
+      // Only handle keydown and keypress (both can carry the composed char to xterm)
+      if (event.type !== "keydown" && event.type !== "keypress") return true;
 
       const code = event.code;
       let seq: string | null = null;
@@ -420,8 +434,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
       }
 
       if (seq === null) return true; // unknown key: let xterm handle
-      terminal!.input(seq, true);
-      return false; // suppress xterm's default alt-key processing
+      // On keydown: inject ESC sequence into PTY; on keypress: just suppress
+      if (event.type === "keydown") terminal!.input(seq, true);
+      return false; // suppress xterm's default alt-key processing (both keydown + keypress)
     });
 
     fitAddon = new FitAddon();
