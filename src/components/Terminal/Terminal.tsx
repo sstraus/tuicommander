@@ -300,7 +300,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
             });
             break;
           case "plan-file":
-            // Handled by planPlugin via dispatchStructuredEvent below
+            // Mark terminal as awaiting input — the plan needs user approval
+            terminalsStore.setAwaitingInput(props.id, "question");
+            if (terminalsStore.state.activeId !== props.id) {
+              notificationsStore.playQuestion();
+            }
+            // Also handled by planPlugin via dispatchStructuredEvent below
             break;
         }
 
