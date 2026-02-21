@@ -138,6 +138,10 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
       return { method: "PUT", path: "/config/repo-settings", body: args.config };
     case "check_has_custom_settings":
       return { method: "GET", path: `/config/repo-settings/has-custom?path=${p("path")}` };
+    case "load_repo_defaults":
+      return { method: "GET", path: "/config/repo-defaults" };
+    case "save_repo_defaults":
+      return { method: "PUT", path: "/config/repo-defaults", body: args.config };
 
     // --- Config: repositories ---
     case "load_repositories":

@@ -1,5 +1,6 @@
 import { Component, For, Show } from "solid-js";
 import { settingsStore, IDE_NAMES, FONT_FAMILIES } from "../../../stores/settings";
+import { repoDefaultsStore } from "../../../stores/repoDefaults";
 import { updaterStore } from "../../../stores/updater";
 import { THEME_NAMES } from "../../../themes";
 import type { IdeType, FontType } from "../../../stores/settings";
@@ -189,6 +190,69 @@ export const GeneralTab: Component = () => {
           <span>{settingsStore.state.defaultFontSize}px</span>
         </div>
         <p class="settings-hint">Default size for new terminals. Use <strong>Cmd+Plus/Minus</strong> to zoom individually, <strong>Cmd+0</strong> to reset</p>
+      </div>
+
+      <h3>Repository Defaults</h3>
+      <p class="settings-hint" style={{ "margin-bottom": "12px" }}>
+        Default settings applied to all repositories. Override individually in each repo's settings.
+      </p>
+
+      <div class="settings-group">
+        <label>Default Base Branch</label>
+        <select
+          value={repoDefaultsStore.state.baseBranch}
+          onChange={(e) => repoDefaultsStore.setBaseBranch(e.currentTarget.value)}
+        >
+          <option value="automatic">Automatic (origin/main or origin/master)</option>
+          <option value="main">main</option>
+          <option value="master">master</option>
+          <option value="develop">develop</option>
+        </select>
+        <p class="settings-hint">Default base branch when creating new worktrees</p>
+      </div>
+
+      <div class="settings-group">
+        <label>File Handling Defaults</label>
+
+        <div class="settings-toggle">
+          <input
+            type="checkbox"
+            checked={repoDefaultsStore.state.copyIgnoredFiles}
+            onChange={(e) => repoDefaultsStore.setCopyIgnoredFiles(e.currentTarget.checked)}
+          />
+          <span>Copy ignored files to new worktrees</span>
+        </div>
+
+        <div class="settings-toggle">
+          <input
+            type="checkbox"
+            checked={repoDefaultsStore.state.copyUntrackedFiles}
+            onChange={(e) => repoDefaultsStore.setCopyUntrackedFiles(e.currentTarget.checked)}
+          />
+          <span>Copy untracked files to new worktrees</span>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <label>Default Setup Script</label>
+        <textarea
+          value={repoDefaultsStore.state.setupScript}
+          onInput={(e) => repoDefaultsStore.setSetupScript(e.currentTarget.value)}
+          placeholder="#!/bin/bash&#10;npm install"
+          rows={4}
+        />
+        <p class="settings-hint">Executed once after a new worktree is created (e.g., npm install)</p>
+      </div>
+
+      <div class="settings-group">
+        <label>Default Run Script</label>
+        <textarea
+          value={repoDefaultsStore.state.runScript}
+          onInput={(e) => repoDefaultsStore.setRunScript(e.currentTarget.value)}
+          placeholder="#!/bin/bash&#10;npm run dev"
+          rows={4}
+        />
+        <p class="settings-hint">On-demand script launchable from the toolbar (e.g., npm run dev)</p>
       </div>
 
     </div>

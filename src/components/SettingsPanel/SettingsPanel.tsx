@@ -1,5 +1,6 @@
 import { Component, Show, createEffect, createSignal } from "solid-js";
 import { repoSettingsStore, type RepoSettings } from "../../stores/repoSettings";
+import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { repositoriesStore } from "../../stores/repositories";
 import { uiStore } from "../../stores/ui";
 import { shortenHomePath } from "../../platform";
@@ -129,8 +130,8 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
           const onUpdate = updateRepoSetting(path);
           return (
             <>
-              <RepoWorktreeTab settings={settings} onUpdate={onUpdate} />
-              <RepoScriptsTab settings={settings} onUpdate={onUpdate} />
+              <RepoWorktreeTab settings={settings} defaults={repoDefaultsStore.state} onUpdate={onUpdate} />
+              <RepoScriptsTab settings={settings} defaults={repoDefaultsStore.state} onUpdate={onUpdate} />
             </>
           );
         }}

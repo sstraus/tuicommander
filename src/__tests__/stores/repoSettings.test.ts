@@ -7,6 +7,19 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: mockInvoke,
 }));
 
+// Mock repoDefaultsStore so getEffective tests are deterministic
+const mockDefaults = {
+  baseBranch: "automatic",
+  copyIgnoredFiles: false,
+  copyUntrackedFiles: false,
+  setupScript: "",
+  runScript: "",
+};
+
+vi.mock("../../stores/repoDefaults", () => ({
+  repoDefaultsStore: { state: mockDefaults },
+}));
+
 describe("repoSettingsStore", () => {
   let store: typeof import("../../stores/repoSettings").repoSettingsStore;
 
@@ -15,8 +28,21 @@ describe("repoSettingsStore", () => {
     mockInvoke.mockReset().mockResolvedValue(undefined);
     localStorage.clear();
 
+    // Reset mock defaults to known state
+    Object.assign(mockDefaults, {
+      baseBranch: "automatic",
+      copyIgnoredFiles: false,
+      copyUntrackedFiles: false,
+      setupScript: "",
+      runScript: "",
+    });
+
     vi.doMock("@tauri-apps/api/core", () => ({
       invoke: mockInvoke,
+    }));
+
+    vi.doMock("../../stores/repoDefaults", () => ({
+      repoDefaultsStore: { state: mockDefaults },
     }));
 
     store = (await import("../../stores/repoSettings")).repoSettingsStore;
@@ -32,12 +58,19 @@ describe("repoSettingsStore", () => {
   });
 
   describe("getOrCreate()", () => {
-    it("creates settings for new repo", () => {
+    it("creates settings for new repo with null overridable fields (inheriting from global)", () => {
       createRoot((dispose) => {
         const settings = store.getOrCreate("/repo", "my-repo");
         expect(settings.path).toBe("/repo");
         expect(settings.displayName).toBe("my-repo");
-        expect(settings.baseBranch).toBe("automatic");
+        // Overridable fields default to null (inherit from global defaults)
+        expect(settings.baseBranch).toBeNull();
+        expect(settings.copyIgnoredFiles).toBeNull();
+        expect(settings.copyUntrackedFiles).toBeNull();
+        expect(settings.setupScript).toBeNull();
+        expect(settings.runScript).toBeNull();
+        // Non-overridable fields remain non-nullable
+        expect(settings.color).toBe("");
         dispose();
       });
     });
@@ -78,9 +111,89 @@ describe("repoSettingsStore", () => {
       });
     });
 
+    it("can set overridable fields back to null (inherit)", () => {
+      createRoot((dispose) => {
+        store.getOrCreate("/repo", "my-repo");
+        store.update("/repo", { baseBranch: "main" });
+        store.update("/repo", { baseBranch: null });
+        expect(store.get("/repo")?.baseBranch).toBeNull();
+        dispose();
+      });
+    });
+
     it("ignores updates for unknown repos", () => {
       createRoot((dispose) => {
         store.update("/unknown", { baseBranch: "main" }); // Should not throw
+        dispose();
+      });
+    });
+  });
+
+  describe("getEffective()", () => {
+    it("returns global defaults for a new repo with null overrides", () => {
+      createRoot((dispose) => {
+        store.getOrCreate("/repo", "my-repo");
+        const effective = store.getEffective("/repo");
+        expect(effective.baseBranch).toBe("automatic"); // from global default
+        expect(effective.copyIgnoredFiles).toBe(false);
+        expect(effective.copyUntrackedFiles).toBe(false);
+        expect(effective.setupScript).toBe("");
+        expect(effective.runScript).toBe("");
+        dispose();
+      });
+    });
+
+    it("uses per-repo override when set", () => {
+      createRoot((dispose) => {
+        store.getOrCreate("/repo", "my-repo");
+        store.update("/repo", { baseBranch: "main", copyIgnoredFiles: true });
+
+        mockDefaults.baseBranch = "develop"; // global default is different
+        const effective = store.getEffective("/repo");
+        expect(effective.baseBranch).toBe("main"); // repo override wins
+        expect(effective.copyIgnoredFiles).toBe(true);
+        dispose();
+      });
+    });
+
+    it("falls back to global default when field is null", () => {
+      createRoot((dispose) => {
+        store.getOrCreate("/repo", "my-repo");
+        // baseBranch is null (inherit) but global says "develop"
+        mockDefaults.baseBranch = "develop";
+        const effective = store.getEffective("/repo");
+        expect(effective.baseBranch).toBe("develop");
+        dispose();
+      });
+    });
+
+    it("returns non-nullable effective settings", () => {
+      createRoot((dispose) => {
+        store.getOrCreate("/repo", "my-repo");
+        const effective = store.getEffective("/repo");
+        // All fields must be non-null
+        expect(effective.baseBranch).not.toBeNull();
+        expect(effective.copyIgnoredFiles).not.toBeNull();
+        expect(effective.setupScript).not.toBeNull();
+        dispose();
+      });
+    });
+
+    it("returns undefined for unknown repo", () => {
+      createRoot((dispose) => {
+        expect(store.getEffective("/unknown")).toBeUndefined();
+        dispose();
+      });
+    });
+
+    it("preserves non-overridable fields (path, displayName, color)", () => {
+      createRoot((dispose) => {
+        store.getOrCreate("/repo", "my-repo");
+        store.update("/repo", { color: "#ff0000" });
+        const effective = store.getEffective("/repo");
+        expect(effective!.path).toBe("/repo");
+        expect(effective!.displayName).toBe("my-repo");
+        expect(effective!.color).toBe("#ff0000");
         dispose();
       });
     });
@@ -118,66 +231,6 @@ describe("repoSettingsStore", () => {
       });
     });
 
-    it("returns true when baseBranch changed", async () => {
-      await createRoot(async (dispose) => {
-        store.getOrCreate("/repo", "my-repo");
-        store.update("/repo", { baseBranch: "main" });
-        mockInvoke.mockResolvedValueOnce(true);
-        expect(await store.hasCustomSettings("/repo")).toBe(true);
-        dispose();
-      });
-    });
-
-    it("returns true when setupScript set", async () => {
-      await createRoot(async (dispose) => {
-        store.getOrCreate("/repo", "my-repo");
-        store.update("/repo", { setupScript: "npm install" });
-        mockInvoke.mockResolvedValueOnce(true);
-        expect(await store.hasCustomSettings("/repo")).toBe(true);
-        dispose();
-      });
-    });
-
-    it("returns true when runScript set", async () => {
-      await createRoot(async (dispose) => {
-        store.getOrCreate("/repo", "my-repo");
-        store.update("/repo", { runScript: "npm start" });
-        mockInvoke.mockResolvedValueOnce(true);
-        expect(await store.hasCustomSettings("/repo")).toBe(true);
-        dispose();
-      });
-    });
-
-    it("returns true when copyIgnoredFiles enabled", async () => {
-      await createRoot(async (dispose) => {
-        store.getOrCreate("/repo", "my-repo");
-        store.update("/repo", { copyIgnoredFiles: true });
-        mockInvoke.mockResolvedValueOnce(true);
-        expect(await store.hasCustomSettings("/repo")).toBe(true);
-        dispose();
-      });
-    });
-
-    it("returns true when copyUntrackedFiles enabled", async () => {
-      await createRoot(async (dispose) => {
-        store.getOrCreate("/repo", "my-repo");
-        store.update("/repo", { copyUntrackedFiles: true });
-        mockInvoke.mockResolvedValueOnce(true);
-        expect(await store.hasCustomSettings("/repo")).toBe(true);
-        dispose();
-      });
-    });
-
-    it("returns true when multiple fields changed", async () => {
-      await createRoot(async (dispose) => {
-        store.getOrCreate("/repo", "my-repo");
-        store.update("/repo", { baseBranch: "develop", setupScript: "make build" });
-        mockInvoke.mockResolvedValueOnce(true);
-        expect(await store.hasCustomSettings("/repo")).toBe(true);
-        dispose();
-      });
-    });
-
     it("returns false for unknown repos", async () => {
       await createRoot(async (dispose) => {
         expect(await store.hasCustomSettings("/unknown")).toBe(false);
@@ -187,13 +240,25 @@ describe("repoSettingsStore", () => {
   });
 
   describe("reset()", () => {
-    it("resets to defaults", () => {
+    it("resets overridable fields to null (inherit from global)", () => {
       createRoot((dispose) => {
         store.getOrCreate("/repo", "my-repo");
         store.update("/repo", { baseBranch: "main", setupScript: "npm install" });
         store.reset("/repo");
-        expect(store.get("/repo")?.baseBranch).toBe("automatic");
-        expect(store.get("/repo")?.setupScript).toBe("");
+        expect(store.get("/repo")?.baseBranch).toBeNull();
+        expect(store.get("/repo")?.setupScript).toBeNull();
+        expect(store.get("/repo")?.copyIgnoredFiles).toBeNull();
+        dispose();
+      });
+    });
+
+    it("preserves non-overridable fields (displayName, color)", () => {
+      createRoot((dispose) => {
+        store.getOrCreate("/repo", "my-repo");
+        store.update("/repo", { color: "#ff0000" });
+        store.reset("/repo");
+        expect(store.get("/repo")?.displayName).toBe("my-repo");
+        expect(store.get("/repo")?.color).toBe("#ff0000");
         dispose();
       });
     });
@@ -228,10 +293,10 @@ describe("repoSettingsStore", () => {
             path: "/repo",
             displayName: "my-repo",
             baseBranch: "main",
-            copyIgnoredFiles: false,
-            copyUntrackedFiles: false,
-            setupScript: "",
-            runScript: "",
+            copyIgnoredFiles: null,
+            copyUntrackedFiles: null,
+            setupScript: null,
+            runScript: null,
           },
         },
       });

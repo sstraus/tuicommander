@@ -1,10 +1,17 @@
 import { Component, For, Show } from "solid-js";
 import type { RepoSettings } from "../../../stores/repoSettings";
+import type { RepoDefaults } from "../../../stores/repoDefaults";
 import { PRESET_COLORS } from "./GroupsTab";
 
 export interface RepoTabProps {
   settings: RepoSettings;
+  defaults: RepoDefaults;
   onUpdate: <K extends keyof RepoSettings>(key: K, value: RepoSettings[K]) => void;
+}
+
+/** Returns the effective (resolved) value for a nullable boolean field */
+function effectiveBool(override: boolean | null, fallback: boolean): boolean {
+  return override ?? fallback;
 }
 
 export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
@@ -14,6 +21,15 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
     { value: "master", label: "master" },
     { value: "develop", label: "develop" },
   ];
+
+  /** "inherit" sentinel value for the baseBranch dropdown */
+  const INHERIT = "__inherit__";
+
+  const baseBranchValue = () => props.settings.baseBranch ?? INHERIT;
+
+  const handleBaseBranchChange = (value: string) => {
+    props.onUpdate("baseBranch", value === INHERIT ? null : value);
+  };
 
   return (
     <div class="settings-section">
@@ -77,9 +93,12 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
       <div class="settings-group">
         <label>Branch new workspaces from</label>
         <select
-          value={props.settings.baseBranch ?? "automatic"}
-          onChange={(e) => props.onUpdate("baseBranch", e.currentTarget.value)}
+          value={baseBranchValue()}
+          onChange={(e) => handleBaseBranchChange(e.currentTarget.value)}
         >
+          <option value={INHERIT}>
+            Use global default ({props.defaults.baseBranch})
+          </option>
           <For each={branchOptions}>
             {(opt) => <option value={opt.value}>{opt.label}</option>}
           </For>
@@ -93,19 +112,29 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
         <div class="settings-toggle">
           <input
             type="checkbox"
-            checked={props.settings.copyIgnoredFiles ?? false}
+            checked={effectiveBool(props.settings.copyIgnoredFiles, props.defaults.copyIgnoredFiles)}
             onChange={(e) => props.onUpdate("copyIgnoredFiles", e.currentTarget.checked)}
           />
-          <span>Copy ignored files to new worktrees</span>
+          <span>
+            Copy ignored files to new worktrees
+            <Show when={props.settings.copyIgnoredFiles === null}>
+              <span class="settings-hint-inline"> (global default)</span>
+            </Show>
+          </span>
         </div>
 
         <div class="settings-toggle">
           <input
             type="checkbox"
-            checked={props.settings.copyUntrackedFiles ?? false}
+            checked={effectiveBool(props.settings.copyUntrackedFiles, props.defaults.copyUntrackedFiles)}
             onChange={(e) => props.onUpdate("copyUntrackedFiles", e.currentTarget.checked)}
           />
-          <span>Copy untracked files to new worktrees</span>
+          <span>
+            Copy untracked files to new worktrees
+            <Show when={props.settings.copyUntrackedFiles === null}>
+              <span class="settings-hint-inline"> (global default)</span>
+            </Show>
+          </span>
         </div>
       </div>
     </div>

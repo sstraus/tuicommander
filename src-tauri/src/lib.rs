@@ -387,6 +387,8 @@ pub fn run() {
             config::load_repo_settings,
             config::save_repo_settings,
             config::check_has_custom_settings,
+            config::load_repo_defaults,
+            config::save_repo_defaults,
             config::load_repositories,
             config::save_repositories,
             config::load_prompt_library,

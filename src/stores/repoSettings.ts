@@ -1,8 +1,26 @@
 import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "../invoke";
+import { repoDefaultsStore } from "./repoDefaults";
 
-/** Per-repository settings */
+/** Per-repository settings — overridable fields are nullable (null = inherit from global defaults) */
 export interface RepoSettings {
+  path: string;
+  displayName: string;
+  /** null = inherit from repoDefaultsStore */
+  baseBranch: string | null;
+  /** null = inherit from repoDefaultsStore */
+  copyIgnoredFiles: boolean | null;
+  /** null = inherit from repoDefaultsStore */
+  copyUntrackedFiles: boolean | null;
+  /** null = inherit from repoDefaultsStore */
+  setupScript: string | null;
+  /** null = inherit from repoDefaultsStore */
+  runScript: string | null;
+  color: string;
+}
+
+/** Fully resolved settings with no nulls — use getEffective() to obtain */
+export interface EffectiveRepoSettings {
   path: string;
   displayName: string;
   baseBranch: string;
@@ -13,14 +31,16 @@ export interface RepoSettings {
   color: string;
 }
 
-/** Default repository settings — used only for creating new entries */
-const DEFAULT_REPO_SETTINGS: Omit<RepoSettings, "path" | "displayName"> = {
-  baseBranch: "automatic",
-  copyIgnoredFiles: false,
-  copyUntrackedFiles: false,
-  setupScript: "",
-  runScript: "",
-  color: "",
+/** Fields that can be overridden per-repo (all others are repo-specific) */
+const OVERRIDABLE_NULL_DEFAULTS: Pick<
+  RepoSettings,
+  "baseBranch" | "copyIgnoredFiles" | "copyUntrackedFiles" | "setupScript" | "runScript"
+> = {
+  baseBranch: null,
+  copyIgnoredFiles: null,
+  copyUntrackedFiles: null,
+  setupScript: null,
+  runScript: null,
 };
 
 /** Repository settings store state */
@@ -68,7 +88,7 @@ function createRepoSettingsStore() {
       }
     },
 
-    /** Get settings for a repository */
+    /** Get raw settings for a repository (may contain nulls = inherited) */
     get(path: string): RepoSettings | undefined {
       return state.settings[path];
     },
@@ -82,13 +102,32 @@ function createRepoSettingsStore() {
       const newSettings: RepoSettings = {
         path,
         displayName,
-        ...DEFAULT_REPO_SETTINGS,
+        color: "",
+        ...OVERRIDABLE_NULL_DEFAULTS,
       };
 
       setState("settings", path, newSettings);
       saveSettings(state.settings);
 
       return newSettings;
+    },
+
+    /** Get fully resolved settings, merging global defaults with per-repo overrides */
+    getEffective(path: string): EffectiveRepoSettings | undefined {
+      const settings = state.settings[path];
+      if (!settings) return undefined;
+
+      const defaults = repoDefaultsStore.state;
+      return {
+        path: settings.path,
+        displayName: settings.displayName,
+        color: settings.color,
+        baseBranch: settings.baseBranch ?? defaults.baseBranch,
+        copyIgnoredFiles: settings.copyIgnoredFiles ?? defaults.copyIgnoredFiles,
+        copyUntrackedFiles: settings.copyUntrackedFiles ?? defaults.copyUntrackedFiles,
+        setupScript: settings.setupScript ?? defaults.setupScript,
+        runScript: settings.runScript ?? defaults.runScript,
+      };
     },
 
     /** Update settings for a repository */
@@ -130,13 +169,13 @@ function createRepoSettingsStore() {
       }
     },
 
-    /** Reset repository settings to defaults */
+    /** Reset per-repo overridable fields to null (inherits from global defaults) */
     reset(path: string): void {
       if (!state.settings[path]) return;
 
       setState("settings", path, {
         ...state.settings[path],
-        ...DEFAULT_REPO_SETTINGS,
+        ...OVERRIDABLE_NULL_DEFAULTS,
       });
       saveSettings(state.settings);
     },

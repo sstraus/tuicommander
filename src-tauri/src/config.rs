@@ -328,6 +328,55 @@ pub(crate) struct RepoSettingsEntry {
     pub(crate) path: String,
     #[serde(default)]
     pub(crate) display_name: String,
+    /// null = inherit from global repo defaults
+    #[serde(default)]
+    pub(crate) base_branch: Option<String>,
+    /// null = inherit from global repo defaults
+    #[serde(default)]
+    pub(crate) copy_ignored_files: Option<bool>,
+    /// null = inherit from global repo defaults
+    #[serde(default)]
+    pub(crate) copy_untracked_files: Option<bool>,
+    /// null = inherit from global repo defaults
+    #[serde(default)]
+    pub(crate) setup_script: Option<String>,
+    /// null = inherit from global repo defaults
+    #[serde(default)]
+    pub(crate) run_script: Option<String>,
+    #[serde(default)]
+    pub(crate) color: String,
+}
+
+impl Default for RepoSettingsEntry {
+    fn default() -> Self {
+        Self {
+            path: String::new(),
+            display_name: String::new(),
+            base_branch: None,
+            copy_ignored_files: None,
+            copy_untracked_files: None,
+            setup_script: None,
+            run_script: None,
+            color: String::new(),
+        }
+    }
+}
+
+impl RepoSettingsEntry {
+    /// Check if this entry has any non-default settings
+    pub(crate) fn has_custom_settings(&self) -> bool {
+        self.base_branch.is_some()
+            || self.copy_ignored_files.is_some()
+            || self.copy_untracked_files.is_some()
+            || self.setup_script.is_some()
+            || self.run_script.is_some()
+            || !self.color.is_empty()
+    }
+}
+
+/// Global defaults applied to all repos unless overridden per-repo
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct RepoDefaultsConfig {
     #[serde(default = "default_base_branch")]
     pub(crate) base_branch: String,
     #[serde(default)]
@@ -338,39 +387,22 @@ pub(crate) struct RepoSettingsEntry {
     pub(crate) setup_script: String,
     #[serde(default)]
     pub(crate) run_script: String,
-    #[serde(default)]
-    pub(crate) color: String,
 }
 
-impl Default for RepoSettingsEntry {
+impl Default for RepoDefaultsConfig {
     fn default() -> Self {
         Self {
-            path: String::new(),
-            display_name: String::new(),
             base_branch: default_base_branch(),
             copy_ignored_files: false,
             copy_untracked_files: false,
             setup_script: String::new(),
             run_script: String::new(),
-            color: String::new(),
         }
     }
 }
 
 fn default_base_branch() -> String {
     "automatic".to_string()
-}
-
-impl RepoSettingsEntry {
-    /// Check if this entry has any non-default settings
-    pub(crate) fn has_custom_settings(&self) -> bool {
-        self.base_branch != default_base_branch()
-            || self.copy_ignored_files
-            || self.copy_untracked_files
-            || !self.setup_script.is_empty()
-            || !self.run_script.is_empty()
-            || !self.color.is_empty()
-    }
 }
 
 /// Map of repo path -> settings
@@ -409,6 +441,7 @@ const APP_CONFIG_FILE: &str = "config.json";
 const NOTIFICATION_CONFIG_FILE: &str = "notifications.json";
 const UI_PREFS_FILE: &str = "ui-prefs.json";
 const REPO_SETTINGS_FILE: &str = "repo-settings.json";
+const REPO_DEFAULTS_FILE: &str = "repo-defaults.json";
 const PROMPT_LIBRARY_FILE: &str = "prompt-library.json";
 const REPOSITORIES_FILE: &str = "repositories.json";
 const NOTES_FILE: &str = "notes.json";
@@ -461,6 +494,17 @@ pub(crate) fn save_repo_settings(config: RepoSettingsMap) -> Result<(), String> 
 pub(crate) fn check_has_custom_settings(path: String) -> bool {
     let settings: RepoSettingsMap = load_json_config(REPO_SETTINGS_FILE);
     settings.repos.get(&path).is_some_and(|entry| entry.has_custom_settings())
+}
+
+// Repo defaults (global defaults for all repos)
+#[tauri::command]
+pub(crate) fn load_repo_defaults() -> RepoDefaultsConfig {
+    load_json_config(REPO_DEFAULTS_FILE)
+}
+
+#[tauri::command]
+pub(crate) fn save_repo_defaults(config: RepoDefaultsConfig) -> Result<(), String> {
+    save_json_config(REPO_DEFAULTS_FILE, &config)
 }
 
 // Repositories (opaque JSON — schema owned by frontend)
@@ -635,11 +679,11 @@ mod tests {
             RepoSettingsEntry {
                 path: "/my/repo".to_string(),
                 display_name: "my-repo".to_string(),
-                base_branch: "main".to_string(),
-                copy_ignored_files: true,
-                copy_untracked_files: false,
-                setup_script: "npm install".to_string(),
-                run_script: "npm start".to_string(),
+                base_branch: Some("main".to_string()),
+                copy_ignored_files: Some(true),
+                copy_untracked_files: None,
+                setup_script: Some("npm install".to_string()),
+                run_script: Some("npm start".to_string()),
                 color: String::new(),
             },
         );
@@ -648,8 +692,9 @@ mod tests {
         assert_eq!(loaded.repos.len(), 1);
         let entry = loaded.repos.get("/my/repo").unwrap();
         assert_eq!(entry.display_name, "my-repo");
-        assert_eq!(entry.base_branch, "main");
-        assert!(entry.copy_ignored_files);
+        assert_eq!(entry.base_branch, Some("main".to_string()));
+        assert_eq!(entry.copy_ignored_files, Some(true));
+        assert_eq!(entry.copy_untracked_files, None);
     }
 
     #[test]
@@ -736,7 +781,7 @@ mod tests {
     #[test]
     fn has_custom_settings_true_when_base_branch_changed() {
         let entry = RepoSettingsEntry {
-            base_branch: "main".to_string(),
+            base_branch: Some("main".to_string()),
             ..RepoSettingsEntry::default()
         };
         assert!(entry.has_custom_settings());
@@ -745,7 +790,7 @@ mod tests {
     #[test]
     fn has_custom_settings_true_when_copy_ignored_files() {
         let entry = RepoSettingsEntry {
-            copy_ignored_files: true,
+            copy_ignored_files: Some(true),
             ..RepoSettingsEntry::default()
         };
         assert!(entry.has_custom_settings());
@@ -754,7 +799,7 @@ mod tests {
     #[test]
     fn has_custom_settings_true_when_copy_untracked_files() {
         let entry = RepoSettingsEntry {
-            copy_untracked_files: true,
+            copy_untracked_files: Some(true),
             ..RepoSettingsEntry::default()
         };
         assert!(entry.has_custom_settings());
@@ -763,7 +808,7 @@ mod tests {
     #[test]
     fn has_custom_settings_true_when_setup_script_set() {
         let entry = RepoSettingsEntry {
-            setup_script: "npm install".to_string(),
+            setup_script: Some("npm install".to_string()),
             ..RepoSettingsEntry::default()
         };
         assert!(entry.has_custom_settings());
@@ -772,7 +817,7 @@ mod tests {
     #[test]
     fn has_custom_settings_true_when_run_script_set() {
         let entry = RepoSettingsEntry {
-            run_script: "npm start".to_string(),
+            run_script: Some("npm start".to_string()),
             ..RepoSettingsEntry::default()
         };
         assert!(entry.has_custom_settings());
@@ -790,8 +835,8 @@ mod tests {
     #[test]
     fn has_custom_settings_true_when_multiple_fields_changed() {
         let entry = RepoSettingsEntry {
-            base_branch: "develop".to_string(),
-            setup_script: "make build".to_string(),
+            base_branch: Some("develop".to_string()),
+            setup_script: Some("make build".to_string()),
             ..RepoSettingsEntry::default()
         };
         assert!(entry.has_custom_settings());
@@ -804,7 +849,7 @@ mod tests {
         let path = dir.path().join("bad.json");
         fs::write(&path, "not valid json!!!").unwrap();
         // Since load_json_config uses the global config_dir, we test the deserialization path
-        let result: Result<AgentConfig, _> = serde_json::from_str("not valid json!!!");
+        let result: Result<AppConfig, _> = serde_json::from_str("not valid json!!!");
         assert!(result.is_err());
         // The load_json_config function gracefully falls back to default
     }

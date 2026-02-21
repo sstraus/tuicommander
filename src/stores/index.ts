@@ -25,6 +25,8 @@ export type { TaskData, TaskStatus, TaskCompletionCallback } from "./tasks";
 export { notificationsStore } from "./notifications";
 
 export { repoSettingsStore } from "./repoSettings";
-export type { RepoSettings } from "./repoSettings";
+export type { RepoSettings, EffectiveRepoSettings } from "./repoSettings";
+export { repoDefaultsStore } from "./repoDefaults";
+export type { RepoDefaults } from "./repoDefaults";
 
 export { githubStore } from "./github";
