@@ -42,7 +42,6 @@ import { settingsStore } from "./stores/settings";
 import { githubStore } from "./stores/github";
 import { dictationStore } from "./stores/dictation";
 import { notificationsStore } from "./stores/notifications";
-import { errorHandlingStore } from "./stores/errorHandling";
 import { repoSettingsStore } from "./stores/repoSettings";
 import { notesStore } from "./stores/notes";
 import { prNotificationsStore } from "./stores/prNotifications";
@@ -177,7 +176,6 @@ const App: Component = () => {
             uiStore.hydrate(),
             settingsStore.hydrate(),
             notificationsStore.hydrate(),
-            errorHandlingStore.hydrate(),
             repoSettingsStore.hydrate(),
             promptLibraryStore.hydrate(),
             notesStore.hydrate(),

@@ -295,33 +295,8 @@ impl Default for NotificationConfig {
 }
 
 // ---------------------------------------------------------------------------
-// UIPrefsConfig — sidebar visibility, width, error handling strategy, etc.
+// UIPrefsConfig — sidebar, panel sizes, settings nav width
 // ---------------------------------------------------------------------------
-
-#[derive(Clone, Serialize, Deserialize)]
-pub(crate) struct ErrorHandlingConfig {
-    #[serde(default = "default_strategy")]
-    pub(crate) strategy: String,
-    #[serde(default = "default_max_retries")]
-    pub(crate) max_retries: u32,
-}
-
-fn default_strategy() -> String {
-    "retry".to_string()
-}
-
-fn default_max_retries() -> u32 {
-    3
-}
-
-impl Default for ErrorHandlingConfig {
-    fn default() -> Self {
-        Self {
-            strategy: default_strategy(),
-            max_retries: default_max_retries(),
-        }
-    }
-}
 
 #[derive(Clone, Serialize, Deserialize, Default)]
 pub(crate) struct UIPrefsConfig {
@@ -329,13 +304,20 @@ pub(crate) struct UIPrefsConfig {
     pub(crate) sidebar_visible: bool,
     #[serde(default = "default_sidebar_width")]
     pub(crate) sidebar_width: u32,
-    #[serde(default)]
-    pub(crate) error_handling: ErrorHandlingConfig,
+    #[serde(default = "default_panel_width")]
+    pub(crate) diff_panel_width: u32,
+    #[serde(default = "default_panel_width")]
+    pub(crate) markdown_panel_width: u32,
+    #[serde(default = "default_notes_panel_width")]
+    pub(crate) notes_panel_width: u32,
+    #[serde(default = "default_settings_nav_width")]
+    pub(crate) settings_nav_width: u32,
 }
 
-fn default_sidebar_width() -> u32 {
-    260
-}
+fn default_sidebar_width() -> u32 { 260 }
+fn default_panel_width() -> u32 { 400 }
+fn default_notes_panel_width() -> u32 { 350 }
+fn default_settings_nav_width() -> u32 { 180 }
 
 // ---------------------------------------------------------------------------
 // RepoSettingsMap — per-repo settings keyed by repo path
@@ -630,16 +612,18 @@ mod tests {
         let cfg = UIPrefsConfig {
             sidebar_visible: false,
             sidebar_width: 300,
-            error_handling: ErrorHandlingConfig {
-                strategy: "ignore".to_string(),
-                max_retries: 5,
-            },
+            diff_panel_width: 500,
+            markdown_panel_width: 450,
+            notes_panel_width: 320,
+            settings_nav_width: 200,
         };
         let loaded: UIPrefsConfig = round_trip_in_dir(dir.path(), "ui-prefs.json", &cfg);
         assert!(!loaded.sidebar_visible);
         assert_eq!(loaded.sidebar_width, 300);
-        assert_eq!(loaded.error_handling.strategy, "ignore");
-        assert_eq!(loaded.error_handling.max_retries, 5);
+        assert_eq!(loaded.diff_panel_width, 500);
+        assert_eq!(loaded.markdown_panel_width, 450);
+        assert_eq!(loaded.notes_panel_width, 320);
+        assert_eq!(loaded.settings_nav_width, 200);
     }
 
     #[test]

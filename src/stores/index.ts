@@ -21,8 +21,6 @@ export type { SavedPrompt, PromptCategory, PromptVariable } from "./promptLibrar
 export { tasksStore } from "./tasks";
 export type { TaskData, TaskStatus, TaskCompletionCallback } from "./tasks";
 
-export { errorHandlingStore } from "./errorHandling";
-export type { RetryInfo } from "./errorHandling";
 
 export { notificationsStore } from "./notifications";
 

@@ -8,6 +8,11 @@ const SIDEBAR_MIN_WIDTH = 200;
 const SIDEBAR_MAX_WIDTH = 500;
 const SIDEBAR_DEFAULT_WIDTH = 300;
 
+const DIFF_PANEL_DEFAULT_WIDTH = 400;
+const MARKDOWN_PANEL_DEFAULT_WIDTH = 400;
+const NOTES_PANEL_DEFAULT_WIDTH = 350;
+const SETTINGS_NAV_DEFAULT_WIDTH = 180;
+
 /** UI store state */
 interface UIStoreState {
   // Sidebar visibility
@@ -21,6 +26,12 @@ interface UIStoreState {
   markdownPanelVisible: boolean;
   notesPanelVisible: boolean;
   fileBrowserPanelVisible: boolean;
+
+  // Resizable panel widths (persisted)
+  diffPanelWidth: number;
+  markdownPanelWidth: number;
+  notesPanelWidth: number;
+  settingsNavWidth: number;
 
   // Diff panel state
   currentDiffRepo: string | null;
@@ -40,13 +51,6 @@ function clampWidth(v: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, v));
 }
 
-/** Persist sidebar prefs to Rust backend (fire-and-forget) */
-function saveSidebarPrefs(visible: boolean, width: number): void {
-  invoke("save_ui_prefs", {
-    config: { sidebar_visible: visible, sidebar_width: width },
-  }).catch((err) => console.debug("Failed to save UI prefs:", err));
-}
-
 /** Create the UI store */
 function createUIStore() {
   const [state, setState] = createStore<UIStoreState>({
@@ -56,12 +60,30 @@ function createUIStore() {
     markdownPanelVisible: false,
     notesPanelVisible: false,
     fileBrowserPanelVisible: false,
+    diffPanelWidth: DIFF_PANEL_DEFAULT_WIDTH,
+    markdownPanelWidth: MARKDOWN_PANEL_DEFAULT_WIDTH,
+    notesPanelWidth: NOTES_PANEL_DEFAULT_WIDTH,
+    settingsNavWidth: SETTINGS_NAV_DEFAULT_WIDTH,
     currentDiffRepo: null,
     activeDropdown: null,
     isLoading: false,
     loadingMessage: "",
     planFilePath: null,
   });
+
+  /** Persist all layout prefs to Rust backend (fire-and-forget) */
+  function saveUIPrefs(): void {
+    invoke("save_ui_prefs", {
+      config: {
+        sidebar_visible: state.sidebarVisible,
+        sidebar_width: state.sidebarWidth,
+        diff_panel_width: state.diffPanelWidth,
+        markdown_panel_width: state.markdownPanelWidth,
+        notes_panel_width: state.notesPanelWidth,
+        settings_nav_width: state.settingsNavWidth,
+      },
+    }).catch((err) => console.debug("Failed to save UI prefs:", err));
+  }
 
   const actions = {
     /** Load UI prefs from Rust backend; migrate from localStorage on first run */
@@ -81,13 +103,32 @@ function createUIStore() {
           localStorage.removeItem(LEGACY_SIDEBAR_WIDTH_KEY);
         }
 
-        const loaded = await invoke<{ sidebar_visible?: boolean; sidebar_width?: number }>("load_ui_prefs");
+        const loaded = await invoke<{
+          sidebar_visible?: boolean;
+          sidebar_width?: number;
+          diff_panel_width?: number;
+          markdown_panel_width?: number;
+          notes_panel_width?: number;
+          settings_nav_width?: number;
+        }>("load_ui_prefs");
         if (loaded) {
           if (loaded.sidebar_visible !== undefined) {
             setState("sidebarVisible", loaded.sidebar_visible);
           }
           if (loaded.sidebar_width !== undefined) {
             setState("sidebarWidth", clampWidth(loaded.sidebar_width));
+          }
+          if (loaded.diff_panel_width !== undefined) {
+            setState("diffPanelWidth", loaded.diff_panel_width);
+          }
+          if (loaded.markdown_panel_width !== undefined) {
+            setState("markdownPanelWidth", loaded.markdown_panel_width);
+          }
+          if (loaded.notes_panel_width !== undefined) {
+            setState("notesPanelWidth", loaded.notes_panel_width);
+          }
+          if (loaded.settings_nav_width !== undefined) {
+            setState("settingsNavWidth", loaded.settings_nav_width);
           }
         }
       } catch (err) {
@@ -179,21 +220,40 @@ function createUIStore() {
 
     // Sidebar visibility
     toggleSidebar(): void {
-      const next = !state.sidebarVisible;
-      setState("sidebarVisible", next);
-      saveSidebarPrefs(next, state.sidebarWidth);
+      setState("sidebarVisible", (v) => !v);
+      saveUIPrefs();
     },
 
     setSidebarVisible(visible: boolean): void {
       setState("sidebarVisible", visible);
-      saveSidebarPrefs(visible, state.sidebarWidth);
+      saveUIPrefs();
     },
 
     // Sidebar width
     setSidebarWidth(width: number): void {
-      const clamped = clampWidth(width);
-      setState("sidebarWidth", clamped);
-      saveSidebarPrefs(state.sidebarVisible, clamped);
+      setState("sidebarWidth", clampWidth(width));
+      saveUIPrefs();
+    },
+
+    // Panel widths
+    setDiffPanelWidth(width: number): void {
+      setState("diffPanelWidth", width);
+      saveUIPrefs();
+    },
+
+    setMarkdownPanelWidth(width: number): void {
+      setState("markdownPanelWidth", width);
+      saveUIPrefs();
+    },
+
+    setNotesPanelWidth(width: number): void {
+      setState("notesPanelWidth", width);
+      saveUIPrefs();
+    },
+
+    setSettingsNavWidth(width: number): void {
+      setState("settingsNavWidth", width);
+      saveUIPrefs();
     },
 
     // Loading state
