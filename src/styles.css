@@ -4002,14 +4002,18 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .settings-toggle-btn {
-  padding: 8px 12px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   color: var(--fg-secondary);
-  font-size: var(--font-md);
   cursor: pointer;
-  white-space: nowrap;
 }
 
 .settings-toggle-btn:hover {
