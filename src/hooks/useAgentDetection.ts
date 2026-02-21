@@ -52,6 +52,11 @@ export function useAgentDetection() {
       { type: "opencode", binary: "opencode" },
       { type: "aider", binary: "aider" },
       { type: "codex", binary: "codex" },
+      { type: "amp", binary: "amp" },
+      { type: "jules", binary: "jules" },
+      { type: "cursor", binary: "cursor-agent" },
+      { type: "warp", binary: "oz" },
+      { type: "ona", binary: "gitpod" },
     ];
 
     const results = await Promise.all(

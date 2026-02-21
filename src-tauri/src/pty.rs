@@ -781,6 +781,11 @@ pub(crate) fn classify_agent(process_name: &str) -> Option<&'static str> {
         "opencode" => Some("opencode"),
         "aider" => Some("aider"),
         "codex" => Some("codex"),
+        "amp" => Some("amp"),
+        "jules" => Some("jules"),
+        "cursor-agent" => Some("cursor"),
+        "oz" => Some("warp"),
+        "gitpod" => Some("ona"),
         _ => None,
     }
 }

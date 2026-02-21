@@ -70,21 +70,26 @@ describe("useAgentDetection", () => {
   });
 
   describe("detectAll()", () => {
-    it("detects all 5 agents and populates detections signal", async () => {
+    it("detects all 10 agents and populates detections signal", async () => {
       await createRoot(async (dispose) => {
-        // Mock all 5 invoke calls (claude, gemini, opencode, aider, codex)
+        // Mock all 10 invoke calls (claude, gemini, opencode, aider, codex, amp, jules, cursor, warp, ona)
         mockInvoke
           .mockResolvedValueOnce({ path: "/bin/claude", version: "1.0" })
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: "/bin/opencode", version: "2.0" })
           .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: "/bin/codex", version: "0.5" });
+          .mockResolvedValueOnce({ path: "/bin/codex", version: "0.5" })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null });
 
         const { detectAll, detections } = useAgentDetection();
         await detectAll();
 
         const map = detections();
-        expect(map.size).toBe(5);
+        expect(map.size).toBe(10);
         expect(map.get("claude")?.available).toBe(true);
         expect(map.get("gemini")?.available).toBe(false);
         expect(map.get("opencode")?.available).toBe(true);
@@ -101,6 +106,11 @@ describe("useAgentDetection", () => {
       await createRoot(async (dispose) => {
         mockInvoke
           .mockResolvedValueOnce({ path: "/bin/claude", version: "1.0" })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
@@ -135,6 +145,11 @@ describe("useAgentDetection", () => {
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null });
 
         const { detectAll, isAvailable } = useAgentDetection();
@@ -149,6 +164,11 @@ describe("useAgentDetection", () => {
     it("returns false when agent is not available", async () => {
       await createRoot(async (dispose) => {
         mockInvoke
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
@@ -181,6 +201,11 @@ describe("useAgentDetection", () => {
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: "/bin/opencode", version: "2.0" })
           .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null });
 
         const { detectAll, getAvailable } = useAgentDetection();
@@ -198,6 +223,11 @@ describe("useAgentDetection", () => {
     it("returns empty array when no agents available", async () => {
       await createRoot(async (dispose) => {
         mockInvoke
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
@@ -226,6 +256,11 @@ describe("useAgentDetection", () => {
     it("is false after detectAll completes", async () => {
       await createRoot(async (dispose) => {
         mockInvoke
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
+          .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })
           .mockResolvedValueOnce({ path: null, version: null })

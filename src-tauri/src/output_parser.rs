@@ -139,8 +139,10 @@ fn build_rate_limit_patterns() -> Vec<RateLimitPattern> {
         // Claude: specific API error codes (snake_case identifiers)
         rl("claude-http-429", r"(?i)rate_limit_error", Some(60000), false),
         rl("claude-overloaded", r"(?i)overloaded_error", Some(30000), false),
-        // OpenAI: specific error class names (PascalCase/structured)
+        // OpenAI / Cursor: specific error class names (PascalCase/structured)
         rl("openai-http-429", r"RateLimitError", Some(60000), false),
+        // Cursor: API key rate limit (structured error message)
+        rl("cursor-rate-limit", r"User Provided API Key Rate Limit Exceeded", Some(60000), false),
         // Gemini: gRPC error code (UPPER_SNAKE_CASE)
         rl("gemini-resource-exhausted", r"RESOURCE_EXHAUSTED", Some(60000), false),
         // HTTP status line — requires "429" adjacent to HTTP-like context

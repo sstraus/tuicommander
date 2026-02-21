@@ -1,5 +1,5 @@
 /** Supported agent types */
-export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex";
+export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "jules" | "cursor" | "warp" | "ona";
 
 /** Agent configuration */
 export interface AgentConfig {
@@ -194,6 +194,133 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
       ],
     },
   },
+  amp: {
+    type: "amp",
+    name: "Amp",
+    binary: "amp",
+    description: "Sourcegraph's AI coding agent",
+    resumeCommand: null,
+    spawnArgs: (prompt) => {
+      return [prompt];
+    },
+    outputFormat: "text",
+    detectPatterns: {
+      rateLimit: [
+        /rate.?limit/i,
+        /429/,
+        /too many requests/i,
+        /overloaded/i,
+      ],
+      completion: [],
+      error: [
+        /error:/i,
+        /failed:/i,
+      ],
+      prompt: [
+        /Allow this command\?/i,
+        /\[y\/n\/!\]/i,
+        /\[y\/n\]/i,
+      ],
+    },
+  },
+  jules: {
+    type: "jules",
+    name: "Jules",
+    binary: "jules",
+    description: "Google's async cloud coding agent",
+    resumeCommand: null,
+    spawnArgs: (prompt) => {
+      return [prompt];
+    },
+    outputFormat: "text",
+    detectPatterns: {
+      rateLimit: [
+        /RESOURCE_EXHAUSTED/i,
+        /429/,
+      ],
+      completion: [],
+      error: [
+        /error:/i,
+        /failed:/i,
+      ],
+      prompt: [
+        /\/remote/,
+        /\/new/,
+      ],
+    },
+  },
+  cursor: {
+    type: "cursor",
+    name: "Cursor Agent",
+    binary: "cursor-agent",
+    description: "Cursor's standalone coding agent CLI",
+    resumeCommand: null,
+    spawnArgs: (prompt) => {
+      return [prompt];
+    },
+    outputFormat: "text",
+    detectPatterns: {
+      rateLimit: [
+        /User Provided API Key Rate Limit Exceeded/i,
+        /RateLimitError/,
+        /429/,
+      ],
+      completion: [],
+      error: [
+        /error:/i,
+        /failed:/i,
+      ],
+      prompt: [
+        /\(Y\)es\/\(N\)o/,
+      ],
+    },
+  },
+  warp: {
+    type: "warp",
+    name: "Warp Oz",
+    binary: "oz",
+    description: "Warp's AI agent (local + cloud)",
+    resumeCommand: null,
+    spawnArgs: (prompt) => {
+      return ["agent", "run", prompt];
+    },
+    outputFormat: "text",
+    detectPatterns: {
+      rateLimit: [
+        /rate.?limit/i,
+        /429/,
+      ],
+      completion: [],
+      error: [
+        /error:/i,
+        /failed:/i,
+      ],
+      prompt: [],
+    },
+  },
+  ona: {
+    type: "ona",
+    name: "ONA",
+    binary: "gitpod",
+    description: "ONA (formerly Gitpod) cloud environment agent",
+    resumeCommand: null,
+    spawnArgs: (prompt) => {
+      return [prompt];
+    },
+    outputFormat: "text",
+    detectPatterns: {
+      rateLimit: [
+        /rate.?limit/i,
+        /429/,
+      ],
+      completion: [],
+      error: [
+        /error:/i,
+        /failed:/i,
+      ],
+      prompt: [],
+    },
+  },
 };
 
 /** Agent display info for UI */
@@ -203,5 +330,10 @@ export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string }> =
   opencode: { icon: "O", color: "#10a37f" },
   aider: { icon: "A", color: "#9333ea" },
   codex: { icon: "X", color: "#ef4444" },
+  amp: { icon: "A", color: "#ff5543" },
+  jules: { icon: "J", color: "#4285f4" },
+  cursor: { icon: "C", color: "#000000" },
+  warp: { icon: "W", color: "#01a4ff" },
+  ona: { icon: "O", color: "#ffe400" },
 };
 
