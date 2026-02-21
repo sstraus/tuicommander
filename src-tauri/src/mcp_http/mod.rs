@@ -211,11 +211,16 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         eprintln!("MCP HTTP: failed to write port file: {e}");
     }
 
-    // Serve with ConnectInfo for auth middleware
+    // Register shutdown channel so save_config can restart server without requiring app restart
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    *state.server_shutdown.lock() = Some(shutdown_tx);
+
+    // Serve with ConnectInfo for auth middleware; graceful shutdown via channel
     let result = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    .with_graceful_shutdown(async { shutdown_rx.await.ok(); })
     .await;
 
     // Cleanup port file

@@ -7,6 +7,7 @@ const NAV_DEFAULT_WIDTH = 180;
 export interface SettingsShellTab {
   key: string;
   label: string;
+  color?: string;
 }
 
 export interface SettingsShellProps {
@@ -97,6 +98,7 @@ export const SettingsShell: Component<SettingsShellProps> = (props) => {
                   ) : (
                     <button
                       class={`settings-nav-item${tab.key.startsWith("repo:") ? " settings-nav-item--repo" : ""}${props.activeTab === tab.key ? " active" : ""}`}
+                      style={tab.color ? { color: tab.color } : undefined}
                       onClick={() => props.onTabChange(tab.key)}
                     >
                       {tab.label}

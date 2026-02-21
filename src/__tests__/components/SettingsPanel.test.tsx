@@ -62,11 +62,13 @@ vi.mock("../../stores/repositories", () => ({
       repoOrder: ["/repo/alpha", "/repo/beta"],
     },
     setDisplayName: vi.fn(),
+    getGroupForRepo: vi.fn(() => undefined),
   },
 }));
 
 vi.mock("../../stores/repoSettings", () => ({
   repoSettingsStore: {
+    get: vi.fn(() => undefined),
     getOrCreate: vi.fn().mockReturnValue({
       path: "/repo/alpha",
       displayName: "Alpha",

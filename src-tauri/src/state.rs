@@ -387,6 +387,8 @@ pub struct AppState {
     pub(crate) github_token: parking_lot::RwLock<Option<String>>,
     /// Circuit breaker for GitHub API calls
     pub(crate) github_circuit_breaker: crate::github::GitHubCircuitBreaker,
+    /// Shutdown sender for the HTTP server — send () to gracefully stop it
+    pub(crate) server_shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 }
 
 impl AppState {

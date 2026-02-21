@@ -35,12 +35,14 @@ vi.mock("../../stores/repositories", () => ({
       repoOrder: ["/repo"],
     },
     setDisplayName: vi.fn(),
+    getGroupForRepo: vi.fn(() => undefined),
   },
 }));
 
 vi.mock("../../stores/repoSettings", () => {
   const mockReset = vi.fn();
   const mockUpdate = vi.fn();
+  const mockGet = vi.fn(() => undefined);
   const mockGetOrCreate = vi.fn().mockReturnValue({
     path: "/repo",
     displayName: "my-repo",
@@ -54,6 +56,7 @@ vi.mock("../../stores/repoSettings", () => {
 
   return {
     repoSettingsStore: {
+      get: mockGet,
       getOrCreate: mockGetOrCreate,
       update: mockUpdate,
       reset: mockReset,

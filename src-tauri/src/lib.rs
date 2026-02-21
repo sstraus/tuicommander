@@ -11,6 +11,7 @@ pub(crate) mod repo_watcher;
 pub(crate) mod mcp_http;
 mod menu;
 mod output_parser;
+pub(crate) mod plugins;
 pub(crate) mod prompt;
 pub(crate) mod pty;
 pub(crate) mod sleep_prevention;
@@ -82,11 +83,43 @@ fn load_config(state: State<'_, Arc<AppState>>) -> config::AppConfig {
     state.config.read().unwrap().clone()
 }
 
-/// Save configuration to disk and update the AppState cache
+/// Save configuration to disk, update the AppState cache, and live-restart the HTTP server
+/// if MCP / Remote Access settings changed (no app restart required).
 #[tauri::command]
 fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Result<(), String> {
+    let old = state.config.read().unwrap().clone();
+    let server_changed = old.mcp_server_enabled != config.mcp_server_enabled
+        || old.remote_access_enabled != config.remote_access_enabled
+        || old.remote_access_port != config.remote_access_port
+        || old.remote_access_username != config.remote_access_username
+        || old.remote_access_password_hash != config.remote_access_password_hash;
+
     config::save_app_config(config.clone())?;
-    *state.config.write().unwrap() = config;
+    *state.config.write().unwrap() = config.clone();
+
+    if server_changed {
+        // Shutdown existing server (if any)
+        if let Some(tx) = state.server_shutdown.lock().take() {
+            let _ = tx.send(());
+        }
+
+        // Start fresh server if either mode is now enabled
+        if config.mcp_server_enabled || config.remote_access_enabled {
+            let mcp_enabled = config.mcp_server_enabled;
+            let remote_enabled = config.remote_access_enabled;
+            let state_arc = state.inner().clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("tokio runtime for HTTP server restart");
+                rt.block_on(async move {
+                    mcp_http::start_server(state_arc, mcp_enabled, remote_enabled).await;
+                });
+            });
+        }
+    }
+
     Ok(())
 }
 
@@ -255,6 +288,7 @@ pub fn run() {
         http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
         github_token: parking_lot::RwLock::new(github_token),
         github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+        server_shutdown: parking_lot::Mutex::new(None),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled
@@ -273,7 +307,9 @@ pub fn run() {
         });
     }
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    let builder = plugins::register_plugin_protocol(builder);
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -314,6 +350,9 @@ pub fn run() {
             app.on_menu_event(|app_handle, event| {
                 let _ = app_handle.emit("menu-action", event.id().0.as_str());
             });
+
+            // Start plugin directory watcher for hot-reload
+            plugins::start_plugin_watcher(app.handle());
 
             // Auto-start HEAD and repo watchers for known repositories
             let repos_json = config::load_repositories();
@@ -424,7 +463,11 @@ pub fn run() {
             fs::delete_path,
             fs::rename_path,
             fs::copy_path,
-            fs::add_to_gitignore
+            fs::add_to_gitignore,
+            plugins::list_user_plugins,
+            plugins::read_plugin_data,
+            plugins::write_plugin_data,
+            plugins::delete_plugin_data
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
