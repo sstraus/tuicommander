@@ -4,6 +4,7 @@ mod config_routes;
 mod git_routes;
 mod github_routes;
 mod mcp_transport;
+mod plugin_docs;
 mod session;
 mod static_files;
 mod types;
@@ -55,6 +56,11 @@ fn validate_repo_path(path: &str) -> Result<(), (StatusCode, Json<serde_json::Va
 /// Port file path: <config_dir>/mcp-port
 fn port_file_path() -> std::path::PathBuf {
     crate::config::config_dir().join("mcp-port")
+}
+
+/// Return the plugin development guide as JSON.
+async fn plugin_dev_guide_handler() -> Json<serde_json::Value> {
+    Json(serde_json::json!({"content": plugin_docs::PLUGIN_DOCS}))
 }
 
 /// Build the router (exposed for testing).
@@ -133,7 +139,9 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/agents/detect", get(agent_routes::detect_agent_binary_http))
         .route("/agents/ides", get(agent_routes::detect_installed_ides_http))
         // MCP status
-        .route("/mcp/status", get(config_routes::get_mcp_status_http));
+        .route("/mcp/status", get(config_routes::get_mcp_status_http))
+        // Plugin docs (for MCP bridge)
+        .route("/plugins/docs", get(plugin_dev_guide_handler));
 
     // MCP SSE transport — only when MCP is enabled
     if mcp_enabled {
@@ -263,6 +271,7 @@ mod tests {
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             server_shutdown: parking_lot::Mutex::new(None),
+            session_token: uuid::Uuid::new_v4().to_string(),
         })
     }
 
@@ -606,7 +615,7 @@ mod tests {
         let msg = rx.try_recv().unwrap();
         let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 20);
+        assert_eq!(tools.len(), 21);
 
         // Verify key tools are present
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
@@ -621,7 +630,7 @@ mod tests {
     fn test_mcp_tool_definitions_count() {
         let tools = mcp_transport::test_mcp_tool_definitions();
         let arr = tools.as_array().unwrap();
-        assert_eq!(arr.len(), 20);
+        assert_eq!(arr.len(), 21);
     }
 
     #[test]

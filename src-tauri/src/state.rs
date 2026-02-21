@@ -389,6 +389,9 @@ pub struct AppState {
     pub(crate) github_circuit_breaker: crate::github::GitHubCircuitBreaker,
     /// Shutdown sender for the HTTP server — send () to gracefully stop it
     pub(crate) server_shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    /// Random session token for browser cookie auth — regenerated on each server start.
+    /// Browsers auto-send cookies in fetch(), unlike stored Basic Auth credentials.
+    pub(crate) session_token: String,
 }
 
 impl AppState {
@@ -750,6 +753,7 @@ mod tests {
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             server_shutdown: parking_lot::Mutex::new(None),
+            session_token: String::from("test-token"),
         }
     }
 

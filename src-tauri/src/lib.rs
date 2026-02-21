@@ -289,6 +289,7 @@ pub fn run() {
         github_token: parking_lot::RwLock::new(github_token),
         github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
         server_shutdown: parking_lot::Mutex::new(None),
+        session_token: uuid::Uuid::new_v4().to_string(),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled
