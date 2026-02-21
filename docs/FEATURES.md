@@ -124,6 +124,7 @@
 - Renders `.md` and `.mdx` files with syntax-highlighted code blocks
 - File list from repository's markdown files
 - Clickable file paths in terminal open `.md` files here
+- Header bar shows file path (or title for virtual tabs) with Edit button (pencil icon) to open in CodeEditor
 
 ### 3.4 File Browser Panel (`Cmd+E`)
 - Directory tree of active repository
