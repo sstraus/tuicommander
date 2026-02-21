@@ -1,11 +1,14 @@
 # TUI Commander Documentation
 
+- **[Complete Feature Reference](FEATURES.md)** — Canonical inventory of every feature, shortcut, and UI element
+
 ## User Guide
 
 - [Getting Started](user-guide/getting-started.md) - First launch, workflow overview
 - [Keyboard Shortcuts](user-guide/keyboard-shortcuts.md) - All shortcuts (terminal, tabs, panels, git)
 - [Terminal Features](user-guide/terminals.md) - Tabs, splits, zoom, copy/paste, AI agents
-- [Settings](user-guide/settings.md) - All configuration options
+- [File Browser & Code Editor](user-guide/file-browser.md) - Browse files, edit code, git status
+- [Settings](user-guide/settings.md) - Groups, diff panel, repository config
 - [Git Worktrees](user-guide/worktrees.md) - Worktree workflow, configuration, storage
 - [GitHub Integration](user-guide/github-integration.md) - PR monitoring, CI rings, merge state
 - [Voice Dictation](user-guide/dictation.md) - Push-to-talk setup, models, corrections

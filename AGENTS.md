@@ -5,6 +5,7 @@
 **IMPORTANT:** When implementing new features or keyboard shortcuts, you MUST update the HelpPanel component to keep documentation in sync.
 
 ### Files to update:
+- `docs/FEATURES.md` - Canonical feature inventory (add/update/remove entries)
 - `src/components/HelpPanel/HelpPanel.tsx` - Add new shortcuts/features to the help content
 - `SPEC.md` - Update feature status
 
@@ -18,6 +19,7 @@
 ### Checklist for new features:
 - [ ] Feature works correctly
 - [ ] Keyboard shortcut added (if applicable)
+- [ ] `docs/FEATURES.md` updated with new feature entry
 - [ ] HelpPanel updated with new shortcut/feature
 - [ ] SPEC.md feature status updated
 

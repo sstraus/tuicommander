@@ -55,6 +55,33 @@ Click a PR badge or CI ring to open the detail popover. Shows:
 - **Line changes** — Total additions and deletions
 - **Commit count**
 
+## PR Notifications (Toolbar Bell)
+
+When any branch has a PR event that needs attention, a bell icon with a count badge appears in the toolbar.
+
+**Click the bell** to see all active notifications in a popover list. Each notification shows the repo, branch, and event type.
+
+### Notification Types
+
+| Type | Meaning |
+|------|---------|
+| Merged | PR was merged |
+| Closed | PR was closed without merge |
+| Conflicts | Merge conflicts detected |
+| CI Failed | One or more CI checks failed |
+| Changes Req. | Reviewer requested changes |
+| Ready | PR is ready to merge (all checks pass, approved) |
+
+### Interacting with Notifications
+
+- **Click a notification item** — Opens the full PR detail popover for that branch
+- **Click the dismiss (x) button** on an item — Dismiss that single notification
+- **Click "Dismiss All"** — Clear all notifications at once
+
+### PR Badge on Sidebar Branches
+
+Click the colored PR status badge on any branch in the sidebar to open the PR detail popover directly.
+
 ## Polling
 
 GitHub data is polled automatically:

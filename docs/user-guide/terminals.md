@@ -85,6 +85,10 @@ The new pane opens a fresh terminal in the same working directory. Maximum 2 pan
 - **Alt+↑/↓** — Switch between horizontal panes
 - The active pane receives keyboard input
 
+### Resizing Split Panes
+
+Drag the divider between the two panes to adjust the split ratio. Both terminals re-fit automatically when you release.
+
 ### Closing Split Panes
 
 - **Cmd+W** closes the active pane and collapses back to a single pane
@@ -102,6 +106,21 @@ Split layouts are stored per branch. When you switch branches and come back, you
 ## Clear Terminal
 
 `Cmd+L` clears the terminal display. Running processes are unaffected.
+
+## Clickable File Paths
+
+File paths appearing in terminal output are automatically detected and become clickable links. Hover over a path to see the link underline, then click to open it.
+
+- `.md` / `.mdx` files open in the Markdown viewer panel
+- All other code files open in your configured IDE, at the line number if a `:line` or `:line:col` suffix is present
+
+Paths are validated against the filesystem before becoming clickable — only real files show as links.
+
+Recognized extensions include: `.rs`, `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.go`, `.java`, `.css`, `.html`, `.json`, `.yaml`, `.toml`, `.sql`, and many more.
+
+## Plan File Detection
+
+When an AI agent emits a plan file path (e.g., `PLAN.md`), a button appears in the toolbar showing the file name. Click it to open the plan — Markdown files open in the viewer panel, others open in the IDE. Click the dismiss button (x) to hide it.
 
 ## Working with AI Agents
 

@@ -7,11 +7,14 @@ TUI Commander is a desktop terminal orchestrator for running multiple AI coding 
 **Key capabilities:**
 - Up to 50 concurrent terminal sessions
 - Git worktree isolation per branch
-- GitHub PR monitoring with CI status
+- GitHub PR monitoring with CI status and notifications
 - AI agent detection and fallback chains
 - Voice dictation with local Whisper
 - Prompt library with variable substitution
-- Split terminal panes
+- Split terminal panes with drag-resize
+- Built-in file browser and code editor
+- Repository groups with color labels
+- Clickable file paths in terminal output
 - Remote access via HTTP/WebSocket
 
 ## First Launch
@@ -40,22 +43,35 @@ Each branch has its own set of terminals. When you switch branches, your previou
 
 The sidebar shows all your repositories and their branches.
 
+**Repository groups:**
+- Repositories can be organized into named, colored groups
+- Drag a repo onto a group header to move it
+- Right-click a group to rename, change color, or delete it
+- Groups collapse/expand by clicking the group header
+
 **Repository entry:**
 - Click to expand/collapse branch list
-- Click again to toggle icon-only mode
+- Click again to toggle icon-only mode (shows initials)
 - `+` button: Create new worktree for a new branch
-- `⋯` button: Repo settings, remove repository
+- `⋯` button: Repo settings, remove, move to group
 
 **Branch entry:**
 - Click: Switch to this branch (shows its terminals)
+- Double-click the branch name: Rename branch
 - CI ring: Shows CI check status (green/red/yellow segments)
-- PR badge: Shows PR number with color-coded state
+- PR badge: Shows PR number with color-coded state — click for detail popover
 - Stats: Shows +additions/-deletions
+
+**Git quick actions** (bottom of sidebar when a repo is active):
+- Pull, Push, Fetch, Stash buttons — run the git command in the active terminal
 
 ## Next Steps
 
 - [Keyboard Shortcuts](keyboard-shortcuts.md) — All shortcuts
 - [Terminal Features](terminals.md) — Tabs, splits, zoom, copy/paste
+- [File Browser & Code Editor](file-browser.md) — Browse files, edit code, git status
 - [Settings](settings.md) — All configuration options
 - [Voice Dictation](dictation.md) — Push-to-talk setup
-- [GitHub Integration](github-integration.md) — PR monitoring, CI rings
+- [GitHub Integration](github-integration.md) — PR monitoring, CI rings, notifications
+- [Git Worktrees](worktrees.md) — Worktree workflow, configuration
+- [Prompt Library](prompt-library.md) — Template management, variables

@@ -50,10 +50,14 @@ Font size range: 8px to 32px, step 2px per action.
 | `Cmd+[` | Toggle sidebar |
 | `Cmd+D` | Toggle diff panel |
 | `Cmd+M` | Toggle markdown panel |
+| `Cmd+N` | Toggle Ideas panel |
+| `Cmd+E` | Toggle file browser |
 | `Cmd+,` | Open settings |
 | `Cmd+?` | Toggle help panel |
 | `Cmd+K` | Prompt library |
 | `Cmd+J` | Task queue |
+
+Note: File browser, Markdown, and Diff panels are mutually exclusive — opening one closes any other that is open.
 
 ## Git & Lazygit
 
@@ -71,6 +75,30 @@ Font size range: 8px to 32px, step 2px per action.
 | `Cmd+Ctrl+1-9` | Switch to branch by index |
 
 While holding the modifier, all branches show numbered badges. Press a number to switch instantly.
+
+## File Browser (when panel is focused)
+
+| Shortcut | Action |
+|----------|--------|
+| `↑` / `↓` | Navigate files |
+| `Enter` | Open file or enter directory |
+| `Backspace` | Go to parent directory |
+| `Cmd+C` | Copy selected file |
+| `Cmd+X` | Cut selected file |
+| `Cmd+V` | Paste file into current directory |
+
+## Code Editor (when editor tab is focused)
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+S` | Save file |
+
+## Ideas Panel (when textarea is focused)
+
+| Shortcut | Action |
+|----------|--------|
+| `Enter` | Submit idea |
+| `Shift+Enter` | Insert newline |
 
 ## Voice Dictation
 
@@ -102,3 +130,7 @@ Hold to record, release to transcribe and inject text into active terminal.
 | Drag | Tab | Reorder tabs |
 | Drag | Sidebar right edge | Resize sidebar (200-500px) |
 | Click | PR badge / CI ring | Open PR detail popover |
+| Click | Status bar CWD path | Copy path to clipboard |
+| Click | Status bar panel buttons | Toggle Diff/MD/FB/Ideas panels |
+| Drag | Panel left edge | Resize right-side panel (200-800px) |
+| Drag | Split pane divider | Resize split terminal panes |

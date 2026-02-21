@@ -100,6 +100,45 @@ See [Voice Dictation](dictation.md) for full details.
 - Audio device selection
 - Text corrections dictionary
 
+## Repository Groups
+
+Organize repositories into named, colored groups in the sidebar.
+
+### Creating Groups
+
+- **Right-click** a repo's `⋯` button → **Move to Group** → **New Group...**
+- Enter a name in the dialog to create the group and move the repo into it
+
+### Managing Groups
+
+- **Drag a repo** onto a group header to move it into that group
+- **Right-click a group header** to rename it, change its color, or delete it
+- **Click a group header** to collapse/expand it
+- **Drag groups** to reorder them
+
+### Removing Repos from Groups
+
+Right-click a repo's `⋯` button → **Move to Group** → **Ungrouped** to remove it from its current group.
+
+### Color Labels
+
+Groups can have a color label. The color appears as a sidebar accent. Repo-specific colors (set in repo settings) take priority over group colors.
+
+## Diff Panel
+
+Toggle with `Cmd+D` or the diff icon in the status bar.
+
+### Scope Selector
+
+A dropdown at the top of the diff panel lets you choose what to diff:
+
+- **Working tree** (default) — Shows unstaged and staged changes
+- **Last 5 commits** — Select a specific commit by hash and subject line to see its changes
+
+### File List
+
+Click any file in the diff list to open a dedicated diff tab in the main tab area, showing the inline diff for that file.
+
 ## Repository Settings
 
 Per-repository settings accessed via sidebar `⋯` → "Repo Settings".
