@@ -1,10 +1,10 @@
 ---
 id: 319-0595
 title: Markdown provider registry for virtual content URIs
-status: ready
+status: complete
 priority: P1
 created: "2026-02-21T09:33:40.202Z"
-updated: "2026-02-21T10:02:49.046Z"
+updated: "2026-02-21T10:10:19.766Z"
 dependencies: ["317-af1e"]
 ---
 
@@ -29,4 +29,6 @@ Plugin items need to display dynamically generated markdown content (not read fr
 - src/__tests__/plugins/markdownProviderRegistry.test.ts
 
 ## Work Log
+
+### 2026-02-21T10:10:19.689Z - Implemented markdownProviderRegistry with per-scheme provider stacks. Stack design means dispose() restores previous provider for same scheme. 14/14 tests green covering sync/async providers, URI parsing, multi-scheme routing, dispose behaviour.
 
