@@ -135,14 +135,123 @@ fn clear_caches(state: State<'_, Arc<AppState>>) {
     state.clear_caches();
 }
 
-/// Return the machine's preferred local IP address (the one used for outbound traffic).
-/// Uses a UDP connect trick — no data is sent.
+/// One IPv4 address found on a network interface.
+#[derive(serde::Serialize)]
+struct LocalIpEntry {
+    ip: String,
+    label: String,
+}
+
+/// Return all non-loopback IPv4 addresses on this machine, with human-readable labels.
+///
+/// Uses getifaddrs on Unix (macOS/Linux) to enumerate every interface.
+/// On Windows, falls back to the UDP-route trick (returns one address only).
+///
+/// Labels are classified as:
+///   "Tailscale" — 100.64.0.0/10 (CGNAT range Tailscale uses)
+///   "Wi-Fi / LAN" — 192.168.x.x or 10.x.x.x with a broadcast address
+///   "VPN" — 10.x.x.x point-to-point (no broadcast, /32)
+///   "Network" — anything else non-loopback
+#[tauri::command]
+fn get_local_ips() -> Vec<LocalIpEntry> {
+    #[cfg(unix)]
+    {
+        enumerate_unix_ips()
+    }
+    #[cfg(windows)]
+    {
+        // Fallback: one address via UDP route trick
+        use std::net::UdpSocket;
+        if let Ok(sock) = UdpSocket::bind("0.0.0.0:0") {
+            if sock.connect("8.8.8.8:80").is_ok() {
+                if let Ok(addr) = sock.local_addr() {
+                    let ip = addr.ip().to_string();
+                    if !ip.starts_with("127.") {
+                        return vec![LocalIpEntry { ip, label: "Network".to_string() }];
+                    }
+                }
+            }
+        }
+        vec![]
+    }
+}
+
+#[cfg(unix)]
+fn enumerate_unix_ips() -> Vec<LocalIpEntry> {
+    use std::ffi::CStr;
+    use std::net::Ipv4Addr;
+
+    let mut result = Vec::new();
+    unsafe {
+        let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
+        if libc::getifaddrs(&mut ifap) != 0 {
+            return result;
+        }
+        let mut cur = ifap;
+        while !cur.is_null() {
+            let ifa = &*cur;
+            if !ifa.ifa_addr.is_null()
+                && (*ifa.ifa_addr).sa_family == libc::AF_INET as libc::sa_family_t
+            {
+                let sa = &*(ifa.ifa_addr as *const libc::sockaddr_in);
+                let raw = u32::from_be(sa.sin_addr.s_addr);
+                let ip = Ipv4Addr::from(raw);
+                if !ip.is_loopback() && !ip.is_link_local() {
+                    let iface = if ifa.ifa_name.is_null() {
+                        String::new()
+                    } else {
+                        CStr::from_ptr(ifa.ifa_name).to_string_lossy().into_owned()
+                    };
+                    let has_broadcast = (ifa.ifa_flags & libc::IFF_BROADCAST as u32) != 0;
+                    let label = classify_ip(ip, &iface, has_broadcast);
+                    result.push(LocalIpEntry { ip: ip.to_string(), label });
+                }
+            }
+            cur = (*cur).ifa_next;
+        }
+        libc::freeifaddrs(ifap);
+    }
+    result
+}
+
+/// Classify a non-loopback IPv4 address into a human-readable label.
+fn classify_ip(ip: std::net::Ipv4Addr, iface: &str, has_broadcast: bool) -> String {
+    let o = ip.octets();
+    // Tailscale: 100.64.0.0 – 100.127.255.255 (CGNAT / RFC 6598)
+    if o[0] == 100 && o[1] >= 64 && o[1] <= 127 {
+        return format!("Tailscale ({})", iface);
+    }
+    // 192.168.x.x — always LAN
+    if o[0] == 192 && o[1] == 168 {
+        return format!("Wi-Fi / LAN ({})", iface);
+    }
+    // 10.x.x.x — LAN if it has a broadcast address (not point-to-point), else VPN
+    if o[0] == 10 {
+        if has_broadcast {
+            return format!("LAN ({})", iface);
+        } else {
+            return format!("VPN ({})", iface);
+        }
+    }
+    // 172.16–31.x.x — private LAN
+    if o[0] == 172 && o[1] >= 16 && o[1] <= 31 {
+        return format!("LAN ({})", iface);
+    }
+    format!("Network ({})", iface)
+}
+
+/// Legacy single-IP command kept for backwards compatibility.
+/// Returns the LAN/Tailscale IP preferred for remote access, or the default-route IP.
 #[tauri::command]
 fn get_local_ip() -> Option<String> {
-    use std::net::UdpSocket;
-    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.connect("8.8.8.8:80").ok()?;
-    socket.local_addr().ok().map(|a| a.ip().to_string())
+    let ips = get_local_ips();
+    // Prefer Tailscale, then LAN, then any
+    for label_prefix in &["Tailscale", "Wi-Fi", "LAN"] {
+        if let Some(e) = ips.iter().find(|e| e.label.contains(label_prefix)) {
+            return Some(e.ip.clone());
+        }
+    }
+    ips.into_iter().next().map(|e| e.ip)
 }
 
 
@@ -438,6 +547,7 @@ pub fn run() {
             worktree::generate_worktree_name_cmd,
             clear_caches,
             get_local_ip,
+            get_local_ips,
             get_mcp_status,
             dictation::commands::get_dictation_status,
             dictation::commands::get_model_info,

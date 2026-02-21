@@ -45,6 +45,7 @@ include_dir = { version = "0.7.4", features = ["glob"] }
 mime_guess = "2.0.5"
 tower-http = { version = "0.6.8", features = ["cors"] }
 rand = "0.9"
+libc = "0.2"
 notify = "7"
 notify-debouncer-mini = "0.5"
 gh-token = "0.1"

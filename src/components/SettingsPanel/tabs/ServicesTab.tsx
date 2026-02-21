@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, createResource, createMemo, createEffect, onMount, onCleanup } from "solid-js";
+import { Component, For, Show, createSignal, createResource, createMemo, createEffect, onMount, onCleanup } from "solid-js";
 import { rpc } from "../../../transport";
 import QRCode from "qrcode";
 
@@ -27,9 +27,12 @@ interface AppConfig {
   remote_access_password_hash: string;
 }
 
+interface LocalIpEntry { ip: string; label: string; }
+
 export const ServicesTab: Component = () => {
   const [status, setStatus] = createSignal<McpStatus | null>(null);
-  const [localIp] = createResource(() => rpc<string | null>("get_local_ip"));
+  const [localIps] = createResource(() => rpc<LocalIpEntry[]>("get_local_ips"));
+  const [selectedIp, setSelectedIp] = createSignal<string>("");
   const [saving, setSaving] = createSignal(false);
 
   // Remote access form state
@@ -43,9 +46,21 @@ export const ServicesTab: Component = () => {
   const [raSaved, setRaSaved] = createSignal(false);
   const [qrDataUrl, setQrDataUrl] = createSignal<string | null>(null);
 
-  /** URL to embed in QR: always uses the session token for auth (never user:pass in URL). */
+  // Auto-select best IP when list loads (prefer Tailscale, then LAN/Wi-Fi)
+  createEffect(() => {
+    const ips = localIps();
+    if (!ips?.length || selectedIp()) return;
+    const preferred = ips.find(e => e.label.includes("Tailscale"))
+      ?? ips.find(e => e.label.includes("Wi-Fi") || e.label.includes("LAN"))
+      ?? ips[0];
+    setSelectedIp(preferred.ip);
+  });
+
+  const activeIp = () => selectedIp() || localIps()?.[0]?.ip;
+
+  /** URL to embed in QR: token-based auth, never user:pass in URL. */
   const qrContent = createMemo(() => {
-    const ip = localIp();
+    const ip = activeIp();
     const token = status()?.session_token;
     if (!ip || !token) return null;
     return `http://${ip}:${raPort()}/?token=${token}`;
@@ -271,16 +286,26 @@ export const ServicesTab: Component = () => {
 
             <Show when={status()?.running && status()?.port}>
               <div class="settings-group">
-                <label>Connection URL</label>
-                <code class="settings-url">
-                  http://{localIp() ?? "&lt;your-ip&gt;"}:{raPort()}/?token=…
-                </code>
+                <label>Network Interface</label>
+                <Show when={(localIps()?.length ?? 0) > 1} fallback={
+                  <code class="settings-url">{activeIp() ?? "…"}</code>
+                }>
+                  <select
+                    class="settings-input"
+                    value={selectedIp()}
+                    onChange={(e) => setSelectedIp(e.currentTarget.value)}
+                  >
+                    <For each={localIps()}>
+                      {(entry) => <option value={entry.ip}>{entry.label} — {entry.ip}</option>}
+                    </For>
+                  </select>
+                </Show>
                 <p class="settings-hint" style={{ "margin-top": "4px" }}>
-                  Scan the QR code — the token is embedded in the URL automatically.
+                  Scan the QR code — the auth token is embedded automatically.
                 </p>
                 <Show when={status()?.reachable === false}>
                   <p class="settings-hint" style={{ color: "var(--warning, #e5c07b)", "margin-top": "4px" }}>
-                    Server may be blocked by a firewall. On macOS: System Preferences → Security → Firewall → Firewall Options → allow this app.
+                    Firewall may be blocking incoming connections. On macOS: System Settings → Network → Firewall → Options → allow this app. On Linux: check iptables/ufw. On Windows: check Windows Defender Firewall.
                   </p>
                 </Show>
                 <Show when={status()?.reachable === true}>
