@@ -1,10 +1,10 @@
 ---
 id: 323-46a4
 title: "Plan plugin: migrate plan detection from uiStore to plugin system"
-status: ready
+status: complete
 priority: P1
 created: "2026-02-21T09:34:49.510Z"
-updated: "2026-02-21T10:02:49.051Z"
+updated: "2026-02-21T10:17:44.746Z"
 dependencies: ["320-e879"]
 ---
 
@@ -35,4 +35,6 @@ Currently plan file detection sets uiStore.planFilePath directly from Terminal.t
 - 320-e879
 
 ## Work Log
+
+### 2026-02-21T10:17:44.679Z - Implemented planPlugin with section registration, plan-file structured event handler, and plan MarkdownProvider. Deduplication via stable item id. MarkdownProvider splits absolute path into dirname+basename for read_file security constraint. 13/13 tests green.
 
