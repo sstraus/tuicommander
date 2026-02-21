@@ -2,6 +2,7 @@ import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
 import { invoke, listen } from "../invoke";
+import { isTauri } from "../transport";
 import type { SavedTerminal } from "../types";
 
 /** Dependencies injected into initApp */
@@ -126,14 +127,16 @@ export async function initApp(deps: AppInitDeps) {
     deps.setStatusInfo("Warning: 1 store(s) failed to load");
   }
 
-  // Start HEAD and repo file watchers for all known repos
-  for (const repoPath of repositoriesStore.getPaths()) {
-    invoke("start_head_watcher", { repoPath }).catch((err) =>
-      console.warn(`[HeadWatcher] Failed to start for ${repoPath}:`, err),
-    );
-    invoke("start_repo_watcher", { repoPath }).catch((err) =>
-      console.warn(`[RepoWatcher] Failed to start for ${repoPath}:`, err),
-    );
+  // Start HEAD and repo file watchers for all known repos (Tauri-only: no HTTP equivalent)
+  if (isTauri()) {
+    for (const repoPath of repositoriesStore.getPaths()) {
+      invoke("start_head_watcher", { repoPath }).catch((err) =>
+        console.warn(`[HeadWatcher] Failed to start for ${repoPath}:`, err),
+      );
+      invoke("start_repo_watcher", { repoPath }).catch((err) =>
+        console.warn(`[RepoWatcher] Failed to start for ${repoPath}:`, err),
+      );
+    }
   }
 
   listen<{ repo_path: string; branch: string }>("head-changed", (event) => {

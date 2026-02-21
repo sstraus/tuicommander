@@ -72,6 +72,7 @@ import { applyPlatformClass, getModifierSymbol, isQuickSwitcherActive, isQuickSw
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke, listen } from "./invoke";
+import { isTauri } from "./transport";
 import { setLastMenuActionTime } from "./menuDedup";
 
 const getDefaultFontSize = () => settingsStore.state.defaultFontSize;
@@ -202,6 +203,7 @@ const App: Component = () => {
       detectBinary: (binary) => invoke("detect_agent_binary", { binary }),
       applyPlatformClass,
       onCloseRequested: (handler) => {
+        if (!isTauri()) return;
         getCurrentWindow().onCloseRequested(async (event) => handler(event));
       },
     });
@@ -220,6 +222,7 @@ const App: Component = () => {
 
   // Prevent system sleep while any terminal is busy (Story 258)
   createEffect(() => {
+    if (!isTauri()) return;
     const enabled = settingsStore.state.preventSleepWhenBusy;
     const terminals = terminalsStore.state.terminals;
     const anyBusy = Object.values(terminals).some((t) => t.shellState === "busy");
@@ -252,7 +255,7 @@ const App: Component = () => {
     setQuitDialogVisible(false);
 
     // Destroy window after a short timeout regardless of PTY cleanup
-    const destroyTimer = setTimeout(() => getCurrentWindow().destroy(), 500);
+    const destroyTimer = isTauri() ? setTimeout(() => getCurrentWindow().destroy(), 500) : null;
 
     try {
       const sessionIds = terminalsStore.getIds()
@@ -261,8 +264,8 @@ const App: Component = () => {
       await Promise.all(sessionIds.map((sid) => pty.close(sid).catch((err) => console.warn(`Failed to close PTY ${sid} on quit:`, err))));
     } catch { /* ignore */ }
 
-    clearTimeout(destroyTimer);
-    getCurrentWindow().destroy();
+    if (destroyTimer !== null) clearTimeout(destroyTimer);
+    if (isTauri()) getCurrentWindow().destroy();
   };
 
   // Context menu items
@@ -465,6 +468,7 @@ const App: Component = () => {
   // Uses tauri-plugin-global-shortcut so the hotkey works even without window focus.
   // Unregisters while capturingHotkey is true so the browser can capture the keypress.
   createEffect(() => {
+    if (!isTauri()) return;
     const hotkey = dictationStore.state.hotkey;
     const capturing = dictationStore.state.capturingHotkey;
     if (!dictationStore.state.enabled || !hotkey || capturing) return;
@@ -590,6 +594,19 @@ const App: Component = () => {
             <For each={terminalsStore.getIds()}>
               {(id) => {
                 const terminal = terminalsStore.get(id);
+                const repoPathForTerminal = () => {
+                  for (const [path, repo] of Object.entries(repositoriesStore.state.repositories)) {
+                    for (const branch of Object.values(repo.branches)) {
+                      if (branch.terminals.includes(id)) return path;
+                    }
+                  }
+                  return null;
+                };
+                const terminalMetaHotkeys = () => {
+                  const path = repoPathForTerminal();
+                  if (!path) return undefined;
+                  return repoSettingsStore.getEffective(path)?.terminalMetaHotkeys;
+                };
                 const isSplitPane = () => terminalsStore.state.layout.panes.includes(id);
                 const isActivePaneInSplit = () => {
                   const layout = terminalsStore.state.layout;
@@ -618,6 +635,7 @@ const App: Component = () => {
                       onFocus={terminalLifecycle.handleTerminalFocus}
                       onSessionCreated={() => {}}
                       onOpenFilePath={handleOpenFilePath}
+                      metaHotkeys={terminalMetaHotkeys()}
                     />
                   </div>
                 );
