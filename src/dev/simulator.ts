@@ -16,6 +16,7 @@ import { uiStore } from "../stores/ui";
 import { pluginRegistry } from "../plugins/pluginRegistry";
 import { repoDefaultsStore, type RepoDefaults } from "../stores/repoDefaults";
 import { repoSettingsStore, type RepoSettings } from "../stores/repoSettings";
+import { activityStore } from "../stores/activityStore";
 import { PRESETS, buildPrStatus, type PrOverride } from "./presets";
 
 const SIM_REPO_PATH = "/sim/repo";
@@ -217,6 +218,46 @@ const simulator = {
     console.log(`[tuic] Toggled panel: ${name}`);
   },
 
+  /** Inject a plugin activity item into the bell dropdown (section created if needed) */
+  activity(options?: {
+    title?: string;
+    subtitle?: string;
+    sectionId?: string;
+    sectionLabel?: string;
+    contentUri?: string;
+    dismissible?: boolean;
+    iconColor?: string;
+  }): void {
+    const sectionId = options?.sectionId ?? "sim-activity";
+    const sectionLabel = options?.sectionLabel ?? "SIMULATED ACTIVITY";
+    // Register section if not already present
+    activityStore.registerSection({
+      id: sectionId,
+      label: sectionLabel,
+      priority: 50,
+      canDismissAll: true,
+    });
+    const id = `sim-activity-${Date.now()}`;
+    activityStore.addItem({
+      id,
+      pluginId: "simulator",
+      sectionId,
+      title: options?.title ?? "Simulated activity item",
+      subtitle: options?.subtitle,
+      icon: `<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6"/></svg>`,
+      iconColor: options?.iconColor ?? "var(--fg-accent)",
+      dismissible: options?.dismissible ?? true,
+      contentUri: options?.contentUri,
+    });
+    console.log(`[tuic] Activity item injected: "${options?.title ?? "Simulated activity item"}" in section "${sectionLabel}"`);
+  },
+
+  /** Clear all activity store items and sections */
+  activityClear(): void {
+    activityStore.clearAll();
+    console.log("[tuic] Activity store cleared");
+  },
+
   /** Set global repo defaults (the baseline inherited by all repos unless overridden) */
   defaults(options: Partial<RepoDefaults>): void {
     if (options.baseBranch !== undefined) repoDefaultsStore.setBaseBranch(options.baseBranch);
@@ -248,6 +289,7 @@ const simulator = {
   reset(): void {
     rateLimitStore.clearAll();
     prNotificationsStore.clearAll();
+    activityStore.clearAll();
 
     // Clean up sim repo if it was created
     if (repositoriesStore.get(SIM_REPO_PATH)) {
@@ -332,6 +374,14 @@ const simulator = {
   __tuic.panel('markdown')         Toggle markdown panel
   __tuic.panel('files')            Toggle file browser panel
   __tuic.panel('notes')            Toggle notes/ideas panel
+
+── Activity Bell (plugin sections) ───────────────────────────
+  __tuic.activity()                                         Add item to "SIMULATED ACTIVITY" section
+  __tuic.activity({ title: 'Story #42 running', subtitle: 'feat/auth' })
+  __tuic.activity({ sectionId: 'stories', sectionLabel: 'STORIES', title: 'My story' })
+  __tuic.activity({ contentUri: 'plan:file?path=plans/foo.md' })  Opens virtual markdown tab on click
+  __tuic.activity({ dismissible: false, iconColor: '#3fb950' })
+  __tuic.activityClear()                                    Clear all activity items and sections
 
 ── Repo Defaults & Settings ──────────────────────────────────
   __tuic.defaults({ baseBranch: 'develop' })             Set global default base branch
