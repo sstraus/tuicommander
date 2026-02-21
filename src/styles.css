@@ -4053,9 +4053,15 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   font-family: var(--font-mono);
 }
 
+.settings-credentials-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
 .settings-connection-row {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 16px;
 }
 
@@ -4064,15 +4070,17 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .settings-qr {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-start;
   gap: 4px;
   flex-shrink: 0;
+  padding-top: 22px; /* align with input, below label height */
 }
 
 .settings-qr img {
