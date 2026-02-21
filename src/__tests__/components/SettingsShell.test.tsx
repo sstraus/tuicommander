@@ -74,39 +74,56 @@ describe("SettingsShell", () => {
     expect(icon!.textContent).toBe("📁");
   });
 
-  it("renders tab buttons", () => {
+  it("renders nav items in sidebar", () => {
     const { container } = render(() => (
       <SettingsShell {...defaultProps}>
         <p>content</p>
       </SettingsShell>
     ));
-    const tabBtns = container.querySelectorAll(".settings-tab");
-    expect(tabBtns.length).toBe(2);
-    expect(tabBtns[0].textContent).toBe("General");
-    expect(tabBtns[1].textContent).toBe("Appearance");
+    const navItems = container.querySelectorAll(".settings-nav-item");
+    expect(navItems.length).toBe(2);
+    expect(navItems[0].textContent).toBe("General");
+    expect(navItems[1].textContent).toBe("Appearance");
   });
 
-  it("marks active tab", () => {
+  it("marks active nav item", () => {
     const { container } = render(() => (
       <SettingsShell {...defaultProps}>
         <p>content</p>
       </SettingsShell>
     ));
-    const tabBtns = container.querySelectorAll(".settings-tab");
-    expect(tabBtns[0].classList.contains("active")).toBe(true);
-    expect(tabBtns[1].classList.contains("active")).toBe(false);
+    const navItems = container.querySelectorAll(".settings-nav-item");
+    expect(navItems[0].classList.contains("active")).toBe(true);
+    expect(navItems[1].classList.contains("active")).toBe(false);
   });
 
-  it("clicking tab calls onTabChange", () => {
+  it("clicking nav item calls onTabChange", () => {
     const onTabChange = vi.fn();
     const { container } = render(() => (
       <SettingsShell {...defaultProps} onTabChange={onTabChange}>
         <p>content</p>
       </SettingsShell>
     ));
-    const tabBtns = container.querySelectorAll(".settings-tab");
-    fireEvent.click(tabBtns[1]);
+    const navItems = container.querySelectorAll(".settings-nav-item");
+    fireEvent.click(navItems[1]);
     expect(onTabChange).toHaveBeenCalledWith("appearance");
+  });
+
+  it("renders separator between nav groups", () => {
+    const tabsWithSep = [
+      { key: "a", label: "A" },
+      { key: "__sep__", label: "─" },
+      { key: "b", label: "B" },
+    ];
+    const { container } = render(() => (
+      <SettingsShell {...defaultProps} tabs={tabsWithSep}>
+        <p>content</p>
+      </SettingsShell>
+    ));
+    const navItems = container.querySelectorAll(".settings-nav-item");
+    const separator = container.querySelector(".settings-nav-separator");
+    expect(navItems.length).toBe(2);
+    expect(separator).not.toBeNull();
   });
 
   it("close button calls onClose", () => {
@@ -162,5 +179,36 @@ describe("SettingsShell", () => {
     ));
     const header = container.querySelector(".settings-header");
     expect(header!.classList.contains("settings-header--repo")).toBe(true);
+  });
+
+  it("nav sidebar renders with default width when navWidth not provided", () => {
+    const { container } = render(() => (
+      <SettingsShell {...defaultProps}>
+        <p>content</p>
+      </SettingsShell>
+    ));
+    const nav = container.querySelector(".settings-nav") as HTMLElement | null;
+    expect(nav).not.toBeNull();
+  });
+
+  it("renders split layout with nav and content side by side", () => {
+    const { container } = render(() => (
+      <SettingsShell {...defaultProps}>
+        <p>content</p>
+      </SettingsShell>
+    ));
+    const body = container.querySelector(".settings-body");
+    expect(body).not.toBeNull();
+    expect(body!.querySelector(".settings-nav")).not.toBeNull();
+    expect(body!.querySelector(".settings-content")).not.toBeNull();
+  });
+
+  it("renders resize handle inside nav", () => {
+    const { container } = render(() => (
+      <SettingsShell {...defaultProps}>
+        <p>content</p>
+      </SettingsShell>
+    ));
+    expect(container.querySelector(".settings-nav-resize-handle")).not.toBeNull();
   });
 });

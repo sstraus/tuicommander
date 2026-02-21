@@ -19,17 +19,10 @@ vi.mock("../../stores/notifications", () => ({
   },
 }));
 
-vi.mock("../../stores/errorHandling", () => ({
-  errorHandlingStore: {
-    state: { config: { strategy: "retry", maxRetries: 3 } },
-    setStrategy: vi.fn(), setMaxRetries: vi.fn(), resetConfig: vi.fn(),
-  },
-}));
-
-vi.mock("../../stores/agentFallback", () => ({
-  agentFallbackStore: {
-    state: { primaryAgent: "claude", autoRecovery: true, fallbackChain: [], recoveryIntervalMs: 30000 },
-    setPrimary: vi.fn(), configure: vi.fn(), forceResetToPrimary: vi.fn(),
+vi.mock("../../stores/ui", () => ({
+  uiStore: {
+    state: { settingsNavWidth: 180 },
+    setSettingsNavWidth: vi.fn(),
   },
 }));
 
@@ -105,7 +98,7 @@ describe("SettingsPanel — repo context", () => {
     const { container } = render(() => (
       <SettingsPanel {...defaultProps} />
     ));
-    const tabs = container.querySelectorAll(".settings-tab");
+    const tabs = container.querySelectorAll(".settings-nav-item");
     const tabLabels = Array.from(tabs).map((t) => t.textContent);
     // Repo tabs
     expect(tabLabels).toContain("Worktree");
@@ -139,7 +132,7 @@ describe("SettingsPanel — repo context", () => {
       <SettingsPanel {...defaultProps} initialTab="repo-scripts" />
     ));
 
-    const tabs = container.querySelectorAll(".settings-tab");
+    const tabs = container.querySelectorAll(".settings-nav-item");
     const worktreeTab = Array.from(tabs).find((t) => t.textContent === "Worktree")!;
     fireEvent.click(worktreeTab);
     const sectionTitle = container.querySelector(".settings-section h3");
@@ -151,7 +144,7 @@ describe("SettingsPanel — repo context", () => {
       <SettingsPanel {...defaultProps} />
     ));
 
-    const tabs = container.querySelectorAll(".settings-tab");
+    const tabs = container.querySelectorAll(".settings-nav-item");
     const scriptsTab = Array.from(tabs).find((t) => t.textContent === "Scripts")!;
     fireEvent.click(scriptsTab);
     const sectionTitle = container.querySelector(".settings-section h3");

@@ -1,6 +1,7 @@
 import { Component, Show, createEffect, createSignal } from "solid-js";
 import { repoSettingsStore, type RepoSettings } from "../../stores/repoSettings";
 import { repositoriesStore } from "../../stores/repositories";
+import { uiStore } from "../../stores/ui";
 import { shortenHomePath } from "../../platform";
 import { SettingsShell } from "./SettingsShell";
 import type { SettingsShellTab } from "./SettingsShell";
@@ -115,6 +116,8 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
       tabs={tabs()}
       activeTab={activeTab()}
       onTabChange={setActiveTab}
+      navWidth={uiStore.state.settingsNavWidth}
+      onNavWidthChange={uiStore.setSettingsNavWidth}
       footer={footer()}
     >
       {/* Repo tabs */}

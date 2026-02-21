@@ -3294,7 +3294,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .settings-panel {
-  width: 680px;
+  width: 800px;
   max-width: 90vw;
   height: 80vh;
   max-height: 90vh;
@@ -3313,6 +3313,7 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .settings-header h2 {
@@ -3336,47 +3337,80 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   color: var(--fg-primary);
 }
 
-.settings-tabs {
+/* Split body: nav sidebar + content pane */
+.settings-body {
   display: flex;
-  gap: 4px;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-tertiary);
-  overflow-x: auto;
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 0;
 }
 
-.settings-tab {
+/* Vertical nav sidebar */
+.settings-nav {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  background: var(--bg-tertiary);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  position: relative;
+}
+
+.settings-nav-item {
+  display: block;
+  width: 100%;
+  text-align: left;
   padding: 8px 16px;
-  white-space: nowrap;
   background: transparent;
   border: none;
-  border-radius: var(--radius-md);
-  color: var(--fg-muted);
-  font-size: var(--font-base);
+  border-left: 2px solid transparent;
+  color: var(--fg-secondary);
+  font-size: var(--font-md);
+  font-family: var(--font-ui);
   cursor: pointer;
-  transition: all 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.1s, color 0.1s;
 }
 
-.settings-tab:hover {
+.settings-nav-item:hover {
   background: var(--bg-highlight);
   color: var(--fg-primary);
 }
 
-.settings-tab.active {
-  background: var(--accent);
-  color: var(--text-on-accent);
+.settings-nav-item.active {
+  background: var(--bg-highlight);
+  border-left-color: var(--accent);
+  color: var(--fg-primary);
+  padding-left: 14px; /* compensate for border */
 }
 
-.settings-tab-separator {
-  width: 1px;
-  align-self: stretch;
-  margin: 4px 4px;
+.settings-nav-separator {
+  height: 1px;
+  margin: 6px 12px;
   background: var(--border);
+}
+
+/* Drag handle on the right edge of nav sidebar */
+.settings-nav-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+.settings-nav-resize-handle:hover {
+  background: var(--accent);
+  opacity: 0.5;
 }
 
 .settings-content {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   padding: 20px;
