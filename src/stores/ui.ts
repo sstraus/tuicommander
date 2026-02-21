@@ -249,6 +249,10 @@ function createUIStore() {
 
     setSettingsNavWidth(width: number): void {
       setState("settingsNavWidth", width);
+    },
+
+    /** Persist current UI prefs to disk. Call after drag-end, not during drag. */
+    persistUIPrefs(): void {
       saveUIPrefs();
     },
 

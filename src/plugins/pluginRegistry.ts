@@ -105,7 +105,16 @@ function createPluginRegistry() {
 
     const disposables: Disposable[] = [];
     const host = buildHost(plugin.id, disposables);
-    plugin.onload(host);
+
+    try {
+      plugin.onload(host);
+    } catch (err) {
+      console.error(`[pluginRegistry] plugin "${plugin.id}" threw during onload:`, err);
+      for (const d of disposables) {
+        try { d.dispose(); } catch { /* cleanup best-effort */ }
+      }
+      return;
+    }
 
     plugins.set(plugin.id, {
       plugin,
@@ -178,9 +187,18 @@ function createPluginRegistry() {
   function dispatchStructuredEvent(type: string, payload: unknown, sessionId: string): void {
     const handlers = structuredHandlers.get(type);
     if (!handlers) return;
-    for (const { handler } of handlers) {
-      handler(payload, sessionId);
+    for (const { pluginId, handler } of handlers) {
+      try {
+        handler(payload, sessionId);
+      } catch (err) {
+        console.error(`[pluginRegistry] structured handler (plugin "${pluginId}", type "${type}") threw:`, err);
+      }
     }
+  }
+
+  /** Clean up the LineBuffer for a closed PTY session. */
+  function removeSession(sessionId: string): void {
+    lineBuffers.delete(sessionId);
   }
 
   /** Remove all plugins and registrations (for testing). */
@@ -188,9 +206,10 @@ function createPluginRegistry() {
     for (const id of [...plugins.keys()]) {
       unregister(id);
     }
+    lineBuffers.clear();
   }
 
-  return { register, unregister, processRawOutput, dispatchLine, dispatchStructuredEvent, clear };
+  return { register, unregister, processRawOutput, dispatchLine, dispatchStructuredEvent, removeSession, clear };
 }
 
 export const pluginRegistry = createPluginRegistry();

@@ -164,7 +164,8 @@ function createRepoSettingsStore() {
       if (!state.settings[path]) return false;
       try {
         return await invoke<boolean>("check_has_custom_settings", { path });
-      } catch {
+      } catch (err) {
+        console.warn("[repoSettingsStore] hasCustomSettings IPC failed:", path, err);
         return false;
       }
     },

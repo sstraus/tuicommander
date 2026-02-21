@@ -30,7 +30,7 @@ function createRepoDefaultsStore() {
         setup_script: state.setupScript,
         run_script: state.runScript,
       },
-    }).catch((err) => console.debug("Failed to save repo defaults:", err));
+    }).catch((err) => console.error("Failed to save repo defaults:", err));
   }
 
   return {

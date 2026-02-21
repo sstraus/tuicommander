@@ -316,4 +316,77 @@ describe("dispatchStructuredEvent", () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", {}, "s1");
     expect(handler).not.toHaveBeenCalled();
   });
+
+  it("catches and does not rethrow handler exceptions", () => {
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      host.registerStructuredEventHandler("plan-file", () => { throw new Error("handler boom"); });
+    }));
+    expect(() => pluginRegistry.dispatchStructuredEvent("plan-file", {}, "s1")).not.toThrow();
+  });
+
+  it("continues dispatching to other handlers after one throws", () => {
+    const h2 = vi.fn();
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      host.registerStructuredEventHandler("plan-file", () => { throw new Error("boom"); });
+    }));
+    pluginRegistry.register(makePlugin("p2", (host) => {
+      host.registerStructuredEventHandler("plan-file", h2);
+    }));
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/foo.md" }, "s1");
+    expect(h2).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onload failure
+// ---------------------------------------------------------------------------
+
+describe("onload failure", () => {
+  it("does not register a plugin whose onload throws", () => {
+    pluginRegistry.register(makePlugin("bad", () => { throw new Error("onload boom"); }));
+    // Plugin should not be registered — unregister should be a no-op
+    const onunload = vi.fn();
+    pluginRegistry.unregister("bad");
+    expect(onunload).not.toHaveBeenCalled();
+  });
+
+  it("cleans up partial registrations when onload throws", () => {
+    pluginRegistry.register(makePlugin("bad", (host) => {
+      host.registerSection({ id: "partial-section", label: "X", priority: 10, canDismissAll: false });
+      throw new Error("mid-onload boom");
+    }));
+    // The section registered before the throw should be cleaned up
+    expect(activityStore.getSections().some((s) => s.id === "partial-section")).toBe(false);
+  });
+
+  it("does not affect subsequent plugin registrations", () => {
+    pluginRegistry.register(makePlugin("bad", () => { throw new Error("boom"); }));
+    const onload = vi.fn();
+    pluginRegistry.register(makePlugin("good", onload));
+    expect(onload).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeSession
+// ---------------------------------------------------------------------------
+
+describe("removeSession", () => {
+  it("cleans up LineBuffer for a session", () => {
+    const onMatch = vi.fn();
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      host.registerOutputWatcher({ pattern: /hello/, onMatch });
+    }));
+    // Build up partial data in session buffer
+    pluginRegistry.processRawOutput("hel", "s1");
+    // Remove the session — the partial "hel" should be lost
+    pluginRegistry.removeSession("s1");
+    // Now send "lo\n" — should NOT complete "hello" since buffer was cleared
+    pluginRegistry.processRawOutput("lo\n", "s1");
+    expect(onMatch).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op for unknown session", () => {
+    expect(() => pluginRegistry.removeSession("nonexistent")).not.toThrow();
+  });
 });

@@ -342,10 +342,21 @@ describe("uiStore", () => {
       });
     });
 
-    it("setSettingsNavWidth updates and persists", () => {
+    it("setSettingsNavWidth updates state without persisting (persist on drag-end)", () => {
       createRoot((dispose) => {
         store.setSettingsNavWidth(220);
         expect(store.state.settingsNavWidth).toBe(220);
+        // setSettingsNavWidth no longer calls save_ui_prefs directly (IPC storm fix);
+        // callers must call persistUIPrefs() explicitly after drag-end
+        dispose();
+      });
+    });
+
+    it("persistUIPrefs saves current state to backend", () => {
+      createRoot((dispose) => {
+        store.setSettingsNavWidth(220);
+        mockInvoke.mockClear();
+        store.persistUIPrefs();
         expect(mockInvoke).toHaveBeenCalledWith("save_ui_prefs", {
           config: expect.objectContaining({ settings_nav_width: 220 }),
         });

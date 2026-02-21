@@ -705,6 +705,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Sessions persist across branch/repo switches and reconnect on remount.
     // PTY sessions are only closed via explicit closeTerminal() action.
 
+    // Clean up plugin line buffer for this session
+    if (sessionId) pluginRegistry.removeSession(sessionId);
+
     terminal?.dispose();
   });
 

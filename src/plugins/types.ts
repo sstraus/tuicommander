@@ -48,7 +48,11 @@ export interface ActivityItem {
   title: string;
   /** Secondary display text (smaller, muted) */
   subtitle?: string;
-  /** Inline SVG string for the icon */
+  /**
+   * Inline SVG string rendered via innerHTML.
+   * SECURITY: MUST be a compile-time constant from trusted first-party code.
+   * NEVER pass user-generated, PTY-derived, or externally-sourced strings here.
+   */
   icon: string;
   /** CSS color for the icon (e.g. "var(--fg-muted)", "#3fb950") */
   iconColor?: string;

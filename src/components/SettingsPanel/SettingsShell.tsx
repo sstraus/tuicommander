@@ -20,8 +20,10 @@ export interface SettingsShellProps {
   onTabChange: (key: string) => void;
   /** Width of the nav sidebar in px (persisted externally) */
   navWidth?: number;
-  /** Called when user drags the nav resize handle */
+  /** Called on every pixel during nav resize drag (update state only) */
   onNavWidthChange?: (width: number) => void;
+  /** Called once on mouseup after nav resize drag (persist to disk) */
+  onNavWidthPersist?: () => void;
   footer?: JSX.Element;
   children: JSX.Element;
 }
@@ -47,6 +49,7 @@ export const SettingsShell: Component<SettingsShellProps> = (props) => {
       document.removeEventListener("mouseup", onUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      props.onNavWidthPersist?.();
     };
 
     document.addEventListener("mousemove", onMove);

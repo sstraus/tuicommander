@@ -44,10 +44,10 @@ describe("LineBuffer", () => {
       expect(buf.push("\n")).toEqual(["abc"]);
     });
 
-    it("handles \\r\\n line endings by retaining \\r in line content", () => {
-      // We split on \n only; \r is preserved in the line (callers can strip it)
+    it("handles \\r\\n line endings by stripping trailing \\r", () => {
+      // Windows PTY output uses \r\n; LineBuffer strips trailing \r for cross-platform regex matching
       const lines = buf.push("hello\r\n");
-      expect(lines).toEqual(["hello\r"]);
+      expect(lines).toEqual(["hello"]);
     });
 
     it("handles multi-byte UTF-8 characters split across chunks", () => {

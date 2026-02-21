@@ -1,5 +1,5 @@
 import { invoke } from "../invoke";
-import type { Disposable, MarkdownProvider, PluginHost, TuiPlugin } from "./types";
+import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 
@@ -83,7 +83,8 @@ function createStoriesMarkdownProvider(): MarkdownProvider {
         if (!entry) return null;
 
         return await invoke<string>("read_file", { path: dir, file: entry.path });
-      } catch {
+      } catch (err) {
+        console.warn("[wizStoriesPlugin] Failed to load story content:", storyId, err);
         return null;
       }
     },
@@ -108,7 +109,6 @@ export function createWizStoriesPlugin(
 class WizStoriesPlugin implements TuiPlugin {
   readonly id = PLUGIN_ID;
 
-  private disposables: Disposable[] = [];
   private readonly getStoriesDir: (sessionId: string) => string | null;
 
   constructor(getStoriesDir: (sessionId: string) => string | null) {
@@ -116,71 +116,58 @@ class WizStoriesPlugin implements TuiPlugin {
   }
 
   onload(host: PluginHost): void {
-    this.disposables = [];
+    host.registerSection({
+      id: SECTION_ID,
+      label: "STORIES",
+      priority: 20,
+      canDismissAll: false,
+    });
 
-    this.disposables.push(
-      host.registerSection({
-        id: SECTION_ID,
-        label: "STORIES",
-        priority: 20,
-        canDismissAll: false,
-      }),
-    );
+    host.registerMarkdownProvider(SECTION_ID, createStoriesMarkdownProvider());
 
-    this.disposables.push(
-      host.registerMarkdownProvider(SECTION_ID, createStoriesMarkdownProvider()),
-    );
+    host.registerOutputWatcher({
+      pattern: STATUS_PATTERN,
+      onMatch: (match, sessionId) => {
+        const storyId = match[1];
+        const status = match[2];
+        const storiesDir = this.getStoriesDir(sessionId);
+        host.addItem({
+          id: stableItemId(storyId),
+          pluginId: PLUGIN_ID,
+          sectionId: SECTION_ID,
+          title: storyId,
+          subtitle: `${storyId} · ${status}`,
+          icon: BOLT_SVG,
+          dismissible: true,
+          contentUri: buildContentUri(storyId, storiesDir),
+        });
+      },
+    });
 
-    this.disposables.push(
-      host.registerOutputWatcher({
-        pattern: STATUS_PATTERN,
-        onMatch: (match, sessionId) => {
-          const storyId = match[1];
-          const status = match[2];
-          const storiesDir = this.getStoriesDir(sessionId);
-          host.addItem({
-            id: stableItemId(storyId),
-            pluginId: PLUGIN_ID,
-            sectionId: SECTION_ID,
-            title: storyId,
-            subtitle: `${storyId} · ${status}`,
-            icon: BOLT_SVG,
-            dismissible: true,
-            contentUri: buildContentUri(storyId, storiesDir),
-          });
-        },
-      }),
-    );
-
-    this.disposables.push(
-      host.registerOutputWatcher({
-        pattern: WORKLOG_PATTERN,
-        onMatch: (match, sessionId) => {
-          const storyId = match[1];
-          const storiesDir = this.getStoriesDir(sessionId);
-          // Add or refresh the item (addItem deduplicates by id)
-          host.addItem({
-            id: stableItemId(storyId),
-            pluginId: PLUGIN_ID,
-            sectionId: SECTION_ID,
-            title: storyId,
-            subtitle: `${storyId} · worklog`,
-            icon: BOLT_SVG,
-            dismissible: true,
-            contentUri: buildContentUri(storyId, storiesDir),
-          });
-        },
-      }),
-    );
+    host.registerOutputWatcher({
+      pattern: WORKLOG_PATTERN,
+      onMatch: (match, sessionId) => {
+        const storyId = match[1];
+        const storiesDir = this.getStoriesDir(sessionId);
+        // Add or refresh the item (addItem deduplicates by id)
+        host.addItem({
+          id: stableItemId(storyId),
+          pluginId: PLUGIN_ID,
+          sectionId: SECTION_ID,
+          title: storyId,
+          subtitle: `${storyId} · worklog`,
+          icon: BOLT_SVG,
+          dismissible: true,
+          contentUri: buildContentUri(storyId, storiesDir),
+        });
+      },
+    });
   }
 
   onunload(): void {
-    for (const d of this.disposables) {
-      d.dispose();
-    }
-    this.disposables = [];
+    // All registrations are auto-disposed by the plugin registry
   }
 }
 
-/** Default singleton for use in BUILTIN_PLUGINS */
+/** Default singleton using the standard store-based storiesDir resolver */
 export const wizStoriesPlugin: TuiPlugin = createWizStoriesPlugin();

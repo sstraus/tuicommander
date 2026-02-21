@@ -18,6 +18,7 @@ export class LineBuffer {
     const parts = this.buffer.split("\n");
     // Last element is the incomplete trailing line (may be "" if chunk ended with \n)
     this.buffer = parts.pop() ?? "";
-    return parts;
+    // Strip trailing \r for Windows PTY output (\r\n line endings)
+    return parts.map((line) => line.endsWith("\r") ? line.slice(0, -1) : line);
   }
 }

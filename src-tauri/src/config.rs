@@ -298,7 +298,7 @@ impl Default for NotificationConfig {
 // UIPrefsConfig — sidebar, panel sizes, settings nav width
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct UIPrefsConfig {
     #[serde(default = "default_true")]
     pub(crate) sidebar_visible: bool,
@@ -312,6 +312,19 @@ pub(crate) struct UIPrefsConfig {
     pub(crate) notes_panel_width: u32,
     #[serde(default = "default_settings_nav_width")]
     pub(crate) settings_nav_width: u32,
+}
+
+impl Default for UIPrefsConfig {
+    fn default() -> Self {
+        Self {
+            sidebar_visible: true,
+            sidebar_width: default_sidebar_width(),
+            diff_panel_width: default_panel_width(),
+            markdown_panel_width: default_panel_width(),
+            notes_panel_width: default_notes_panel_width(),
+            settings_nav_width: default_settings_nav_width(),
+        }
+    }
 }
 
 fn default_sidebar_width() -> u32 { 260 }
@@ -346,8 +359,6 @@ pub(crate) struct RepoSettingsEntry {
     #[serde(default)]
     pub(crate) color: String,
 }
-
-
 
 impl RepoSettingsEntry {
     /// Check if this entry has any non-default settings

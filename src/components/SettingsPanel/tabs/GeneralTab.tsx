@@ -115,7 +115,7 @@ export const GeneralTab: Component = () => {
       <div class="settings-group">
         <button
           class="settings-test-btn"
-          onClick={() => updaterStore.checkForUpdate()}
+          onClick={() => { updaterStore.checkForUpdate().catch((err: unknown) => console.debug("Update check failed:", err)); }}
           disabled={updaterStore.state.checking || updaterStore.state.downloading}
         >
           {updaterStore.state.checking ? "Checking..." : "Check Now"}

@@ -3,30 +3,26 @@ import type { Disposable, MarkdownProvider } from "./types";
 /**
  * Routes virtual content URIs to registered MarkdownProvider implementations.
  *
- * Follows the VS Code TextDocumentContentProvider pattern: each plugin registers
- * a provider keyed by URI scheme. When a user clicks an ActivityItem with a
- * contentUri, resolve() dispatches to the matching provider.
- *
- * Multiple registrations for the same scheme stack — the most recent wins.
- * Disposing a registration restores the previous provider for that scheme.
+ * Each plugin registers a provider keyed by URI scheme. When a user clicks an
+ * ActivityItem with a contentUri, resolve() dispatches to the matching provider.
  */
 function createMarkdownProviderRegistry() {
-  // Stack per scheme: last entry is the active provider
-  const stacks = new Map<string, MarkdownProvider[]>();
+  const providers = new Map<string, MarkdownProvider>();
 
   function register(scheme: string, provider: MarkdownProvider): Disposable {
-    if (!stacks.has(scheme)) {
-      stacks.set(scheme, []);
-    }
-    stacks.get(scheme)!.push(provider);
+    const previous = providers.get(scheme);
+    providers.set(scheme, provider);
 
     return {
       dispose() {
-        const stack = stacks.get(scheme);
-        if (!stack) return;
-        const idx = stack.lastIndexOf(provider);
-        if (idx >= 0) stack.splice(idx, 1);
-        if (stack.length === 0) stacks.delete(scheme);
+        // Only remove if this registration is still the active one
+        if (providers.get(scheme) === provider) {
+          if (previous) {
+            providers.set(scheme, previous);
+          } else {
+            providers.delete(scheme);
+          }
+        }
       },
     };
   }
@@ -43,16 +39,15 @@ function createMarkdownProviderRegistry() {
     const scheme = uri.protocol.replace(/:$/, "");
     if (!scheme) return null;
 
-    const stack = stacks.get(scheme);
-    if (!stack || stack.length === 0) return null;
+    const provider = providers.get(scheme);
+    if (!provider) return null;
 
-    const provider = stack[stack.length - 1];
     return provider.provideContent(uri);
   }
 
   /** Remove all registrations (for testing). */
   function clear(): void {
-    stacks.clear();
+    providers.clear();
   }
 
   return { register, resolve, clear };

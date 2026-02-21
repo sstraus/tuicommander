@@ -121,6 +121,7 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
       onTabChange={setActiveTab}
       navWidth={uiStore.state.settingsNavWidth}
       onNavWidthChange={uiStore.setSettingsNavWidth}
+      onNavWidthPersist={uiStore.persistUIPrefs}
       footer={footer()}
     >
       {/* Repo settings (shown when a repo nav item is active) */}
@@ -156,5 +157,3 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
     </SettingsShell>
   );
 };
-
-export default SettingsPanel;

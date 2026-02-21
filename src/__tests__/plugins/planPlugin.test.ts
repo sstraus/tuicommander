@@ -101,6 +101,26 @@ describe("plan-file structured event", () => {
     const item = activityStore.getForSection("plan")[0];
     expect(item.icon).toContain("<svg");
   });
+
+  it("ignores null payload", () => {
+    pluginRegistry.dispatchStructuredEvent("plan-file", null, "s1");
+    expect(activityStore.getForSection("plan")).toHaveLength(0);
+  });
+
+  it("ignores payload with non-string path", () => {
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: 42 }, "s1");
+    expect(activityStore.getForSection("plan")).toHaveLength(0);
+  });
+
+  it("ignores payload without path property", () => {
+    pluginRegistry.dispatchStructuredEvent("plan-file", { file: "/foo.md" }, "s1");
+    expect(activityStore.getForSection("plan")).toHaveLength(0);
+  });
+
+  it("ignores string payload (not object)", () => {
+    pluginRegistry.dispatchStructuredEvent("plan-file", "/foo.md", "s1");
+    expect(activityStore.getForSection("plan")).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -128,5 +148,11 @@ describe("plan MarkdownProvider", () => {
     mockedInvoke.mockRejectedValue(new Error("file not found"));
     const result = await markdownProviderRegistry.resolve("plan:file?path=%2Ffoo%2Fbar.md");
     expect(result).toBeNull();
+  });
+
+  it("returns null for path traversal attempts", async () => {
+    const result = await markdownProviderRegistry.resolve("plan:file?path=%2Ffoo%2F..%2F..%2Fetc%2Fpasswd");
+    expect(result).toBeNull();
+    expect(mockedInvoke).not.toHaveBeenCalled();
   });
 });

@@ -47,6 +47,21 @@ describe("activityStore", () => {
       const ids = activityStore.getSections().map((s) => s.id);
       expect(ids.indexOf("a")).toBeLessThan(ids.indexOf("b"));
     });
+
+    it("re-registering same section id replaces the existing one", () => {
+      activityStore.registerSection(makeSection({ id: "dup", label: "First" }));
+      activityStore.registerSection(makeSection({ id: "dup", label: "Second" }));
+      const sections = activityStore.getSections().filter((s) => s.id === "dup");
+      expect(sections).toHaveLength(1);
+      expect(sections[0].label).toBe("Second");
+    });
+
+    it("disposing old registration after re-register removes section (dispose filters by id)", () => {
+      const d1 = activityStore.registerSection(makeSection({ id: "dup", label: "First" }));
+      activityStore.registerSection(makeSection({ id: "dup", label: "Second" }));
+      d1.dispose(); // dispose filters by id — removes the replacement too
+      expect(activityStore.getSections().some((s) => s.id === "dup")).toBe(false);
+    });
   });
 
   // -------------------------------------------------------------------------

@@ -103,6 +103,9 @@ describe("repoDefaultsStore", () => {
       createRoot((dispose) => {
         store.setCopyUntrackedFiles(true);
         expect(store.state.copyUntrackedFiles).toBe(true);
+        expect(mockInvoke).toHaveBeenCalledWith("save_repo_defaults", expect.objectContaining({
+          config: expect.objectContaining({ copy_untracked_files: true }),
+        }));
         dispose();
       });
     });
@@ -111,6 +114,9 @@ describe("repoDefaultsStore", () => {
       createRoot((dispose) => {
         store.setSetupScript("npm install");
         expect(store.state.setupScript).toBe("npm install");
+        expect(mockInvoke).toHaveBeenCalledWith("save_repo_defaults", expect.objectContaining({
+          config: expect.objectContaining({ setup_script: "npm install" }),
+        }));
         dispose();
       });
     });
@@ -119,6 +125,25 @@ describe("repoDefaultsStore", () => {
       createRoot((dispose) => {
         store.setRunScript("npm run dev");
         expect(store.state.runScript).toBe("npm run dev");
+        expect(mockInvoke).toHaveBeenCalledWith("save_repo_defaults", expect.objectContaining({
+          config: expect.objectContaining({ run_script: "npm run dev" }),
+        }));
+        dispose();
+      });
+    });
+
+    it("save includes full config with all fields", () => {
+      createRoot((dispose) => {
+        store.setBaseBranch("develop");
+        expect(mockInvoke).toHaveBeenCalledWith("save_repo_defaults", {
+          config: {
+            base_branch: "develop",
+            copy_ignored_files: false,
+            copy_untracked_files: false,
+            setup_script: "",
+            run_script: "",
+          },
+        });
         dispose();
       });
     });

@@ -1,5 +1,5 @@
 import { invoke } from "../invoke";
-import type { Disposable, MarkdownProvider, PluginHost, TuiPlugin } from "./types";
+import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -41,7 +41,7 @@ function contentUri(absolutePath: string): string {
 const planMarkdownProvider: MarkdownProvider = {
   async provideContent(uri: URL): Promise<string | null> {
     const rawPath = uri.searchParams.get("path");
-    if (!rawPath) return null;
+    if (!rawPath || rawPath.includes("..")) return null;
 
     // Split absolute path into repo_path (dirname) + file (basename)
     // so it satisfies read_file_impl's within-repo security constraint.
@@ -51,7 +51,8 @@ const planMarkdownProvider: MarkdownProvider = {
 
     try {
       return await invoke<string>("read_file", { path: dirPath, file: fileName });
-    } catch {
+    } catch (err) {
+      console.warn("[planPlugin] Failed to read plan file:", rawPath, err);
       return null;
     }
   },
@@ -64,49 +65,37 @@ const planMarkdownProvider: MarkdownProvider = {
 class PlanPlugin implements TuiPlugin {
   readonly id = PLUGIN_ID;
 
-  private disposables: Disposable[] = [];
-
   onload(host: PluginHost): void {
-    this.disposables = [];
+    host.registerSection({
+      id: SECTION_ID,
+      label: "ACTIVE PLAN",
+      priority: 10,
+      canDismissAll: false,
+    });
 
-    this.disposables.push(
-      host.registerSection({
-        id: SECTION_ID,
-        label: "ACTIVE PLAN",
-        priority: 10,
-        canDismissAll: false,
-      }),
-    );
+    host.registerStructuredEventHandler("plan-file", (payload, _sessionId) => {
+      if (typeof payload !== "object" || payload === null || typeof (payload as Record<string, unknown>).path !== "string") return;
+      const { path } = payload as { path: string };
+      const id = itemId(path);
 
-    this.disposables.push(
-      host.registerStructuredEventHandler("plan-file", (payload, _sessionId) => {
-        const { path } = payload as { path: string };
-        const id = itemId(path);
+      // Add or update (addItem deduplicates by id)
+      host.addItem({
+        id,
+        pluginId: PLUGIN_ID,
+        sectionId: SECTION_ID,
+        title: displayName(path),
+        subtitle: path,
+        icon: ICON_SVG,
+        dismissible: true,
+        contentUri: contentUri(path),
+      });
+    });
 
-        // Add or update (addItem deduplicates by id)
-        host.addItem({
-          id,
-          pluginId: PLUGIN_ID,
-          sectionId: SECTION_ID,
-          title: displayName(path),
-          subtitle: path,
-          icon: ICON_SVG,
-          dismissible: true,
-          contentUri: contentUri(path),
-        });
-      }),
-    );
-
-    this.disposables.push(
-      host.registerMarkdownProvider("plan", planMarkdownProvider),
-    );
+    host.registerMarkdownProvider("plan", planMarkdownProvider);
   }
 
   onunload(): void {
-    for (const d of this.disposables) {
-      d.dispose();
-    }
-    this.disposables = [];
+    // All registrations are auto-disposed by the plugin registry
   }
 }
 

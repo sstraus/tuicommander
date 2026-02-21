@@ -7,7 +7,7 @@ import type { TuiPlugin } from "./types";
  * All built-in plugins shipped with TUI Commander.
  * Order does not matter — plugins are independent.
  */
-export const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin, wizStoriesPlugin];
+const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin, wizStoriesPlugin];
 
 /**
  * Register all built-in plugins with the plugin registry.
