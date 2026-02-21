@@ -206,6 +206,9 @@ const App: Component = () => {
         if (!isTauri()) return;
         getCurrentWindow().onCloseRequested(async (event) => handler(event));
       },
+    }).catch((err) => {
+      console.error("[App] Fatal initialization error:", err);
+      setStatusInfo("Error: App failed to initialize — check browser console");
     });
 
     // Check for updates after hydration (non-blocking)

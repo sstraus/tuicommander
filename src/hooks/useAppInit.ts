@@ -178,7 +178,12 @@ export async function initApp(deps: AppInitDeps) {
   );
 
   // Check for surviving PTY sessions (persists across Vite HMR reloads)
-  const survivingSessions = await deps.pty.listActiveSessions();
+  let survivingSessions: Awaited<ReturnType<typeof deps.pty.listActiveSessions>> = [];
+  try {
+    survivingSessions = await deps.pty.listActiveSessions();
+  } catch (err) {
+    console.warn("[PTY] Failed to list active sessions (server unreachable or auth failure):", err);
+  }
 
   // Clear stale terminal IDs from previous session
   for (const id of terminalsStore.getIds()) {
