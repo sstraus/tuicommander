@@ -27,7 +27,6 @@ describe("settingsStore", () => {
       createRoot((dispose) => {
         expect(store.state.ide).toBe("vscode");
         expect(store.state.font).toBe("JetBrains Mono");
-        expect(store.state.agent).toBe("claude");
         expect(store.state.defaultFontSize).toBe(12);
         expect(store.state.confirmBeforeQuit).toBe(true);
         expect(store.state.confirmBeforeClosingTab).toBe(true);
@@ -129,16 +128,6 @@ describe("settingsStore", () => {
     });
   });
 
-  describe("setAgent()", () => {
-    it("updates agent preference in state", () => {
-      createRoot((dispose) => {
-        store.setAgent("gemini");
-        expect(store.state.agent).toBe("gemini");
-        dispose();
-      });
-    });
-  });
-
   describe("getFontFamily()", () => {
     it("returns CSS font family string", () => {
       createRoot((dispose) => {
@@ -224,14 +213,12 @@ describe("settingsStore", () => {
         ide: "zed",
         default_font_size: 16,
       });
-      mockInvoke.mockResolvedValueOnce({ primary_agent: "gemini" });
 
       await createRoot(async (dispose) => {
         await store.hydrate();
         expect(store.state.font).toBe("Hack");
         expect(store.state.ide).toBe("zed");
         expect(store.state.defaultFontSize).toBe(16);
-        expect(store.state.agent).toBe("gemini");
         dispose();
       });
     });
@@ -263,13 +250,11 @@ describe("settingsStore", () => {
         theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
         ide: "invalid-ide", default_font_size: 12,
       });
-      mockInvoke.mockResolvedValueOnce({ primary_agent: "gpt4" });
 
       await createRoot(async (dispose) => {
         await store.hydrate();
         expect(store.state.font).toBe("JetBrains Mono");
         expect(store.state.ide).toBe("vscode");
-        expect(store.state.agent).toBe("claude");
         dispose();
       });
     });
@@ -281,31 +266,6 @@ describe("settingsStore", () => {
         await store.hydrate();
         expect(store.state.font).toBe("JetBrains Mono");
         expect(store.state.ide).toBe("vscode");
-        expect(store.state.agent).toBe("claude");
-        dispose();
-      });
-    });
-
-    it("migrates legacy agent from localStorage", async () => {
-      localStorage.setItem("tui-commander-agent", "gemini");
-      mockInvoke.mockResolvedValueOnce({
-        shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
-        ide: "vscode", default_font_size: 12,
-      }); // load_config for migration
-      mockInvoke.mockResolvedValueOnce(undefined); // save_config for migration
-      mockInvoke.mockResolvedValueOnce({
-        shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
-        ide: "vscode", default_font_size: 12,
-      }); // load_config after migration
-
-      await createRoot(async (dispose) => {
-        await store.hydrate();
-        // Legacy key removed from localStorage
-        expect(localStorage.getItem("tui-commander-agent")).toBeNull();
-        // Agent set from legacyAgent variable (captured before removal)
-        expect(store.state.agent).toBe("gemini");
         dispose();
       });
     });

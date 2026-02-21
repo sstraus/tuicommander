@@ -105,7 +105,6 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Config
         .route("/config", get(config_routes::get_config).put(config_routes::put_config))
         .route("/config/hash-password", post(config_routes::hash_password_http))
-        .route("/config/agent", get(config_routes::get_agent_config).put(config_routes::put_agent_config))
         .route("/config/notifications", get(config_routes::get_notification_config).put(config_routes::put_notification_config))
         .route("/config/ui-prefs", get(config_routes::get_ui_prefs).put(config_routes::put_ui_prefs))
         .route("/config/repo-settings", get(config_routes::get_repo_settings).put(config_routes::put_repo_settings))

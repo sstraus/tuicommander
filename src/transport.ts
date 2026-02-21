@@ -119,12 +119,6 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
         transform: (data) => (data as { hash: string }).hash,
       };
 
-    // --- Config: agent ---
-    case "load_agent_config":
-      return { method: "GET", path: "/config/agent" };
-    case "save_agent_config":
-      return { method: "PUT", path: "/config/agent", body: args.config };
-
     // --- Config: notifications ---
     case "load_notification_config":
       return { method: "GET", path: "/config/notifications" };

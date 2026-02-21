@@ -240,26 +240,6 @@ impl Default for AppConfig {
 }
 
 // ---------------------------------------------------------------------------
-// AgentConfig — agent fallback settings
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Serialize, Deserialize, Default)]
-pub(crate) struct AgentConfig {
-    #[serde(default)]
-    pub(crate) primary_agent: String,
-    #[serde(default)]
-    pub(crate) auto_recovery: bool,
-    #[serde(default)]
-    pub(crate) fallback_chain: Vec<String>,
-    #[serde(default = "default_recovery_interval")]
-    pub(crate) recovery_interval_ms: u64,
-}
-
-fn default_recovery_interval() -> u64 {
-    30_000
-}
-
-// ---------------------------------------------------------------------------
 // NotificationConfig
 // ---------------------------------------------------------------------------
 
@@ -444,7 +424,6 @@ pub(crate) struct PromptLibraryConfig {
 // ---------------------------------------------------------------------------
 
 const APP_CONFIG_FILE: &str = "config.json";
-const AGENT_CONFIG_FILE: &str = "agent-config.json";
 const NOTIFICATION_CONFIG_FILE: &str = "notifications.json";
 const UI_PREFS_FILE: &str = "ui-prefs.json";
 const REPO_SETTINGS_FILE: &str = "repo-settings.json";
@@ -461,17 +440,6 @@ pub(crate) fn load_app_config() -> AppConfig {
 #[tauri::command]
 pub(crate) fn save_app_config(config: AppConfig) -> Result<(), String> {
     save_json_config(APP_CONFIG_FILE, &config)
-}
-
-// Agent config
-#[tauri::command]
-pub(crate) fn load_agent_config() -> AgentConfig {
-    load_json_config(AGENT_CONFIG_FILE)
-}
-
-#[tauri::command]
-pub(crate) fn save_agent_config(config: AgentConfig) -> Result<(), String> {
-    save_json_config(AGENT_CONFIG_FILE, &config)
 }
 
 // Notification config
@@ -636,22 +604,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_config_round_trip() {
-        let dir = TempDir::new().unwrap();
-        let cfg = AgentConfig {
-            primary_agent: "claude".to_string(),
-            auto_recovery: true,
-            fallback_chain: vec!["aider".to_string(), "codex".to_string()],
-            recovery_interval_ms: 60_000,
-        };
-        let loaded: AgentConfig = round_trip_in_dir(dir.path(), "agent-config.json", &cfg);
-        assert_eq!(loaded.primary_agent, "claude");
-        assert!(loaded.auto_recovery);
-        assert_eq!(loaded.fallback_chain.len(), 2);
-        assert_eq!(loaded.recovery_interval_ms, 60_000);
-    }
-
-    #[test]
     fn notification_config_round_trip() {
         let dir = TempDir::new().unwrap();
         let cfg = NotificationConfig {
@@ -737,9 +689,8 @@ mod tests {
     #[test]
     fn missing_file_returns_default() {
         // load_json_config with a nonexistent file returns default
-        let cfg: AgentConfig = load_json_config("nonexistent-12345.json");
-        assert_eq!(cfg.primary_agent, "");
-        assert!(!cfg.auto_recovery);
+        let cfg: NotificationConfig = load_json_config("nonexistent-12345.json");
+        assert!(cfg.enabled); // default is true
     }
 
     #[test]
@@ -749,27 +700,21 @@ mod tests {
         let target = dir.path().join(filename);
 
         // Write initial content
-        let initial = AgentConfig {
-            primary_agent: "initial".to_string(),
-            ..AgentConfig::default()
-        };
+        let initial = NotificationConfig { enabled: false, ..NotificationConfig::default() };
         let json = serde_json::to_string_pretty(&initial).unwrap();
         fs::write(&target, json).unwrap();
 
         // Overwrite with new content using save_json_config pattern
-        let updated = AgentConfig {
-            primary_agent: "updated".to_string(),
-            ..AgentConfig::default()
-        };
+        let updated = NotificationConfig { enabled: true, ..NotificationConfig::default() };
         let json2 = serde_json::to_string_pretty(&updated).unwrap();
         let temp = dir.path().join(format!("{}.tmp.{}", filename, std::process::id()));
         fs::write(&temp, &json2).unwrap();
         fs::rename(&temp, &target).unwrap();
 
         // Verify the new content is there
-        let loaded: AgentConfig =
+        let loaded: NotificationConfig =
             serde_json::from_str(&fs::read_to_string(&target).unwrap()).unwrap();
-        assert_eq!(loaded.primary_agent, "updated");
+        assert!(loaded.enabled);
 
         // Verify no temp file remains
         assert!(!temp.exists());
@@ -784,7 +729,7 @@ mod tests {
         let filename = "perms-test.json";
         let target = dir.path().join(filename);
 
-        let cfg = AgentConfig::default();
+        let cfg = NotificationConfig::default();
         let json = serde_json::to_string_pretty(&cfg).unwrap();
         let temp = dir.path().join(format!("{}.tmp.{}", filename, std::process::id()));
         fs::write(&temp, &json).unwrap();

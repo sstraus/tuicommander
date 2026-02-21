@@ -175,9 +175,6 @@ const simulator = {
         rateLimitStore.addRateLimit(rl);
       }
     }
-    if (preset.agent) {
-      simulator.agent(preset.agent);
-    }
   },
 
   /** List available presets */
@@ -260,16 +257,9 @@ const simulator = {
 ── Git ────────────────────────────────────────────────────────
   __tuic.git({ branch: 'feature/test', additions: 50, deletions: 10 })
 
-── Agents & Rate Limits ───────────────────────────────────────
+── Rate Limits ────────────────────────────────────────────────
   __tuic.rateLimit({ agent: 'claude', minutes: 15 })
   __tuic.rateLimit({ agent: 'gemini', minutes: 10 })
-  __tuic.agent({ active: 'gemini' })
-  __tuic.agent({ active: 'amp' })                    Sourcegraph Amp
-  __tuic.agent({ active: 'jules' })                  Google Jules
-  __tuic.agent({ active: 'cursor' })                 Cursor Agent
-  __tuic.agent({ active: 'warp' })                   Warp Oz
-  __tuic.agent({ active: 'ona' })                    ONA (Gitpod)
-  __tuic.agent({ unavailable: ['claude', 'gemini'] })
 
 ── Question / Awaiting Input ──────────────────────────────────
   __tuic.question()                              Show ? icon (question type)

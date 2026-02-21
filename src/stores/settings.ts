@@ -1,11 +1,9 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
-import type { AgentType } from "../agents";
 
 // Legacy storage keys for one-time migration
 const LEGACY_KEYS = {
   IDE: "tui-commander-default-ide",
-  AGENT: "tui-commander-agent",
   SESSION: "tui-commander-session",
 } as const;
 
@@ -32,7 +30,6 @@ interface RustAppConfig {
 const DEFAULTS = {
   ide: "vscode" as const,
   font: "JetBrains Mono" as const,
-  agent: "claude" as AgentType,
   fontSize: 12,
 };
 
@@ -188,9 +185,6 @@ const VALID_FONTS: readonly FontType[] = [
   "Geist Mono",
 ];
 
-/** Valid agent values */
-const VALID_AGENTS: readonly string[] = ["claude", "gemini", "opencode", "aider", "codex"];
-
 /** Validate and return IDE type or default */
 function validateIde(value: string | null): IdeType {
   return value && VALID_IDES.includes(value) ? (value as IdeType) : DEFAULTS.ide;
@@ -201,10 +195,6 @@ function validateFont(value: string | null): FontType {
   return value && VALID_FONTS.includes(value as FontType) ? (value as FontType) : DEFAULTS.font;
 }
 
-/** Validate and return agent type or default */
-function validateAgent(value: string | null): AgentType {
-  return value && VALID_AGENTS.includes(value) ? (value as AgentType) : DEFAULTS.agent;
-}
 
 /** Split tab mode */
 export type SplitTabMode = "separate" | "unified";
@@ -213,7 +203,6 @@ export type SplitTabMode = "separate" | "unified";
 interface SettingsStoreState {
   ide: IdeType;
   font: FontType;
-  agent: AgentType;
   defaultFontSize: number;
   shell: string | null;
   theme: string;
@@ -231,7 +220,6 @@ function createSettingsStore() {
   const [state, setState] = createStore<SettingsStoreState>({
     ide: DEFAULTS.ide,
     font: DEFAULTS.font,
-    agent: DEFAULTS.agent,
     defaultFontSize: DEFAULTS.fontSize,
     shell: null,
     theme: "vscode-dark",
@@ -250,20 +238,15 @@ function createSettingsStore() {
       try {
         // One-time migration from localStorage
         const legacyIde = localStorage.getItem(LEGACY_KEYS.IDE);
-        const legacyAgent = localStorage.getItem(LEGACY_KEYS.AGENT);
-        let migrated = false;
-
-        if (legacyIde || legacyAgent) {
+        if (legacyIde) {
           try {
             const config = await invoke<RustAppConfig>("load_config");
-            if (legacyIde) config.ide = legacyIde;
+            config.ide = legacyIde;
             await invoke("save_config", { config });
           } catch { /* ignore migration failure */ }
-          if (legacyIde) localStorage.removeItem(LEGACY_KEYS.IDE);
-          if (legacyAgent) localStorage.removeItem(LEGACY_KEYS.AGENT);
-          migrated = true;
+          localStorage.removeItem(LEGACY_KEYS.IDE);
         }
-        // Also clean up legacy session key
+        // Clean up legacy session key
         localStorage.removeItem(LEGACY_KEYS.SESSION);
 
         const config = await invoke<RustAppConfig>("load_config");
@@ -279,16 +262,6 @@ function createSettingsStore() {
         setState("autoShowPrPopover", config.auto_show_pr_popover ?? true);
         setState("preventSleepWhenBusy", config.prevent_sleep_when_busy ?? false);
         setState("autoUpdateEnabled", config.auto_update_enabled ?? true);
-
-        // Agent stored separately in agent-config
-        if (!migrated && !legacyAgent) {
-          const agentConfig = await invoke<{ primary_agent?: string }>("load_agent_config");
-          if (agentConfig?.primary_agent) {
-            setState("agent", validateAgent(agentConfig.primary_agent));
-          }
-        } else if (legacyAgent) {
-          setState("agent", validateAgent(legacyAgent));
-        }
       } catch (err) {
         console.error("Failed to hydrate settings:", err);
       }
@@ -331,12 +304,6 @@ function createSettingsStore() {
       } catch (err) {
         console.error("Failed to load font from config:", err);
       }
-    },
-
-    /** Set agent preference */
-    setAgent(agent: AgentType): void {
-      setState("agent", agent);
-      // Agent is persisted via agentFallback store's configure()
     },
 
     /** Set default font size */

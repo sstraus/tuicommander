@@ -10,7 +10,6 @@ export interface Preset {
   description: string;
   pr?: PrOverride;
   rateLimit?: RateLimitInfo[];
-  agent?: { active: AgentType };
 }
 
 /** Default PR values shared by presets */
@@ -171,9 +170,8 @@ export const PRESETS: Record<string, Preset> = {
   },
 
   "rate-limited": {
-    description: "Claude rate limited, Gemini fallback active",
+    description: "Claude rate limited",
     rateLimit: [rateLimitFor("claude", 15)],
-    agent: { active: "gemini" },
   },
 
   "all-down": {

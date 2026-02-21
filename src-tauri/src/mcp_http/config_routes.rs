@@ -58,23 +58,6 @@ pub(super) async fn hash_password_http(
     }
 }
 
-pub(super) async fn get_agent_config() -> impl IntoResponse {
-    Json(crate::config::load_agent_config())
-}
-
-pub(super) async fn put_agent_config(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(config): Json<crate::config::AgentConfig>,
-) -> impl IntoResponse {
-    if !addr.ip().is_loopback() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Config modification is only allowed from localhost"})));
-    }
-    match crate::config::save_agent_config(config) {
-        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
-    }
-}
-
 pub(super) async fn get_notification_config() -> impl IntoResponse {
     Json(crate::config::load_notification_config())
 }

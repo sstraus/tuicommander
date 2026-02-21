@@ -380,8 +380,6 @@ pub fn run() {
             dictation::commands::set_dictation_config,
             config::load_app_config,
             config::save_app_config,
-            config::load_agent_config,
-            config::save_agent_config,
             config::load_notification_config,
             config::save_notification_config,
             config::load_ui_prefs,
