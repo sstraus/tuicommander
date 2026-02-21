@@ -1,10 +1,10 @@
 ---
 id: 316-3cfb
 title: "Settings: repos as direct nav items with deep-link open"
-status: in_progress
+status: complete
 priority: P2
 created: "2026-02-21T09:17:54.233Z"
-updated: "2026-02-21T09:31:44.060Z"
+updated: "2026-02-21T09:40:45.649Z"
 dependencies: ["315"]
 ---
 
@@ -32,4 +32,6 @@ Currently opening repo settings requires two dialogs (gear → settings → repo
 - src/components/Sidebar/Sidebar.tsx
 
 ## Work Log
+
+### 2026-02-21T09:40:45.580Z - Implemented unified settings panel: repos appear as nav items below global sections (General/Groups/Notifications/Dictation/Services), separated by a REPOSITORIES label. Deep-link open via context kind=repo pre-selects the repo nav item. Reset to Defaults footer button only shows for repo nav. displayName removed from SettingsContext. All 1640 tests green, visual verification confirmed.
 
