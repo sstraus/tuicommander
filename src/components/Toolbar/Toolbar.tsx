@@ -1,5 +1,6 @@
 import { Component, Show, For, createSignal, createEffect, onCleanup } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
+import { repoSettingsStore } from "../../stores/repoSettings";
 import { uiStore } from "../../stores/ui";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
@@ -237,7 +238,14 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                         >
                           <span class="pr-notif-icon">{info.icon}</span>
                           <div class="pr-notif-details">
-                            <span class="pr-notif-repo">
+                            <span
+                              class="pr-notif-repo"
+                              style={(() => {
+                                const color = repoSettingsStore.get(notif.repoPath)?.color
+                                  || repositoriesStore.getGroupForRepo(notif.repoPath)?.color;
+                                return color ? { color } : undefined;
+                              })()}
+                            >
                               {repositoriesStore.get(notif.repoPath)?.displayName ?? notif.repoPath.split("/").pop()}
                             </span>
                             <span class="pr-notif-pr">#{notif.prNumber} {info.label}</span>
