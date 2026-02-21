@@ -102,6 +102,16 @@ fn clear_caches(state: State<'_, Arc<AppState>>) {
     state.clear_caches();
 }
 
+/// Return the machine's preferred local IP address (the one used for outbound traffic).
+/// Uses a UDP connect trick — no data is sent.
+#[tauri::command]
+fn get_local_ip() -> Option<String> {
+    use std::net::UdpSocket;
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    socket.local_addr().ok().map(|a| a.ip().to_string())
+}
+
 
 /// A markdown file with its git status
 #[derive(Debug, Clone, serde::Serialize)]
@@ -365,6 +375,7 @@ pub fn run() {
             github::get_repo_pr_statuses,
             worktree::generate_worktree_name_cmd,
             clear_caches,
+            get_local_ip,
             get_mcp_status,
             dictation::commands::get_dictation_status,
             dictation::commands::get_model_info,

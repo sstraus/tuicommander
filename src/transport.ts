@@ -256,6 +256,10 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
     case "get_mcp_status":
       return { method: "GET", path: "/mcp/status" };
 
+    // --- Network ---
+    case "get_local_ip":
+      return { method: "GET", path: "/system/local-ip" };
+
     default:
       throw new Error(`No HTTP mapping for command: ${command}`);
   }

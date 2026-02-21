@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, onMount, onCleanup } from "solid-js";
+import { Component, Show, createSignal, createResource, onMount, onCleanup } from "solid-js";
 import { rpc } from "../../../transport";
 
 interface McpStatus {
@@ -24,6 +24,7 @@ interface AppConfig {
 
 export const ServicesTab: Component = () => {
   const [status, setStatus] = createSignal<McpStatus | null>(null);
+  const [localIp] = createResource(() => rpc<string | null>("get_local_ip"));
   const [saving, setSaving] = createSignal(false);
 
   // Remote access form state
@@ -245,7 +246,7 @@ export const ServicesTab: Component = () => {
           <div class="settings-group">
             <label>Connection URL</label>
             <code class="settings-url">
-              http://&lt;your-ip&gt;:{raPort()}
+              http://{localIp() ?? "&lt;your-ip&gt;"}:{raPort()}
             </code>
           </div>
         </Show>
