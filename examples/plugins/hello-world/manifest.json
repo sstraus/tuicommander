@@ -1,0 +1,9 @@
+{
+  "id": "hello-world",
+  "name": "Hello World",
+  "version": "1.0.0",
+  "minAppVersion": "0.3.0",
+  "main": "main.js",
+  "description": "Minimal example: detects 'hello' in terminal output and adds an activity item.",
+  "author": "TUI Commander"
+}

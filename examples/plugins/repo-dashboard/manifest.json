@@ -1,0 +1,9 @@
+{
+  "id": "repo-dashboard",
+  "name": "Repo Dashboard",
+  "version": "1.0.0",
+  "minAppVersion": "0.3.0",
+  "main": "main.js",
+  "description": "Shows a multi-repo status view using read-only host methods and markdown provider.",
+  "author": "TUI Commander"
+}

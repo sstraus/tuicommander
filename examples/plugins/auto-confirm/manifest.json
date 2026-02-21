@@ -1,0 +1,10 @@
+{
+  "id": "auto-confirm",
+  "name": "Auto Confirm",
+  "version": "1.0.0",
+  "minAppVersion": "0.3.0",
+  "main": "main.js",
+  "description": "Auto-responds 'y' to [y/N] prompts in terminal output.",
+  "author": "TUI Commander",
+  "capabilities": ["pty:write"]
+}
