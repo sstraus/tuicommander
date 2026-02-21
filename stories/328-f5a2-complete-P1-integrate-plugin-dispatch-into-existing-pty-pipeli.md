@@ -1,10 +1,10 @@
 ---
 id: 328-f5a2
 title: Integrate plugin dispatch into existing PTY pipeline
-status: ready
+status: complete
 priority: P1
 created: "2026-02-21T09:53:53.388Z"
-updated: "2026-02-21T10:02:49.068Z"
+updated: "2026-02-21T10:20:15.726Z"
 dependencies: ["320-e879"]
 ---
 
@@ -34,4 +34,6 @@ The plugin system must be integrated INTO the existing PTY pipeline, not bolted 
 - 320-e879
 
 ## Work Log
+
+### 2026-02-21T10:20:15.659Z - Added processRawOutput to pluginRegistry (manages per-session LineBuffers, strips ANSI, dispatches clean lines). Integrated into Terminal.tsx handlePtyData() before terminal.write(). Added dispatchStructuredEvent call after switch/case in pty-parsed handler. 1770 tests green, no regressions.
 

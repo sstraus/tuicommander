@@ -224,6 +224,53 @@ describe("dispatchLine", () => {
 });
 
 // ---------------------------------------------------------------------------
+// processRawOutput
+// ---------------------------------------------------------------------------
+
+describe("processRawOutput", () => {
+  it("reassembles lines and dispatches clean (ANSI-stripped) lines to watchers", () => {
+    const onMatch = vi.fn();
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      host.registerOutputWatcher({ pattern: /hello/, onMatch });
+    }));
+    // Raw chunk with ANSI color + newline
+    pluginRegistry.processRawOutput("\x1b[32mhello world\x1b[0m\n", "s1");
+    expect(onMatch).toHaveBeenCalledOnce();
+    // First arg is RegExpExecArray, match[0] should be the clean text match
+    expect(onMatch.mock.calls[0][0][0]).toBe("hello");
+    expect(onMatch.mock.calls[0][1]).toBe("s1");
+  });
+
+  it("holds partial lines until newline arrives", () => {
+    const onMatch = vi.fn();
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      host.registerOutputWatcher({ pattern: /hello/, onMatch });
+    }));
+    pluginRegistry.processRawOutput("hel", "s1");
+    expect(onMatch).not.toHaveBeenCalled();
+    pluginRegistry.processRawOutput("lo\n", "s1");
+    expect(onMatch).toHaveBeenCalledOnce();
+  });
+
+  it("is a no-op when no watchers are registered", () => {
+    // Should not throw even with no plugins registered
+    expect(() => pluginRegistry.processRawOutput("anything\n", "s1")).not.toThrow();
+  });
+
+  it("maintains separate LineBuffers per sessionId", () => {
+    const onMatch = vi.fn();
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      host.registerOutputWatcher({ pattern: /done/, onMatch });
+    }));
+    pluginRegistry.processRawOutput("do", "session-a");
+    pluginRegistry.processRawOutput("ne\n", "session-b"); // different session
+    expect(onMatch).not.toHaveBeenCalled(); // "done" not complete in session-b's buffer
+    pluginRegistry.processRawOutput("ne\n", "session-a");  // completes in session-a
+    expect(onMatch).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Structured event dispatch
 // ---------------------------------------------------------------------------
 

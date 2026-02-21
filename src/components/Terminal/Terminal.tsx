@@ -13,6 +13,7 @@ import { notificationsStore } from "../../stores/notifications";
 import { uiStore } from "../../stores/ui";
 import { invoke } from "../../invoke";
 import { isMacOS } from "../../platform";
+import { pluginRegistry } from "../../plugins/pluginRegistry";
 
 
 /** Structured events parsed by Rust OutputParser, received via pty-parsed-{sessionId} */
@@ -135,6 +136,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
   /** Process a chunk of PTY output — write to terminal or buffer if not ready */
   const handlePtyData = (data: string) => {
     if (terminal) {
+      // Dispatch to plugins BEFORE writing to xterm so they observe the same byte order
+      if (sessionId) pluginRegistry.processRawOutput(data, sessionId);
+
       const byteLen = data.length;
       pendingWriteBytes += byteLen;
 
@@ -300,6 +304,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
             uiStore.setPlanFilePath(parsed.path);
             break;
         }
+
+        // Also dispatch to plugin structured event handlers
+        pluginRegistry.dispatchStructuredEvent(parsed.type, parsed, targetSessionId);
       });
     }
   };

@@ -1,5 +1,7 @@
 import { activityStore } from "../stores/activityStore";
 import { markdownProviderRegistry } from "./markdownProviderRegistry";
+import { LineBuffer } from "../utils/lineBuffer";
+import { stripAnsi } from "../utils/stripAnsi";
 import type {
   Disposable,
   MarkdownProvider,
@@ -23,6 +25,9 @@ function createPluginRegistry() {
 
   // Global watcher list — all watchers from all plugins, tagged with pluginId
   const outputWatchers: Array<{ pluginId: string; watcher: OutputWatcher }> = [];
+
+  // Per-session LineBuffers for processRawOutput
+  const lineBuffers = new Map<string, LineBuffer>();
 
   // Structured event handlers: type → list of { pluginId, handler }
   const structuredHandlers = new Map<
@@ -147,6 +152,27 @@ function createPluginRegistry() {
   }
 
   /**
+   * Accept a raw PTY data chunk, reassemble complete lines, strip ANSI, and
+   * dispatch each clean line to all registered OutputWatchers.
+   *
+   * Called inside handlePtyData() BEFORE terminal.write() so that plugins
+   * observe every byte in the same order xterm does.
+   */
+  function processRawOutput(data: string, sessionId: string): void {
+    if (outputWatchers.length === 0) return; // fast path: no watchers
+    let buf = lineBuffers.get(sessionId);
+    if (!buf) {
+      buf = new LineBuffer();
+      lineBuffers.set(sessionId, buf);
+    }
+    const lines = buf.push(data);
+    for (const line of lines) {
+      const clean = stripAnsi(line);
+      dispatchLine(clean, sessionId);
+    }
+  }
+
+  /**
    * Dispatch a structured Tauri event to all registered handlers for the type.
    */
   function dispatchStructuredEvent(type: string, payload: unknown, sessionId: string): void {
@@ -164,7 +190,7 @@ function createPluginRegistry() {
     }
   }
 
-  return { register, unregister, dispatchLine, dispatchStructuredEvent, clear };
+  return { register, unregister, processRawOutput, dispatchLine, dispatchStructuredEvent, clear };
 }
 
 export const pluginRegistry = createPluginRegistry();
