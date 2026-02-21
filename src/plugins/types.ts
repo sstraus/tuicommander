@@ -54,6 +54,8 @@ export interface ActivityItem {
   iconColor?: string;
   /** Whether the user can dismiss this item individually */
   dismissible: boolean;
+  /** Whether this item has been dismissed by the user */
+  dismissed?: boolean;
   /** Unix timestamp when this item was created (set by store) */
   createdAt: number;
   /**

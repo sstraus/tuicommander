@@ -172,7 +172,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
             <button
               class="activity-last-item-btn"
               onClick={handleLastItemClick}
-              title={src().kind === "activity" ? src().item.title : src().notif.branch}
+              title={(() => { const s = src(); return s.kind === "activity" ? s.item.title : s.notif.branch; })()}
             >
               <Show when={src().kind === "activity"}>
                 <span class="activity-last-item-icon" innerHTML={(src() as { kind: "activity"; item: ActivityItem }).item.icon} />

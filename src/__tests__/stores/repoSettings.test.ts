@@ -134,11 +134,12 @@ describe("repoSettingsStore", () => {
       createRoot((dispose) => {
         store.getOrCreate("/repo", "my-repo");
         const effective = store.getEffective("/repo");
-        expect(effective.baseBranch).toBe("automatic"); // from global default
-        expect(effective.copyIgnoredFiles).toBe(false);
-        expect(effective.copyUntrackedFiles).toBe(false);
-        expect(effective.setupScript).toBe("");
-        expect(effective.runScript).toBe("");
+        expect(effective).toBeDefined();
+        expect(effective!.baseBranch).toBe("automatic"); // from global default
+        expect(effective!.copyIgnoredFiles).toBe(false);
+        expect(effective!.copyUntrackedFiles).toBe(false);
+        expect(effective!.setupScript).toBe("");
+        expect(effective!.runScript).toBe("");
         dispose();
       });
     });
@@ -150,8 +151,9 @@ describe("repoSettingsStore", () => {
 
         mockDefaults.baseBranch = "develop"; // global default is different
         const effective = store.getEffective("/repo");
-        expect(effective.baseBranch).toBe("main"); // repo override wins
-        expect(effective.copyIgnoredFiles).toBe(true);
+        expect(effective).toBeDefined();
+        expect(effective!.baseBranch).toBe("main"); // repo override wins
+        expect(effective!.copyIgnoredFiles).toBe(true);
         dispose();
       });
     });
@@ -162,7 +164,8 @@ describe("repoSettingsStore", () => {
         // baseBranch is null (inherit) but global says "develop"
         mockDefaults.baseBranch = "develop";
         const effective = store.getEffective("/repo");
-        expect(effective.baseBranch).toBe("develop");
+        expect(effective).toBeDefined();
+        expect(effective!.baseBranch).toBe("develop");
         dispose();
       });
     });
@@ -171,10 +174,11 @@ describe("repoSettingsStore", () => {
       createRoot((dispose) => {
         store.getOrCreate("/repo", "my-repo");
         const effective = store.getEffective("/repo");
+        expect(effective).toBeDefined();
         // All fields must be non-null
-        expect(effective.baseBranch).not.toBeNull();
-        expect(effective.copyIgnoredFiles).not.toBeNull();
-        expect(effective.setupScript).not.toBeNull();
+        expect(effective!.baseBranch).not.toBeNull();
+        expect(effective!.copyIgnoredFiles).not.toBeNull();
+        expect(effective!.setupScript).not.toBeNull();
         dispose();
       });
     });

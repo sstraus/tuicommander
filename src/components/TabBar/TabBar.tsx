@@ -361,10 +361,10 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 }}
                 onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); mdTabsStore.remove(id); props.onTabClose(id); } }}
                 onContextMenu={(e) => openTabContextMenu(e, id)}
-                title={mdTab()?.filePath}
+                title={(() => { const t = mdTab(); return t?.type === "file" ? t.filePath : t?.title; })()}
               >
                 <span class="tab-icon">📝</span>
-                <span class="tab-name">{mdTab()?.fileName}</span>
+                <span class="tab-name">{(() => { const t = mdTab(); return t?.type === "file" ? t.fileName : t?.title; })()}</span>
                 <button
                   class="tab-close"
                   title="Close"

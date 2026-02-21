@@ -45,8 +45,8 @@ function buildContentUri(storyId: string, storiesDir: string | null): string {
  */
 function defaultGetStoriesDir(sessionId: string): string | null {
   // Find the terminal with this session
-  const termId = terminalsStore.getAllIds().find(
-    (id) => terminalsStore.get(id)?.sessionId === sessionId,
+  const termId = terminalsStore.getIds().find(
+    (id: string) => terminalsStore.get(id)?.sessionId === sessionId,
   );
   if (!termId) return null;
 

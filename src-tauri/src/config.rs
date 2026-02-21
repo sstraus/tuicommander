@@ -323,7 +323,7 @@ fn default_settings_nav_width() -> u32 { 180 }
 // RepoSettingsMap — per-repo settings keyed by repo path
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub(crate) struct RepoSettingsEntry {
     pub(crate) path: String,
     #[serde(default)]
@@ -347,20 +347,7 @@ pub(crate) struct RepoSettingsEntry {
     pub(crate) color: String,
 }
 
-impl Default for RepoSettingsEntry {
-    fn default() -> Self {
-        Self {
-            path: String::new(),
-            display_name: String::new(),
-            base_branch: None,
-            copy_ignored_files: None,
-            copy_untracked_files: None,
-            setup_script: None,
-            run_script: None,
-            color: String::new(),
-        }
-    }
-}
+
 
 impl RepoSettingsEntry {
     /// Check if this entry has any non-default settings
