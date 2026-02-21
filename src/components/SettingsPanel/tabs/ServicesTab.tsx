@@ -8,6 +8,10 @@ interface McpStatus {
   port: number | null;
   active_sessions: number;
   max_sessions: number;
+  /** UUID token for QR-code auth — only present when server is running */
+  session_token?: string;
+  /** null = remote disabled, true = TCP reachable, false = likely firewalled */
+  reachable?: boolean | null;
 }
 
 interface AppConfig {
@@ -39,17 +43,12 @@ export const ServicesTab: Component = () => {
   const [raSaved, setRaSaved] = createSignal(false);
   const [qrDataUrl, setQrDataUrl] = createSignal<string | null>(null);
 
-  /** URL to embed in QR: includes credentials if plaintext password is available */
+  /** URL to embed in QR: always uses the session token for auth (never user:pass in URL). */
   const qrContent = createMemo(() => {
     const ip = localIp();
-    if (!ip) return null;
-    const base = `http://${ip}:${raPort()}`;
-    const user = raUsername();
-    const pass = raPassword(); // only set if user typed it this session
-    if (user && pass) {
-      return `http://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${ip}:${raPort()}`;
-    }
-    return base;
+    const token = status()?.session_token;
+    if (!ip || !token) return null;
+    return `http://${ip}:${raPort()}/?token=${token}`;
   });
 
   createEffect(() => {
@@ -274,12 +273,19 @@ export const ServicesTab: Component = () => {
               <div class="settings-group">
                 <label>Connection URL</label>
                 <code class="settings-url">
-                  http://{localIp() ?? "&lt;your-ip&gt;"}:{raPort()}
+                  http://{localIp() ?? "&lt;your-ip&gt;"}:{raPort()}/?token=…
                 </code>
-                <Show when={raUsername()}>
-                  <p class="settings-hint" style={{ "margin-top": "4px" }}>
-                    User: <strong>{raUsername()}</strong>
-                    {raPassword() ? "" : raHasPassword() ? " · password set" : ""}
+                <p class="settings-hint" style={{ "margin-top": "4px" }}>
+                  Scan the QR code — the token is embedded in the URL automatically.
+                </p>
+                <Show when={status()?.reachable === false}>
+                  <p class="settings-hint" style={{ color: "var(--warning, #e5c07b)", "margin-top": "4px" }}>
+                    Server may be blocked by a firewall. On macOS: System Preferences → Security → Firewall → Firewall Options → allow this app.
+                  </p>
+                </Show>
+                <Show when={status()?.reachable === true}>
+                  <p class="settings-hint" style={{ color: "var(--green, #98c379)", "margin-top": "4px" }}>
+                    Server is reachable from the network.
                   </p>
                 </Show>
               </div>

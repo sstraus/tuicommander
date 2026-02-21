@@ -82,6 +82,15 @@ fn has_valid_session_cookie(req: &Request<axum::body::Body>, session_token: &str
         .any(|c| c == expected)
 }
 
+/// Check whether the request carries a valid `?token=<session_token>` query param.
+/// This is the primary auth method for remote devices: the QR code URL includes the token,
+/// and scanning it authenticates the device (a session cookie is then set for subsequent calls).
+fn has_valid_url_token(req: &Request<axum::body::Body>, session_token: &str) -> bool {
+    let query = req.uri().query().unwrap_or("");
+    let expected = format!("token={session_token}");
+    query.split('&').any(|param| param == expected)
+}
+
 /// Build a Set-Cookie header value for the session token.
 fn session_cookie_value(token: &str) -> String {
     // HttpOnly: JS cannot read the cookie (XSS protection)
@@ -114,12 +123,25 @@ pub async fn basic_auth_middleware(
         return next.run(req).await;
     }
 
+    let session_token = state.session_token.clone();
+
     // Fast path: valid session cookie skips bcrypt entirely
-    if has_valid_session_cookie(&req, &state.session_token) {
+    if has_valid_session_cookie(&req, &session_token) {
         return next.run(req).await;
     }
 
-    // Read credentials and auth header (owned, for move into spawn_blocking)
+    // Primary remote auth: valid ?token=<session_token> in URL.
+    // The QR code embeds this token, so scanning it authenticates the device.
+    // We set a session cookie so the SPA's subsequent fetch() calls are also authenticated.
+    if has_valid_url_token(&req, &session_token) {
+        let mut response = next.run(req).await;
+        if let Ok(val) = session_cookie_value(&session_token).parse() {
+            response.headers_mut().insert(header::SET_COOKIE, val);
+        }
+        return response;
+    }
+
+    // Fallback: Basic Auth (if username+password are configured)
     let (username, hash) = {
         let config = state.config.read().unwrap();
         (
@@ -132,7 +154,6 @@ pub async fn basic_auth_middleware(
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .map(String::from);
-    let session_token = state.session_token.clone();
 
     // bcrypt::verify is CPU-intensive (~100ms). Run it on a blocking thread to
     // avoid stalling the single-threaded tokio runtime for the entire server.
@@ -144,22 +165,19 @@ pub async fn basic_auth_middleware(
 
     match result {
         AuthResult::Ok => {
-            // Set session cookie so the SPA's JS fetch() calls are authenticated
+            // Set session cookie so subsequent JS fetch() calls are authenticated
             let mut response = next.run(req).await;
             if let Ok(val) = session_cookie_value(&session_token).parse() {
                 response.headers_mut().insert(header::SET_COOKIE, val);
             }
             response
         }
-        AuthResult::MissingHeader => (
+        AuthResult::MissingHeader | AuthResult::NotConfigured => (
             StatusCode::UNAUTHORIZED,
             [(header::WWW_AUTHENTICATE, "Basic realm=\"TUI Commander\"")],
-            "Authentication required",
+            "Scan the QR code or authenticate with Basic Auth",
         )
             .into_response(),
-        AuthResult::NotConfigured => {
-            (StatusCode::UNAUTHORIZED, "Authentication not configured").into_response()
-        }
         AuthResult::Invalid => {
             (StatusCode::UNAUTHORIZED, "Invalid credentials").into_response()
         }

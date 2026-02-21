@@ -252,12 +252,34 @@ fn get_mcp_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
     let running = server_should_run && port.is_some();
     let active_sessions = state.sessions.len();
 
+    // Quick TCP self-test: can we reach the server on the external (non-loopback) IP?
+    // A failure here usually means a firewall is blocking incoming connections.
+    // Only runs when remote is enabled and we have an IP and port.
+    let reachable = if config.remote_access_enabled {
+        port.and_then(|p| {
+            get_local_ip().and_then(|ip| {
+                let addr = format!("{ip}:{p}");
+                let timeout = std::time::Duration::from_millis(800);
+                addr.parse::<std::net::SocketAddr>()
+                    .ok()
+                    .map(|sa| std::net::TcpStream::connect_timeout(&sa, timeout).is_ok())
+            })
+        })
+    } else {
+        None
+    };
+
     serde_json::json!({
         "enabled": config.mcp_server_enabled,
         "running": running,
         "port": port,
         "active_sessions": active_sessions,
         "max_sessions": MAX_CONCURRENT_SESSIONS,
+        // session_token is the primary auth credential — included in the QR code URL.
+        // Only exposed via this Tauri command (local IPC), never via the HTTP API.
+        "session_token": state.session_token,
+        // null = remote disabled, true = TCP connect succeeded, false = likely firewalled
+        "reachable": reachable,
     })
 }
 
