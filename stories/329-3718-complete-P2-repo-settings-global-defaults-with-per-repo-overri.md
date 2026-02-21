@@ -1,10 +1,10 @@
 ---
 id: 329-3718
 title: "Repo settings: global defaults with per-repo overrides"
-status: in_progress
+status: complete
 priority: P2
 created: "2026-02-21T10:03:28.852Z"
-updated: "2026-02-21T10:03:56.298Z"
+updated: "2026-02-21T10:21:15.504Z"
 dependencies: []
 ---
 
@@ -32,4 +32,6 @@ Users must configure each repository individually with no way to set global defa
 - src/components/SettingsPanel/tabs/RepoScriptsTab.tsx
 
 ## Work Log
+
+### 2026-02-21T10:21:15.431Z - Implemented repoDefaultsStore (Rust+TS), nullable RepoSettings overrides, getEffective() merge, Repository Defaults in GeneralTab, inherit UI in RepoWorktreeTab/RepoScriptsTab. 1770 TS tests + 369 Rust tests passing.
 

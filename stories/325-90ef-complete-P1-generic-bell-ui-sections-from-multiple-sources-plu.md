@@ -1,10 +1,10 @@
 ---
 id: 325-90ef
 title: "Generic bell UI: sections from multiple sources plus last-item shortcut"
-status: ready
+status: complete
 priority: P1
 created: "2026-02-21T09:35:09.522Z"
-updated: "2026-02-21T10:02:49.064Z"
+updated: "2026-02-21T10:23:47.779Z"
 dependencies: ["318-d0e3", "321-a3f0", "323-46a4"]
 ---
 
@@ -42,4 +42,6 @@ The bell dropdown is hardcoded for PR notifications and the plan button is hardc
 - 323-46a4
 
 ## Work Log
+
+### 2026-02-21T10:23:47.714Z - Removed plan button from Toolbar. Merged bell to show PR + plugin items with combined badge count. Added plugin activity sections to dropdown. Added last-item shortcut button showing most recent item across both stores. 38/38 Toolbar tests + 1776 total tests green.
 
