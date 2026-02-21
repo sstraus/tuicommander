@@ -1,8 +1,9 @@
 /**
  * Shared types for the TUI Commander plugin system.
  *
- * Plugins are trusted first-party TypeScript modules compiled with the app.
- * Each plugin implements TuiPlugin and registers capabilities via PluginHost.
+ * Plugins implement TuiPlugin and register capabilities via PluginHost.
+ * Built-in plugins are compiled with the app; external plugins are loaded
+ * at runtime from {config_dir}/plugins/ via the plugin:// URI protocol.
  */
 
 // ---------------------------------------------------------------------------
@@ -117,15 +118,88 @@ export interface MarkdownProvider {
 }
 
 // ---------------------------------------------------------------------------
+// Read-only snapshot types (Tier 2 — always available)
+// ---------------------------------------------------------------------------
+
+/** Read-only snapshot of the active repository */
+export interface RepoSnapshot {
+  path: string;
+  displayName: string;
+  activeBranch: string | null;
+  worktreePath: string | null;
+}
+
+/** Read-only snapshot of a registered repository */
+export interface RepoListEntry {
+  path: string;
+  displayName: string;
+}
+
+/** Read-only snapshot of a PR notification */
+export interface PrNotificationSnapshot {
+  id: string;
+  repoPath: string;
+  branch: string;
+  prNumber: number;
+  title: string;
+  type: string;
+}
+
+/** Read-only snapshot of effective repo settings */
+export interface RepoSettingsSnapshot {
+  path: string;
+  displayName: string;
+  baseBranch: string;
+  color: string;
+}
+
+// ---------------------------------------------------------------------------
+// Capabilities
+// ---------------------------------------------------------------------------
+
+/** Known capability strings for external plugins */
+export type PluginCapability =
+  | "pty:write"
+  | "ui:markdown"
+  | "ui:sound"
+  | "invoke:read_file"
+  | "invoke:list_markdown_files";
+
+/** Error thrown when a plugin calls a method without the required capability */
+export class PluginCapabilityError extends Error {
+  constructor(pluginId: string, capability: PluginCapability) {
+    super(`Plugin "${pluginId}" requires capability "${capability}" but did not declare it`);
+    this.name = "PluginCapabilityError";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Plugin host (the API surface exposed to plugins)
 // ---------------------------------------------------------------------------
+
+/** Commands allowed via host.invoke() (Tier 4) */
+export const INVOKE_WHITELIST: readonly string[] = [
+  "read_file",
+  "list_markdown_files",
+  "read_plugin_data",
+  "write_plugin_data",
+  "delete_plugin_data",
+];
 
 /**
  * The API that the plugin registry exposes to each loaded plugin.
  * Plugins call these methods in onload() and store the returned Disposables
  * for cleanup in onunload().
+ *
+ * API Tiers:
+ * - Tier 1: Activity Center + watchers + providers (always available)
+ * - Tier 2: Read-only app state snapshots (always available)
+ * - Tier 3: Write actions (capability-gated via manifest.json)
+ * - Tier 4: Scoped Tauri invoke (whitelisted commands only)
  */
 export interface PluginHost {
+  // -- Tier 1: Activity Center + watchers + providers (always available) --
+
   /** Register a section in the Activity Center dropdown */
   registerSection(section: ActivitySection): Disposable;
 
@@ -152,6 +226,39 @@ export interface PluginHost {
 
   /** Update fields on an existing activity item */
   updateItem(id: string, updates: Partial<Omit<ActivityItem, "id" | "pluginId" | "createdAt">>): void;
+
+  // -- Tier 2: Read-only app state (always available) --
+
+  /** Get the active repository snapshot, or null if none active */
+  getActiveRepo(): RepoSnapshot | null;
+
+  /** Get all registered repositories */
+  getRepos(): RepoListEntry[];
+
+  /** Get the active terminal's session ID, or null if none active */
+  getActiveTerminalSessionId(): string | null;
+
+  /** Get active (non-dismissed) PR notifications */
+  getPrNotifications(): PrNotificationSnapshot[];
+
+  /** Get effective settings for a repository */
+  getSettings(repoPath: string): RepoSettingsSnapshot | null;
+
+  // -- Tier 3: Write actions (capability-gated) --
+
+  /** Send input to a terminal session. Requires "pty:write" capability. */
+  writePty(sessionId: string, data: string): Promise<void>;
+
+  /** Open a virtual markdown tab and show the panel. Requires "ui:markdown" capability. */
+  openMarkdownPanel(title: string, contentUri: string): void;
+
+  /** Play the notification sound. Requires "ui:sound" capability. */
+  playNotificationSound(): Promise<void>;
+
+  // -- Tier 4: Scoped Tauri invoke (whitelisted commands only) --
+
+  /** Invoke a whitelisted Tauri command. See INVOKE_WHITELIST for allowed commands. */
+  invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
 }
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { activityStore } from "../../stores/activityStore";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
+import { PluginCapabilityError } from "../../plugins/types";
 import type { TuiPlugin, PluginHost } from "../../plugins/types";
+
+// Mock invoke to avoid Tauri internals in test environment
+vi.mock("../../invoke", () => ({
+  invoke: vi.fn(() => Promise.resolve()),
+}));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -388,5 +394,181 @@ describe("removeSession", () => {
 
   it("is a no-op for unknown session", () => {
     expect(() => pluginRegistry.removeSession("nonexistent")).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 2: Read-only app state
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — Tier 2 read-only state", () => {
+  it("getActiveRepo returns null when no repo is active", () => {
+    let result: ReturnType<PluginHost["getActiveRepo"]> = undefined as never;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      result = host.getActiveRepo();
+    }));
+    expect(result).toBeNull();
+  });
+
+  it("getRepos returns empty array when no repos registered", () => {
+    let result: ReturnType<PluginHost["getRepos"]> = undefined as never;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      result = host.getRepos();
+    }));
+    expect(result).toEqual([]);
+  });
+
+  it("getActiveTerminalSessionId returns null when no terminal active", () => {
+    let result: ReturnType<PluginHost["getActiveTerminalSessionId"]> = undefined as never;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      result = host.getActiveTerminalSessionId();
+    }));
+    expect(result).toBeNull();
+  });
+
+  it("getPrNotifications returns empty array when no notifications", () => {
+    let result: ReturnType<PluginHost["getPrNotifications"]> = undefined as never;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      result = host.getPrNotifications();
+    }));
+    expect(result).toEqual([]);
+  });
+
+  it("getSettings returns null for unknown repo", () => {
+    let result: ReturnType<PluginHost["getSettings"]> = undefined as never;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      result = host.getSettings("/nonexistent/repo");
+    }));
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 3: Capability-gated write actions
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — Tier 3 capability gating", () => {
+  it("built-in plugins (no capabilities) can call writePty without error", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    // invoke is mocked to resolve — should not throw PluginCapabilityError
+    await expect(host!.writePty("s1", "data")).resolves.toBeUndefined();
+  });
+
+  it("external plugin without pty:write throws PluginCapabilityError on writePty", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no capabilities
+    );
+    await expect(host!.writePty("s1", "data")).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with pty:write can call writePty", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["pty:write"],
+    );
+    await expect(host!.writePty("s1", "data")).resolves.toBeUndefined();
+  });
+
+  it("external plugin without ui:markdown throws on openMarkdownPanel", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [],
+    );
+    expect(() => host!.openMarkdownPanel("Title", "plan:file")).toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with ui:markdown can call openMarkdownPanel", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["ui:markdown"],
+    );
+    expect(() => host!.openMarkdownPanel("Title", "plan:file")).not.toThrow();
+  });
+
+  it("external plugin without ui:sound throws on playNotificationSound", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [],
+    );
+    await expect(host!.playNotificationSound()).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with ui:sound can call playNotificationSound", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["ui:sound"],
+    );
+    await expect(host!.playNotificationSound()).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 4: Scoped invoke
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — Tier 4 scoped invoke", () => {
+  it("rejects non-whitelisted commands", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("p1", (h) => { host = h; }));
+    await expect(host!.invoke("dangerous_command")).rejects.toThrow("not in the invoke whitelist");
+  });
+
+  it("allows whitelisted plugin data commands without capability", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no capabilities
+    );
+    // read_plugin_data, write_plugin_data, delete_plugin_data are always allowed
+    await expect(host!.invoke("read_plugin_data", { plugin_id: "ext", path: "cache.json" }))
+      .resolves.toBeUndefined();
+  });
+
+  it("external plugin needs invoke:read_file capability for read_file", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no invoke:read_file capability
+    );
+    await expect(host!.invoke("read_file", { path: "/repo", file: "README.md" }))
+      .rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with invoke:read_file can call read_file", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["invoke:read_file"],
+    );
+    await expect(host!.invoke("read_file", { path: "/repo", file: "README.md" }))
+      .resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// register() with capabilities parameter
+// ---------------------------------------------------------------------------
+
+describe("register with capabilities", () => {
+  it("second arg passes capabilities to buildHost", () => {
+    // Verify the external plugin pattern works end-to-end
+    const onload = vi.fn();
+    pluginRegistry.register(makePlugin("ext", onload), ["pty:write", "ui:sound"]);
+    expect(onload).toHaveBeenCalledOnce();
+  });
+
+  it("built-in plugins (no second arg) have unrestricted access", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    // Should not throw PluginCapabilityError for any Tier 3 method
+    expect(() => host!.openMarkdownPanel("Title", "plan:file")).not.toThrow(PluginCapabilityError);
   });
 });

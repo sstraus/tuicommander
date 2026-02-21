@@ -1,13 +1,30 @@
 import { activityStore } from "../stores/activityStore";
+import { repositoriesStore } from "../stores/repositories";
+import { terminalsStore } from "../stores/terminals";
+import { prNotificationsStore } from "../stores/prNotifications";
+import { repoSettingsStore } from "../stores/repoSettings";
+import { notificationsStore } from "../stores/notifications";
+import { mdTabsStore } from "../stores/mdTabs";
+import { uiStore } from "../stores/ui";
 import { markdownProviderRegistry } from "./markdownProviderRegistry";
+import { invoke } from "../invoke";
 import { LineBuffer } from "../utils/lineBuffer";
 import { stripAnsi } from "../utils/stripAnsi";
+import {
+  INVOKE_WHITELIST,
+  PluginCapabilityError,
+} from "./types";
 import type {
   Disposable,
   MarkdownProvider,
   OutputWatcher,
+  PluginCapability,
   PluginHost,
   TuiPlugin,
+  RepoSnapshot,
+  RepoListEntry,
+  PrNotificationSnapshot,
+  RepoSettingsSnapshot,
 } from "./types";
 
 /**
@@ -18,6 +35,7 @@ import type {
  * - Auto-disposes all plugin registrations (sections, watchers, providers) on unregister
  * - Dispatches raw PTY lines to registered OutputWatchers
  * - Dispatches structured Tauri events to registered typed handlers
+ * - Provides tiered API surface to plugins (Tier 1-4)
  */
 function createPluginRegistry() {
   // Active plugin → its aggregated Disposable (wraps all sub-registrations)
@@ -36,16 +54,44 @@ function createPluginRegistry() {
   >();
 
   // -------------------------------------------------------------------------
+  // Capability checking
+  // -------------------------------------------------------------------------
+
+  function requireCapability(
+    pluginId: string,
+    capabilities: ReadonlySet<string> | null,
+    required: PluginCapability,
+  ): void {
+    // null = built-in plugin, no restrictions
+    if (capabilities === null) return;
+    if (!capabilities.has(required)) {
+      throw new PluginCapabilityError(pluginId, required);
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Build the PluginHost surface for a given plugin
   // -------------------------------------------------------------------------
 
-  function buildHost(pluginId: string, disposables: Disposable[]): PluginHost {
+  /**
+   * Build a PluginHost for a plugin.
+   * @param pluginId - The plugin's unique ID
+   * @param disposables - Mutable array to track disposables for auto-cleanup
+   * @param capabilities - Set of declared capabilities, or null for built-in plugins (unrestricted)
+   */
+  function buildHost(
+    pluginId: string,
+    disposables: Disposable[],
+    capabilities: ReadonlySet<string> | null = null,
+  ): PluginHost {
     function track(d: Disposable): Disposable {
       disposables.push(d);
       return d;
     }
 
     return {
+      // -- Tier 1: Activity Center + watchers + providers --
+
       registerSection(section) {
         return track(activityStore.registerSection(section));
       },
@@ -90,6 +136,88 @@ function createPluginRegistry() {
       updateItem(id, updates) {
         activityStore.updateItem(id, updates);
       },
+
+      // -- Tier 2: Read-only app state --
+
+      getActiveRepo(): RepoSnapshot | null {
+        const repo = repositoriesStore.getActive();
+        if (!repo) return null;
+        const branch = repo.activeBranch ? repo.branches[repo.activeBranch] : null;
+        return {
+          path: repo.path,
+          displayName: repo.displayName,
+          activeBranch: repo.activeBranch,
+          worktreePath: branch?.worktreePath ?? null,
+        };
+      },
+
+      getRepos(): RepoListEntry[] {
+        return repositoriesStore.getPaths().map((path) => {
+          const repo = repositoriesStore.get(path);
+          return { path, displayName: repo?.displayName ?? path };
+        });
+      },
+
+      getActiveTerminalSessionId(): string | null {
+        const terminal = terminalsStore.getActive();
+        return terminal?.sessionId ?? null;
+      },
+
+      getPrNotifications(): PrNotificationSnapshot[] {
+        return prNotificationsStore.getActive().map((n) => ({
+          id: n.id,
+          repoPath: n.repoPath,
+          branch: n.branch,
+          prNumber: n.prNumber,
+          title: n.title,
+          type: n.type,
+        }));
+      },
+
+      getSettings(repoPath: string): RepoSettingsSnapshot | null {
+        const effective = repoSettingsStore.getEffective(repoPath);
+        if (!effective) return null;
+        return {
+          path: effective.path,
+          displayName: effective.displayName,
+          baseBranch: effective.baseBranch,
+          color: effective.color,
+        };
+      },
+
+      // -- Tier 3: Write actions (capability-gated) --
+
+      async writePty(sessionId: string, data: string): Promise<void> {
+        requireCapability(pluginId, capabilities, "pty:write");
+        await invoke("write_pty", { id: sessionId, data });
+      },
+
+      openMarkdownPanel(title: string, contentUri: string): void {
+        requireCapability(pluginId, capabilities, "ui:markdown");
+        mdTabsStore.addVirtual(title, contentUri);
+        if (!uiStore.state.markdownPanelVisible) {
+          uiStore.toggleMarkdownPanel();
+        }
+      },
+
+      async playNotificationSound(): Promise<void> {
+        requireCapability(pluginId, capabilities, "ui:sound");
+        await notificationsStore.testSound("question");
+      },
+
+      // -- Tier 4: Scoped Tauri invoke --
+
+      async invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+        if (!INVOKE_WHITELIST.includes(cmd)) {
+          throw new Error(`Plugin "${pluginId}": command "${cmd}" is not in the invoke whitelist`);
+        }
+        // Check capability for scoped invoke commands
+        const capKey = `invoke:${cmd}` as PluginCapability;
+        if (capabilities !== null && cmd !== "read_plugin_data" && cmd !== "write_plugin_data" && cmd !== "delete_plugin_data") {
+          requireCapability(pluginId, capabilities, capKey);
+        }
+        return invoke<T>(cmd, args);
+      },
     };
   }
 
@@ -97,14 +225,21 @@ function createPluginRegistry() {
   // Lifecycle
   // -------------------------------------------------------------------------
 
-  function register(plugin: TuiPlugin): void {
+  /**
+   * Register a plugin.
+   * @param plugin - The plugin to register
+   * @param capabilities - Optional set of declared capabilities for external plugins.
+   *   Pass null or omit for built-in plugins (unrestricted access).
+   */
+  function register(plugin: TuiPlugin, capabilities?: string[]): void {
     // Replace existing registration for same id
     if (plugins.has(plugin.id)) {
       unregister(plugin.id);
     }
 
     const disposables: Disposable[] = [];
-    const host = buildHost(plugin.id, disposables);
+    const capSet = capabilities ? new Set(capabilities) : null;
+    const host = buildHost(plugin.id, disposables, capSet);
 
     try {
       plugin.onload(host);
