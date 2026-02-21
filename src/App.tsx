@@ -43,7 +43,6 @@ import { githubStore } from "./stores/github";
 import { dictationStore } from "./stores/dictation";
 import { notificationsStore } from "./stores/notifications";
 import { errorHandlingStore } from "./stores/errorHandling";
-import { agentFallbackStore } from "./stores/agentFallback";
 import { repoSettingsStore } from "./stores/repoSettings";
 import { notesStore } from "./stores/notes";
 import { prNotificationsStore } from "./stores/prNotifications";
@@ -179,7 +178,6 @@ const App: Component = () => {
             settingsStore.hydrate(),
             notificationsStore.hydrate(),
             errorHandlingStore.hydrate(),
-            agentFallbackStore.hydrate(),
             repoSettingsStore.hydrate(),
             promptLibraryStore.hydrate(),
             notesStore.hydrate(),

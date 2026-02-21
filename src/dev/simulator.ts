@@ -8,7 +8,6 @@ import type { RateLimitInfo } from "../rate-limit";
 import type { AwaitingInputType } from "../stores/terminals";
 import { githubStore } from "../stores/github";
 import { rateLimitStore } from "../stores/ratelimit";
-import { agentFallbackStore } from "../stores/agentFallback";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { notificationsStore } from "../stores/notifications";
@@ -95,20 +94,7 @@ const simulator = {
     console.log(`[tuic] Rate limit applied: ${options.agent} for ${options.minutes ?? 15}m`);
   },
 
-  /** Override agent availability/active */
-  agent(options: { active?: AgentType; unavailable?: AgentType[] }): void {
-    if (options.unavailable) {
-      for (const agent of options.unavailable) {
-        agentFallbackStore.markUnavailable(agent);
-      }
-    }
-    if (options.active) {
-      agentFallbackStore._devOverrideActive(options.active);
-      console.log(`[tuic] Active agent: ${options.active}`);
-    }
-  },
-
-  /** Simulate a terminal awaiting input (shows ? icon on branch) */
+/** Simulate a terminal awaiting input (shows ? icon on branch) */
   question(options?: { type?: AwaitingInputType; clear?: boolean }): void {
     const { branch } = ensureRepo();
     const active = repositoriesStore.getActive();
@@ -235,7 +221,6 @@ const simulator = {
   reset(): void {
     rateLimitStore.clearAll();
     prNotificationsStore.clearAll();
-    agentFallbackStore.forceResetToPrimary();
 
     // Clean up sim repo if it was created
     if (repositoriesStore.get(SIM_REPO_PATH)) {

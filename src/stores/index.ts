@@ -17,8 +17,6 @@ export { rateLimitStore } from "./ratelimit";
 export { promptLibraryStore } from "./promptLibrary";
 export type { SavedPrompt, PromptCategory, PromptVariable } from "./promptLibrary";
 
-export { agentFallbackStore } from "./agentFallback";
-export type { FallbackChainConfig } from "./agentFallback";
 
 export { tasksStore } from "./tasks";
 export type { TaskData, TaskStatus, TaskCompletionCallback } from "./tasks";
