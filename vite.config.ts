@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import checker from "vite-plugin-checker";
@@ -8,8 +9,14 @@ import { Features } from "lightningcss";
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
+// Read app version from tauri.conf.json
+const tauriConf = JSON.parse(readFileSync("./src-tauri/tauri.conf.json", "utf-8"));
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  define: {
+    __APP_VERSION__: JSON.stringify(tauriConf.version),
+  },
   plugins: [
     solid(),
     checker({ typescript: true }),

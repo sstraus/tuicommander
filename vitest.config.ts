@@ -4,6 +4,9 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [solid()],
+  define: {
+    __APP_VERSION__: JSON.stringify("0.3.0"),
+  },
   resolve: {
     conditions: ["development", "browser"],
     alias: {
