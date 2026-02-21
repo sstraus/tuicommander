@@ -1,153 +1,176 @@
-# Writing Plugins
+# Plugin Authoring Guide
 
-TUI Commander uses an Obsidian-style plugin system where built-in TypeScript modules extend the Activity Center (bell dropdown in the toolbar). Plugins detect patterns in terminal output and surface them as interactive items with optional markdown content.
+TUI Commander uses an Obsidian-style plugin system. Plugins extend the Activity Center (bell dropdown), watch terminal output, and interact with app state. Plugins can be **built-in** (compiled with the app) or **external** (loaded at runtime from the user's plugins directory).
 
-## Architecture Overview
+## Quick Start: External Plugin
+
+1. Create a directory: `~/.config/tui-commander/plugins/my-plugin/`
+2. Create `manifest.json`:
+
+```json
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "version": "1.0.0",
+  "minAppVersion": "0.3.0",
+  "main": "main.js"
+}
+```
+
+3. Create `main.js` (ES module with default export):
+
+```javascript
+const PLUGIN_ID = "my-plugin";
+
+export default {
+  id: PLUGIN_ID,
+  onload(host) {
+    host.registerSection({
+      id: "my-section",
+      label: "MY SECTION",
+      priority: 30,
+      canDismissAll: false,
+    });
+
+    host.registerOutputWatcher({
+      pattern: /hello (\w+)/,
+      onMatch(match, sessionId) {
+        host.addItem({
+          id: `hello:${match[1]}`,
+          pluginId: PLUGIN_ID,
+          sectionId: "my-section",
+          title: `Hello ${match[1]}`,
+          icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6"/></svg>',
+          dismissible: true,
+        });
+      },
+    });
+  },
+  onunload() {},
+};
+```
+
+4. Restart the app (or save the file — hot reload will pick it up).
+
+## Architecture
 
 ```
-PTY output ──► pluginRegistry.processRawOutput()
-                  │
-                  ├── LineBuffer (reassemble lines)
-                  ├── stripAnsi (clean ANSI codes)
-                  └── dispatchLine() ──► OutputWatcher.onMatch()
-                                              │
-                                              └── host.addItem() ──► Activity Center bell
-                                                                           │
+PTY output ──> pluginRegistry.processRawOutput()
+                  |
+                  +-- LineBuffer (reassemble lines)
+                  +-- stripAnsi (clean ANSI codes)
+                  +-- dispatchLine() --> OutputWatcher.onMatch()
+                                              |
+                                              +-- host.addItem() --> Activity Center bell
+                                                                           |
                                                               user clicks item
-                                                                           │
+                                                                           |
                                               markdownProviderRegistry.resolve(contentUri)
-                                                                           │
+                                                                           |
                                                               MarkdownTab renders content
+
+Tauri OutputParser --> pluginRegistry.dispatchStructuredEvent(type, payload, sessionId)
+                            |
+                            +-- structuredEventHandler(payload, sessionId)
 ```
 
-Structured events from the Rust backend follow a parallel path:
+## Plugin Lifecycle
 
-```
-Tauri OutputParser ──► pluginRegistry.dispatchStructuredEvent(type, payload, sessionId)
-                            │
-                            └── structuredEventHandler(payload, sessionId)
-```
+1. **Discovery** — Rust `list_user_plugins` scans `~/.config/tui-commander/plugins/` for `manifest.json` files
+2. **Validation** — Frontend validates manifest fields and `minAppVersion`
+3. **Import** — `import("plugin://my-plugin/main.js")` loads the module via the custom URI protocol
+4. **Module check** — Default export must have `id`, `onload`, `onunload`
+5. **Register** — `pluginRegistry.register(plugin, capabilities)` calls `plugin.onload(host)`
+6. **Active** — Plugin receives PTY lines, structured events, and can use the PluginHost API
+7. **Hot reload** — File changes emit `plugin-changed` events; the plugin is unregistered and re-imported
+8. **Unload** — `plugin.onunload()` is called, then all registrations are auto-disposed
+
+### Crash Safety
+
+Every boundary is wrapped in try/catch:
+- `import()` — syntax errors or missing exports are caught
+- Module validation — missing `id`, `onload`, or `onunload` logs an error and skips the plugin
+- `plugin.onload()` — if it throws, partial registrations are cleaned up automatically
+- Watcher/handler dispatch — exceptions are caught and logged, other plugins continue
+
+A broken plugin produces a console error and is skipped. The app always continues.
+
+## Manifest Reference
+
+File: `~/.config/tui-commander/plugins/{id}/manifest.json`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | yes | Must match the directory name |
+| `name` | string | yes | Human-readable display name |
+| `version` | string | yes | Plugin semver (e.g. `"1.0.0"`) |
+| `minAppVersion` | string | yes | Minimum TUI Commander version required |
+| `main` | string | yes | Entry point filename (e.g. `"main.js"`) |
+| `description` | string | no | Short description |
+| `author` | string | no | Author name |
+| `capabilities` | string[] | no | Tier 3/4 capabilities needed (defaults to `[]`) |
+
+### Validation Rules
+
+- `id` must match the directory name exactly
+- `id` must not be empty
+- `main` must not contain path separators or `..`
+- All `capabilities` must be known strings (see Capabilities section)
+- `minAppVersion` must be <= the current app version (semver comparison)
 
 ## Plugin Interface
 
-Every plugin implements `TuiPlugin` from `src/plugins/types.ts`:
-
 ```typescript
 interface TuiPlugin {
-  id: string;              // Unique identifier (e.g. "plan", "wiz-stories")
-  onload(host: PluginHost): void;   // Register capabilities
-  onunload(): void;                 // Dispose all registrations
+  id: string;
+  onload(host: PluginHost): void;
+  onunload(): void;
 }
 ```
 
-## Step-by-Step: Creating a Plugin
-
-### 1. Create the plugin file
-
-Create `src/plugins/myPlugin.ts`:
-
-```typescript
-import type { Disposable, PluginHost, TuiPlugin } from "./types";
-
-const PLUGIN_ID = "my-plugin";
-const SECTION_ID = "my-section";
-
-const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
-  <!-- your 16x16 monochrome SVG path here -->
-</svg>`;
-
-class MyPlugin implements TuiPlugin {
-  readonly id = PLUGIN_ID;
-  private disposables: Disposable[] = [];
-
-  onload(host: PluginHost): void {
-    this.disposables = [];
-
-    // 1. Register a section in the Activity Center dropdown
-    this.disposables.push(
-      host.registerSection({
-        id: SECTION_ID,
-        label: "MY SECTION",   // Uppercase label shown as header
-        priority: 30,           // Lower = higher position
-        canDismissAll: false,
-      }),
-    );
-
-    // 2. Register output watchers (optional)
-    // 3. Register structured event handlers (optional)
-    // 4. Register markdown provider (optional)
-  }
-
-  onunload(): void {
-    for (const d of this.disposables) {
-      d.dispose();
-    }
-    this.disposables = [];
-  }
-}
-
-export const myPlugin: TuiPlugin = new MyPlugin();
-```
-
-### 2. Register it in `src/plugins/index.ts`
-
-```typescript
-import { myPlugin } from "./myPlugin";
-
-export const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin, wizStoriesPlugin, myPlugin];
-```
-
-That's it — `initPlugins()` is called in `App.tsx` on mount.
+The `onload` function receives a `PluginHost` object — this is your entire API surface. External plugins cannot import app internals; everything goes through `host`.
 
 ## PluginHost API Reference
 
-Every `host.register*()` method returns a `Disposable`. Store them all and call `dispose()` in `onunload()`.
+### Tier 1: Activity Center + Watchers + Providers (always available)
 
-### registerSection(section)
+#### host.registerSection(section) -> Disposable
 
-Adds a section heading to the Activity Center dropdown. Each plugin should register exactly one section.
+Adds a section heading to the Activity Center dropdown.
 
 ```typescript
 host.registerSection({
-  id: "my-section",        // Must match the sectionId you use in addItem()
+  id: "my-section",        // Must match sectionId in addItem()
   label: "MY SECTION",     // Displayed as section header
-  priority: 30,            // Lower = higher in the dropdown
+  priority: 30,            // Lower number = higher position
   canDismissAll: false,     // Show "Dismiss All" button?
 });
 ```
 
-### registerOutputWatcher(watcher)
+#### host.registerOutputWatcher(watcher) -> Disposable
 
-Watches every PTY output line (after ANSI stripping and line reassembly). The `onMatch` callback **must be synchronous and fast** (< 1ms) — it runs in the PTY hot path.
+Watches every PTY output line (after ANSI stripping and line reassembly).
 
 ```typescript
 host.registerOutputWatcher({
-  // Regex tested against each clean line. Use capture groups for extraction.
-  // Avoid global flag (g) — lastIndex is reset automatically before each test.
-  pattern: /✓ Deployed: (\S+) to (\S+)/,
-
-  // Called when pattern matches. Positional args, NOT a destructured object.
-  onMatch: (match, sessionId) => {
-    const service = match[1];
-    const env = match[2];
-    host.addItem({
-      id: `deploy:${service}:${env}`,
-      pluginId: PLUGIN_ID,
-      sectionId: SECTION_ID,
-      title: service,
-      subtitle: `Deployed to ${env}`,
-      icon: ICON_SVG,
-      dismissible: true,
-    });
+  pattern: /Deployed: (\S+) to (\S+)/,
+  onMatch(match, sessionId) {
+    // match[0] = full match, match[1] = first capture group, etc.
+    // sessionId = the PTY session that produced the line
+    host.addItem({ ... });
   },
 });
 ```
 
-**Important**: Validate your regex against actual terminal output. The input is ANSI-stripped but still contains Unicode characters (checkmarks, arrows, emoji).
+**Rules:**
+- `onMatch` must be synchronous and fast (< 1ms) — it's in the PTY hot path
+- `pattern.lastIndex` is reset before each test (safe to use global flag, but unnecessary)
+- Input is ANSI-stripped but may contain Unicode (checkmarks, arrows, emoji)
+- Arguments are positional: `onMatch(match, sessionId)` — NOT destructured
 
-### registerStructuredEventHandler(type, handler)
+#### host.registerStructuredEventHandler(type, handler) -> Disposable
 
-Handles events from the Rust `OutputParser` that have already been parsed into typed payloads (e.g. `"plan-file"`, `"rate-limit"`).
+Handles typed events from the Rust OutputParser.
 
 ```typescript
 host.registerStructuredEventHandler("plan-file", (payload, sessionId) => {
@@ -156,52 +179,163 @@ host.registerStructuredEventHandler("plan-file", (payload, sessionId) => {
 });
 ```
 
-### registerMarkdownProvider(scheme, provider)
+Known event types: `"plan-file"`, `"rate-limit"`.
 
-Registers a content provider for a URI scheme. When the user clicks an ActivityItem with a `contentUri`, the system resolves `scheme:...` by calling your provider's `provideContent(uri)`.
+#### host.registerMarkdownProvider(scheme, provider) -> Disposable
+
+Provides content for a URI scheme when the user clicks an ActivityItem.
 
 ```typescript
 host.registerMarkdownProvider("my-scheme", {
-  async provideContent(uri: URL): Promise<string | null> {
+  async provideContent(uri) {
     const id = uri.searchParams.get("id");
     if (!id) return null;
-
     try {
-      // Read file via Tauri backend
-      return await invoke<string>("read_file", { path: dir, file: name });
+      return await host.invoke("read_file", { path: dir, file: name });
     } catch {
-      return null; // Content unavailable
+      return null;
     }
   },
 });
 ```
 
-The provider stack supports multiple registrations per scheme. Dispose removes your specific provider and restores the previous one (if any).
+#### host.addItem(item) / host.removeItem(id) / host.updateItem(id, updates)
 
-### addItem(item) / removeItem(id) / updateItem(id, updates)
-
-Manage activity items in the store:
+Manage activity items:
 
 ```typescript
-// Add or update (deduplicates by id — same id replaces existing item)
 host.addItem({
-  id: "deploy:api:prod",       // Stable, unique identifier
-  pluginId: PLUGIN_ID,         // Must match your plugin id
-  sectionId: SECTION_ID,       // Must match your registered section
-  title: "api-server",         // Primary text (larger)
-  subtitle: "Deployed to prod", // Secondary text (smaller, muted)
-  icon: ICON_SVG,              // Inline SVG with fill="currentColor"
-  dismissible: true,           // User can dismiss
+  id: "deploy:api:prod",       // Unique identifier
+  pluginId: "my-plugin",       // Must match your plugin id
+  sectionId: "my-section",     // Must match your registered section
+  title: "api-server",         // Primary text
+  subtitle: "Deployed to prod", // Secondary text (optional)
+  icon: '<svg .../>',          // Inline SVG with fill="currentColor"
+  dismissible: true,
   contentUri: "my-scheme:detail?id=api",  // Opens in MarkdownTab on click
-  // OR: onClick: () => { ... },          // Direct action (mutually exclusive)
+  // OR: onClick: () => { ... },          // Mutually exclusive with contentUri
 });
 
-// Update specific fields
 host.updateItem("deploy:api:prod", { subtitle: "Rolled back" });
-
-// Remove
 host.removeItem("deploy:api:prod");
 ```
+
+### Tier 2: Read-Only App State (always available)
+
+#### host.getActiveRepo() -> RepoSnapshot | null
+
+```typescript
+const repo = host.getActiveRepo();
+// { path: "/Users/me/project", displayName: "project", activeBranch: "main", worktreePath: null }
+```
+
+#### host.getRepos() -> RepoListEntry[]
+
+```typescript
+const repos = host.getRepos();
+// [{ path: "/Users/me/project", displayName: "project" }, ...]
+```
+
+#### host.getActiveTerminalSessionId() -> string | null
+
+```typescript
+const sessionId = host.getActiveTerminalSessionId();
+```
+
+#### host.getPrNotifications() -> PrNotificationSnapshot[]
+
+```typescript
+const prs = host.getPrNotifications();
+// [{ id, repoPath, branch, prNumber, title, type }, ...]
+```
+
+#### host.getSettings(repoPath) -> RepoSettingsSnapshot | null
+
+```typescript
+const settings = host.getSettings("/Users/me/project");
+// { path, displayName, baseBranch: "main", color: "#3fb950" }
+```
+
+### Tier 3: Write Actions (capability-gated)
+
+These methods require declaring capabilities in `manifest.json`. Calling without the required capability throws `PluginCapabilityError`.
+
+#### host.writePty(sessionId, data) -> Promise<void>
+
+Sends input to a terminal session. **Requires `"pty:write"` capability.**
+
+```typescript
+await host.writePty(sessionId, "y\n");
+```
+
+#### host.openMarkdownPanel(title, contentUri) -> void
+
+Opens a virtual markdown tab and shows the panel. **Requires `"ui:markdown"` capability.**
+
+```typescript
+host.openMarkdownPanel("CI Report", "my-scheme:report?id=123");
+```
+
+#### host.playNotificationSound() -> Promise<void>
+
+Plays the notification sound. **Requires `"ui:sound"` capability.**
+
+```typescript
+await host.playNotificationSound();
+```
+
+### Tier 4: Scoped Tauri Invoke (whitelisted commands only)
+
+#### host.invoke<T>(cmd, args?) -> Promise<T>
+
+Invokes a whitelisted Tauri command. Non-whitelisted commands throw immediately.
+
+**Whitelisted commands:**
+| Command | Args | Returns | Capability |
+|---------|------|---------|------------|
+| `read_file` | `{ path: string, file: string }` | `string` | `invoke:read_file` |
+| `list_markdown_files` | `{ path: string }` | `Array<{ path, git_status }>` | `invoke:list_markdown_files` |
+| `read_plugin_data` | `{ plugin_id: string, path: string }` | `string` | none (always allowed) |
+| `write_plugin_data` | `{ plugin_id: string, path: string, data: string }` | `void` | none (always allowed) |
+| `delete_plugin_data` | `{ plugin_id: string, path: string }` | `void` | none (always allowed) |
+
+**Plugin data storage** is sandboxed to `~/.config/tui-commander/plugins/{id}/data/`. No capability required — every plugin can store its own data.
+
+```typescript
+// Store cache data
+await host.invoke("write_plugin_data", {
+  plugin_id: "my-plugin",
+  path: "cache.json",
+  data: JSON.stringify({ lastCheck: Date.now() }),
+});
+
+// Read it back
+const raw = await host.invoke("read_plugin_data", {
+  plugin_id: "my-plugin",
+  path: "cache.json",
+});
+const cache = JSON.parse(raw);
+```
+
+## Capabilities
+
+Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest.json`:
+
+```json
+{
+  "capabilities": ["pty:write", "ui:sound"]
+}
+```
+
+| Capability | Unlocks | Risk |
+|------------|---------|------|
+| `pty:write` | `host.writePty()` | Can send arbitrary input to terminals |
+| `ui:markdown` | `host.openMarkdownPanel()` | Can open panels in the UI |
+| `ui:sound` | `host.playNotificationSound()` | Can play sounds |
+| `invoke:read_file` | `host.invoke("read_file", ...)` | Can read files on disk |
+| `invoke:list_markdown_files` | `host.invoke("list_markdown_files", ...)` | Can list directory contents |
+
+Tier 1, Tier 2, and plugin data commands are always available without capabilities.
 
 ## Content URI Format
 
@@ -209,59 +343,68 @@ host.removeItem("deploy:api:prod");
 scheme:path?key=value&key2=value2
 ```
 
-- **scheme** — matches what you passed to `registerMarkdownProvider(scheme, ...)`
-- Query params are URL-encoded and parsed as `URL` by the provider
-
-Examples from built-in plugins:
+Examples:
 - `plan:file?path=%2Frepo%2Fplans%2Ffoo.md`
 - `stories:detail?id=324-9b46&dir=%2Frepo%2Fstories`
 
-## Reading Files from Plugins
-
-Plugins run in the webview — no direct filesystem access. Use Tauri `invoke` to read files via the Rust backend:
-
-```typescript
-import { invoke } from "../invoke";
-
-// Read a single file (path = directory, file = filename within it)
-const content = await invoke<string>("read_file", {
-  path: "/repo/plans",
-  file: "my-plan.md",
-});
-
-// List markdown files in a directory
-const files = await invoke<{ path: string; git_status: string }[]>(
-  "list_markdown_files",
-  { path: "/repo/stories" },
-);
-```
-
-**Security constraint**: `read_file` requires the file to be within the given directory path (enforced by `read_file_impl` in Rust).
-
 ## Icons
 
-All icons must be monochrome inline SVGs with `fill="currentColor"`. This ensures they inherit the current text color and work with all themes. Recommended viewBox: `0 0 16 16`.
+All icons must be monochrome inline SVGs with `fill="currentColor"` and viewBox `0 0 16 16`:
 
-```typescript
-const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
-  <path d="..."/>
-</svg>`;
+```javascript
+const ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><path d="..."/></svg>';
 ```
 
-Never use emoji for icons — they render inconsistently across platforms.
+Never use emoji — they render inconsistently across platforms.
+
+## Hot Reload
+
+When any file in a plugin directory changes, the app:
+1. Emits a `plugin-changed` event with the plugin ID
+2. Calls `pluginRegistry.unregister(id)` (runs `onunload`, disposes all registrations)
+3. Re-imports the module with a cache-busting query (`?t=timestamp`)
+4. Validates and re-registers the plugin
+
+This means you can edit `main.js` and see changes without restarting the app.
+
+## Build & Install
+
+External plugins must be pre-compiled ES modules. Use esbuild:
+
+```bash
+esbuild src/main.ts --bundle --format=esm --outfile=main.js --external:nothing
+```
+
+Install by copying the directory to:
+- macOS: `~/Library/Application Support/com.tuic.commander/plugins/my-plugin/`
+- Linux: `~/.config/tui-commander/plugins/my-plugin/`
+- Windows: `%APPDATA%/com.tuic.commander/plugins/my-plugin/`
+
+Directory structure:
+```
+my-plugin/
+  manifest.json
+  main.js
+```
+
+## Built-in Plugins
+
+Built-in plugins are TypeScript modules in `src/plugins/` compiled with the app. They have unrestricted access (no capability checks).
+
+| Plugin | File | Section | Detects |
+|--------|------|---------|---------|
+| `plan` | `planPlugin.ts` | ACTIVE PLAN | `plan-file` structured events |
+| `wiz-stories` | `wizStoriesPlugin.ts` | STORIES | `Updated:` and `Added worklog` PTY patterns |
+
+To create a built-in plugin, add it to `BUILTIN_PLUGINS` in `src/plugins/index.ts`.
 
 ## Testing
 
-### Test file location
-
-`src/__tests__/plugins/myPlugin.test.ts`
-
-### Mock setup
+### Mock setup for plugin tests
 
 ```typescript
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// Mock Tauri invoke
 vi.mock("../../invoke", () => ({
   invoke: vi.fn(),
   listen: vi.fn().mockResolvedValue(() => {}),
@@ -271,36 +414,21 @@ import { invoke } from "../../invoke";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { activityStore } from "../../stores/activityStore";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
-import { myPlugin } from "../../plugins/myPlugin";
-
-const mockedInvoke = vi.mocked(invoke);
 
 beforeEach(() => {
   pluginRegistry.clear();
   activityStore.clearAll();
   markdownProviderRegistry.clear();
-  mockedInvoke.mockReset();
+  vi.mocked(invoke).mockReset();
 });
 ```
 
-### What to test
-
-1. **Lifecycle** — section registered on load, removed on unload
-2. **Watcher patterns** — match expected lines, ignore unrelated lines
-3. **Item fields** — id, title, subtitle, icon, contentUri, sectionId, dismissible
-4. **Deduplication** — same id updates rather than duplicates
-5. **Multiple items** — different ids create separate items
-6. **MarkdownProvider** — resolves content via mocked invoke
-7. **Provider edge cases** — missing params return null, invoke errors return null
-
 ### Testing output watchers
-
-Use `pluginRegistry.processRawOutput()` to simulate PTY output:
 
 ```typescript
 it("detects deployment from PTY output", () => {
   pluginRegistry.register(myPlugin);
-  pluginRegistry.processRawOutput("✓ Deployed: api-server to prod\n", "session-1");
+  pluginRegistry.processRawOutput("Deployed: api-server to prod\n", "session-1");
 
   const items = activityStore.getForSection("my-section");
   expect(items).toHaveLength(1);
@@ -308,29 +436,18 @@ it("detects deployment from PTY output", () => {
 });
 ```
 
-### Testing injectable dependencies
-
-If your plugin needs external state (like repo paths), use a factory pattern for testability:
+### Testing capability gating
 
 ```typescript
-// In plugin file
-export function createMyPlugin(
-  getDirFn: (sessionId: string) => string | null = defaultGetDir,
-): TuiPlugin {
-  return new MyPluginImpl(getDirFn);
-}
-
-// In test file
-const plugin = createMyPlugin(() => "/test/path");
-pluginRegistry.register(plugin);
+it("external plugin without pty:write throws on writePty", async () => {
+  let host;
+  pluginRegistry.register(
+    { id: "ext", onload: (h) => { host = h; }, onunload: () => {} },
+    [], // no capabilities
+  );
+  await expect(host.writePty("s1", "data")).rejects.toThrow(PluginCapabilityError);
+});
 ```
-
-## Existing Plugins
-
-| Plugin | File | Section | Detects |
-|--------|------|---------|---------|
-| `plan` | `planPlugin.ts` | ACTIVE PLAN | `plan-file` structured events from OutputParser |
-| `wiz-stories` | `wizStoriesPlugin.ts` | STORIES | `✓ Updated:` and `✓ Added worklog to` PTY patterns |
 
 ## CSS Classes
 
@@ -350,3 +467,15 @@ Activity items use these CSS classes (defined in `src/styles.css`):
 | `activity-last-item-btn` | Shortcut button in toolbar |
 | `activity-last-item-icon` | Shortcut button icon |
 | `activity-last-item-title` | Shortcut button text |
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| Plugin not loading | `manifest.json` missing or malformed | Check console for validation errors |
+| `requires app version X.Y.Z` | `minAppVersion` too high | Lower `minAppVersion` or update app |
+| `not in the invoke whitelist` | Calling non-whitelisted Tauri command | Only use commands listed in the whitelist table |
+| `requires capability "X"` | Missing capability in manifest | Add the capability to `manifest.json` `capabilities` array |
+| Module not found | `main` field doesn't match filename | Ensure `"main": "main.js"` matches your actual file |
+| Changes not reflecting | Hot reload cache | Save the file again, or restart the app |
+| `default export` error | Module doesn't `export default { ... }` | Ensure your module has a default export with `id`, `onload`, `onunload` |
