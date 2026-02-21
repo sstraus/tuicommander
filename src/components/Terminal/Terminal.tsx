@@ -388,7 +388,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
       if (!isMacOS()) return true; // Windows/Linux: xterm handles Alt natively
       if (event.metaKey || event.ctrlKey) return true; // Cmd+Alt or AltGr: pass through
-      if (!event.altKey) return true;
+      // AltLeft keyup fires with altKey=false — reset state here before early return
+      if (!event.altKey) { leftOptionHeld = false; return true; }
 
       // Track left vs right Option state via the modifier key itself (location=1 for left)
       if (event.code === "AltLeft") {
