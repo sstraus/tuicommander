@@ -1,10 +1,10 @@
 ---
 id: 318-d0e3
 title: Activity store for plugin-contributed items
-status: pending
+status: complete
 priority: P1
 created: "2026-02-21T09:33:07.572Z"
-updated: "2026-02-21T09:35:41.439Z"
+updated: "2026-02-21T10:09:17.585Z"
 dependencies: ["317-af1e"]
 ---
 
@@ -32,4 +32,6 @@ Plugins need a reactive SolidJS store to register sections and add/remove/dismis
 - src/__tests__/stores/activityStore.test.ts
 
 ## Work Log
+
+### 2026-02-21T10:09:05.098Z - Implemented activityStore with registerSection (Disposable), getSections (sorted), addItem (deduplication), removeItem, updateItem, dismissItem, dismissSection, getActive, getForSection, getLastItem, clearAll. Fixed tie-break in getLastItem to use >= so later-inserted items win on same timestamp. 21/21 tests green.
 

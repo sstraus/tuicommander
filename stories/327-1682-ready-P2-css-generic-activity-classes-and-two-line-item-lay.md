@@ -1,10 +1,10 @@
 ---
 id: 327-1682
 title: "CSS: generic activity-* classes and two-line item layout"
-status: pending
+status: ready
 priority: P2
 created: "2026-02-21T09:35:32.591Z"
-updated: "2026-02-21T09:35:42.633Z"
+updated: "2026-02-21T10:02:49.067Z"
 dependencies: ["325-90ef"]
 ---
 

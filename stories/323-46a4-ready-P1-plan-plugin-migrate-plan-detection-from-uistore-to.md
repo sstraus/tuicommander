@@ -1,10 +1,10 @@
 ---
 id: 323-46a4
 title: "Plan plugin: migrate plan detection from uiStore to plugin system"
-status: pending
+status: ready
 priority: P1
 created: "2026-02-21T09:34:49.510Z"
-updated: "2026-02-21T09:35:41.923Z"
+updated: "2026-02-21T10:02:49.051Z"
 dependencies: ["320-e879"]
 ---
 

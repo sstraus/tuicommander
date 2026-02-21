@@ -1,10 +1,10 @@
 ---
 id: 324-9b46
 title: "Wiz stories plugin: detect active stories from PTY output"
-status: pending
+status: ready
 priority: P2
 created: "2026-02-21T09:34:57.240Z"
-updated: "2026-02-21T09:35:42.015Z"
+updated: "2026-02-21T10:02:49.052Z"
 dependencies: ["320-e879"]
 ---
 

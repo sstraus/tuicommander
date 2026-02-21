@@ -1,10 +1,10 @@
 ---
 id: 319-0595
 title: Markdown provider registry for virtual content URIs
-status: pending
+status: ready
 priority: P1
 created: "2026-02-21T09:33:40.202Z"
-updated: "2026-02-21T09:35:41.514Z"
+updated: "2026-02-21T10:02:49.046Z"
 dependencies: ["317-af1e"]
 ---
 

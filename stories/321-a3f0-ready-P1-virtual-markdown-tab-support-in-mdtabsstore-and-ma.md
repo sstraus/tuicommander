@@ -1,10 +1,10 @@
 ---
 id: 321-a3f0
 title: Virtual markdown tab support in mdTabsStore and MarkdownTab
-status: pending
+status: ready
 priority: P1
 created: "2026-02-21T09:34:29.891Z"
-updated: "2026-02-21T09:35:41.741Z"
+updated: "2026-02-21T10:02:49.049Z"
 dependencies: ["319-0595"]
 ---
 

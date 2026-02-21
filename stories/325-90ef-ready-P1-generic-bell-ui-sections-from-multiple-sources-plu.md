@@ -1,10 +1,10 @@
 ---
 id: 325-90ef
 title: "Generic bell UI: sections from multiple sources plus last-item shortcut"
-status: pending
+status: ready
 priority: P1
 created: "2026-02-21T09:35:09.522Z"
-updated: "2026-02-21T09:35:42.250Z"
+updated: "2026-02-21T10:02:49.064Z"
 dependencies: ["318-d0e3", "321-a3f0", "323-46a4"]
 ---
 

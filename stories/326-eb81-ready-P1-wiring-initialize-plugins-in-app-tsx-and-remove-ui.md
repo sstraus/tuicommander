@@ -1,11 +1,11 @@
 ---
 id: 326-eb81
 title: "Wiring: initialize plugins in App.tsx and remove uiStore plan state"
-status: pending
+status: ready
 priority: P1
 created: "2026-02-21T09:35:19.156Z"
-updated: "2026-02-21T09:35:42.554Z"
-dependencies: ["322-f60f", "323-46a4", "324-9b46", "325-90ef"]
+updated: "2026-02-21T10:02:49.066Z"
+dependencies: ["322-f60f", "323-46a4", "324-9b46", "325-90ef", "328-f5a2"]
 ---
 
 # Wiring: initialize plugins in App.tsx and remove uiStore plan state

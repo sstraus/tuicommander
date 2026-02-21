@@ -1,10 +1,10 @@
 ---
 id: 320-e879
 title: Plugin registry and PluginHost implementation
-status: pending
+status: ready
 priority: P1
 created: "2026-02-21T09:34:19.725Z"
-updated: "2026-02-21T09:35:41.668Z"
+updated: "2026-02-21T10:02:49.047Z"
 dependencies: ["318-d0e3", "319-0595"]
 ---
 

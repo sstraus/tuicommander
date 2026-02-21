@@ -1,10 +1,10 @@
 ---
-id: "317-af1e"
-title: "Core types, LineBuffer and stripAnsi utilities"
-status: pending
+id: 317-af1e
+title: Core types, LineBuffer and stripAnsi utilities
+status: complete
 priority: P1
-created: 2026-02-21T09:30:48.737Z
-updated: 2026-02-21T09:30:48.737Z
+created: "2026-02-21T09:30:48.737Z"
+updated: "2026-02-21T10:06:03.484Z"
 dependencies: []
 ---
 
@@ -31,4 +31,6 @@ The plugin system needs shared TypeScript interfaces (TuiPlugin, PluginHost, Act
 - src/__tests__/utils/stripAnsi.test.ts
 
 ## Work Log
+
+### 2026-02-21T10:06:03.412Z - Implemented LineBuffer (push returns complete lines, retains partial tail), stripAnsi (ECMA-48 CSI+OSC, fixed param-byte range \x30-\x3F), and types.ts (all plugin interfaces). 31 new tests, 1671 total passing.
 
