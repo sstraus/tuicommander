@@ -14,6 +14,8 @@ import { notificationsStore } from "../stores/notifications";
 import { prNotificationsStore, type PrNotificationType } from "../stores/prNotifications";
 import { uiStore } from "../stores/ui";
 import { pluginRegistry } from "../plugins/pluginRegistry";
+import { repoDefaultsStore, type RepoDefaults } from "../stores/repoDefaults";
+import { repoSettingsStore, type RepoSettings } from "../stores/repoSettings";
 import { PRESETS, buildPrStatus, type PrOverride } from "./presets";
 
 const SIM_REPO_PATH = "/sim/repo";
@@ -215,6 +217,33 @@ const simulator = {
     console.log(`[tuic] Toggled panel: ${name}`);
   },
 
+  /** Set global repo defaults (the baseline inherited by all repos unless overridden) */
+  defaults(options: Partial<RepoDefaults>): void {
+    if (options.baseBranch !== undefined) repoDefaultsStore.setBaseBranch(options.baseBranch);
+    if (options.copyIgnoredFiles !== undefined) repoDefaultsStore.setCopyIgnoredFiles(options.copyIgnoredFiles);
+    if (options.copyUntrackedFiles !== undefined) repoDefaultsStore.setCopyUntrackedFiles(options.copyUntrackedFiles);
+    if (options.setupScript !== undefined) repoDefaultsStore.setSetupScript(options.setupScript);
+    if (options.runScript !== undefined) repoDefaultsStore.setRunScript(options.runScript);
+    console.log("[tuic] Global repo defaults updated:", repoDefaultsStore.state);
+  },
+
+  /** Set per-repo setting overrides (null = inherit from global defaults) */
+  repoSettings(repoPath: string, overrides: Partial<Pick<RepoSettings,
+    "baseBranch" | "copyIgnoredFiles" | "copyUntrackedFiles" | "setupScript" | "runScript" | "color"
+  >>): void {
+    repoSettingsStore.getOrCreate(repoPath, repoPath.split("/").pop() ?? repoPath);
+    for (const [key, value] of Object.entries(overrides) as [keyof typeof overrides, unknown][]) {
+      repoSettingsStore.update(repoPath, { [key]: value } as Partial<RepoSettings>);
+    }
+    console.log("[tuic] Repo settings updated for", repoPath, ":", repoSettingsStore.get(repoPath));
+  },
+
+  /** Print effective (merged) settings for a repo */
+  effectiveSettings(repoPath: string): void {
+    const effective = repoSettingsStore.getEffective(repoPath);
+    console.log("[tuic] Effective settings for", repoPath, ":", effective);
+  },
+
   /** Clear all mocks and resume polling */
   reset(): void {
     rateLimitStore.clearAll();
@@ -303,6 +332,15 @@ const simulator = {
   __tuic.panel('markdown')         Toggle markdown panel
   __tuic.panel('files')            Toggle file browser panel
   __tuic.panel('notes')            Toggle notes/ideas panel
+
+── Repo Defaults & Settings ──────────────────────────────────
+  __tuic.defaults({ baseBranch: 'develop' })             Set global default base branch
+  __tuic.defaults({ copyIgnoredFiles: true })            Set global copy ignored files default
+  __tuic.defaults({ setupScript: 'npm install' })        Set global setup script default
+  __tuic.defaults({ runScript: 'npm start' })            Set global run script default
+  __tuic.repoSettings('/path/repo', { baseBranch: 'main' })    Override for specific repo
+  __tuic.repoSettings('/path/repo', { baseBranch: null })      Reset to inherit global default
+  __tuic.effectiveSettings('/path/repo')                 Print merged (global + override) settings
 
 ── Control ────────────────────────────────────────────────────
   __tuic.reset()                   Clear all mocks, resume polling
