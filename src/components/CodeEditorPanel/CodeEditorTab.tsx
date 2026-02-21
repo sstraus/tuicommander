@@ -160,6 +160,10 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
     try {
       await fb.writeFile(props.repoPath, props.filePath, code());
       setSavedContent(code());
+      // Notify revision-subscribed panels (e.g. MarkdownTab) that a file changed on disk
+      if (props.repoPath) {
+        repositoriesStore.bumpRevision(props.repoPath);
+      }
     } catch (err) {
       console.error("Failed to save file:", err);
     }
