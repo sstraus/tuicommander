@@ -13,6 +13,7 @@ import { terminalsStore } from "../stores/terminals";
 import { notificationsStore } from "../stores/notifications";
 import { prNotificationsStore, type PrNotificationType } from "../stores/prNotifications";
 import { uiStore } from "../stores/ui";
+import { pluginRegistry } from "../plugins/pluginRegistry";
 import { PRESETS, buildPrStatus, type PrOverride } from "./presets";
 
 const SIM_REPO_PATH = "/sim/repo";
@@ -188,8 +189,8 @@ const simulator = {
   /** Simulate a plan file detection */
   plan(path?: string): void {
     const planPath = path ?? "plans/example-feature.md";
-    uiStore.setPlanFilePath(planPath);
-    console.log(`[tuic] Plan file set: ${planPath}`);
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: planPath }, "simulator");
+    console.log(`[tuic] Plan file detected: ${planPath}`);
   },
 
   /** Toggle a panel for testing */

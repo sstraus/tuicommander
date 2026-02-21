@@ -47,6 +47,7 @@ import { repoDefaultsStore } from "./stores/repoDefaults";
 import { notesStore } from "./stores/notes";
 import { prNotificationsStore } from "./stores/prNotifications";
 import { updaterStore } from "./stores/updater";
+import { initPlugins } from "./plugins";
 import { usePty } from "./hooks/usePty";
 import { useRepository } from "./hooks/useRepository";
 import { useKeyboardRedirect } from "./hooks/useKeyboardRedirect";
@@ -232,6 +233,11 @@ const App: Component = () => {
         console.error("Failed to unblock sleep:", err),
       );
     }
+  });
+
+  // Initialize plugin system
+  onMount(() => {
+    initPlugins();
   });
 
   // Clear dock badge when window gains focus
@@ -512,7 +518,6 @@ const App: Component = () => {
           }
         }}
         onRun={(shiftKey) => gitOps.handleRunCommand(shiftKey, () => setRunCommandDialogVisible(true))}
-        onOpenPlan={(path) => handleOpenFilePath(path)}
       />
 
       {/* Body: sidebar + main content side by side */}

@@ -1,10 +1,10 @@
 ---
 id: 326-eb81
 title: "Wiring: initialize plugins in App.tsx and remove uiStore plan state"
-status: ready
+status: complete
 priority: P1
 created: "2026-02-21T09:35:19.156Z"
-updated: "2026-02-21T10:02:49.066Z"
+updated: "2026-02-21T10:27:30.576Z"
 dependencies: ["322-f60f", "323-46a4", "324-9b46", "325-90ef", "328-f5a2"]
 ---
 
@@ -42,4 +42,6 @@ The plugin system needs to be initialized at app startup. planFilePath state in 
 - 325-90ef
 
 ## Work Log
+
+### 2026-02-21T10:27:30.499Z - Created plugins/index.ts with BUILTIN_PLUGINS and initPlugins(). App.tsx calls initPlugins() on mount, onOpenPlan prop removed. uiStore planFilePath/setPlanFilePath/clearPlanFile removed. Terminal.tsx plan-file case now delegates fully to plugin via dispatchStructuredEvent. simulator.ts uses pluginRegistry.dispatchStructuredEvent. All references removed. 1772 tests green.
 

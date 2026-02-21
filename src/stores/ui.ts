@@ -42,9 +42,6 @@ interface UIStoreState {
   // Loading states
   isLoading: boolean;
   loadingMessage: string;
-
-  // Plan file detected in terminal output
-  planFilePath: string | null;
 }
 
 function clampWidth(v: number): number {
@@ -68,7 +65,6 @@ function createUIStore() {
     activeDropdown: null,
     isLoading: false,
     loadingMessage: "",
-    planFilePath: null,
   });
 
   /** Persist all layout prefs to Rust backend (fire-and-forget) */
@@ -260,15 +256,6 @@ function createUIStore() {
     setLoading(loading: boolean, message?: string): void {
       setState("isLoading", loading);
       setState("loadingMessage", message || "");
-    },
-
-    // Plan file
-    setPlanFilePath(path: string | null): void {
-      setState("planFilePath", path);
-    },
-
-    clearPlanFile(): void {
-      setState("planFilePath", null);
     },
   };
 

@@ -298,41 +298,6 @@ describe("uiStore", () => {
     });
   });
 
-  describe("plan file", () => {
-    it("planFilePath defaults to null", () => {
-      createRoot((dispose) => {
-        expect(store.state.planFilePath).toBeNull();
-        dispose();
-      });
-    });
-
-    it("setPlanFilePath sets the path", () => {
-      createRoot((dispose) => {
-        store.setPlanFilePath("/some/repo/plan.md");
-        expect(store.state.planFilePath).toBe("/some/repo/plan.md");
-        dispose();
-      });
-    });
-
-    it("setPlanFilePath with null clears the path", () => {
-      createRoot((dispose) => {
-        store.setPlanFilePath("/plan.md");
-        store.setPlanFilePath(null);
-        expect(store.state.planFilePath).toBeNull();
-        dispose();
-      });
-    });
-
-    it("clearPlanFile resets planFilePath to null", () => {
-      createRoot((dispose) => {
-        store.setPlanFilePath("/plan.md");
-        store.clearPlanFile();
-        expect(store.state.planFilePath).toBeNull();
-        dispose();
-      });
-    });
-  });
-
   describe("panel widths", () => {
     it("defaults to expected widths", () => {
       createRoot((dispose) => {

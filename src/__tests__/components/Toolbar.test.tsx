@@ -47,7 +47,6 @@ describe("Toolbar", () => {
     }
     repositoriesStore.setActive(null);
     uiStore.setSidebarVisible(true);
-    uiStore.clearPlanFile();
     prNotificationsStore.clearAll();
     activityStore.clearAll();
   });
@@ -242,7 +241,6 @@ describe("Toolbar", () => {
   // Plan button is REMOVED (now plan items go through Activity Center)
   // -------------------------------------------------------------------------
   it("plan button is not rendered (plan moved to Activity Center)", () => {
-    uiStore.setPlanFilePath("/repo/plans/my-plan.md");
     const { container } = render(() => <Toolbar />);
     expect(container.querySelector(".plan-button")).toBeNull();
     expect(container.querySelector(".plan-button-group")).toBeNull();

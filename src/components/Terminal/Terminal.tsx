@@ -10,7 +10,6 @@ import { getTerminalTheme } from "../../themes";
 import { terminalsStore } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { notificationsStore } from "../../stores/notifications";
-import { uiStore } from "../../stores/ui";
 import { invoke } from "../../invoke";
 import { isMacOS } from "../../platform";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
@@ -301,7 +300,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             });
             break;
           case "plan-file":
-            uiStore.setPlanFilePath(parsed.path);
+            // Handled by planPlugin via dispatchStructuredEvent below
             break;
         }
 
