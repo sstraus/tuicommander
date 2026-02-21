@@ -359,12 +359,12 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
                     for event in &events {
                         if event.kind == DebouncedEventKind::Any {
                             // Extract plugin ID from path: plugins_dir / <id> / ...
-                            if let Ok(relative) = event.path.strip_prefix(&dir) {
-                                if let Some(first) = relative.components().next() {
-                                    let id = first.as_os_str().to_string_lossy().to_string();
-                                    if !id.starts_with('.') && !changed_ids.contains(&id) {
-                                        changed_ids.push(id);
-                                    }
+                            if let Ok(relative) = event.path.strip_prefix(&dir)
+                                && let Some(first) = relative.components().next()
+                            {
+                                let id = first.as_os_str().to_string_lossy().to_string();
+                                if !id.starts_with('.') && !changed_ids.contains(&id) {
+                                    changed_ids.push(id);
                                 }
                             }
                         }
