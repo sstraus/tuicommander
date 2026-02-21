@@ -301,55 +301,62 @@ html, body {
 
 
 .sidebar-footer {
-  padding: 8px 12px;
+  padding: 4px 6px;
   border-top: 1px solid var(--border);
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
 }
 
 .sidebar-add-repo {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 10px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--fg-secondary);
-  font-size: var(--font-md);
+  gap: 7px;
+  padding: 7px 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
   cursor: pointer;
   transition: all 0.15s;
+  text-align: left;
+  min-width: 0;
 }
 
 .sidebar-add-repo:hover {
-  background: var(--bg-highlight);
+  background: var(--bg-tertiary);
   color: var(--fg-primary);
-  border-color: var(--accent);
 }
 
 .sidebar-add-repo-icon {
   flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.sidebar-add-repo:hover .sidebar-add-repo-icon {
+  opacity: 1;
 }
 
 .sidebar-footer-icons {
   display: flex;
-  justify-content: center;
-  gap: 4px;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 .sidebar-footer-action {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-lg);
+  border: none;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
-  font-size: var(--font-lg);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -357,7 +364,6 @@ html, body {
 .sidebar-footer-action:hover {
   background: var(--bg-tertiary);
   color: var(--fg-primary);
-  border-color: var(--border);
 }
 
 .sidebar-empty {
@@ -6144,47 +6150,47 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
    ============================================================================ */
 
 .git-quick-actions {
-  padding: 8px 12px;
+  padding: 4px 6px;
   border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
 }
 
 .git-quick-actions-title {
-  font-size: var(--font-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--fg-muted);
-  margin-bottom: 6px;
-  letter-spacing: 0.05em;
+  display: none; /* label removed — buttons are self-explanatory */
 }
 
 .git-quick-actions-btns {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex: 1;
+  gap: 2px;
 }
 
 .git-quick-btn {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 4px;
+  background: transparent;
+  border: none;
   border-radius: var(--radius-md);
-  color: var(--fg-secondary);
+  color: var(--fg-muted);
   font-size: var(--font-sm);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .git-quick-btn:hover:not(:disabled) {
-  background: var(--bg-highlight);
-  border-color: var(--accent);
+  background: var(--bg-tertiary);
   color: var(--fg-primary);
 }
 
 .git-quick-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
@@ -6194,7 +6200,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
 }
 
 .git-quick-icon {
-  font-size: var(--font-md);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 /* ============================================================================

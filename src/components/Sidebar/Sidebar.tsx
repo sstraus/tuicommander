@@ -813,7 +813,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       {/* Git Quick Actions (Story 050) */}
       <Show when={repositoriesStore.getActive()}>
         <div class="git-quick-actions">
-          <div class="git-quick-actions-title">Git</div>
           <div class="git-quick-actions-btns">
             <button
               class="git-quick-btn"
@@ -823,7 +822,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               }}
               title="Pull latest changes"
             >
-              <span class="git-quick-icon">{"\u2193"}</span> Pull
+              <span class="git-quick-icon">
+                {/* arrow-down-to-line */}
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2v9M4 8l4 4 4-4M2 14h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              Pull
             </button>
             <button
               class="git-quick-btn"
@@ -833,7 +836,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               }}
               title="Push commits"
             >
-              <span class="git-quick-icon">{"\u2191"}</span> Push
+              <span class="git-quick-icon">
+                {/* arrow-up-from-line */}
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 14V5M4 8l4-4 4 4M2 2h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              Push
             </button>
             <button
               class="git-quick-btn"
@@ -843,7 +850,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               }}
               title="Fetch from all remotes"
             >
-              <span class="git-quick-icon">{"\u27F3"}</span> Fetch
+              <span class="git-quick-icon">
+                {/* refresh-cw */}
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M1 4s.5-1 3-2.5A7 7 0 0 1 15 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M15 12s-.5 1-3 2.5A7 7 0 0 1 1 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M1 1v3h3M15 15v-3h-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              Fetch
             </button>
             <button
               class="git-quick-btn"
@@ -853,7 +864,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               }}
               title="Stash changes"
             >
-              <span class="git-quick-icon">{"\u2261"}</span> Stash
+              <span class="git-quick-icon">
+                {/* layers/stash */}
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M1.5 6 8 9.5 14.5 6M1.5 10 8 13.5 14.5 10M8 2.5 14.5 6 8 9.5 1.5 6 8 2.5Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+              </span>
+              Stash
             </button>
           </div>
         </div>
@@ -862,7 +877,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       {/* Footer */}
       <div class="sidebar-footer">
         <button class="sidebar-add-repo" onClick={props.onAddRepo} title="Add Repository">
-          <svg class="sidebar-add-repo-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <svg class="sidebar-add-repo-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M1.5 2A1.5 1.5 0 0 1 3 .5h3.379a1.5 1.5 0 0 1 1.06.44l1.122 1.12H13A1.5 1.5 0 0 1 14.5 3.5v9a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 12.5V2Z" stroke="currentColor" stroke-width="1.2"/>
           </svg>
           Add Repository
@@ -873,7 +888,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
             onClick={props.onOpenHelp}
             title="Help"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
               <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/>
               <path d="M6 6.2a2 2 0 0 1 3.9.6c0 1.2-1.9 1.2-1.9 2.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
               <circle cx="8" cy="11.5" r="0.7" fill="currentColor"/>
@@ -884,7 +899,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
             onClick={props.onOpenSettings}
             title="Settings"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
               <path d="M6.5 1.5h3l.4 1.8a5 5 0 011.2.7l1.7-.6 1.5 2.6-1.3 1.2a5 5 0 010 1.4l1.3 1.2-1.5 2.6-1.7-.6a5 5 0 01-1.2.7l-.4 1.8h-3l-.4-1.8a5 5 0 01-1.2-.7l-1.7.6-1.5-2.6 1.3-1.2a5 5 0 010-1.4L1.7 5.7l1.5-2.6 1.7.6a5 5 0 011.2-.7z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
               <circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/>
             </svg>

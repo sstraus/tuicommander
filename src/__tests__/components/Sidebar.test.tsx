@@ -580,9 +580,6 @@ describe("Sidebar", () => {
       const quickActions = container.querySelector(".git-quick-actions");
       expect(quickActions).not.toBeNull();
 
-      const title = container.querySelector(".git-quick-actions-title");
-      expect(title!.textContent).toBe("Git");
-
       const buttons = container.querySelectorAll(".git-quick-btn");
       expect(buttons.length).toBe(4);
     });
