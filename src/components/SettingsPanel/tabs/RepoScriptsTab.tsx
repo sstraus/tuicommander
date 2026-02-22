@@ -1,7 +1,6 @@
 import { Component } from "solid-js";
 import type { RepoTabProps } from "./RepoWorktreeTab";
 import { t } from "../../../i18n";
-import { cx } from "../../../utils";
 import s from "../Settings.module.css";
 
 export const RepoScriptsTab: Component<RepoTabProps> = (props) => {

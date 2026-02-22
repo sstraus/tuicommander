@@ -2,7 +2,6 @@ import { Component, For, Show } from "solid-js";
 import { notificationsStore } from "../../../stores/notifications";
 import type { NotificationSound } from "../../../notifications";
 import { t } from "../../../i18n";
-import { cx } from "../../../utils";
 import s from "../Settings.module.css";
 
 export const NotificationsTab: Component = () => {

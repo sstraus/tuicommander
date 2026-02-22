@@ -264,3 +264,9 @@ button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Shared keyframes — used by Sidebar, TabBar, and StatusBar modules */
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}

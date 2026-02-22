@@ -39,6 +39,10 @@
   user-select: none;
 }
 
+:global(.platform-macos) .left {
+  padding-left: 78px;
+}
+
 :global(#app.sidebar-hidden) .left {
   width: auto;
   flex: none;

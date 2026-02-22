@@ -5,7 +5,6 @@ import { updaterStore } from "../../../stores/updater";
 import { THEME_NAMES } from "../../../themes";
 import type { IdeType, FontType } from "../../../stores/settings";
 import { t } from "../../../i18n";
-import { cx } from "../../../utils";
 import s from "../Settings.module.css";
 
 export const GeneralTab: Component = () => {
