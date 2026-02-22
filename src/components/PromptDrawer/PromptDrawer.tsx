@@ -2,6 +2,9 @@ import { Component, For, Show, createEffect, createSignal, onCleanup } from "sol
 import { promptLibraryStore, type SavedPrompt, type PromptCategory } from "../../stores/promptLibrary";
 import { terminalsStore } from "../../stores/terminals";
 import { usePty } from "../../hooks/usePty";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import s from "./PromptDrawer.module.css";
 
 export interface PromptDrawerProps {
   onClose?: () => void;
@@ -188,21 +191,21 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 
   return (
     <Show when={isOpen()}>
-      <div class="prompt-drawer-overlay" onClick={() => promptLibraryStore.closeDrawer()}>
-        <div class="prompt-drawer" onClick={(e) => e.stopPropagation()}>
+      <div class={s.overlay} onClick={() => promptLibraryStore.closeDrawer()}>
+        <div class={s.drawer} onClick={(e) => e.stopPropagation()}>
           {/* Header */}
-          <div class="prompt-drawer-header">
-            <h3>Prompt Library</h3>
-            <button class="prompt-drawer-close" onClick={() => promptLibraryStore.closeDrawer()}>
+          <div class={s.header}>
+            <h3>{t("promptDrawer.title", "Prompt Library")}</h3>
+            <button class={s.close} onClick={() => promptLibraryStore.closeDrawer()}>
               &times;
             </button>
           </div>
 
           {/* Search */}
-          <div class="prompt-drawer-search">
+          <div class={s.search}>
             <input
               type="text"
-              placeholder="Search prompts... (type to filter)"
+              placeholder={t("promptDrawer.searchPlaceholder", "Search prompts... (type to filter)")}
               value={promptLibraryStore.state.searchQuery}
               onInput={(e) => promptLibraryStore.setSearchQuery(e.currentTarget.value)}
               autofocus
@@ -210,11 +213,11 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
           </div>
 
           {/* Categories */}
-          <div class="prompt-drawer-categories">
+          <div class={s.categories}>
             <For each={Object.entries(CATEGORY_LABELS)}>
               {([category, label]) => (
                 <button
-                  class={`category-btn ${promptLibraryStore.state.selectedCategory === category ? "active" : ""}`}
+                  class={cx(s.categoryBtn, promptLibraryStore.state.selectedCategory === category && s.categoryBtnActive)}
                   onClick={() => promptLibraryStore.setSelectedCategory(category as PromptCategory | "all")}
                 >
                   {label}
@@ -224,36 +227,36 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
           </div>
 
           {/* Prompt list */}
-          <div class="prompt-drawer-list">
+          <div class={s.list}>
             <Show
               when={filteredPrompts().length > 0}
               fallback={
-                <div class="prompt-drawer-empty">
-                  <p>No prompts found</p>
-                  <button onClick={createNewPrompt}>Create your first prompt</button>
+                <div class={s.empty}>
+                  <p>{t("promptDrawer.noPrompts", "No prompts found")}</p>
+                  <button onClick={createNewPrompt}>{t("promptDrawer.createFirst", "Create your first prompt")}</button>
                 </div>
               }
             >
               <For each={filteredPrompts()}>
                 {(prompt, index) => (
                   <div
-                    class={`prompt-item ${index() === selectedIndex() ? "selected" : ""}`}
+                    class={cx(s.promptItem, index() === selectedIndex() && s.selected)}
                     onClick={() => injectPrompt(prompt)}
                     onDblClick={() => injectPrompt(prompt, true)}
                   >
-                    <div class="prompt-item-content">
-                      <div class="prompt-item-name">
-                        {prompt.isFavorite && <span class="favorite-star">★</span>}
+                    <div class={s.itemContent}>
+                      <div class={s.itemName}>
+                        {prompt.isFavorite && <span class={s.favoriteStar}>★</span>}
                         {prompt.name}
-                        {prompt.shortcut && <span class="prompt-shortcut">{prompt.shortcut}</span>}
+                        {prompt.shortcut && <span class={s.shortcut}>{prompt.shortcut}</span>}
                       </div>
                       <Show when={prompt.description}>
-                        <div class="prompt-item-description">{prompt.description}</div>
+                        <div class={s.itemDescription}>{prompt.description}</div>
                       </Show>
                     </div>
-                    <div class="prompt-item-actions">
+                    <div class={s.itemActions}>
                       <button
-                        title="Edit"
+                        title={t("promptDrawer.edit", "Edit")}
                         onClick={(e) => {
                           e.stopPropagation();
                           editPrompt(prompt);
@@ -262,7 +265,7 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
                         ✎
                       </button>
                       <button
-                        title={prompt.isFavorite ? "Unfavorite" : "Favorite"}
+                        title={prompt.isFavorite ? t("promptDrawer.unfavorite", "Unfavorite") : t("promptDrawer.favorite", "Favorite")}
                         onClick={(e) => {
                           e.stopPropagation();
                           promptLibraryStore.toggleFavorite(prompt.id);
@@ -271,7 +274,7 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
                         {prompt.isFavorite ? "★" : "☆"}
                       </button>
                       <button
-                        title="Delete"
+                        title={t("promptDrawer.delete", "Delete")}
                         onClick={(e) => {
                           e.stopPropagation();
                           deletePrompt(prompt);
@@ -287,10 +290,10 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
           </div>
 
           {/* Footer */}
-          <div class="prompt-drawer-footer">
-            <button onClick={createNewPrompt}>+ New Prompt</button>
-            <span class="prompt-drawer-hint">
-              ↑↓ Navigate • Enter Insert • Ctrl+N New • Esc Close
+          <div class={s.footer}>
+            <button onClick={createNewPrompt}>{t("promptDrawer.newPrompt", "+ New Prompt")}</button>
+            <span class={s.hint}>
+              {t("promptDrawer.hint", "↑↓ Navigate • Enter Insert • Ctrl+N New • Esc Close")}
             </span>
           </div>
         </div>
@@ -298,12 +301,12 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 
       {/* Variable Dialog */}
       <Show when={showVariableDialog() && pendingPrompt()}>
-        <div class="variable-dialog-overlay" onClick={() => setShowVariableDialog(false)}>
-          <div class="variable-dialog" onClick={(e) => e.stopPropagation()}>
-            <h4>Fill in variables</h4>
+        <div class={s.variableOverlay} onClick={() => setShowVariableDialog(false)}>
+          <div class={s.variableDialog} onClick={(e) => e.stopPropagation()}>
+            <h4>{t("promptDrawer.fillVariables", "Fill in variables")}</h4>
             <For each={Object.keys(variableValues())}>
               {(varName) => (
-                <div class="variable-input">
+                <div class={s.variableInput}>
                   <label>{varName}</label>
                   <input
                     type="text"
@@ -316,10 +319,10 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
                 </div>
               )}
             </For>
-            <div class="variable-dialog-actions">
-              <button onClick={() => handleVariableSubmit(false)}>Insert</button>
-              <button onClick={() => handleVariableSubmit(true)}>Insert & Run</button>
-              <button onClick={() => setShowVariableDialog(false)}>Cancel</button>
+            <div class={s.variableActions}>
+              <button onClick={() => handleVariableSubmit(false)}>{t("promptDrawer.insert", "Insert")}</button>
+              <button onClick={() => handleVariableSubmit(true)}>{t("promptDrawer.insertAndRun", "Insert & Run")}</button>
+              <button onClick={() => setShowVariableDialog(false)}>{t("promptDrawer.cancel", "Cancel")}</button>
             </div>
           </div>
         </div>
@@ -386,54 +389,54 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
   };
 
   return (
-    <div class="prompt-editor-overlay" onClick={props.onCancel}>
-      <div class="prompt-editor" onClick={(e) => e.stopPropagation()}>
-        <h4>{props.prompt ? "Edit Prompt" : "New Prompt"}</h4>
+    <div class={s.editorOverlay} onClick={props.onCancel}>
+      <div class={s.editor} onClick={(e) => e.stopPropagation()}>
+        <h4>{props.prompt ? t("promptDrawer.editPrompt", "Edit Prompt") : t("promptDrawer.newPromptTitle", "New Prompt")}</h4>
 
-        <div class="prompt-editor-field">
-          <label>Name *</label>
+        <div class={s.editorField}>
+          <label>{t("promptDrawer.nameLabel", "Name *")}</label>
           <input
             type="text"
             value={name()}
             onInput={(e) => setName(e.currentTarget.value)}
-            placeholder="My Prompt"
+            placeholder={t("promptDrawer.namePlaceholder", "My Prompt")}
             autofocus
           />
         </div>
 
-        <div class="prompt-editor-field">
-          <label>Description</label>
+        <div class={s.editorField}>
+          <label>{t("promptDrawer.descriptionLabel", "Description")}</label>
           <input
             type="text"
             value={description()}
             onInput={(e) => setDescription(e.currentTarget.value)}
-            placeholder="What does this prompt do?"
+            placeholder={t("promptDrawer.descriptionPlaceholder", "What does this prompt do?")}
           />
         </div>
 
-        <div class="prompt-editor-field">
-          <label>Content * (use {"{variable}"} for variables)</label>
+        <div class={s.editorField}>
+          <label>{t("promptDrawer.contentLabel", "Content * (use {variable} for variables)")}</label>
           <textarea
             value={content()}
             onInput={(e) => setContent(e.currentTarget.value)}
-            placeholder="Enter your prompt text here..."
+            placeholder={t("promptDrawer.contentPlaceholder", "Enter your prompt text here...")}
             rows={6}
           />
         </div>
 
-        <div class="prompt-editor-field">
-          <label>Keyboard Shortcut</label>
+        <div class={s.editorField}>
+          <label>{t("promptDrawer.shortcutLabel", "Keyboard Shortcut")}</label>
           <input
             type="text"
             value={shortcut()}
             onInput={(e) => setShortcut(e.currentTarget.value)}
-            placeholder="e.g., Ctrl+1"
+            placeholder={t("promptDrawer.shortcutPlaceholder", "e.g., Ctrl+1")}
           />
         </div>
 
-        <div class="prompt-editor-actions">
-          <button onClick={handleSave}>Save</button>
-          <button onClick={props.onCancel}>Cancel</button>
+        <div class={s.editorActions}>
+          <button onClick={handleSave}>{t("promptDrawer.save", "Save")}</button>
+          <button onClick={props.onCancel}>{t("promptDrawer.cancel", "Cancel")}</button>
         </div>
       </div>
     </div>
