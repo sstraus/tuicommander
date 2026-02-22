@@ -179,3 +179,28 @@
   color: var(--fg-secondary);
   word-break: break-word;
 }
+
+/* Uninstall button */
+
+.uninstallBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.uninstallBtn:hover {
+  background: rgba(248, 81, 73, 0.1);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Install row at bottom of tab */
+
+.installRow {
+  margin-top: 16px;
+}

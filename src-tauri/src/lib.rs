@@ -602,7 +602,10 @@ pub fn run() {
             plugins::list_user_plugins,
             plugins::read_plugin_data,
             plugins::write_plugin_data,
-            plugins::delete_plugin_data
+            plugins::delete_plugin_data,
+            plugins::install_plugin_from_zip,
+            plugins::install_plugin_from_url,
+            plugins::uninstall_plugin
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

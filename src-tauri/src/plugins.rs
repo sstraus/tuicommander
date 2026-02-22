@@ -314,6 +314,233 @@ pub fn delete_plugin_data(plugin_id: String, path: String) -> Result<(), String>
 }
 
 // ---------------------------------------------------------------------------
+// ZIP plugin installation
+// ---------------------------------------------------------------------------
+
+/// Install a plugin from a ZIP archive.
+///
+/// Extracts the archive into `{plugins_dir}/{manifest.id}/`, validates the
+/// manifest, and emits a `plugin-changed` event. If the plugin already exists,
+/// the `data/` subdirectory is preserved across the overwrite.
+///
+/// Returns the validated manifest on success.
+#[tauri::command]
+pub async fn install_plugin_from_zip(
+    path: String,
+    app_handle: AppHandle,
+) -> Result<PluginManifest, String> {
+    let zip_path = PathBuf::from(&path);
+    if !zip_path.exists() {
+        return Err(format!("File not found: {path}"));
+    }
+
+    install_zip_inner(&zip_path, &app_handle)
+}
+
+/// Install a plugin from an HTTPS URL: download to a temp file, then extract.
+#[tauri::command]
+pub async fn install_plugin_from_url(
+    url: String,
+    app_handle: AppHandle,
+) -> Result<PluginManifest, String> {
+    // Security: only HTTPS URLs
+    if !url.starts_with("https://") {
+        return Err("Only HTTPS URLs are allowed for plugin installation".into());
+    }
+
+    // Download to temp file
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Download failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", response.status()));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read download: {e}"))?;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("tuic-plugin-{}.zip", uuid::Uuid::new_v4()));
+    std::fs::write(&temp_path, &bytes)
+        .map_err(|e| format!("Failed to write temp file: {e}"))?;
+
+    let result = install_zip_inner(&temp_path, &app_handle);
+    let _ = std::fs::remove_file(&temp_path);
+    result
+}
+
+/// Core ZIP extraction logic shared by install_plugin_from_zip and install_plugin_from_url.
+fn install_zip_inner(
+    zip_path: &std::path::Path,
+    app_handle: &AppHandle,
+) -> Result<PluginManifest, String> {
+    let file = std::fs::File::open(zip_path)
+        .map_err(|e| format!("Failed to open ZIP: {e}"))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("Invalid ZIP archive: {e}"))?;
+
+    // Find manifest.json — may be at root or inside a single top-level dir
+    let manifest_path = find_manifest_in_zip(&archive)?;
+    let prefix = manifest_path
+        .strip_suffix("manifest.json")
+        .unwrap_or("")
+        .to_string();
+
+    // Read and validate manifest
+    let manifest_data = {
+        let mut entry = archive
+            .by_name(&manifest_path)
+            .map_err(|e| format!("Failed to read manifest.json: {e}"))?;
+        let mut buf = String::new();
+        std::io::Read::read_to_string(&mut entry, &mut buf)
+            .map_err(|e| format!("Failed to read manifest.json: {e}"))?;
+        buf
+    };
+
+    let manifest: PluginManifest = serde_json::from_str(&manifest_data)
+        .map_err(|e| format!("Invalid manifest.json: {e}"))?;
+
+    validate_manifest(&manifest, &manifest.id)?;
+
+    let target_dir = plugins_dir().join(&manifest.id);
+
+    // Preserve data/ directory if plugin already exists
+    let temp_data_dir = if target_dir.join("data").exists() {
+        let tmp = std::env::temp_dir().join(format!("tuic-data-backup-{}", uuid::Uuid::new_v4()));
+        std::fs::rename(target_dir.join("data"), &tmp)
+            .map_err(|e| format!("Failed to backup data/: {e}"))?;
+        Some(tmp)
+    } else {
+        None
+    };
+
+    // Clean target and extract
+    if target_dir.exists() {
+        std::fs::remove_dir_all(&target_dir)
+            .map_err(|e| format!("Failed to clean existing plugin dir: {e}"))?;
+    }
+    std::fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("Failed to create plugin dir: {e}"))?;
+
+    // Extract files
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("ZIP entry error: {e}"))?;
+
+        let entry_path = entry
+            .enclosed_name()
+            .ok_or_else(|| "ZIP entry has unsafe path".to_string())?
+            .to_path_buf();
+
+        let entry_str = entry_path.to_string_lossy();
+
+        // Strip prefix (if manifest was inside a subdirectory)
+        let relative = if !prefix.is_empty() {
+            match entry_str.strip_prefix(&prefix) {
+                Some(r) if !r.is_empty() => r.to_string(),
+                _ => continue,
+            }
+        } else {
+            entry_str.to_string()
+        };
+
+        // Zip-slip protection
+        if is_path_escape(&relative) {
+            return Err(format!("ZIP entry attempts path traversal: {relative}"));
+        }
+
+        let target = target_dir.join(&relative);
+
+        if entry.is_dir() {
+            std::fs::create_dir_all(&target)
+                .map_err(|e| format!("Failed to create dir {relative}: {e}"))?;
+        } else {
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create parent dir: {e}"))?;
+            }
+            let mut outfile = std::fs::File::create(&target)
+                .map_err(|e| format!("Failed to create {relative}: {e}"))?;
+            std::io::copy(&mut entry, &mut outfile)
+                .map_err(|e| format!("Failed to write {relative}: {e}"))?;
+        }
+    }
+
+    // Restore data/ directory
+    if let Some(tmp) = temp_data_dir {
+        std::fs::rename(&tmp, target_dir.join("data"))
+            .map_err(|e| format!("Failed to restore data/: {e}"))?;
+    }
+
+    // Emit plugin-changed event for hot reload
+    let _ = app_handle.emit("plugin-changed", vec![manifest.id.clone()]);
+
+    eprintln!("[plugins] Installed plugin \"{}\" v{}", manifest.id, manifest.version);
+    Ok(manifest)
+}
+
+/// Find the path to manifest.json inside a ZIP archive.
+/// It may be at the root or inside a single top-level directory.
+fn find_manifest_in_zip(archive: &zip::ZipArchive<std::fs::File>) -> Result<String, String> {
+    // Try root-level first
+    for i in 0..archive.len() {
+        let name = archive.name_for_index(i).unwrap_or("");
+        if name == "manifest.json" {
+            return Ok("manifest.json".to_string());
+        }
+    }
+
+    // Try single top-level dir: <dirname>/manifest.json
+    let mut top_dirs = std::collections::HashSet::new();
+    for i in 0..archive.len() {
+        let name = archive.name_for_index(i).unwrap_or("");
+        if let Some(slash) = name.find('/') {
+            top_dirs.insert(&name[..=slash]);
+        }
+    }
+
+    if top_dirs.len() == 1 {
+        let dir = top_dirs.into_iter().next().unwrap();
+        let candidate = format!("{dir}manifest.json");
+        for i in 0..archive.len() {
+            if archive.name_for_index(i).unwrap_or("") == candidate {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    Err("manifest.json not found in ZIP archive".into())
+}
+
+// ---------------------------------------------------------------------------
+// Plugin uninstall
+// ---------------------------------------------------------------------------
+
+/// Remove a plugin and all its files (including data/).
+#[tauri::command]
+pub fn uninstall_plugin(id: String, app_handle: AppHandle) -> Result<(), String> {
+    if id.is_empty() || is_path_escape(&id) {
+        return Err("Invalid plugin ID".into());
+    }
+
+    let dir = plugins_dir().join(&id);
+    if !dir.exists() {
+        return Ok(()); // Already gone
+    }
+
+    std::fs::remove_dir_all(&dir)
+        .map_err(|e| format!("Failed to remove plugin directory: {e}"))?;
+
+    let _ = app_handle.emit("plugin-changed", vec![id.clone()]);
+    eprintln!("[plugins] Uninstalled plugin \"{id}\"");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Plugin directory watcher (hot reload)
 // ---------------------------------------------------------------------------
 
@@ -581,5 +808,76 @@ mod tests {
         assert!(result.is_ok());
         let path = result.unwrap();
         assert!(path.ends_with("my-plugin/data/cache/v1/data.json"));
+    }
+
+    // -- ZIP installation helpers --
+
+    /// Create a ZIP archive in memory with given files and return the path.
+    fn create_test_zip(dir: &std::path::Path, files: &[(&str, &str)]) -> PathBuf {
+        use std::io::Write;
+        let zip_path = dir.join("test.zip");
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip_writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, content) in files {
+            zip_writer.start_file(*name, options).unwrap();
+            zip_writer.write_all(content.as_bytes()).unwrap();
+        }
+        zip_writer.finish().unwrap();
+        zip_path
+    }
+
+    fn valid_manifest_json(id: &str) -> String {
+        format!(
+            r#"{{"id":"{}","name":"Test","version":"1.0.0","minAppVersion":"0.1.0","main":"main.js","capabilities":[]}}"#,
+            id
+        )
+    }
+
+    #[test]
+    fn find_manifest_root_level() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let zip_path = create_test_zip(
+            dir.path(),
+            &[
+                ("manifest.json", &valid_manifest_json("test")),
+                ("main.js", "export default {}"),
+            ],
+        );
+        let file = std::fs::File::open(&zip_path).unwrap();
+        let archive = zip::ZipArchive::new(file).unwrap();
+        let result = find_manifest_in_zip(&archive);
+        assert_eq!(result.unwrap(), "manifest.json");
+    }
+
+    #[test]
+    fn find_manifest_in_subdirectory() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let zip_path = create_test_zip(
+            dir.path(),
+            &[
+                ("my-plugin/manifest.json", &valid_manifest_json("my-plugin")),
+                ("my-plugin/main.js", "export default {}"),
+            ],
+        );
+        let file = std::fs::File::open(&zip_path).unwrap();
+        let archive = zip::ZipArchive::new(file).unwrap();
+        let result = find_manifest_in_zip(&archive);
+        assert_eq!(result.unwrap(), "my-plugin/manifest.json");
+    }
+
+    #[test]
+    fn find_manifest_missing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let zip_path = create_test_zip(
+            dir.path(),
+            &[("main.js", "export default {}")],
+        );
+        let file = std::fs::File::open(&zip_path).unwrap();
+        let archive = zip::ZipArchive::new(file).unwrap();
+        let result = find_manifest_in_zip(&archive);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
     }
 }

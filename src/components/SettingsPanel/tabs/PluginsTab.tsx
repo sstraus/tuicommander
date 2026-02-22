@@ -1,6 +1,8 @@
 import { Component, For, Show, createSignal } from "solid-js";
+import { open } from "@tauri-apps/plugin-dialog";
 import { pluginStore } from "../../../stores/pluginStore";
 import { setPluginEnabled } from "../../../plugins/pluginLoader";
+import { invoke } from "../../../invoke";
 import type { PluginState } from "../../../stores/pluginStore";
 import type { LogEntry } from "../../../plugins/pluginLogger";
 import s from "../Settings.module.css";
@@ -39,6 +41,7 @@ const PluginLogViewer: Component<{ plugin: PluginState }> = (props) => {
 const PluginRow: Component<{ plugin: PluginState }> = (props) => {
   const [showLogs, setShowLogs] = createSignal(false);
   const [toggling, setToggling] = createSignal(false);
+  const [uninstalling, setUninstalling] = createSignal(false);
 
   const handleToggle = async () => {
     if (props.plugin.builtIn || toggling()) return;
@@ -47,6 +50,22 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
       await setPluginEnabled(props.plugin.id, !props.plugin.enabled);
     } finally {
       setToggling(false);
+    }
+  };
+
+  const handleUninstall = async () => {
+    if (props.plugin.builtIn || uninstalling()) return;
+    if (!confirm(`Uninstall "${props.plugin.manifest?.name ?? props.plugin.id}"? This will remove all plugin files including data.`)) {
+      return;
+    }
+    setUninstalling(true);
+    try {
+      await invoke("uninstall_plugin", { id: props.plugin.id });
+      pluginStore.removePlugin(props.plugin.id);
+    } catch (err) {
+      console.error(`Failed to uninstall plugin "${props.plugin.id}":`, err);
+    } finally {
+      setUninstalling(false);
     }
   };
 
@@ -104,6 +123,16 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
           >
             Logs
           </button>
+          <Show when={!props.plugin.builtIn}>
+            <button
+              class={ps.uninstallBtn}
+              onClick={handleUninstall}
+              disabled={uninstalling()}
+              title="Uninstall plugin"
+            >
+              {uninstalling() ? "..." : "Uninstall"}
+            </button>
+          </Show>
         </div>
       </div>
 
@@ -120,6 +149,27 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
 
 export const PluginsTab: Component = () => {
   const plugins = () => pluginStore.getAll();
+  const [installing, setInstalling] = createSignal(false);
+
+  const handleInstallFromFile = async () => {
+    if (installing()) return;
+    const selected = await open({
+      title: "Install Plugin",
+      filters: [{ name: "Plugin Archive", extensions: ["zip"] }],
+      multiple: false,
+    });
+    if (!selected) return;
+
+    setInstalling(true);
+    try {
+      await invoke("install_plugin_from_zip", { path: selected });
+    } catch (err) {
+      console.error("Failed to install plugin:", err);
+      alert(`Installation failed: ${err}`);
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   return (
     <div class={s.section}>
@@ -137,6 +187,16 @@ export const PluginsTab: Component = () => {
           </For>
         </div>
       </Show>
+
+      <div class={ps.installRow}>
+        <button
+          class={s.testBtn}
+          onClick={handleInstallFromFile}
+          disabled={installing()}
+        >
+          {installing() ? "Installing..." : "Install from file..."}
+        </button>
+      </div>
     </div>
   );
 };
