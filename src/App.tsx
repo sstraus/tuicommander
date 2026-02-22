@@ -490,7 +490,7 @@ const App: Component = () => {
         // Help
         case "help-panel": setHelpPanelVisible((v) => !v); break;
         case "check-for-updates": updaterStore.checkForUpdate().catch((err) => console.warn("[Updater] Manual check failed:", err)); break;
-        case "about": /* handled by PredefinedMenuItem on macOS; no-op here */ break;
+        case "about": openSettings("about"); break;
 
         default: {
           // switch-tab-1 through switch-tab-9
@@ -793,6 +793,10 @@ const App: Component = () => {
       <HelpPanel
         visible={helpPanelVisible()}
         onClose={() => setHelpPanelVisible(false)}
+        onOpenShortcuts={() => {
+          setHelpPanelVisible(false);
+          openSettings("shortcuts");
+        }}
       />
 
       {/* Quit confirmation dialog (Story 057) */}

@@ -64,13 +64,6 @@ export const GeneralTab: Component = () => {
         <p class={s.hint}>{t("general.hint.splitTabMode", "How worktree tabs are arranged in the tab bar")}</p>
       </div>
 
-      <div class={s.group}>
-        <label>{t("general.label.keyboardShortcuts", "Keyboard Shortcuts")}</label>
-        <p class={s.hint}>
-          <strong>Cmd+T:</strong> {t("general.shortcut.newTerminal", "New terminal")} • <strong>Cmd+W:</strong> {t("general.shortcut.closeTab", "Close tab")} • <strong>Cmd+1-9:</strong> {t("general.shortcut.switchTabs", "Switch tabs")} • <strong>Cmd+Plus/Minus:</strong> {t("general.shortcut.zoom", "Zoom")}
-        </p>
-      </div>
-
       <h3>{t("general.heading.confirmations", "Confirmations")}</h3>
 
       <div class={s.group}>
