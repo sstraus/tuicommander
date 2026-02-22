@@ -35,6 +35,8 @@ export interface ShortcutHandlers {
   toggleNotesPanel: () => void;
   toggleFileBrowserPanel: () => void;
   findInTerminal: () => void;
+  toggleCommandPalette: () => void;
+  toggleActivityDashboard: () => void;
 }
 
 /**
@@ -102,6 +104,8 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "toggle-git-ops": handlers.toggleGitOpsPanel(); return true;
     case "toggle-help": handlers.toggleHelpPanel(); return true;
     case "find-in-terminal": handlers.findInTerminal(); return true;
+    case "command-palette": handlers.toggleCommandPalette(); return true;
+    case "activity-dashboard": handlers.toggleActivityDashboard(); return true;
 
     // Tab navigation
     case "prev-tab": handlers.navigateTab("prev"); return true;

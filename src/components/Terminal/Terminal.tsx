@@ -121,6 +121,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let activityFlagged = false; // Avoids redundant store updates per data chunk
   let busyFlagged = false;
   let hasResumedAgent = false; // Ensures agent resume command fires only once
+  let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
 
   // Reset activity flag when this terminal becomes active (store clears activity)
   createEffect(() => {
@@ -174,6 +175,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
         const dropped = outputBuffer.shift()!;
         outputBufferBytes -= dropped.length;
       }
+    }
+
+    // Track last PTY output timestamp for activity dashboard (throttled to 1s)
+    const now = Date.now();
+    if (!lastDataAtTimestamp || now - lastDataAtTimestamp > 1000) {
+      lastDataAtTimestamp = now;
+      terminalsStore.update(props.id, { lastDataAt: now });
     }
 
     if (terminalsStore.state.activeId !== props.id && !activityFlagged) {

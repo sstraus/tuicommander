@@ -38,6 +38,9 @@ describe("keybindingDefaults", () => {
         "toggle-git-ops",
         "toggle-help",
         "open-lazygit-pane",
+        "find-in-terminal",
+        "command-palette",
+        "activity-dashboard",
       ];
       for (const name of expected) {
         expect(ACTION_NAMES).toContain(name);

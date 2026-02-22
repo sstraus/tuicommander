@@ -25,6 +25,11 @@ import { RenameBranchDialog } from "./components/RenameBranchDialog";
 import { PromptDialog } from "./components/PromptDialog";
 import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
+import { CommandPalette } from "./components/CommandPalette";
+import { ActivityDashboard } from "./components/ActivityDashboard";
+import { commandPaletteStore } from "./stores/commandPalette";
+import { activityDashboardStore } from "./stores/activityDashboard";
+import { getActionEntries } from "./actions/actionRegistry";
 import { promptLibraryStore } from "./stores/promptLibrary";
 import { terminalsStore } from "./stores/terminals";
 import { repositoriesStore } from "./stores/repositories";
@@ -402,41 +407,49 @@ const App: Component = () => {
     });
   });
 
+  // Shared shortcut handlers used by both keyboard shortcuts and command palette
+  const shortcutHandlers = {
+    zoomIn: terminalLifecycle.zoomIn,
+    zoomOut: terminalLifecycle.zoomOut,
+    zoomReset: terminalLifecycle.zoomReset,
+    createNewTerminal: terminalLifecycle.createNewTerminal,
+    closeTerminal: terminalLifecycle.closeTerminal,
+    reopenClosedTab: terminalLifecycle.reopenClosedTab,
+    navigateTab: terminalLifecycle.navigateTab,
+    clearTerminal: terminalLifecycle.clearTerminal,
+    terminalIds: terminalLifecycle.terminalIds,
+    handleTerminalSelect: terminalLifecycle.handleTerminalSelect,
+    handleSplit: splitPanes.handleSplit,
+    handleRunCommand: (forceDialog: boolean) => gitOps.handleRunCommand(forceDialog, () => setRunCommandDialogVisible(true)),
+    switchToBranchByIndex: quickSwitcher.switchToBranchByIndex,
+    isQuickSwitcherOpen: quickSwitcherVisible,
+    lazygitAvailable: lazygit.lazygitAvailable,
+    spawnLazygit: lazygit.spawnLazygit,
+    openLazygitPane: lazygit.openLazygitPane,
+    toggleDiffPanel: uiStore.toggleDiffPanel,
+    toggleMarkdownPanel: uiStore.toggleMarkdownPanel,
+    toggleSidebar: uiStore.toggleSidebar,
+    togglePromptLibrary: promptLibraryStore.toggleDrawer,
+    toggleSettings: () => setSettingsPanelVisible((v) => !v),
+    toggleTaskQueue: () => setTaskQueueVisible((v) => !v),
+    toggleGitOpsPanel: () => setGitOpsPanelVisible((v) => !v),
+    toggleHelpPanel: () => setHelpPanelVisible((v) => !v),
+    toggleNotesPanel: uiStore.toggleNotesPanel,
+    toggleFileBrowserPanel: uiStore.toggleFileBrowserPanel,
+    findInTerminal: () => {
+      const active = terminalsStore.getActive();
+      active?.ref?.openSearch();
+    },
+    toggleCommandPalette: () => commandPaletteStore.toggle(),
+    toggleActivityDashboard: () => activityDashboardStore.toggle(),
+  };
+
+  // Action entries for the command palette
+  const actionEntries = createMemo(() => getActionEntries(shortcutHandlers));
+
   // Keyboard shortcuts
   createEffect(() => {
-    const cleanup = useKeyboardShortcuts({
-      zoomIn: terminalLifecycle.zoomIn,
-      zoomOut: terminalLifecycle.zoomOut,
-      zoomReset: terminalLifecycle.zoomReset,
-      createNewTerminal: terminalLifecycle.createNewTerminal,
-      closeTerminal: terminalLifecycle.closeTerminal,
-      reopenClosedTab: terminalLifecycle.reopenClosedTab,
-      navigateTab: terminalLifecycle.navigateTab,
-      clearTerminal: terminalLifecycle.clearTerminal,
-      terminalIds: terminalLifecycle.terminalIds,
-      handleTerminalSelect: terminalLifecycle.handleTerminalSelect,
-      handleSplit: splitPanes.handleSplit,
-      handleRunCommand: (forceDialog) => gitOps.handleRunCommand(forceDialog, () => setRunCommandDialogVisible(true)),
-      switchToBranchByIndex: quickSwitcher.switchToBranchByIndex,
-      isQuickSwitcherOpen: quickSwitcherVisible,
-      lazygitAvailable: lazygit.lazygitAvailable,
-      spawnLazygit: lazygit.spawnLazygit,
-      openLazygitPane: lazygit.openLazygitPane,
-      toggleDiffPanel: uiStore.toggleDiffPanel,
-      toggleMarkdownPanel: uiStore.toggleMarkdownPanel,
-      toggleSidebar: uiStore.toggleSidebar,
-      togglePromptLibrary: promptLibraryStore.toggleDrawer,
-      toggleSettings: () => setSettingsPanelVisible((v) => !v),
-      toggleTaskQueue: () => setTaskQueueVisible((v) => !v),
-      toggleGitOpsPanel: () => setGitOpsPanelVisible((v) => !v),
-      toggleHelpPanel: () => setHelpPanelVisible((v) => !v),
-      toggleNotesPanel: uiStore.toggleNotesPanel,
-      toggleFileBrowserPanel: uiStore.toggleFileBrowserPanel,
-      findInTerminal: () => {
-        const active = terminalsStore.getActive();
-        active?.ref?.openSearch();
-      },
-    });
+    const cleanup = useKeyboardShortcuts(shortcutHandlers);
     onCleanup(cleanup);
   });
 
@@ -502,6 +515,8 @@ const App: Component = () => {
 
         // Help
         case "help-panel": setHelpPanelVisible((v) => !v); break;
+        case "command-palette": commandPaletteStore.toggle(); break;
+        case "activity-dashboard": activityDashboardStore.toggle(); break;
         case "check-for-updates": updaterStore.checkForUpdate().catch((err) => console.warn("[Updater] Manual check failed:", err)); break;
         case "about": openSettings("about"); break;
 
@@ -690,6 +705,12 @@ const App: Component = () => {
 
       {/* Prompt library drawer */}
       <PromptDrawer />
+
+      {/* Command palette */}
+      <CommandPalette actions={actionEntries()} />
+
+      {/* Activity dashboard */}
+      <ActivityDashboard />
 
       {/* Settings panel */}
       <SettingsPanel

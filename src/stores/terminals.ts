@@ -33,6 +33,7 @@ export interface TerminalData {
   agentType: AgentType | null; // Detected foreground agent process (e.g. "claude")
   pendingResumeCommand: string | null; // Set at restore time, consumed on first shell idle
   usageLimit: { percentage: number; limitType: string } | null; // Claude Code usage limit
+  lastDataAt: number | null; // Timestamp of last PTY output
 }
 
 /** Terminal component ref interface */
@@ -82,16 +83,16 @@ function createTerminalsStore() {
 
   const actions = {
     /** Add a new terminal */
-    add(data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "usageLimit">): string {
+    add(data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "usageLimit" | "lastDataAt">): string {
       const id = `term-${state.counter + 1}`;
       setState("counter", (c) => c + 1);
-      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, ...data });
+      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, lastDataAt: null, ...data });
       return id;
     },
 
     /** Register a terminal with a specific ID (used by floating windows to reconnect to existing PTY sessions) */
-    register(id: string, data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "usageLimit">): void {
-      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, ...data });
+    register(id: string, data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "usageLimit" | "lastDataAt">): void {
+      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, lastDataAt: null, ...data });
     },
 
     /** Remove a terminal */

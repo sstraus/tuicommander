@@ -1,0 +1,128 @@
+/* Command Palette overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px;
+  z-index: 1000;
+}
+
+.palette {
+  width: 560px;
+  max-width: 90vw;
+  max-height: 60vh;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.search {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-primary);
+  font-size: var(--font-base);
+  outline: none;
+}
+
+.search input:focus {
+  border-color: var(--accent);
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-md);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  cursor: pointer;
+  gap: 12px;
+}
+
+.item:hover {
+  background: var(--bg-tertiary);
+}
+
+.selected {
+  background: var(--bg-highlight);
+}
+
+.selected:hover {
+  background: var(--bg-highlight);
+}
+
+.itemLabel {
+  flex: 1;
+  font-size: var(--font-base);
+  color: var(--fg-primary);
+}
+
+.category {
+  font-size: var(--font-xs);
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.keybinding {
+  font-size: var(--font-sm);
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  color: var(--fg-secondary);
+  white-space: nowrap;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+}
+
+.footerHint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.footerHint kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+}

@@ -90,6 +90,8 @@ function getShortcutSections(): ShortcutSection[] {
       { keys: keyFor("toggle-prompt-library"), description: t("helpPanel.promptLibrary", "Prompt library") },
       { keys: keyFor("toggle-notes"), description: t("helpPanel.toggleIdeasPanel", "Toggle ideas panel") },
       { keys: keyFor("toggle-help"), description: t("helpPanel.toggleHelpPanel", "Toggle help panel") },
+      { keys: keyFor("command-palette"), description: t("helpPanel.commandPalette", "Command palette") },
+      { keys: keyFor("activity-dashboard"), description: t("helpPanel.activityDashboard", "Activity dashboard") },
     ],
   },
   {
