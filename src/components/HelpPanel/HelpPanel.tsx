@@ -1,156 +1,27 @@
-import { Component, Show, For, createSignal, createEffect, onCleanup } from "solid-js";
-import { getModifierSymbol, isMacOS } from "../../platform";
+import { Component, Show, createEffect, onCleanup } from "solid-js";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { t } from "../../i18n";
-import { keybindingsStore } from "../../stores/keybindings";
-import type { ActionName } from "../../keybindingDefaults";
+import { isTauri } from "../../transport";
 import s from "./HelpPanel.module.css";
 
-interface ShortcutEntry {
-  keys: string;
-  description: string;
-}
+const GITHUB_URL = "https://github.com/sstraus/tui-commander";
+const DOCS_URL = "https://github.com/sstraus/tui-commander/wiki";
 
-interface ShortcutSection {
-  title: string;
-  shortcuts: ShortcutEntry[];
-}
-
-/**
- * Convert a keybinding combo string (e.g. "Cmd+Shift+D") to a display string
- * using platform-appropriate symbols (e.g. "⌘⇧D" on macOS, "Ctrl+Shift+D" on others).
- */
-function comboToDisplay(combo: string): string {
-  if (!combo) return "";
-  const mod = getModifierSymbol();
-  const mac = isMacOS();
-
-  const parts = combo.split("+");
-  const key = parts.pop()!;
-  const modifiers = parts;
-
-  const displayParts: string[] = [];
-  for (const m of modifiers) {
-    switch (m) {
-      case "Cmd": displayParts.push(mod); break;
-      case "Shift": displayParts.push(mac ? "\u21E7" : "Shift+"); break;
-      case "Alt": displayParts.push(mac ? "\u2325" : "Alt+"); break;
-      case "Ctrl": displayParts.push(mac ? "^" : "Ctrl+"); break;
-      default: displayParts.push(m + "+"); break;
-    }
+function handleOpenUrl(url: string) {
+  if (isTauri()) {
+    openUrl(url).catch((err) => console.error("Failed to open URL:", err));
+  } else {
+    window.open(url, "_blank");
   }
-
-  // Uppercase the key for display
-  displayParts.push(key.toUpperCase());
-  return displayParts.join("");
-}
-
-/** Get display string for an action from the keybindings store, or fallback */
-function keyFor(action: ActionName, fallback?: string): string {
-  const combo = keybindingsStore.getKeyForAction(action);
-  if (!combo) return fallback ?? "";
-  return comboToDisplay(combo);
-}
-
-function getShortcutSections(): ShortcutSection[] {
-  const mod = getModifierSymbol();
-  const editKey = keyFor("edit-command");
-  return [
-  {
-    title: t("helpPanel.terminal", "Terminal"),
-    shortcuts: [
-      { keys: keyFor("new-terminal"), description: t("helpPanel.newTerminalTab", "New terminal tab") },
-      { keys: keyFor("close-terminal"), description: t("helpPanel.closeTerminalTab", "Close terminal tab") },
-      { keys: keyFor("run-command"), description: t("helpPanel.runSavedCommand", `Run saved command (${editKey} to edit)`) },
-      { keys: keyFor("reopen-closed-tab"), description: t("helpPanel.reopenClosedTab", "Reopen closed tab") },
-      { keys: keyFor("switch-tab-1", `${mod}1-9`), description: t("helpPanel.switchToTab", "Switch to tab by number") },
-      { keys: keyFor("prev-tab"), description: t("helpPanel.previousTab", "Previous tab") },
-      { keys: keyFor("next-tab"), description: t("helpPanel.nextTab", "Next tab") },
-      { keys: keyFor("clear-terminal"), description: t("helpPanel.clearTerminal", "Clear terminal") },
-      { keys: keyFor("find-in-terminal"), description: t("helpPanel.findInTerminal", "Find in terminal") },
-      { keys: `${mod}G`, description: t("helpPanel.findNext", "Find next match") },
-      { keys: `${isMacOS() ? "⌘⇧G" : "Shift+F3"}`, description: t("helpPanel.findPrevious", "Find previous match") },
-      { keys: `${mod}C`, description: t("helpPanel.copySelection", "Copy selection") },
-      { keys: `${mod}V`, description: t("helpPanel.pasteToTerminal", "Paste to terminal") },
-    ],
-  },
-  {
-    title: t("helpPanel.zoom", "Zoom"),
-    shortcuts: [
-      { keys: keyFor("zoom-in"), description: t("helpPanel.zoomIn", "Zoom in") },
-      { keys: keyFor("zoom-out"), description: t("helpPanel.zoomOut", "Zoom out") },
-      { keys: keyFor("zoom-reset"), description: t("helpPanel.resetZoom", "Reset zoom") },
-    ],
-  },
-  {
-    title: t("helpPanel.panels", "Panels"),
-    shortcuts: [
-      { keys: keyFor("toggle-diff"), description: t("helpPanel.toggleDiffPanel", "Toggle git diff panel") },
-      { keys: keyFor("toggle-markdown"), description: t("helpPanel.toggleMarkdownPanel", "Toggle markdown panel") },
-      { keys: keyFor("toggle-settings"), description: t("helpPanel.openSettings", "Open settings") },
-      { keys: keyFor("toggle-task-queue"), description: t("helpPanel.toggleTaskQueue", "Toggle task queue") },
-      { keys: keyFor("toggle-prompt-library"), description: t("helpPanel.promptLibrary", "Prompt library") },
-      { keys: keyFor("toggle-notes"), description: t("helpPanel.toggleIdeasPanel", "Toggle ideas panel") },
-      { keys: keyFor("toggle-help"), description: t("helpPanel.toggleHelpPanel", "Toggle help panel") },
-    ],
-  },
-  {
-    title: t("helpPanel.git", "Git"),
-    shortcuts: [
-      { keys: keyFor("open-lazygit"), description: t("helpPanel.openLazygit", "Open lazygit in terminal") },
-      { keys: keyFor("toggle-git-ops"), description: t("helpPanel.gitOperationsPanel", "Git operations panel") },
-      { keys: keyFor("open-lazygit-pane"), description: t("helpPanel.lazygitSplitPane", "Lazygit split pane") },
-    ],
-  },
-  {
-    title: t("helpPanel.splitPanes", "Split Panes"),
-    shortcuts: [
-      { keys: keyFor("split-vertical"), description: t("helpPanel.splitVertically", "Split vertically (side by side)") },
-      { keys: keyFor("split-horizontal"), description: t("helpPanel.splitHorizontally", "Split horizontally (stacked)") },
-      { keys: "\u2325\u2190/\u2192", description: t("helpPanel.navigatePanesVertical", "Navigate panes (vertical split)") },
-      { keys: "\u2325\u2191/\u2193", description: t("helpPanel.navigatePanesHorizontal", "Navigate panes (horizontal split)") },
-      { keys: keyFor("close-terminal"), description: t("helpPanel.closeActivePane", "Close active pane (or tab if single)") },
-    ],
-  },
-  {
-    title: t("helpPanel.sidebarNavigation", "Sidebar & Navigation"),
-    shortcuts: [
-      { keys: keyFor("toggle-sidebar"), description: t("helpPanel.toggleSidebar", "Toggle sidebar") },
-      { keys: keyFor("switch-branch-1", `${mod}^1-9`), description: t("helpPanel.quickSwitchBranch", "Quick switch to branch") },
-      { keys: `Hold ${mod}^`, description: t("helpPanel.showQuickSwitcher", "Show quick switcher") },
-      { keys: t("helpPanel.dragRepo", "Drag repo"), description: t("helpPanel.reorderRepos", "Reorder repos or move between groups") },
-      { keys: t("helpPanel.dragGroup", "Drag group"), description: t("helpPanel.reorderGroups", "Reorder groups") },
-      { keys: t("helpPanel.rightClickGroup", "Right-click group"), description: t("helpPanel.renameColorDelete", "Rename, change color, delete") },
-    ],
-  },
-  {
-    title: t("helpPanel.fileBrowserEditor", "File Browser & Editor"),
-    shortcuts: [
-      { keys: keyFor("toggle-file-browser"), description: t("helpPanel.toggleFileBrowser", "Toggle file browser panel") },
-      { keys: "\u2191/\u2193", description: t("helpPanel.navigateFileList", "Navigate file list (when focused)") },
-      { keys: "Enter", description: t("helpPanel.openFile", "Open file or enter directory") },
-      { keys: "Backspace", description: t("helpPanel.goToParent", "Go to parent directory") },
-      { keys: `${mod}S`, description: t("helpPanel.saveFile", "Save file (when editor focused)") },
-    ],
-  },
-  {
-    title: t("helpPanel.voiceDictation", "Voice Dictation"),
-    shortcuts: [
-      { keys: "Hold F5", description: t("helpPanel.pushToTalk", "Push-to-talk, works globally (configurable in Settings)") },
-      { keys: t("helpPanel.holdMicBtn", "Hold Mic btn"), description: t("helpPanel.statusBarMic", "StatusBar mic button (hold to record)") },
-    ],
-  },
-  ];
 }
 
 export interface HelpPanelProps {
   visible: boolean;
   onClose: () => void;
+  onOpenShortcuts: () => void;
 }
 
 export const HelpPanel: Component<HelpPanelProps> = (props) => {
-  const [filter, setFilter] = createSignal("");
-  let inputRef: HTMLInputElement | undefined;
-
   // Close on Escape
   createEffect(() => {
     if (!props.visible) return;
@@ -163,74 +34,69 @@ export const HelpPanel: Component<HelpPanelProps> = (props) => {
 
     document.addEventListener("keydown", handleKeydown);
     onCleanup(() => document.removeEventListener("keydown", handleKeydown));
-
-    // Focus search input when opening
-    requestAnimationFrame(() => inputRef?.focus());
   });
-
-  const filteredSections = () => {
-    const q = filter().toLowerCase();
-    if (!q) return getShortcutSections();
-
-    return getShortcutSections()
-      .map((section) => ({
-        ...section,
-        shortcuts: section.shortcuts.filter(
-          (sc) =>
-            sc.keys.toLowerCase().includes(q) ||
-            sc.description.toLowerCase().includes(q)
-        ),
-      }))
-      .filter((section) => section.shortcuts.length > 0);
-  };
 
   return (
     <Show when={props.visible}>
       <div class={s.overlay} onClick={props.onClose}>
         <div class={s.panel} onClick={(e) => e.stopPropagation()}>
           <div class={s.header}>
-            <h2>{t("helpPanel.title", "Keyboard Shortcuts")}</h2>
+            <h2>{t("helpPanel.title", "Help")}</h2>
             <button class={s.close} onClick={props.onClose}>
               &times;
             </button>
           </div>
 
-          <div class={s.search}>
-            <input
-              ref={inputRef}
-              type="text"
-              placeholder={t("helpPanel.searchPlaceholder", "Search shortcuts...")}
-              value={filter()}
-              onInput={(e) => setFilter(e.currentTarget.value)}
-            />
-          </div>
-
           <div class={s.content}>
-            <p class={s.menuNote}>
-              {t("helpPanel.menuNote", "These shortcuts are also available via the system menu bar.")}
-            </p>
-            <For each={filteredSections()}>
-              {(section) => (
-                <div class={s.section}>
-                  <h3 class={s.sectionTitle}>{section.title}</h3>
-                  <table class={s.table}>
-                    <For each={section.shortcuts}>
-                      {(shortcut) => (
-                        <tr>
-                          <td class={s.key}>
-                            <kbd>{shortcut.keys}</kbd>
-                          </td>
-                          <td class={s.desc}>{shortcut.description}</td>
-                        </tr>
-                      )}
-                    </For>
-                  </table>
-                </div>
-              )}
-            </For>
-            <Show when={filteredSections().length === 0}>
-              <div class={s.empty}>{t("helpPanel.noResults", "No shortcuts match your search")}</div>
-            </Show>
+            <div class={s.section}>
+              <h3 class={s.sectionTitle}>{t("helpPanel.aboutApp", "TUI Commander")}</h3>
+              <p class={s.desc}>
+                {t("helpPanel.appDescription", "A modern terminal multiplexer and Git worktree manager built with Tauri, SolidJS, and xterm.js.")}
+              </p>
+            </div>
+
+            <div class={s.section}>
+              <h3 class={s.sectionTitle}>{t("helpPanel.quickActions", "Quick Actions")}</h3>
+              <div class={s.linkList}>
+                <button class={s.linkButton} onClick={() => { props.onClose(); props.onOpenShortcuts(); }}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M3 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2H3zm2.5 4a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h1zm3 0a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h1zm3 0a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h1zM5 9a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H4.5a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5H5zm6.5 0a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-5a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h5z"/>
+                  </svg>
+                  {t("helpPanel.keyboardShortcuts", "Keyboard Shortcuts")}
+                </button>
+              </div>
+            </div>
+
+            <div class={s.section}>
+              <h3 class={s.sectionTitle}>{t("helpPanel.resources", "Resources")}</h3>
+              <div class={s.linkList}>
+                <button class={s.linkButton} onClick={() => handleOpenUrl(GITHUB_URL)}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                  </svg>
+                  {t("helpPanel.githubProject", "GitHub Project")}
+                </button>
+                <button class={s.linkButton} onClick={() => handleOpenUrl(DOCS_URL)}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M1 2.828c.885-.37 2.154-.769 3.388-.893 1.33-.134 2.458.063 3.112.752v9.746c-.935-.53-2.12-.603-3.213-.493-1.18.12-2.37.461-3.287.811V2.828zm7.5-.141c.654-.689 1.782-.886 3.112-.752 1.234.124 2.503.523 3.388.893v9.923c-.918-.35-2.107-.692-3.287-.81-1.094-.111-2.278-.039-3.213.492V2.687zM8 1.783C7.015.936 5.587.81 4.287.94c-1.514.153-3.042.672-3.994 1.105A.5.5 0 000 2.5v10a.5.5 0 00.707.455c.882-.4 2.303-.881 3.68-1.02 1.409-.142 2.59.087 3.223.877a.5.5 0 00.78 0c.633-.79 1.814-1.019 3.222-.877 1.378.139 2.8.62 3.681 1.02A.5.5 0 0016 12.5v-10a.5.5 0 00-.293-.455c-.952-.433-2.48-.952-3.994-1.105C10.413.81 8.985.936 8 1.783z"/>
+                  </svg>
+                  {t("helpPanel.documentation", "Documentation")}
+                </button>
+                <button class={s.linkButton} onClick={() => handleOpenUrl(`${GITHUB_URL}/issues`)}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+                    <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/>
+                  </svg>
+                  {t("helpPanel.reportIssue", "Report an Issue")}
+                </button>
+              </div>
+            </div>
+
+            <div class={s.section}>
+              <p class={s.menuNote}>
+                {t("helpPanel.version", "Version")} {__APP_VERSION__}
+              </p>
+            </div>
           </div>
         </div>
       </div>

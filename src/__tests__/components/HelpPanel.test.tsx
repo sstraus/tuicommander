@@ -2,10 +2,20 @@ import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@solidjs/testing-library";
 import { HelpPanel } from "../../components/HelpPanel/HelpPanel";
 
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe("HelpPanel", () => {
+  const defaultProps = {
+    visible: true,
+    onClose: vi.fn(),
+    onOpenShortcuts: vi.fn(),
+  };
+
   it("renders nothing when not visible", () => {
     const { container } = render(() => (
-      <HelpPanel visible={false} onClose={() => {}} />
+      <HelpPanel visible={false} onClose={() => {}} onOpenShortcuts={() => {}} />
     ));
     const overlay = container.querySelector(".overlay");
     expect(overlay).toBeNull();
@@ -13,82 +23,63 @@ describe("HelpPanel", () => {
 
   it("renders help panel when visible", () => {
     const { container } = render(() => (
-      <HelpPanel visible={true} onClose={() => {}} />
+      <HelpPanel {...defaultProps} />
     ));
     const overlay = container.querySelector(".overlay");
     expect(overlay).not.toBeNull();
     const heading = container.querySelector("h2");
     expect(heading).not.toBeNull();
-    expect(heading!.textContent).toBe("Keyboard Shortcuts");
+    expect(heading!.textContent).toBe("Help");
   });
 
-  it("renders sections with titles", () => {
+  it("shows project links", () => {
     const { container } = render(() => (
-      <HelpPanel visible={true} onClose={() => {}} />
+      <HelpPanel {...defaultProps} />
     ));
-    const sections = container.querySelectorAll(".sectionTitle");
-    expect(sections.length).toBeGreaterThan(0);
-    // Should have Terminal, Zoom, Panels, Git, Sidebar sections
-    const titles = Array.from(sections).map((s) => s.textContent);
-    expect(titles).toContain("Terminal");
-    expect(titles).toContain("Zoom");
-    expect(titles).toContain("Panels");
-    expect(titles).toContain("Git");
+    const buttons = container.querySelectorAll("button");
+    const buttonTexts = Array.from(buttons).map((b) => b.textContent?.trim());
+    expect(buttonTexts).toContain("GitHub Project");
+    expect(buttonTexts).toContain("Documentation");
+    expect(buttonTexts).toContain("Report an Issue");
   });
 
-  it("renders keyboard shortcuts in tables", () => {
+  it("shows keyboard shortcuts button", () => {
     const { container } = render(() => (
-      <HelpPanel visible={true} onClose={() => {}} />
+      <HelpPanel {...defaultProps} />
     ));
-    const kbds = container.querySelectorAll("kbd");
-    expect(kbds.length).toBeGreaterThan(0);
+    const buttons = container.querySelectorAll("button");
+    const buttonTexts = Array.from(buttons).map((b) => b.textContent?.trim());
+    expect(buttonTexts).toContain("Keyboard Shortcuts");
   });
 
-  it("has a search input", () => {
+  it("calls onOpenShortcuts and onClose when keyboard shortcuts button is clicked", () => {
+    const onClose = vi.fn();
+    const onOpenShortcuts = vi.fn();
     const { container } = render(() => (
-      <HelpPanel visible={true} onClose={() => {}} />
+      <HelpPanel visible={true} onClose={onClose} onOpenShortcuts={onOpenShortcuts} />
     ));
-    const input = container.querySelector("input[type='text']");
-    expect(input).not.toBeNull();
-    expect(input!.getAttribute("placeholder")).toBe("Search shortcuts...");
-  });
-
-  it("filters shortcuts by search text", async () => {
-    const { container } = render(() => (
-      <HelpPanel visible={true} onClose={() => {}} />
-    ));
-    const input = container.querySelector("input[type='text']") as HTMLInputElement;
-
-    // Type a search term that matches only zoom shortcuts
-    fireEvent.input(input, { target: { value: "zoom" } });
-
-    const sections = container.querySelectorAll(".sectionTitle");
-    const titles = Array.from(sections).map((s) => s.textContent);
-    expect(titles).toContain("Zoom");
-    // Other sections should be filtered out (no Terminal shortcuts match "zoom")
-    expect(titles).not.toContain("Terminal");
-  });
-
-  it("shows empty message when no shortcuts match", async () => {
-    const { container } = render(() => (
-      <HelpPanel visible={true} onClose={() => {}} />
-    ));
-    const input = container.querySelector("input[type='text']") as HTMLInputElement;
-
-    fireEvent.input(input, { target: { value: "xyznonexistent" } });
-
-    const empty = container.querySelector(".empty");
-    expect(empty).not.toBeNull();
-    expect(empty!.textContent).toBe("No shortcuts match your search");
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const shortcutsBtn = buttons.find((b) => b.textContent?.trim() === "Keyboard Shortcuts");
+    expect(shortcutsBtn).not.toBeNull();
+    fireEvent.click(shortcutsBtn!);
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onOpenShortcuts).toHaveBeenCalledOnce();
   });
 
   it("calls onClose when close button is clicked", () => {
     const handleClose = vi.fn();
     const { container } = render(() => (
-      <HelpPanel visible={true} onClose={handleClose} />
+      <HelpPanel visible={true} onClose={handleClose} onOpenShortcuts={() => {}} />
     ));
     const closeBtn = container.querySelector(".close")!;
     fireEvent.click(closeBtn);
     expect(handleClose).toHaveBeenCalledOnce();
+  });
+
+  it("displays the app version", () => {
+    const { container } = render(() => (
+      <HelpPanel {...defaultProps} />
+    ));
+    expect(container.textContent).toContain("Version");
   });
 });

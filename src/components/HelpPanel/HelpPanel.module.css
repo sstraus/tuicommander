@@ -9,7 +9,7 @@
 }
 
 .panel {
-  width: 560px;
+  width: 420px;
   max-width: 90vw;
   max-height: 80vh;
   background: var(--bg-secondary);
@@ -49,26 +49,6 @@
   color: var(--fg-primary);
 }
 
-.search {
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--border);
-}
-
-.search input {
-  width: 100%;
-  padding: 8px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--fg-primary);
-  font-size: var(--font-base);
-  outline: none;
-}
-
-.search input:focus {
-  border-color: var(--accent);
-}
-
 .content {
   flex: 1;
   overflow-y: auto;
@@ -76,7 +56,7 @@
 }
 
 .menuNote {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: var(--font-sm);
   color: var(--fg-muted);
 }
@@ -94,40 +74,46 @@
   letter-spacing: 0.5px;
 }
 
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.table tr:hover {
-  background: var(--bg-tertiary);
-}
-
-.key {
-  width: 100px;
-  padding: 6px 8px;
-  vertical-align: middle;
-}
-
-.key kbd {
-  display: inline-block;
-  padding: 2px 8px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-family: var(--font-mono);
-  font-size: var(--font-sm);
-  color: var(--fg-secondary);
-}
-
 .desc {
-  padding: 6px 8px;
   font-size: var(--font-base);
   color: var(--fg-secondary);
+  line-height: 1.5;
+  margin: 0;
 }
 
-.empty {
-  text-align: center;
-  padding: 40px 20px;
-  color: var(--fg-muted);
+.linkList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.linkButton {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--fg-secondary);
+  font-size: var(--font-base);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.linkButton:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+}
+
+.linkButton svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.linkButton:hover svg {
+  opacity: 1;
 }
