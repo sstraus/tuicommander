@@ -12,9 +12,10 @@ mod worktree_routes;
 
 use crate::AppState;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
-use axum::http::{Method, StatusCode};
+use axum::http::{header, Method, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
-use axum::{Json, Router};
+use axum::{extract::Path as AxumPath, Json, Router};
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
@@ -62,6 +63,25 @@ fn port_file_path() -> std::path::PathBuf {
 /// Return the plugin development guide as JSON.
 async fn plugin_dev_guide_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({"content": plugin_docs::PLUGIN_DOCS}))
+}
+
+/// Serve plugin data files over HTTP.
+/// Reuses the same sandboxed read logic as the Tauri `read_plugin_data` command.
+async fn plugin_data_http(
+    AxumPath((plugin_id, path)): AxumPath<(String, String)>,
+) -> Response {
+    match crate::plugins::read_plugin_data(plugin_id, path) {
+        Ok(Some(content)) => {
+            let content_type = if content.starts_with('{') || content.starts_with('[') {
+                "application/json"
+            } else {
+                "text/plain"
+            };
+            (StatusCode::OK, [(header::CONTENT_TYPE, content_type)], content).into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+    }
 }
 
 /// Build the router (exposed for testing).
@@ -150,7 +170,9 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // MCP status
         .route("/mcp/status", get(config_routes::get_mcp_status_http))
         // Plugin docs (for MCP bridge)
-        .route("/plugins/docs", get(plugin_dev_guide_handler));
+        .route("/plugins/docs", get(plugin_dev_guide_handler))
+        // Plugin data (for external HTTP clients)
+        .route("/api/plugins/{plugin_id}/data/{*path}", get(plugin_data_http));
 
     // MCP SSE transport — only when MCP is enabled
     if mcp_enabled {
@@ -308,6 +330,7 @@ mod tests {
             server_shutdown: parking_lot::Mutex::new(None),
             session_token: uuid::Uuid::new_v4().to_string(),
             app_handle: parking_lot::RwLock::new(None),
+            plugin_watchers: DashMap::new(),
         })
     }
 

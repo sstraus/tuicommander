@@ -11,6 +11,7 @@ pub(crate) mod repo_watcher;
 pub(crate) mod mcp_http;
 mod menu;
 mod output_parser;
+pub(crate) mod plugin_fs;
 pub(crate) mod plugins;
 pub(crate) mod prompt;
 pub(crate) mod registry;
@@ -445,6 +446,7 @@ pub fn run() {
         server_shutdown: parking_lot::Mutex::new(None),
         session_token: uuid::Uuid::new_v4().to_string(),
         app_handle: parking_lot::RwLock::new(None),
+        plugin_watchers: DashMap::new(),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled
@@ -628,6 +630,10 @@ pub fn run() {
             plugins::install_plugin_from_zip,
             plugins::install_plugin_from_url,
             plugins::uninstall_plugin,
+            plugin_fs::plugin_read_file,
+            plugin_fs::plugin_list_directory,
+            plugin_fs::plugin_watch_path,
+            plugin_fs::plugin_unwatch,
             registry::fetch_plugin_registry
         ])
         .build(tauri::generate_context!())

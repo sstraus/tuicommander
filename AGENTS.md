@@ -92,6 +92,24 @@ When Boss asks to tag a release:
 - **Issue templates**: Bug reports and feature requests use `.github/ISSUE_TEMPLATE/*.yml` forms
 - **Token for project ops**: Use `GH_TOKEN=$GH_STRAUS gh ...` when commands need the `project` scope (the default `gh auth` token only has `repo` + `workflow`)
 
+## Plugin Interface Changes
+
+When modifying the plugin system interface (PluginHost API, capabilities, or Tauri commands used by plugins), you MUST update all of the following:
+
+### Code:
+- `src/plugins/types.ts` — TypeScript types (PluginHost interface, PluginCapability union, snapshot types)
+- `src/plugins/pluginRegistry.ts` — Implementation of PluginHost methods in `buildHost()`
+- `src-tauri/src/plugins.rs` — `KNOWN_CAPABILITIES` list (if adding new capabilities)
+- `src-tauri/src/lib.rs` — Register new Tauri commands in `invoke_handler`
+
+### Documentation:
+- `docs/plugins.md` — Full plugin developer guide (API reference, capabilities table, examples)
+- `src-tauri/src/mcp_http/plugin_docs.rs` — AI-optimized plugin reference (`PLUGIN_DOCS` const)
+- `docs/api/tauri-commands.md` — Tauri commands reference table
+- `docs/api/http-api.md` — HTTP API reference (if new HTTP endpoints added)
+- `docs/backend/mcp-http.md` — MCP/HTTP server docs (if new routes added)
+- `docs/FEATURES.md` — Feature inventory (section 17.1 capabilities list)
+
 ## Ideas Tracker
 
 **`IDEAS.md`** is a shared memory for feature concepts under evaluation. Ideas live here until we validate and promote them to SPEC.md for implementation.

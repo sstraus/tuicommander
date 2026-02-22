@@ -673,7 +673,8 @@ All data persisted to platform config directory via Rust:
 - Built-in plugins (TypeScript, compiled with app) and external plugins (JS, loaded at runtime)
 - Hot-reload: file changes in plugin directories trigger automatic re-import
 - Per-plugin error logging with ring buffer (500 entries)
-- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `invoke:read_file`, `invoke:list_markdown_files`
+- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`
+- Filesystem API: sandboxed read, list, and watch operations restricted to `$HOME`
 
 ### 17.2 Plugin Management (Settings > Plugins)
 - **Installed tab:** List all plugins with enable/disable toggle, logs viewer, uninstall button

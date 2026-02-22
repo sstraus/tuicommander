@@ -157,13 +157,30 @@ export interface RepoSettingsSnapshot {
 // Capabilities
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Filesystem change events
+// ---------------------------------------------------------------------------
+
+/** A filesystem change event emitted by the watcher. */
+export interface FsChangeEvent {
+  type: "create" | "modify" | "delete";
+  path: string;
+}
+
+// ---------------------------------------------------------------------------
+// Capabilities
+// ---------------------------------------------------------------------------
+
 /** Known capability strings for external plugins */
 export type PluginCapability =
   | "pty:write"
   | "ui:markdown"
   | "ui:sound"
   | "invoke:read_file"
-  | "invoke:list_markdown_files";
+  | "invoke:list_markdown_files"
+  | "fs:read"
+  | "fs:list"
+  | "fs:watch";
 
 /** Error thrown when a plugin calls a method without the required capability */
 export class PluginCapabilityError extends Error {
@@ -262,6 +279,27 @@ export interface PluginHost {
 
   /** Play the notification sound. Requires "ui:sound" capability. */
   playNotificationSound(): Promise<void>;
+
+  // -- Tier 3b: Filesystem operations (capability-gated) --
+
+  /** Read a file as UTF-8 text. Path must be absolute and within $HOME. Requires "fs:read". */
+  readFile(absolutePath: string): Promise<string>;
+
+  /** List filenames in a directory, optionally filtered by glob. Requires "fs:list". */
+  listDirectory(path: string, pattern?: string): Promise<string[]>;
+
+  /**
+   * Watch a path for filesystem changes. Requires "fs:watch".
+   * @param path - Absolute path within $HOME
+   * @param callback - Called with batched change events
+   * @param options - recursive (default false), debounceMs (default 300)
+   * @returns Disposable to stop watching
+   */
+  watchPath(
+    path: string,
+    callback: (events: FsChangeEvent[]) => void,
+    options?: { recursive?: boolean; debounceMs?: number },
+  ): Promise<Disposable>;
 
   // -- Tier 4: Scoped Tauri invoke (whitelisted commands only) --
 

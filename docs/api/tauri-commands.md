@@ -113,6 +113,15 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `get_dictation_config` | — | `DictationConfig` | Load config |
 | `set_dictation_config` | `config` | `()` | Save config |
 
+## Plugin Filesystem (`plugin_fs.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `plugin_read_file` | `path, plugin_id` | `String` | Read file as UTF-8 (within $HOME, 10 MB limit) |
+| `plugin_list_directory` | `path, pattern?, plugin_id` | `Vec<String>` | List filenames in directory (optional glob filter) |
+| `plugin_watch_path` | `path, plugin_id, recursive?, debounce_ms?` | `String` (watch ID) | Start watching path for changes |
+| `plugin_unwatch` | `watch_id, plugin_id` | `()` | Stop watching a path |
+
 ## Utility Commands (`lib.rs`)
 
 | Command | Args | Returns | Description |

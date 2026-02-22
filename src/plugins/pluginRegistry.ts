@@ -8,7 +8,7 @@ import { mdTabsStore } from "../stores/mdTabs";
 import { uiStore } from "../stores/ui";
 import { pluginStore } from "../stores/pluginStore";
 import { markdownProviderRegistry } from "./markdownProviderRegistry";
-import { invoke } from "../invoke";
+import { invoke, listen } from "../invoke";
 import { LineBuffer } from "../utils/lineBuffer";
 import { stripAnsi } from "../utils/stripAnsi";
 import {
@@ -17,6 +17,7 @@ import {
 } from "./types";
 import type {
   Disposable,
+  FsChangeEvent,
   MarkdownProvider,
   OutputWatcher,
   PluginCapability,
@@ -228,6 +229,50 @@ function createPluginRegistry() {
       async playNotificationSound(): Promise<void> {
         requireCapability(pluginId, capabilities, "ui:sound");
         await notificationsStore.testSound("question");
+      },
+
+      // -- Tier 3b: Filesystem operations --
+
+      async readFile(absolutePath: string): Promise<string> {
+        requireCapability(pluginId, capabilities, "fs:read");
+        return invoke<string>("plugin_read_file", { path: absolutePath, pluginId });
+      },
+
+      async listDirectory(path: string, pattern?: string): Promise<string[]> {
+        requireCapability(pluginId, capabilities, "fs:list");
+        return invoke<string[]>("plugin_list_directory", { path, pattern: pattern ?? null, pluginId });
+      },
+
+      async watchPath(
+        path: string,
+        callback: (events: FsChangeEvent[]) => void,
+        options?: { recursive?: boolean; debounceMs?: number },
+      ): Promise<Disposable> {
+        requireCapability(pluginId, capabilities, "fs:watch");
+        const watchId = await invoke<string>("plugin_watch_path", {
+          path,
+          pluginId,
+          recursive: options?.recursive ?? false,
+          debounceMs: options?.debounceMs ?? 300,
+        });
+        const eventName = `plugin-fs-change-${pluginId}`;
+        const unlisten = await listen<FsChangeEvent[]>(eventName, (event) => {
+          try {
+            callback(event.payload);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            pluginStore.getLogger(pluginId).error(`watchPath callback threw: ${msg}`, err);
+          }
+        });
+        const disposable: Disposable = {
+          dispose() {
+            unlisten();
+            invoke("plugin_unwatch", { watchId, pluginId }).catch(() => {
+              // Watcher may already be cleaned up on plugin unload
+            });
+          },
+        };
+        return track(disposable);
       },
 
       // -- Tier 4: Scoped Tauri invoke --

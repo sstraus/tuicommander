@@ -77,6 +77,7 @@ When enabled, the server:
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/plugins/docs` | Plugin development guide (AI-optimized reference) |
+| `GET` | `/api/plugins/:plugin_id/data/*path` | Read plugin data file (JSON or plain text) |
 
 ### Worktrees
 

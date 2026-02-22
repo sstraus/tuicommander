@@ -243,6 +243,14 @@ GET /plugins/docs
 
 Returns the complete plugin development reference as `{"content": "..."}`. AI-optimized documentation covering manifest format, PluginHost API, structured event types, and example plugins.
 
+### Plugin Data
+
+```
+GET /api/plugins/:plugin_id/data/*path
+```
+
+Reads a plugin's stored data file. Returns `application/json` if content starts with `{` or `[`, otherwise `text/plain`. Returns 404 if the file doesn't exist. Goes through the same auth middleware as all other routes.
+
 ## Worktree Endpoints
 
 ### Create Worktree

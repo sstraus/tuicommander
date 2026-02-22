@@ -48,6 +48,9 @@ const KNOWN_CAPABILITIES: &[&str] = &[
     "ui:sound",
     "invoke:read_file",
     "invoke:list_markdown_files",
+    "fs:read",
+    "fs:list",
+    "fs:watch",
 ];
 
 /// Validate a parsed manifest for required fields and sanity.

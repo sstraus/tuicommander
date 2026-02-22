@@ -411,6 +411,8 @@ pub struct AppState {
     /// Tauri AppHandle — stored after setup() so HTTP handlers can emit events.
     /// None before Tauri initializes (or in headless/test scenarios).
     pub(crate) app_handle: parking_lot::RwLock<Option<AppHandle>>,
+    /// Plugin filesystem watchers: watch_id → (plugin_id, watcher)
+    pub plugin_watchers: DashMap<String, (String, notify::RecommendedWatcher)>,
 }
 
 impl AppState {
@@ -774,6 +776,7 @@ mod tests {
             server_shutdown: parking_lot::Mutex::new(None),
             session_token: String::from("test-token"),
             app_handle: parking_lot::RwLock::new(None),
+            plugin_watchers: dashmap::DashMap::new(),
         }
     }
 

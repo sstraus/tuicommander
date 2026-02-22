@@ -312,6 +312,58 @@ Plays the notification sound. **Requires `"ui:sound"` capability.**
 await host.playNotificationSound();
 ```
 
+### Tier 3b: Filesystem Operations (capability-gated)
+
+These methods provide sandboxed filesystem access. All paths must be absolute and within the user's home directory (`$HOME`).
+
+#### host.readFile(absolutePath) -> Promise<string>
+
+Read a file's content as UTF-8 text. Maximum file size: 10 MB. **Requires `"fs:read"` capability.**
+
+```typescript
+const content = await host.readFile("/Users/me/.claude/projects/foo/conversation.jsonl");
+```
+
+#### host.listDirectory(path, pattern?) -> Promise<string[]>
+
+List filenames in a directory, optionally filtered by a glob pattern. Returns filenames only (not full paths), sorted alphabetically. **Requires `"fs:list"` capability.**
+
+```typescript
+const files = await host.listDirectory("/Users/me/.claude/projects/foo", "*.jsonl");
+// ["conversation-1.jsonl", "conversation-2.jsonl"]
+```
+
+#### host.watchPath(path, callback, options?) -> Promise<Disposable>
+
+Watch a path for filesystem changes. Emits batched events after a debounce period. **Requires `"fs:watch"` capability.**
+
+```typescript
+const watcher = await host.watchPath(
+  "/Users/me/.claude/projects/foo",
+  (events) => {
+    for (const event of events) {
+      console.log(event.type, event.path); // "create" | "modify" | "delete"
+    }
+  },
+  { recursive: true, debounceMs: 500 },
+);
+
+// Later: stop watching
+watcher.dispose();
+```
+
+**Options:**
+- `recursive` — Watch subdirectories (default: `false`)
+- `debounceMs` — Debounce window in milliseconds (default: `300`)
+
+**FsChangeEvent:**
+```typescript
+interface FsChangeEvent {
+  type: "create" | "modify" | "delete";
+  path: string;
+}
+```
+
 ### Tier 4: Scoped Tauri Invoke (whitelisted commands only)
 
 #### host.invoke<T>(cmd, args?) -> Promise<T>
@@ -362,6 +414,9 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `ui:sound` | `host.playNotificationSound()` | Can play sounds |
 | `invoke:read_file` | `host.invoke("read_file", ...)` | Can read files on disk |
 | `invoke:list_markdown_files` | `host.invoke("list_markdown_files", ...)` | Can list directory contents |
+| `fs:read` | `host.readFile()` | Can read files within `$HOME` (10 MB limit) |
+| `fs:list` | `host.listDirectory()` | Can list directory contents within `$HOME` |
+| `fs:watch` | `host.watchPath()` | Can watch filesystem paths within `$HOME` for changes |
 
 Tier 1, Tier 2, and plugin data commands are always available without capabilities.
 

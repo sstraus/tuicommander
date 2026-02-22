@@ -30,7 +30,7 @@ Constraints:
 - `id` must match directory name exactly, non-empty
 - `main` must be a filename only (no path separators or `..`)
 - `minAppVersion` must be <= current app version (current: 0.3.x)
-- `capabilities`: subset of `pty:write`, `ui:markdown`, `ui:sound`, `invoke:read_file`, `invoke:list_markdown_files`
+- `capabilities`: subset of `pty:write`, `ui:markdown`, `ui:sound`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`
 - Module default export must have `id`, `onload(host)`, `onunload()`
 
 ## Complete main.js Template
@@ -152,6 +152,28 @@ host.getSettings(repoPath: string) // { path, displayName, baseBranch, color } |
 | `await host.writePty(sessionId: string, data: string): Promise<void>` | `pty:write` |
 | `host.openMarkdownPanel(title: string, contentUri: string): void` | `ui:markdown` |
 | `await host.playNotificationSound(): Promise<void>` | `ui:sound` |
+
+### Tier 3b: Filesystem Operations (capability-gated)
+
+All paths must be absolute and within `$HOME`. Resolved via canonicalize (symlinks, `..` resolved).
+
+```typescript
+// Read a file (max 10 MB, UTF-8)
+const content = await host.readFile("/Users/me/.claude/projects/foo/conversation.jsonl");  // requires "fs:read"
+
+// List directory (optional glob filter)
+const files = await host.listDirectory("/Users/me/.claude/projects/foo", "*.jsonl");  // requires "fs:list"
+
+// Watch for changes (returns Disposable)
+const watcher = await host.watchPath(  // requires "fs:watch"
+  "/Users/me/.claude/projects/foo",
+  (events) => { /* FsChangeEvent[] with type + path */ },
+  { recursive: true, debounceMs: 500 },
+);
+watcher.dispose();  // stop watching
+```
+
+FsChangeEvent: `{ type: "create" | "modify" | "delete", path: string }`
 
 ### Tier 4: Tauri Invoke (whitelisted only)
 
