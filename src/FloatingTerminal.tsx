@@ -46,6 +46,13 @@ export const FloatingTerminal: Component = () => {
     terminalsStore.setActive(tabId);
 
     setReady(true);
+
+    // Deferred fit: the Tauri window may not have stable layout when Terminal
+    // first mounts.  xterm won't repaint until it receives new data, so we
+    // force a fit() after the window has settled.
+    setTimeout(() => {
+      terminalsStore.get(tabId)?.ref?.fit();
+    }, 150);
   });
 
   // Apply theme to the floating window

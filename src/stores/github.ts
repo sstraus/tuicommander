@@ -155,6 +155,8 @@ function createGitHubStore() {
     const paths = repositoriesStore.getPaths();
     if (paths.length === 0) return;
 
+    let hitRateLimit = false;
+
     try {
       await Promise.all(
         paths.map(async (path) => {
@@ -162,12 +164,24 @@ function createGitHubStore() {
             const statuses = await invoke<BranchPrStatus[]>("get_repo_pr_statuses", { path });
             updateRepoData(path, statuses);
           } catch (err) {
-            console.error(`Failed to poll PR statuses for ${path}:`, err);
+            const errStr = String(err);
+            if (errStr.startsWith("rate-limit:")) {
+              hitRateLimit = true;
+              console.warn(`[GitHub] Rate limited: ${errStr}`);
+            } else {
+              console.error(`Failed to poll PR statuses for ${path}:`, err);
+            }
           }
         })
       );
-      consecutiveErrors = 0;
-      currentInterval = document.hidden ? HIDDEN_INTERVAL : BASE_INTERVAL;
+
+      if (hitRateLimit) {
+        currentInterval = MAX_INTERVAL;
+        scheduleNext();
+      } else {
+        consecutiveErrors = 0;
+        currentInterval = document.hidden ? HIDDEN_INTERVAL : BASE_INTERVAL;
+      }
     } catch {
       consecutiveErrors++;
       currentInterval = Math.min(BASE_INTERVAL * Math.pow(2, consecutiveErrors), MAX_INTERVAL);

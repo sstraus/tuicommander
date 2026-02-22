@@ -368,6 +368,8 @@ const App: Component = () => {
 
   // Quick Switcher: visible while modifier combo is held, hides on release
   // macOS: Cmd+Ctrl, Windows/Linux: Ctrl+Alt
+  // Also dismiss on window blur/visibility change — keyup events are missed
+  // when the window loses focus while modifier keys are held.
   createEffect(() => {
     const trackKeydown = (e: KeyboardEvent) => {
       if (isQuickSwitcherActive(e)) {
@@ -381,11 +383,17 @@ const App: Component = () => {
       }
     };
 
+    const dismiss = () => setQuickSwitcherVisible(false);
+
     document.addEventListener("keydown", trackKeydown);
     document.addEventListener("keyup", trackKeyup);
+    window.addEventListener("blur", dismiss);
+    document.addEventListener("visibilitychange", dismiss);
     onCleanup(() => {
       document.removeEventListener("keydown", trackKeydown);
       document.removeEventListener("keyup", trackKeyup);
+      window.removeEventListener("blur", dismiss);
+      document.removeEventListener("visibilitychange", dismiss);
     });
   });
 

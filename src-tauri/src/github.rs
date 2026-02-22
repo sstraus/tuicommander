@@ -81,11 +81,19 @@ pub(crate) fn resolve_github_token_candidates() -> Vec<String> {
     candidates
 }
 
-/// Error type for GraphQL requests, distinguishing auth failures from other errors.
+/// Error type for GraphQL requests, distinguishing auth failures and rate limits from other errors.
 #[derive(Debug)]
 pub(crate) enum GqlError {
     /// 401 Unauthorized — token is invalid or expired
     Auth(String),
+    /// Rate limited by GitHub (429, 403 with exhausted limits, or GraphQL RATE_LIMITED)
+    RateLimit {
+        /// Unix epoch from `x-ratelimit-reset` header (primary limit reset time)
+        reset_at: Option<u64>,
+        /// Seconds from `retry-after` header (secondary/abuse limits)
+        retry_after: Option<u64>,
+        message: String,
+    },
     /// Any other error (network, parse, non-401 HTTP status, GraphQL errors)
     Other(String),
 }
@@ -94,6 +102,7 @@ impl fmt::Display for GqlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             GqlError::Auth(msg) => write!(f, "Auth error: {msg}"),
+            GqlError::RateLimit { message, .. } => write!(f, "Rate limited: {message}"),
             GqlError::Other(msg) => write!(f, "{msg}"),
         }
     }
@@ -101,9 +110,12 @@ impl fmt::Display for GqlError {
 
 /// Circuit breaker for GitHub API calls.
 /// Tracks consecutive failures and stops making requests after a threshold.
+/// Rate limits are tracked separately so they don't inflate the failure count.
 pub(crate) struct GitHubCircuitBreaker {
     failure_count: AtomicU32,
     open_until: parking_lot::RwLock<Option<Instant>>,
+    /// Separate backoff for rate limits — does not affect failure_count
+    rate_limit_until: parking_lot::RwLock<Option<Instant>>,
 }
 
 /// Consecutive failures before the circuit opens (tolerates occasional transient errors).
@@ -120,12 +132,27 @@ impl GitHubCircuitBreaker {
         Self {
             failure_count: AtomicU32::new(0),
             open_until: parking_lot::RwLock::new(None),
+            rate_limit_until: parking_lot::RwLock::new(None),
         }
     }
 
-    /// Check if the circuit is open. Returns Ok(()) if closed (requests allowed),
-    /// or Err with a message if open (requests should be skipped).
+    /// Check if the circuit is open (failure-based or rate-limited).
+    /// Returns Ok(()) if closed (requests allowed), or Err with a message.
     pub(crate) fn check(&self) -> Result<(), String> {
+        // Check rate limit backoff first (more specific message)
+        let rl_guard = self.rate_limit_until.read();
+        if let Some(until) = *rl_guard
+            && Instant::now() < until
+        {
+            let remaining = until.duration_since(Instant::now());
+            return Err(format!(
+                "rate-limit: backing off for {:.0}s",
+                remaining.as_secs_f64()
+            ));
+        }
+        drop(rl_guard);
+
+        // Check failure-based circuit breaker
         let guard = self.open_until.read();
         if let Some(until) = *guard
             && Instant::now() < until
@@ -143,6 +170,16 @@ impl GitHubCircuitBreaker {
     pub(crate) fn record_success(&self) {
         self.failure_count.store(0, Ordering::Relaxed);
         *self.open_until.write() = None;
+    }
+
+    /// Record a rate limit response. Sets a dedicated backoff timer
+    /// without inflating the failure count.
+    pub(crate) fn record_rate_limit(&self, wait_secs: u64) {
+        let delay = std::time::Duration::from_secs(wait_secs);
+        *self.rate_limit_until.write() = Some(Instant::now() + delay);
+        eprintln!(
+            "[github] Rate limited — backing off for {wait_secs}s",
+        );
     }
 
     /// Record a failed API call. Opens the circuit after threshold failures.
@@ -196,8 +233,14 @@ pub(crate) fn parse_remote_url(url: &str) -> Option<(String, String)> {
     None
 }
 
+/// Parse a header value as a u64, returning None if missing or unparseable.
+fn header_as_u64(response: &reqwest::blocking::Response, name: &str) -> Option<u64> {
+    response.headers().get(name)?.to_str().ok()?.parse().ok()
+}
+
 /// Execute a GraphQL query against the GitHub API.
-/// Returns the parsed JSON response or a typed error (Auth for 401, Other for everything else).
+/// Returns the parsed JSON response or a typed error.
+/// Detects rate limits from HTTP status codes, headers, and GraphQL error types.
 pub(crate) fn graphql_request(
     client: &reqwest::blocking::Client,
     token: &str,
@@ -218,6 +261,21 @@ pub(crate) fn graphql_request(
         .map_err(|e| GqlError::Other(format!("GraphQL request failed: {e}")))?;
 
     let status = response.status();
+
+    // Extract rate limit headers before consuming the response body
+    let ratelimit_remaining = header_as_u64(&response, "x-ratelimit-remaining");
+    let ratelimit_reset = header_as_u64(&response, "x-ratelimit-reset");
+    let retry_after = header_as_u64(&response, "retry-after");
+
+    // 1. HTTP 429 → always a rate limit
+    if status.as_u16() == 429 {
+        return Err(GqlError::RateLimit {
+            reset_at: ratelimit_reset,
+            retry_after,
+            message: "HTTP 429 Too Many Requests".to_string(),
+        });
+    }
+
     let json: serde_json::Value = response
         .json()
         .map_err(|e| GqlError::Other(format!("Failed to parse GraphQL response: {e}")))?;
@@ -225,15 +283,52 @@ pub(crate) fn graphql_request(
     if !status.is_success() {
         let msg = json["message"].as_str().unwrap_or("Unknown error");
         let err_msg = format!("GitHub API error ({status}): {msg}");
+
         if status.as_u16() == 401 {
             return Err(GqlError::Auth(err_msg));
         }
+
+        // 2. HTTP 403 + x-ratelimit-remaining: 0 → primary rate limit exhausted
+        if status.as_u16() == 403 && ratelimit_remaining == Some(0) {
+            return Err(GqlError::RateLimit {
+                reset_at: ratelimit_reset,
+                retry_after,
+                message: format!("Primary rate limit exhausted: {msg}"),
+            });
+        }
+
+        // 3. HTTP 403 + body mentions "secondary rate" → secondary/abuse rate limit
+        if status.as_u16() == 403 {
+            let msg_lower = msg.to_lowercase();
+            if msg_lower.contains("secondary rate") || msg_lower.contains("abuse") {
+                return Err(GqlError::RateLimit {
+                    reset_at: ratelimit_reset,
+                    retry_after,
+                    message: format!("Secondary rate limit: {msg}"),
+                });
+            }
+        }
+
         return Err(GqlError::Other(err_msg));
     }
 
+    // 4. HTTP 200 + GraphQL errors with type "RATE_LIMITED"
     if let Some(errors) = json["errors"].as_array()
         && !errors.is_empty()
     {
+        let has_rate_limit_error = errors.iter().any(|e| {
+            e["type"].as_str() == Some("RATE_LIMITED")
+        });
+
+        if has_rate_limit_error {
+            let msg = errors[0]["message"].as_str().unwrap_or("GraphQL rate limit");
+            return Err(GqlError::RateLimit {
+                reset_at: ratelimit_reset,
+                retry_after,
+                message: msg.to_string(),
+            });
+        }
+
         let msg = errors[0]["message"].as_str().unwrap_or("Unknown GraphQL error");
         return Err(GqlError::Other(format!("GraphQL error: {msg}")));
     }
@@ -241,8 +336,28 @@ pub(crate) fn graphql_request(
     Ok(json)
 }
 
+/// Calculate how long to wait for a rate limit, in seconds.
+/// Prefers `retry-after` (secondary limits), falls back to `reset_at - now + 1`,
+/// defaults to 60s if neither header is available.
+fn rate_limit_wait_secs(reset_at: Option<u64>, retry_after: Option<u64>) -> u64 {
+    if let Some(secs) = retry_after {
+        return secs;
+    }
+    if let Some(reset) = reset_at {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        if reset > now {
+            return reset - now + 1;
+        }
+    }
+    60 // Default: wait 60 seconds
+}
+
 /// Execute a GraphQL query with token fallback and circuit breaker protection.
 /// On 401, tries remaining token candidates and updates the stored token on success.
+/// Rate limits are handled separately from failures — they don't inflate the failure count.
 pub(crate) fn graphql_with_retry(
     state: &AppState,
     query: &str,
@@ -262,6 +377,11 @@ pub(crate) fn graphql_with_retry(
             state.github_circuit_breaker.record_success();
             Ok(response)
         }
+        Err(GqlError::RateLimit { reset_at, retry_after, message }) => {
+            let wait = rate_limit_wait_secs(reset_at, retry_after);
+            state.github_circuit_breaker.record_rate_limit(wait);
+            Err(format!("rate-limit: {message}"))
+        }
         Err(GqlError::Auth(msg)) => {
             eprintln!("[github] 401 with current token, trying fallback candidates");
             // Try other candidates
@@ -278,6 +398,11 @@ pub(crate) fn graphql_with_retry(
                         return Ok(response);
                     }
                     Err(GqlError::Auth(_)) => continue, // Try next candidate
+                    Err(GqlError::RateLimit { reset_at, retry_after, message }) => {
+                        let wait = rate_limit_wait_secs(reset_at, retry_after);
+                        state.github_circuit_breaker.record_rate_limit(wait);
+                        return Err(format!("rate-limit: {message}"));
+                    }
                     Err(GqlError::Other(e)) => {
                         state.github_circuit_breaker.record_failure();
                         return Err(e);
@@ -608,24 +733,25 @@ fn get_github_remote_url(repo_path: &Path) -> Option<String> {
 }
 
 /// Core logic for fetching PR statuses via GitHub GraphQL API (no caching).
+/// Returns Err for rate limits (prefixed with "rate-limit:") so callers can handle them.
 pub(crate) fn get_repo_pr_statuses_impl(
     path: &str,
     state: &AppState,
-) -> Vec<BranchPrStatus> {
+) -> Result<Vec<BranchPrStatus>, String> {
     let repo_path = PathBuf::from(path);
 
     if state.github_token.read().is_none() {
-        return vec![]; // No token = no GitHub API access
+        return Ok(vec![]); // No token = no GitHub API access
     }
 
     let remote_url = match get_github_remote_url(&repo_path) {
         Some(url) => url,
-        None => return vec![],
+        None => return Ok(vec![]),
     };
 
     let (owner, repo) = match parse_remote_url(&remote_url) {
         Some(pair) => pair,
-        None => return vec![],
+        None => return Ok(vec![]),
     };
 
     let variables = serde_json::json!({
@@ -635,10 +761,11 @@ pub(crate) fn get_repo_pr_statuses_impl(
     });
 
     match graphql_with_retry(state, BATCH_PR_QUERY, variables) {
-        Ok(response) => parse_graphql_prs(&response),
+        Ok(response) => Ok(parse_graphql_prs(&response)),
+        Err(e) if e.starts_with("rate-limit:") => Err(e),
         Err(e) => {
             eprintln!("[github] GraphQL batch PR query failed: {e}");
-            vec![]
+            Ok(vec![])
         }
     }
 }
@@ -653,15 +780,15 @@ pub(crate) async fn get_repo_pr_statuses(
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || {
         if let Some(cached) = AppState::get_cached(&state.github_status_cache, &path, GITHUB_CACHE_TTL) {
-            return cached;
+            return Ok(cached);
         }
 
-        let statuses = get_repo_pr_statuses_impl(&path, &state);
-        AppState::set_cached(&state.github_status_cache, path, statuses.clone());
-        statuses
+        let statuses = get_repo_pr_statuses_impl(&path, &state)?;
+        AppState::set_cached(&state.github_status_cache, path.clone(), statuses.clone());
+        Ok(statuses)
     })
     .await
-    .map_err(|e| format!("Task failed: {e}"))
+    .map_err(|e| format!("Task failed: {e}"))?
 }
 
 /// Get git remote + branch status for a repository (implementation).
@@ -1778,5 +1905,98 @@ mod tests {
         let result = cb.check();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("circuit breaker open"));
+    }
+
+    // --- Rate limit circuit breaker tests ---
+
+    #[test]
+    fn test_circuit_breaker_rate_limit_blocks_requests() {
+        let cb = GitHubCircuitBreaker::new();
+        cb.record_rate_limit(60);
+        let result = cb.check();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().starts_with("rate-limit:"),
+            "Rate limit check should return error starting with 'rate-limit:'");
+    }
+
+    #[test]
+    fn test_circuit_breaker_rate_limit_does_not_increment_failure_count() {
+        let cb = GitHubCircuitBreaker::new();
+        // Record 2 failures (below threshold)
+        cb.record_failure();
+        cb.record_failure();
+        // Record a rate limit — this should NOT push us over the failure threshold
+        cb.record_rate_limit(1);
+        // Wait for rate limit to expire
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        // Should still be open for requests (only 2 failures, threshold is 3)
+        assert!(cb.check().is_ok(),
+            "Rate limit should not inflate failure count");
+    }
+
+    #[test]
+    fn test_circuit_breaker_rate_limit_expires() {
+        let cb = GitHubCircuitBreaker::new();
+        // Set rate limit that expires in 1 second
+        *cb.rate_limit_until.write() = Some(Instant::now() + std::time::Duration::from_millis(50));
+        assert!(cb.check().is_err(), "Should be rate limited initially");
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        assert!(cb.check().is_ok(), "Should be open after rate limit expires");
+    }
+
+    #[test]
+    fn test_circuit_breaker_rate_limit_takes_priority_over_open() {
+        let cb = GitHubCircuitBreaker::new();
+        // Set both circuit breaker open and rate limited
+        *cb.open_until.write() = Some(Instant::now() + std::time::Duration::from_secs(60));
+        *cb.rate_limit_until.write() = Some(Instant::now() + std::time::Duration::from_secs(60));
+        let result = cb.check();
+        assert!(result.is_err());
+        // Rate limit message should take priority
+        assert!(result.unwrap_err().starts_with("rate-limit:"),
+            "Rate limit should take priority in error message");
+    }
+
+    // --- GqlError display tests for RateLimit ---
+
+    #[test]
+    fn test_gql_error_display_rate_limit() {
+        let err = GqlError::RateLimit {
+            reset_at: Some(1700000000),
+            retry_after: Some(60),
+            message: "API rate limit exceeded".to_string(),
+        };
+        assert_eq!(format!("{err}"), "Rate limited: API rate limit exceeded");
+    }
+
+    // --- rate_limit_wait_secs tests ---
+
+    #[test]
+    fn test_rate_limit_wait_secs_prefers_retry_after() {
+        // retry-after takes priority over reset_at
+        assert_eq!(rate_limit_wait_secs(Some(9999999999), Some(42)), 42);
+    }
+
+    #[test]
+    fn test_rate_limit_wait_secs_falls_back_to_reset_at() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let reset = now + 30;
+        let wait = rate_limit_wait_secs(Some(reset), None);
+        // Should be approximately 31 (30 + 1 safety margin)
+        assert!(wait >= 30 && wait <= 32, "Expected ~31, got {wait}");
+    }
+
+    #[test]
+    fn test_rate_limit_wait_secs_defaults_to_60() {
+        assert_eq!(rate_limit_wait_secs(None, None), 60);
+    }
+
+    #[test]
+    fn test_rate_limit_wait_secs_reset_in_past() {
+        // If reset_at is in the past and no retry-after, default to 60
+        assert_eq!(rate_limit_wait_secs(Some(1000), None), 60);
     }
 }
