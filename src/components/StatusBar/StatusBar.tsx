@@ -12,6 +12,9 @@ import { formatWaitTime } from "../../rate-limit";
 import { dictationStore } from "../../stores/dictation";
 import { updaterStore } from "../../stores/updater";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import s from "./StatusBar.module.css";
 
 export interface StatusBarProps {
   fontSize: number;
@@ -92,21 +95,21 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   };
 
   return (
-    <div id="status-bar">
+    <div id="status-bar" class={s.bar}>
       {/* Left section */}
-      <div class="status-section">
+      <div class={s.section}>
         <ZoomIndicator
           fontSize={props.fontSize}
           defaultFontSize={props.defaultFontSize}
         />
-        <span id="status-info">{props.statusInfo}</span>
+        <span class={s.info}>{props.statusInfo}</span>
         <Show when={shortenedCwd()}>
           <span
-            class="status-cwd"
-            title={`Click to copy: ${props.cwd}`}
+            class={s.cwd}
+            title={`${t("statusBar.clickCopy", "Click to copy:")} ${props.cwd}`}
             onClick={handleCopyCwd}
           >
-            {cwdCopied() ? "Copied!" : shortenedCwd()}
+            {cwdCopied() ? t("statusBar.copied", "Copied!") : shortenedCwd()}
           </span>
         </Show>
         <Show when={terminalsStore.getActive()?.agentType}>
@@ -114,9 +117,9 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
             const display = () => AGENT_DISPLAY[agentType()];
             return (
               <span
-                class="status-agent-badge"
+                class={s.agentBadge}
                 style={{ color: display().color }}
-                title={`Agent: ${agentType()}`}
+                title={`${t("statusBar.agent", "Agent:")} ${agentType()}`}
               >
                 <AgentIcon agent={agentType()} size={12} /> {agentType()}
               </span>
@@ -126,11 +129,11 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         <Show when={terminalsStore.getActive()?.usageLimit}>
           {(ul) => (
             <span
-              class="status-usage-limit"
-              classList={{
-                "usage-warning": ul().percentage >= 70 && ul().percentage < 90,
-                "usage-critical": ul().percentage >= 90,
-              }}
+              class={cx(
+                s.usageLimit,
+                ul().percentage >= 90 && s.usageCritical,
+                ul().percentage >= 70 && ul().percentage < 90 && s.usageWarning,
+              )}
               title={`Claude Code ${ul().limitType} limit: ${ul().percentage}% used`}
             >
               {ul().percentage}% {ul().limitType}
@@ -139,23 +142,23 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         </Show>
         <Show when={rateLimitWarning()}>
           {(rl) => (
-            <span class="status-rate-limit" title={`${rl().count} session(s) rate limited`}>
-              ⚠ Rate limited ({rl().remaining})
+            <span class={s.rateLimit} title={`${rl().count} session(s) rate limited`}>
+              ⚠ {t("statusBar.rateLimited", "Rate limited")} ({rl().remaining})
             </span>
           )}
         </Show>
         <Show when={updaterStore.state.available && !updaterStore.state.downloading}>
           <span
-            class="status-update-badge"
-            title={`Update to v${updaterStore.state.version}`}
+            class={s.updateBadge}
+            title={`${t("statusBar.updateTo", "Update to")} v${updaterStore.state.version}`}
             onClick={() => updaterStore.downloadAndInstall()}
           >
-            Update v{updaterStore.state.version}
+            {t("statusBar.update", "Update")} v{updaterStore.state.version}
           </span>
         </Show>
         <Show when={updaterStore.state.downloading}>
-          <span class="status-update-badge downloading" title="Downloading update...">
-            Updating {updaterStore.state.progress}%
+          <span class={cx(s.updateBadge, s.downloading)} title={t("statusBar.downloading", "Downloading update...")}>
+            {t("statusBar.updating", "Updating")} {updaterStore.state.progress}%
           </span>
         </Show>
       </div>
@@ -163,7 +166,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
       {/* GitHub status section */}
       <Show when={github.status()}>
         {(gs) => (
-          <div id="github-status" class="status-section">
+          <div class={s.githubStatus}>
             <BranchBadge
               branch={gs().current_branch}
               ahead={gs().ahead}
@@ -200,21 +203,21 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
       </Show>
 
       {/* Right section - controls */}
-      <div class="status-section status-controls">
+      <div class={cx(s.section, s.controls)}>
         {/* Toggle buttons */}
-        <button id="notes-toggle" class="toggle-btn" onClick={() => props.onToggleNotes?.()} title={`Toggle Ideas Panel (${getModifierSymbol()}N)`} style={{ position: "relative" }}>
+        <button class="toggle-btn" onClick={() => props.onToggleNotes?.()} title={`${t("statusBar.toggleNotes", "Toggle Ideas Panel")} (${getModifierSymbol()}N)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 21c0 .5.4 1 1 1h4c.6 0 1-.5 1-1v-1H9v1zm3-19C8.1 2 5 5.1 5 9c0 2.4 1.2 4.5 3 5.7V17c0 .5.4 1 1 1h6c.6 0 1-.5 1-1v-2.3c1.8-1.3 3-3.4 3-5.7 0-3.9-3.1-7-7-7z"/></svg>
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}N</span>
         </button>
-        <button id="fb-toggle" class="toggle-btn" onClick={() => props.onToggleFileBrowser?.()} title={`File Browser (${getModifierSymbol()}E)`} style={{ position: "relative" }}>
+        <button class="toggle-btn" onClick={() => props.onToggleFileBrowser?.()} title={`${t("statusBar.fileBrowser", "File Browser")} (${getModifierSymbol()}E)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}E</span>
         </button>
-        <button id="md-toggle" class="toggle-btn" onClick={props.onToggleMarkdown} title={`Markdown (${getModifierSymbol()}M)`} style={{ position: "relative" }}>
+        <button class="toggle-btn" onClick={props.onToggleMarkdown} title={`${t("statusBar.markdown", "Markdown")} (${getModifierSymbol()}M)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 208 128" width="16" height="10" fill="currentColor"><rect x="5" y="5" width="198" height="118" rx="12" fill="none" stroke="currentColor" stroke-width="12"/><path d="M30 98V30h20l20 25 20-25h20v68h-20V59L70 84 50 59v39H30zm125 0l-30-33h20V30h20v35h20l-30 33z"/></svg>
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}M</span>
         </button>
-        <button id="diff-toggle" class="toggle-btn" onClick={props.onToggleDiff} title={`Diff (${getModifierSymbol()}D)`} style={{ position: "relative" }}>
+        <button class="toggle-btn" onClick={props.onToggleDiff} title={`${t("statusBar.diff", "Diff")} (${getModifierSymbol()}D)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 7H7v2H5v2h2v2h2v-2h2V9H9V7zm7 2h4v2h-4V9zm0 4h4v2h-4v-2zM5 19h14v2H5v-2zM5 3h14v2H5V3z"/></svg>
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}D</span>
         </button>
@@ -222,7 +225,6 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         {/* Mic button - hold to talk (rightmost) */}
         <Show when={dictationStore.state.enabled}>
           <button
-            id="mic-toggle"
             class="toggle-btn"
             classList={{
               "mic-recording": dictationStore.state.recording,
@@ -238,7 +240,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
             onMouseLeave={() => {
               if (dictationStore.state.recording) props.onDictationStop();
             }}
-            title={`Voice Dictation (${dictationStore.state.hotkey})`}
+            title={`${t("statusBar.voiceDictation", "Voice Dictation")} (${dictationStore.state.hotkey})`}
             style={{ position: "relative" }}
           >
             <svg class="mic-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
@@ -265,7 +267,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         )}
       </Show>
 
-      {/* Rich PR detail popover (Story 093) */}
+      {/* Rich PR detail popover */}
       <Show when={showPrDetailPopover()}>
         <PrDetailPopover
           repoPath={props.currentRepoPath || ""}

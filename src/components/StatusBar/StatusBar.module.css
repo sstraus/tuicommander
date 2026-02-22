@@ -1,0 +1,127 @@
+/* StatusBar */
+.bar {
+  height: var(--status-height);
+  min-height: var(--status-height);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: var(--font-sm);
+  gap: 8px;
+  overflow: hidden;
+}
+
+.section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.githubStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.info {
+  color: var(--fg-muted);
+}
+
+.cwd {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cwd:hover {
+  color: var(--fg-secondary);
+  background: var(--bg-tertiary);
+}
+
+.agentBadge {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  white-space: nowrap;
+}
+
+.usageLimit {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  color: #59a8dd;
+  background: rgba(89, 168, 221, 0.15);
+  white-space: nowrap;
+}
+
+.usageWarning {
+  color: #dcdcaa;
+  background: rgba(220, 220, 170, 0.2);
+}
+
+.usageCritical {
+  color: #f48771;
+  background: rgba(244, 135, 113, 0.2);
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+
+.rateLimit {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.1);
+  white-space: nowrap;
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+
+.updateBadge {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  color: #4ec9b0;
+  background: rgba(78, 201, 176, 0.15);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.updateBadge:hover {
+  background: rgba(78, 201, 176, 0.3);
+}
+
+.downloading {
+  cursor: default;
+  animation: pulse-opacity 2s ease-in-out infinite;
+}

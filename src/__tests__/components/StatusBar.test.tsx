@@ -102,10 +102,16 @@ function makePrData(overrides: Record<string, unknown> = {}) {
 
 /** Find the CI badge wrapper span (the one with the onClick handler) */
 function findCiBadgeWrapper(container: HTMLElement): HTMLElement {
-  const badges = container.querySelectorAll("#github-status .status-badge");
+  const badges = container.querySelectorAll(".githubStatus .status-badge");
   const ciBadgeEl = Array.from(badges).find((b) => b.textContent?.includes("CI"));
   if (!ciBadgeEl?.parentElement) throw new Error("CI badge wrapper not found");
   return ciBadgeEl.parentElement;
+}
+
+/** Find a toggle button by its title text */
+function findToggleByTitle(container: HTMLElement, titlePart: string): HTMLElement | null {
+  const buttons = container.querySelectorAll(".toggle-btn");
+  return (Array.from(buttons).find((b) => b.getAttribute("title")?.includes(titlePart)) as HTMLElement) ?? null;
 }
 
 describe("StatusBar", () => {
@@ -132,23 +138,21 @@ describe("StatusBar", () => {
 
   it("renders status info text", () => {
     const { container } = render(() => <StatusBar {...defaultProps} />);
-    const statusInfo = container.querySelector("#status-info");
+    const statusInfo = container.querySelector(".info");
     expect(statusInfo).not.toBeNull();
     expect(statusInfo!.textContent).toBe("Ready");
   });
 
   it("renders MD toggle button", () => {
     const { container } = render(() => <StatusBar {...defaultProps} />);
-    const mdBtn = container.querySelector("#md-toggle");
+    const mdBtn = findToggleByTitle(container, "Markdown");
     expect(mdBtn).not.toBeNull();
-    expect(mdBtn!.getAttribute("title")).toContain("Markdown");
   });
 
   it("renders Diff toggle button", () => {
     const { container } = render(() => <StatusBar {...defaultProps} />);
-    const diffBtn = container.querySelector("#diff-toggle");
+    const diffBtn = findToggleByTitle(container, "Diff");
     expect(diffBtn).not.toBeNull();
-    expect(diffBtn!.getAttribute("title")).toContain("Diff");
   });
 
   it("calls onToggleMarkdown when MD button clicked", () => {
@@ -156,7 +160,7 @@ describe("StatusBar", () => {
     const { container } = render(() => (
       <StatusBar {...defaultProps} onToggleMarkdown={onToggleMarkdown} />
     ));
-    const mdBtn = container.querySelector("#md-toggle")!;
+    const mdBtn = findToggleByTitle(container, "Markdown")!;
     fireEvent.click(mdBtn);
     expect(onToggleMarkdown).toHaveBeenCalledOnce();
   });
@@ -166,33 +170,33 @@ describe("StatusBar", () => {
     const { container } = render(() => (
       <StatusBar {...defaultProps} onToggleDiff={onToggleDiff} />
     ));
-    const diffBtn = container.querySelector("#diff-toggle")!;
+    const diffBtn = findToggleByTitle(container, "Diff")!;
     fireEvent.click(diffBtn);
     expect(onToggleDiff).toHaveBeenCalledOnce();
   });
 
   it("shows zoom indicator", () => {
     const { container } = render(() => <StatusBar {...defaultProps} />);
-    const statusBar = container.querySelector("#status-bar");
+    const statusBar = container.querySelector(".bar");
     expect(statusBar).not.toBeNull();
-    const statusSection = container.querySelector(".status-section");
+    const statusSection = container.querySelector(".section");
     expect(statusSection).not.toBeNull();
   });
 
-  it("does not render github-status when github status is null", () => {
+  it("does not render githubStatus when github status is null", () => {
     const { container } = render(() => <StatusBar {...defaultProps} />);
-    const githubStatus = container.querySelector("#github-status");
+    const githubStatus = container.querySelector(".githubStatus");
     expect(githubStatus).toBeNull();
   });
 
-  it("shows github-status with BranchBadge when github status exists", () => {
+  it("shows githubStatus with BranchBadge when github status exists", () => {
     mockGitHubStatus.mockReturnValue({
       current_branch: "feature/test",
       ahead: 2,
       behind: 1,
     });
     const { container } = render(() => <StatusBar {...defaultProps} />);
-    const githubStatus = container.querySelector("#github-status");
+    const githubStatus = container.querySelector(".githubStatus");
     expect(githubStatus).not.toBeNull();
     const badge = githubStatus!.querySelector(".status-badge");
     expect(badge).not.toBeNull();
@@ -211,7 +215,7 @@ describe("StatusBar", () => {
     const { container } = render(() => (
       <StatusBar {...defaultProps} currentRepoPath="/repo" />
     ));
-    const githubStatus = container.querySelector("#github-status");
+    const githubStatus = container.querySelector(".githubStatus");
     expect(githubStatus).not.toBeNull();
     const badges = githubStatus!.querySelectorAll(".status-badge");
     const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
@@ -230,7 +234,7 @@ describe("StatusBar", () => {
     const { container } = render(() => (
       <StatusBar {...defaultProps} currentRepoPath="/repo" />
     ));
-    const githubStatus = container.querySelector("#github-status");
+    const githubStatus = container.querySelector(".githubStatus");
     expect(githubStatus).not.toBeNull();
     const badges = githubStatus!.querySelectorAll(".status-badge");
     const ciBadge = Array.from(badges).find((b) => b.textContent?.includes("CI passed"));
@@ -273,7 +277,7 @@ describe("StatusBar", () => {
       <StatusBar {...defaultProps} />
     ));
 
-    const badges = container.querySelectorAll("#github-status .status-badge");
+    const badges = container.querySelectorAll(".githubStatus .status-badge");
     const ciBadge = Array.from(badges).find((b) => b.textContent?.includes("CI"));
     expect(ciBadge).toBeUndefined();
   });
@@ -288,7 +292,7 @@ describe("StatusBar", () => {
       <StatusBar {...defaultProps} currentRepoPath="/repo" />
     ));
 
-    const branchBadge = container.querySelector("#github-status .status-badge");
+    const branchBadge = container.querySelector(".githubStatus .status-badge");
     expect(branchBadge).not.toBeNull();
     fireEvent.click(branchBadge!);
 
@@ -320,7 +324,7 @@ describe("StatusBar", () => {
       behind: 0,
     });
     const { container } = render(() => <StatusBar {...defaultProps} />);
-    const badge = container.querySelector("#github-status .status-badge");
+    const badge = container.querySelector(".githubStatus .status-badge");
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toContain("develop");
     expect(badge!.textContent).toContain("\u21913");
@@ -360,7 +364,7 @@ describe("StatusBar", () => {
       <StatusBar {...defaultProps} currentRepoPath="/repo" onBranchRenamed={onBranchRenamed} />
     ));
 
-    const branchBadge = container.querySelector("#github-status .status-badge")!;
+    const branchBadge = container.querySelector(".githubStatus .status-badge")!;
     fireEvent.click(branchBadge);
 
     const popover = container.querySelector(".popover");
@@ -381,14 +385,14 @@ describe("StatusBar", () => {
   it("shows mic button when dictation is enabled", () => {
     mockDictationState.enabled = true;
     const { container } = render(() => <StatusBar {...defaultProps} />);
-    const micBtn = container.querySelector("#mic-toggle");
+    const micBtn = findToggleByTitle(container, "Voice Dictation");
     expect(micBtn).not.toBeNull();
   });
 
   it("does not show mic button when dictation is disabled", () => {
     mockDictationState.enabled = false;
     const { container } = render(() => <StatusBar {...defaultProps} />);
-    const micBtn = container.querySelector("#mic-toggle");
+    const micBtn = findToggleByTitle(container, "Voice Dictation");
     expect(micBtn).toBeNull();
   });
 
@@ -398,7 +402,7 @@ describe("StatusBar", () => {
     const { container } = render(() => (
       <StatusBar {...defaultProps} onDictationStart={onDictationStart} />
     ));
-    const micBtn = container.querySelector("#mic-toggle")!;
+    const micBtn = findToggleByTitle(container, "Voice Dictation")!;
     fireEvent.mouseDown(micBtn, { button: 0 });
     expect(onDictationStart).toHaveBeenCalled();
   });
@@ -410,7 +414,7 @@ describe("StatusBar", () => {
     const { container } = render(() => (
       <StatusBar {...defaultProps} onDictationStop={onDictationStop} />
     ));
-    const micBtn = container.querySelector("#mic-toggle")!;
+    const micBtn = findToggleByTitle(container, "Voice Dictation")!;
     fireEvent.mouseUp(micBtn, { button: 0 });
     expect(onDictationStop).toHaveBeenCalled();
   });
@@ -422,7 +426,7 @@ describe("StatusBar", () => {
     const { container } = render(() => (
       <StatusBar {...defaultProps} onDictationStop={onDictationStop} />
     ));
-    const micBtn = container.querySelector("#mic-toggle")!;
+    const micBtn = findToggleByTitle(container, "Voice Dictation")!;
     fireEvent.mouseLeave(micBtn);
     expect(onDictationStop).toHaveBeenCalled();
   });
@@ -436,7 +440,7 @@ describe("StatusBar", () => {
     const { container } = render(() => (
       <StatusBar {...defaultProps} />
     ));
-    const branchBadge = container.querySelector("#github-status .status-badge")!;
+    const branchBadge = container.querySelector(".githubStatus .status-badge")!;
     fireEvent.click(branchBadge);
 
     const popover = container.querySelector(".popover");
