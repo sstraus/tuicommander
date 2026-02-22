@@ -157,8 +157,8 @@ describe("useKeyboardShortcuts", () => {
   });
 
   describe("panel toggles", () => {
-    it("Cmd+D toggles diff panel", () => {
-      fireKeydown("d", { metaKey: true });
+    it("Cmd+Shift+D toggles diff panel", () => {
+      fireKeydown("D", { metaKey: true, shiftKey: true });
       expect(handlers.toggleDiffPanel).toHaveBeenCalled();
     });
 

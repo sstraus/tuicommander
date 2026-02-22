@@ -126,7 +126,7 @@ Groups can have a color label. The color appears as a sidebar accent. Repo-speci
 
 ## Diff Panel
 
-Toggle with `Cmd+D` or the diff icon in the status bar.
+Toggle with `Cmd+Shift+D` or the diff icon in the status bar.
 
 ### Scope Selector
 

@@ -48,7 +48,7 @@ Font size range: 8px to 32px, step 2px per action.
 | Shortcut | Action |
 |----------|--------|
 | `Cmd+[` | Toggle sidebar |
-| `Cmd+D` | Toggle diff panel |
+| `Cmd+Shift+D` | Toggle diff panel |
 | `Cmd+M` | Toggle markdown panel |
 | `Cmd+N` | Toggle Ideas panel |
 | `Cmd+E` | Toggle file browser |

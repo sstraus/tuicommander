@@ -114,7 +114,7 @@
 - All panels have drag-resize handles on their left edge (200-800px)
 - Toggle buttons in status bar with hotkey hints visible during quick switcher
 
-### 3.2 Diff Panel (`Cmd+D`)
+### 3.2 Diff Panel (`Cmd+Shift+D`)
 - Scope selector dropdown: Working tree (default) or any of the last 5 commits
 - File list with change indicators
 - Click a file to open a dedicated inline diff tab in the main tab area
@@ -221,7 +221,7 @@
 - Ideas (lightbulb icon) — `Cmd+N`
 - File Browser (folder icon) — `Cmd+E`
 - Markdown (MD icon) — `Cmd+M`
-- Diff (diff icon) — `Cmd+D`
+- Diff (diff icon) — `Cmd+Shift+D`
 - Mic button (when dictation enabled): hold to record, release to transcribe
 
 ---
@@ -525,7 +525,7 @@ All data persisted to platform config directory via Rust:
 | Shortcut | Action |
 |----------|--------|
 | `Cmd+[` | Toggle sidebar |
-| `Cmd+D` | Toggle diff panel |
+| `Cmd+Shift+D` | Toggle diff panel |
 | `Cmd+M` | Toggle markdown panel |
 | `Cmd+N` | Toggle Ideas panel |
 | `Cmd+E` | Toggle file browser |

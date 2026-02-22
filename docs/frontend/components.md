@@ -129,7 +129,7 @@ Rich PR detail popup shown on hover/click in sidebar.
 | Panel | Toggle Shortcut | Store |
 |-------|-----------------|-------|
 | Sidebar | `Cmd+B` | `uiStore.toggleSidebar()` |
-| Diff Panel | `Cmd+D` | `uiStore.toggleDiffPanel()` |
+| Diff Panel | `Cmd+Shift+D` | `uiStore.toggleDiffPanel()` |
 | Markdown Panel | `Cmd+M` | `uiStore.toggleMarkdownPanel()` |
 | Settings | `Cmd+,` | Local state in App.tsx |
 | Help | `Cmd+?` | Local state in App.tsx |

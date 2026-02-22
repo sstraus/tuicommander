@@ -124,7 +124,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
     }
 
     // Panel toggles
-    if (isMeta && e.key === "d") {
+    if (isMeta && e.shiftKey && e.key === "D") {
       e.preventDefault();
       handlers.toggleDiffPanel();
       return;

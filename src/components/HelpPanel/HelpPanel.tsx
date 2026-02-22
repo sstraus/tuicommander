@@ -42,7 +42,7 @@ function getShortcutSections(): ShortcutSection[] {
   {
     title: t("helpPanel.panels", "Panels"),
     shortcuts: [
-      { keys: `${mod}D`, description: t("helpPanel.toggleDiffPanel", "Toggle git diff panel") },
+      { keys: `${mod}⇧D`, description: t("helpPanel.toggleDiffPanel", "Toggle git diff panel") },
       { keys: `${mod}M`, description: t("helpPanel.toggleMarkdownPanel", "Toggle markdown panel") },
       { keys: `${mod},`, description: t("helpPanel.openSettings", "Open settings") },
       { keys: `${mod}J`, description: t("helpPanel.toggleTaskQueue", "Toggle task queue") },
