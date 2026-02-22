@@ -1,5 +1,7 @@
 import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { useRepository } from "../../hooks/useRepository";
+import { t } from "../../i18n";
+import d from "../shared/dialog.module.css";
 
 export interface BranchPopoverProps {
   branch: string;
@@ -86,14 +88,14 @@ export const BranchPopover: Component<BranchPopoverProps> = (props) => {
   };
 
   return (
-    <div class="branch-popover-overlay" onClick={props.onClose}>
-      <div class="branch-popover" onClick={(e) => e.stopPropagation()}>
-        <div class="branch-popover-header">
-          <span class="branch-icon">&#xe0a0;</span>
-          <h4>Rename Branch</h4>
+    <div class={d.overlay} onClick={props.onClose}>
+      <div class={d.popover} onClick={(e) => e.stopPropagation()}>
+        <div class={d.header}>
+          <span class={d.headerIcon}>&#xe0a0;</span>
+          <h4>{t("branchPopover.title", "Rename Branch")}</h4>
         </div>
 
-        <div class="branch-popover-content">
+        <div class={d.body}>
           <input
             ref={inputRef}
             type="text"
@@ -102,29 +104,29 @@ export const BranchPopover: Component<BranchPopoverProps> = (props) => {
               setNewBranchName(e.currentTarget.value);
               setError(null);
             }}
-            placeholder="New branch name"
+            placeholder={t("branchPopover.placeholder", "New branch name")}
             disabled={isRenaming()}
           />
 
           <Show when={error()}>
-            <p class="branch-popover-error">{error()}</p>
+            <p class={d.error}>{error()}</p>
           </Show>
         </div>
 
-        <div class="branch-popover-actions">
+        <div class={d.actions}>
           <button
-            class="branch-popover-cancel"
+            class={d.cancelBtn}
             onClick={props.onClose}
             disabled={isRenaming()}
           >
-            Cancel
+            {t("branchPopover.cancel", "Cancel")}
           </button>
           <button
-            class="branch-popover-rename"
+            class={d.primaryBtn}
             onClick={handleRename}
             disabled={isRenaming() || !newBranchName().trim()}
           >
-            {isRenaming() ? "Renaming..." : "Rename"}
+            {isRenaming() ? t("branchPopover.renaming", "Renaming...") : t("branchPopover.rename", "Rename")}
           </button>
         </div>
       </div>

@@ -1,0 +1,114 @@
+/* Shared Dialog/Popover styles (RenameBranchDialog, RunCommandDialog, PromptDialog) */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.popover {
+  width: 320px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-popup);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
+.headerIcon {
+  font-size: var(--font-xl);
+  color: var(--accent);
+}
+
+.header h4 {
+  margin: 0;
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.body {
+  padding: 16px;
+}
+
+.body input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-primary);
+  font-size: var(--font-base);
+  font-family: var(--font-mono);
+}
+
+.body input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.body input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error {
+  margin: 8px 0 0;
+  font-size: var(--font-md);
+  color: var(--error);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+}
+
+.actions button {
+  flex: 1;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancelBtn {
+  background: var(--bg-highlight);
+  color: var(--fg-secondary);
+}
+
+.cancelBtn:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--fg-primary);
+}
+
+.primaryBtn {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}

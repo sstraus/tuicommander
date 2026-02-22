@@ -12,7 +12,7 @@ describe("RunCommandDialog", () => {
         onSaveAndRun={() => {}}
       />
     ));
-    const dialog = container.querySelector(".run-command-dialog");
+    const dialog = container.querySelector(".wider");
     expect(dialog).not.toBeNull();
     const heading = container.querySelector("h4");
     expect(heading!.textContent).toBe("Run Command");
@@ -27,7 +27,7 @@ describe("RunCommandDialog", () => {
         onSaveAndRun={() => {}}
       />
     ));
-    const dialog = container.querySelector(".run-command-dialog");
+    const dialog = container.querySelector(".wider");
     expect(dialog).toBeNull();
   });
 
@@ -40,7 +40,7 @@ describe("RunCommandDialog", () => {
         onSaveAndRun={() => {}}
       />
     ));
-    const input = container.querySelector(".run-command-input") as HTMLInputElement;
+    const input = container.querySelector(".monoInput") as HTMLInputElement;
     expect(input).not.toBeNull();
     expect(input.value).toBe("npm run dev");
   });
@@ -55,10 +55,10 @@ describe("RunCommandDialog", () => {
         onSaveAndRun={handleSaveAndRun}
       />
     ));
-    const input = container.querySelector(".run-command-input") as HTMLInputElement;
+    const input = container.querySelector(".monoInput") as HTMLInputElement;
     fireEvent.input(input, { target: { value: "  cargo watch  " } });
 
-    const saveBtn = container.querySelector(".branch-popover-rename")!;
+    const saveBtn = container.querySelector(".primaryBtn")!;
     fireEvent.click(saveBtn);
 
     expect(handleSaveAndRun).toHaveBeenCalledWith("cargo watch");
@@ -73,7 +73,7 @@ describe("RunCommandDialog", () => {
         onSaveAndRun={() => {}}
       />
     ));
-    const saveBtn = container.querySelector(".branch-popover-rename") as HTMLButtonElement;
+    const saveBtn = container.querySelector(".primaryBtn") as HTMLButtonElement;
     expect(saveBtn.disabled).toBe(true);
   });
 
@@ -87,7 +87,7 @@ describe("RunCommandDialog", () => {
         onSaveAndRun={() => {}}
       />
     ));
-    const cancelBtn = container.querySelector(".branch-popover-cancel")!;
+    const cancelBtn = container.querySelector(".cancelBtn")!;
     fireEvent.click(cancelBtn);
     expect(handleClose).toHaveBeenCalledOnce();
   });
@@ -102,10 +102,10 @@ describe("RunCommandDialog", () => {
         onSaveAndRun={handleSaveAndRun}
       />
     ));
-    const input = container.querySelector(".run-command-input") as HTMLInputElement;
+    const input = container.querySelector(".monoInput") as HTMLInputElement;
     fireEvent.input(input, { target: { value: "   " } });
 
-    const saveBtn = container.querySelector(".branch-popover-rename")!;
+    const saveBtn = container.querySelector(".primaryBtn")!;
     fireEvent.click(saveBtn);
 
     expect(handleSaveAndRun).not.toHaveBeenCalled();
@@ -120,7 +120,7 @@ describe("RunCommandDialog", () => {
         onSaveAndRun={() => {}}
       />
     ));
-    const desc = container.querySelector(".run-command-description");
+    const desc = container.querySelector(".description");
     expect(desc).not.toBeNull();
     expect(desc!.textContent).toContain("Enter a command to run");
   });

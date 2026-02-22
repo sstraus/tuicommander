@@ -1,4 +1,6 @@
 import { Component, Show, createSignal, createEffect, onCleanup } from "solid-js";
+import { t } from "../../i18n";
+import d from "../shared/dialog.module.css";
 
 export interface PromptDialogProps {
   visible: boolean;
@@ -12,7 +14,7 @@ export interface PromptDialogProps {
 
 /**
  * Generic text input dialog — replaces window.prompt() which doesn't work
- * in Tauri's webview. Reuses branch-popover CSS classes for consistent styling.
+ * in Tauri's webview. Uses shared dialog CSS module for consistent styling.
  */
 export const PromptDialog: Component<PromptDialogProps> = (props) => {
   const [value, setValue] = createSignal("");
@@ -50,12 +52,12 @@ export const PromptDialog: Component<PromptDialogProps> = (props) => {
 
   return (
     <Show when={props.visible}>
-      <div class="branch-popover-overlay" onClick={props.onClose}>
-        <div class="branch-popover" onClick={(e) => e.stopPropagation()}>
-          <div class="branch-popover-header">
+      <div class={d.overlay} onClick={props.onClose}>
+        <div class={d.popover} onClick={(e) => e.stopPropagation()}>
+          <div class={d.header}>
             <h4>{props.title}</h4>
           </div>
-          <div class="branch-popover-content">
+          <div class={d.body}>
             <input
               ref={inputRef}
               type="text"
@@ -64,12 +66,12 @@ export const PromptDialog: Component<PromptDialogProps> = (props) => {
               placeholder={props.placeholder ?? ""}
             />
           </div>
-          <div class="branch-popover-actions">
-            <button class="branch-popover-cancel" onClick={props.onClose}>
-              Cancel
+          <div class={d.actions}>
+            <button class={d.cancelBtn} onClick={props.onClose}>
+              {t("promptDialog.cancel", "Cancel")}
             </button>
             <button
-              class="branch-popover-rename"
+              class={d.primaryBtn}
               onClick={() => {
                 if (value().trim()) {
                   props.onConfirm(value().trim());
@@ -78,7 +80,7 @@ export const PromptDialog: Component<PromptDialogProps> = (props) => {
               }}
               disabled={!value().trim()}
             >
-              {props.confirmLabel ?? "OK"}
+              {props.confirmLabel ?? t("promptDialog.ok", "OK")}
             </button>
           </div>
         </div>

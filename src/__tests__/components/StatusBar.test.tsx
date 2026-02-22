@@ -292,7 +292,7 @@ describe("StatusBar", () => {
     expect(branchBadge).not.toBeNull();
     fireEvent.click(branchBadge!);
 
-    const popover = container.querySelector(".branch-popover");
+    const popover = container.querySelector(".popover");
     expect(popover).not.toBeNull();
   });
 
@@ -363,13 +363,13 @@ describe("StatusBar", () => {
     const branchBadge = container.querySelector("#github-status .status-badge")!;
     fireEvent.click(branchBadge);
 
-    const popover = container.querySelector(".branch-popover");
+    const popover = container.querySelector(".popover");
     expect(popover).not.toBeNull();
 
     const input = popover!.querySelector("input")!;
     fireEvent.input(input, { target: { value: "feature/new" } });
 
-    const renameBtn = popover!.querySelector(".branch-popover-rename")!;
+    const renameBtn = popover!.querySelector(".primaryBtn")!;
     fireEvent.click(renameBtn);
 
     await waitFor(() => {
@@ -439,7 +439,7 @@ describe("StatusBar", () => {
     const branchBadge = container.querySelector("#github-status .status-badge")!;
     fireEvent.click(branchBadge);
 
-    const popover = container.querySelector(".branch-popover");
+    const popover = container.querySelector(".popover");
     expect(popover).not.toBeNull();
   });
 });

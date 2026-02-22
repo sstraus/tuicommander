@@ -1,0 +1,15 @@
+/* RunCommandDialog-specific styles */
+.wider {
+  width: 380px;
+}
+
+.description {
+  margin: 0 0 12px;
+  font-size: var(--font-md);
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.monoInput {
+  font-family: var(--font-mono);
+}

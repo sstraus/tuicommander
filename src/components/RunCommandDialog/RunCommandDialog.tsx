@@ -1,4 +1,8 @@
 import { Component, Show, createSignal, createEffect, onCleanup } from "solid-js";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import d from "../shared/dialog.module.css";
+import s from "./RunCommandDialog.module.css";
 
 export interface RunCommandDialogProps {
   visible: boolean;
@@ -51,38 +55,38 @@ export const RunCommandDialog: Component<RunCommandDialogProps> = (props) => {
 
   return (
     <Show when={props.visible}>
-      <div class="branch-popover-overlay" onClick={props.onClose}>
-        <div class="branch-popover run-command-dialog" onClick={(e) => e.stopPropagation()}>
-          <div class="branch-popover-header">
-            <span class="branch-icon">▶</span>
-            <h4>Run Command</h4>
+      <div class={d.overlay} onClick={props.onClose}>
+        <div class={cx(d.popover, s.wider)} onClick={(e) => e.stopPropagation()}>
+          <div class={d.header}>
+            <span class={d.headerIcon}>▶</span>
+            <h4>{t("runCommand.title", "Run Command")}</h4>
           </div>
-          <div class="branch-popover-content">
-            <p class="run-command-description">
-              Enter a command to run in this worktree. It will be saved to repository settings.
+          <div class={d.body}>
+            <p class={s.description}>
+              {t("runCommand.description", "Enter a command to run in this worktree. It will be saved to repository settings.")}
             </p>
             <input
               ref={inputRef}
               type="text"
-              class="run-command-input"
+              class={s.monoInput}
               value={command()}
               onInput={(e) => setCommand((e.target as HTMLInputElement).value)}
-              placeholder="npm run dev, cargo watch, make dev..."
+              placeholder={t("runCommand.placeholder", "npm run dev, cargo watch, make dev...")}
             />
           </div>
-          <div class="branch-popover-actions">
+          <div class={d.actions}>
             <button
-              class="branch-popover-cancel"
+              class={d.cancelBtn}
               onClick={props.onClose}
             >
-              Cancel
+              {t("runCommand.cancel", "Cancel")}
             </button>
             <button
-              class="branch-popover-rename"
+              class={d.primaryBtn}
               onClick={handleSaveAndRun}
               disabled={!command().trim()}
             >
-              Save & Run
+              {t("runCommand.saveAndRun", "Save & Run")}
             </button>
           </div>
         </div>

@@ -53,7 +53,7 @@ describe("RenameBranchDialog", () => {
         onRename={async () => {}}
       />
     ));
-    const dialog = container.querySelector(".branch-popover");
+    const dialog = container.querySelector(".popover");
     expect(dialog).not.toBeNull();
     const heading = container.querySelector("h4");
     expect(heading!.textContent).toBe("Rename Branch");
@@ -68,7 +68,7 @@ describe("RenameBranchDialog", () => {
         onRename={async () => {}}
       />
     ));
-    const dialog = container.querySelector(".branch-popover");
+    const dialog = container.querySelector(".popover");
     expect(dialog).toBeNull();
   });
 
@@ -101,11 +101,11 @@ describe("RenameBranchDialog", () => {
     fireEvent.input(input, { target: { value: "bad name" } });
 
     // Click the rename button
-    const renameBtn = container.querySelector(".branch-popover-rename")!;
+    const renameBtn = container.querySelector(".primaryBtn")!;
     fireEvent.click(renameBtn);
 
     // Check for validation error
-    const error = container.querySelector(".branch-popover-error");
+    const error = container.querySelector(".error");
     expect(error).not.toBeNull();
     expect(error!.textContent).toBe("Branch name cannot contain spaces");
   });
@@ -125,7 +125,7 @@ describe("RenameBranchDialog", () => {
 
     fireEvent.input(input, { target: { value: "new-branch" } });
 
-    const renameBtn = container.querySelector(".branch-popover-rename")!;
+    const renameBtn = container.querySelector(".primaryBtn")!;
     fireEvent.click(renameBtn);
 
     // Wait for the async onRename to complete
@@ -144,7 +144,7 @@ describe("RenameBranchDialog", () => {
         onRename={async () => {}}
       />
     ));
-    const cancelBtn = container.querySelector(".branch-popover-cancel")!;
+    const cancelBtn = container.querySelector(".cancelBtn")!;
     fireEvent.click(cancelBtn);
     expect(handleClose).toHaveBeenCalledOnce();
   });

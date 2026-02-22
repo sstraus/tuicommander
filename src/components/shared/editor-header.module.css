@@ -1,0 +1,51 @@
+/* Shared Editor Header (CodeEditorTab, MarkdownTab) */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-md);
+}
+
+.filename {
+  flex: 1;
+  font-family: var(--font-mono);
+  color: var(--fg-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dirtyDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+  flex-shrink: 0;
+}
+
+.btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.btnSave {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btnSave:hover {
+  background: rgba(122, 162, 247, 0.15);
+}

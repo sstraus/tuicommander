@@ -34,7 +34,7 @@ describe("BranchPopover", () => {
 
   it("shows 'Rename Branch' header", () => {
     const { container } = render(() => <BranchPopover {...defaultProps} />);
-    const header = container.querySelector(".branch-popover-header h4");
+    const header = container.querySelector(".header h4");
     expect(header).not.toBeNull();
     expect(header!.textContent).toBe("Rename Branch");
   });
@@ -44,7 +44,7 @@ describe("BranchPopover", () => {
     const { container } = render(() => (
       <BranchPopover {...defaultProps} onClose={onClose} />
     ));
-    const cancelBtn = container.querySelector(".branch-popover-cancel")!;
+    const cancelBtn = container.querySelector(".cancelBtn")!;
     fireEvent.click(cancelBtn);
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -61,7 +61,7 @@ describe("BranchPopover", () => {
     fireEvent.keyDown(document, { key: "Enter" });
 
     await waitFor(() => {
-      const error = container.querySelector(".branch-popover-error");
+      const error = container.querySelector(".error");
       expect(error).not.toBeNull();
       expect(error!.textContent).toBe("Branch name cannot be empty");
     });
@@ -73,11 +73,11 @@ describe("BranchPopover", () => {
 
     fireEvent.input(input, { target: { value: "bad branch name!@#" } });
 
-    const renameBtn = container.querySelector(".branch-popover-rename")!;
+    const renameBtn = container.querySelector(".primaryBtn")!;
     fireEvent.click(renameBtn);
 
     await waitFor(() => {
-      const error = container.querySelector(".branch-popover-error");
+      const error = container.querySelector(".error");
       expect(error).not.toBeNull();
       expect(error!.textContent).toBe("Invalid characters in branch name");
     });
@@ -92,11 +92,11 @@ describe("BranchPopover", () => {
     // Enter a different valid name to trigger rename logic
     fireEvent.input(input, { target: { value: "new-name" } });
 
-    const renameBtn = container.querySelector(".branch-popover-rename")!;
+    const renameBtn = container.querySelector(".primaryBtn")!;
     fireEvent.click(renameBtn);
 
     await waitFor(() => {
-      const error = container.querySelector(".branch-popover-error");
+      const error = container.querySelector(".error");
       expect(error).not.toBeNull();
       expect(error!.textContent).toBe("Cannot rename protected branch");
     });
@@ -110,11 +110,11 @@ describe("BranchPopover", () => {
 
     fireEvent.input(input, { target: { value: "new-name" } });
 
-    const renameBtn = container.querySelector(".branch-popover-rename")!;
+    const renameBtn = container.querySelector(".primaryBtn")!;
     fireEvent.click(renameBtn);
 
     await waitFor(() => {
-      const error = container.querySelector(".branch-popover-error");
+      const error = container.querySelector(".error");
       expect(error).not.toBeNull();
       expect(error!.textContent).toBe("Cannot rename protected branch");
     });
@@ -128,11 +128,11 @@ describe("BranchPopover", () => {
 
     fireEvent.input(input, { target: { value: "valid-name" } });
 
-    const renameBtn = container.querySelector(".branch-popover-rename")!;
+    const renameBtn = container.querySelector(".primaryBtn")!;
     fireEvent.click(renameBtn);
 
     await waitFor(() => {
-      const error = container.querySelector(".branch-popover-error");
+      const error = container.querySelector(".error");
       expect(error).not.toBeNull();
       expect(error!.textContent).toBe("No repository selected");
     });
@@ -152,7 +152,7 @@ describe("BranchPopover", () => {
 
     fireEvent.input(input, { target: { value: "renamed-branch" } });
 
-    const renameBtn = container.querySelector(".branch-popover-rename")!;
+    const renameBtn = container.querySelector(".primaryBtn")!;
     fireEvent.click(renameBtn);
 
     await waitFor(() => {
@@ -167,7 +167,7 @@ describe("BranchPopover", () => {
     const { container } = render(() => (
       <BranchPopover {...defaultProps} onClose={onClose} />
     ));
-    const overlay = container.querySelector(".branch-popover-overlay")!;
+    const overlay = container.querySelector(".overlay")!;
     fireEvent.click(overlay);
     expect(onClose).toHaveBeenCalledOnce();
   });
