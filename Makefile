@@ -21,13 +21,20 @@ export MACOSX_DEPLOYMENT_TARGET ?= 10.15
 # Distribution output
 DIST_DIR=dist-release
 
-.PHONY: all clean dev build build-dmg check sign verify-sign notarize release dist \
+.PHONY: all clean dev test build build-dmg check sign verify-sign notarize release dist \
        build-github-release publish-github-release github-release
 
 all: build sign
 
 # Run in development mode with hot reload
 dev:
+	npm run tauri dev
+
+# Build frontend + launch Tauri dev (for quick manual testing)
+test:
+	@echo "Building Vite frontend..."
+	@npx vite build
+	@echo "Starting Tauri dev..."
 	npm run tauri dev
 
 # Build .app only (default, fast — skips DMG)

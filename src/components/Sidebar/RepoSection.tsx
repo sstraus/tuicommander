@@ -85,6 +85,21 @@ export const PrStateBadge: Component<{
   );
 };
 
+/** Grace period (ms) after which closed/merged PRs are hidden from the sidebar. */
+const PR_TERMINAL_GRACE_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Get PR status, hiding closed/merged PRs that have been in that state for > grace period. */
+function activePrStatus(repoPath: string, branch: string) {
+  const pr = githubStore.getPrStatus(repoPath, branch);
+  if (!pr) return null;
+  const state = pr.state?.toLowerCase();
+  if (state !== "closed" && state !== "merged") return pr;
+  // Show briefly after transition, then hide
+  const updatedAt = new Date(pr.updated_at).getTime();
+  if (Date.now() - updatedAt > PR_TERMINAL_GRACE_MS) return null;
+  return pr;
+}
+
 /** Branch item component */
 export const BranchItem: Component<{
   branch: BranchState;
@@ -149,11 +164,18 @@ export const BranchItem: Component<{
           {props.branch.name}
         </span>
       </div>
-      <Show when={githubStore.getPrStatus(props.repoPath, props.branch.name)}>
+      <Show when={activePrStatus(props.repoPath, props.branch.name)}>
         {(prData) => {
           const checks = () => githubStore.getCheckSummary(props.repoPath, props.branch.name);
+          const isTerminal = () => {
+            const st = prData().state?.toLowerCase();
+            return st === "closed" || st === "merged";
+          };
           return (
-            <span onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}>
+            <span
+              class={isTerminal() ? s.prBadgeDimmed : undefined}
+              onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}
+            >
               <PrStateBadge
                 prNumber={prData().number}
                 state={prData().state}

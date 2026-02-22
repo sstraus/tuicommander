@@ -467,6 +467,10 @@
   color: var(--text-on-error);
 }
 
+.prBadgeDimmed {
+  opacity: 0.4;
+}
+
 .prDraft {
   background: transparent;
   border: 1px dashed var(--fg-muted);
