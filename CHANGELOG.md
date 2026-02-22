@@ -24,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Built-in plugin toggle** — Plan and Stories plugins can be disabled from Settings → Plugins
 - **Activity Center bell** — Toolbar bell replaces the plan button; plugins contribute sections and items; supports per-item dismiss and "Dismiss All"
 - **4 sample plugins** in `examples/plugins/` demonstrating all capability tiers
+- **Plugin filesystem API** — `fs:read`, `fs:list`, `fs:watch` capabilities for sandboxed file access within `$HOME` (10 MB limit, glob filtering, debounced watching via `notify`)
+- **Plugin data HTTP endpoint** — `GET /api/plugins/{id}/data/{path}` exposes plugin data to external HTTP clients
 
 ### Terminal
 
@@ -80,9 +82,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Repo watcher** — Shared file watcher for automatic panel refresh on `.git/` changes
 - **Context menu submenus** — ContextMenu supports nested children
 - **Remote access QR code** — Shows actual local IP address; HTTPS-only install links; firewall reachability check
+- **Auto-hide closed/merged PRs** — PR notifications for closed or merged PRs are automatically dismissed
 
 ### Changed
 
+- **Display name** — "TUI Commander" renamed to "TUICommander" across the codebase
+- **UX density** — Tighter status bar (22px), toolbar (35px macOS), and sidebar row spacing to match VS Code density
+- **Browser/remote mode** — Full compatibility with MCP session events, CORS for any origin, IPv4 binding
 - **Status bar icons** — All text labels replaced with monochrome SVG icons; buttons reordered
 - **HelpPanel** — Simplified to app info and resource links; keyboard shortcuts moved to Settings
 - **Sidebar design** — Flat layout; harmonized git actions and footer; SVG branch/asterisk icons
@@ -108,6 +114,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Browser-mode init freeze** — Fixed hang when session cookie expires
 - **Silent failures and memory leak** — P1 issues resolved (floating promises, missing cleanup)
 - **Drag-over visual feedback** — Group sections show drop indicator during drag
+- **Tab store mutual exclusivity** — Fixed markdown wheel scroll by enforcing only one tab store active at a time
+- **Browser mode PTY creation** — Fixed ConnectInfo extraction and keybinding conflicts in remote mode
 
 ---
 
