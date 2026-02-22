@@ -161,6 +161,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                     repoPath={diffTab.repoPath}
                     filePath={diffTab.filePath}
                     scope={diffTab.scope}
+                    active={diffTabsStore.state.activeId === id}
                     onClose={() => props.onCloseTab(id)}
                   />
                 )}
@@ -181,6 +182,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                 {mdTab && (
                   <MarkdownTab
                     tab={mdTab}
+                    active={mdTabsStore.state.activeId === id}
                     onClose={() => props.onCloseTab(id)}
                   />
                 )}

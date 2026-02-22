@@ -4,3 +4,7 @@
   height: 100%;
   overflow: auto;
 }
+
+.content:focus {
+  outline: none;
+}

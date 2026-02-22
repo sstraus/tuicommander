@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, Show } from "solid-js";
+import { Component, createEffect, createSignal, onMount, Show } from "solid-js";
 import { MarkdownRenderer } from "../ui";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { useRepository } from "../../hooks/useRepository";
@@ -12,6 +12,7 @@ import s from "./MarkdownTab.module.css";
 
 export interface MarkdownTabProps {
   tab: MdTabData;
+  active?: boolean;
   onClose?: () => void;
 }
 
@@ -21,6 +22,13 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const [error, setError] = createSignal<string | null>(null);
   const repo = useRepository();
   const contextMenu = createContextMenu();
+  let contentRef!: HTMLDivElement;
+
+  // Focus the scroll container when this tab is active so wheel events route here, not the terminal canvas
+  onMount(() => contentRef?.focus({ preventScroll: true }));
+  createEffect(() => {
+    if (props.active) contentRef?.focus({ preventScroll: true });
+  });
 
   createEffect(() => {
     const tab = props.tab;
@@ -135,7 +143,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
           </button>
         </Show>
       </div>
-      <div class={s.content}>
+      <div ref={contentRef} tabIndex={-1} class={s.content}>
         <MarkdownRenderer
           content={content()}
           onLinkClick={handleMdLink}
