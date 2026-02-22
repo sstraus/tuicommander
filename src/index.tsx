@@ -1,6 +1,7 @@
 /* @refresh reload */
 import { render, ErrorBoundary } from "solid-js/web";
 import App from "./App";
+import "./global.css";
 import "./styles.css";
 import "@xterm/xterm/css/xterm.css";
 

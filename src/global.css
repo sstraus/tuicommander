@@ -1,0 +1,266 @@
+/* TUI Commander — Global Styles */
+
+/*
+ * Platform-specific styling:
+ * - macOS: titleBarStyle "overlay" - traffic lights overlay content, 78px left padding
+ * - Windows/Linux: standard OS window chrome above content, no extra padding
+ *
+ * Platform classes applied to <html>: .platform-macos, .platform-windows, .platform-linux
+ */
+
+/* Bundled web fonts (woff2, no external requests) */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Fira Code';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/fira-code-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fira Code';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/fira-code-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Hack';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/hack-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Hack';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/hack-bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Cascadia Code';
+  font-style: normal;
+  font-weight: 200 700;
+  font-display: swap;
+  src: url('/fonts/cascadia-code.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Iosevka';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/iosevka-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Iosevka';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/iosevka-bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Source Code Pro';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/source-code-pro-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Source Code Pro';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/source-code-pro-bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inconsolata';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/inconsolata-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inconsolata';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/inconsolata-bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Monaspace Neon';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/monaspace-neon-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Monaspace Neon';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/monaspace-neon-bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Commit Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/commit-mono-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Commit Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/commit-mono-bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/geist-mono-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/geist-mono-bold.woff2') format('woff2');
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:root {
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #252526;
+  --bg-tertiary: #2d2d30;
+  --bg-highlight: #37373d;
+  --fg-primary: #cccccc;
+  --fg-secondary: #a0a0a0;
+  --fg-muted: #9aa1a9;
+  --accent: #59a8dd;
+  --accent-hover: #7abde5;
+  --border: #3e3e42;
+  --success: #4ec9b0;
+  --warning: #dcdcaa;
+  --error: #f48771;
+  --text-on-accent: #000000;
+  --text-on-error: #000000;
+  --text-on-success: #000000;
+
+  /* Border radius scale */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-pill: 12px;
+  --radius-full: 50%;
+
+  /* Font size scale */
+  --font-2xs: 9px;
+  --font-xs: 10px;
+  --font-sm: 11px;
+  --font-md: 12px;
+  --font-base: 13px;
+  --font-lg: 14px;
+  --font-xl: 16px;
+
+  /* Elevation */
+  --shadow-popup: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-dropdown: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --shadow-bottom-anchor: 0 -4px 20px rgba(0, 0, 0, 0.4);
+
+  --sidebar-width: 300px;
+  --toolbar-height: 38px;
+  --tab-bar-height: 33px;
+  --status-height: 28px;
+  --font-mono: "JetBrains Mono", "Fira Code", "Hack", "Cascadia Code", "Source Code Pro", "DejaVu Sans Mono", monospace;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", sans-serif;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--fg-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-base);
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh; /* dvh adapts to iOS Safari dynamic toolbar; falls back gracefully */
+  width: 100dvw;
+}
+
+#app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Scrollbar styling — thin, unobtrusive, unified across all panels */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-highlight);
+  border-radius: var(--radius-md);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-muted);
+}
+
+/* Focus styles — exclude status bar toggle buttons (mic, MD, Diff) */
+button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
