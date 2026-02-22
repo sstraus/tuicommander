@@ -33,7 +33,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} visible={false} />
       ));
-      const panel = container.querySelector(".git-ops-panel");
+      const panel = container.querySelector(".panel");
       expect(panel).toBeNull();
     });
 
@@ -41,7 +41,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const panel = container.querySelector(".git-ops-panel");
+      const panel = container.querySelector(".panel");
       expect(panel).not.toBeNull();
     });
   });
@@ -51,7 +51,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const header = container.querySelector(".git-ops-header h3");
+      const header = container.querySelector(".header h3");
       expect(header).not.toBeNull();
       expect(header!.textContent).toBe("Git Operations");
     });
@@ -60,7 +60,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const branch = container.querySelector(".git-ops-branch");
+      const branch = container.querySelector(".branch");
       expect(branch).not.toBeNull();
       expect(branch!.textContent).toBe("feature/test");
     });
@@ -69,7 +69,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} currentBranch={null} />
       ));
-      const branch = container.querySelector(".git-ops-branch");
+      const branch = container.querySelector(".branch");
       expect(branch).not.toBeNull();
       expect(branch!.textContent).toBe("No branch");
     });
@@ -78,7 +78,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const state = container.querySelector(".git-ops-state");
+      const state = container.querySelector(".state");
       expect(state).not.toBeNull();
       expect(state!.textContent).toBe("clean");
     });
@@ -87,7 +87,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="dirty" />
       ));
-      const state = container.querySelector(".git-ops-state-dirty");
+      const state = container.querySelector(".stateDirty");
       expect(state).not.toBeNull();
     });
   });
@@ -98,7 +98,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} onClose={onClose} />
       ));
-      const closeBtn = container.querySelector(".git-ops-close")!;
+      const closeBtn = container.querySelector(".closeBtn")!;
       fireEvent.click(closeBtn);
       expect(onClose).toHaveBeenCalledOnce();
     });
@@ -109,7 +109,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const buttons = container.querySelectorAll(".git-ops-btn");
+      const buttons = container.querySelectorAll(".btn");
       const labels = Array.from(buttons).map((b) => b.textContent?.trim());
       expect(labels).toContain("↓Pull");
       expect(labels).toContain("↑Push");
@@ -120,13 +120,13 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoPath={null} />
       ));
-      const sectionTitles = container.querySelectorAll(".git-ops-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const quickActionsSection = Array.from(sectionTitles).find(
         (t) => t.textContent === "Quick Actions"
       );
       expect(quickActionsSection).not.toBeNull();
       const quickActionsButtons = quickActionsSection!
-        .parentElement!.querySelectorAll(".git-ops-btn");
+        .parentElement!.querySelectorAll(".btn");
       for (const btn of Array.from(quickActionsButtons)) {
         expect((btn as HTMLButtonElement).disabled).toBe(true);
       }
@@ -136,12 +136,12 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="merge" />
       ));
-      const sectionTitles = container.querySelectorAll(".git-ops-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const quickActionsSection = Array.from(sectionTitles).find(
         (t) => t.textContent === "Quick Actions"
       );
       const quickActionsButtons = quickActionsSection!
-        .parentElement!.querySelectorAll(".git-ops-btn");
+        .parentElement!.querySelectorAll(".btn");
       for (const btn of Array.from(quickActionsButtons)) {
         expect((btn as HTMLButtonElement).disabled).toBe(true);
       }
@@ -151,7 +151,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const buttons = container.querySelectorAll(".git-ops-btn");
+      const buttons = container.querySelectorAll(".btn");
       const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "↓Pull")!;
       fireEvent.click(pullBtn);
       expect(mockWrite).toHaveBeenCalledOnce();
@@ -162,7 +162,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const buttons = container.querySelectorAll(".git-ops-btn");
+      const buttons = container.querySelectorAll(".btn");
       const pushBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "↑Push")!;
       fireEvent.click(pushBtn);
       expect(mockWrite).toHaveBeenCalledOnce();
@@ -173,7 +173,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const buttons = container.querySelectorAll(".git-ops-btn");
+      const buttons = container.querySelectorAll(".btn");
       const fetchBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "⟳Fetch")!;
       fireEvent.click(fetchBtn);
       expect(mockWrite).toHaveBeenCalledOnce();
@@ -185,7 +185,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} onClose={onClose} />
       ));
-      const buttons = container.querySelectorAll(".git-ops-btn");
+      const buttons = container.querySelectorAll(".btn");
       const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "↓Pull")!;
       fireEvent.click(pullBtn);
       expect(onClose).toHaveBeenCalledOnce();
@@ -196,7 +196,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} onBranchChange={onBranchChange} />
       ));
-      const buttons = container.querySelectorAll(".git-ops-btn");
+      const buttons = container.querySelectorAll(".btn");
       const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "↓Pull")!;
       fireEvent.click(pullBtn);
       expect(onBranchChange).toHaveBeenCalledOnce();
@@ -207,7 +207,7 @@ describe("GitOperationsPanel", () => {
         <GitOperationsPanel {...defaultProps} repoPath={null} />
       ));
       // Even with disabled buttons, try clicking - the handleOperation guard should return
-      const buttons = container.querySelectorAll(".git-ops-btn");
+      const buttons = container.querySelectorAll(".btn");
       const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "↓Pull")!;
       fireEvent.click(pullBtn);
       expect(mockWrite).not.toHaveBeenCalled();
@@ -219,9 +219,9 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="merge" />
       ));
-      const mergeSection = container.querySelector(".git-ops-merge-section");
+      const mergeSection = container.querySelector(".mergeSection");
       expect(mergeSection).not.toBeNull();
-      const title = mergeSection!.querySelector(".git-ops-section-title");
+      const title = mergeSection!.querySelector(".sectionTitle");
       expect(title!.textContent).toBe("Merge in Progress");
     });
 
@@ -229,7 +229,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="conflict" />
       ));
-      const mergeSection = container.querySelector(".git-ops-merge-section");
+      const mergeSection = container.querySelector(".mergeSection");
       expect(mergeSection).not.toBeNull();
     });
 
@@ -237,7 +237,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="clean" />
       ));
-      const mergeSection = container.querySelector(".git-ops-merge-section");
+      const mergeSection = container.querySelector(".mergeSection");
       expect(mergeSection).toBeNull();
     });
 
@@ -245,7 +245,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="dirty" />
       ));
-      const mergeSection = container.querySelector(".git-ops-merge-section");
+      const mergeSection = container.querySelector(".mergeSection");
       expect(mergeSection).toBeNull();
     });
 
@@ -253,7 +253,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="unknown" />
       ));
-      const mergeSection = container.querySelector(".git-ops-merge-section");
+      const mergeSection = container.querySelector(".mergeSection");
       expect(mergeSection).toBeNull();
     });
 
@@ -261,7 +261,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="merge" />
       ));
-      const warning = container.querySelector(".git-ops-warning");
+      const warning = container.querySelector(".warning");
       expect(warning).not.toBeNull();
       expect(warning!.textContent).toContain("Resolve conflicts");
     });
@@ -270,8 +270,8 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="merge" />
       ));
-      const mergeSection = container.querySelector(".git-ops-merge-section");
-      const buttons = mergeSection!.querySelectorAll(".git-ops-btn");
+      const mergeSection = container.querySelector(".mergeSection");
+      const buttons = mergeSection!.querySelectorAll(".btn");
       const labels = Array.from(buttons).map((b) => b.textContent?.trim());
       expect(labels).toContain("✕Abort Merge");
       expect(labels).toContain("→Continue Merge");
@@ -283,8 +283,8 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="merge" />
       ));
-      const mergeSection = container.querySelector(".git-ops-merge-section");
-      const buttons = mergeSection!.querySelectorAll(".git-ops-btn");
+      const mergeSection = container.querySelector(".mergeSection");
+      const buttons = mergeSection!.querySelectorAll(".btn");
       const abortBtn = Array.from(buttons).find((b) => b.textContent?.includes("Abort"))!;
       fireEvent.click(abortBtn);
       expect(mockWrite).toHaveBeenCalledOnce();
@@ -295,8 +295,8 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="merge" />
       ));
-      const mergeSection = container.querySelector(".git-ops-merge-section");
-      const buttons = mergeSection!.querySelectorAll(".git-ops-btn");
+      const mergeSection = container.querySelector(".mergeSection");
+      const buttons = mergeSection!.querySelectorAll(".btn");
       const continueBtn = Array.from(buttons).find((b) => b.textContent?.includes("Continue"))!;
       fireEvent.click(continueBtn);
       expect(mockWrite).toHaveBeenCalledOnce();
@@ -307,8 +307,8 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="merge" />
       ));
-      const mergeSection = container.querySelector(".git-ops-merge-section");
-      const buttons = mergeSection!.querySelectorAll(".git-ops-btn");
+      const mergeSection = container.querySelector(".mergeSection");
+      const buttons = mergeSection!.querySelectorAll(".btn");
       const oursBtn = Array.from(buttons).find((b) => b.textContent?.includes("Ours"))!;
       fireEvent.click(oursBtn);
       expect(mockWrite).toHaveBeenCalledOnce();
@@ -319,8 +319,8 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="merge" />
       ));
-      const mergeSection = container.querySelector(".git-ops-merge-section");
-      const buttons = mergeSection!.querySelectorAll(".git-ops-btn");
+      const mergeSection = container.querySelector(".mergeSection");
+      const buttons = mergeSection!.querySelectorAll(".btn");
       const theirsBtn = Array.from(buttons).find((b) => b.textContent?.includes("Theirs"))!;
       fireEvent.click(theirsBtn);
       expect(mockWrite).toHaveBeenCalledOnce();
@@ -333,7 +333,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const select = container.querySelector(".git-ops-branch-select select");
+      const select = container.querySelector(".branchSelect select");
       expect(select).not.toBeNull();
     });
 
@@ -341,7 +341,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const buttons = container.querySelectorAll(".git-ops-btn");
+      const buttons = container.querySelectorAll(".btn");
       const labels = Array.from(buttons).map((b) => b.textContent?.trim());
       expect(labels).toContain("⊕Merge");
       expect(labels).toContain("⎇Checkout");
@@ -351,12 +351,12 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const sectionTitles = container.querySelectorAll(".git-ops-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const branchSection = Array.from(sectionTitles).find(
         (t) => t.textContent === "Branch Operations"
       );
       const branchButtons = branchSection!.parentElement!.querySelectorAll(
-        ".git-ops-buttons .git-ops-btn"
+        ".buttons .btn"
       );
       for (const btn of Array.from(branchButtons)) {
         expect((btn as HTMLButtonElement).disabled).toBe(true);
@@ -376,12 +376,12 @@ describe("GitOperationsPanel", () => {
 
       // Wait for the async fetchBranches to resolve
       await vi.waitFor(() => {
-        const options = container.querySelectorAll(".git-ops-branch-select option");
+        const options = container.querySelectorAll(".branchSelect option");
         // Should have "Select a branch..." + "main" (current branch filtered out in <For>)
         expect(options.length).toBeGreaterThanOrEqual(2);
       });
 
-      const options = container.querySelectorAll(".git-ops-branch-select option");
+      const options = container.querySelectorAll(".branchSelect option");
       const optionTexts = Array.from(options).map((o) => o.textContent);
       expect(optionTexts).toContain("Select a branch...");
       expect(optionTexts).toContain("main");
@@ -416,7 +416,7 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoStatus="merge" />
       ));
-      const select = container.querySelector(".git-ops-branch-select select") as HTMLSelectElement;
+      const select = container.querySelector(".branchSelect select") as HTMLSelectElement;
       expect(select.disabled).toBe(true);
     });
   });
@@ -426,13 +426,13 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const sectionTitles = container.querySelectorAll(".git-ops-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const stashSection = Array.from(sectionTitles).find(
         (t) => t.textContent === "Stash"
       );
       expect(stashSection).not.toBeNull();
 
-      const buttons = stashSection!.parentElement!.querySelectorAll(".git-ops-btn");
+      const buttons = stashSection!.parentElement!.querySelectorAll(".btn");
       const labels = Array.from(buttons).map((b) => b.textContent?.trim());
       expect(labels).toContain("⊡Stash");
       expect(labels).toContain("⊞Pop");
@@ -442,11 +442,11 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const sectionTitles = container.querySelectorAll(".git-ops-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const stashSection = Array.from(sectionTitles).find(
         (t) => t.textContent === "Stash"
       );
-      const buttons = stashSection!.parentElement!.querySelectorAll(".git-ops-btn");
+      const buttons = stashSection!.parentElement!.querySelectorAll(".btn");
       const stashBtn = Array.from(buttons).find((b) => b.textContent?.includes("Stash") && !b.textContent?.includes("Pop"))!;
       fireEvent.click(stashBtn);
       expect(mockWrite).toHaveBeenCalledOnce();
@@ -459,11 +459,11 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
-      const sectionTitles = container.querySelectorAll(".git-ops-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const stashSection = Array.from(sectionTitles).find(
         (t) => t.textContent === "Stash"
       );
-      const buttons = stashSection!.parentElement!.querySelectorAll(".git-ops-btn");
+      const buttons = stashSection!.parentElement!.querySelectorAll(".btn");
       const popBtn = Array.from(buttons).find((b) => b.textContent?.includes("Pop"))!;
       fireEvent.click(popBtn);
       expect(mockWrite).toHaveBeenCalledOnce();
@@ -474,11 +474,11 @@ describe("GitOperationsPanel", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} repoPath={null} />
       ));
-      const sectionTitles = container.querySelectorAll(".git-ops-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const stashSection = Array.from(sectionTitles).find(
         (t) => t.textContent === "Stash"
       );
-      const buttons = stashSection!.parentElement!.querySelectorAll(".git-ops-btn");
+      const buttons = stashSection!.parentElement!.querySelectorAll(".btn");
       for (const btn of Array.from(buttons)) {
         expect((btn as HTMLButtonElement).disabled).toBe(true);
       }
@@ -496,7 +496,7 @@ describe("GitOperationsPanel", () => {
           onClose={vi.fn()}
         />
       ));
-      const buttons = container.querySelectorAll(".git-ops-btn");
+      const buttons = container.querySelectorAll(".btn");
       const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "↓Pull")!;
       // Should not throw when onBranchChange is undefined
       expect(() => fireEvent.click(pullBtn)).not.toThrow();

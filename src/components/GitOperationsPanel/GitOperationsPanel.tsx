@@ -3,6 +3,18 @@ import { invoke } from "../../invoke";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { escapeShellArg, isValidBranchName, isValidPath } from "../../utils";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import s from "./GitOperationsPanel.module.css";
+
+/** Map repo status strings to CSS module classes */
+const STATE_CLASSES: Record<string, string> = {
+  clean: s.stateClean,
+  dirty: s.stateDirty,
+  conflict: s.stateConflict,
+  merge: s.stateMerge,
+  unknown: s.stateUnknown,
+};
 
 export interface GitOperationsPanelProps {
   visible: boolean;
@@ -159,39 +171,39 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
 
   return (
     <Show when={props.visible}>
-      <div class="git-ops-panel">
-        <div class="git-ops-header">
-          <h3>Git Operations</h3>
-          <button class="git-ops-close" onClick={props.onClose}>
+      <div class={s.panel}>
+        <div class={s.header}>
+          <h3>{t("gitOps.title", "Git Operations")}</h3>
+          <button class={s.closeBtn} onClick={props.onClose}>
             &times;
           </button>
         </div>
 
-        <div class="git-ops-content">
+        <div class={s.content}>
           {/* Current status */}
-          <div class="git-ops-status">
-            <span class="git-ops-branch">{props.currentBranch || "No branch"}</span>
-            <span class={`git-ops-state git-ops-state-${props.repoStatus}`}>
+          <div class={s.status}>
+            <span class={s.branch}>{props.currentBranch || t("gitOps.noBranch", "No branch")}</span>
+            <span class={cx(s.state, STATE_CLASSES[props.repoStatus])}>
               {props.repoStatus}
             </span>
           </div>
 
           {/* Merge in progress section */}
           <Show when={isMergeInProgress()}>
-            <div class="git-ops-section git-ops-merge-section">
-              <div class="git-ops-section-title">Merge in Progress</div>
-              <div class="git-ops-warning">
-                Resolve conflicts before continuing
+            <div class={cx(s.section, s.mergeSection)}>
+              <div class={s.sectionTitle}>{t("gitOps.mergeInProgress", "Merge in Progress")}</div>
+              <div class={s.warning}>
+                {t("gitOps.resolveConflicts", "Resolve conflicts before continuing")}
               </div>
-              <div class="git-ops-buttons">
+              <div class={s.buttons}>
                 <For each={MERGE_OPERATIONS}>
                   {(op) => (
                     <button
-                      class="git-ops-btn"
+                      class={s.btn}
                       onClick={() => props.repoPath && executeCommand(op.command(props.repoPath))}
                       title={op.description}
                     >
-                      <span class="git-ops-btn-icon">{op.icon}</span>
+                      <span class={s.btnIcon}>{op.icon}</span>
                       {op.label}
                     </button>
                   )}
@@ -201,18 +213,18 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
           </Show>
 
           {/* Quick actions */}
-          <div class="git-ops-section">
-            <div class="git-ops-section-title">Quick Actions</div>
-            <div class="git-ops-buttons">
+          <div class={s.section}>
+            <div class={s.sectionTitle}>{t("gitOps.quickActions", "Quick Actions")}</div>
+            <div class={s.buttons}>
               <For each={GIT_OPERATIONS.filter((op) => !op.requiresBranch)}>
                 {(op) => (
                   <button
-                    class="git-ops-btn"
+                    class={s.btn}
                     onClick={() => handleOperation(op)}
                     disabled={!props.repoPath || isMergeInProgress()}
                     title={op.description}
                   >
-                    <span class="git-ops-btn-icon">{op.icon}</span>
+                    <span class={s.btnIcon}>{op.icon}</span>
                     {op.label}
                   </button>
                 )}
@@ -221,33 +233,33 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
           </div>
 
           {/* Branch operations */}
-          <div class="git-ops-section">
-            <div class="git-ops-section-title">Branch Operations</div>
+          <div class={s.section}>
+            <div class={s.sectionTitle}>{t("gitOps.branchOperations", "Branch Operations")}</div>
 
             {/* Branch selector */}
-            <div class="git-ops-branch-select">
+            <div class={s.branchSelect}>
               <select
                 value={selectedBranch()}
                 onChange={(e) => setSelectedBranch(e.currentTarget.value)}
                 disabled={loadingBranches() || isMergeInProgress()}
               >
-                <option value="">Select a branch...</option>
+                <option value="">{t("gitOps.selectBranch", "Select a branch...")}</option>
                 <For each={branches().filter((b) => b !== props.currentBranch)}>
                   {(branch) => <option value={branch}>{branch}</option>}
                 </For>
               </select>
             </div>
 
-            <div class="git-ops-buttons">
+            <div class={s.buttons}>
               <For each={GIT_OPERATIONS.filter((op) => op.requiresBranch)}>
                 {(op) => (
                   <button
-                    class="git-ops-btn"
+                    class={s.btn}
                     onClick={() => handleOperation(op)}
                     disabled={!props.repoPath || !selectedBranch() || isMergeInProgress()}
                     title={op.description}
                   >
-                    <span class="git-ops-btn-icon">{op.icon}</span>
+                    <span class={s.btnIcon}>{op.icon}</span>
                     {op.label}
                   </button>
                 )}
@@ -256,26 +268,26 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
           </div>
 
           {/* Stash operations */}
-          <div class="git-ops-section">
-            <div class="git-ops-section-title">Stash</div>
-            <div class="git-ops-buttons">
+          <div class={s.section}>
+            <div class={s.sectionTitle}>{t("gitOps.stash", "Stash")}</div>
+            <div class={s.buttons}>
               <button
-                class="git-ops-btn"
+                class={s.btn}
                 onClick={() => props.repoPath && executeCommand(`cd ${escapeShellArg(props.repoPath)} && git stash`)}
                 disabled={!props.repoPath}
-                title="Stash current changes"
+                title={t("gitOps.stashChanges", "Stash current changes")}
               >
-                <span class="git-ops-btn-icon">⊡</span>
-                Stash
+                <span class={s.btnIcon}>⊡</span>
+                {t("gitOps.stashBtn", "Stash")}
               </button>
               <button
-                class="git-ops-btn"
+                class={s.btn}
                 onClick={() => props.repoPath && executeCommand(`cd ${escapeShellArg(props.repoPath)} && git stash pop`)}
                 disabled={!props.repoPath}
-                title="Apply and remove latest stash"
+                title={t("gitOps.stashPop", "Apply and remove latest stash")}
               >
-                <span class="git-ops-btn-icon">⊞</span>
-                Pop
+                <span class={s.btnIcon}>⊞</span>
+                {t("gitOps.popBtn", "Pop")}
               </button>
             </div>
           </div>

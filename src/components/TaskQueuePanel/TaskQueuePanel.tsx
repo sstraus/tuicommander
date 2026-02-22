@@ -1,5 +1,8 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import { tasksStore, type TaskData, type TaskStatus } from "../../stores/tasks";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import s from "./TaskQueuePanel.module.css";
 
 export interface TaskQueuePanelProps {
   visible: boolean;
@@ -56,28 +59,28 @@ export const TaskQueuePanel: Component<TaskQueuePanelProps> = (props) => {
 
   return (
     <Show when={props.visible}>
-      <div class="task-queue-panel">
-        <div class="task-queue-header">
-          <h3>Task Queue</h3>
-          <div class="task-queue-actions">
+      <div class={s.panel}>
+        <div class={s.header}>
+          <h3>{t("taskQueue.title", "Task Queue")}</h3>
+          <div class={s.actions}>
             <button
-              class="task-queue-clear"
+              class={s.clearBtn}
               onClick={() => tasksStore.clearCompleted()}
-              title="Clear completed"
+              title={t("taskQueue.clearCompleted", "Clear completed")}
             >
-              Clear
+              {t("taskQueue.clear", "Clear")}
             </button>
-            <button class="task-queue-close" onClick={props.onClose}>
+            <button class={s.closeBtn} onClick={props.onClose}>
               &times;
             </button>
           </div>
         </div>
 
-        <div class="task-queue-content">
+        <div class={s.content}>
           {/* Running Tasks */}
           <Show when={runningTasks().length > 0}>
-            <div class="task-queue-section">
-              <div class="task-queue-section-title">Running</div>
+            <div class={s.section}>
+              <div class={s.sectionTitle}>{t("taskQueue.running", "Running")}</div>
               <For each={runningTasks()}>
                 {(task) => (
                   <TaskItem
@@ -92,14 +95,14 @@ export const TaskQueuePanel: Component<TaskQueuePanelProps> = (props) => {
 
           {/* Pending Tasks */}
           <Show when={pendingTasks().length > 0}>
-            <div class="task-queue-section">
-              <div class="task-queue-section-title">
-                Pending ({pendingTasks().length})
+            <div class={s.section}>
+              <div class={s.sectionTitle}>
+                {t("taskQueue.pending", "Pending")} ({pendingTasks().length})
               </div>
               <For each={pendingTasks()}>
                 {(task) => (
                   <div
-                    class={`task-item-wrapper ${draggedId() === task.id ? "dragging" : ""}`}
+                    class={cx(s.itemWrapper, draggedId() === task.id && s.dragging)}
                     draggable={true}
                     onDragStart={(e) => handleDragStart(e, task.id)}
                     onDragOver={(e) => handleDragOver(e, task.id)}
@@ -119,9 +122,9 @@ export const TaskQueuePanel: Component<TaskQueuePanelProps> = (props) => {
 
           {/* Completed Tasks */}
           <Show when={completedTasks().length > 0}>
-            <div class="task-queue-section">
-              <div class="task-queue-section-title">
-                Completed ({completedTasks().length})
+            <div class={s.section}>
+              <div class={s.sectionTitle}>
+                {t("taskQueue.completed", "Completed")} ({completedTasks().length})
               </div>
               <For each={completedTasks().slice(0, 10)}>
                 {(task) => (
@@ -137,9 +140,9 @@ export const TaskQueuePanel: Component<TaskQueuePanelProps> = (props) => {
 
           {/* Empty State */}
           <Show when={tasks().length === 0}>
-            <div class="task-queue-empty">
-              <p>No tasks in queue</p>
-              <p class="task-queue-hint">Tasks will appear here when agents are running</p>
+            <div class={s.empty}>
+              <p>{t("taskQueue.noTasks", "No tasks in queue")}</p>
+              <p class={s.hint}>{t("taskQueue.hint", "Tasks will appear here when agents are running")}</p>
             </div>
           </Show>
         </div>
@@ -173,35 +176,35 @@ const TaskItem: Component<TaskItemProps> = (props) => {
 
   return (
     <div
-      class={`task-item ${props.task.status} ${props.compact ? "compact" : ""}`}
+      class={cx(s.item, s[props.task.status], props.compact && s.compact)}
       onClick={props.onSelect}
     >
-      <span class="task-item-status" style={{ color: statusColor() }}>
+      <span class={s.itemStatus} style={{ color: statusColor() }}>
         {statusIcon()}
       </span>
 
-      <div class="task-item-content">
-        <div class="task-item-name">{props.task.name}</div>
+      <div class={s.itemContent}>
+        <div class={s.itemName}>{props.task.name}</div>
         <Show when={!props.compact && props.task.description}>
-          <div class="task-item-description">{props.task.description}</div>
+          <div class={s.itemDescription}>{props.task.description}</div>
         </Show>
       </div>
 
-      <div class="task-item-meta">
+      <div class={s.itemMeta}>
         <Show when={getDuration()}>
-          <span class="task-item-duration">{getDuration()}</span>
+          <span class={s.itemDuration}>{getDuration()}</span>
         </Show>
         <Show when={props.draggable}>
-          <span class="task-item-drag">⋮⋮</span>
+          <span class={s.itemDrag}>⋮⋮</span>
         </Show>
         <Show when={props.onCancel && (props.task.status === "pending" || props.task.status === "running")}>
           <button
-            class="task-item-cancel"
+            class={s.itemCancel}
             onClick={(e) => {
               e.stopPropagation();
               props.onCancel?.();
             }}
-            title="Cancel task"
+            title={t("taskQueue.cancelTask", "Cancel task")}
           >
             ✕
           </button>

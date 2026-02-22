@@ -51,7 +51,7 @@ describe("TaskQueuePanel", () => {
       const { container } = render(() => (
         <TaskQueuePanel visible={false} onClose={() => {}} />
       ));
-      const panel = container.querySelector(".task-queue-panel");
+      const panel = container.querySelector(".panel");
       expect(panel).toBeNull();
     });
 
@@ -59,7 +59,7 @@ describe("TaskQueuePanel", () => {
       const { container } = render(() => (
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
-      const panel = container.querySelector(".task-queue-panel");
+      const panel = container.querySelector(".panel");
       expect(panel).not.toBeNull();
     });
   });
@@ -69,11 +69,11 @@ describe("TaskQueuePanel", () => {
       const { container } = render(() => (
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
-      const header = container.querySelector(".task-queue-header h3");
+      const header = container.querySelector(".header h3");
       expect(header).not.toBeNull();
       expect(header!.textContent).toBe("Task Queue");
 
-      const closeBtn = container.querySelector(".task-queue-close");
+      const closeBtn = container.querySelector(".closeBtn");
       expect(closeBtn).not.toBeNull();
     });
 
@@ -82,7 +82,7 @@ describe("TaskQueuePanel", () => {
       const { container } = render(() => (
         <TaskQueuePanel visible={true} onClose={onClose} />
       ));
-      const closeBtn = container.querySelector(".task-queue-close")!;
+      const closeBtn = container.querySelector(".closeBtn")!;
       fireEvent.click(closeBtn);
       expect(onClose).toHaveBeenCalledOnce();
     });
@@ -91,7 +91,7 @@ describe("TaskQueuePanel", () => {
       const { container } = render(() => (
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
-      const clearBtn = container.querySelector(".task-queue-clear");
+      const clearBtn = container.querySelector(".clearBtn");
       expect(clearBtn).not.toBeNull();
       expect(clearBtn!.textContent).toBe("Clear");
     });
@@ -110,15 +110,15 @@ describe("TaskQueuePanel", () => {
       ));
 
       // Verify task appears
-      const tasksBefore = container.querySelectorAll(".task-item-name");
+      const tasksBefore = container.querySelectorAll(".itemName");
       expect(tasksBefore.length).toBeGreaterThan(0);
 
       // Click clear
-      const clearBtn = container.querySelector(".task-queue-clear")!;
+      const clearBtn = container.querySelector(".clearBtn")!;
       fireEvent.click(clearBtn);
 
       // Verify task is removed
-      const tasksAfter = container.querySelectorAll(".task-item-name");
+      const tasksAfter = container.querySelectorAll(".itemName");
       expect(tasksAfter.length).toBe(0);
     });
   });
@@ -128,7 +128,7 @@ describe("TaskQueuePanel", () => {
       const { container } = render(() => (
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
-      const empty = container.querySelector(".task-queue-empty");
+      const empty = container.querySelector(".empty");
       expect(empty).not.toBeNull();
       expect(empty!.textContent).toContain("No tasks in queue");
     });
@@ -137,7 +137,7 @@ describe("TaskQueuePanel", () => {
       const { container } = render(() => (
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
-      const hint = container.querySelector(".task-queue-hint");
+      const hint = container.querySelector(".hint");
       expect(hint).not.toBeNull();
       expect(hint!.textContent).toContain("Tasks will appear here");
     });
@@ -155,7 +155,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const taskNames = container.querySelectorAll(".task-item-name");
+      const taskNames = container.querySelectorAll(".itemName");
       expect(taskNames.length).toBeGreaterThan(0);
       expect(taskNames[0].textContent).toBe("Test Task");
     });
@@ -168,7 +168,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const sectionTitles = container.querySelectorAll(".task-queue-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const pendingTitle = Array.from(sectionTitles).find(
         (t) => t.textContent?.includes("Pending")
       );
@@ -183,7 +183,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const wrapper = container.querySelector(".task-item-wrapper");
+      const wrapper = container.querySelector(".itemWrapper");
       expect(wrapper).not.toBeNull();
       expect(wrapper!.getAttribute("draggable")).toBe("true");
     });
@@ -195,7 +195,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const dragHandle = container.querySelector(".task-item-drag");
+      const dragHandle = container.querySelector(".itemDrag");
       expect(dragHandle).not.toBeNull();
     });
 
@@ -206,7 +206,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const cancelBtn = container.querySelector(".task-item-cancel");
+      const cancelBtn = container.querySelector(".itemCancel");
       expect(cancelBtn).not.toBeNull();
     });
 
@@ -217,7 +217,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const cancelBtn = container.querySelector(".task-item-cancel")!;
+      const cancelBtn = container.querySelector(".itemCancel")!;
       fireEvent.click(cancelBtn);
 
       const task = tasksStore.get(taskId);
@@ -234,7 +234,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const sectionTitles = container.querySelectorAll(".task-queue-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const runningTitle = Array.from(sectionTitles).find(
         (t) => t.textContent?.includes("Running")
       );
@@ -250,7 +250,7 @@ describe("TaskQueuePanel", () => {
       ));
 
       // Running status icon is a filled circle
-      const statusIcon = container.querySelector(".task-item-status");
+      const statusIcon = container.querySelector(".itemStatus");
       expect(statusIcon).not.toBeNull();
     });
 
@@ -262,7 +262,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const cancelBtn = container.querySelector(".task-item-cancel");
+      const cancelBtn = container.querySelector(".itemCancel");
       expect(cancelBtn).not.toBeNull();
     });
 
@@ -274,7 +274,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const duration = container.querySelector(".task-item-duration");
+      const duration = container.querySelector(".itemDuration");
       expect(duration).not.toBeNull();
       // Should show seconds since it just started
       expect(duration!.textContent).toMatch(/\d+s/);
@@ -291,7 +291,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const sectionTitles = container.querySelectorAll(".task-queue-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const completedTitle = Array.from(sectionTitles).find(
         (t) => t.textContent?.includes("Completed")
       );
@@ -311,7 +311,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const sectionTitles = container.querySelectorAll(".task-queue-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const completedTitle = Array.from(sectionTitles).find(
         (t) => t.textContent?.includes("Completed")
       );
@@ -332,11 +332,11 @@ describe("TaskQueuePanel", () => {
       ));
 
       // Completed tasks have compact class
-      const compactItems = container.querySelectorAll(".task-item.compact");
+      const compactItems = container.querySelectorAll(".item.compact");
       expect(compactItems.length).toBeGreaterThan(0);
 
       // Description should not be rendered in compact mode
-      const descriptions = container.querySelectorAll(".task-item.compact .task-item-description");
+      const descriptions = container.querySelectorAll(".item.compact .itemDescription");
       expect(descriptions.length).toBe(0);
     });
 
@@ -350,7 +350,7 @@ describe("TaskQueuePanel", () => {
       ));
 
       // Only completed tasks are present
-      const cancelBtn = container.querySelector(".task-item-cancel");
+      const cancelBtn = container.querySelector(".itemCancel");
       expect(cancelBtn).toBeNull();
     });
 
@@ -363,7 +363,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const sectionTitles = container.querySelectorAll(".task-queue-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const completedTitle = Array.from(sectionTitles).find(
         (t) => t.textContent?.includes("Completed")
       );
@@ -378,7 +378,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const sectionTitles = container.querySelectorAll(".task-queue-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const completedTitle = Array.from(sectionTitles).find(
         (t) => t.textContent?.includes("Completed")
       );
@@ -394,7 +394,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const name = container.querySelector(".task-item-name");
+      const name = container.querySelector(".itemName");
       expect(name).not.toBeNull();
       expect(name!.textContent).toBe("My Task");
     });
@@ -410,7 +410,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const desc = container.querySelector(".task-item-description");
+      const desc = container.querySelector(".itemDescription");
       expect(desc).not.toBeNull();
       expect(desc!.textContent).toBe("A longer description");
     });
@@ -422,7 +422,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const desc = container.querySelector(".task-item-description");
+      const desc = container.querySelector(".itemDescription");
       expect(desc).toBeNull();
     });
 
@@ -434,7 +434,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const statusIcons = container.querySelectorAll(".task-item-status");
+      const statusIcons = container.querySelectorAll(".itemStatus");
       expect(statusIcons.length).toBeGreaterThan(0);
       // Pending icon is an empty circle
       expect(statusIcons[0].textContent).toBe("○");
@@ -450,7 +450,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} onTaskSelect={onTaskSelect} />
       ));
 
-      const taskItem = container.querySelector(".task-item")!;
+      const taskItem = container.querySelector(".item")!;
       fireEvent.click(taskItem);
       expect(onTaskSelect).toHaveBeenCalledWith(taskId);
     });
@@ -462,7 +462,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const taskItem = container.querySelector(".task-item")!;
+      const taskItem = container.querySelector(".item")!;
       expect(() => fireEvent.click(taskItem)).not.toThrow();
     });
   });
@@ -485,7 +485,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const sectionTitles = container.querySelectorAll(".task-queue-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const titleTexts = Array.from(sectionTitles).map((t) => t.textContent);
 
       expect(titleTexts.some((t) => t?.includes("Running"))).toBe(true);
@@ -493,7 +493,7 @@ describe("TaskQueuePanel", () => {
       expect(titleTexts.some((t) => t?.includes("Completed"))).toBe(true);
 
       // Empty state should NOT show
-      const empty = container.querySelector(".task-queue-empty");
+      const empty = container.querySelector(".empty");
       expect(empty).toBeNull();
     });
 
@@ -504,7 +504,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const sectionTitles = container.querySelectorAll(".task-queue-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const runningTitle = Array.from(sectionTitles).find(
         (t) => t.textContent?.includes("Running")
       );
@@ -519,7 +519,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const sectionTitles = container.querySelectorAll(".task-queue-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const pendingTitle = Array.from(sectionTitles).find(
         (t) => t.textContent?.includes("Pending")
       );
@@ -533,7 +533,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const sectionTitles = container.querySelectorAll(".task-queue-section-title");
+      const sectionTitles = container.querySelectorAll(".sectionTitle");
       const completedTitle = Array.from(sectionTitles).find(
         (t) => t.textContent?.includes("Completed")
       );
@@ -556,7 +556,7 @@ describe("TaskQueuePanel", () => {
         <TaskQueuePanel visible={true} onClose={() => {}} />
       ));
 
-      const duration = container.querySelector(".task-item-duration");
+      const duration = container.querySelector(".itemDuration");
       expect(duration).not.toBeNull();
       // Should show minutes and seconds
       expect(duration!.textContent).toMatch(/\d+m \d+s/);
