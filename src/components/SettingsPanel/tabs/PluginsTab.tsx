@@ -1,13 +1,17 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { pluginStore } from "../../../stores/pluginStore";
 import { registryStore, type RegistryEntry } from "../../../stores/registryStore";
 import { setPluginEnabled } from "../../../plugins/pluginLoader";
 import { invoke } from "../../../invoke";
+import { isTauri } from "../../../transport";
 import type { PluginState } from "../../../stores/pluginStore";
 import type { LogEntry } from "../../../plugins/pluginLogger";
 import s from "../Settings.module.css";
 import ps from "./PluginsTab.module.css";
+
+const PLUGIN_DOCS_URL = "https://github.com/sstraus/tui-commander/blob/main/docs/plugins.md";
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -45,7 +49,7 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
   const [uninstalling, setUninstalling] = createSignal(false);
 
   const handleToggle = async () => {
-    if (props.plugin.builtIn || toggling()) return;
+    if (toggling()) return;
     setToggling(true);
     try {
       await setPluginEnabled(props.plugin.id, !props.plugin.enabled);
@@ -106,16 +110,14 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
         </div>
 
         <div class={ps.pluginActions}>
-          <Show when={!props.plugin.builtIn}>
-            <label class={s.toggle}>
-              <input
-                type="checkbox"
-                checked={props.plugin.enabled}
-                disabled={toggling()}
-                onChange={handleToggle}
-              />
-            </label>
-          </Show>
+          <label class={s.toggle}>
+            <input
+              type="checkbox"
+              checked={props.plugin.enabled}
+              disabled={toggling()}
+              onChange={handleToggle}
+            />
+          </label>
           <button
             class={ps.logsBtn}
             classList={{ [ps.logsActive]: showLogs() }}
@@ -244,7 +246,22 @@ export const PluginsTab: Component = () => {
 
   return (
     <div class={s.section}>
-      <h3>Plugins</h3>
+      <div class={ps.sectionHeader}>
+        <h3>Plugins</h3>
+        <button
+          class={ps.docsLink}
+          onClick={() => {
+            if (isTauri()) {
+              openUrl(PLUGIN_DOCS_URL).catch((err) => console.error("Failed to open URL:", err));
+            } else {
+              window.open(PLUGIN_DOCS_URL, "_blank");
+            }
+          }}
+          title="Open plugin authoring guide"
+        >
+          Documentation
+        </button>
+      </div>
 
       <div class={ps.subTabs}>
         <button

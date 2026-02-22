@@ -1,5 +1,33 @@
 /* PluginsTab — plugin list, browse, and log viewer styles */
 
+/* Section header with docs link */
+
+.sectionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.sectionHeader h3 {
+  margin: 0;
+}
+
+.docsLink {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.docsLink:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
 /* Sub-tab switcher */
 
 .subTabs {

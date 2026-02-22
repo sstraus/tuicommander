@@ -19,6 +19,17 @@ import type { TuiPlugin } from "./types";
 const APP_VERSION = __APP_VERSION__;
 
 // ---------------------------------------------------------------------------
+// Built-in plugin registry (populated by initPlugins to avoid circular imports)
+// ---------------------------------------------------------------------------
+
+const builtInPluginMap = new Map<string, TuiPlugin>();
+
+/** Register a built-in plugin so it can be toggled on/off */
+export function registerBuiltInPlugin(plugin: TuiPlugin): void {
+  builtInPluginMap.set(plugin.id, plugin);
+}
+
+// ---------------------------------------------------------------------------
 // Manifest type (matches Rust PluginManifest serialization)
 // ---------------------------------------------------------------------------
 
@@ -98,7 +109,7 @@ export function validateModule(mod: unknown, expectedId: string): string | null 
 let disabledPluginIds = new Set<string>();
 
 /** Fetch the disabled plugin list from Rust config */
-async function syncDisabledList(): Promise<void> {
+export async function syncDisabledList(): Promise<void> {
   try {
     const config = await invoke<{ disabled_plugin_ids?: string[] }>("load_config");
     disabledPluginIds = new Set(config.disabled_plugin_ids ?? []);
@@ -134,22 +145,34 @@ export async function setPluginEnabled(id: string, enabled: boolean): Promise<vo
   disabledPluginIds = list;
   pluginStore.updatePlugin(id, { enabled });
 
+  // Check if this is a built-in plugin
+  const builtIn = builtInPluginMap.get(id);
+
   if (enabled) {
-    // Load the plugin if it has a manifest
-    const manifests = await invoke<PluginManifest[]>("list_user_plugins");
-    const manifest = manifests.find((m) => m.id === id);
-    if (manifest) {
-      const error = validateManifest(manifest);
-      if (error) {
-        pluginStore.getLogger(id).error(error);
-        pluginStore.updatePlugin(id, { error, loaded: false });
-      } else {
-        await loadPlugin(manifest);
+    if (builtIn) {
+      // Re-register built-in plugin
+      pluginRegistry.register(builtIn);
+      pluginStore.updatePlugin(id, { loaded: true, error: null });
+    } else {
+      // Load external plugin from disk
+      const manifests = await invoke<PluginManifest[]>("list_user_plugins");
+      const manifest = manifests.find((m) => m.id === id);
+      if (manifest) {
+        const error = validateManifest(manifest);
+        if (error) {
+          pluginStore.getLogger(id).error(error);
+          pluginStore.updatePlugin(id, { error, loaded: false });
+        } else {
+          await loadPlugin(manifest);
+        }
       }
     }
   } else {
     // Unload the plugin
-    if (loadedPluginIds.has(id)) {
+    if (builtIn) {
+      pluginRegistry.unregister(id);
+      pluginStore.updatePlugin(id, { loaded: false });
+    } else if (loadedPluginIds.has(id)) {
       pluginRegistry.unregister(id);
       loadedPluginIds.delete(id);
     }
