@@ -4,8 +4,8 @@ title: "CSS modularization: split monolithic styles.css into co-located modules"
 status: pending
 priority: P2
 created: "2026-02-21T19:11:16.300Z"
-updated: "2026-02-21T19:11:22.227Z"
-dependencies: ["338-6509"]
+updated: "2026-02-22T07:21:12.737Z"
+dependencies: ["338-6509", "353-6135"]
 ---
 
 # CSS modularization: split monolithic styles.css into co-located modules

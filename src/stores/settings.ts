@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
+import { setLocale } from "../i18n";
 
 // Legacy storage keys for one-time migration
 const LEGACY_KEYS = {
@@ -24,6 +25,7 @@ interface RustAppConfig {
   auto_show_pr_popover: boolean;
   prevent_sleep_when_busy: boolean;
   auto_update_enabled: boolean;
+  language: string;
 }
 
 // Default values
@@ -213,6 +215,7 @@ interface SettingsStoreState {
   autoShowPrPopover: boolean;
   preventSleepWhenBusy: boolean;
   autoUpdateEnabled: boolean;
+  language: string;
 }
 
 /** Create the settings store */
@@ -230,6 +233,7 @@ function createSettingsStore() {
     autoShowPrPopover: true,
     preventSleepWhenBusy: false,
     autoUpdateEnabled: true,
+    language: "en",
   });
 
   const actions = {
@@ -262,6 +266,8 @@ function createSettingsStore() {
         setState("autoShowPrPopover", config.auto_show_pr_popover ?? true);
         setState("preventSleepWhenBusy", config.prevent_sleep_when_busy ?? false);
         setState("autoUpdateEnabled", config.auto_update_enabled ?? true);
+        setState("language", config.language || "en");
+        setLocale(config.language || "en");
       } catch (err) {
         console.error("Failed to hydrate settings:", err);
       }
@@ -421,6 +427,22 @@ function createSettingsStore() {
       } catch (err) {
         console.error("Failed to persist autoUpdateEnabled:", err);
         setState("autoUpdateEnabled", prevValue);
+      }
+    },
+
+    /** Set UI language */
+    async setLanguage(language: string): Promise<void> {
+      const prevLang = state.language;
+      setState("language", language);
+      setLocale(language);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.language = language;
+        await invoke("save_config", { config });
+      } catch (err) {
+        console.error("Failed to persist language:", err);
+        setState("language", prevLang);
+        setLocale(prevLang);
       }
     },
 

@@ -11,6 +11,17 @@ export const GeneralTab: Component = () => {
       <h3>General</h3>
 
       <div class="settings-group">
+        <label>Language</label>
+        <select
+          value={settingsStore.state.language}
+          onChange={(e) => settingsStore.setLanguage(e.currentTarget.value)}
+        >
+          <option value="en">English</option>
+        </select>
+        <p class="settings-hint">UI display language. More languages coming soon.</p>
+      </div>
+
+      <div class="settings-group">
         <label>Default IDE</label>
         <select
           value={settingsStore.state.ide}

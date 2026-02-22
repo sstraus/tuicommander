@@ -1,3 +1,4 @@
+export { cx } from "./cx";
 export { escapeShellArg, isValidBranchName, isValidPath } from "./shell";
 export { hotkeyToTauriShortcut, tauriShortcutToHotkey, isValidHotkey } from "./hotkey";
 export { findOrphanTerminals } from "./terminalOrphans";
