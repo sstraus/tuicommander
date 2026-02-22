@@ -48,10 +48,6 @@
   overflow: auto;
 }
 
-.content:focus {
-  outline: none;
-}
-
 .search {
   display: flex;
   align-items: center;

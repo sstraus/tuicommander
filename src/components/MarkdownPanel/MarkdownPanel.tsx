@@ -42,12 +42,6 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
   const repo = useRepository();
   const contextMenu = createContextMenu();
   const [contextEntry, setContextEntry] = createSignal<MdFileEntry | null>(null);
-  let contentRef!: HTMLDivElement;
-
-  // Focus the scroll container when panel opens so wheel events route here, not the terminal
-  createEffect(() => {
-    if (props.visible) contentRef?.focus({ preventScroll: true });
-  });
 
   /** Files filtered by search query (supports glob wildcards) */
   const filteredFiles = () => {
@@ -164,7 +158,7 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
         </Show>
       </div>
 
-      <div ref={contentRef} tabIndex={-1} class={p.content}>
+      <div class={p.content}>
         <Show when={loading()}>
           <div class={s.empty}>{t("markdownPanel.loading", "Loading files...")}</div>
         </Show>
