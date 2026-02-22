@@ -1,8 +1,8 @@
-# TUI Commander Makefile
+# TUICommander Makefile
 # Builds, signs, and packages the Tauri app for macOS distribution
 
-APP_NAME=TUI Commander
-BINARY_NAME=tui-commander
+APP_NAME=TUICommander
+BINARY_NAME=tuicommander
 BUNDLE_ID=com.tuic.commander
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 

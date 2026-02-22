@@ -4,35 +4,44 @@ use std::path::PathBuf;
 
 /// Get the config directory using platform-appropriate location.
 ///
-/// - macOS: `~/Library/Application Support/tui-commander/`
-/// - Linux: `~/.config/tui-commander/` (or `$XDG_CONFIG_HOME`)
-/// - Windows: `%APPDATA%/tui-commander/`
+/// - macOS: `~/Library/Application Support/tuicommander/`
+/// - Linux: `~/.config/tuicommander/` (or `$XDG_CONFIG_HOME`)
+/// - Windows: `%APPDATA%/tuicommander/`
 ///
-/// Falls back to `~/.tui-commander/` if platform dir is unavailable.
-/// On first call, migrates from legacy `~/.tui-commander/` if it exists.
+/// Falls back to `~/.tuicommander/` if platform dir is unavailable.
+/// On first call, migrates from legacy locations if the new dir doesn't exist:
+///   1. `~/.tui-commander/` (legacy dotdir)
+///   2. `{platform_config}/tui-commander/` (old platform-dir name)
 pub(crate) fn config_dir() -> PathBuf {
     let new_dir = dirs::config_dir()
-        .map(|d| d.join("tui-commander"))
-        .unwrap_or_else(legacy_config_dir);
+        .map(|d| d.join("tuicommander"))
+        .unwrap_or_else(legacy_dotdir);
 
-    // Migrate from legacy ~/.tui-commander/ if new dir doesn't exist yet
-    let legacy = legacy_config_dir();
-    if legacy.exists() && !new_dir.exists() && legacy != new_dir
-        && let Err(e) = migrate_config_dir(&legacy, &new_dir)
-    {
-        eprintln!("Warning: config migration failed: {e}");
-        // Fall back to legacy dir if migration fails
-        return legacy;
+    if !new_dir.exists() {
+        // Try migrating from old platform dir (tui-commander) first, then legacy dotdir
+        let old_platform_dir = dirs::config_dir().map(|d| d.join("tui-commander"));
+        let legacy_dot = legacy_dotdir();
+
+        let source = old_platform_dir
+            .filter(|d| d.exists())
+            .unwrap_or(legacy_dot);
+
+        if source.exists() && source != new_dir {
+            if let Err(e) = migrate_config_dir(&source, &new_dir) {
+                eprintln!("Warning: config migration failed: {e}");
+                return source;
+            }
+        }
     }
 
     new_dir
 }
 
-/// Legacy config directory: ~/.tui-commander/
-fn legacy_config_dir() -> PathBuf {
+/// Legacy config directory: ~/.tuicommander/
+fn legacy_dotdir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".tui-commander")
+        .join(".tuicommander")
 }
 
 /// Copy all files from legacy config dir to new platform dir.
@@ -223,7 +232,7 @@ fn default_language() -> String {
 }
 
 fn default_font_size() -> u16 {
-    12
+    13
 }
 
 fn default_max_tab_name_length() -> u32 {
@@ -244,7 +253,7 @@ impl Default for AppConfig {
             worktree_dir: None,
             mcp_server_enabled: false,
             ide: String::new(),
-            default_font_size: 12,
+            default_font_size: 13,
             remote_access_enabled: false,
             remote_access_port: default_remote_port(),
             remote_access_username: String::new(),
@@ -652,7 +661,7 @@ mod tests {
         fs::write(&path, old_json).unwrap();
         let loaded: AppConfig = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(loaded.ide, "");
-        assert_eq!(loaded.default_font_size, 12);
+        assert_eq!(loaded.default_font_size, 13);
         assert!(!loaded.mcp_server_enabled);
         assert!(!loaded.remote_access_enabled);
         assert_eq!(loaded.remote_access_port, 9876);

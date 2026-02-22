@@ -255,7 +255,7 @@ pub(crate) fn graphql_request(
     let response = client
         .post("https://api.github.com/graphql")
         .header("Authorization", format!("Bearer {token}"))
-        .header("User-Agent", "tui-commander")
+        .header("User-Agent", "tuicommander")
         .json(&body)
         .send()
         .map_err(|e| GqlError::Other(format!("GraphQL request failed: {e}")))?;

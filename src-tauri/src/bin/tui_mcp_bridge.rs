@@ -462,11 +462,11 @@ fn urlencoded(s: &str) -> String {
 
 fn config_dir() -> std::path::PathBuf {
     dirs::config_dir()
-        .map(|d| d.join("tui-commander"))
+        .map(|d| d.join("tuicommander"))
         .unwrap_or_else(|| {
             dirs::home_dir()
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join(".tui-commander")
+                .join(".tuicommander")
         })
 }
 
@@ -559,7 +559,7 @@ fn main() {
                             "tools": {}
                         },
                         "serverInfo": {
-                            "name": "tui-commander",
+                            "name": "tuicommander",
                             "version": env!("CARGO_PKG_VERSION")
                         }
                     })),

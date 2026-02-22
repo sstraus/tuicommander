@@ -140,11 +140,11 @@ All config files are JSON, stored in the platform config directory:
 
 | Platform | Path |
 |----------|------|
-| macOS | `~/Library/Application Support/tui-commander/` |
-| Linux | `~/.config/tui-commander/` |
-| Windows | `%APPDATA%/tui-commander/` |
+| macOS | `~/Library/Application Support/tuicommander/` |
+| Linux | `~/.config/tuicommander/` |
+| Windows | `%APPDATA%/tuicommander/` |
 
-Legacy path `~/.tui-commander/` is auto-migrated on first launch.
+Legacy path `~/.tuicommander/` is auto-migrated on first launch.
 
 ### Config File Map
 

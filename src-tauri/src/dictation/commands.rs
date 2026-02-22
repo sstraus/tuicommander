@@ -227,9 +227,9 @@ pub fn list_audio_devices() -> Vec<audio::AudioDevice> {
 /// Currently only callable from within the app via Tauri IPC.
 ///
 /// Future external trigger mechanisms:
-/// 1. CLI: `tui-commander inject "text"` via IPC socket
-/// 2. Pipe: `echo "text" | tui-commander --inject`
-/// 3. Tauri deep link: `tui-commander://inject?text=...`
+/// 1. CLI: `tuicommander inject "text"` via IPC socket
+/// 2. Pipe: `echo "text" | tuicommander --inject`
+/// 3. Tauri deep link: `tuicommander://inject?text=...`
 ///
 /// Security: Will require authentication token stored in env var.
 #[tauri::command]

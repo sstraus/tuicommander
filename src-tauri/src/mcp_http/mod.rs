@@ -168,7 +168,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
 /// Start the HTTP API server.
 /// When remote access is enabled, binds to 0.0.0.0:{configured_port} with Basic Auth.
 /// Otherwise, binds to 127.0.0.1:0 (localhost only, no auth).
-/// Writes the port number to ~/.tui-commander/mcp-port for the MCP bridge to discover.
+/// Writes the port number to ~/.tuicommander/mcp-port for the MCP bridge to discover.
 pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enabled: bool) {
     let config = state.config.read().clone();
 

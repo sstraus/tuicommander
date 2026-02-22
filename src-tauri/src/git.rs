@@ -769,7 +769,7 @@ mod tests {
     }
 
     // --- Integration tests: compare file I/O vs git subprocess ---
-    // These run against the actual tui-commander repo to validate correctness.
+    // These run against the actual tuicommander repo to validate correctness.
 
     #[test]
     fn test_read_branch_matches_git_rev_parse() {

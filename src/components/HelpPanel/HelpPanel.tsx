@@ -3,8 +3,8 @@ import { t } from "../../i18n";
 import { handleOpenUrl } from "../../utils/openUrl";
 import s from "./HelpPanel.module.css";
 
-const GITHUB_URL = "https://github.com/sstraus/tui-commander";
-const DOCS_URL = "https://github.com/sstraus/tui-commander/wiki";
+const GITHUB_URL = "https://github.com/sstraus/tuicommander";
+const DOCS_URL = "https://github.com/sstraus/tuicommander/wiki";
 
 export interface HelpPanelProps {
   visible: boolean;

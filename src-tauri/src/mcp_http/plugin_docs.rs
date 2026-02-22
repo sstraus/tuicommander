@@ -6,7 +6,7 @@ pub const PLUGIN_DOCS: &str = r###"# TUI Commander Plugin Development Reference
 
 Create directory `{id}/` containing `manifest.json` + `main.js` under the platform plugins path:
 - macOS: `~/Library/Application Support/com.tuic.commander/plugins/`
-- Linux: `~/.config/tui-commander/plugins/`
+- Linux: `~/.config/tuicommander/plugins/`
 - Windows: `%APPDATA%/com.tuic.commander/plugins/`
 
 Hot reload: editing any file in the plugin directory triggers automatic unload + re-import.

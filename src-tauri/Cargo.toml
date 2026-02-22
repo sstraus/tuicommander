@@ -1,13 +1,13 @@
 [package]
-name = "tui-commander"
-version = "0.3.0"
-description = "TUI Commander - Multi-agent terminal orchestrator"
+name = "tuicommander"
+version = "0.5.0"
+description = "TUICommander - Native platform for AI coding agents"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"
-default-run = "tui-commander"
+default-run = "tuicommander"
 
 [lib]
-name = "tui_commander_lib"
+name = "tuicommander_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

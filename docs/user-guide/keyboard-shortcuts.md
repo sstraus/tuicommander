@@ -6,9 +6,9 @@ All shortcuts use `Cmd` on macOS and `Ctrl` on Windows/Linux unless noted.
 
 You can override any keyboard shortcut by creating a `keybindings.json` file in your TUI Commander config directory:
 
-- **macOS:** `~/Library/Application Support/tui-commander/keybindings.json`
-- **Windows:** `%APPDATA%\tui-commander\keybindings.json`
-- **Linux:** `~/.config/tui-commander/keybindings.json`
+- **macOS:** `~/Library/Application Support/tuicommander/keybindings.json`
+- **Windows:** `%APPDATA%\tuicommander\keybindings.json`
+- **Linux:** `~/.config/tuicommander/keybindings.json`
 
 The file is a JSON array of override objects. Only include shortcuts you want to change:
 

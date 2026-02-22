@@ -120,7 +120,7 @@ jobs:
             **Rolling build from `main` — always the latest code.**
 
             Updated on every push to main. May contain experimental features.
-            For stable releases, see the [latest versioned release](https://github.com/sstraus/tui-commander/releases/latest).
+            For stable releases, see the [latest versioned release](https://github.com/sstraus/tuicommander/releases/latest).
           releaseDraft: false
           prerelease: true
           includeUpdaterJson: false

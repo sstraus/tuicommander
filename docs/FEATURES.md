@@ -683,7 +683,7 @@ All data persisted to platform config directory via Rust:
 - **Uninstall:** Removes plugin directory (confirmation required)
 
 ### 17.3 Plugin Registry
-- Remote JSON registry hosted on GitHub (`tui-commander-plugins` repo)
+- Remote JSON registry hosted on GitHub (`tuicommander-plugins` repo)
 - Fetched on demand with 1-hour TTL cache
 - Version comparison for "Update available" detection
 - Install/update via download URL

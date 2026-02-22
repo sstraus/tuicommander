@@ -19,9 +19,9 @@ Main branches (main, master, develop) use the original repository directory — 
 ## Worktree Storage
 
 Worktrees are stored in:
-- macOS: `~/Library/Application Support/tui-commander/worktrees/`
-- Linux: `~/.config/tui-commander/worktrees/`
-- Windows: `%APPDATA%/tui-commander/worktrees/`
+- macOS: `~/Library/Application Support/tuicommander/worktrees/`
+- Linux: `~/.config/tuicommander/worktrees/`
+- Windows: `%APPDATA%/tuicommander/worktrees/`
 
 Named as: `{repo-name}--{branch-name}`
 

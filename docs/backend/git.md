@@ -38,7 +38,7 @@ All git operations are performed by shelling out to the `git` CLI. This module h
 struct RepoInfo {
     path: String,        // Repository path
     name: String,        // Repository name (from directory)
-    initials: String,    // 2-char initials (e.g., "TC" for tui-commander)
+    initials: String,    // 2-char initials (e.g., "TC" for tuicommander)
     branch: String,      // Current branch name
     status: String,      // "clean", "dirty", or "conflict"
     is_git_repo: bool,   // Whether path is a git repository
@@ -71,7 +71,7 @@ struct ChangedFile {
 
 Generates 2-character initials from a repository name:
 - Split on hyphens, underscores, dots, spaces
-- If multiple words: first letter of first two words (e.g., "tui-commander" → "TC")
+- If multiple words: first letter of first two words (e.g., "tuicommander" → "TC")
 - If single word: first two letters (e.g., "react" → "RE")
 - Always uppercase
 

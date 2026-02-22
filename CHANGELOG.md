@@ -6,36 +6,108 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
-- **Command Palette** (`Cmd+Shift+P`) — fuzzy search across all app actions with recent-first ordering
-- **Activity Dashboard** (`Cmd+Shift+A`) — real-time view of all terminal sessions and agent status
-- **Park Repos** — right-click any repo to park it; sidebar footer button shows parked repos with badge count
-- **Copy Path context menu action** in Markdown panel
-- **Windows compatibility** - Full cross-platform support: platform-aware shell escaping (cmd.exe vs POSIX), Windows foreground process detection via `CreateToolhelp32Snapshot`, Windows paths in `resolve_cli`, IDE detection/launch for Windows, `if exist` syntax for lazygit config detection
-- **Repository groups context menu** - Right-click any repo to "Move to Group" with "New Group..." option that creates and assigns in one step
-- **PromptDialog component** - Reusable native dialog replacing `window.prompt()` which doesn't work in Tauri's webview; used for terminal rename and group creation
-- **Lazy terminal restore** - Terminal sessions no longer eagerly restore on app startup; they materialize only when clicking the branch in the sidebar
-- **Check for Updates menu** - "Check for Updates" item in both app menu and Help menu, wired to the updater store
-- **Repo watcher** - Shared file watcher for automatic GitOperationsPanel refresh when repository files change
-- **Context menu submenus** - ContextMenu component now supports nested children for submenu rendering
-- **`github-release` Makefile target** - One-command releases via `make publish-github-release`
+### Planned
+- **Tab scoping per worktree** — Each worktree/branch will have its own isolated set of tabs instead of sharing a global tab list
+
+---
+
+## [0.5.0] - Unreleased
+
+### Plugin System
+
+- **External plugin loading** — Plugins live in `~/.config/tui-commander/plugins/{id}/` and are loaded at runtime via the `plugin://` URI scheme; hot reload when files change on disk
+- **Plugin Settings tab** — Install plugins from a ZIP file or URL, enable/disable, uninstall, view per-plugin logs
+- **Community registry / Browse tab** — Discover and install plugins from `sstraus/tuicommander-plugins`; 1-hour TTL cache with manual refresh
+- **`tuic://` deep link scheme** — `tuic://install-plugin?url=…`, `tuic://open-repo?path=…`, `tuic://settings?tab=…`
+- **Per-plugin error logging** — 500-entry ring-buffer logger per plugin; errors from lifecycle hooks and watchers captured automatically
+- **Capability-gated PluginHost API** — Tier 1 (activity/watchers), Tier 2 (read-only state), Tier 3 (PTY write, markdown panel, sound), Tier 4 (whitelisted Tauri invoke)
+- **Built-in plugin toggle** — Plan and Stories plugins can be disabled from Settings → Plugins
+- **Activity Center bell** — Toolbar bell replaces the plan button; plugins contribute sections and items; supports per-item dismiss and "Dismiss All"
+- **4 sample plugins** in `examples/plugins/` demonstrating all capability tiers
+
+### Terminal
+
+- **Detachable terminal tabs** — Float any terminal tab into an independent OS window; re-attach on close
+- **Find in Terminal** (`Cmd+F`) — In-terminal search overlay with match count and navigation
+- **Configurable keybindings** — Remap any shortcut in Settings → Keyboard Shortcuts; persisted to `~/.config/tui-commander/keybindings.json`
+- **iTerm2-style Option key split** — macOS: left Option sends Meta (for Emacs/readline), right Option sends special chars; configurable per repo
+- **Per-repo terminal meta hotkeys** — Override Option key behavior per repository in Settings
+
+### Settings Panel
+
+- **Split-view layout** — Vertical nav sidebar + content pane replaces the old dialog
+- **Repos in Settings nav** — Each repo appears as a nav item with deep-link open support
+- **Keyboard Shortcuts tab** — Browse and rebind all app actions
+- **About tab** — App version, links, acknowledgements
+- **Appearance tab** — Absorbs former Groups tab; theme, color, font settings in one place
+- **Global repo defaults** — Set base branch, color, and other defaults; per-repo settings override only what differs
+
+### File Browser & Editor
+
+- **File browser panel** (`Cmd+E`) — Tree view of the active repository with git status indicators, copy/cut/paste, context menu
+- **CodeMirror 6 code editor** — Full editor panel with tab system, syntax highlighting, and file browser integration
+- **Markdown edit button** — Pencil icon in MarkdownTab header opens the file in the code editor
+- **Clickable file paths** — File references in diff and code panels open in the editor or focused in the IDE
+- **Panel search** — Search within code and diff panels
+- **Mutually exclusive panels** — File browser, Markdown, and Diff panels are now mutually exclusive to save screen space
+- **Drag-resize** — Panel dividers are draggable
+
+### Git & GitHub
+
+- **Diff panel commit dropdown** — Select any recent commit to diff against; Working / Last Commit scope toggle
+- **PR notification rich popover** — Click the bell to see PR title, CI status, review state, and open in browser
+- **Plan file detection** — Toolbar button lights up when an agent creates a plan file in the active repo
+- **GitHub API rate limit handling** — Graceful backoff and UI indicator when GitHub API rate limit is hit
+
+### Agent Support
+
+- **New agents** — Amp, Jules, Cursor, Warp, Ona; brand SVG logos for all supported agents
+- **Silence-based question detection** — Recognizes interactive prompts for unrecognized agents via output silence heuristic
+- **MCP tools consolidation** — 21 individual MCP tools replaced by 5 meta-commands
+
+### Cross-Platform
+
+- **Windows compatibility** — Platform-aware shell escaping (cmd.exe vs POSIX), foreground process detection via `CreateToolhelp32Snapshot`, Windows paths in `resolve_cli`, IDE detection/launch, `if exist` syntax for lazygit config detection
+
+### Other Added
+
+- **Command Palette** (`Cmd+Shift+P`) — Fuzzy search across all app actions with recent-first ordering
+- **Activity Dashboard** (`Cmd+Shift+A`) — Real-time view of all terminal sessions and agent status
+- **Park Repos** — Right-click any repo to park it; sidebar footer button shows parked repos with badge count
+- **Repository groups context menu** — Right-click any repo to "Move to Group" with "New Group..." option
+- **Lazy terminal restore** — Terminal sessions materialize only when clicking a branch, not on startup
+- **Check for Updates menu** — In both app menu and Help menu
+- **Repo watcher** — Shared file watcher for automatic panel refresh on `.git/` changes
+- **Context menu submenus** — ContextMenu supports nested children
+- **Remote access QR code** — Shows actual local IP address; HTTPS-only install links; firewall reachability check
 
 ### Changed
-- **CLI resolution via `resolve_cli`** - All `git` and `gh` command invocations now route through `resolve_cli()` for reliable PATH resolution in desktop-launched apps
-- **Tab creation UX** - `+` button creates new tab on click; split options on right-click only
-- **Data persistence guard** - `save()` now blocks before `hydrate()` completes to prevent nuking persisted `repositories.json`
+
+- **Status bar icons** — All text labels replaced with monochrome SVG icons; buttons reordered
+- **HelpPanel** — Simplified to app info and resource links; keyboard shortcuts moved to Settings
+- **Sidebar design** — Flat layout; harmonized git actions and footer; SVG branch/asterisk icons
+- **Tab creation UX** — `+` button creates new tab; split options on right-click only
+- **CLI resolution** — All `git` and `gh` invocations route through `resolve_cli()` for reliable PATH in release builds
+- **Diff panel shortcut** — Remapped from `Cmd+D` to `Cmd+Shift+D`
+- **Data persistence guard** — `save()` blocks until `hydrate()` completes to prevent wiping `repositories.json`
 
 ### Fixed
-- **Window-state corruption** - Guard against zero-dimension or off-screen windows from persisted state causing PTY garbage output
-- **IDE detection in release builds** - `resolve_cli` probes well-known directories when tools aren't on PATH
-- **Multi-byte UTF-8 panic** - Fixed panic on multi-byte chars in rate-limit debug output
-- **International keyboard support** - Terminal now handles intl keyboard input correctly; reduced rate-limit false positives
-- **Tab drag-and-drop** - Fixed broken DnD caused by Tauri's internal drag handler
-- **Updater error message** - Friendly message when no published releases exist instead of raw error
-- **Drag-over visual feedback** - Added visual indicators when dragging repos over group sections
 
-### Planned
-- **Tab scoping per worktree** - Each worktree/branch will have its own isolated set of tabs instead of sharing a global tab list
+- **Lazygit pane ghost terminal** on close
+- **xterm fit() minimum dimensions** — Guard prevents crash on zero-size terminal
+- **Terminal reattach fit** after floating window closes
+- **Splash screen timing** — Deferred removal until stores are fully hydrated
+- **Markdown viewer refresh** — Viewer now refreshes after saving a file in the code editor
+- **Window-state corruption** — Guard against zero-dimension or off-screen persisted state causing PTY garbage
+- **IDE detection in release builds** — `resolve_cli` probes well-known directories
+- **Multi-byte UTF-8 panic** — Fixed in rate-limit debug output
+- **International keyboard support** — Correct handling of intl input; fewer rate-limit false positives
+- **Tab drag-and-drop** — Fixed by working around Tauri's internal drag handler
+- **Left Option key state leak** — Reset on `altKey=false` to prevent stuck Meta state
+- **PromptDialog hidden on mount** — Dialog now shows correctly when first rendered
+- **Browser-mode init freeze** — Fixed hang when session cookie expires
+- **Silent failures and memory leak** — P1 issues resolved (floating promises, missing cleanup)
+- **Drag-over visual feedback** — Group sections show drop indicator during drag
 
 ---
 

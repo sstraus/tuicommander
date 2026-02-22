@@ -548,7 +548,7 @@ pub(super) async fn mcp_messages(
                     "protocolVersion": "2024-11-05",
                     "capabilities": { "tools": {} },
                     "serverInfo": {
-                        "name": "tui-commander",
+                        "name": "tuicommander",
                         "version": env!("CARGO_PKG_VERSION")
                     }
                 }

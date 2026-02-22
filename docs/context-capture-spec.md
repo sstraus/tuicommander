@@ -1,6 +1,6 @@
 # Claude Code Context Capture & Parse — Implementation Specification
 
-> Design document for a Rust module that captures, parses, and exposes Claude Code conversation context from within tui-commander — both as a standalone local module and as a compatible client for the Happy ecosystem.
+> Design document for a Rust module that captures, parses, and exposes Claude Code conversation context from within tuicommander — both as a standalone local module and as a compatible client for the Happy ecosystem.
 > **Status:** Draft — implementation not started
 > **Target location:** `src-tauri/src/context_capture/` + `src-tauri/src/happy_client/`
 
@@ -12,7 +12,7 @@
 
 1. [Goal](#1-goal)
 2. [Reference Architecture (Happy app)](#2-reference-architecture-happy-app)
-3. [Proposed Architecture (tui-commander)](#3-proposed-architecture-tui-commander)
+3. [Proposed Architecture (tuicommander)](#3-proposed-architecture-tuicommander)
 4. [Data Model](#4-data-model)
 5. [Module: `conversation_reader`](#5-module-conversation_reader)
 6. [Module: `message_parser`](#6-module-message_parser)
@@ -48,14 +48,14 @@
 
 ## 1. Goal
 
-Provide a Rust-native module in tui-commander that:
+Provide a Rust-native module in tuicommander that:
 
 1. **Captures** Claude Code conversation data (messages, tool calls, permissions, session metadata) from live PTY sessions
 2. **Parses** raw output into structured conversation events
 3. **Formats** the structured data into context strings suitable for transmission to external consumers (voice assistants, MCP clients, other agents)
 4. **Exposes** the context via HTTP/WebSocket endpoints and Tauri events
 
-The module must be **paritetico** (equivalent in capability) to the Happy app's TypeScript implementation but adapted to tui-commander's PTY-first architecture — no remote server required, no encryption layer, direct local capture.
+The module must be **paritetico** (equivalent in capability) to the Happy app's TypeScript implementation but adapted to tuicommander's PTY-first architecture — no remote server required, no encryption layer, direct local capture.
 
 ---
 
@@ -194,9 +194,9 @@ ENABLE_DEBUG_LOGGING: true
 
 ---
 
-## 3. Proposed Architecture (tui-commander)
+## 3. Proposed Architecture (tuicommander)
 
-tui-commander has a fundamental advantage: **direct PTY access**. No remote server, no encryption, no WebSocket sync. We read Claude Code's output directly.
+tuicommander has a fundamental advantage: **direct PTY access**. No remote server, no encryption, no WebSocket sync. We read Claude Code's output directly.
 
 ### Architectural difference
 
@@ -212,7 +212,7 @@ Claude Code emits **two types of output** to the PTY:
 1. **Streaming text** — visible terminal output (ANSI-escaped, human-readable)
 2. **JSONL structured events** — when launched with `--output-format stream-json`, Claude Code emits one JSON object per line containing typed events
 
-tui-commander's `output_parser.rs` already parses the streaming text for events (rate limits, questions, status lines). The context capture module builds on top of this by additionally:
+tuicommander's `output_parser.rs` already parses the streaming text for events (rate limits, questions, status lines). The context capture module builds on top of this by additionally:
 
 - Parsing JSONL events when available (preferred, lossless)
 - Falling back to heuristic text parsing when JSONL is not available
@@ -238,7 +238,7 @@ src-tauri/src/context_capture/
 ### `types.rs`
 
 ```rust
-/// Unique session identifier (maps to tui-commander's PTY session ID)
+/// Unique session identifier (maps to tuicommander's PTY session ID)
 pub type SessionId = String;
 
 /// A conversation message in its final, structured form.
@@ -930,7 +930,7 @@ pub struct MessagesResponse {
 
 ### Per-session context config
 
-Configurable via `AppConfig` (persisted in `~/.tui-commander/config.json`):
+Configurable via `AppConfig` (persisted in `~/.tuicommander/config.json`):
 
 ```rust
 pub struct ContextCaptureConfig {
@@ -970,7 +970,7 @@ pub struct ContextCaptureConfig {
 
 ## 12. Crate Dependencies
 
-All dependencies are **already in tui-commander's Cargo.toml** — no new crates needed:
+All dependencies are **already in tuicommander's Cargo.toml** — no new crates needed:
 
 | Crate | Use |
 |-------|-----|
@@ -1019,7 +1019,7 @@ Use `proptest` to verify:
 
 ## 14. Differences from Happy App
 
-| Aspect | Happy (TypeScript) | tui-commander (Rust) |
+| Aspect | Happy (TypeScript) | tuicommander (Rust) |
 |--------|-------------------|---------------------|
 | **Data source** | Remote server via WebSocket, encrypted | Local PTY, plaintext |
 | **Encryption** | tweetnacl decrypt per message | None needed |
@@ -1037,13 +1037,13 @@ Use `proptest` to verify:
 - **Encryption/decryption layer** — not needed, local PTY
 - **`localId` deduplication** — single writer per session
 - **Sidechain handling** — Claude Code's sidechains are visible in JSONL but don't require separate UI routing in the context string
-- **Voice token API** — consumers authenticate via tui-commander's existing auth, not ElevenLabs
+- **Voice token API** — consumers authenticate via tuicommander's existing auth, not ElevenLabs
 - **`shownSessions` dedup set** — consumer-side concern, not the store's responsibility
 
 ### What we add
 
 - **JSONL parsing** — Happy doesn't parse JSONL; it receives pre-structured messages from its server
-- **Heuristic fallback** — Happy never needs this; tui-commander must support non-JSON agent output
+- **Heuristic fallback** — Happy never needs this; tuicommander must support non-JSON agent output
 - **Multi-consumer support** — Happy sends to one consumer (ElevenLabs); we expose to MCP, HTTP, Tauri events simultaneously
 - **Configurable per-session** — Happy uses global voice config; we allow per-session overrides
 
@@ -1068,7 +1068,7 @@ Use `proptest` to verify:
 
 # Part II — Happy Infrastructure Integration
 
-This section specifies how tui-commander can act as a **full participant in the Happy ecosystem**, replacing the `happy-cli` daemon with a Rust-native implementation that uses Happy's server infrastructure for encrypted sync, remote session control, and cross-device communication.
+This section specifies how tuicommander can act as a **full participant in the Happy ecosystem**, replacing the `happy-cli` daemon with a Rust-native implementation that uses Happy's server infrastructure for encrypted sync, remote session control, and cross-device communication.
 
 ---
 
@@ -1086,7 +1086,7 @@ The Happy ecosystem consists of three components:
         │                                                         │
         │            ┌──────────────────────┐                     │
         └────────────│  THIS DOCUMENT       │─────────────────────┘
-                     │  tui-commander as    │
+                     │  tuicommander as    │
                      │  Rust replacement    │
                      │  for happy-cli       │
                      └──────────────────────┘
@@ -1100,16 +1100,16 @@ The Happy ecosystem consists of three components:
 | **happy-server** | `slopus/happy-server` | Central relay — encrypted message storage, WebSocket push, auth |
 | **happy-cli** | `slopus/happy-cli` | Machine daemon — wraps Claude Code, pushes data to server |
 
-### What tui-commander replaces:
+### What tuicommander replaces:
 
-**`happy-cli`** — the machine-side daemon. Instead of running `happy` as a wrapper around `claude`, tui-commander already manages Claude Code sessions via PTY. Adding Happy integration means tui-commander can:
+**`happy-cli`** — the machine-side daemon. Instead of running `happy` as a wrapper around `claude`, tuicommander already manages Claude Code sessions via PTY. Adding Happy integration means tuicommander can:
 
 1. **Register as a machine** with the Happy server
 2. **Push session data** (encrypted) to the server in real-time
 3. **Receive commands** (RPC) from the mobile app (abort, permission responses, messages)
 4. **Report machine status** (online/offline, daemon state)
 
-The mobile app (`happy-coder`) continues working unchanged — it doesn't know or care whether the machine runs `happy-cli` (Node.js) or tui-commander (Rust).
+The mobile app (`happy-coder`) continues working unchanged — it doesn't know or care whether the machine runs `happy-cli` (Node.js) or tuicommander (Rust).
 
 ---
 
@@ -1123,7 +1123,7 @@ Happy uses **QR code-based authentication** with a **Curve25519 key exchange** t
 
 ```
 ┌──────────────┐          ┌──────────────┐          ┌──────────────┐
-│  tui-commander│          │  happy-server │          │  mobile app  │
+│  tuicommander│          │  happy-server │          │  mobile app  │
 │  (new device) │          │              │          │  (approver)  │
 └──────┬───────┘          └──────┬───────┘          └──────┬───────┘
        │                         │                         │
@@ -1218,7 +1218,7 @@ struct HappyCredentials {
     token: String,          // JWT for HTTP/WebSocket auth
     secret: [u8; 32],      // Master secret for encryption
 }
-// Persist to ~/.tui-commander/happy-credentials.json (encrypted at rest)
+// Persist to ~/.tuicommander/happy-credentials.json (encrypted at rest)
 // or OS keychain via keyring crate
 ```
 
@@ -1517,7 +1517,7 @@ Server URL: `https://api.cluster-fluster.com` (configurable).
 
 ## 21. Machine Daemon Protocol
 
-This is the core of what tui-commander replaces: the machine-side daemon that feeds data into the Happy ecosystem.
+This is the core of what tuicommander replaces: the machine-side daemon that feeds data into the Happy ecosystem.
 
 ### Machine Registration
 
@@ -1659,7 +1659,7 @@ socket.emit("message", json!({
 ### Full Flow: User Types on Phone → Claude Code Receives
 
 ```
-Mobile app                    Server                      tui-commander
+Mobile app                    Server                      tuicommander
     │                            │                              │
     │  1. User types message     │                              │
     │  2. Encrypt with           │                              │
@@ -1695,7 +1695,7 @@ Mobile app                    Server                      tui-commander
 ### Permission Request Flow
 
 ```
-tui-commander                 Server                      Mobile app
+tuicommander                 Server                      Mobile app
     │                            │                              │
     │  Claude Code asks for      │                              │
     │  tool permission           │                              │
@@ -1909,7 +1909,7 @@ impl HappyCrypto {
 
 ## 25. Module: `happy_sync`
 
-Manages the two-way data flow between tui-commander and the Happy server.
+Manages the two-way data flow between tuicommander and the Happy server.
 
 ```rust
 pub struct HappySync {
@@ -1959,7 +1959,7 @@ Wraps the full daemon lifecycle, equivalent to `happy-cli`'s daemon mode.
 pub struct HappyDaemon {
     client: Arc<HappyClient>,
     sync: Arc<HappySync>,
-    state: Arc<AppState>,       // tui-commander's global state
+    state: Arc<AppState>,       // tuicommander's global state
 }
 
 impl HappyDaemon {
@@ -2168,7 +2168,7 @@ For Part II, these crates are needed (not currently in Cargo.toml):
 ### Credential Storage
 
 - **Primary:** OS keychain via `keyring` crate (macOS Keychain, Linux Secret Service, Windows Credential Manager)
-- **Fallback:** Encrypted file at `~/.tui-commander/happy-credentials.enc`
+- **Fallback:** Encrypted file at `~/.tuicommander/happy-credentials.enc`
 - **Never:** Plain text on disk
 
 ### Memory Safety
@@ -2185,8 +2185,8 @@ For Part II, these crates are needed (not currently in Cargo.toml):
 
 ### Trust Boundary
 
-- tui-commander trusts the Happy server (it's the user's own backend)
-- tui-commander does NOT trust incoming RPC content — validate all file paths, commands
+- tuicommander trusts the Happy server (it's the user's own backend)
+- tuicommander does NOT trust incoming RPC content — validate all file paths, commands
 - Sandbox file operations to the session's working directory where possible
 
 ---
@@ -2201,14 +2201,14 @@ For Part II, these crates are needed (not currently in Cargo.toml):
 
 4. **Dual-mode operation:** When Happy is connected, should local context capture (Part I) still run independently? Or should Happy sync be the sole consumer? Recommendation: always run Part I locally, with Happy sync as an optional overlay.
 
-5. **Session ID mapping:** tui-commander uses UUID v4 for PTY sessions. Happy uses its own session IDs. Do we reuse tui-commander's IDs or let Happy assign them?
+5. **Session ID mapping:** tuicommander uses UUID v4 for PTY sessions. Happy uses its own session IDs. Do we reuse tuicommander's IDs or let Happy assign them?
 
 6. **Offline buffering:** If the WebSocket disconnects, should we buffer messages locally and replay on reconnect? What's the max buffer size?
 
-7. **Multiple machines:** Can one tui-commander instance manage multiple machine identities? Or one machine per installation?
+7. **Multiple machines:** Can one tuicommander instance manage multiple machine identities? Or one machine per installation?
 
 8. **happy-cli compatibility:** Should we aim for exact behavioral compatibility with `happy-cli` (so the mobile app can't tell the difference), or is "functionally equivalent" sufficient?
 
-9. **Authentication UX in TUI:** The QR code flow works well in a terminal (unicode block QR), but what about headless/SSH scenarios? The secret key backup restore flow may be the primary auth method for tui-commander.
+9. **Authentication UX in TUI:** The QR code flow works well in a terminal (unicode block QR), but what about headless/SSH scenarios? The secret key backup restore flow may be the primary auth method for tuicommander.
 
 10. **Scope:** Do we need to implement the full social features (friends, feed, artifacts) or just session/message sync? Recommendation: start with session/message/machine sync only — that's what `happy-cli` does.

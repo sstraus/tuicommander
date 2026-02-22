@@ -17,14 +17,14 @@ The system has two components:
 
 The MCP HTTP server is **disabled by default**. Enable it in TUI Commander's config:
 
-Edit `~/.tui-commander/config.json`:
+Edit `~/.tuicommander/config.json`:
 ```json
 {
   "mcp_server_enabled": true
 }
 ```
 
-Restart TUI Commander after changing this setting. When enabled, the app starts an HTTP server on a random localhost port and writes the port number to `~/.tui-commander/mcp-port`.
+Restart TUI Commander after changing this setting. When enabled, the app starts an HTTP server on a random localhost port and writes the port number to `~/.tuicommander/mcp-port`.
 
 ## Building the Bridge Binary
 
@@ -42,7 +42,7 @@ Add to your Claude Code MCP config (`~/.claude.json` or project `.claude/setting
 ```json
 {
   "mcpServers": {
-    "tui-commander": {
+    "tuicommander": {
       "command": "/path/to/tui-mcp-bridge"
     }
   }
@@ -51,9 +51,9 @@ Add to your Claude Code MCP config (`~/.claude.json` or project `.claude/setting
 
 ## HTTP API Reference
 
-Read the port from `~/.tui-commander/mcp-port`:
+Read the port from `~/.tuicommander/mcp-port`:
 ```bash
-PORT=$(cat ~/.tui-commander/mcp-port)
+PORT=$(cat ~/.tuicommander/mcp-port)
 BASE=http://127.0.0.1:$PORT
 ```
 
@@ -183,7 +183,7 @@ Returns the complete plugin development reference (manifest format, PluginHost A
 ## Example Usage
 
 ```bash
-PORT=$(cat ~/.tui-commander/mcp-port)
+PORT=$(cat ~/.tuicommander/mcp-port)
 
 # Create a session and run a command
 SESSION=$(curl -s -X POST http://127.0.0.1:$PORT/sessions \

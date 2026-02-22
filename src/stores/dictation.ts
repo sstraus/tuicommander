@@ -1,7 +1,7 @@
 import { createStore } from "solid-js/store";
 import { invoke, listen } from "../invoke";
 
-/** Dictation config persisted to ~/.tui-commander/dictation-config.json */
+/** Dictation config persisted to ~/.tuicommander/dictation-config.json */
 interface DictationConfig {
   enabled: boolean;
   hotkey: string;

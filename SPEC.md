@@ -1,7 +1,7 @@
 # TUI Commander Specification
 
-**Version:** 0.3.0
-**Last Updated:** 2026-02-19
+**Version:** 0.5.0
+**Last Updated:** 2026-02-22
 
 ## Overview
 

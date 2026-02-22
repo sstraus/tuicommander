@@ -82,9 +82,9 @@ See [Architecture Overview](../architecture/overview.md) for full directory stru
 ## Configuration
 
 App config stored in platform config directory:
-- macOS: `~/Library/Application Support/tui-commander/`
-- Linux: `~/.config/tui-commander/`
-- Windows: `%APPDATA%/tui-commander/`
+- macOS: `~/Library/Application Support/tuicommander/`
+- Linux: `~/.config/tuicommander/`
+- Windows: `%APPDATA%/tuicommander/`
 
 See [Configuration docs](../backend/config.md) for all config files.
 

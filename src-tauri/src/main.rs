@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    tui_commander_lib::run()
+    tuicommander_lib::run()
 }

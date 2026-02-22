@@ -4,8 +4,8 @@ import { handleOpenUrl } from "../../../utils/openUrl";
 import s from "../Settings.module.css";
 
 const APP_VERSION = __APP_VERSION__;
-const GITHUB_URL = "https://github.com/sstraus/tui-commander";
-const DOCS_URL = "https://github.com/sstraus/tui-commander/wiki";
+const GITHUB_URL = "https://github.com/sstraus/tuicommander";
+const DOCS_URL = "https://github.com/sstraus/tuicommander/wiki";
 
 export const AboutTab: Component = () => {
   return (
