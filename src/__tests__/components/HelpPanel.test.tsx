@@ -7,7 +7,7 @@ describe("HelpPanel", () => {
     const { container } = render(() => (
       <HelpPanel visible={false} onClose={() => {}} />
     ));
-    const overlay = container.querySelector(".help-overlay");
+    const overlay = container.querySelector(".overlay");
     expect(overlay).toBeNull();
   });
 
@@ -15,7 +15,7 @@ describe("HelpPanel", () => {
     const { container } = render(() => (
       <HelpPanel visible={true} onClose={() => {}} />
     ));
-    const overlay = container.querySelector(".help-overlay");
+    const overlay = container.querySelector(".overlay");
     expect(overlay).not.toBeNull();
     const heading = container.querySelector("h2");
     expect(heading).not.toBeNull();
@@ -26,7 +26,7 @@ describe("HelpPanel", () => {
     const { container } = render(() => (
       <HelpPanel visible={true} onClose={() => {}} />
     ));
-    const sections = container.querySelectorAll(".help-section-title");
+    const sections = container.querySelectorAll(".sectionTitle");
     expect(sections.length).toBeGreaterThan(0);
     // Should have Terminal, Zoom, Panels, Git, Sidebar sections
     const titles = Array.from(sections).map((s) => s.textContent);
@@ -62,7 +62,7 @@ describe("HelpPanel", () => {
     // Type a search term that matches only zoom shortcuts
     fireEvent.input(input, { target: { value: "zoom" } });
 
-    const sections = container.querySelectorAll(".help-section-title");
+    const sections = container.querySelectorAll(".sectionTitle");
     const titles = Array.from(sections).map((s) => s.textContent);
     expect(titles).toContain("Zoom");
     // Other sections should be filtered out (no Terminal shortcuts match "zoom")
@@ -77,7 +77,7 @@ describe("HelpPanel", () => {
 
     fireEvent.input(input, { target: { value: "xyznonexistent" } });
 
-    const empty = container.querySelector(".help-empty");
+    const empty = container.querySelector(".empty");
     expect(empty).not.toBeNull();
     expect(empty!.textContent).toBe("No shortcuts match your search");
   });
@@ -87,7 +87,7 @@ describe("HelpPanel", () => {
     const { container } = render(() => (
       <HelpPanel visible={true} onClose={handleClose} />
     ));
-    const closeBtn = container.querySelector(".help-close")!;
+    const closeBtn = container.querySelector(".close")!;
     fireEvent.click(closeBtn);
     expect(handleClose).toHaveBeenCalledOnce();
   });

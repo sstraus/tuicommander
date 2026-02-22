@@ -15,6 +15,11 @@ export default defineConfig({
     },
   },
   test: {
+    css: {
+      modules: {
+        classNameStrategy: "non-scoped",
+      },
+    },
     environment: "happy-dom",
     globals: true,
     setupFiles: ["src/__tests__/setup.ts"],
