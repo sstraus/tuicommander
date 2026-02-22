@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { Component, For, Show, createEffect, createSignal } from "solid-js";
 import { notesStore } from "../../stores/notes";
 import { getModifierSymbol } from "../../platform";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
@@ -18,6 +18,12 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
   const [inputText, setInputText] = createSignal("");
   const [editingId, setEditingId] = createSignal<string | null>(null);
   let textareaRef: HTMLTextAreaElement | undefined;
+  let contentRef!: HTMLDivElement;
+
+  // Focus the scroll container when panel opens so wheel events route here, not the terminal
+  createEffect(() => {
+    if (props.visible) contentRef?.focus({ preventScroll: true });
+  });
 
   const handleSubmit = () => {
     const text = inputText();
@@ -60,7 +66,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
         </button>
       </div>
 
-      <div class={cx(p.content, s.list)}>
+      <div ref={contentRef} tabIndex={-1} class={cx(p.content, s.list)}>
         <Show when={notesStore.state.notes.length === 0}>
           <div class={s.empty}>{t("notesPanel.empty", "No ideas yet. Add one below.")}</div>
         </Show>

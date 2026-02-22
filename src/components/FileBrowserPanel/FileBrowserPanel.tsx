@@ -55,6 +55,12 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
   // File clipboard state for copy/cut/paste
   const [clipboard, setClipboard] = createSignal<{ entry: DirEntry; mode: "copy" | "cut" } | null>(null);
+  let contentRef!: HTMLDivElement;
+
+  // Focus the scroll container when panel opens so wheel events route here, not the terminal
+  createEffect(() => {
+    if (props.visible) contentRef?.focus({ preventScroll: true });
+  });
 
   // Load entries when visible, repo changes, subdir changes, or repo content changes
   createEffect(() => {
@@ -404,7 +410,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         </div>
       </Show>
 
-      <div class={p.content}>
+      <div ref={contentRef} tabIndex={-1} class={p.content}>
         <Show when={loading()}>
           <div class={s.empty}>{t("fileBrowser.loading", "Loading...")}</div>
         </Show>

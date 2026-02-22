@@ -29,6 +29,12 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
   const [scope, setScope] = createSignal<string | undefined>(undefined);
   const [commits, setCommits] = createSignal<RecentCommit[]>([]);
   const repo = useRepository();
+  let contentRef!: HTMLDivElement;
+
+  // Focus the scroll container when panel opens so wheel events route here, not the terminal
+  createEffect(() => {
+    if (props.visible) contentRef?.focus({ preventScroll: true });
+  });
 
   // Load recent commits when panel becomes visible or repo changes
   createEffect(() => {
@@ -136,7 +142,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
         </select>
       </div>
 
-      <div class={p.content}>
+      <div ref={contentRef} tabIndex={-1} class={p.content}>
         <Show when={loading()}>
           <div class={s.empty}>{t("diffPanel.loading", "Loading changes...")}</div>
         </Show>
