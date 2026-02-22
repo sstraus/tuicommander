@@ -38,6 +38,8 @@ export interface TerminalProps {
   onOpenFilePath?: (absolutePath: string, line?: number, col?: number) => void;
   /** When false, disables left-Option-as-Meta key sequences (macOS only). Default: true */
   metaHotkeys?: boolean;
+  /** When true, terminal initializes immediately without requiring activeId match (e.g. lazygit pane) */
+  alwaysVisible?: boolean;
 }
 
 /** Get current theme from settings, with scrollbar defaults */
@@ -92,6 +94,11 @@ const OUTPUT_BUFFER_MAX_BYTES = 100 * 1024; // 100KB
 const HIGH_WATERMARK = 512 * 1024;  // 512KB — pause reader when exceeded
 const LOW_WATERMARK = 128 * 1024;   // 128KB — resume reader when drained below
 
+// Minimum container dimensions before fit() is allowed — prevents WebGL rendering
+// artifacts when xterm gets squeezed into impossibly small panes (e.g. narrow lazygit split)
+const MIN_FIT_WIDTH = 80;   // px (~5 columns at 14px)
+const MIN_FIT_HEIGHT = 40;  // px (~2 rows)
+
 export const Terminal: Component<TerminalProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
   let terminal: XTerm | undefined;
@@ -122,6 +129,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let busyFlagged = false;
   let hasResumedAgent = false; // Ensures agent resume command fires only once
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
+
+  /** Fit terminal to container, guarded against undersized containers.
+   *  Skips fit when the container is too small to avoid WebGL rendering artifacts. */
+  const doFit = () => {
+    if (!containerRef || !fitAddon || !terminal) return;
+    if (containerRef.offsetWidth < MIN_FIT_WIDTH || containerRef.offsetHeight < MIN_FIT_HEIGHT) return;
+    fitAddon.fit();
+  };
 
   // Reset activity flag when this terminal becomes active (store clears activity)
   createEffect(() => {
@@ -243,13 +258,18 @@ export const Terminal: Component<TerminalProps> = (props) => {
         if (terminal) {
           terminal.writeln("\r\n\x1b[33m[Process exited]\x1b[0m");
         }
-        // Restore original tab name if it was overwritten by status-line
-        if (originalName && !terminalsStore.get(props.id)?.nameIsCustom) {
-          terminalsStore.update(props.id, { name: originalName });
+        // Guard: terminal may have been removed from the store already
+        // (e.g. lazygit pane closed). Updating a removed entry would recreate it as a ghost.
+        const stillExists = terminalsStore.get(props.id);
+        if (stillExists) {
+          // Restore original tab name if it was overwritten by status-line
+          if (originalName && !stillExists.nameIsCustom) {
+            terminalsStore.update(props.id, { name: originalName });
+          }
+          terminalsStore.update(props.id, { sessionId: null });
         }
         lastOscTitleUpdate = 0;
         sessionId = null;
-        terminalsStore.update(props.id, { sessionId: null });
         props.onSessionExit?.(props.id);
         if (terminalsStore.state.activeId !== props.id) {
           notificationsStore.playCompletion();
@@ -605,7 +625,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     resizeObserver = new ResizeObserver(() => {
       requestAnimationFrame(() => {
         if (containerRef && containerRef.offsetWidth > 0 && containerRef.offsetHeight > 0) {
-          fitAddon?.fit();
+          doFit();
         }
       });
     });
@@ -648,7 +668,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const tryFit = (remaining: number) => {
       requestAnimationFrame(() => {
         if (containerRef && containerRef.offsetWidth > 0 && containerRef.offsetHeight > 0) {
-          fitAddon?.fit();
+          doFit();
           onReady?.();
         } else if (remaining > 0) {
           tryFit(remaining - 1);
@@ -661,8 +681,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
     tryFit(retries);
   };
 
-  // Check if this terminal is visible (active or in a split layout pane)
+  // Check if this terminal is visible (active, in a split layout pane, or always-visible)
   const isVisible = () =>
+    props.alwaysVisible ||
     terminalsStore.state.activeId === props.id ||
     terminalsStore.state.layout.panes.includes(props.id);
 
@@ -684,7 +705,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           getCurrentWindow().onResized(() => {
             requestAnimationFrame(() => {
               if (containerRef && containerRef.offsetWidth > 0 && containerRef.offsetHeight > 0) {
-                fitAddon?.fit();
+                doFit();
               }
             });
           }).then((unlisten) => {
@@ -706,7 +727,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const fontSize = terminalsStore.state.terminals[props.id]?.fontSize;
     if (terminal && fontSize !== undefined) {
       terminal.options.fontSize = fontSize;
-      fitAddon?.fit();
+      doFit();
     }
   });
 
@@ -715,7 +736,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     settingsStore.state.font;
     if (terminal) {
       terminal.options.fontFamily = getFontFamily();
-      fitAddon?.fit();
+      doFit();
     }
   });
 
@@ -753,7 +774,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   // Public methods exposed via ref pattern
   const refMethods = {
-    fit: () => fitAddon?.fit(),
+    fit: () => doFit(),
     write: (data: string) => {
       // Write to PTY stdin (sends as user input to the shell)
       if (sessionId) {
