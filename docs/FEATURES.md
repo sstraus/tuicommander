@@ -633,3 +633,42 @@ All data persisted to platform config directory via Rust:
 - macOS code signing and notarization
 - Linux: `libasound2-dev` dependency, `-fPIC` flags
 - Updater signing with dedicated keys
+
+## 17. Plugin System
+
+### 17.1 Architecture
+- Obsidian-style plugin API with 4 capability tiers
+- Built-in plugins (TypeScript, compiled with app) and external plugins (JS, loaded at runtime)
+- Hot-reload: file changes in plugin directories trigger automatic re-import
+- Per-plugin error logging with ring buffer (500 entries)
+- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `invoke:read_file`, `invoke:list_markdown_files`
+
+### 17.2 Plugin Management (Settings > Plugins)
+- **Installed tab:** List all plugins with enable/disable toggle, logs viewer, uninstall button
+- **Browse tab:** Discover plugins from the community registry with one-click install/update
+- **Enable/Disable:** Persisted in `AppConfig.disabled_plugin_ids`
+- **ZIP Installation:** Install from local `.zip` file or HTTPS URL
+- **Uninstall:** Removes plugin directory (confirmation required)
+
+### 17.3 Plugin Registry
+- Remote JSON registry hosted on GitHub (`tui-commander-plugins` repo)
+- Fetched on demand with 1-hour TTL cache
+- Version comparison for "Update available" detection
+- Install/update via download URL
+
+### 17.4 Deep Links (`tuic://`)
+- `tuic://install-plugin?url=https://...` — Download and install plugin (HTTPS only, confirmation dialog)
+- `tuic://open-repo?path=/path` — Switch to repo (must be in sidebar)
+- `tuic://settings?tab=plugins` — Open Settings to specific tab
+
+### 17.5 Built-in Plugins
+- **Plan Tracker** — Detects Claude Code plan files from structured events
+
+### 17.6 Example External Plugins
+See `examples/plugins/` for reference implementations:
+- `hello-world` — Minimal output watcher example
+- `auto-confirm` — Auto-respond to Y/N prompts
+- `ci-notifier` — Sound notifications and markdown panels
+- `repo-dashboard` — Read-only state and dynamic markdown
+- `wiz-stories` — Story tracking with markdown provider
+- `wiz-reviews` — Code review tracking with markdown provider

@@ -132,6 +132,19 @@ The `onload` function receives a `PluginHost` object — this is your entire API
 
 ## PluginHost API Reference
 
+### Tier 0: Logging (always available)
+
+#### host.log(level, message, data?) -> void
+
+Write to the plugin's log ring buffer (visible in Settings > Plugins > Logs).
+
+```typescript
+host.log("info", "Plugin initialized");
+host.log("error", "Failed to process", { code: 404 });
+```
+
+Levels: `"debug"`, `"info"`, `"warn"`, `"error"`.
+
 ### Tier 1: Activity Center + Watchers + Providers (always available)
 
 #### host.registerSection(section) -> Disposable
@@ -241,6 +254,20 @@ const repos = host.getRepos();
 
 ```typescript
 const sessionId = host.getActiveTerminalSessionId();
+```
+
+#### host.getRepoPathForSession(sessionId) -> string | null
+
+Resolves which repository owns a given terminal session. Useful in output watcher callbacks where `sessionId` is provided but you need the repo context.
+
+```typescript
+host.registerOutputWatcher({
+  pattern: /Deployed: (\S+)/,
+  onMatch(match, sessionId) {
+    const repoPath = host.getRepoPathForSession(sessionId);
+    // repoPath = "/Users/me/project" or null
+  },
+});
 ```
 
 #### host.getPrNotifications() -> PrNotificationSnapshot[]
@@ -388,6 +415,70 @@ my-plugin/
   main.js
 ```
 
+## Plugin Management (Settings > Plugins)
+
+The Settings panel has a **Plugins** tab with two sub-tabs:
+
+### Installed
+
+- Lists all plugins (built-in and external) with toggle, logs, and uninstall buttons
+- Built-in plugins show a "Built-in" badge and cannot be toggled or uninstalled
+- Error count badges appear on plugins with recent errors
+- "Logs" button opens an expandable log viewer showing the plugin's ring buffer
+- "Install from file..." button opens a file dialog accepting `.zip` archives
+
+### Browse
+
+- Shows plugins from the community registry (fetched from GitHub)
+- "Install" button downloads and installs directly
+- "Update available" badge when a newer version exists
+- "Refresh" button forces a new registry fetch (normally cached for 1 hour)
+
+### Enable/Disable
+
+Plugin enabled state is persisted in `AppConfig.disabled_plugin_ids`. Disabled plugins appear in the Installed list but are not loaded.
+
+## ZIP Plugin Installation
+
+Plugins can be distributed as ZIP archives:
+
+1. **From Settings:** Click "Install from file..." in the Plugins tab
+2. **From URL:** Use `tuic://install-plugin?url=https://example.com/plugin.zip`
+3. **From Rust:** `invoke("install_plugin_from_zip", { path })` or `invoke("install_plugin_from_url", { url })`
+
+**ZIP requirements:**
+- Must contain a valid `manifest.json` (at root or in a single top-level directory)
+- All paths are validated for zip-slip attacks (no `..` traversal)
+- If updating an existing plugin, the `data/` directory is preserved
+
+## Deep Link Scheme (`tuic://`)
+
+TUI Commander registers the `tuic://` URL scheme for external integration:
+
+| URL | Action |
+|-----|--------|
+| `tuic://install-plugin?url=https://...` | Download ZIP, show confirmation, install |
+| `tuic://open-repo?path=/path/to/repo` | Switch to repo (must already be in sidebar) |
+| `tuic://settings?tab=plugins` | Open Settings to a specific tab |
+
+**Security:** `install-plugin` requires HTTPS URLs and shows a confirmation dialog. `open-repo` only accepts paths already in the repository list.
+
+## Plugin Registry
+
+The registry is a JSON file hosted on GitHub (`tui-commander-plugins` repo). The app fetches it on demand (Browse tab) with a 1-hour TTL cache.
+
+Registry entries include: `id`, `name`, `description`, `author`, `latestVersion`, `minAppVersion`, `capabilities`, `downloadUrl`.
+
+The Browse tab compares installed versions to detect available updates.
+
+## Per-Plugin Error Logging
+
+Each plugin has a dedicated ring buffer logger (500 entries max). Errors from `onload`, `onunload`, output watchers, and structured event handlers are automatically captured.
+
+Plugins can also write to their log via `host.log(level, message, data)`.
+
+View logs in Settings > Plugins > click "Logs" on any plugin row.
+
 ## Built-in Plugins
 
 Built-in plugins are TypeScript modules in `src/plugins/` compiled with the app. They have unrestricted access (no capability checks).
@@ -395,7 +486,8 @@ Built-in plugins are TypeScript modules in `src/plugins/` compiled with the app.
 | Plugin | File | Section | Detects |
 |--------|------|---------|---------|
 | `plan` | `planPlugin.ts` | ACTIVE PLAN | `plan-file` structured events |
-| `wiz-stories` | `wizStoriesPlugin.ts` | STORIES | `Updated:` and `Added worklog` PTY patterns |
+
+The `wiz-stories` plugin was extracted to an external plugin in `examples/plugins/wiz-stories/`.
 
 To create a built-in plugin, add it to `BUILTIN_PLUGINS` in `src/plugins/index.ts`.
 
@@ -569,6 +661,8 @@ See `examples/plugins/` for complete working examples:
 | `auto-confirm` | 1+3 | `pty:write` | Auto-responding to Y/N prompts |
 | `ci-notifier` | 1+3 | `ui:sound`, `ui:markdown` | Sound notifications, markdown panels |
 | `repo-dashboard` | 1+2 | none | Read-only state, dynamic markdown |
+| `wiz-stories` | 1+4 | `invoke:read_file`, `invoke:list_markdown_files`, `ui:markdown` | Story tracking, markdown provider, session-to-repo resolution |
+| `wiz-reviews` | 1+4 | `invoke:read_file`, `ui:markdown` | Code review tracking, markdown provider |
 
 ## Troubleshooting
 

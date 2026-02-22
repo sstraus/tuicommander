@@ -232,3 +232,17 @@ Features to test when TUI Commander is more usable.
 - [ ] Rename tab → run agent → exit → custom name persists (not overwritten)
 - [ ] Launch `FOO=bar claude` → tab should show `claude`, not the env vars
 - [ ] New session in same tab → OSC titles update immediately (no stale timestamp delay)
+
+## Plugin System v2
+- [ ] Settings > Plugins tab shows installed plugins with built-in badge
+- [ ] Toggle enable/disable on external plugin, restart, verify state persists
+- [ ] Click "Logs" on a plugin, verify log viewer opens with entries
+- [ ] Install a plugin from ZIP file via "Install from file..." button
+- [ ] Uninstall an external plugin via Uninstall button (confirm dialog)
+- [ ] Browse tab loads registry entries (when registry repo exists)
+- [ ] Install plugin from Browse tab downloads and installs
+- [ ] Deep link: `tuic://settings?tab=plugins` opens Settings to Plugins
+- [ ] Deep link: `tuic://install-plugin?url=https://...` shows confirmation then installs
+- [ ] Deep link: `tuic://open-repo?path=...` switches to repo (only if in sidebar)
+- [ ] Hot-reload still works after enable/disable/uninstall operations
+- [ ] Plugin errors show error badge and are visible in log viewer
