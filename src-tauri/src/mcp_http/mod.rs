@@ -68,17 +68,25 @@ async fn plugin_dev_guide_handler() -> Json<serde_json::Value> {
 /// When `remote_auth` is true, applies Basic Auth middleware (requires ConnectInfo).
 /// When `mcp_enabled` is false, excludes MCP SSE transport routes (/sse, /messages).
 pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) -> Router {
-    // Restrict CORS origins to localhost and Tauri webview
-    let allowed_origins = [
-        "http://localhost".parse::<axum::http::HeaderValue>().unwrap(),
-        "http://127.0.0.1".parse::<axum::http::HeaderValue>().unwrap(),
-        "tauri://localhost".parse::<axum::http::HeaderValue>().unwrap(),
-        "https://tauri.localhost".parse::<axum::http::HeaderValue>().unwrap(),
-    ];
-    let cors = CorsLayer::new()
-        .allow_origin(allowed_origins.to_vec())
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
-        .allow_headers([AUTHORIZATION, CONTENT_TYPE]);
+    // When remote access is enabled, allow any origin (Basic Auth secures the endpoint).
+    // Otherwise, restrict to localhost and Tauri webview origins.
+    let cors = if remote_auth {
+        CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+            .allow_headers([AUTHORIZATION, CONTENT_TYPE])
+    } else {
+        let allowed_origins = [
+            "http://localhost".parse::<axum::http::HeaderValue>().unwrap(),
+            "http://127.0.0.1".parse::<axum::http::HeaderValue>().unwrap(),
+            "tauri://localhost".parse::<axum::http::HeaderValue>().unwrap(),
+            "https://tauri.localhost".parse::<axum::http::HeaderValue>().unwrap(),
+        ];
+        CorsLayer::new()
+            .allow_origin(allowed_origins.to_vec())
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+            .allow_headers([AUTHORIZATION, CONTENT_TYPE])
+    };
 
     let mut routes = Router::new()
         // Health
