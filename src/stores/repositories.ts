@@ -24,6 +24,7 @@ export interface RepositoryState {
   initials: string;
   expanded: boolean; // Whether branches are expanded/collapsed
   collapsed: boolean; // Whether entire repo is collapsed to icon only
+  parked: boolean;    // Whether repo is hidden from sidebar (recallable via popover)
   branches: Record<string, BranchState>;
   activeBranch: string | null;
 }
@@ -166,6 +167,9 @@ function createRepositoriesStore() {
             if (repo.expanded === undefined) {
               repo.expanded = true;
             }
+            if (repo.parked === undefined) {
+              repo.parked = false;
+            }
             for (const branch of Object.values(repo.branches)) {
               branch.terminals = [];
               // Reset hadTerminals on startup: the flag only suppresses auto-spawn
@@ -210,6 +214,7 @@ function createRepositoriesStore() {
         initials: repo.initials ?? "",
         expanded: true,
         collapsed: false,
+        parked: false,
         branches: {},
         activeBranch: null,
       });
@@ -407,11 +412,23 @@ function createRepositoriesStore() {
       save();
     },
 
-    /** Get ordered repo paths */
+    /** Park or unpark a repository (hide from sidebar, recallable via popover) */
+    setPark(path: string, parked: boolean): void {
+      if (!state.repositories[path]) return;
+      setState("repositories", path, "parked", parked);
+      save();
+    },
+
+    /** Get all parked repositories */
+    getParkedRepos(): RepositoryState[] {
+      return Object.values(state.repositories).filter((r) => r.parked);
+    },
+
+    /** Get ordered repo paths (excludes parked repos) */
     getOrderedRepos(): RepositoryState[] {
       return state.repoOrder
         .map((path) => state.repositories[path])
-        .filter(Boolean);
+        .filter((r) => r && !r.parked);
     },
 
     /** Reorder terminals within the active branch */
@@ -659,7 +676,7 @@ function createRepositoriesStore() {
           group,
           repos: group.repoOrder
             .map((path) => state.repositories[path])
-            .filter(Boolean),
+            .filter((r) => r && !r.parked),
         }));
 
       // Collect all repo paths that belong to a group
@@ -670,7 +687,7 @@ function createRepositoriesStore() {
       const ungrouped = state.repoOrder
         .filter((path) => !groupedPaths.has(path))
         .map((path) => state.repositories[path])
-        .filter(Boolean);
+        .filter((r) => r && !r.parked);
 
       return { groups, ungrouped };
     },

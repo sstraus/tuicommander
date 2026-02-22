@@ -90,6 +90,17 @@ describe("actionRegistry", () => {
       expect(ids).not.toContain("switch-branch-1");
     });
 
+    it("ActionEntry.id accepts arbitrary strings (for dynamic entries)", () => {
+      const entry: ActionEntry = {
+        id: "switch-repo:/some/path",
+        label: "My Repo",
+        category: "Repository",
+        keybinding: "",
+        execute: vi.fn(),
+      };
+      expect(entry.id).toBe("switch-repo:/some/path");
+    });
+
     it("execute calls the corresponding handler", () => {
       const handlers = createMockHandlers();
       const handlerEntries = getActionEntries(handlers);

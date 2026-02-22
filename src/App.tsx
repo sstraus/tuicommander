@@ -449,8 +449,69 @@ const App: Component = () => {
     toggleActivityDashboard: () => activityDashboardStore.toggle(),
   };
 
-  // Action entries for the command palette
-  const actionEntries = createMemo(() => getActionEntries(shortcutHandlers));
+  // Action entries for the command palette: static registry + dynamic entries
+  const actionEntries = createMemo(() => {
+    const entries = getActionEntries(shortcutHandlers);
+
+    // Dynamic: one entry per active (non-parked) repo for quick switching
+    const repos = Object.values(repositoriesStore.state.repositories);
+    for (const repo of repos) {
+      if (repo.parked) continue;
+      entries.push({
+        id: `switch-repo:${repo.path}`,
+        label: repo.displayName,
+        category: "Repository",
+        keybinding: "",
+        execute: () => {
+          repositoriesStore.setActive(repo.path);
+          const branch = repo.activeBranch || Object.keys(repo.branches)[0];
+          if (branch) gitOps.handleBranchSelect(repo.path, branch);
+        },
+      });
+    }
+
+    // Dynamic: one entry per parked repo for unparking
+    for (const repo of repos) {
+      if (!repo.parked) continue;
+      entries.push({
+        id: `unpark-repo:${repo.path}`,
+        label: `Unpark: ${repo.displayName}`,
+        category: "Repository",
+        keybinding: "",
+        execute: () => {
+          repositoriesStore.setPark(repo.path, false);
+          repositoriesStore.setActive(repo.path);
+          const branch = repo.activeBranch || Object.keys(repo.branches)[0];
+          if (branch) gitOps.handleBranchSelect(repo.path, branch);
+        },
+      });
+    }
+
+    // Static extra actions (no keybinding)
+    entries.push({
+      id: "add-repository",
+      label: "Add Repository",
+      category: "Repository",
+      keybinding: "",
+      execute: () => gitOps.handleAddRepo(),
+    });
+    entries.push({
+      id: "check-for-updates",
+      label: "Check for Updates",
+      category: "Application",
+      keybinding: "",
+      execute: () => updaterStore.checkForUpdate().catch((err) => console.warn("[Updater] Check failed:", err)),
+    });
+    entries.push({
+      id: "reset-panel-sizes",
+      label: "Reset Panel Sizes",
+      category: "Application",
+      keybinding: "",
+      execute: () => splitPanes.resetLayout(),
+    });
+
+    return entries;
+  });
 
   // Keyboard shortcuts
   createEffect(() => {

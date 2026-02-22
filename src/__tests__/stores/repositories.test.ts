@@ -739,6 +739,104 @@ describe("repositoriesStore", () => {
     });
   });
 
+  describe("park repos", () => {
+    it("setPark() marks a repo as parked", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo", displayName: "test" });
+        expect(store.get("/repo")!.parked).toBe(false);
+        store.setPark("/repo", true);
+        expect(store.get("/repo")!.parked).toBe(true);
+        dispose();
+      });
+    });
+
+    it("setPark(false) unparks a repo", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo", displayName: "test" });
+        store.setPark("/repo", true);
+        store.setPark("/repo", false);
+        expect(store.get("/repo")!.parked).toBe(false);
+        dispose();
+      });
+    });
+
+    it("getParkedRepos() returns only parked repos", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/a", displayName: "A" });
+        store.add({ path: "/b", displayName: "B" });
+        store.add({ path: "/c", displayName: "C" });
+        store.setPark("/b", true);
+        const parked = store.getParkedRepos();
+        expect(parked).toHaveLength(1);
+        expect(parked[0].path).toBe("/b");
+        dispose();
+      });
+    });
+
+    it("getOrderedRepos() excludes parked repos", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/a", displayName: "A" });
+        store.add({ path: "/b", displayName: "B" });
+        store.setPark("/b", true);
+        const ordered = store.getOrderedRepos();
+        expect(ordered).toHaveLength(1);
+        expect(ordered[0].path).toBe("/a");
+        dispose();
+      });
+    });
+
+    it("getGroupedLayout() excludes parked repos from groups and ungrouped", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/a", displayName: "A" });
+        store.add({ path: "/b", displayName: "B" });
+        store.add({ path: "/c", displayName: "C" });
+        const gid = store.createGroup("Work")!;
+        store.addRepoToGroup("/a", gid);
+        store.addRepoToGroup("/b", gid);
+        store.setPark("/b", true);
+        store.setPark("/c", true);
+        const layout = store.getGroupedLayout();
+        expect(layout.groups[0].repos).toHaveLength(1);
+        expect(layout.groups[0].repos[0].path).toBe("/a");
+        expect(layout.ungrouped).toHaveLength(0);
+        dispose();
+      });
+    });
+
+    it("parked repos persist via save", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo", displayName: "test" });
+        store.setPark("/repo", true);
+        vi.advanceTimersByTime(500);
+        const saveCalls = mockInvoke.mock.calls.filter(
+          (c: unknown[]) => c[0] === "save_repositories"
+        );
+        const lastCall = saveCalls[saveCalls.length - 1];
+        expect(lastCall[1].config.repos["/repo"].parked).toBe(true);
+        dispose();
+      });
+    });
+
+    it("hydrate() defaults parked to false when missing", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        repos: {
+          "/repo": {
+            path: "/repo", displayName: "test", initials: "TE",
+            expanded: true, collapsed: false,
+            branches: { main: { name: "main", isMain: true, worktreePath: null, terminals: [], additions: 0, deletions: 0 } },
+            activeBranch: "main",
+          },
+        },
+        repoOrder: ["/repo"],
+      });
+      await createRoot(async (dispose) => {
+        await store.hydrate();
+        expect(store.get("/repo")!.parked).toBe(false);
+        dispose();
+      });
+    });
+  });
+
   describe("hydrate guard", () => {
     it("blocks saves before hydrate completes", () => {
       createRoot((dispose) => {

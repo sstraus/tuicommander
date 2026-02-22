@@ -10,7 +10,7 @@ import { comboToDisplay } from "../components/SettingsPanel/tabs/KeyboardShortcu
 import type { ShortcutHandlers } from "../hooks/useKeyboardShortcuts";
 
 export interface ActionEntry {
-  id: ActionName;
+  id: string;  // ActionName for static entries, or dynamic IDs like "switch-repo:/path"
   label: string;
   category: string;
   keybinding: string;
