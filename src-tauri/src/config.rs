@@ -451,6 +451,7 @@ const REPO_DEFAULTS_FILE: &str = "repo-defaults.json";
 const PROMPT_LIBRARY_FILE: &str = "prompt-library.json";
 const REPOSITORIES_FILE: &str = "repositories.json";
 const NOTES_FILE: &str = "notes.json";
+const KEYBINDINGS_FILE: &str = "keybindings.json";
 
 // App config
 #[tauri::command]
@@ -544,6 +545,17 @@ pub(crate) fn load_notes() -> serde_json::Value {
 #[tauri::command]
 pub(crate) fn save_notes(config: serde_json::Value) -> Result<(), String> {
     save_json_config(NOTES_FILE, &config)
+}
+
+// Keybindings (opaque JSON — schema owned by frontend)
+#[tauri::command]
+pub(crate) fn load_keybindings() -> serde_json::Value {
+    load_json_config(KEYBINDINGS_FILE)
+}
+
+#[tauri::command]
+pub(crate) fn save_keybindings(config: serde_json::Value) -> Result<(), String> {
+    save_json_config(KEYBINDINGS_FILE, &config)
 }
 
 // ---------------------------------------------------------------------------
