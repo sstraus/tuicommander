@@ -6,6 +6,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { TerminalSearch } from "./TerminalSearch";
 import { isTauri, subscribePty, type Unsubscribe } from "../../transport";
+import { browserCreatedSessions } from "../../hooks/useAppInit";
 import { usePty } from "../../hooks/usePty";
 import { settingsStore, FONT_FAMILIES } from "../../stores/settings";
 import { getTerminalTheme } from "../../themes";
@@ -389,6 +390,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
           cwd: props.cwd || null,
         });
         if (sessionId) {
+          // Track browser-created sessions so beforeunload only closes our own
+          if (!isTauri()) {
+            browserCreatedSessions.add(sessionId);
+          }
           await attachSessionListeners(sessionId);
         }
       }

@@ -1,6 +1,7 @@
 import { createStore } from "solid-js/store";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { isTauri } from "../transport";
 
 interface UpdaterState {
   available: boolean;
@@ -27,6 +28,7 @@ function createUpdaterStore() {
 
   const actions = {
     async checkForUpdate(): Promise<void> {
+      if (!isTauri()) return;
       if (state.checking || state.downloading) return;
       setState({ checking: true, error: null });
       try {
@@ -59,7 +61,7 @@ function createUpdaterStore() {
     },
 
     async downloadAndInstall(): Promise<void> {
-      if (!pendingUpdate || state.downloading) return;
+      if (!isTauri() || !pendingUpdate || state.downloading) return;
       setState({ downloading: true, progress: 0, error: null });
       try {
         let contentLength = 0;

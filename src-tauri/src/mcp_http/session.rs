@@ -1,6 +1,7 @@
-use crate::pty::{build_shell_command, resolve_shell, spawn_headless_reader_thread};
+use crate::pty::{build_shell_command, resolve_shell, spawn_headless_reader_thread, spawn_reader_thread};
 use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
 use crate::state::OUTPUT_RING_BUFFER_CAPACITY;
+use tauri::Emitter;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -147,6 +148,14 @@ pub(super) async fn close_session(
             }
         }
         drop(session);
+
+        // Notify Tauri frontend that the session was closed
+        if let Some(app) = state.app_handle.read().as_ref() {
+            let _ = app.emit("session-closed", serde_json::json!({
+                "session_id": session_id,
+            }));
+        }
+
         (StatusCode::OK, Json(serde_json::json!({"ok": true})))
     } else {
         (
@@ -247,7 +256,22 @@ pub(super) async fn create_session(
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
 
-    spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
+    // Use full reader thread (with Tauri events) when AppHandle is available,
+    // fall back to headless for tests or pre-setup scenarios
+    let app_handle = state.app_handle.read().clone();
+    if let Some(ref app) = app_handle {
+        spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state);
+    } else {
+        spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
+    }
+
+    // Notify Tauri frontend about the new session
+    if let Some(app) = app_handle {
+        let _ = app.emit("session-created", serde_json::json!({
+            "session_id": session_id,
+            "cwd": body.cwd,
+        }));
+    }
 
     (
         StatusCode::CREATED,
@@ -398,7 +422,19 @@ pub(super) async fn create_session_with_worktree(
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
 
-    spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
+    let app_handle = state.app_handle.read().clone();
+    if let Some(ref app) = app_handle {
+        spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state);
+    } else {
+        spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
+    }
+
+    if let Some(app) = app_handle {
+        let _ = app.emit("session-created", serde_json::json!({
+            "session_id": session_id,
+            "cwd": worktree_path_str,
+        }));
+    }
 
     (
         StatusCode::CREATED,

@@ -295,15 +295,17 @@ export const PluginsTab: Component = () => {
           </div>
         </Show>
 
-        <div class={ps.installRow}>
-          <button
-            class={s.testBtn}
-            onClick={handleInstallFromFile}
-            disabled={installing()}
-          >
-            {installing() ? "Installing..." : "Install from file..."}
-          </button>
-        </div>
+        <Show when={isTauri()}>
+          <div class={ps.installRow}>
+            <button
+              class={s.testBtn}
+              onClick={handleInstallFromFile}
+              disabled={installing()}
+            >
+              {installing() ? "Installing..." : "Install from file..."}
+            </button>
+          </div>
+        </Show>
       </Show>
 
       {/* Browse tab */}

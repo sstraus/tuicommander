@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tauri::AppHandle;
 
 /// TTL for git operations (local disk): 5 seconds
 pub(crate) const GIT_CACHE_TTL: Duration = Duration::from_secs(5);
@@ -407,6 +408,9 @@ pub struct AppState {
     /// Random session token for browser cookie auth — regenerated on each server start.
     /// Browsers auto-send cookies in fetch(), unlike stored Basic Auth credentials.
     pub(crate) session_token: String,
+    /// Tauri AppHandle — stored after setup() so HTTP handlers can emit events.
+    /// None before Tauri initializes (or in headless/test scenarios).
+    pub(crate) app_handle: parking_lot::RwLock<Option<AppHandle>>,
 }
 
 impl AppState {
@@ -769,6 +773,7 @@ mod tests {
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             server_shutdown: parking_lot::Mutex::new(None),
             session_token: String::from("test-token"),
+            app_handle: parking_lot::RwLock::new(None),
         }
     }
 

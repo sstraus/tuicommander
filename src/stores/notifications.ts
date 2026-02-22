@@ -1,6 +1,7 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isTauri } from "../transport";
 import {
   notificationManager,
   type NotificationConfig,
@@ -136,6 +137,7 @@ function createNotificationsStore() {
     async incrementBadge(): Promise<void> {
       const newCount = state.badgeCount + 1;
       setState("badgeCount", newCount);
+      if (!isTauri()) return;
       try {
         await getCurrentWindow().setBadgeCount(newCount);
       } catch {
@@ -147,6 +149,7 @@ function createNotificationsStore() {
     async clearBadge(): Promise<void> {
       if (state.badgeCount === 0) return;
       setState("badgeCount", 0);
+      if (!isTauri()) return;
       try {
         await getCurrentWindow().setBadgeCount(0);
       } catch {

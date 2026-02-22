@@ -1,4 +1,5 @@
 import { ask, message } from "@tauri-apps/plugin-dialog";
+import { isTauri } from "../transport";
 
 export interface ConfirmOptions {
   title: string;
@@ -8,10 +9,13 @@ export interface ConfirmOptions {
   kind?: "info" | "warning" | "error";
 }
 
-/** Hook for native confirmation dialogs */
+/** Hook for confirmation dialogs — uses native Tauri dialogs or HTML fallbacks */
 export function useConfirmDialog() {
   /** Show a confirmation dialog */
   async function confirm(options: ConfirmOptions): Promise<boolean> {
+    if (!isTauri()) {
+      return window.confirm(`${options.title}\n\n${options.message}`);
+    }
     return await ask(options.message, {
       title: options.title,
       okLabel: options.okLabel || "OK",
@@ -22,11 +26,19 @@ export function useConfirmDialog() {
 
   /** Show an info message */
   async function info(title: string, msg: string): Promise<void> {
+    if (!isTauri()) {
+      window.alert(`${title}\n\n${msg}`);
+      return;
+    }
     await message(msg, { title, kind: "info" });
   }
 
   /** Show an error message */
   async function error(title: string, msg: string): Promise<void> {
+    if (!isTauri()) {
+      window.alert(`${title}\n\n${msg}`);
+      return;
+    }
     await message(msg, { title, kind: "error" });
   }
 

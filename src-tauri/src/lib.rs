@@ -444,6 +444,7 @@ pub fn run() {
         github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
         server_shutdown: parking_lot::Mutex::new(None),
         session_token: uuid::Uuid::new_v4().to_string(),
+        app_handle: parking_lot::RwLock::new(None),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled
@@ -501,6 +502,10 @@ pub fn run() {
             app.on_menu_event(|app_handle, event| {
                 let _ = app_handle.emit("menu-action", event.id().0.as_str());
             });
+
+            // Store AppHandle so HTTP handlers can emit Tauri events
+            let app_state: &Arc<AppState> = app.state::<Arc<AppState>>().inner();
+            *app_state.app_handle.write() = Some(app.handle().clone());
 
             // Start plugin directory watcher for hot-reload
             plugins::start_plugin_watcher(app.handle());
@@ -631,10 +636,10 @@ pub fn run() {
             // Guard against corrupted window-state applied by tauri-plugin-window-state.
             // Must run at Ready (after plugins have restored persisted position/size),
             // not in setup() which fires before the plugin applies its state.
-            if let tauri::RunEvent::Ready = event {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    ensure_window_visible(&window);
-                }
+            if let tauri::RunEvent::Ready = event
+                && let Some(window) = app_handle.get_webview_window("main")
+            {
+                ensure_window_visible(&window);
             }
         });
 }

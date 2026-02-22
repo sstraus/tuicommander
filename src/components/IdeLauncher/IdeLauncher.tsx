@@ -1,5 +1,6 @@
 import { Component, For, Show, createSignal, onCleanup, createEffect, onMount } from "solid-js";
 import { invoke } from "../../invoke";
+import { isTauri } from "../../transport";
 import { settingsStore, IDE_NAMES, IDE_ICON_PATHS, IDE_CATEGORIES } from "../../stores/settings";
 import type { IdeType } from "../../stores/settings";
 
@@ -140,6 +141,9 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
   };
 
   const currentIde = () => settingsStore.state.ide;
+
+  // IDE launcher requires native Tauri APIs — hide in browser mode
+  if (!isTauri()) return null;
 
   return (
     <div class={s.launcher} ref={dropdownRef}>

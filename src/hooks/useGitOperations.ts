@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { open } from "@tauri-apps/plugin-dialog";
+import { isTauri } from "../transport";
 import { findOrphanTerminals } from "../utils/terminalOrphans";
 import { filterValidTerminals } from "../utils/terminalFilter";
 import { AGENTS } from "../agents";
@@ -255,15 +256,23 @@ export function useGitOperations(deps: GitOperationsDeps) {
   };
 
   const handleAddRepo = async () => {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: "Select Repository Folder",
-    });
+    let path: string | null = null;
 
-    if (!selected) return;
+    if (isTauri()) {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Repository Folder",
+      });
+      if (!selected) return;
+      path = typeof selected === "string" ? selected : selected[0];
+    } else {
+      // Browser mode: no native file picker — prompt for path
+      const input = window.prompt("Enter the absolute path to the repository:");
+      if (!input?.trim()) return;
+      path = input.trim();
+    }
 
-    const path = typeof selected === "string" ? selected : selected[0];
     if (!path) return;
 
     try {

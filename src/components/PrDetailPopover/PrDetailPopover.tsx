@@ -4,7 +4,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { CiRing } from "../ui/CiRing";
 import { relativeTime } from "../../utils/time";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { handleOpenUrl } from "../../utils/openUrl";
 import { getCiIcon, getCiClass } from "../../utils/ciDisplay";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -135,7 +135,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                 <span class={s.title}>{pr().title}</span>
                 <span
                   class={cx(s.number, s.link)}
-                  onClick={() => pr().url && openUrl(pr().url).catch((err) => console.error("Failed to open URL:", err))}
+                  onClick={() => pr().url && handleOpenUrl(pr().url)}
                   title={t("prDetail.openOnGithub", "Open PR on GitHub")}
                 >
                   #{pr().number}
@@ -260,7 +260,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
               <Show when={pr().url}>
                 <div
                   class={s.openGithub}
-                  onClick={() => openUrl(pr().url).catch((err) => console.error("Failed to open URL:", err))}
+                  onClick={() => handleOpenUrl(pr().url)}
                 >
                   {t("prDetail.openOnGithub", "Open on GitHub")} {"\u2197"}
                 </div>

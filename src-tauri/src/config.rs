@@ -26,11 +26,11 @@ pub(crate) fn config_dir() -> PathBuf {
             .filter(|d| d.exists())
             .unwrap_or(legacy_dot);
 
-        if source.exists() && source != new_dir {
-            if let Err(e) = migrate_config_dir(&source, &new_dir) {
-                eprintln!("Warning: config migration failed: {e}");
-                return source;
-            }
+        if source.exists() && source != new_dir
+            && let Err(e) = migrate_config_dir(&source, &new_dir)
+        {
+            eprintln!("Warning: config migration failed: {e}");
+            return source;
         }
     }
 

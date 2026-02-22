@@ -5,6 +5,9 @@ import { invoke, listen } from "../invoke";
 import { isTauri } from "../transport";
 import type { SavedTerminal } from "../types";
 
+/** Track PTY sessions created by the browser client so we only close our own on unload */
+export const browserCreatedSessions = new Set<string>();
+
 /** Dependencies injected into initApp */
 export interface AppInitDeps {
   pty: {
@@ -109,13 +112,21 @@ export async function initApp(deps: AppInitDeps) {
       repositoriesStore.snapshotTerminals(snapshots);
     }
 
-    // 2. Close all PTY sessions
-    for (const id of terminalsStore.getIds()) {
-      const t = terminalsStore.get(id);
-      if (t?.sessionId) {
-        deps.pty.close(t.sessionId).catch((err) =>
-      console.warn(`Failed to close PTY session ${t.sessionId} on unload:`, err),
-    );
+    // 2. Close PTY sessions
+    if (isTauri()) {
+      // Tauri owns all sessions — close them all
+      for (const id of terminalsStore.getIds()) {
+        const t = terminalsStore.get(id);
+        if (t?.sessionId) {
+          deps.pty.close(t.sessionId).catch((err) =>
+            console.warn(`Failed to close PTY session ${t.sessionId} on unload:`, err),
+          );
+        }
+      }
+    } else {
+      // Browser only closes sessions it created — leave Tauri-created ones alive
+      for (const sid of browserCreatedSessions) {
+        deps.pty.close(sid).catch(() => {});
       }
     }
   });
@@ -180,6 +191,66 @@ export async function initApp(deps: AppInitDeps) {
   }).catch((err) =>
     console.error("[RepoWatcher] Failed to register repo-changed listener:", err),
   );
+
+  // Listen for sessions created/closed by remote clients (browser UI)
+  if (isTauri()) {
+    listen<{ session_id: string; cwd: string | null }>("session-created", (event) => {
+      const { session_id, cwd } = event.payload;
+      // Skip if this session is already tracked (created locally)
+      const existing = terminalsStore.getIds().find(
+        (id) => terminalsStore.get(id)?.sessionId === session_id,
+      );
+      if (existing) return;
+
+      console.log(`[Remote] Session created: ${session_id}`);
+      const id = terminalsStore.add({
+        sessionId: session_id,
+        fontSize: deps.getDefaultFontSize(),
+        name: `Remote ${terminalsStore.getCount() + 1}`,
+        cwd: cwd ?? null,
+        awaitingInput: null,
+      });
+
+      // Match to repo/branch by cwd
+      if (cwd) {
+        const matchedRepo = repositoriesStore.getPaths().find((repoPath) => {
+          if (cwd === repoPath) return true;
+          const repoState = repositoriesStore.get(repoPath);
+          if (!repoState) return false;
+          return Object.values(repoState.branches).some(
+            (b) => b.worktreePath && cwd === b.worktreePath,
+          );
+        });
+
+        if (matchedRepo) {
+          const repoState = repositoriesStore.get(matchedRepo);
+          const branchName =
+            Object.values(repoState?.branches || {}).find(
+              (b) => b.worktreePath && cwd === b.worktreePath,
+            )?.name || repoState?.activeBranch;
+
+          if (branchName) {
+            repositoriesStore.addTerminalToBranch(matchedRepo, branchName, id);
+          }
+        }
+      }
+    }).catch((err) =>
+      console.error("[Remote] Failed to register session-created listener:", err),
+    );
+
+    listen<{ session_id: string }>("session-closed", (event) => {
+      const { session_id } = event.payload;
+      const termId = terminalsStore.getIds().find(
+        (id) => terminalsStore.get(id)?.sessionId === session_id,
+      );
+      if (termId) {
+        console.log(`[Remote] Session closed: ${session_id}`);
+        terminalsStore.remove(termId);
+      }
+    }).catch((err) =>
+      console.error("[Remote] Failed to register session-closed listener:", err),
+    );
+  }
 
   // Check for surviving PTY sessions (persists across Vite HMR reloads)
   let survivingSessions: Awaited<ReturnType<typeof deps.pty.listActiveSessions>> = [];
