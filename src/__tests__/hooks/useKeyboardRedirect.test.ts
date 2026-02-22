@@ -48,6 +48,8 @@ describe("useKeyboardRedirect", () => {
         writeln: vi.fn(),
         clear: vi.fn(),
         getSessionId: vi.fn(),
+        openSearch: vi.fn(),
+        closeSearch: vi.fn(),
       },
     });
   });

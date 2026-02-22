@@ -1,8 +1,10 @@
-import { Component, createEffect, onCleanup } from "solid-js";
+import { Component, createEffect, createSignal, onCleanup } from "solid-js";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { TerminalSearch } from "./TerminalSearch";
 import { isTauri, subscribePty, type Unsubscribe } from "../../transport";
 import { usePty } from "../../hooks/usePty";
 import { settingsStore, FONT_FAMILIES } from "../../stores/settings";
@@ -94,7 +96,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
   let terminal: XTerm | undefined;
   let fitAddon: FitAddon | undefined;
+  let searchAddon: SearchAddon | undefined;
   let sessionId: string | null = null;
+
+  // Search overlay state
+  const [searchVisible, setSearchVisible] = createSignal(false);
   let sessionInitialized = false;
   let unsubscribePty: Unsubscribe | undefined;
   let unlistenParsed: (() => void) | undefined;
@@ -400,6 +406,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // macOS-composed character that xterm's third-level-shift pass-through would send).
     let leftOptionHeld = false;
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      // Intercept Cmd+F (macOS) / Ctrl+F (Win/Linux) to open search overlay
+      if (event.type === "keydown" && (event.metaKey || event.ctrlKey) && event.key === "f" && !event.altKey && !event.shiftKey) {
+        event.preventDefault();
+        setSearchVisible(true);
+        return false;
+      }
+
+      // Escape closes search overlay when visible
+      if (event.type === "keydown" && event.key === "Escape" && searchVisible()) {
+        event.preventDefault();
+        setSearchVisible(false);
+        return false;
+      }
+
       if (!isMacOS()) return true; // Windows/Linux: xterm handles Alt natively
       if (props.metaHotkeys === false) return true; // disabled for this repo
       if (event.metaKey || event.ctrlKey) return true; // Cmd+Alt or AltGr: pass through
@@ -458,6 +478,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
     fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(new WebLinksAddon());
+
+    searchAddon = new SearchAddon();
+    terminal.loadAddon(searchAddon);
 
     // Register link provider for file paths (clickable to open in IDE or MD viewer)
     if (props.onOpenFilePath) {
@@ -735,6 +758,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
     clear: () => terminal?.clear(),
     focus: () => terminal?.focus(),
     getSessionId: () => sessionId,
+    openSearch: () => setSearchVisible(true),
+    closeSearch: () => setSearchVisible(false),
   };
 
   createEffect(() => {
@@ -742,12 +767,21 @@ export const Terminal: Component<TerminalProps> = (props) => {
   });
 
   return (
-    <div
-      ref={containerRef}
-      class={s.content}
-      data-terminal-id={props.id}
-      style={{ width: "100%", height: "100%" }}
-    />
+    <div class={s.wrapper} data-terminal-id={props.id}>
+      <TerminalSearch
+        visible={searchVisible()}
+        searchAddon={searchAddon}
+        onClose={() => {
+          setSearchVisible(false);
+          terminal?.focus();
+        }}
+      />
+      <div
+        ref={containerRef}
+        class={s.content}
+        style={{ width: "100%", height: "100%" }}
+      />
+    </div>
   );
 };
 

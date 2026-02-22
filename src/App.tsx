@@ -37,6 +37,7 @@ import { notificationsStore } from "./stores/notifications";
 import { repoSettingsStore } from "./stores/repoSettings";
 import { repoDefaultsStore } from "./stores/repoDefaults";
 import { notesStore } from "./stores/notes";
+import { keybindingsStore } from "./stores/keybindings";
 import { prNotificationsStore } from "./stores/prNotifications";
 import { updaterStore } from "./stores/updater";
 import { initPlugins } from "./plugins";
@@ -175,6 +176,7 @@ const App: Component = () => {
             repoDefaultsStore.hydrate(),
             promptLibraryStore.hydrate(),
             notesStore.hydrate(),
+            keybindingsStore.hydrate(),
           ]);
           const failures = results.filter((r) => r.status === "rejected");
           if (failures.length > 0) {
@@ -374,6 +376,10 @@ const App: Component = () => {
       toggleHelpPanel: () => setHelpPanelVisible((v) => !v),
       toggleNotesPanel: uiStore.toggleNotesPanel,
       toggleFileBrowserPanel: uiStore.toggleFileBrowserPanel,
+      findInTerminal: () => {
+        const active = terminalsStore.getActive();
+        active?.ref?.openSearch();
+      },
     });
     onCleanup(cleanup);
   });

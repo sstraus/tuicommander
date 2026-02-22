@@ -2,6 +2,29 @@
 
 All shortcuts use `Cmd` on macOS and `Ctrl` on Windows/Linux unless noted.
 
+## Customizing Keybindings
+
+You can override any keyboard shortcut by creating a `keybindings.json` file in your TUI Commander config directory:
+
+- **macOS:** `~/Library/Application Support/tui-commander/keybindings.json`
+- **Windows:** `%APPDATA%\tui-commander\keybindings.json`
+- **Linux:** `~/.config/tui-commander/keybindings.json`
+
+The file is a JSON array of override objects. Only include shortcuts you want to change:
+
+```json
+[
+  { "action": "toggle-diff", "key": "Cmd+Shift+Y" },
+  { "action": "toggle-markdown", "key": "Cmd+Shift+M" }
+]
+```
+
+- `"key"` uses `Cmd` as the platform-agnostic modifier (resolved to Meta on macOS, Ctrl on Win/Linux)
+- Set `"key": ""` or `"key": null` to unbind an action
+- The Help panel (`Cmd+?`) always shows your actual keybindings
+
+See the action table below for all available action names.
+
 ## Terminal Operations
 
 | Shortcut | Action |
@@ -12,6 +35,10 @@ All shortcuts use `Cmd` on macOS and `Ctrl` on Windows/Linux unless noted.
 | `Cmd+R` | Run saved command |
 | `Cmd+Shift+R` | Edit and run command |
 | `Cmd+L` | Clear terminal |
+| `Cmd+F` | Find in terminal |
+| `Cmd+G` / `Enter` | Find next match (when search is open) |
+| `Cmd+Shift+G` / `Shift+Enter` | Find previous match (when search is open) |
+| `Escape` | Close search overlay |
 | `Cmd+C` | Copy selection |
 | `Cmd+V` | Paste to terminal |
 
@@ -134,3 +161,36 @@ Hold to record, release to transcribe and inject text into active terminal.
 | Click | Status bar panel buttons | Toggle Diff/MD/FB/Ideas panels |
 | Drag | Panel left edge | Resize right-side panel (200-800px) |
 | Drag | Split pane divider | Resize split terminal panes |
+
+## Action Names Reference (for keybindings.json)
+
+| Action Name | Default Shortcut | Description |
+|-------------|-----------------|-------------|
+| `zoom-in` | `Cmd+=` | Zoom in |
+| `zoom-out` | `Cmd+-` | Zoom out |
+| `zoom-reset` | `Cmd+0` | Reset zoom |
+| `new-terminal` | `Cmd+T` | New terminal tab |
+| `close-terminal` | `Cmd+W` | Close terminal/pane |
+| `reopen-closed-tab` | `Cmd+Shift+T` | Reopen closed tab |
+| `clear-terminal` | `Cmd+L` | Clear terminal |
+| `run-command` | `Cmd+R` | Run saved command |
+| `edit-command` | `Cmd+Shift+R` | Edit and run command |
+| `split-vertical` | `Cmd+\` | Split vertically |
+| `split-horizontal` | `Cmd+Alt+\` | Split horizontally |
+| `prev-tab` | `Cmd+Shift+[` | Previous tab |
+| `next-tab` | `Cmd+Shift+]` | Next tab |
+| `switch-tab-1..9` | `Cmd+1..9` | Switch to tab N |
+| `toggle-sidebar` | `Cmd+[` | Toggle sidebar |
+| `toggle-diff` | `Cmd+Shift+D` | Toggle diff panel |
+| `toggle-markdown` | `Cmd+M` | Toggle markdown panel |
+| `toggle-notes` | `Cmd+N` | Toggle ideas panel |
+| `toggle-file-browser` | `Cmd+E` | Toggle file browser |
+| `toggle-prompt-library` | `Cmd+K` | Prompt library |
+| `toggle-settings` | `Cmd+,` | Open settings |
+| `toggle-task-queue` | `Cmd+J` | Task queue |
+| `toggle-help` | `Cmd+?` | Toggle help panel |
+| `toggle-git-ops` | `Cmd+Shift+G` | Git operations panel |
+| `open-lazygit` | `Cmd+G` | Open lazygit |
+| `open-lazygit-pane` | `Cmd+Shift+L` | Lazygit split pane |
+| `find-in-terminal` | `Cmd+F` | Find in terminal |
+| `switch-branch-1..9` | `Cmd+Ctrl+1..9` | Switch to branch N |

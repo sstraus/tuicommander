@@ -43,6 +43,8 @@ export interface TerminalRef {
   clear: () => void;
   focus: () => void;
   getSessionId: () => string | null;
+  openSearch: () => void;
+  closeSearch: () => void;
 }
 
 /** Combined terminal state */

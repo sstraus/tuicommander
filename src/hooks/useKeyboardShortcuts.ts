@@ -1,6 +1,9 @@
 import { terminalsStore } from "../stores/terminals";
 import { isQuickSwitcherActive } from "../platform";
 import { lastMenuActionTime } from "../menuDedup";
+import { keybindingsStore } from "../stores/keybindings";
+import { normalizeCombo } from "../keybindingDefaults";
+import type { ActionName } from "../keybindingDefaults";
 
 /** All action callbacks the keyboard shortcut handler needs */
 export interface ShortcutHandlers {
@@ -31,6 +34,107 @@ export interface ShortcutHandlers {
   toggleHelpPanel: () => void;
   toggleNotesPanel: () => void;
   toggleFileBrowserPanel: () => void;
+  findInTerminal: () => void;
+}
+
+/**
+ * Convert a KeyboardEvent into a normalized combo string that matches our keybinding format.
+ * "Cmd" = metaKey || ctrlKey (the platform primary modifier).
+ */
+export function eventToCombo(e: KeyboardEvent): string {
+  const parts: string[] = [];
+  if (e.metaKey || e.ctrlKey) parts.push("cmd");
+  if (e.altKey) parts.push("alt");
+  if (e.shiftKey) parts.push("shift");
+
+  // For modifier-only keydowns (e.g. pressing Shift alone), key would be "Shift"
+  // — skip those since they're not real shortcuts
+  const key = e.key.toLowerCase();
+  const modifierKeys = new Set(["control", "meta", "alt", "shift"]);
+  if (modifierKeys.has(key)) return "";
+
+  parts.sort();
+  parts.push(key);
+  return parts.join("+");
+}
+
+/** Dispatch an action to the appropriate handler. Returns true if handled. */
+function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean {
+  switch (action) {
+    // Zoom
+    case "zoom-in": handlers.zoomIn(); return true;
+    case "zoom-out": handlers.zoomOut(); return true;
+    case "zoom-reset": handlers.zoomReset(); return true;
+
+    // Terminal management
+    case "new-terminal": handlers.createNewTerminal(); return true;
+    case "close-terminal": {
+      const layout = terminalsStore.state.layout;
+      if (layout.direction !== "none" && layout.panes.length === 2) {
+        const closingId = layout.panes[layout.activePaneIndex];
+        if (closingId) handlers.closeTerminal(closingId, true);
+      } else {
+        const activeId = terminalsStore.state.activeId;
+        if (activeId) handlers.closeTerminal(activeId);
+      }
+      return true;
+    }
+    case "reopen-closed-tab": handlers.reopenClosedTab(); return true;
+    case "clear-terminal": handlers.clearTerminal(); return true;
+
+    // Split panes
+    case "split-vertical": handlers.handleSplit("vertical"); return true;
+    case "split-horizontal": handlers.handleSplit("horizontal"); return true;
+
+    // Run command
+    case "run-command": handlers.handleRunCommand(false); return true;
+    case "edit-command": handlers.handleRunCommand(true); return true;
+
+    // Panel toggles
+    case "toggle-diff": handlers.toggleDiffPanel(); return true;
+    case "toggle-markdown": handlers.toggleMarkdownPanel(); return true;
+    case "toggle-notes": handlers.toggleNotesPanel(); return true;
+    case "toggle-file-browser": handlers.toggleFileBrowserPanel(); return true;
+    case "toggle-prompt-library": handlers.togglePromptLibrary(); return true;
+    case "toggle-settings": handlers.toggleSettings(); return true;
+    case "toggle-task-queue": handlers.toggleTaskQueue(); return true;
+    case "toggle-sidebar": handlers.toggleSidebar(); return true;
+    case "toggle-git-ops": handlers.toggleGitOpsPanel(); return true;
+    case "toggle-help": handlers.toggleHelpPanel(); return true;
+    case "find-in-terminal": handlers.findInTerminal(); return true;
+
+    // Tab navigation
+    case "prev-tab": handlers.navigateTab("prev"); return true;
+    case "next-tab": handlers.navigateTab("next"); return true;
+
+    // Lazygit
+    case "open-lazygit":
+      if (handlers.lazygitAvailable()) handlers.spawnLazygit();
+      return true;
+    case "open-lazygit-pane":
+      if (handlers.lazygitAvailable()) handlers.openLazygitPane();
+      return true;
+
+    default: {
+      // switch-tab-N
+      const tabMatch = action.match(/^switch-tab-(\d)$/);
+      if (tabMatch) {
+        const index = parseInt(tabMatch[1]) - 1;
+        const ids = handlers.terminalIds();
+        if (index < ids.length) handlers.handleTerminalSelect(ids[index]);
+        return true;
+      }
+
+      // switch-branch-N
+      const branchMatch = action.match(/^switch-branch-(\d)$/);
+      if (branchMatch) {
+        handlers.switchToBranchByIndex(parseInt(branchMatch[1]));
+        return true;
+      }
+
+      return false;
+    }
+  }
 }
 
 /** Register keyboard shortcuts. Returns cleanup function. */
@@ -40,6 +144,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
     if (Date.now() - lastMenuActionTime < 200) return;
 
     // Quick switch to branch by index (Cmd+Ctrl+N on macOS, Ctrl+Alt+N on Win/Linux)
+    // This uses platform-specific modifier detection, handled separately
     if (isQuickSwitcherActive(e) && e.key >= "1" && e.key <= "9") {
       e.preventDefault();
       handlers.switchToBranchByIndex(parseInt(e.key));
@@ -49,54 +154,8 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
     // When quick switcher is open, skip other shortcuts
     if (handlers.isQuickSwitcherOpen()) return;
 
-    const isMeta = e.metaKey || e.ctrlKey;
-
-    // Zoom controls
-    if (isMeta && (e.key === "=" || e.key === "+")) {
-      e.preventDefault();
-      handlers.zoomIn();
-      return;
-    }
-    if (isMeta && e.key === "-") {
-      e.preventDefault();
-      handlers.zoomOut();
-      return;
-    }
-    if (isMeta && e.key === "0") {
-      e.preventDefault();
-      handlers.zoomReset();
-      return;
-    }
-
-    // Terminal management
-    if (isMeta && e.key === "t") {
-      e.preventDefault();
-      handlers.createNewTerminal();
-      return;
-    }
-    if (isMeta && e.key === "w") {
-      e.preventDefault();
-      const layout = terminalsStore.state.layout;
-      if (layout.direction !== "none" && layout.panes.length === 2) {
-        // In split mode: close active pane (closeTerminal handles split collapse)
-        const closingId = layout.panes[layout.activePaneIndex];
-        if (closingId) handlers.closeTerminal(closingId, true);
-      } else {
-        const activeId = terminalsStore.state.activeId;
-        if (activeId) handlers.closeTerminal(activeId);
-      }
-      return;
-    }
-
-    // Split pane shortcuts
-    if (isMeta && e.key === "\\") {
-      e.preventDefault();
-      handlers.handleSplit(e.altKey ? "horizontal" : "vertical");
-      return;
-    }
-
-    // Navigate between split panes (Alt+Arrow)
-    if (e.altKey && !isMeta && !e.shiftKey) {
+    // Navigate between split panes (Alt+Arrow) — layout-dependent, not configurable
+    if (e.altKey && !(e.metaKey || e.ctrlKey) && !e.shiftKey) {
       const layout = terminalsStore.state.layout;
       if (layout.direction !== "none" && layout.panes.length === 2) {
         const isNavKey =
@@ -116,128 +175,19 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
       }
     }
 
-    // Run command (Cmd+R / Cmd+Shift+R to edit)
-    if (isMeta && (e.key === "r" || e.key === "R")) {
-      e.preventDefault();
-      handlers.handleRunCommand(e.shiftKey);
-      return;
+    // Convert event to normalized combo and look up action
+    const combo = eventToCombo(e);
+    if (!combo) return;
+
+    // Handle "+" key as alias for "=" in zoom-in (Cmd+= and Cmd++ both zoom in)
+    let action = keybindingsStore.getActionForCombo(combo);
+    if (!action && e.key === "+" && (e.metaKey || e.ctrlKey)) {
+      const altCombo = normalizeCombo("Cmd+=");
+      action = keybindingsStore.getActionForCombo(altCombo);
     }
 
-    // Panel toggles
-    if (isMeta && e.shiftKey && e.key === "D") {
+    if (action && dispatchAction(action, handlers)) {
       e.preventDefault();
-      handlers.toggleDiffPanel();
-      return;
-    }
-    if (isMeta && e.key === "m") {
-      e.preventDefault();
-      handlers.toggleMarkdownPanel();
-      return;
-    }
-    if (isMeta && e.key === "n") {
-      e.preventDefault();
-      handlers.toggleNotesPanel();
-      return;
-    }
-    if (isMeta && e.key === "e") {
-      e.preventDefault();
-      handlers.toggleFileBrowserPanel();
-      return;
-    }
-
-    // Prompt library (Cmd+K)
-    if (isMeta && e.key === "k") {
-      e.preventDefault();
-      handlers.togglePromptLibrary();
-      return;
-    }
-
-    // Settings (Cmd+,)
-    if (isMeta && e.key === ",") {
-      e.preventDefault();
-      handlers.toggleSettings();
-      return;
-    }
-
-    // Task queue (Cmd+J)
-    if (isMeta && e.key === "j") {
-      e.preventDefault();
-      handlers.toggleTaskQueue();
-      return;
-    }
-
-    // Reopen closed tab (Cmd+Shift+T)
-    if (isMeta && e.shiftKey && e.key === "T") {
-      e.preventDefault();
-      handlers.reopenClosedTab();
-      return;
-    }
-
-    // Toggle sidebar (Cmd+[)
-    if (isMeta && !e.shiftKey && e.key === "[") {
-      e.preventDefault();
-      handlers.toggleSidebar();
-      return;
-    }
-
-    // Previous tab (Cmd+Shift+[)
-    if (isMeta && e.shiftKey && e.key === "[") {
-      e.preventDefault();
-      handlers.navigateTab("prev");
-      return;
-    }
-
-    // Next tab (Cmd+Shift+])
-    if (isMeta && e.shiftKey && e.key === "]") {
-      e.preventDefault();
-      handlers.navigateTab("next");
-      return;
-    }
-
-    // Clear terminal (Cmd+L)
-    if (isMeta && e.key === "l") {
-      e.preventDefault();
-      handlers.clearTerminal();
-      return;
-    }
-
-    // Lazygit (Cmd+G)
-    if (isMeta && !e.shiftKey && e.key === "g") {
-      e.preventDefault();
-      if (handlers.lazygitAvailable()) handlers.spawnLazygit();
-      return;
-    }
-
-    // Git operations panel (Cmd+Shift+G)
-    if (isMeta && e.shiftKey && e.key === "G") {
-      e.preventDefault();
-      handlers.toggleGitOpsPanel();
-      return;
-    }
-
-    // Help panel (Cmd+?)
-    if (isMeta && e.key === "?") {
-      e.preventDefault();
-      handlers.toggleHelpPanel();
-      return;
-    }
-
-    // Lazygit split pane (Cmd+Shift+L) (Story 047)
-    if (isMeta && e.shiftKey && e.key === "L") {
-      e.preventDefault();
-      if (handlers.lazygitAvailable()) handlers.openLazygitPane();
-      return;
-    }
-
-    // Navigate terminals with number keys
-    if (isMeta && e.key >= "1" && e.key <= "9") {
-      e.preventDefault();
-      const index = parseInt(e.key) - 1;
-      const ids = handlers.terminalIds();
-      if (index < ids.length) {
-        handlers.handleTerminalSelect(ids[index]);
-      }
-      return;
     }
   };
 

@@ -1,0 +1,89 @@
+/* Terminal search overlay — positioned top-right of terminal pane */
+.overlay {
+  position: absolute;
+  top: 4px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-dropdown);
+  font-family: var(--font-ui);
+  font-size: var(--font-md);
+}
+
+.input {
+  width: 200px;
+  height: 24px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  padding: 0 6px;
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--accent);
+}
+
+.counter {
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  min-width: 50px;
+  text-align: center;
+  user-select: none;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.btn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.toggleBtn {
+  composes: btn;
+}
+
+.toggleActive {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.toggleActive:hover {
+  background: var(--accent-hover);
+  color: var(--text-on-accent);
+}
+
+.separator {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 2px;
+}

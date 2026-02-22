@@ -91,7 +91,7 @@ describe("useAppLazygit", () => {
       });
       terminalsStore.setActive(id);
       terminalsStore.update(id, {
-        ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), focus: vi.fn(), getSessionId: vi.fn() },
+        ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), openSearch: vi.fn(), closeSearch: vi.fn() },
       });
 
       lazygit.spawnLazygit();
@@ -119,7 +119,7 @@ describe("useAppLazygit", () => {
       });
       terminalsStore.setActive(id);
       terminalsStore.update(id, {
-        ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), focus: vi.fn(), getSessionId: vi.fn() },
+        ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), openSearch: vi.fn(), closeSearch: vi.fn() },
       });
 
       noRepoLazygit.spawnLazygit();
@@ -137,7 +137,7 @@ describe("useAppLazygit", () => {
       });
       terminalsStore.setActive(id);
       terminalsStore.update(id, {
-        ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), focus: vi.fn(), getSessionId: vi.fn() },
+        ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), openSearch: vi.fn(), closeSearch: vi.fn() },
       });
 
       lazygit.spawnLazygit();

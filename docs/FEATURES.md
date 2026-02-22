@@ -57,7 +57,16 @@
 - Supports `:line` and `:line:col` suffixes for precise navigation
 - Recognized extensions: rs, ts, tsx, js, jsx, py, go, java, kt, swift, c, cpp, cs, rb, php, lua, zig, css, scss, html, vue, svelte, json, yaml, toml, sql, graphql, tf, sh, dockerfile, and more
 
-### 1.8 International Keyboard Support
+### 1.8 Find in Terminal
+- `Cmd+F` opens search overlay in the active terminal pane
+- Incremental search with highlight decorations (yellow matches, orange active match)
+- Navigate matches: `Enter` / `Cmd+G` (next), `Shift+Enter` / `Cmd+Shift+G` (previous)
+- Toggle options: case sensitive, whole word, regex
+- Match counter shows "N of M" results
+- `Escape` closes search and refocuses terminal
+- Uses `@xterm/addon-search` for native xterm integration
+
+### 1.9 International Keyboard Support
 - Terminal handles international keyboard input correctly
 - Rate-limit false positives reduced for non-ASCII input
 

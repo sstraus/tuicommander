@@ -1,6 +1,8 @@
 import { Component, Show, For, createSignal, createEffect, onCleanup } from "solid-js";
-import { getModifierSymbol } from "../../platform";
+import { getModifierSymbol, isMacOS } from "../../platform";
 import { t } from "../../i18n";
+import { keybindingsStore } from "../../stores/keybindings";
+import type { ActionName } from "../../keybindingDefaults";
 import s from "./HelpPanel.module.css";
 
 interface ShortcutEntry {
@@ -13,20 +15,60 @@ interface ShortcutSection {
   shortcuts: ShortcutEntry[];
 }
 
+/**
+ * Convert a keybinding combo string (e.g. "Cmd+Shift+D") to a display string
+ * using platform-appropriate symbols (e.g. "⌘⇧D" on macOS, "Ctrl+Shift+D" on others).
+ */
+function comboToDisplay(combo: string): string {
+  if (!combo) return "";
+  const mod = getModifierSymbol();
+  const mac = isMacOS();
+
+  const parts = combo.split("+");
+  const key = parts.pop()!;
+  const modifiers = parts;
+
+  const displayParts: string[] = [];
+  for (const m of modifiers) {
+    switch (m) {
+      case "Cmd": displayParts.push(mod); break;
+      case "Shift": displayParts.push(mac ? "\u21E7" : "Shift+"); break;
+      case "Alt": displayParts.push(mac ? "\u2325" : "Alt+"); break;
+      case "Ctrl": displayParts.push(mac ? "^" : "Ctrl+"); break;
+      default: displayParts.push(m + "+"); break;
+    }
+  }
+
+  // Uppercase the key for display
+  displayParts.push(key.toUpperCase());
+  return displayParts.join("");
+}
+
+/** Get display string for an action from the keybindings store, or fallback */
+function keyFor(action: ActionName, fallback?: string): string {
+  const combo = keybindingsStore.getKeyForAction(action);
+  if (!combo) return fallback ?? "";
+  return comboToDisplay(combo);
+}
+
 function getShortcutSections(): ShortcutSection[] {
   const mod = getModifierSymbol();
+  const editKey = keyFor("edit-command");
   return [
   {
     title: t("helpPanel.terminal", "Terminal"),
     shortcuts: [
-      { keys: `${mod}T`, description: t("helpPanel.newTerminalTab", "New terminal tab") },
-      { keys: `${mod}W`, description: t("helpPanel.closeTerminalTab", "Close terminal tab") },
-      { keys: `${mod}R`, description: t("helpPanel.runSavedCommand", `Run saved command (${mod}⇧R to edit)`) },
-      { keys: `${mod}⇧T`, description: t("helpPanel.reopenClosedTab", "Reopen closed tab") },
-      { keys: `${mod}1-9`, description: t("helpPanel.switchToTab", "Switch to tab by number") },
-      { keys: `${mod}⇧[`, description: t("helpPanel.previousTab", "Previous tab") },
-      { keys: `${mod}⇧]`, description: t("helpPanel.nextTab", "Next tab") },
-      { keys: `${mod}L`, description: t("helpPanel.clearTerminal", "Clear terminal") },
+      { keys: keyFor("new-terminal"), description: t("helpPanel.newTerminalTab", "New terminal tab") },
+      { keys: keyFor("close-terminal"), description: t("helpPanel.closeTerminalTab", "Close terminal tab") },
+      { keys: keyFor("run-command"), description: t("helpPanel.runSavedCommand", `Run saved command (${editKey} to edit)`) },
+      { keys: keyFor("reopen-closed-tab"), description: t("helpPanel.reopenClosedTab", "Reopen closed tab") },
+      { keys: keyFor("switch-tab-1", `${mod}1-9`), description: t("helpPanel.switchToTab", "Switch to tab by number") },
+      { keys: keyFor("prev-tab"), description: t("helpPanel.previousTab", "Previous tab") },
+      { keys: keyFor("next-tab"), description: t("helpPanel.nextTab", "Next tab") },
+      { keys: keyFor("clear-terminal"), description: t("helpPanel.clearTerminal", "Clear terminal") },
+      { keys: keyFor("find-in-terminal"), description: t("helpPanel.findInTerminal", "Find in terminal") },
+      { keys: `${mod}G`, description: t("helpPanel.findNext", "Find next match") },
+      { keys: `${isMacOS() ? "⌘⇧G" : "Shift+F3"}`, description: t("helpPanel.findPrevious", "Find previous match") },
       { keys: `${mod}C`, description: t("helpPanel.copySelection", "Copy selection") },
       { keys: `${mod}V`, description: t("helpPanel.pasteToTerminal", "Paste to terminal") },
     ],
@@ -34,46 +76,46 @@ function getShortcutSections(): ShortcutSection[] {
   {
     title: t("helpPanel.zoom", "Zoom"),
     shortcuts: [
-      { keys: `${mod}+`, description: t("helpPanel.zoomIn", "Zoom in") },
-      { keys: `${mod}-`, description: t("helpPanel.zoomOut", "Zoom out") },
-      { keys: `${mod}0`, description: t("helpPanel.resetZoom", "Reset zoom") },
+      { keys: keyFor("zoom-in"), description: t("helpPanel.zoomIn", "Zoom in") },
+      { keys: keyFor("zoom-out"), description: t("helpPanel.zoomOut", "Zoom out") },
+      { keys: keyFor("zoom-reset"), description: t("helpPanel.resetZoom", "Reset zoom") },
     ],
   },
   {
     title: t("helpPanel.panels", "Panels"),
     shortcuts: [
-      { keys: `${mod}⇧D`, description: t("helpPanel.toggleDiffPanel", "Toggle git diff panel") },
-      { keys: `${mod}M`, description: t("helpPanel.toggleMarkdownPanel", "Toggle markdown panel") },
-      { keys: `${mod},`, description: t("helpPanel.openSettings", "Open settings") },
-      { keys: `${mod}J`, description: t("helpPanel.toggleTaskQueue", "Toggle task queue") },
-      { keys: `${mod}K`, description: t("helpPanel.promptLibrary", "Prompt library") },
-      { keys: `${mod}N`, description: t("helpPanel.toggleIdeasPanel", "Toggle ideas panel") },
-      { keys: `${mod}?`, description: t("helpPanel.toggleHelpPanel", "Toggle help panel") },
+      { keys: keyFor("toggle-diff"), description: t("helpPanel.toggleDiffPanel", "Toggle git diff panel") },
+      { keys: keyFor("toggle-markdown"), description: t("helpPanel.toggleMarkdownPanel", "Toggle markdown panel") },
+      { keys: keyFor("toggle-settings"), description: t("helpPanel.openSettings", "Open settings") },
+      { keys: keyFor("toggle-task-queue"), description: t("helpPanel.toggleTaskQueue", "Toggle task queue") },
+      { keys: keyFor("toggle-prompt-library"), description: t("helpPanel.promptLibrary", "Prompt library") },
+      { keys: keyFor("toggle-notes"), description: t("helpPanel.toggleIdeasPanel", "Toggle ideas panel") },
+      { keys: keyFor("toggle-help"), description: t("helpPanel.toggleHelpPanel", "Toggle help panel") },
     ],
   },
   {
     title: t("helpPanel.git", "Git"),
     shortcuts: [
-      { keys: `${mod}G`, description: t("helpPanel.openLazygit", "Open lazygit in terminal") },
-      { keys: `${mod}⇧G`, description: t("helpPanel.gitOperationsPanel", "Git operations panel") },
-      { keys: `${mod}⇧L`, description: t("helpPanel.lazygitSplitPane", "Lazygit split pane") },
+      { keys: keyFor("open-lazygit"), description: t("helpPanel.openLazygit", "Open lazygit in terminal") },
+      { keys: keyFor("toggle-git-ops"), description: t("helpPanel.gitOperationsPanel", "Git operations panel") },
+      { keys: keyFor("open-lazygit-pane"), description: t("helpPanel.lazygitSplitPane", "Lazygit split pane") },
     ],
   },
   {
     title: t("helpPanel.splitPanes", "Split Panes"),
     shortcuts: [
-      { keys: `${mod}\\`, description: t("helpPanel.splitVertically", "Split vertically (side by side)") },
-      { keys: `${mod}⌥\\`, description: t("helpPanel.splitHorizontally", "Split horizontally (stacked)") },
-      { keys: "⌥←/→", description: t("helpPanel.navigatePanesVertical", "Navigate panes (vertical split)") },
-      { keys: "⌥↑/↓", description: t("helpPanel.navigatePanesHorizontal", "Navigate panes (horizontal split)") },
-      { keys: `${mod}W`, description: t("helpPanel.closeActivePane", "Close active pane (or tab if single)") },
+      { keys: keyFor("split-vertical"), description: t("helpPanel.splitVertically", "Split vertically (side by side)") },
+      { keys: keyFor("split-horizontal"), description: t("helpPanel.splitHorizontally", "Split horizontally (stacked)") },
+      { keys: "\u2325\u2190/\u2192", description: t("helpPanel.navigatePanesVertical", "Navigate panes (vertical split)") },
+      { keys: "\u2325\u2191/\u2193", description: t("helpPanel.navigatePanesHorizontal", "Navigate panes (horizontal split)") },
+      { keys: keyFor("close-terminal"), description: t("helpPanel.closeActivePane", "Close active pane (or tab if single)") },
     ],
   },
   {
     title: t("helpPanel.sidebarNavigation", "Sidebar & Navigation"),
     shortcuts: [
-      { keys: `${mod}[`, description: t("helpPanel.toggleSidebar", "Toggle sidebar") },
-      { keys: `${mod}^1-9`, description: t("helpPanel.quickSwitchBranch", "Quick switch to branch") },
+      { keys: keyFor("toggle-sidebar"), description: t("helpPanel.toggleSidebar", "Toggle sidebar") },
+      { keys: keyFor("switch-branch-1", `${mod}^1-9`), description: t("helpPanel.quickSwitchBranch", "Quick switch to branch") },
       { keys: `Hold ${mod}^`, description: t("helpPanel.showQuickSwitcher", "Show quick switcher") },
       { keys: t("helpPanel.dragRepo", "Drag repo"), description: t("helpPanel.reorderRepos", "Reorder repos or move between groups") },
       { keys: t("helpPanel.dragGroup", "Drag group"), description: t("helpPanel.reorderGroups", "Reorder groups") },
@@ -83,8 +125,8 @@ function getShortcutSections(): ShortcutSection[] {
   {
     title: t("helpPanel.fileBrowserEditor", "File Browser & Editor"),
     shortcuts: [
-      { keys: `${mod}E`, description: t("helpPanel.toggleFileBrowser", "Toggle file browser panel") },
-      { keys: "↑/↓", description: t("helpPanel.navigateFileList", "Navigate file list (when focused)") },
+      { keys: keyFor("toggle-file-browser"), description: t("helpPanel.toggleFileBrowser", "Toggle file browser panel") },
+      { keys: "\u2191/\u2193", description: t("helpPanel.navigateFileList", "Navigate file list (when focused)") },
       { keys: "Enter", description: t("helpPanel.openFile", "Open file or enter directory") },
       { keys: "Backspace", description: t("helpPanel.goToParent", "Go to parent directory") },
       { keys: `${mod}S`, description: t("helpPanel.saveFile", "Save file (when editor focused)") },

@@ -39,6 +39,7 @@ function createMockHandlers(): ShortcutHandlers {
     toggleHelpPanel: vi.fn(),
     toggleNotesPanel: vi.fn(),
     toggleFileBrowserPanel: vi.fn(),
+    findInTerminal: vi.fn(),
   };
 }
 
@@ -335,6 +336,13 @@ describe("useKeyboardShortcuts", () => {
 
       // Should not error and terminal should stay active
       expect(terminalsStore.state.activeId).toBe(id);
+    });
+  });
+
+  describe("find in terminal", () => {
+    it("Cmd+F triggers findInTerminal", () => {
+      fireKeydown("f", { metaKey: true });
+      expect(handlers.findInTerminal).toHaveBeenCalled();
     });
   });
 
