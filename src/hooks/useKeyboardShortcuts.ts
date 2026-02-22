@@ -4,6 +4,24 @@ import { lastMenuActionTime } from "../menuDedup";
 import { keybindingsStore } from "../stores/keybindings";
 import { normalizeCombo } from "../keybindingDefaults";
 import type { ActionName } from "../keybindingDefaults";
+import { isTauri } from "../transport";
+
+/**
+ * Normalized combos that are reserved by browsers and should not be intercepted
+ * when running in browser mode (non-Tauri). These would block essential browser
+ * functionality like page refresh, new tab, close tab, etc.
+ */
+const BROWSER_RESERVED_COMBOS = new Set([
+  normalizeCombo("Cmd+R"),       // refresh
+  normalizeCombo("Cmd+Shift+R"), // hard refresh
+  normalizeCombo("Cmd+T"),       // new tab
+  normalizeCombo("Cmd+W"),       // close tab
+  normalizeCombo("Cmd+N"),       // new window
+  normalizeCombo("Cmd+L"),       // address bar
+  normalizeCombo("Cmd+Shift+T"), // reopen closed tab
+  normalizeCombo("Cmd+Shift+P"), // private/incognito window
+  normalizeCombo("Cmd+Shift+A"), // search tabs (Chrome)
+]);
 
 /** All action callbacks the keyboard shortcut handler needs */
 export interface ShortcutHandlers {
@@ -182,6 +200,9 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
     // Convert event to normalized combo and look up action
     const combo = eventToCombo(e);
     if (!combo) return;
+
+    // In browser mode, don't intercept combos reserved by the browser
+    if (!isTauri() && BROWSER_RESERVED_COMBOS.has(combo)) return;
 
     // Handle "+" key as alias for "=" in zoom-in (Cmd+= and Cmd++ both zoom in)
     let action = keybindingsStore.getActionForCombo(combo);

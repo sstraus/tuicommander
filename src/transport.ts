@@ -52,7 +52,12 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
     // --- Session lifecycle ---
     case "create_pty": {
       const config = args.config as Record<string, unknown>;
-      return { method: "POST", path: "/sessions", body: config };
+      return {
+        method: "POST",
+        path: "/sessions",
+        body: config,
+        transform: (data: unknown) => (data as { session_id: string }).session_id,
+      };
     }
     case "create_pty_with_worktree":
       return {

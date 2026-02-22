@@ -809,8 +809,10 @@ const App: Component = () => {
       {/* Prompt library drawer */}
       <PromptDrawer />
 
-      {/* Command palette */}
-      <CommandPalette actions={actionEntries()} />
+      {/* Command palette (Tauri only — many actions are Tauri-specific) */}
+      <Show when={isTauri()}>
+        <CommandPalette actions={actionEntries()} />
+      </Show>
 
       {/* Activity dashboard */}
       <ActivityDashboard />

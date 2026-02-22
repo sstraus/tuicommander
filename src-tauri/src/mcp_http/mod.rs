@@ -252,10 +252,36 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
 mod tests {
     use super::*;
     use axum::body::Body;
+    use axum::extract::connect_info::ConnectInfo;
     use axum::http::{Request, StatusCode};
     use dashmap::DashMap;
     use tower::ServiceExt;
     use crate::MAX_CONCURRENT_SESSIONS;
+
+    /// Build a POST request with ConnectInfo from the given address.
+    fn mcp_post_from(url: &str, body: &serde_json::Value, addr: std::net::SocketAddr) -> Request<Body> {
+        let mut req = Request::post(url)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(body).expect("serialize JSON body")))
+            .expect("build POST request");
+        req.extensions_mut().insert(ConnectInfo(addr));
+        req
+    }
+
+    /// Build a POST request with ConnectInfo set to localhost (the common case).
+    fn mcp_post(url: &str, body: &serde_json::Value) -> Request<Body> {
+        mcp_post_from(url, body, std::net::SocketAddr::from(([127, 0, 0, 1], 0)))
+    }
+
+    /// Build a PUT request with ConnectInfo from the given address.
+    fn put_from(url: &str, body: &serde_json::Value, addr: std::net::SocketAddr) -> Request<Body> {
+        let mut req = Request::put(url)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(body).expect("serialize JSON body")))
+            .expect("build PUT request");
+        req.extensions_mut().insert(ConnectInfo(addr));
+        req
+    }
 
     fn test_state() -> Arc<AppState> {
         // Create blocking client on a separate OS thread because
@@ -388,6 +414,21 @@ mod tests {
         let config: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(config.get("remote_access_password_hash").is_none(),
             "Password hash should be stripped from HTTP response");
+    }
+
+    #[tokio::test]
+    async fn test_config_save_rejects_non_loopback() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        let remote_addr = std::net::SocketAddr::from(([192, 168, 1, 100], 12345));
+        let body = serde_json::to_value(crate::config::AppConfig::default())
+            .expect("serialize default AppConfig");
+        let resp = app
+            .oneshot(put_from("/config", &body, remote_addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN,
+            "Config save from non-loopback address should be rejected");
     }
 
     // --- Path validation tests ---
@@ -544,12 +585,7 @@ mod tests {
             "params": {}
         });
         let resp = app
-            .oneshot(
-                Request::post("/messages?sessionId=nonexistent")
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_string(&body).unwrap()))
-                    .unwrap(),
-            )
+            .oneshot(mcp_post("/messages?sessionId=nonexistent", &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -577,12 +613,7 @@ mod tests {
         });
         let app = build_router(state.clone(), false, true);
         let resp = app
-            .oneshot(
-                Request::post(&format!("/messages?sessionId={}", session_id))
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_string(&body).unwrap()))
-                    .unwrap(),
-            )
+            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -612,12 +643,7 @@ mod tests {
         });
         let app = build_router(state.clone(), false, true);
         let resp = app
-            .oneshot(
-                Request::post(&format!("/messages?sessionId={}", session_id))
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_string(&body).unwrap()))
-                    .unwrap(),
-            )
+            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -672,12 +698,7 @@ mod tests {
         });
         let app = build_router(state.clone(), false, true);
         let resp = app
-            .oneshot(
-                Request::post(&format!("/messages?sessionId={}", session_id))
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_string(&body).unwrap()))
-                    .unwrap(),
-            )
+            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -1017,12 +1038,7 @@ mod tests {
         });
         let app = build_router(state.clone(), false, true);
         let resp = app
-            .oneshot(
-                Request::post(&format!("/messages?sessionId={}", session_id))
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_string(&body).unwrap()))
-                    .unwrap(),
-            )
+            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -1051,12 +1067,7 @@ mod tests {
         });
         let app = build_router(state.clone(), false, true);
         let resp = app
-            .oneshot(
-                Request::post(&format!("/messages?sessionId={}", session_id))
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_string(&body).unwrap()))
-                    .unwrap(),
-            )
+            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -1083,12 +1094,7 @@ mod tests {
         });
         let app = build_router(state.clone(), false, true);
         let resp = app
-            .oneshot(
-                Request::post(&format!("/messages?sessionId={}", session_id))
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_string(&body).unwrap()))
-                    .unwrap(),
-            )
+            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
