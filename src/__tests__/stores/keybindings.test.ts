@@ -66,8 +66,6 @@ describe("keybindingDefaults", () => {
     });
 
     it("has no duplicate key combos", () => {
-      const combos = Object.values(DEFAULT_BINDINGS).map(normalizeCombo);
-      const unique = new Set(combos);
       // Find duplicates for a better error message
       const seen = new Map<string, string[]>();
       for (const [action, combo] of Object.entries(DEFAULT_BINDINGS)) {

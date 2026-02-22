@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@solidjs/testing-library";
+import { render } from "@solidjs/testing-library";
 import { AboutTab } from "../../components/SettingsPanel/tabs/AboutTab";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
