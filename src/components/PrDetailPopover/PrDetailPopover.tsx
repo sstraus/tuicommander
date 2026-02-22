@@ -6,6 +6,9 @@ import { CiRing } from "../ui/CiRing";
 import { relativeTime } from "../../utils/time";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCiIcon, getCiClass } from "../../utils/ciDisplay";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import s from "./PrDetailPopover.module.css";
 
 /** Extract "owner/repo" from a GitHub PR URL, e.g. https://github.com/owner/repo/pull/67 */
 function extractGithubRepo(url: string): string | null {
@@ -15,6 +18,36 @@ function extractGithubRepo(url: string): string | null {
   } catch { /* ignore malformed URL */ }
   return null;
 }
+
+/** Map backend PR state strings to CSS module classes */
+const STATE_CLASSES: Record<string, string> = {
+  open: s.open,
+  merged: s.merged,
+  closed: s.closed,
+  draft: s.draft,
+};
+
+/** Map backend merge state CSS class strings to module classes */
+const MERGE_STATE_CLASSES: Record<string, string> = {
+  clean: s.clean,
+  behind: s.behind,
+  blocked: s.blocked,
+  conflicting: s.conflicting,
+};
+
+/** Map backend review state CSS class strings to module classes */
+const REVIEW_STATE_CLASSES: Record<string, string> = {
+  approved: s.approved,
+  "changes-requested": s.changesRequested,
+  "review-required": s.reviewRequired,
+};
+
+/** Map CI state strings to module classes */
+const CI_CLASSES: Record<string, string> = {
+  success: s.success,
+  failure: s.failure,
+  pending: s.pending,
+};
 
 export interface PrDetailPopoverProps {
   repoPath: string;
@@ -75,16 +108,16 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
   return (
     <>
-      <div class="pr-detail-overlay" onClick={props.onClose} />
-      <div class={`pr-detail-popover ${props.anchor === "top" ? "pr-detail-anchor-top" : ""}`}>
+      <div class={s.overlay} onClick={props.onClose} />
+      <div class={cx(s.popover, props.anchor === "top" && s.anchorTop)}>
         <Show when={prData()} fallback={
-          <div class="pr-detail-empty">No PR data available for {props.branch}</div>
+          <div class={s.empty}>{t("prDetail.noData", "No PR data available for")} {props.branch}</div>
         }>
           {(pr) => (
             <>
               {/* Repo label: GitHub owner/repo (from PR url) with optional repo color */}
               <div
-                class="pr-detail-repo"
+                class={s.repo}
                 style={(() => {
                   const color = repoSettingsStore.get(props.repoPath)?.color
                     || repositoriesStore.getGroupForRepo(props.repoPath)?.color;
@@ -97,32 +130,32 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
               </div>
 
               {/* Header: state badge + title + number */}
-              <div class="pr-detail-header">
-                <span class={`pr-state-badge ${stateClass()}`}>{stateLabel()}</span>
-                <span class="pr-detail-title">{pr().title}</span>
+              <div class={s.header}>
+                <span class={cx(s.stateBadge, STATE_CLASSES[stateClass()])}>{stateLabel()}</span>
+                <span class={s.title}>{pr().title}</span>
                 <span
-                  class="pr-detail-number pr-detail-link"
+                  class={cx(s.number, s.link)}
                   onClick={() => pr().url && openUrl(pr().url).catch((err) => console.error("Failed to open URL:", err))}
-                  title="Open PR on GitHub"
+                  title={t("prDetail.openOnGithub", "Open PR on GitHub")}
                 >
                   #{pr().number}
                 </span>
-                <button class="pr-detail-close" onClick={props.onClose}>&times;</button>
+                <button class={s.close} onClick={props.onClose}>&times;</button>
               </div>
 
               {/* Merge + review status pills */}
               <Show when={mergeState() || reviewState()}>
-                <div class="pr-detail-status-row">
+                <div class={s.statusRow}>
                   <Show when={mergeState()}>
                     {(ms) => (
-                      <span class={`merge-state-badge ${ms().cssClass}`}>
+                      <span class={cx(s.mergeStateBadge, MERGE_STATE_CLASSES[ms().cssClass])}>
                         {ms().label}
                       </span>
                     )}
                   </Show>
                   <Show when={reviewState()}>
                     {(rs) => (
-                      <span class={`review-state-badge ${rs().cssClass}`}>
+                      <span class={cx(s.reviewStateBadge, REVIEW_STATE_CLASSES[rs().cssClass])}>
                         {rs().label}
                       </span>
                     )}
@@ -132,11 +165,11 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
               {/* Labels */}
               <Show when={pr().labels?.length > 0}>
-                <div class="pr-labels">
+                <div class={s.labels}>
                   <For each={pr().labels}>
                     {(label) => (
                       <span
-                        class="pr-label"
+                        class={s.label}
                         style={{
                           "background-color": label.background_color || undefined,
                           "border-color": label.color ? `#${label.color}` : undefined,
@@ -152,52 +185,52 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
               {/* Merge direction */}
               <Show when={pr().base_ref_name}>
-                <div class="pr-merge-direction">
-                  <span class="pr-branch-name">{pr().branch}</span>
-                  <span class="pr-arrow">{"\u2192"}</span>
-                  <span class="pr-branch-name">{pr().base_ref_name}</span>
+                <div class={s.mergeDirection}>
+                  <span class={s.branchName}>{pr().branch}</span>
+                  <span class={s.arrow}>{"\u2192"}</span>
+                  <span class={s.branchName}>{pr().base_ref_name}</span>
                 </div>
               </Show>
 
               {/* Timestamps */}
               <Show when={pr().created_at}>
-                <div class="pr-timestamps">
-                  <span>Created {relativeTime(pr().created_at)}</span>
+                <div class={s.timestamps}>
+                  <span>{t("prDetail.created", "Created")} {relativeTime(pr().created_at)}</span>
                   <Show when={pr().updated_at && pr().updated_at !== pr().created_at}>
-                    <span class="pr-detail-separator">&middot;</span>
-                    <span>Updated {relativeTime(pr().updated_at)}</span>
+                    <span class={s.separator}>&middot;</span>
+                    <span>{t("prDetail.updated", "Updated")} {relativeTime(pr().updated_at)}</span>
                   </Show>
                 </div>
               </Show>
 
               {/* Subheader: author + commits */}
-              <div class="pr-detail-meta">
-                <span class="pr-detail-author">{pr().author}</span>
-                <span class="pr-detail-separator">&middot;</span>
+              <div class={s.meta}>
+                <span class={s.author}>{pr().author}</span>
+                <span class={s.separator}>&middot;</span>
                 <span>{pr().commits} commit{pr().commits !== 1 ? "s" : ""}</span>
-                <span class="pr-detail-separator">&middot;</span>
-                <span class="pr-detail-additions">+{pr().additions}</span>
-                <span class="pr-detail-deletions">-{pr().deletions}</span>
+                <span class={s.separator}>&middot;</span>
+                <span class={s.additions}>+{pr().additions}</span>
+                <span class={s.deletions}>-{pr().deletions}</span>
               </div>
 
               {/* CI summary */}
               <Show when={checkSummary()?.total ? checkSummary() : null}>
                 {(cs) => (
-                  <div class="pr-detail-ci-summary">
+                  <div class={s.ciSummary}>
                     <CiRing
                       passed={cs().passed}
                       failed={cs().failed}
                       pending={cs().pending}
                     />
-                    <span class="pr-detail-ci-text">
+                    <span class={s.ciText}>
                       <Show when={cs().failed > 0}>
-                        <span class="ci-count failure">{cs().failed} failed</span>
+                        <span class={cx(s.ciCount, s.failure)}>{cs().failed} {t("prDetail.failed", "failed")}</span>
                       </Show>
                       <Show when={cs().pending > 0}>
-                        <span class="ci-count pending">{cs().pending} pending</span>
+                        <span class={cx(s.ciCount, s.pending)}>{cs().pending} {t("prDetail.pending", "pending")}</span>
                       </Show>
                       <Show when={cs().passed > 0}>
-                        <span class="ci-count success">{cs().passed} passed</span>
+                        <span class={cx(s.ciCount, s.success)}>{cs().passed} {t("prDetail.passed", "passed")}</span>
                       </Show>
                     </span>
                   </div>
@@ -206,15 +239,15 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
               {/* Check list */}
               <Show when={checkDetails().length > 0}>
-                <div class="pr-detail-checks">
+                <div class={s.checks}>
                   <For each={checkDetails()}>
                     {(check) => (
-                      <div class="pr-detail-check-item">
-                        <span class={`ci-check-icon ${getCiClass(check.state)}`}>
+                      <div class={s.checkItem}>
+                        <span class={cx(s.checkIcon, CI_CLASSES[getCiClass(check.state)])}>
                           {getCiIcon(check.state)}
                         </span>
-                        <span class="pr-detail-check-name">{check.context}</span>
-                        <span class={`ci-check-status ${getCiClass(check.state)}`}>
+                        <span class={s.checkName}>{check.context}</span>
+                        <span class={cx(s.checkStatus, CI_CLASSES[getCiClass(check.state)])}>
                           {check.state}
                         </span>
                       </div>
@@ -226,10 +259,10 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
               {/* Open on GitHub */}
               <Show when={pr().url}>
                 <div
-                  class="pr-detail-open-github"
+                  class={s.openGithub}
                   onClick={() => openUrl(pr().url).catch((err) => console.error("Failed to open URL:", err))}
                 >
-                  Open on GitHub {"\u2197"}
+                  {t("prDetail.openOnGithub", "Open on GitHub")} {"\u2197"}
                 </div>
               </Show>
             </>

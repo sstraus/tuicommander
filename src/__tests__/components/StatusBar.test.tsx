@@ -258,7 +258,7 @@ describe("StatusBar", () => {
     fireEvent.click(ciBadge);
 
     await waitFor(() => {
-      const popover = container.querySelector(".pr-detail-popover");
+      const popover = container.querySelector(".popover");
       expect(popover).not.toBeNull();
     });
   });
@@ -349,7 +349,7 @@ describe("StatusBar", () => {
     const badges = container.querySelectorAll(".status-badge");
     const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"))!;
     fireEvent.click(prBadge);
-    const popover = container.querySelector(".pr-detail-popover");
+    const popover = container.querySelector(".popover");
     expect(popover).not.toBeNull();
   });
 

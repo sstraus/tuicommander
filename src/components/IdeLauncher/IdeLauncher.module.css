@@ -1,0 +1,153 @@
+/* IDE Launcher */
+.launcher {
+  position: relative;
+}
+
+.split {
+  display: flex;
+}
+
+.btn {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.main {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  border-right: none;
+}
+
+.arrowBtn {
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: 2px 5px;
+  border-left: 1px solid var(--border);
+}
+
+.btn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+  border-color: var(--accent);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.name {
+  font-weight: 500;
+}
+
+.arrow {
+  font-size: 8px;
+  color: var(--fg-muted);
+}
+
+.dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 160px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-dropdown);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.section {
+  padding: 2px 0;
+}
+
+.sectionTitle {
+  padding: 3px 10px;
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  letter-spacing: 0.05em;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 10px;
+  background: none;
+  border: none;
+  color: var(--fg-secondary);
+  font-size: var(--font-md);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.1s;
+}
+
+.item:hover:not(:disabled) {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.item.selected {
+  background: var(--bg-highlight);
+  color: var(--accent);
+}
+
+.itemName {
+  flex: 1;
+}
+
+.itemCheck {
+  color: var(--accent);
+  font-size: var(--font-xs);
+}
+
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.action {
+  color: var(--fg-muted);
+}
+
+.action:hover:not(:disabled) {
+  color: var(--fg-primary);
+}
+
+.shortcut {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  margin-left: auto;
+}
+
+.iconEmoji {
+  display: flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+}

@@ -56,7 +56,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const popover = container.querySelector(".pr-detail-popover");
+    const popover = container.querySelector(".popover");
     expect(popover).not.toBeNull();
 
     // Title and number
@@ -113,7 +113,7 @@ describe("PrDetailPopover", () => {
     ]);
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const checkItems = container.querySelectorAll(".pr-detail-check-item");
+    const checkItems = container.querySelectorAll(".checkItem");
     expect(checkItems.length).toBe(2);
     expect(checkItems[0].textContent).toContain("build");
     expect(checkItems[1].textContent).toContain("test");
@@ -157,7 +157,7 @@ describe("PrDetailPopover", () => {
     const onClose = vi.fn();
     const { container } = render(() => <PrDetailPopover {...defaultProps} onClose={onClose} />);
 
-    const overlay = container.querySelector(".pr-detail-overlay");
+    const overlay = container.querySelector(".overlay");
     expect(overlay).not.toBeNull();
     fireEvent.click(overlay!);
     expect(onClose).toHaveBeenCalledOnce();
@@ -167,7 +167,7 @@ describe("PrDetailPopover", () => {
     mockGetBranchPrData.mockReturnValue(null);
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const popover = container.querySelector(".pr-detail-popover");
+    const popover = container.querySelector(".popover");
     expect(popover).not.toBeNull();
     expect(popover!.textContent).toContain("No PR data");
   });
@@ -232,7 +232,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const badge = container.querySelector(".merge-state-badge");
+    const badge = container.querySelector(".mergeStateBadge");
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toContain("Ready to merge");
     expect(badge!.classList.contains("clean")).toBe(true);
@@ -258,7 +258,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const badge = container.querySelector(".merge-state-badge");
+    const badge = container.querySelector(".mergeStateBadge");
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toContain("Behind base");
     expect(badge!.classList.contains("behind")).toBe(true);
@@ -284,7 +284,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const badge = container.querySelector(".merge-state-badge");
+    const badge = container.querySelector(".mergeStateBadge");
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toContain("Conflicts");
     expect(badge!.classList.contains("conflicting")).toBe(true);
@@ -310,7 +310,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const badge = container.querySelector(".merge-state-badge");
+    const badge = container.querySelector(".mergeStateBadge");
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toContain("Blocked");
     expect(badge!.classList.contains("blocked")).toBe(true);
@@ -335,7 +335,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const badge = container.querySelector(".review-state-badge");
+    const badge = container.querySelector(".reviewStateBadge");
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toContain("Approved");
     expect(badge!.classList.contains("approved")).toBe(true);
@@ -360,10 +360,10 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const badge = container.querySelector(".review-state-badge");
+    const badge = container.querySelector(".reviewStateBadge");
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toContain("Changes requested");
-    expect(badge!.classList.contains("changes-requested")).toBe(true);
+    expect(badge!.classList.contains("changesRequested")).toBe(true);
   });
 
   it("shows review status badge for REVIEW_REQUIRED", () => {
@@ -385,10 +385,10 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const badge = container.querySelector(".review-state-badge");
+    const badge = container.querySelector(".reviewStateBadge");
     expect(badge).not.toBeNull();
     expect(badge!.textContent).toContain("Review required");
-    expect(badge!.classList.contains("review-required")).toBe(true);
+    expect(badge!.classList.contains("reviewRequired")).toBe(true);
   });
 
   it("does not show review status badge when review_decision is empty", () => {
@@ -410,7 +410,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const badge = container.querySelector(".review-state-badge");
+    const badge = container.querySelector(".reviewStateBadge");
     expect(badge).toBeNull();
   });
 
@@ -435,7 +435,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const labels = container.querySelectorAll(".pr-label");
+    const labels = container.querySelectorAll(".label");
     expect(labels.length).toBe(2);
     expect(labels[0].textContent).toBe("bug");
     expect(labels[1].textContent).toBe("enhancement");
@@ -462,7 +462,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const label = container.querySelector(".pr-label") as HTMLElement;
+    const label = container.querySelector(".label") as HTMLElement;
     expect(label).not.toBeNull();
     // Pre-computed by Rust: rgba(215, 58, 74, 0.3)
     expect(label.style.backgroundColor).toBe("rgba(215, 58, 74, 0.3)");
@@ -489,7 +489,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const label = container.querySelector(".pr-label") as HTMLElement;
+    const label = container.querySelector(".label") as HTMLElement;
     expect(label).not.toBeNull();
     // Pre-computed by Rust: rgba(162, 238, 239, 0.3)
     expect(label.style.backgroundColor).toBe("rgba(162, 238, 239, 0.3)");
@@ -519,7 +519,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const labels = container.querySelectorAll(".pr-label") as NodeListOf<HTMLElement>;
+    const labels = container.querySelectorAll(".label") as NodeListOf<HTMLElement>;
     expect(labels.length).toBe(2);
     // Black: pre-computed by Rust, luminance=0 < 128 => light text
     expect(labels[0].style.backgroundColor).toBe("rgba(0, 0, 0, 0.3)");
@@ -547,7 +547,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const labelsContainer = container.querySelector(".pr-labels");
+    const labelsContainer = container.querySelector(".labels");
     expect(labelsContainer).toBeNull();
   });
 
@@ -569,7 +569,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const stateBadge = container.querySelector(".pr-state-badge");
+    const stateBadge = container.querySelector(".stateBadge");
     expect(stateBadge).not.toBeNull();
     expect(stateBadge!.textContent).toBe("Draft");
     expect(stateBadge!.classList.contains("draft")).toBe(true);
@@ -596,7 +596,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const mergeDir = container.querySelector(".pr-merge-direction");
+    const mergeDir = container.querySelector(".mergeDirection");
     expect(mergeDir).not.toBeNull();
     expect(mergeDir!.textContent).toContain("feature/x");
     expect(mergeDir!.textContent).toContain("main");
@@ -626,7 +626,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const timestamps = container.querySelector(".pr-timestamps");
+    const timestamps = container.querySelector(".timestamps");
     expect(timestamps).not.toBeNull();
     expect(timestamps!.textContent).toContain("5h ago");
     expect(timestamps!.textContent).toContain("3h ago");
@@ -655,7 +655,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const mergeDir = container.querySelector(".pr-merge-direction");
+    const mergeDir = container.querySelector(".mergeDirection");
     expect(mergeDir).toBeNull();
   });
 
@@ -675,7 +675,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const stateBadge = container.querySelector(".pr-state-badge");
+    const stateBadge = container.querySelector(".stateBadge");
     expect(stateBadge).not.toBeNull();
     expect(stateBadge!.textContent).toBe("MERGED");
     expect(stateBadge!.classList.contains("merged")).toBe(true);
@@ -697,7 +697,7 @@ describe("PrDetailPopover", () => {
     });
 
     const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-    const stateBadge = container.querySelector(".pr-state-badge");
+    const stateBadge = container.querySelector(".stateBadge");
     expect(stateBadge).not.toBeNull();
     expect(stateBadge!.textContent).toBe("CLOSED");
     expect(stateBadge!.classList.contains("closed")).toBe(true);

@@ -7,6 +7,9 @@ import type { IdeType } from "../../stores/settings";
 const FILE_CAPABLE_IDES = new Set<string>(IDE_CATEGORIES.editors);
 import { useRepository } from "../../hooks/useRepository";
 import { getModifierSymbol } from "../../platform";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import s from "./IdeLauncher.module.css";
 
 export interface IdeLauncherProps {
   repoPath?: string;
@@ -22,7 +25,7 @@ const IdeIcon: Component<{ ide: IdeType; size?: number }> = (props) => {
   const size = () => props.size ?? 14;
   return (
     <img
-      class="ide-launcher-icon"
+      class={s.icon}
       src={IDE_ICON_PATHS[props.ide]}
       width={size()}
       height={size()}
@@ -48,10 +51,10 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
   });
 
   const categoryOrder = [
-    { key: "editors", label: "Code Editors" },
-    { key: "terminals", label: "Terminals" },
-    { key: "git", label: "Git Tools" },
-    { key: "utilities", label: "System" },
+    { key: "editors", label: t("ideLauncher.codeEditors", "Code Editors") },
+    { key: "terminals", label: t("ideLauncher.terminals", "Terminals") },
+    { key: "git", label: t("ideLauncher.gitTools", "Git Tools") },
+    { key: "utilities", label: t("ideLauncher.system", "System") },
   ];
 
   // Filter IDE list to only installed ones
@@ -131,7 +134,7 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
 
   const runLabel = () => {
     const cmd = props.runCommand;
-    if (!cmd) return "Run...";
+    if (!cmd) return t("ideLauncher.run", "Run...");
     const maxLen = 20;
     return cmd.length > maxLen ? `Run: ${cmd.slice(0, maxLen)}...` : `Run: ${cmd}`;
   };
@@ -139,51 +142,51 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
   const currentIde = () => settingsStore.state.ide;
 
   return (
-    <div class="ide-launcher" ref={dropdownRef}>
-      <div class="ide-launcher-split">
+    <div class={s.launcher} ref={dropdownRef}>
+      <div class={s.split}>
         {/* Main button - launches current IDE */}
         <button
-          class="ide-launcher-btn ide-launcher-main"
+          class={cx(s.btn, s.main)}
           onClick={handleLaunchCurrent}
           disabled={!props.repoPath}
           title={`Open in ${IDE_NAMES[currentIde()]}`}
         >
           <IdeIcon ide={currentIde()} />
-          <span class="ide-launcher-name">{IDE_NAMES[currentIde()]}</span>
+          <span class={s.name}>{IDE_NAMES[currentIde()]}</span>
         </button>
         {/* Arrow button - opens dropdown */}
         <button
-          class="ide-launcher-btn ide-launcher-arrow-btn"
+          class={cx(s.btn, s.arrowBtn)}
           onClick={() => setIsOpen(!isOpen())}
-          title="Choose editor"
+          title={t("ideLauncher.chooseEditor", "Choose editor")}
         >
-          <span class="ide-launcher-arrow">{isOpen() ? "▲" : "▼"}</span>
+          <span class={s.arrow}>{isOpen() ? "▲" : "▼"}</span>
         </button>
       </div>
 
       <Show when={isOpen()}>
-        <div class="ide-launcher-dropdown">
+        <div class={s.dropdown}>
           <For each={categoryOrder}>
             {(cat) => {
               const items = () => filterInstalled(IDE_CATEGORIES[cat.key]);
               return (
                 <Show when={items().length > 0}>
                   <Show when={cat.key !== "editors"}>
-                    <div class="ide-launcher-divider" />
+                    <div class={s.divider} />
                   </Show>
-                  <div class="ide-launcher-section">
-                    <div class="ide-launcher-section-title">{cat.label}</div>
+                  <div class={s.section}>
+                    <div class={s.sectionTitle}>{cat.label}</div>
                     <For each={items()}>
                       {(ide) => (
                         <button
-                          class={`ide-launcher-item ${currentIde() === ide ? "selected" : ""}`}
+                          class={cx(s.item, currentIde() === ide && s.selected)}
                           onClick={() => handleOpenIn(ide)}
                           disabled={!props.repoPath}
                         >
                           <IdeIcon ide={ide} />
-                          <span class="ide-launcher-item-name">{IDE_NAMES[ide]}</span>
+                          <span class={s.itemName}>{IDE_NAMES[ide]}</span>
                           <Show when={currentIde() === ide}>
-                            <span class="ide-launcher-item-check">✓</span>
+                            <span class={s.itemCheck}>✓</span>
                           </Show>
                         </button>
                       )}
@@ -195,16 +198,16 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
           </For>
 
           {/* Actions */}
-          <div class="ide-launcher-divider" />
-          <div class="ide-launcher-section">
+          <div class={s.divider} />
+          <div class={s.section}>
             <button
-              class="ide-launcher-item ide-launcher-action"
+              class={cx(s.item, s.action)}
               onClick={handleRun}
               disabled={!props.repoPath}
             >
-              <span class="ide-launcher-icon ide-launcher-icon-emoji">▶</span>
-              <span class="ide-launcher-item-name">{runLabel()}</span>
-              <span class="ide-launcher-shortcut">{getModifierSymbol()}R</span>
+              <span class={cx(s.icon, s.iconEmoji)}>▶</span>
+              <span class={s.itemName}>{runLabel()}</span>
+              <span class={s.shortcut}>{getModifierSymbol()}R</span>
             </button>
           </div>
         </div>
