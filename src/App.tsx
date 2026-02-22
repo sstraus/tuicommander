@@ -204,6 +204,7 @@ const App: Component = () => {
     }).catch((err) => {
       console.error("[App] Fatal initialization error:", err);
       setStatusInfo("Error: App failed to initialize — check browser console");
+      document.getElementById("splash")?.remove();
     });
 
     // Check for updates after hydration (non-blocking)

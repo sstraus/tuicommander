@@ -58,8 +58,9 @@ render(
   root,
 );
 
-// Remove splash screen once app has mounted
-document.getElementById("splash")?.remove();
+// Splash screen is removed inside initApp() after store hydration completes.
+// This prevents a flash of empty state (e.g. "Add Repository" button) before
+// persisted data has loaded.
 
 if (import.meta.env.DEV) {
   import("./dev/simulator");

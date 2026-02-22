@@ -127,6 +127,10 @@ export async function initApp(deps: AppInitDeps) {
     deps.setStatusInfo("Warning: 1 store(s) failed to load");
   }
 
+  // Remove splash screen now that stores are hydrated — prevents flash of empty
+  // state (e.g. "Add Repository" button) before persisted repos have loaded.
+  document.getElementById("splash")?.remove();
+
   // Start HEAD and repo file watchers for all known repos (Tauri-only: no HTTP equivalent)
   if (isTauri()) {
     for (const repoPath of repositoriesStore.getPaths()) {

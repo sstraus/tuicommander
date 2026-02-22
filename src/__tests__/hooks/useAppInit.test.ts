@@ -308,6 +308,38 @@ describe("initApp", () => {
     expect(closeSpy).toHaveBeenCalledWith("sess-1");
   });
 
+  it("removes splash screen after hydration", async () => {
+    const splash = document.createElement("div");
+    splash.id = "splash";
+    document.body.appendChild(splash);
+
+    const deps = createMockDeps();
+    await initApp(deps);
+
+    expect(document.getElementById("splash")).toBeNull();
+  });
+
+  it("removes splash screen even when hydration fails", async () => {
+    const splash = document.createElement("div");
+    splash.id = "splash";
+    document.body.appendChild(splash);
+
+    const deps = createMockDeps({
+      stores: {
+        hydrate: vi.fn().mockRejectedValue(new Error("hydration failed")),
+        startPolling: vi.fn(),
+        stopPolling: vi.fn(),
+        startPrNotificationTimer: vi.fn(),
+        loadFontFromConfig: vi.fn(),
+        refreshDictationConfig: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+
+    await initApp(deps);
+
+    expect(document.getElementById("splash")).toBeNull();
+  });
+
   it("clears stale terminals from previous session", async () => {
     // Pre-populate stale terminals
     terminalsStore.add({ sessionId: null, fontSize: 14, name: "stale", cwd: "/old", awaitingInput: null });
