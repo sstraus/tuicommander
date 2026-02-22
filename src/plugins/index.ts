@@ -1,4 +1,5 @@
 import { pluginRegistry } from "./pluginRegistry";
+import { pluginStore } from "../stores/pluginStore";
 import { loadUserPlugins } from "./pluginLoader";
 import { planPlugin } from "./planPlugin";
 import { wizStoriesPlugin } from "./wizStoriesPlugin";
@@ -16,6 +17,7 @@ const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin, wizStoriesPlugin];
  */
 export async function initPlugins(): Promise<void> {
   for (const plugin of BUILTIN_PLUGINS) {
+    pluginStore.registerPlugin(plugin.id, { builtIn: true, enabled: true });
     pluginRegistry.register(plugin);
   }
   await loadUserPlugins();

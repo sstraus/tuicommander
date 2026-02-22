@@ -6,6 +6,7 @@ import { repoSettingsStore } from "../stores/repoSettings";
 import { notificationsStore } from "../stores/notifications";
 import { mdTabsStore } from "../stores/mdTabs";
 import { uiStore } from "../stores/ui";
+import { pluginStore } from "../stores/pluginStore";
 import { markdownProviderRegistry } from "./markdownProviderRegistry";
 import { invoke } from "../invoke";
 import { LineBuffer } from "../utils/lineBuffer";
@@ -89,7 +90,15 @@ function createPluginRegistry() {
       return d;
     }
 
+    const logger = pluginStore.getLogger(pluginId);
+
     return {
+      // -- Tier 0: Logging --
+
+      log(level, message, data) {
+        logger.log(level, message, data);
+      },
+
       // -- Tier 1: Activity Center + watchers + providers --
 
       registerSection(section) {
@@ -241,15 +250,22 @@ function createPluginRegistry() {
     const capSet = capabilities ? new Set(capabilities) : null;
     const host = buildHost(plugin.id, disposables, capSet);
 
+    const pluginLogger = pluginStore.getLogger(plugin.id);
+
     try {
       plugin.onload(host);
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.error(`[pluginRegistry] plugin "${plugin.id}" threw during onload:`, err);
+      pluginLogger.error(`onload failed: ${msg}`, err);
+      pluginStore.updatePlugin(plugin.id, { loaded: false, error: msg });
       for (const d of disposables) {
         try { d.dispose(); } catch { /* cleanup best-effort */ }
       }
       return;
     }
+
+    pluginStore.updatePlugin(plugin.id, { loaded: true, error: null });
 
     plugins.set(plugin.id, {
       plugin,
@@ -267,8 +283,15 @@ function createPluginRegistry() {
     const entry = plugins.get(id);
     if (!entry) return;
     plugins.delete(id);
-    entry.plugin.onunload();
+    try {
+      entry.plugin.onunload();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[pluginRegistry] plugin "${id}" threw during onunload:`, err);
+      pluginStore.getLogger(id).error(`onunload failed: ${msg}`, err);
+    }
     entry.disposable.dispose();
+    pluginStore.updatePlugin(id, { loaded: false });
   }
 
   // -------------------------------------------------------------------------
@@ -280,7 +303,7 @@ function createPluginRegistry() {
    * Called synchronously in the PTY hot path — watchers MUST be fast.
    */
   function dispatchLine(cleanLine: string, sessionId: string): void {
-    for (const { watcher } of outputWatchers) {
+    for (const { pluginId, watcher } of outputWatchers) {
       const { pattern, onMatch } = watcher;
       // Reset global regex state before each test to avoid position carry-over
       if (pattern.global) pattern.lastIndex = 0;
@@ -289,7 +312,9 @@ function createPluginRegistry() {
         try {
           onMatch(match, sessionId);
         } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
           console.error("[pluginRegistry] watcher threw:", err);
+          pluginStore.getLogger(pluginId).error(`OutputWatcher threw: ${msg}`, err);
         }
       }
     }
@@ -326,7 +351,9 @@ function createPluginRegistry() {
       try {
         handler(payload, sessionId);
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         console.error(`[pluginRegistry] structured handler (plugin "${pluginId}", type "${type}") threw:`, err);
+        pluginStore.getLogger(pluginId).error(`Structured handler "${type}" threw: ${msg}`, err);
       }
     }
   }

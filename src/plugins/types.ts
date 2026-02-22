@@ -198,6 +198,11 @@ export const INVOKE_WHITELIST: readonly string[] = [
  * - Tier 4: Scoped Tauri invoke (whitelisted commands only)
  */
 export interface PluginHost {
+  // -- Tier 0: Logging (always available) --
+
+  /** Write a message to this plugin's log (visible in Settings > Plugins). */
+  log(level: "debug" | "info" | "warn" | "error", message: string, data?: unknown): void;
+
   // -- Tier 1: Activity Center + watchers + providers (always available) --
 
   /** Register a section in the Activity Center dropdown */

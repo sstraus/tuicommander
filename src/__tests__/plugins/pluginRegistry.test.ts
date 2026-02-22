@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { activityStore } from "../../stores/activityStore";
+import { pluginStore } from "../../stores/pluginStore";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
 import { PluginCapabilityError } from "../../plugins/types";
 import type { TuiPlugin, PluginHost } from "../../plugins/types";
@@ -30,6 +31,7 @@ beforeEach(() => {
   pluginRegistry.clear();
   activityStore.clearAll();
   markdownProviderRegistry.clear();
+  pluginStore.clear();
 });
 
 // ---------------------------------------------------------------------------
@@ -570,5 +572,72 @@ describe("register with capabilities", () => {
     pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
     // Should not throw PluginCapabilityError for any Tier 3 method
     expect(() => host!.openMarkdownPanel("Title", "plan:file")).not.toThrow(PluginCapabilityError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PluginHost.log — per-plugin logging
+// ---------------------------------------------------------------------------
+
+describe("PluginHost.log", () => {
+  it("writes to the plugin's logger via host.log()", () => {
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      host.log("info", "hello from plugin");
+      host.log("error", "something broke", { code: 42 });
+    }));
+    const logger = pluginStore.getLogger("p1");
+    const entries = logger.getEntries();
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({ level: "info", message: "hello from plugin" });
+    expect(entries[1]).toMatchObject({ level: "error", message: "something broke", data: { code: 42 } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Error capture in plugin logger
+// ---------------------------------------------------------------------------
+
+describe("error capture in plugin logger", () => {
+  it("captures onload errors in the plugin logger", () => {
+    pluginRegistry.register(makePlugin("bad", () => { throw new Error("onload boom"); }));
+    const logger = pluginStore.getLogger("bad");
+    const entries = logger.getEntries();
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.some((e) => e.level === "error" && e.message.includes("onload"))).toBe(true);
+  });
+
+  it("captures watcher errors in the plugin logger", () => {
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      host.registerOutputWatcher({
+        pattern: /boom/,
+        onMatch: () => { throw new Error("watcher error"); },
+      });
+    }));
+    pluginRegistry.dispatchLine("boom", "s1");
+    const logger = pluginStore.getLogger("p1");
+    expect(logger.getEntries().some((e) => e.level === "error" && e.message.includes("OutputWatcher"))).toBe(true);
+  });
+
+  it("captures structured handler errors in the plugin logger", () => {
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      host.registerStructuredEventHandler("test-type", () => { throw new Error("handler error"); });
+    }));
+    pluginRegistry.dispatchStructuredEvent("test-type", {}, "s1");
+    const logger = pluginStore.getLogger("p1");
+    expect(logger.getEntries().some((e) => e.level === "error" && e.message.includes("handler error"))).toBe(true);
+  });
+
+  it("updates pluginStore loaded state on successful registration", () => {
+    pluginStore.registerPlugin("p1", { loaded: false });
+    pluginRegistry.register(makePlugin("p1"));
+    expect(pluginStore.getPlugin("p1")?.loaded).toBe(true);
+  });
+
+  it("updates pluginStore with error on failed onload", () => {
+    pluginStore.registerPlugin("bad", { loaded: false });
+    pluginRegistry.register(makePlugin("bad", () => { throw new Error("fail!"); }));
+    const state = pluginStore.getPlugin("bad");
+    expect(state?.loaded).toBe(false);
+    expect(state?.error).toBe("fail!");
   });
 });

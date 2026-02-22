@@ -8,6 +8,7 @@
 
 import { invoke, listen } from "../invoke";
 import { pluginRegistry } from "./pluginRegistry";
+import { pluginStore } from "../stores/pluginStore";
 import type { TuiPlugin } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -97,25 +98,41 @@ export function validateModule(mod: unknown, expectedId: string): string | null 
 const loadedPluginIds = new Set<string>();
 
 async function loadPlugin(manifest: PluginManifest): Promise<void> {
+  const logger = pluginStore.getLogger(manifest.id);
+
+  // Register in pluginStore so UI can see it even before load completes
+  pluginStore.registerPlugin(manifest.id, {
+    manifest,
+    builtIn: false,
+    enabled: true,
+    loaded: false,
+  });
+
   // Cache-bust for hot reload
   const url = `plugin://${manifest.id}/${manifest.main}?t=${Date.now()}`;
   let mod: unknown;
   try {
     mod = await import(/* @vite-ignore */ url);
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error(`[pluginLoader] failed to import "${manifest.id}":`, err);
+    logger.error(`Import failed: ${msg}`, err);
+    pluginStore.updatePlugin(manifest.id, { error: msg });
     return;
   }
 
   const moduleError = validateModule(mod, manifest.id);
   if (moduleError) {
     console.error(`[pluginLoader] invalid module for "${manifest.id}": ${moduleError}`);
+    logger.error(`Module validation failed: ${moduleError}`);
+    pluginStore.updatePlugin(manifest.id, { error: moduleError });
     return;
   }
 
   const plugin = (mod as { default: TuiPlugin }).default;
   pluginRegistry.register(plugin, manifest.capabilities);
   loadedPluginIds.add(manifest.id);
+  logger.info(`Loaded v${manifest.version}`);
   console.log(`[pluginLoader] loaded plugin "${manifest.id}" v${manifest.version}`);
 }
 
@@ -123,38 +140,49 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
 // Hot reload
 // ---------------------------------------------------------------------------
 
-async function handlePluginChanged(event: { payload: { plugin_id: string } }): Promise<void> {
-  const { plugin_id } = event.payload;
-  console.log(`[pluginLoader] plugin-changed event for "${plugin_id}", reloading...`);
+/**
+ * Handle the plugin-changed event from Rust's file watcher.
+ * Rust emits payload as string[] (array of changed plugin IDs).
+ */
+async function handlePluginChanged(event: { payload: string[] }): Promise<void> {
+  const changedIds = event.payload;
+  if (!Array.isArray(changedIds) || changedIds.length === 0) return;
 
-  // Unregister if previously loaded
-  if (loadedPluginIds.has(plugin_id)) {
-    pluginRegistry.unregister(plugin_id);
-    loadedPluginIds.delete(plugin_id);
+  for (const pluginId of changedIds) {
+    console.log(`[pluginLoader] plugin-changed event for "${pluginId}", reloading...`);
+
+    // Unregister if previously loaded
+    if (loadedPluginIds.has(pluginId)) {
+      pluginRegistry.unregister(pluginId);
+      loadedPluginIds.delete(pluginId);
+    }
+
+    // Re-discover this specific plugin's manifest
+    let manifests: PluginManifest[];
+    try {
+      manifests = await invoke<PluginManifest[]>("list_user_plugins");
+    } catch (err) {
+      console.error("[pluginLoader] failed to list plugins for reload:", err);
+      return;
+    }
+
+    const manifest = manifests.find((m) => m.id === pluginId);
+    if (!manifest) {
+      console.warn(`[pluginLoader] plugin "${pluginId}" not found after change event`);
+      pluginStore.removePlugin(pluginId);
+      continue;
+    }
+
+    const manifestError = validateManifest(manifest);
+    if (manifestError) {
+      console.error(`[pluginLoader] ${manifestError}`);
+      pluginStore.getLogger(pluginId).error(manifestError);
+      pluginStore.updatePlugin(pluginId, { error: manifestError, loaded: false });
+      continue;
+    }
+
+    await loadPlugin(manifest);
   }
-
-  // Re-discover this specific plugin's manifest
-  let manifests: PluginManifest[];
-  try {
-    manifests = await invoke<PluginManifest[]>("list_user_plugins");
-  } catch (err) {
-    console.error("[pluginLoader] failed to list plugins for reload:", err);
-    return;
-  }
-
-  const manifest = manifests.find((m) => m.id === plugin_id);
-  if (!manifest) {
-    console.warn(`[pluginLoader] plugin "${plugin_id}" not found after change event`);
-    return;
-  }
-
-  const manifestError = validateManifest(manifest);
-  if (manifestError) {
-    console.error(`[pluginLoader] ${manifestError}`);
-    return;
-  }
-
-  await loadPlugin(manifest);
 }
 
 // ---------------------------------------------------------------------------
