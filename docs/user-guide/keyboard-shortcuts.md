@@ -143,6 +143,7 @@ Hold to record, release to transcribe and inject text into active terminal.
 | Close Other Tabs | — |
 | Close Tabs to the Right | — |
 | Rename Tab | (double-click tab name) |
+| Detach to Window | — |
 
 ## Mouse Actions
 

@@ -29,6 +29,7 @@ export interface TabBarProps {
   onSplitVertical?: () => void;
   onSplitHorizontal?: () => void;
   onReorder?: (fromIndex: number, toIndex: number) => void;
+  onDetachTab?: (id: string) => void;
 }
 
 export const TabBar: Component<TabBarProps> = (props) => {
@@ -99,12 +100,14 @@ export const TabBar: Component<TabBarProps> = (props) => {
     // Terminal tab
     const ids = activeTerminals();
     const idx = ids.indexOf(id);
+    const hasSession = !!terminalsStore.get(id)?.sessionId;
     return [
       { label: t("tabBar.closeTab", "Close Tab"), shortcut: `${getModifierSymbol()}W`, action: () => props.onTabClose(id) },
       { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
       { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
       { label: "", separator: true, action: () => {} },
       { label: t("tabBar.renameTab", "Rename Tab"), action: () => setEditingId(id) },
+      { label: t("tabBar.detachToWindow", "Detach to Window"), action: () => props.onDetachTab?.(id), disabled: !hasSession },
     ];
   };
 

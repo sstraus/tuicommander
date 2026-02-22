@@ -323,6 +323,49 @@ const App: Component = () => {
 
 
 
+  /** Detach a terminal tab to a floating OS window */
+  const handleDetachTab = async (tabId: string) => {
+    if (!isTauri()) return;
+    const term = terminalsStore.get(tabId);
+    if (!term?.sessionId) return;
+
+    const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+    const windowLabel = `floating-${tabId}`;
+    const url = `index.html#/floating?sessionId=${encodeURIComponent(term.sessionId)}&tabId=${encodeURIComponent(tabId)}&name=${encodeURIComponent(term.name)}`;
+
+    new WebviewWindow(windowLabel, {
+      url,
+      title: term.name || "Terminal",
+      width: 800,
+      height: 600,
+      center: true,
+      decorations: true,
+    });
+
+    terminalsStore.detach(tabId, windowLabel);
+
+    // Switch to next available tab
+    const ids = terminalLifecycle.terminalIds().filter((id) => !terminalsStore.isDetached(id));
+    if (ids.length > 0) {
+      terminalLifecycle.handleTerminalSelect(ids[0]);
+    }
+  };
+
+  // Listen for reattach events from floating windows
+  createEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+
+    listen<{ tabId: string; sessionId: string }>("reattach-terminal", (event) => {
+      const { tabId } = event.payload;
+      terminalsStore.reattach(tabId);
+      terminalLifecycle.handleTerminalSelect(tabId);
+      setStatusInfo("Tab reattached");
+    }).then((fn) => { unlisten = fn; }).catch((err) => console.error("[Reattach] Failed to listen:", err));
+
+    onCleanup(() => unlisten?.());
+  });
+
   // Quick Switcher: visible while modifier combo is held, hides on release
   // macOS: Cmd+Ctrl, Windows/Linux: Ctrl+Alt
   createEffect(() => {
@@ -573,6 +616,7 @@ const App: Component = () => {
                 repositoriesStore.reorderTerminals(activeRepo.path, activeRepo.activeBranch, from, to);
               }
             }}
+            onDetachTab={handleDetachTab}
           />
         </div>
 

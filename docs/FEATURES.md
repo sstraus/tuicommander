@@ -25,7 +25,11 @@
 - Rename: double-click tab name (inline editing)
 - Reorder: drag-and-drop with visual drop indicators
 - Tab indicators: solid dot (activity), question icon (agent asking), error icon, progress bar (OSC 9;4)
-- Context menu (right-click): Close Tab, Close Other Tabs, Close Tabs to the Right
+- Context menu (right-click): Close Tab, Close Other Tabs, Close Tabs to the Right, Detach to Window
+- Detach to Window: right-click a tab to open it in a floating OS window
+  - PTY session stays alive in Rust — floating window reconnects to the same session
+  - Closing the floating window automatically returns the tab to the main window
+  - Requires an active PTY session (disabled for tabs without a session)
 
 ### 1.3 Split Panes
 - Vertical split: `Cmd+\` (side by side)

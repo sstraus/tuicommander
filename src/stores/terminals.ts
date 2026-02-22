@@ -66,6 +66,8 @@ interface TerminalsStoreState {
   activeId: string | null;
   counter: number;
   layout: TabLayout;
+  /** Tabs currently detached to floating windows: tabId → window label */
+  detachedWindows: Record<string, string>;
 }
 
 /** Create the terminals store */
@@ -75,6 +77,7 @@ function createTerminalsStore() {
     activeId: null,
     counter: 0,
     layout: { ...DEFAULT_LAYOUT },
+    detachedWindows: {},
   });
 
   const actions = {
@@ -84,6 +87,11 @@ function createTerminalsStore() {
       setState("counter", (c) => c + 1);
       setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, ...data });
       return id;
+    },
+
+    /** Register a terminal with a specific ID (used by floating windows to reconnect to existing PTY sessions) */
+    register(id: string, data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "usageLimit">): void {
+      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, ...data });
     },
 
     /** Remove a terminal */
@@ -225,6 +233,30 @@ function createTerminalsStore() {
     /** Set the active pane index (0 or 1) */
     setActivePaneIndex(index: 0 | 1): void {
       setState("layout", "activePaneIndex", index);
+    },
+
+    /** Mark a tab as detached to a floating window */
+    detach(tabId: string, windowLabel: string): void {
+      setState("detachedWindows", tabId, windowLabel);
+    },
+
+    /** Un-mark a tab as detached (called when floating window closes) */
+    reattach(tabId: string): void {
+      setState(
+        produce((s) => {
+          delete s.detachedWindows[tabId];
+        }),
+      );
+    },
+
+    /** Check if a tab is currently detached */
+    isDetached(tabId: string): boolean {
+      return tabId in state.detachedWindows;
+    },
+
+    /** Get all non-detached terminal IDs */
+    getAttachedIds(): string[] {
+      return Object.keys(state.terminals).filter((id) => !(id in state.detachedWindows));
     },
   };
 

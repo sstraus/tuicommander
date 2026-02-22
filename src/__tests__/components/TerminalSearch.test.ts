@@ -14,7 +14,9 @@ import type { IEvent } from "@xterm/xterm";
  * in useKeyboardShortcuts.test.ts.
  */
 
-function createMockSearchAddon(): SearchAddon {
+type MockSearchAddon = SearchAddon & { _fireResults: (e: ISearchResultChangeEvent) => void };
+
+function createMockSearchAddon(): MockSearchAddon {
   const listeners: ((e: ISearchResultChangeEvent) => void)[] = [];
 
   return {
@@ -31,7 +33,7 @@ function createMockSearchAddon(): SearchAddon {
     _fireResults: (e: ISearchResultChangeEvent) => {
       for (const l of listeners) l(e);
     },
-  } as SearchAddon & { _fireResults: (e: ISearchResultChangeEvent) => void };
+  } as MockSearchAddon;
 }
 
 describe("TerminalSearch interaction patterns", () => {
@@ -93,7 +95,7 @@ describe("TerminalSearch interaction patterns", () => {
       const callback = vi.fn();
       addon.onDidChangeResults(callback);
 
-      (addon as ReturnType<typeof createMockSearchAddon>)._fireResults({
+      addon._fireResults({
         resultIndex: 2,
         resultCount: 10,
       });
@@ -106,7 +108,7 @@ describe("TerminalSearch interaction patterns", () => {
       const disposable = addon.onDidChangeResults(callback);
       disposable.dispose();
 
-      (addon as ReturnType<typeof createMockSearchAddon>)._fireResults({
+      addon._fireResults({
         resultIndex: 0,
         resultCount: 5,
       });
@@ -118,7 +120,7 @@ describe("TerminalSearch interaction patterns", () => {
       const callback = vi.fn();
       addon.onDidChangeResults(callback);
 
-      (addon as ReturnType<typeof createMockSearchAddon>)._fireResults({
+      addon._fireResults({
         resultIndex: -1,
         resultCount: 1500,
       });

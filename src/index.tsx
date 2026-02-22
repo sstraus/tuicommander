@@ -1,9 +1,12 @@
 /* @refresh reload */
+import { lazy } from "solid-js";
 import { render, ErrorBoundary } from "solid-js/web";
 import App from "./App";
 import "./global.css";
 import "./styles.css";
 import "@xterm/xterm/css/xterm.css";
+
+const FloatingTerminal = lazy(() => import("./FloatingTerminal").then((m) => ({ default: m.FloatingTerminal })));
 
 const root = document.getElementById("app");
 
@@ -43,10 +46,13 @@ function CrashScreen(props: { error: Error }) {
   );
 }
 
+/** Route based on URL hash: #/floating renders the detached terminal window */
+const isFloatingWindow = window.location.hash.startsWith("#/floating");
+
 render(
   () => (
     <ErrorBoundary fallback={(err) => <CrashScreen error={err} />}>
-      <App />
+      {isFloatingWindow ? <FloatingTerminal /> : <App />}
     </ErrorBoundary>
   ),
   root,

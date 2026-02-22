@@ -73,15 +73,18 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
             const paneIndex = () => terminalsStore.state.layout.panes.indexOf(id);
             const splitRatio = () => terminalsStore.state.layout.ratio;
 
+            const isDetached = () => terminalsStore.isDetached(id);
+
             return (
               <div
                 class="terminal-pane"
                 classList={{
-                  active: terminalsStore.state.activeId === id,
+                  active: terminalsStore.state.activeId === id && !isDetached(),
                   "split-pane": isSplitPane(),
                   "split-pane-active": isActivePaneInSplit(),
+                  detached: isDetached(),
                 }}
-                style={isSplitPane() ? {
+                style={isDetached() ? { display: "none" } : isSplitPane() ? {
                   flex: paneIndex() === 0
                     ? `${splitRatio() * 100} 1 0%`
                     : `${(1 - splitRatio()) * 100} 1 0%`,
