@@ -34,6 +34,7 @@ import { promptLibraryStore } from "./stores/promptLibrary";
 import { terminalsStore } from "./stores/terminals";
 import { repositoriesStore } from "./stores/repositories";
 import { mdTabsStore } from "./stores/mdTabs";
+import { diffTabsStore } from "./stores/diffTabs";
 import { uiStore } from "./stores/ui";
 import { settingsStore } from "./stores/settings";
 import { githubStore } from "./stores/github";
@@ -228,6 +229,38 @@ const App: Component = () => {
 
   // Apply the active theme to the entire app chrome (sidebar, tabs, toolbar, etc.)
   createEffect(() => applyAppTheme(settingsStore.state.theme));
+
+  // Enforce mutual exclusivity between tab stores.
+  // When a non-terminal tab becomes active (e.g. from mdTabsStore.add()),
+  // deactivate the terminal so its pane hides and xterm releases focus.
+  createEffect(() => {
+    if (mdTabsStore.state.activeId) {
+      terminalsStore.setActive(null);
+      diffTabsStore.setActive(null);
+      editorTabsStore.setActive(null);
+    }
+  });
+  createEffect(() => {
+    if (diffTabsStore.state.activeId) {
+      terminalsStore.setActive(null);
+      mdTabsStore.setActive(null);
+      editorTabsStore.setActive(null);
+    }
+  });
+  createEffect(() => {
+    if (editorTabsStore.state.activeId) {
+      terminalsStore.setActive(null);
+      diffTabsStore.setActive(null);
+      mdTabsStore.setActive(null);
+    }
+  });
+  createEffect(() => {
+    if (terminalsStore.state.activeId) {
+      diffTabsStore.setActive(null);
+      mdTabsStore.setActive(null);
+      editorTabsStore.setActive(null);
+    }
+  });
 
   // Prevent system sleep while any terminal is busy (Story 258)
   createEffect(() => {
