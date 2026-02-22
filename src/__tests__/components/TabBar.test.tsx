@@ -65,14 +65,14 @@ describe("TabBar", () => {
     const { container } = render(() => (
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
-    expect(container.querySelector("#tabs")).not.toBeNull();
+    expect(container.querySelector(".tabs")).not.toBeNull();
   });
 
   it("renders the new tab button", () => {
     const { container } = render(() => (
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
-    const btn = container.querySelector(".tab-new-btn");
+    const btn = container.querySelector(".newBtn");
     expect(btn).not.toBeNull();
     expect(btn!.textContent).toContain("+");
   });
@@ -82,7 +82,7 @@ describe("TabBar", () => {
     const { container } = render(() => (
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={onNewTab} />
     ));
-    fireEvent.click(container.querySelector(".tab-new-btn")!);
+    fireEvent.click(container.querySelector(".newBtn")!);
     expect(onNewTab).toHaveBeenCalledTimes(1);
   });
 
@@ -90,7 +90,7 @@ describe("TabBar", () => {
     const { container } = render(() => (
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
-    const btn = container.querySelector(".tab-new-btn")!;
+    const btn = container.querySelector(".newBtn")!;
     vi.spyOn(btn, "getBoundingClientRect").mockReturnValue({
       left: 100, bottom: 50, top: 20, right: 150, width: 50, height: 30, x: 100, y: 20, toJSON: () => {},
     } as DOMRect);
@@ -108,7 +108,7 @@ describe("TabBar", () => {
     const { container } = render(() => (
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
-    expect(container.querySelector(".tab-new-btn")!.getAttribute("title")).toBe(`New Tab (${getModifierSymbol()}T)`);
+    expect(container.querySelector(".newBtn")!.getAttribute("title")).toBe(`New Tab (${getModifierSymbol()}T)`);
   });
 
   it("renders terminal tabs from the store", () => {
@@ -120,8 +120,8 @@ describe("TabBar", () => {
     ));
     const tabs = container.querySelectorAll(".tab");
     expect(tabs.length).toBe(2);
-    expect(tabs[0].querySelector(".tab-name")!.textContent).toContain("Tab A");
-    expect(tabs[1].querySelector(".tab-name")!.textContent).toContain("Tab B");
+    expect(tabs[0].querySelector(".tabName")!.textContent).toContain("Tab A");
+    expect(tabs[1].querySelector(".tabName")!.textContent).toContain("Tab B");
   });
 
   it("active tab has 'active' class", () => {
@@ -137,7 +137,7 @@ describe("TabBar", () => {
     expect(tabs[1].classList.contains("active")).toBe(false);
   });
 
-  it("tab with activity has 'has-activity' class", () => {
+  it("tab with activity has 'hasActivity' class", () => {
     const id1 = addTerminal({ name: "Active" });
     const id2 = addTerminal({ name: "Background" });
     // Set id1 as active, and give id2 activity
@@ -149,12 +149,12 @@ describe("TabBar", () => {
     ));
     const tabs = container.querySelectorAll(".tab");
     // id1 is active, so hasActivity = !isActive() && activity = false
-    expect(tabs[0].classList.contains("has-activity")).toBe(false);
+    expect(tabs[0].classList.contains("hasActivity")).toBe(false);
     // id2 is not active and has activity
-    expect(tabs[1].classList.contains("has-activity")).toBe(true);
+    expect(tabs[1].classList.contains("hasActivity")).toBe(true);
   });
 
-  it("tab awaiting input has 'awaiting-input awaiting-question' class", () => {
+  it("tab awaiting input has 'awaitingInput awaitingQuestion' class", () => {
     const id = addTerminal({ name: "Waiting", awaitingInput: "question" });
     terminalsStore.setActive(id);
 
@@ -162,8 +162,8 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tab = container.querySelector(".tab")!;
-    expect(tab.classList.contains("awaiting-input")).toBe(true);
-    expect(tab.classList.contains("awaiting-question")).toBe(true);
+    expect(tab.classList.contains("awaitingInput")).toBe(true);
+    expect(tab.classList.contains("awaitingQuestion")).toBe(true);
   });
 
   it("tab awaiting error input has correct class", () => {
@@ -174,8 +174,8 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tab = container.querySelector(".tab")!;
-    expect(tab.classList.contains("awaiting-input")).toBe(true);
-    expect(tab.classList.contains("awaiting-error")).toBe(true);
+    expect(tab.classList.contains("awaitingInput")).toBe(true);
+    expect(tab.classList.contains("awaitingError")).toBe(true);
   });
 
   it("tab with no awaitingInput has no awaiting classes", () => {
@@ -186,10 +186,10 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tab = container.querySelector(".tab")!;
-    expect(tab.classList.contains("awaiting-input")).toBe(false);
+    expect(tab.classList.contains("awaitingInput")).toBe(false);
   });
 
-  it("non-active tab with shellState 'idle' has 'shell-idle' class", () => {
+  it("non-active tab with shellState 'idle' has 'shellIdle' class", () => {
     const id1 = addTerminal({ name: "Active" });
     const id2 = addTerminal({ name: "Idle" });
     terminalsStore.setActive(id1);
@@ -199,11 +199,11 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tabs = container.querySelectorAll(".tab");
-    expect(tabs[0].classList.contains("shell-idle")).toBe(false);
-    expect(tabs[1].classList.contains("shell-idle")).toBe(true);
+    expect(tabs[0].classList.contains("shellIdle")).toBe(false);
+    expect(tabs[1].classList.contains("shellIdle")).toBe(true);
   });
 
-  it("active tab with shellState 'idle' does NOT have 'shell-idle' class", () => {
+  it("active tab with shellState 'idle' does NOT have 'shellIdle' class", () => {
     const id1 = addTerminal({ name: "Active" });
     terminalsStore.setActive(id1);
     terminalsStore.update(id1, { shellState: "idle" });
@@ -212,10 +212,10 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tab = container.querySelector(".tab")!;
-    expect(tab.classList.contains("shell-idle")).toBe(false);
+    expect(tab.classList.contains("shellIdle")).toBe(false);
   });
 
-  it("non-active tab with shellState 'busy' does NOT have 'shell-idle' class", () => {
+  it("non-active tab with shellState 'busy' does NOT have 'shellIdle' class", () => {
     const id1 = addTerminal({ name: "Active" });
     const id2 = addTerminal({ name: "Busy" });
     terminalsStore.setActive(id1);
@@ -225,7 +225,7 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tabs = container.querySelectorAll(".tab");
-    expect(tabs[1].classList.contains("shell-idle")).toBe(false);
+    expect(tabs[1].classList.contains("shellIdle")).toBe(false);
   });
 
   it("tab with progress shows progress label and bar", () => {
@@ -236,10 +236,10 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tab = container.querySelector(".tab")!;
-    const label = tab.querySelector(".tab-progress-label");
+    const label = tab.querySelector(".progressLabel");
     expect(label).not.toBeNull();
     expect(label!.textContent).toBe("50%");
-    const bar = tab.querySelector(".tab-progress");
+    const bar = tab.querySelector(".progress");
     expect(bar).not.toBeNull();
     expect((bar as HTMLElement).style.width).toBe("50%");
   });
@@ -252,7 +252,7 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tab = container.querySelector(".tab")!;
-    const label = tab.querySelector(".tab-progress-label");
+    const label = tab.querySelector(".progressLabel");
     expect(label).not.toBeNull();
     expect(label!.textContent).toBe("0%");
   });
@@ -265,8 +265,8 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tab = container.querySelector(".tab")!;
-    expect(tab.querySelector(".tab-progress-label")).toBeNull();
-    expect(tab.querySelector(".tab-progress")).toBeNull();
+    expect(tab.querySelector(".progressLabel")).toBeNull();
+    expect(tab.querySelector(".progress")).toBeNull();
   });
 
   it("clicking tab calls onTabSelect with correct id", () => {
@@ -290,7 +290,7 @@ describe("TabBar", () => {
     const { container } = render(() => (
       <TabBar onTabSelect={handleSelect} onTabClose={handleClose} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
-    const closeBtn = container.querySelector(".tab-close")!;
+    const closeBtn = container.querySelector(".tabClose")!;
     fireEvent.click(closeBtn);
     expect(handleClose).toHaveBeenCalledWith(id1);
     // stopPropagation means onTabSelect should NOT be called
@@ -319,8 +319,8 @@ describe("TabBar", () => {
     const tabs = container.querySelectorAll(".tab");
     // Should only show t1 and t2, not t3
     expect(tabs.length).toBe(2);
-    expect(tabs[0].querySelector(".tab-name")!.textContent).toContain("Branch Term 1");
-    expect(tabs[1].querySelector(".tab-name")!.textContent).toContain("Branch Term 2");
+    expect(tabs[0].querySelector(".tabName")!.textContent).toContain("Branch Term 1");
+    expect(tabs[1].querySelector(".tabName")!.textContent).toContain("Branch Term 2");
   });
 
   it("with no activeRepoPath, shows all terminals", () => {
@@ -416,8 +416,8 @@ describe("TabBar", () => {
       clientX: 0,
     });
 
-    // Tab 2 should have drag-over-right class (midpoint=0, clientX=0 => "right")
-    expect(tabs[1].classList.contains("drag-over-right")).toBe(true);
+    // Tab 2 should have dragOverRight class (midpoint=0, clientX=0 => "right")
+    expect(tabs[1].classList.contains("dragOverRight")).toBe(true);
   });
 
   it("dragLeave resets drag-over state", () => {
@@ -439,8 +439,8 @@ describe("TabBar", () => {
     fireEvent.dragOver(tabs[1], { dataTransfer, clientX: 0 });
     fireEvent.dragLeave(tabs[1]);
 
-    expect(tabs[1].classList.contains("drag-over-left")).toBe(false);
-    expect(tabs[1].classList.contains("drag-over-right")).toBe(false);
+    expect(tabs[1].classList.contains("dragOverLeft")).toBe(false);
+    expect(tabs[1].classList.contains("dragOverRight")).toBe(false);
   });
 
   it("drop on same target resets state without reorder", () => {
@@ -564,9 +564,9 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
-      const diffTabs = container.querySelectorAll(".diff-tab");
+      const diffTabs = container.querySelectorAll(".diffTab");
       expect(diffTabs.length).toBe(1);
-      expect(diffTabs[0].querySelector(".tab-name")!.textContent).toBe("file.ts");
+      expect(diffTabs[0].querySelector(".tabName")!.textContent).toBe("file.ts");
     });
 
     it("clicking diff tab selects it", () => {
@@ -576,7 +576,7 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={handleSelect} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
-      fireEvent.click(container.querySelector(".diff-tab")!);
+      fireEvent.click(container.querySelector(".diffTab")!);
       expect(handleSelect).toHaveBeenCalledWith(id);
       expect(diffTabsStore.state.activeId).toBe(id);
     });
@@ -588,7 +588,7 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={handleClose} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
-      const closeBtn = container.querySelector(".diff-tab .tab-close")!;
+      const closeBtn = container.querySelector(".diffTab .tabClose")!;
       fireEvent.click(closeBtn);
       expect(handleClose).toHaveBeenCalledWith(id);
     });
@@ -600,7 +600,7 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={handleClose} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
-      fireEvent(container.querySelector(".diff-tab")!, new MouseEvent("auxclick", { button: 1, bubbles: true }));
+      fireEvent(container.querySelector(".diffTab")!, new MouseEvent("auxclick", { button: 1, bubbles: true }));
       expect(handleClose).toHaveBeenCalledWith(id);
     });
   });
@@ -612,9 +612,9 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
-      const mdTabs = container.querySelectorAll(".md-tab");
+      const mdTabs = container.querySelectorAll(".mdTab");
       expect(mdTabs.length).toBe(1);
-      expect(mdTabs[0].querySelector(".tab-name")!.textContent).toBe("readme.md");
+      expect(mdTabs[0].querySelector(".tabName")!.textContent).toBe("readme.md");
     });
 
     it("clicking md tab selects it", () => {
@@ -624,7 +624,7 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={handleSelect} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
-      fireEvent.click(container.querySelector(".md-tab")!);
+      fireEvent.click(container.querySelector(".mdTab")!);
       expect(handleSelect).toHaveBeenCalledWith(id);
       expect(mdTabsStore.state.activeId).toBe(id);
     });
@@ -636,7 +636,7 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={handleClose} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
-      const closeBtn = container.querySelector(".md-tab .tab-close")!;
+      const closeBtn = container.querySelector(".mdTab .tabClose")!;
       fireEvent.click(closeBtn);
       expect(handleClose).toHaveBeenCalledWith(id);
     });
@@ -652,7 +652,7 @@ describe("TabBar", () => {
       ));
       const tab = container.querySelector(".tab")!;
       fireEvent.dblClick(tab);
-      const input = tab.querySelector(".tab-name-input");
+      const input = tab.querySelector(".tabNameInput");
       expect(input).not.toBeNull();
     });
 
@@ -665,7 +665,7 @@ describe("TabBar", () => {
       ));
       const tab = container.querySelector(".tab")!;
       fireEvent.dblClick(tab);
-      const input = tab.querySelector(".tab-name-input") as HTMLInputElement;
+      const input = tab.querySelector(".tabNameInput") as HTMLInputElement;
       fireEvent.input(input, { target: { value: "New Name" } });
       fireEvent.keyDown(input, { key: "Enter" });
       expect(terminalsStore.get(id)?.name).toBe("New Name");
@@ -680,7 +680,7 @@ describe("TabBar", () => {
       ));
       const tab = container.querySelector(".tab")!;
       fireEvent.dblClick(tab);
-      const input = tab.querySelector(".tab-name-input") as HTMLInputElement;
+      const input = tab.querySelector(".tabNameInput") as HTMLInputElement;
       fireEvent.input(input, { target: { value: "Changed" } });
       fireEvent.keyDown(input, { key: "Escape" });
       // Name should remain original (Escape cancels)
@@ -716,7 +716,7 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
-      const btn = container.querySelector(".tab-new-btn")!;
+      const btn = container.querySelector(".newBtn")!;
       vi.spyOn(btn, "getBoundingClientRect").mockReturnValue({
         left: 100, bottom: 50, top: 20, right: 150, width: 50, height: 30, x: 100, y: 20, toJSON: () => {},
       } as DOMRect);
@@ -743,7 +743,7 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} onSplitVertical={handleSplit} />
       ));
-      const btn = container.querySelector(".tab-new-btn")!;
+      const btn = container.querySelector(".newBtn")!;
       vi.spyOn(btn, "getBoundingClientRect").mockReturnValue({
         left: 100, bottom: 50, top: 20, right: 150, width: 50, height: 30, x: 100, y: 20, toJSON: () => {},
       } as DOMRect);
@@ -778,7 +778,7 @@ describe("TabBar", () => {
       // Only one tab should be visible (unified)
       expect(tabs.length).toBe(1);
       // Should show combined name
-      expect(tabs[0].querySelector(".tab-name")!.textContent).toContain("T1 | T2");
+      expect(tabs[0].querySelector(".tabName")!.textContent).toContain("T1 | T2");
 
       // Reset
       settingsStore.setSplitTabMode("separate");
@@ -800,7 +800,7 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={handleClose} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
-      const closeBtn = container.querySelector(".tab-close")!;
+      const closeBtn = container.querySelector(".tabClose")!;
       fireEvent.click(closeBtn);
       // Should close both terminals
       expect(handleClose).toHaveBeenCalledWith(id2);
@@ -840,7 +840,7 @@ describe("TabBar", () => {
       ));
 
       // Click close on the unified tab
-      const closeBtn = container.querySelector(".tab-close")!;
+      const closeBtn = container.querySelector(".tabClose")!;
       fireEvent.click(closeBtn);
 
       // Verify layout is clean
@@ -860,7 +860,7 @@ describe("TabBar", () => {
       const { container } = render(() => (
         <TabBar quickSwitcherActive={true} onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
-      const badges = container.querySelectorAll(".tab-shortcut-badge");
+      const badges = container.querySelectorAll(".shortcutBadge");
       expect(badges.length).toBe(2);
     });
   });

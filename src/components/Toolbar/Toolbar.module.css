@@ -1,0 +1,447 @@
+/* Toolbar */
+.toolbar {
+  height: var(--toolbar-height);
+  min-height: var(--toolbar-height);
+  background: #1e1e1e;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+.left,
+.center,
+.right {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.left {
+  width: var(--sidebar-width);
+  flex: none;
+  position: relative;
+  justify-content: flex-end;
+  padding-right: 10px;
+  gap: 8px;
+  -webkit-app-region: drag;
+}
+
+.appName {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  user-select: none;
+}
+
+:global(#app.sidebar-hidden) .left {
+  width: auto;
+  flex: none;
+}
+
+:global(#app.sidebar-hidden) .appName {
+  display: none;
+}
+
+.center {
+  flex: 1;
+  gap: 8px;
+}
+
+.right {
+  flex: none;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Sidebar toggle */
+.sidebarToggle {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-lg);
+  color: var(--fg-muted);
+  font-size: 17px;
+  cursor: pointer;
+  transition: all 0.15s;
+  -webkit-app-region: no-drag;
+}
+
+.sidebarToggle:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+}
+
+/* Branch button */
+.branch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease;
+  -webkit-app-region: no-drag;
+}
+
+.branch:hover {
+  background: var(--bg-highlight);
+}
+
+.branchIcon {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.repoName {
+  font-size: var(--font-md);
+  font-weight: 500;
+  color: var(--fg-secondary);
+  white-space: nowrap;
+}
+
+.branchSeparator {
+  font-size: var(--font-md);
+  color: var(--fg-muted);
+  margin: 0 2px;
+}
+
+.branchName {
+  font-size: var(--font-md);
+  font-weight: 500;
+  color: var(--fg-primary);
+  white-space: nowrap;
+}
+
+/* PR Notification Bell */
+.notifWrapper {
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.bell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.bell:hover {
+  background: var(--bg-highlight);
+  border-color: var(--accent);
+  color: var(--fg-primary);
+}
+
+.notifCount {
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-radius: 7px;
+}
+
+.popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 240px;
+  max-width: 320px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-dropdown);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.notifHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.notifTitle {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dismissAll {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.dismissAll:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.notifItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.notifItem:hover {
+  background: var(--bg-highlight);
+}
+
+.notifItem:last-child {
+  border-bottom: none;
+}
+
+.notifIcon {
+  font-size: var(--font-md);
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.notifDetails {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.notifRepo {
+  font-size: var(--font-xs);
+  color: var(--fg-accent);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notifPr {
+  font-size: var(--font-md);
+  font-weight: 500;
+  color: var(--fg-primary);
+}
+
+.notifBranch {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notifClose {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-lg);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.notifClose:hover {
+  color: var(--fg-primary);
+}
+
+/* Notification type colors */
+.notifMerged .notifIcon { color: #a371f7; }
+.notifClosed .notifIcon { color: var(--fg-muted); }
+.notifBlocked .notifIcon { color: #f85149; }
+.notifCiFailed .notifIcon { color: #f85149; }
+.notifChanges .notifIcon { color: #d29922; }
+.notifReady .notifIcon { color: #3fb950; }
+
+/* Activity Center — generic plugin sections */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+
+.sectionLabel {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.activityDismissAll {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.activityDismissAll:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.activityItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.activityItem:hover {
+  background: var(--bg-highlight);
+}
+
+.activityItem:last-child {
+  border-bottom: none;
+}
+
+.activityItemIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-muted);
+}
+
+.activityItemIcon svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.activityItemBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.activityItemTitle {
+  font-size: var(--font-md);
+  font-weight: 500;
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activityItemSubtitle {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activityItemDismiss {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-lg);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.activityItemDismiss:hover {
+  color: var(--fg-primary);
+}
+
+/* Last-item shortcut button */
+.lastItemBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  max-width: 180px;
+  margin-right: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.lastItemBtn:hover {
+  background: var(--bg-highlight);
+  border-color: var(--accent);
+}
+
+.lastItemIcon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.lastItemIcon svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+.lastItemTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Windows/Linux: slightly shorter toolbar */
+:global(.platform-windows) .toolbar,
+:global(.platform-linux) .toolbar {
+  height: 32px;
+  min-height: 32px;
+}

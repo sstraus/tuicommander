@@ -9,16 +9,19 @@ import { activityStore } from "../../stores/activityStore";
 import { getModifierSymbol } from "../../platform";
 import { IdeLauncher } from "../IdeLauncher";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
 import type { ActivityItem } from "../../plugins/types";
 import type { PrNotification } from "../../stores/prNotifications";
+import s from "./Toolbar.module.css";
 
 const NOTIFICATION_LABELS: Record<PrNotificationType, { label: string; icon: string; cls: string }> = {
-  merged: { label: "Merged", icon: "\u2714", cls: "notif-merged" },
-  closed: { label: "Closed", icon: "\u2716", cls: "notif-closed" },
-  blocked: { label: "Conflicts", icon: "\u26A0", cls: "notif-blocked" },
-  ci_failed: { label: "CI Failed", icon: "\u2716", cls: "notif-ci-failed" },
-  changes_requested: { label: "Changes Req.", icon: "\u270E", cls: "notif-changes" },
-  ready: { label: "Ready", icon: "\u2713", cls: "notif-ready" },
+  merged: { label: "Merged", icon: "\u2714", cls: s.notifMerged },
+  closed: { label: "Closed", icon: "\u2716", cls: s.notifClosed },
+  blocked: { label: "Conflicts", icon: "\u26A0", cls: s.notifBlocked },
+  ci_failed: { label: "CI Failed", icon: "\u2716", cls: s.notifCiFailed },
+  changes_requested: { label: "Changes Req.", icon: "\u270E", cls: s.notifChanges },
+  ready: { label: "Ready", icon: "\u2713", cls: s.notifReady },
 };
 
 // ---------------------------------------------------------------------------
@@ -133,10 +136,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   };
 
   return (
-    <div id="toolbar" data-tauri-drag-region>
-      <div class="toolbar-left" data-tauri-drag-region>
+    <div id="toolbar" class={s.toolbar} data-tauri-drag-region>
+      <div class={s.left} data-tauri-drag-region>
         {/* Embossed app name — dark shadow below, lighter highlight above; TUIC slightly brighter */}
-        <svg class="toolbar-app-name" data-tauri-drag-region viewBox="0 0 110 16" width="110" height="16" aria-label="TUICommander">
+        <svg class={s.appName} data-tauri-drag-region viewBox="0 0 110 16" width="110" height="16" aria-label="TUICommander">
           <defs>
             <linearGradient id="toolbar-name-grad" x1="0" y1="0" x2="110" y2="0" gradientUnits="userSpaceOnUse">
               <stop offset="0%" stop-color="#909090" />
@@ -149,9 +152,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
           <text x="0" y="12" fill="url(#toolbar-name-grad)" font-size="11" font-weight="700" letter-spacing="0.09em" font-family="system-ui,-apple-system,sans-serif">TUICommander</text>
         </svg>
         <button
-          class="toolbar-sidebar-toggle"
+          class={s.sidebarToggle}
           onClick={() => uiStore.toggleSidebar()}
-          title={uiStore.state.sidebarVisible ? `Hide Sidebar (${getModifierSymbol()}[)` : `Show Sidebar (${getModifierSymbol()}[)`}
+          title={uiStore.state.sidebarVisible ? `${t("toolbar.hideSidebar", "Hide Sidebar")} (${getModifierSymbol()}[)` : `${t("toolbar.showSidebar", "Show Sidebar")} (${getModifierSymbol()}[)`}
           style={{ position: "relative" }}
         >
           ◧
@@ -159,27 +162,27 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
         </button>
       </div>
 
-      <div class="toolbar-center" data-tauri-drag-region>
+      <div class={s.center} data-tauri-drag-region>
         <Show when={activeBranchName()}>
           <button
-            class="toolbar-branch"
+            class={s.branch}
             onClick={(e) => {
               e.stopPropagation();
               props.onBranchClick?.();
             }}
-            title="Rename branch"
+            title={t("toolbar.renameBranch", "Rename branch")}
           >
-            <svg class="toolbar-branch-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/></svg>
+            <svg class={s.branchIcon} viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/></svg>
             <Show when={activeRepoName()}>
-              <span class="toolbar-repo-name">{activeRepoName()}</span>
-              <span class="toolbar-branch-separator">/</span>
+              <span class={s.repoName}>{activeRepoName()}</span>
+              <span class={s.branchSeparator}>/</span>
             </Show>
-            <span class="toolbar-branch-name">{activeBranchName()}</span>
+            <span class={s.branchName}>{activeBranchName()}</span>
           </button>
         </Show>
       </div>
 
-      <div class="toolbar-right">
+      <div class={s.right}>
         {/* Last-item shortcut: shows the most recently added item from any source */}
         <Show when={lastItem()}>
           {(src) => {
@@ -187,23 +190,23 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
             const prSrc = () => src().kind === "pr" ? src() as { kind: "pr"; notif: PrNotification } : null;
             return (
               <button
-                class="activity-last-item-btn"
+                class={s.lastItemBtn}
                 onClick={handleLastItemClick}
-                title={(() => { const s = src(); return s.kind === "activity" ? s.item.title : s.notif.branch; })()}
+                title={(() => { const v = src(); return v.kind === "activity" ? v.item.title : v.notif.branch; })()}
               >
                 <Show when={activitySrc()} keyed>
-                  {(s) => (
+                  {(as) => (
                     <>
-                      <span class="activity-last-item-icon" innerHTML={s.item.icon} />
-                      <span class="activity-last-item-title">{s.item.title}</span>
+                      <span class={s.lastItemIcon} innerHTML={as.item.icon} />
+                      <span class={s.lastItemTitle}>{as.item.title}</span>
                     </>
                   )}
                 </Show>
                 <Show when={prSrc()} keyed>
-                  {(s) => (
+                  {(ps) => (
                     <>
                       <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354Z"/></svg>
-                      <span class="activity-last-item-title">{s.notif.branch}</span>
+                      <span class={s.lastItemTitle}>{ps.notif.branch}</span>
                     </>
                   )}
                 </Show>
@@ -214,25 +217,25 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 
         {/* Bell: aggregates PR notifications + activity store items */}
         <Show when={hasAnyItems()}>
-          <div class="pr-notif-wrapper" ref={notifRef}>
+          <div class={s.notifWrapper} ref={notifRef}>
             <button
-              class="pr-notif-bell"
+              class={s.bell}
               onClick={() => setShowNotifPopover(!showNotifPopover())}
-              title={`${totalBadgeCount()} notification(s)`}
+              title={`${totalBadgeCount()} ${t("toolbar.notifications", "notification(s)")}`}
             >
               <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
                 <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
               </svg>
-              <span class="pr-notif-count">{totalBadgeCount()}</span>
+              <span class={s.notifCount}>{totalBadgeCount()}</span>
             </button>
             <Show when={showNotifPopover()}>
-              <div class="pr-notif-popover">
+              <div class={s.popover}>
                 {/* PR Updates section (native, always first) */}
                 <Show when={activeNotifs().length > 0}>
-                  <div class="pr-notif-header">
-                    <span class="pr-notif-title">PR UPDATES</span>
-                    <button class="pr-notif-dismiss-all" onClick={() => { prNotificationsStore.dismissAll(); setShowNotifPopover(false); }}>
-                      Dismiss All
+                  <div class={s.notifHeader}>
+                    <span class={s.notifTitle}>{t("toolbar.prUpdates", "PR UPDATES")}</span>
+                    <button class={s.dismissAll} onClick={() => { prNotificationsStore.dismissAll(); setShowNotifPopover(false); }}>
+                      {t("toolbar.dismissAll", "Dismiss All")}
                     </button>
                   </div>
                   <For each={activeNotifs()}>
@@ -240,7 +243,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                       const info = NOTIFICATION_LABELS[notif.type];
                       return (
                         <div
-                          class={`pr-notif-item ${info.cls}`}
+                          class={cx(s.notifItem, info.cls)}
                           onClick={(e) => {
                             e.stopPropagation();
                             setShowNotifPopover(false);
@@ -249,10 +252,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                             });
                           }}
                         >
-                          <span class="pr-notif-icon">{info.icon}</span>
-                          <div class="pr-notif-details">
+                          <span class={s.notifIcon}>{info.icon}</span>
+                          <div class={s.notifDetails}>
                             <span
-                              class="pr-notif-repo"
+                              class={s.notifRepo}
                               style={(() => {
                                 const color = repoSettingsStore.get(notif.repoPath)?.color
                                   || repositoriesStore.getGroupForRepo(notif.repoPath)?.color;
@@ -261,10 +264,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                             >
                               {repositoriesStore.get(notif.repoPath)?.displayName ?? notif.repoPath.split("/").pop()}
                             </span>
-                            <span class="pr-notif-pr">#{notif.prNumber} {info.label}</span>
-                            <span class="pr-notif-branch" title={notif.title}>{notif.branch}</span>
+                            <span class={s.notifPr}>#{notif.prNumber} {info.label}</span>
+                            <span class={s.notifBranch} title={notif.title}>{notif.branch}</span>
                           </div>
-                          <button class="pr-notif-close" onClick={(e) => { e.stopPropagation(); prNotificationsStore.dismiss(notif.id); }}>&times;</button>
+                          <button class={s.notifClose} onClick={(e) => { e.stopPropagation(); prNotificationsStore.dismiss(notif.id); }}>&times;</button>
                         </div>
                       );
                     }}
@@ -277,37 +280,37 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                     const sectionItems = () => activityStore.getForSection(section.id);
                     return (
                       <Show when={sectionItems().length > 0}>
-                        <div class="activity-section-header">
-                          <span class="activity-section-label">{section.label}</span>
+                        <div class={s.sectionHeader}>
+                          <span class={s.sectionLabel}>{section.label}</span>
                           <Show when={section.canDismissAll}>
                             <button
-                              class="activity-dismiss-all"
+                              class={s.activityDismissAll}
                               onClick={() => activityStore.dismissSection(section.id)}
                             >
-                              Dismiss All
+                              {t("toolbar.dismissAll", "Dismiss All")}
                             </button>
                           </Show>
                         </div>
                         <For each={sectionItems()}>
                           {(item) => (
                             <div
-                              class="activity-item"
+                              class={s.activityItem}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setShowNotifPopover(false);
                                 openActivityItem(item);
                               }}
                             >
-                              <span class="activity-item-icon" innerHTML={item.icon} />
-                              <div class="activity-item-body">
-                                <span class="activity-item-title">{item.title}</span>
+                              <span class={s.activityItemIcon} innerHTML={item.icon} />
+                              <div class={s.activityItemBody}>
+                                <span class={s.activityItemTitle}>{item.title}</span>
                                 <Show when={item.subtitle}>
-                                  <span class="activity-item-subtitle">{item.subtitle}</span>
+                                  <span class={s.activityItemSubtitle}>{item.subtitle}</span>
                                 </Show>
                               </div>
                               <Show when={item.dismissible}>
                                 <button
-                                  class="activity-item-dismiss"
+                                  class={s.activityItemDismiss}
                                   onClick={(e) => { e.stopPropagation(); activityStore.dismissItem(item.id); }}
                                 >
                                   &times;

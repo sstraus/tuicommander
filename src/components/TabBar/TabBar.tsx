@@ -7,7 +7,17 @@ import { editorTabsStore } from "../../stores/editorTabs";
 import { settingsStore } from "../../stores/settings";
 import { getModifierSymbol } from "../../platform";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
 import type { ContextMenuItem } from "../ContextMenu/ContextMenu";
+import s from "./TabBar.module.css";
+
+/** Map awaiting input type to module class */
+const AWAITING_CLASSES: Record<string, string> = {
+  question: s.awaitingQuestion,
+  error: s.awaitingError,
+  confirmation: s.awaitingConfirmation,
+};
 
 export interface TabBarProps {
   quickSwitcherActive?: boolean;
@@ -39,10 +49,10 @@ export const TabBar: Component<TabBarProps> = (props) => {
   const mod = getModifierSymbol();
 
   const getNewTabMenuItems = (): ContextMenuItem[] => [
-    { label: "New Tab", shortcut: `${mod}T`, action: () => props.onNewTab() },
+    { label: t("tabBar.newTab", "New Tab"), shortcut: `${mod}T`, action: () => props.onNewTab() },
     { label: "", separator: true, action: () => {} },
-    { label: "Split Vertically", shortcut: `${mod}\\`, action: () => props.onSplitVertical?.(), disabled: isSplitActive() },
-    { label: "Split Horizontally", shortcut: `${mod}Alt+\\`, action: () => props.onSplitHorizontal?.(), disabled: isSplitActive() },
+    { label: t("tabBar.splitVertical", "Split Vertically"), shortcut: `${mod}\\`, action: () => props.onSplitVertical?.(), disabled: isSplitActive() },
+    { label: t("tabBar.splitHorizontal", "Split Horizontally"), shortcut: `${mod}Alt+\\`, action: () => props.onSplitHorizontal?.(), disabled: isSplitActive() },
   ];
 
   const openNewTabMenu = (e: MouseEvent) => {
@@ -60,9 +70,9 @@ export const TabBar: Component<TabBarProps> = (props) => {
       const ids = diffTabsStore.getIds();
       const idx = ids.indexOf(id);
       return [
-        { label: "Close Tab", action: () => { diffTabsStore.remove(id); props.onTabClose(id); } },
-        { label: "Close Other Tabs", action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
-        { label: "Close Tabs to the Right", action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
+        { label: t("tabBar.closeTab", "Close Tab"), action: () => { diffTabsStore.remove(id); props.onTabClose(id); } },
+        { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
+        { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
       ];
     }
 
@@ -70,9 +80,9 @@ export const TabBar: Component<TabBarProps> = (props) => {
       const ids = mdTabsStore.getIds();
       const idx = ids.indexOf(id);
       return [
-        { label: "Close Tab", action: () => { mdTabsStore.remove(id); props.onTabClose(id); } },
-        { label: "Close Other Tabs", action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
-        { label: "Close Tabs to the Right", action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
+        { label: t("tabBar.closeTab", "Close Tab"), action: () => { mdTabsStore.remove(id); props.onTabClose(id); } },
+        { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
+        { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
       ];
     }
 
@@ -80,9 +90,9 @@ export const TabBar: Component<TabBarProps> = (props) => {
       const ids = editorTabsStore.getIds();
       const idx = ids.indexOf(id);
       return [
-        { label: "Close Tab", action: () => { editorTabsStore.remove(id); props.onTabClose(id); } },
-        { label: "Close Other Tabs", action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
-        { label: "Close Tabs to the Right", action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
+        { label: t("tabBar.closeTab", "Close Tab"), action: () => { editorTabsStore.remove(id); props.onTabClose(id); } },
+        { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
+        { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
       ];
     }
 
@@ -90,11 +100,11 @@ export const TabBar: Component<TabBarProps> = (props) => {
     const ids = activeTerminals();
     const idx = ids.indexOf(id);
     return [
-      { label: "Close Tab", shortcut: `${getModifierSymbol()}W`, action: () => props.onTabClose(id) },
-      { label: "Close Other Tabs", action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
-      { label: "Close Tabs to the Right", action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
+      { label: t("tabBar.closeTab", "Close Tab"), shortcut: `${getModifierSymbol()}W`, action: () => props.onTabClose(id) },
+      { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
+      { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
       { label: "", separator: true, action: () => {} },
-      { label: "Rename Tab", action: () => setEditingId(id) },
+      { label: t("tabBar.renameTab", "Rename Tab"), action: () => setEditingId(id) },
     ];
   };
 
@@ -194,7 +204,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
   };
 
   return (
-    <div id="tabs">
+    <div class={s.tabs}>
       {/* Terminal tabs */}
       <For each={activeTerminals()}>
         {(id, index) => {
@@ -203,11 +213,6 @@ export const TabBar: Component<TabBarProps> = (props) => {
           const hasActivity = () => !isActive() && terminal()?.activity;
           const isIdle = () => !isActive() && terminal()?.shellState === "idle";
           const awaitingInput = () => terminal()?.awaitingInput;
-          const awaitingClass = () => {
-            const type = awaitingInput();
-            if (!type) return "";
-            return `awaiting-input awaiting-${type}`;
-          };
           const isDragging = () => draggingId() === id;
           const isDragOver = () => dragOverId() === id && draggingId() !== id;
           const progress = () => terminal()?.progress;
@@ -240,7 +245,17 @@ export const TabBar: Component<TabBarProps> = (props) => {
           return (
             <Show when={terminal() && !isSecondSplitPane()}>
               <div
-                class={`tab ${(isActive() || isActiveInUnified()) ? "active" : ""} ${awaitingClass()} ${hasActivity() ? "has-activity" : ""} ${isIdle() ? "shell-idle" : ""} ${isDragging() ? "dragging" : ""} ${isDragOver() && dragOverSide() === "left" ? "drag-over-left" : ""} ${isDragOver() && dragOverSide() === "right" ? "drag-over-right" : ""}`}
+                class={cx(
+                  s.tab,
+                  (isActive() || isActiveInUnified()) && s.active,
+                  awaitingInput() && s.awaitingInput,
+                  awaitingInput() && AWAITING_CLASSES[awaitingInput()!],
+                  hasActivity() && s.hasActivity,
+                  isIdle() && s.shellIdle,
+                  isDragging() && s.dragging,
+                  isDragOver() && dragOverSide() === "left" && s.dragOverLeft,
+                  isDragOver() && dragOverSide() === "right" && s.dragOverRight,
+                )}
                 onClick={() => props.onTabSelect(id)}
                 onAuxClick={(e) => {
                   if (e.button === 1) handleCloseTab(e);
@@ -258,17 +273,17 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   setEditingId(id);
                 }}
               >
-                <span class="tab-icon">●</span>
+                <span class={s.tabIcon}>●</span>
                 <Show when={isEditing()} fallback={
-                  <span class="tab-name">
+                  <span class={s.tabName}>
                     {isFirstSplitPane() ? unifiedName() : terminal()?.name}
                     {progress() !== null && progress() !== undefined && (
-                      <span class="tab-progress-label">{progress()}%</span>
+                      <span class={s.progressLabel}>{progress()}%</span>
                     )}
                   </span>
                 }>
                   <input
-                    class="tab-name-input"
+                    class={s.tabNameInput}
                     type="text"
                     value={terminal()?.name || ""}
                     ref={(el) => {
@@ -290,14 +305,14 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   />
                 </Show>
                 {progress() !== null && progress() !== undefined && (
-                  <div class="tab-progress" style={{ width: `${progress()}%` }} />
+                  <div class={s.progress} style={{ width: `${progress()}%` }} />
                 )}
                 <Show when={props.quickSwitcherActive && index() < 9}>
-                  <span class="tab-shortcut-badge">{getModifierSymbol()}{index() + 1}</span>
+                  <span class={s.shortcutBadge}>{getModifierSymbol()}{index() + 1}</span>
                 </Show>
                 <button
-                  class="tab-close"
-                  title="Close"
+                  class={s.tabClose}
+                  title={t("tabBar.close", "Close")}
                   onClick={handleCloseTab}
                 >
                   ×
@@ -317,7 +332,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
           return (
             <Show when={diffTab()}>
               <div
-                class={`tab diff-tab ${isActive() ? "active" : ""}`}
+                class={cx(s.tab, s.diffTab, isActive() && s.active)}
                 onClick={() => {
                   diffTabsStore.setActive(id);
                   props.onTabSelect(id);
@@ -326,11 +341,11 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={diffTab()?.filePath}
               >
-                <span class="tab-icon">📄</span>
-                <span class="tab-name">{diffTab()?.fileName}{diffTab()?.scope ? ` (${diffTab()?.scope?.slice(0, 7)})` : ""}</span>
+                <span class={s.tabIcon}>📄</span>
+                <span class={s.tabName}>{diffTab()?.fileName}{diffTab()?.scope ? ` (${diffTab()?.scope?.slice(0, 7)})` : ""}</span>
                 <button
-                  class="tab-close"
-                  title="Close"
+                  class={s.tabClose}
+                  title={t("tabBar.close", "Close")}
                   onClick={(e) => {
                     e.stopPropagation();
                     diffTabsStore.remove(id);
@@ -354,20 +369,20 @@ export const TabBar: Component<TabBarProps> = (props) => {
           return (
             <Show when={mdTab()}>
               <div
-                class={`tab md-tab ${isActive() ? "active" : ""}`}
+                class={cx(s.tab, s.mdTab, isActive() && s.active)}
                 onClick={() => {
                   mdTabsStore.setActive(id);
                   props.onTabSelect(id);
                 }}
                 onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); mdTabsStore.remove(id); props.onTabClose(id); } }}
                 onContextMenu={(e) => openTabContextMenu(e, id)}
-                title={(() => { const t = mdTab(); return t?.type === "file" ? t.filePath : t?.title; })()}
+                title={(() => { const tab = mdTab(); return tab?.type === "file" ? tab.filePath : tab?.title; })()}
               >
-                <span class="tab-icon">📝</span>
-                <span class="tab-name">{(() => { const t = mdTab(); return t?.type === "file" ? t.fileName : t?.title; })()}</span>
+                <span class={s.tabIcon}>📝</span>
+                <span class={s.tabName}>{(() => { const tab = mdTab(); return tab?.type === "file" ? tab.fileName : tab?.title; })()}</span>
                 <button
-                  class="tab-close"
-                  title="Close"
+                  class={s.tabClose}
+                  title={t("tabBar.close", "Close")}
                   onClick={(e) => {
                     e.stopPropagation();
                     mdTabsStore.remove(id);
@@ -391,7 +406,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
           return (
             <Show when={editTab()}>
               <div
-                class={`tab edit-tab ${isActive() ? "active" : ""}`}
+                class={cx(s.tab, s.editTab, isActive() && s.active)}
                 onClick={() => {
                   editorTabsStore.setActive(id);
                   props.onTabSelect(id);
@@ -400,11 +415,11 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={editTab()?.filePath}
               >
-                <span class="tab-icon">{editTab()?.isDirty ? "●" : "✎"}</span>
-                <span class="tab-name">{editTab()?.fileName}</span>
+                <span class={s.tabIcon}>{editTab()?.isDirty ? "●" : "✎"}</span>
+                <span class={s.tabName}>{editTab()?.fileName}</span>
                 <button
-                  class="tab-close"
-                  title="Close"
+                  class={s.tabClose}
+                  title={t("tabBar.close", "Close")}
                   onClick={(e) => {
                     e.stopPropagation();
                     editorTabsStore.remove(id);
@@ -420,7 +435,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
       </For>
 
       {/* New Tab button: click = new tab, right-click = split menu */}
-      <button class="tab-new-btn" onClick={() => props.onNewTab()} onContextMenu={openNewTabMenu} title={`New Tab (${mod}T)`} style={{ position: "relative" }}>
+      <button class={s.newBtn} onClick={() => props.onNewTab()} onContextMenu={openNewTabMenu} title={`${t("tabBar.newTab", "New Tab")} (${mod}T)`} style={{ position: "relative" }}>
         +
         <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{mod}T</span>
       </button>

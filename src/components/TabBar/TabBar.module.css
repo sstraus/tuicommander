@@ -1,0 +1,287 @@
+/* TabBar */
+.tabs {
+  display: flex;
+  flex: 1;
+  gap: 0;
+  overflow-x: auto;
+  align-items: stretch;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  background: transparent;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-right: 1px solid var(--border);
+  position: relative;
+}
+
+.tab:hover {
+  background: var(--bg-highlight);
+}
+
+.tab.active {
+  background: var(--bg-primary);
+}
+
+.tab.active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.tabIcon {
+  font-size: 6px;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+  opacity: 0.3;
+}
+
+.tabName {
+  font-size: var(--font-md);
+  color: var(--fg-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.tab.active .tabName {
+  color: var(--fg-primary);
+}
+
+.tabNameInput {
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  color: var(--fg-primary);
+  font-size: var(--font-md);
+  font-family: inherit;
+  padding: 0 4px;
+  min-width: 40px;
+  max-width: 200px;
+  outline: none;
+}
+
+.tabClose {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-lg);
+  line-height: 1;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  transition: all 0.1s;
+  opacity: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.tab:hover .tabClose {
+  opacity: 1;
+}
+
+.tabClose:hover {
+  background: var(--error);
+  color: var(--text-on-error);
+}
+
+.newBtn {
+  width: 28px;
+  min-width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-xl);
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: auto;
+  align-self: stretch;
+}
+
+.newBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+/* Tab activity/idle indicators */
+.tab.hasActivity .tabIcon {
+  color: var(--accent);
+  opacity: 1;
+  font-size: 8px;
+  animation: pulse-opacity 1.5s ease-in-out 3;
+}
+
+.tab.shellIdle .tabIcon {
+  color: var(--success);
+  opacity: 1;
+  font-size: 8px;
+}
+
+.tab.awaitingInput::after {
+  content: "●";
+  margin-left: 6px;
+  font-size: 8px;
+  color: var(--accent);
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+.tab.awaitingQuestion::after {
+  color: var(--accent);
+}
+
+.tab.awaitingError::after {
+  color: var(--error);
+}
+
+.tab.awaitingConfirmation::after {
+  color: var(--warning);
+}
+
+/* Diff tabs */
+.tab.diffTab {
+  background: linear-gradient(to bottom, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+  border-bottom: 2px solid rgba(239, 68, 68, 0.3);
+}
+
+.tab.diffTab:hover {
+  background: linear-gradient(to bottom, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.08));
+}
+
+.tab.diffTab.active {
+  background: linear-gradient(to bottom, rgba(239, 68, 68, 0.25), rgba(239, 68, 68, 0.15));
+  border-bottom-color: #ef4444;
+}
+
+.tab.diffTab.active::before {
+  display: none;
+}
+
+.tab.diffTab .tabIcon {
+  font-size: var(--font-lg);
+}
+
+/* Editor tabs */
+.tab.editTab {
+  background: linear-gradient(to bottom, rgba(122, 162, 247, 0.1), rgba(122, 162, 247, 0.05));
+  border-bottom: 2px solid rgba(122, 162, 247, 0.3);
+}
+
+.tab.editTab:hover {
+  background: linear-gradient(to bottom, rgba(122, 162, 247, 0.15), rgba(122, 162, 247, 0.08));
+}
+
+.tab.editTab.active {
+  background: linear-gradient(to bottom, rgba(122, 162, 247, 0.25), rgba(122, 162, 247, 0.15));
+  border-bottom-color: var(--accent);
+}
+
+.tab.editTab.active::before {
+  display: none;
+}
+
+.tab.editTab .tabIcon {
+  font-size: var(--font-lg);
+}
+
+/* Markdown tabs */
+.tab.mdTab {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%);
+  border-bottom: 2px solid rgba(34, 197, 94, 0.3);
+}
+
+.tab.mdTab:hover {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.08) 100%);
+  border-bottom-color: rgba(34, 197, 94, 0.5);
+}
+
+.tab.mdTab.active {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.1) 100%);
+  border-bottom-color: #22c55e;
+}
+
+.tab.mdTab.active::before {
+  display: none;
+}
+
+.tab.mdTab .tabIcon {
+  font-size: var(--font-lg);
+}
+
+/* Drag & drop */
+.tab.dragging {
+  opacity: 0.4;
+}
+
+.tab.dragOverLeft::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--accent);
+  z-index: 10;
+}
+
+.tab.dragOverRight::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--accent);
+  z-index: 10;
+}
+
+/* Quick switcher shortcut badges */
+.shortcutBadge {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  padding: 1px 5px;
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  z-index: 10;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Progress indicator */
+.progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.progressLabel {
+  font-size: var(--font-2xs);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  margin-left: 4px;
+}

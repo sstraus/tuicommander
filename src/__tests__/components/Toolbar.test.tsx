@@ -77,32 +77,32 @@ describe("Toolbar", () => {
 
   it("renders toolbar element", () => {
     const { container } = render(() => <Toolbar />);
-    expect(container.querySelector("#toolbar")).not.toBeNull();
+    expect(container.querySelector(".toolbar")).not.toBeNull();
   });
 
   it("renders sidebar toggle button", () => {
     const { container } = render(() => <Toolbar />);
-    const toggle = container.querySelector(".toolbar-sidebar-toggle");
+    const toggle = container.querySelector(".sidebarToggle");
     expect(toggle).not.toBeNull();
   });
 
-  it("renders toolbar-left, toolbar-center, and toolbar-right sections", () => {
+  it("renders left, center, and right sections", () => {
     const { container } = render(() => <Toolbar />);
-    expect(container.querySelector(".toolbar-left")).not.toBeNull();
-    expect(container.querySelector(".toolbar-center")).not.toBeNull();
-    expect(container.querySelector(".toolbar-right")).not.toBeNull();
+    expect(container.querySelector(".left")).not.toBeNull();
+    expect(container.querySelector(".center")).not.toBeNull();
+    expect(container.querySelector(".right")).not.toBeNull();
   });
 
   it("has data-tauri-drag-region attribute", () => {
     const { container } = render(() => <Toolbar />);
-    const toolbar = container.querySelector("#toolbar");
+    const toolbar = container.querySelector(".toolbar");
     expect(toolbar!.getAttribute("data-tauri-drag-region")).not.toBeNull();
   });
 
   it("sidebar toggle button click calls uiStore.toggleSidebar", () => {
     const spy = vi.spyOn(uiStore, "toggleSidebar");
     const { container } = render(() => <Toolbar />);
-    const toggle = container.querySelector(".toolbar-sidebar-toggle")!;
+    const toggle = container.querySelector(".sidebarToggle")!;
     fireEvent.click(toggle);
     expect(spy).toHaveBeenCalledOnce();
     spy.mockRestore();
@@ -111,14 +111,14 @@ describe("Toolbar", () => {
   it("sidebar toggle title reflects sidebar visible state", () => {
     uiStore.setSidebarVisible(true);
     const { container } = render(() => <Toolbar />);
-    const toggle = container.querySelector(".toolbar-sidebar-toggle")!;
+    const toggle = container.querySelector(".sidebarToggle")!;
     expect(toggle.getAttribute("title")).toBe(`Hide Sidebar (${getModifierSymbol()}[)`);
   });
 
   it("sidebar toggle title when sidebar hidden", () => {
     uiStore.setSidebarVisible(false);
     const { container } = render(() => <Toolbar />);
-    const toggle = container.querySelector(".toolbar-sidebar-toggle")!;
+    const toggle = container.querySelector(".sidebarToggle")!;
     expect(toggle.getAttribute("title")).toBe(`Show Sidebar (${getModifierSymbol()}[)`);
   });
 
@@ -130,9 +130,9 @@ describe("Toolbar", () => {
     repositoriesStore.setActiveBranch(repoPath, "feature-x");
 
     const { container } = render(() => <Toolbar />);
-    const branchBtn = container.querySelector(".toolbar-branch");
+    const branchBtn = container.querySelector(".branch");
     expect(branchBtn).not.toBeNull();
-    const branchName = container.querySelector(".toolbar-branch-name");
+    const branchName = container.querySelector(".branchName");
     expect(branchName!.textContent).toBe("feature-x");
   });
 
@@ -145,14 +145,14 @@ describe("Toolbar", () => {
     repositoriesStore.setActiveBranch(repoPath, "main");
 
     const { container } = render(() => <Toolbar onBranchClick={handleBranchClick} />);
-    const branchBtn = container.querySelector(".toolbar-branch")!;
+    const branchBtn = container.querySelector(".branch")!;
     fireEvent.click(branchBtn);
     expect(handleBranchClick).toHaveBeenCalledOnce();
   });
 
   it("no branch button when no active branch", () => {
     const { container } = render(() => <Toolbar />);
-    expect(container.querySelector(".toolbar-branch")).toBeNull();
+    expect(container.querySelector(".branch")).toBeNull();
   });
 
   it("no branch button when activeRepoPath but no activeBranch", () => {
@@ -161,7 +161,7 @@ describe("Toolbar", () => {
     repositoriesStore.setActive(repoPath);
 
     const { container } = render(() => <Toolbar />);
-    expect(container.querySelector(".toolbar-branch")).toBeNull();
+    expect(container.querySelector(".branch")).toBeNull();
   });
 
   it("no branch button when activeRepoPath and activeBranch not in branches record", () => {
@@ -171,7 +171,7 @@ describe("Toolbar", () => {
     repositoriesStore.setActiveBranch(repoPath, "nonexistent");
 
     const { container } = render(() => <Toolbar />);
-    expect(container.querySelector(".toolbar-branch")).toBeNull();
+    expect(container.querySelector(".branch")).toBeNull();
   });
 
   it("branch button has title 'Rename branch'", () => {
@@ -182,7 +182,7 @@ describe("Toolbar", () => {
     repositoriesStore.setActiveBranch(repoPath, "main");
 
     const { container } = render(() => <Toolbar />);
-    const branchBtn = container.querySelector(".toolbar-branch")!;
+    const branchBtn = container.querySelector(".branch")!;
     expect(branchBtn.getAttribute("title")).toBe("Rename branch");
   });
 
@@ -194,7 +194,7 @@ describe("Toolbar", () => {
     repositoriesStore.setActiveBranch(repoPath, "dev");
 
     const { container } = render(() => <Toolbar />);
-    const icon = container.querySelector(".toolbar-branch-icon");
+    const icon = container.querySelector(".branchIcon");
     expect(icon).not.toBeNull();
     expect(icon!.tagName.toLowerCase()).toBe("svg");
   });
@@ -252,20 +252,20 @@ describe("Toolbar", () => {
   describe("PR notification bell", () => {
     it("hides bell when no active notifications or activity items", () => {
       const { container } = render(() => <Toolbar />);
-      expect(container.querySelector(".pr-notif-bell")).toBeNull();
+      expect(container.querySelector(".bell")).toBeNull();
     });
 
     it("shows bell when there are active PR notifications", () => {
       addTestNotif();
       const { container } = render(() => <Toolbar />);
-      expect(container.querySelector(".pr-notif-bell")).not.toBeNull();
+      expect(container.querySelector(".bell")).not.toBeNull();
     });
 
     it("shows bell when there are active activity items", () => {
       activityStore.registerSection({ id: "plan", label: "PLAN", priority: 10, canDismissAll: false });
       addTestActivityItem();
       const { container } = render(() => <Toolbar />);
-      expect(container.querySelector(".pr-notif-bell")).not.toBeNull();
+      expect(container.querySelector(".bell")).not.toBeNull();
     });
 
     it("bell badge count is sum of PR + activity items", () => {
@@ -274,32 +274,32 @@ describe("Toolbar", () => {
       addTestActivityItem({ id: "a1" });
       addTestActivityItem({ id: "a2" });
       const { container } = render(() => <Toolbar />);
-      const count = container.querySelector(".pr-notif-count");
+      const count = container.querySelector(".notifCount");
       expect(count?.textContent).toBe("3"); // 1 PR + 2 activity
     });
 
     it("clicking bell toggles popover open", () => {
       addTestNotif();
       const { container } = render(() => <Toolbar />);
-      const bell = container.querySelector(".pr-notif-bell")!;
+      const bell = container.querySelector(".bell")!;
       fireEvent.click(bell);
-      expect(container.querySelector(".pr-notif-popover")).not.toBeNull();
+      expect(container.querySelector(".popover")).not.toBeNull();
     });
 
     it("clicking bell again closes popover", () => {
       addTestNotif();
       const { container } = render(() => <Toolbar />);
-      const bell = container.querySelector(".pr-notif-bell")!;
+      const bell = container.querySelector(".bell")!;
       fireEvent.click(bell);
       fireEvent.click(bell);
-      expect(container.querySelector(".pr-notif-popover")).toBeNull();
+      expect(container.querySelector(".popover")).toBeNull();
     });
 
     it("popover shows PR notification items", () => {
       addTestNotif({ type: "ci_failed", prNumber: 99 });
       const { container } = render(() => <Toolbar />);
-      fireEvent.click(container.querySelector(".pr-notif-bell")!);
-      const items = container.querySelectorAll(".pr-notif-item");
+      fireEvent.click(container.querySelector(".bell")!);
+      const items = container.querySelectorAll(".notifItem");
       expect(items.length).toBe(1);
       expect(items[0].textContent).toContain("#99");
     });
@@ -308,17 +308,17 @@ describe("Toolbar", () => {
       addTestNotif({ branch: "a" });
       addTestNotif({ branch: "b", prNumber: 43 });
       const { container } = render(() => <Toolbar />);
-      fireEvent.click(container.querySelector(".pr-notif-bell")!);
-      fireEvent.click(container.querySelector(".pr-notif-dismiss-all")!);
+      fireEvent.click(container.querySelector(".bell")!);
+      fireEvent.click(container.querySelector(".dismissAll")!);
       expect(prNotificationsStore.getActive().length).toBe(0);
-      expect(container.querySelector(".pr-notif-popover")).toBeNull();
+      expect(container.querySelector(".popover")).toBeNull();
     });
 
     it("individual PR dismiss button removes notification", () => {
       addTestNotif();
       const { container } = render(() => <Toolbar />);
-      fireEvent.click(container.querySelector(".pr-notif-bell")!);
-      const closeBtn = container.querySelector(".pr-notif-close")!;
+      fireEvent.click(container.querySelector(".bell")!);
+      const closeBtn = container.querySelector(".notifClose")!;
       fireEvent.click(closeBtn);
       expect(prNotificationsStore.getActive().length).toBe(0);
     });
@@ -326,8 +326,8 @@ describe("Toolbar", () => {
     it("clicking PR notification item opens PrDetailPopover", async () => {
       addTestNotif({ repoPath: "/my/repo", branch: "feature", prNumber: 42 });
       const { container } = render(() => <Toolbar />);
-      fireEvent.click(container.querySelector(".pr-notif-bell")!);
-      const item = container.querySelector(".pr-notif-item")!;
+      fireEvent.click(container.querySelector(".bell")!);
+      const item = container.querySelector(".notifItem")!;
       fireEvent.click(item);
 
       await waitFor(() => {
@@ -347,39 +347,39 @@ describe("Toolbar", () => {
     it("shows activity section header with label", () => {
       addTestActivityItem({ title: "My Plan" });
       const { container } = render(() => <Toolbar />);
-      fireEvent.click(container.querySelector(".pr-notif-bell")!);
-      const header = container.querySelector(".activity-section-label");
+      fireEvent.click(container.querySelector(".bell")!);
+      const header = container.querySelector(".sectionLabel");
       expect(header?.textContent).toBe("ACTIVE PLAN");
     });
 
     it("shows activity item title", () => {
       addTestActivityItem({ title: "My Plan" });
       const { container } = render(() => <Toolbar />);
-      fireEvent.click(container.querySelector(".pr-notif-bell")!);
-      const title = container.querySelector(".activity-item-title");
+      fireEvent.click(container.querySelector(".bell")!);
+      const title = container.querySelector(".activityItemTitle");
       expect(title?.textContent).toBe("My Plan");
     });
 
     it("shows activity item subtitle when present", () => {
       addTestActivityItem({ title: "My Plan", subtitle: "/repo/plans/foo.md" });
       const { container } = render(() => <Toolbar />);
-      fireEvent.click(container.querySelector(".pr-notif-bell")!);
-      const subtitle = container.querySelector(".activity-item-subtitle");
+      fireEvent.click(container.querySelector(".bell")!);
+      const subtitle = container.querySelector(".activityItemSubtitle");
       expect(subtitle?.textContent).toBe("/repo/plans/foo.md");
     });
 
     it("clicking dismissible activity item shows dismiss button", () => {
       addTestActivityItem();
       const { container } = render(() => <Toolbar />);
-      fireEvent.click(container.querySelector(".pr-notif-bell")!);
-      expect(container.querySelector(".activity-item-dismiss")).not.toBeNull();
+      fireEvent.click(container.querySelector(".bell")!);
+      expect(container.querySelector(".activityItemDismiss")).not.toBeNull();
     });
 
     it("clicking activity item dismiss removes it from store", () => {
       addTestActivityItem({ id: "act-x" });
       const { container } = render(() => <Toolbar />);
-      fireEvent.click(container.querySelector(".pr-notif-bell")!);
-      fireEvent.click(container.querySelector(".activity-item-dismiss")!);
+      fireEvent.click(container.querySelector(".bell")!);
+      fireEvent.click(container.querySelector(".activityItemDismiss")!);
       expect(activityStore.getActive().find((i) => i.id === "act-x")).toBeUndefined();
     });
   });
@@ -390,34 +390,34 @@ describe("Toolbar", () => {
   describe("last-item shortcut button", () => {
     it("hidden when no items exist", () => {
       const { container } = render(() => <Toolbar />);
-      expect(container.querySelector(".activity-last-item-btn")).toBeNull();
+      expect(container.querySelector(".lastItemBtn")).toBeNull();
     });
 
     it("visible when an activity item exists", () => {
       activityStore.registerSection({ id: "plan", label: "PLAN", priority: 10, canDismissAll: false });
       addTestActivityItem({ title: "My Plan" });
       const { container } = render(() => <Toolbar />);
-      expect(container.querySelector(".activity-last-item-btn")).not.toBeNull();
+      expect(container.querySelector(".lastItemBtn")).not.toBeNull();
     });
 
     it("visible when a PR notification exists", () => {
       addTestNotif({ branch: "my-feature" });
       const { container } = render(() => <Toolbar />);
-      expect(container.querySelector(".activity-last-item-btn")).not.toBeNull();
+      expect(container.querySelector(".lastItemBtn")).not.toBeNull();
     });
 
     it("shows activity item title in last-item button", () => {
       activityStore.registerSection({ id: "plan", label: "PLAN", priority: 10, canDismissAll: false });
       addTestActivityItem({ title: "Active Plan" });
       const { container } = render(() => <Toolbar />);
-      const btn = container.querySelector(".activity-last-item-btn");
+      const btn = container.querySelector(".lastItemBtn");
       expect(btn?.textContent).toContain("Active Plan");
     });
 
     it("shows PR branch name when PR is the last item", () => {
       addTestNotif({ branch: "hotfix/critical" });
       const { container } = render(() => <Toolbar />);
-      const btn = container.querySelector(".activity-last-item-btn");
+      const btn = container.querySelector(".lastItemBtn");
       expect(btn?.textContent).toContain("hotfix/critical");
     });
   });
