@@ -123,9 +123,10 @@ describe("SettingsPanel", () => {
     const navItems = container.querySelectorAll(".navItem");
     const labels = Array.from(navItems).map((n) => n.textContent);
     expect(labels).toContain("General");
+    expect(labels).toContain("Appearance");
     expect(labels).toContain("Notifications");
     expect(labels).not.toContain("Agents");
-    expect(labels).not.toContain("Appearance");
+    expect(labels).not.toContain("Groups");
   });
 
   it("close button calls onClose", () => {
@@ -153,15 +154,14 @@ describe("SettingsPanel", () => {
       <SettingsPanel visible={true} onClose={() => {}} />
     ));
 
-    // Default is General
+    // Default is General (visual settings moved to Appearance tab)
     const headings = container.querySelectorAll(".section h3");
-    expect(headings.length).toBeGreaterThanOrEqual(6);
+    expect(headings.length).toBeGreaterThanOrEqual(5);
     expect(headings[0]!.textContent).toBe("General");
     expect(headings[1]!.textContent).toBe("Confirmations");
     expect(headings[2]!.textContent).toBe("Power Management");
     expect(headings[3]!.textContent).toBe("Updates");
     expect(headings[4]!.textContent).toBe("Git Integration");
-    expect(headings[5]!.textContent).toBe("Appearance");
 
     // Click Notifications nav item
     const navItems = container.querySelectorAll(".navItem");

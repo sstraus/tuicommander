@@ -408,17 +408,21 @@
 ## 11. Settings
 
 ### 11.1 General
-- Terminal font: 11 bundled monospace fonts (JetBrains Mono default)
-- Default font size: 8-32px
-- Shell: custom path or system default
-- Default IDE: editors, IDEs, terminals, git tools, utilities
-- Terminal theme: multiple themes, color swatches
+- Language, Default IDE, Shell
 - Confirmations: quit, close tab
+- Power management: prevent sleep when busy
+- Updates: auto-check, check now
+- Git integration: auto-show PR popover
+- Repository defaults: base branch, file handling, setup/run scripts
 
-### 11.2 Agents
-- Primary agent selection (10 agents)
-- Auto-recovery toggle and interval
-- Reset to primary button
+### 11.2 Appearance
+- Terminal theme: multiple themes, color swatches
+- Terminal font: 11 bundled monospace fonts (JetBrains Mono default)
+- Default font size: 8-32px slider
+- Split tab mode: separate / unified
+- Max tab name length: 10-60 slider
+- Repository groups: create, rename, delete, color-coded
+- Reset panel sizes: restore sidebar and panel widths to defaults
 
 ### 11.3 Services
 - MCP HTTP server: enable/disable, port, session count

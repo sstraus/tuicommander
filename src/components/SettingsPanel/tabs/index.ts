@@ -1,7 +1,7 @@
 export { GeneralTab } from "./GeneralTab";
+export { AppearanceTab } from "./AppearanceTab";
 export { NotificationsTab } from "./NotificationsTab";
 export { ServicesTab } from "./ServicesTab";
-export { GroupsTab } from "./GroupsTab";
 export { KeyboardShortcutsTab } from "./KeyboardShortcutsTab";
 export { PluginsTab } from "./PluginsTab";
 export { AboutTab } from "./AboutTab";

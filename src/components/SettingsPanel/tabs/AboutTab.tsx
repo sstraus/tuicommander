@@ -59,6 +59,10 @@ export const AboutTab: Component = () => {
           Tauri 2 &middot; SolidJS &middot; xterm.js &middot; Rust
         </p>
       </div>
+
+      <div class={s.group}>
+        <p class={s.hint}>&copy; 2026 Stefano Straus &middot; stefano@straus.it</p>
+      </div>
     </div>
   );
 };

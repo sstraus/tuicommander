@@ -11,7 +11,7 @@ import {
   GeneralTab,
   NotificationsTab,
   ServicesTab,
-  GroupsTab,
+  AppearanceTab,
   KeyboardShortcutsTab,
   PluginsTab,
   AboutTab,
@@ -35,7 +35,7 @@ export interface SettingsPanelProps {
 
 const GLOBAL_TABS: SettingsShellTab[] = [
   { key: "general", label: t("settings.general", "General") },
-  { key: "groups", label: t("settings.groups", "Groups") },
+  { key: "appearance", label: t("settings.appearance", "Appearance") },
   { key: "shortcuts", label: t("settings.keyboardShortcuts", "Keyboard Shortcuts") },
   { key: "notifications", label: t("settings.notifications", "Notifications") },
   { key: "dictation", label: t("settings.dictation", "Dictation") },
@@ -154,8 +154,8 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
       <Show when={activeTab() === "general"}>
         <GeneralTab />
       </Show>
-      <Show when={activeTab() === "groups"}>
-        <GroupsTab />
+      <Show when={activeTab() === "appearance"}>
+        <AppearanceTab />
       </Show>
       <Show when={activeTab() === "notifications"}>
         <NotificationsTab />

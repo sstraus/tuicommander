@@ -435,7 +435,7 @@
   border-color: var(--accent);
 }
 
-/* ── Color Picker (shared by GroupsTab + RepoWorktreeTab) ── */
+/* ── Color Picker (shared by AppearanceTab + RepoWorktreeTab) ── */
 .colorPickerSwatch {
   position: relative;
   width: 36px;

@@ -446,6 +446,21 @@ function createSettingsStore() {
       }
     },
 
+    /** Set max tab name length and persist */
+    async setMaxTabNameLength(length: number): Promise<void> {
+      const clamped = Math.max(10, Math.min(60, length));
+      const prev = state.maxTabNameLength;
+      setState("maxTabNameLength", clamped);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.max_tab_name_length = clamped;
+        await invoke("save_config", { config });
+      } catch (err) {
+        console.error("Failed to persist maxTabNameLength:", err);
+        setState("maxTabNameLength", prev);
+      }
+    },
+
     /** Get CSS font family string */
     getFontFamily(): string {
       return FONT_FAMILIES[state.font] || FONT_FAMILIES[DEFAULTS.font];

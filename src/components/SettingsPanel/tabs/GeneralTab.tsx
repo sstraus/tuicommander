@@ -1,9 +1,8 @@
 import { Component, For, Show } from "solid-js";
-import { settingsStore, IDE_NAMES, FONT_FAMILIES } from "../../../stores/settings";
+import { settingsStore, IDE_NAMES } from "../../../stores/settings";
 import { repoDefaultsStore } from "../../../stores/repoDefaults";
 import { updaterStore } from "../../../stores/updater";
-import { THEME_NAMES } from "../../../themes";
-import type { IdeType, FontType } from "../../../stores/settings";
+import type { IdeType } from "../../../stores/settings";
 import { t } from "../../../i18n";
 import s from "../Settings.module.css";
 
@@ -45,23 +44,6 @@ export const GeneralTab: Component = () => {
           placeholder={t("general.placeholder.shell", "Default shell")}
         />
         <p class={s.hint}>{t("general.hint.shell", "Shell used in terminals (leave blank for system default)")}</p>
-      </div>
-
-      <div class={s.group}>
-        <label>{t("general.label.splitTabMode", "Split Tab Mode")}</label>
-        <select
-          value={settingsStore.state.splitTabMode}
-          onChange={(e) => {
-            const value = e.currentTarget.value;
-            if (value === "separate" || value === "unified") {
-              settingsStore.setSplitTabMode(value);
-            }
-          }}
-        >
-          <option value="separate">{t("general.splitTabMode.separate", "Separate")}</option>
-          <option value="unified">{t("general.splitTabMode.unified", "Unified")}</option>
-        </select>
-        <p class={s.hint}>{t("general.hint.splitTabMode", "How worktree tabs are arranged in the tab bar")}</p>
       </div>
 
       <h3>{t("general.heading.confirmations", "Confirmations")}</h3>
@@ -153,49 +135,6 @@ export const GeneralTab: Component = () => {
           <span>{t("general.toggle.autoShowPrPopover", "Auto-show PR popover")}</span>
         </div>
         <p class={s.hint}>{t("general.hint.autoShowPrPopover", "Automatically open the PR panel when a branch has an associated pull request")}</p>
-      </div>
-
-      <h3>{t("general.heading.appearance", "Appearance")}</h3>
-
-      <div class={s.group}>
-        <label>{t("general.label.terminalTheme", "Terminal Theme")}</label>
-        <select
-          value={settingsStore.state.theme}
-          onChange={(e) => settingsStore.setTheme(e.currentTarget.value)}
-        >
-          <For each={Object.entries(THEME_NAMES)}>
-            {([value, label]) => <option value={value}>{label}</option>}
-          </For>
-        </select>
-        <p class={s.hint}>{t("general.hint.terminalTheme", "Color theme for terminal output")}</p>
-      </div>
-
-      <div class={s.group}>
-        <label>{t("general.label.terminalFont", "Terminal Font")}</label>
-        <select
-          value={settingsStore.state.font}
-          onChange={(e) => settingsStore.setFont(e.currentTarget.value as FontType)}
-        >
-          <For each={Object.entries(FONT_FAMILIES)}>
-            {([value, _label]) => <option value={value}>{value}</option>}
-          </For>
-        </select>
-        <p class={s.hint}>{t("general.hint.terminalFont", "Monospace font for terminals")}</p>
-      </div>
-
-      <div class={s.group}>
-        <label>{t("general.label.defaultFontSize", "Default Font Size")}</label>
-        <div class={s.slider}>
-          <input
-            type="range"
-            min="8"
-            max="32"
-            value={settingsStore.state.defaultFontSize}
-            onInput={(e) => settingsStore.setDefaultFontSize(parseInt(e.currentTarget.value))}
-          />
-          <span>{settingsStore.state.defaultFontSize}px</span>
-        </div>
-        <p class={s.hint}>{t("general.hint.defaultFontSize", "Default font size for new terminals")}</p>
       </div>
 
       <h3>{t("general.heading.repoDefaults", "Repository Defaults")}</h3>

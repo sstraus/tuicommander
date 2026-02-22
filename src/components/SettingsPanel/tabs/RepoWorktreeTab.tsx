@@ -1,7 +1,7 @@
 import { Component, For, Show } from "solid-js";
 import type { RepoSettings } from "../../../stores/repoSettings";
 import type { RepoDefaults } from "../../../stores/repoDefaults";
-import { PRESET_COLORS } from "./GroupsTab";
+import { PRESET_COLORS } from "./AppearanceTab";
 import { isMacOS } from "../../../platform";
 import { t } from "../../../i18n";
 import { cx } from "../../../utils";

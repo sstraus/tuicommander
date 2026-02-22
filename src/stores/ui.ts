@@ -256,6 +256,16 @@ function createUIStore() {
       saveUIPrefs();
     },
 
+    /** Reset all panel and sidebar widths to defaults */
+    resetLayout(): void {
+      setState("sidebarWidth", SIDEBAR_DEFAULT_WIDTH);
+      setState("diffPanelWidth", DIFF_PANEL_DEFAULT_WIDTH);
+      setState("markdownPanelWidth", MARKDOWN_PANEL_DEFAULT_WIDTH);
+      setState("notesPanelWidth", NOTES_PANEL_DEFAULT_WIDTH);
+      setState("settingsNavWidth", SETTINGS_NAV_DEFAULT_WIDTH);
+      saveUIPrefs();
+    },
+
     // Loading state
     setLoading(loading: boolean, message?: string): void {
       setState("isLoading", loading);
