@@ -67,13 +67,13 @@ describe("DictationSettings – Model Selector", () => {
 
   it("renders a row for each model", () => {
     const { container } = render(() => <DictationSettings />);
-    const rows = container.querySelectorAll(".dictation-model-row");
+    const rows = container.querySelectorAll(".modelRow");
     expect(rows.length).toBe(2);
   });
 
   it("shows display name and size hint for each model", () => {
     const { container } = render(() => <DictationSettings />);
-    const rows = container.querySelectorAll(".dictation-model-row");
+    const rows = container.querySelectorAll(".modelRow");
 
     expect(rows[0].textContent).toContain("Small");
     expect(rows[0].textContent).toContain("488");
@@ -83,22 +83,22 @@ describe("DictationSettings – Model Selector", () => {
 
   it("shows download button for not-downloaded models", () => {
     const { container } = render(() => <DictationSettings />);
-    const rows = container.querySelectorAll(".dictation-model-row");
-    const downloadBtn = rows[0].querySelector(".dictation-model-download");
+    const rows = container.querySelectorAll(".modelRow");
+    const downloadBtn = rows[0].querySelector(".modelDownload");
     expect(downloadBtn).not.toBeNull();
     expect(downloadBtn!.textContent).toContain("Download");
   });
 
   it("shows delete button for downloaded models", () => {
     const { container } = render(() => <DictationSettings />);
-    const rows = container.querySelectorAll(".dictation-model-row");
-    const deleteBtn = rows[1].querySelector(".dictation-model-delete");
+    const rows = container.querySelectorAll(".modelRow");
+    const deleteBtn = rows[1].querySelector(".modelDelete");
     expect(deleteBtn).not.toBeNull();
   });
 
   it("marks the selected model as active", () => {
     const { container } = render(() => <DictationSettings />);
-    const rows = container.querySelectorAll(".dictation-model-row");
+    const rows = container.querySelectorAll(".modelRow");
     expect(rows[1].classList.contains("active")).toBe(true);
     expect(rows[0].classList.contains("active")).toBe(false);
   });
@@ -111,8 +111,8 @@ describe("DictationSettings – Model Selector", () => {
     ];
 
     const { container } = render(() => <DictationSettings />);
-    const rows = container.querySelectorAll(".dictation-model-row");
-    const selectBtn = rows[0].querySelector(".dictation-model-select");
+    const rows = container.querySelectorAll(".modelRow");
+    const selectBtn = rows[0].querySelector(".modelSelect");
     expect(selectBtn).not.toBeNull();
     fireEvent.click(selectBtn!);
     expect(mockStore.setModel).toHaveBeenCalledWith("small");
@@ -120,36 +120,36 @@ describe("DictationSettings – Model Selector", () => {
 
   it("download button calls downloadModel with model name", () => {
     const { container } = render(() => <DictationSettings />);
-    const rows = container.querySelectorAll(".dictation-model-row");
-    const downloadBtn = rows[0].querySelector(".dictation-model-download");
+    const rows = container.querySelectorAll(".modelRow");
+    const downloadBtn = rows[0].querySelector(".modelDownload");
     fireEvent.click(downloadBtn!);
     expect(mockStore.downloadModel).toHaveBeenCalledWith("small");
   });
 
   it("delete button calls deleteModel with model name", () => {
     const { container } = render(() => <DictationSettings />);
-    const rows = container.querySelectorAll(".dictation-model-row");
-    const deleteBtn = rows[1].querySelector(".dictation-model-delete");
+    const rows = container.querySelectorAll(".modelRow");
+    const deleteBtn = rows[1].querySelector(".modelDelete");
     fireEvent.click(deleteBtn!);
     expect(mockStore.deleteModel).toHaveBeenCalledWith("large-v3-turbo");
   });
 
   it("does not allow selecting a not-downloaded model", () => {
     const { container } = render(() => <DictationSettings />);
-    const rows = container.querySelectorAll(".dictation-model-row");
+    const rows = container.querySelectorAll(".modelRow");
     // Not-downloaded model should not have a select button
-    const selectBtn = rows[0].querySelector(".dictation-model-select");
+    const selectBtn = rows[0].querySelector(".modelSelect");
     expect(selectBtn).toBeNull();
   });
 
   it("shows status badge for each model", () => {
     const { container } = render(() => <DictationSettings />);
-    const rows = container.querySelectorAll(".dictation-model-row");
+    const rows = container.querySelectorAll(".modelRow");
 
-    const badge0 = rows[0].querySelector(".dictation-model-badge");
+    const badge0 = rows[0].querySelector(".modelBadge");
     expect(badge0).not.toBeNull();
 
-    const badge1 = rows[1].querySelector(".dictation-model-badge");
+    const badge1 = rows[1].querySelector(".modelBadge");
     expect(badge1).not.toBeNull();
     expect(badge1!.textContent).toContain("Downloaded");
   });
@@ -161,7 +161,7 @@ describe("DictationSettings – Model Selector", () => {
     mockStore.state.selectedModel = "small";
 
     const { container } = render(() => <DictationSettings />);
-    const progressBar = container.querySelector(".dictation-progress-fill");
+    const progressBar = container.querySelector(".progressFill");
     expect(progressBar).not.toBeNull();
   });
 });

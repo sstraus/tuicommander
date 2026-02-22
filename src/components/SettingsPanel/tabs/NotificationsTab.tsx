@@ -1,42 +1,45 @@
 import { Component, For, Show } from "solid-js";
 import { notificationsStore } from "../../../stores/notifications";
 import type { NotificationSound } from "../../../notifications";
+import { t } from "../../../i18n";
+import { cx } from "../../../utils";
+import s from "../Settings.module.css";
 
 export const NotificationsTab: Component = () => {
   const sounds: { key: NotificationSound; label: string }[] = [
-    { key: "question", label: "Agent asks question" },
-    { key: "error", label: "Error occurred" },
-    { key: "completion", label: "Task completed" },
-    { key: "warning", label: "Warning" },
+    { key: "question", label: t("notifications.sound.question", "Question") },
+    { key: "error", label: t("notifications.sound.error", "Error") },
+    { key: "completion", label: t("notifications.sound.completion", "Completion") },
+    { key: "warning", label: t("notifications.sound.warning", "Warning") },
   ];
 
   return (
-    <div class="settings-section">
-      <h3>Notification Settings</h3>
+    <div class={s.section}>
+      <h3>{t("notifications.heading.notificationSettings", "Notification Settings")}</h3>
 
       <Show
         when={notificationsStore.state.isAvailable}
         fallback={
-          <p class="settings-warning">
-            Audio notifications are not available in this browser or environment.
+          <p class={s.warning}>
+            {t("notifications.warning.notAvailable", "Audio notifications are not available on this platform")}
           </p>
         }
       >
-        <div class="settings-group">
-          <label>Enable Audio Notifications</label>
-          <div class="settings-toggle">
+        <div class={s.group}>
+          <label>{t("notifications.label.enableAudio", "Enable Audio")}</label>
+          <div class={s.toggle}>
             <input
               type="checkbox"
               checked={notificationsStore.state.config.enabled}
               onChange={(e) => notificationsStore.setEnabled(e.currentTarget.checked)}
             />
-            <span>Play sounds for agent events and system notifications</span>
+            <span>{t("notifications.toggle.enableAudio", "Enable audio notifications")}</span>
           </div>
         </div>
 
-        <div class="settings-group">
-          <label>Master Volume</label>
-          <div class="settings-slider">
+        <div class={s.group}>
+          <label>{t("notifications.label.masterVolume", "Master Volume")}</label>
+          <div class={s.slider}>
             <input
               type="range"
               min="0"
@@ -46,18 +49,18 @@ export const NotificationsTab: Component = () => {
             />
             <span>{Math.round(notificationsStore.state.config.volume * 100)}%</span>
           </div>
-          <p class="settings-hint">Adjust the volume level for all notification sounds</p>
+          <p class={s.hint}>{t("notifications.hint.masterVolume", "Overall volume for all notification sounds")}</p>
         </div>
 
-        <div class="settings-group">
-          <label>Notification Events</label>
-          <p class="settings-hint" style={{ "margin-bottom": "12px" }}>
-            Choose which events trigger sound notifications
+        <div class={s.group}>
+          <label>{t("notifications.label.notificationEvents", "Notification Events")}</label>
+          <p class={s.hint} style={{ "margin-bottom": "12px" }}>
+            {t("notifications.hint.notificationEvents", "Choose which events play a sound")}
           </p>
           <For each={sounds}>
             {(sound) => (
-              <div class="settings-sound-row">
-                <div class="settings-toggle">
+              <div class={s.soundRow}>
+                <div class={s.toggle}>
                   <input
                     type="checkbox"
                     checked={notificationsStore.state.config.sounds[sound.key]}
@@ -68,18 +71,18 @@ export const NotificationsTab: Component = () => {
                   <span>{sound.label}</span>
                 </div>
                 <button
-                  class="settings-test-btn"
+                  class={s.testBtn}
                   onClick={() => notificationsStore.testSound(sound.key)}
                 >
-                  Test
+                  {t("notifications.btn.test", "Test")}
                 </button>
               </div>
             )}
           </For>
         </div>
 
-        <div class="settings-actions">
-          <button onClick={() => notificationsStore.reset()}>Reset to Defaults</button>
+        <div class={s.actions}>
+          <button onClick={() => notificationsStore.reset()}>{t("notifications.btn.resetDefaults", "Reset Defaults")}</button>
         </div>
       </Show>
     </div>

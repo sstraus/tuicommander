@@ -1,6 +1,9 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import { repositoriesStore } from "../../../stores/repositories";
 import type { RepoGroup } from "../../../stores/repositories";
+import { t } from "../../../i18n";
+import { cx } from "../../../utils";
+import s from "../Settings.module.css";
 
 /** Preset colors for groups and sidebar */
 export const PRESET_COLORS = [
@@ -25,12 +28,12 @@ const GroupSettingsItem: Component<{
   const commitRename = () => {
     const name = editName().trim();
     if (!name) {
-      setNameError("Name cannot be empty");
+      setNameError(t("groups.error.nameEmpty", "Name cannot be empty"));
       return;
     }
     const ok = repositoriesStore.renameGroup(props.group.id, name);
     if (!ok) {
-      setNameError("Name already exists");
+      setNameError(t("groups.error.nameExists", "A group with this name already exists"));
       return;
     }
     setNameError("");
@@ -44,13 +47,13 @@ const GroupSettingsItem: Component<{
   };
 
   return (
-    <div class="group-settings-item">
-      <div class="group-settings-row">
+    <div class={s.groupItem}>
+      <div class={s.groupRow}>
         <Show
           when={editing()}
           fallback={
             <span
-              class="group-settings-name"
+              class={s.groupName}
               onDblClick={() => setEditing(true)}
             >
               {props.group.name}
@@ -58,7 +61,7 @@ const GroupSettingsItem: Component<{
           }
         >
           <input
-            class="group-settings-name-input"
+            class={s.groupNameInput}
             value={editName()}
             onInput={(e) => {
               setEditName(e.currentTarget.value);
@@ -72,21 +75,21 @@ const GroupSettingsItem: Component<{
           />
         </Show>
         <button
-          class="group-delete-btn"
+          class={s.groupDeleteBtn}
           onClick={() => repositoriesStore.deleteGroup(props.group.id)}
-          title="Delete group"
+          title={t("groups.btn.deleteGroup", "Delete group")}
         >
           ×
         </button>
       </div>
       <Show when={nameError()}>
-        <div class="group-name-error">{nameError()}</div>
+        <div class={s.groupNameError}>{nameError()}</div>
       </Show>
-      <div class="group-color-picker">
+      <div class={s.groupColorPicker}>
         <For each={PRESET_COLORS}>
           {(preset) => (
             <button
-              class={`color-swatch ${props.group.color === preset.hex ? "active" : ""}`}
+              class={cx(s.colorSwatch, props.group.color === preset.hex && s.active)}
               style={{ background: preset.hex }}
               onClick={() => repositoriesStore.setGroupColor(props.group.id, preset.hex)}
               title={preset.name}
@@ -94,9 +97,9 @@ const GroupSettingsItem: Component<{
           )}
         </For>
         <button
-          class={`color-swatch clear ${!props.group.color ? "active" : ""}`}
+          class={cx(s.colorSwatch, s.colorSwatchClear, !props.group.color && s.active)}
           onClick={() => repositoriesStore.setGroupColor(props.group.id, "")}
-          title="No color"
+          title={t("groups.btn.noColor", "No color")}
         >
           ×
         </button>
@@ -112,24 +115,24 @@ export const GroupsTab: Component = () => {
       .filter(Boolean);
 
   const handleAddGroup = () => {
-    repositoriesStore.createGroup("New Group");
+    repositoriesStore.createGroup(t("groups.defaultGroupName", "New Group"));
   };
 
   return (
-    <div class="settings-section">
-      <h3>Repository Groups</h3>
-      <p class="settings-hint">Organize your repositories into named groups with colors.</p>
+    <div class={s.section}>
+      <h3>{t("groups.heading.repositoryGroups", "Repository Groups")}</h3>
+      <p class={s.hint}>{t("groups.hint.organize", "Organize repositories into color-coded groups in the sidebar")}</p>
 
       <Show when={groups().length === 0}>
-        <div class="groups-empty">No groups yet. Create one to get started.</div>
+        <div class={s.groupsEmpty}>{t("groups.empty.noGroups", "No groups yet")}</div>
       </Show>
 
       <For each={groups()}>
         {(group) => <GroupSettingsItem group={group} />}
       </For>
 
-      <button class="groups-add-btn" onClick={handleAddGroup}>
-        + Add Group
+      <button class={s.groupsAddBtn} onClick={handleAddGroup}>
+        {t("groups.btn.addGroup", "Add Group")}
       </button>
     </div>
   );

@@ -1,0 +1,273 @@
+/* Dictation Settings */
+.modelList {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.modelRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-base);
+}
+
+.modelRow:last-child {
+  border-bottom: none;
+}
+
+.modelRow.active {
+  background: var(--bg-highlight);
+}
+
+.modelInfo {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.modelName {
+  color: var(--fg-primary);
+  font-weight: 500;
+}
+
+.modelSize {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+}
+
+.modelBadge {
+  font-size: var(--font-sm);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.modelBadge.downloaded {
+  background: color-mix(in srgb, var(--success, #4ade80) 15%, transparent);
+  color: var(--success, #4ade80);
+}
+
+.modelActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.modelSelect,
+.modelDownload {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--fg-secondary);
+  font-size: var(--font-md);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.modelSelect:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.modelDownload {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.modelDownload:hover {
+  opacity: 0.85;
+}
+
+.modelDelete {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--font-xl);
+  padding: 0 2px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.modelDelete:hover {
+  color: var(--error, #f87171);
+}
+
+.modelActiveLabel {
+  font-size: var(--font-md);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.downloadProgress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 100px;
+}
+
+.progressBar {
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  transition: width 0.3s ease;
+}
+
+.progressText {
+  font-size: var(--font-md);
+  color: var(--fg-muted);
+}
+
+.hotkeyRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.hotkeyDisplay {
+  padding: 6px 16px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font-family: monospace;
+  font-size: var(--font-base);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.hotkeyDisplay:hover {
+  border-color: var(--accent);
+  background: var(--bg-highlight);
+}
+
+.hotkeyInput {
+  padding: 6px 12px;
+  background: var(--bg-primary);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font-family: monospace;
+  font-size: var(--font-base);
+  outline: none;
+  width: 200px;
+}
+
+.correctionsTable {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.correctionsHeader {
+  display: grid;
+  grid-template-columns: 1fr 1fr 32px;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.correctionsRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr 32px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+  align-items: center;
+  font-size: var(--font-base);
+}
+
+.correctionsRow:hover {
+  background: var(--bg-highlight);
+}
+
+.correctionText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-secondary);
+}
+
+.correctionDelete {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--font-xl);
+  padding: 0;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.correctionDelete:hover {
+  color: var(--error, #f87171);
+}
+
+.correctionAdd {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.correctionAdd input {
+  flex: 1;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-primary);
+  font-size: var(--font-base);
+}
+
+.correctionAdd input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.correctionArrow {
+  color: var(--fg-muted);
+  font-size: var(--font-lg);
+}
+
+.correctionAddBtn {
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  font-size: var(--font-base);
+  transition: all 0.15s;
+}
+
+.correctionAddBtn:hover:not(:disabled) {
+  background: var(--bg-highlight);
+  border-color: var(--accent);
+}
+
+.correctionAddBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

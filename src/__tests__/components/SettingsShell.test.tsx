@@ -28,7 +28,7 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    expect(container.querySelector(".settings-overlay")).toBeNull();
+    expect(container.querySelector(".overlay")).toBeNull();
   });
 
   it("renders overlay and panel when visible", () => {
@@ -37,8 +37,8 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    expect(container.querySelector(".settings-overlay")).not.toBeNull();
-    expect(container.querySelector(".settings-panel")).not.toBeNull();
+    expect(container.querySelector(".overlay")).not.toBeNull();
+    expect(container.querySelector(".panel")).not.toBeNull();
   });
 
   it("renders title in header", () => {
@@ -47,7 +47,7 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const h2 = container.querySelector(".settings-header h2");
+    const h2 = container.querySelector(".header h2");
     expect(h2).not.toBeNull();
     expect(h2!.textContent).toBe("Settings");
   });
@@ -58,7 +58,7 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const sub = container.querySelector(".settings-path--repo");
+    const sub = container.querySelector(".pathRepo");
     expect(sub).not.toBeNull();
     expect(sub!.textContent).toBe("/path/to/repo");
   });
@@ -69,7 +69,7 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const icon = container.querySelector(".settings-icon--repo");
+    const icon = container.querySelector(".iconRepo");
     expect(icon).not.toBeNull();
     expect(icon!.textContent).toBe("📁");
   });
@@ -80,7 +80,7 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const navItems = container.querySelectorAll(".settings-nav-item");
+    const navItems = container.querySelectorAll(".navItem");
     expect(navItems.length).toBe(2);
     expect(navItems[0].textContent).toBe("General");
     expect(navItems[1].textContent).toBe("Appearance");
@@ -92,7 +92,7 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const navItems = container.querySelectorAll(".settings-nav-item");
+    const navItems = container.querySelectorAll(".navItem");
     expect(navItems[0].classList.contains("active")).toBe(true);
     expect(navItems[1].classList.contains("active")).toBe(false);
   });
@@ -104,7 +104,7 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const navItems = container.querySelectorAll(".settings-nav-item");
+    const navItems = container.querySelectorAll(".navItem");
     fireEvent.click(navItems[1]);
     expect(onTabChange).toHaveBeenCalledWith("appearance");
   });
@@ -121,13 +121,13 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const label = container.querySelector(".settings-nav-label");
+    const label = container.querySelector(".navLabel");
     expect(label).not.toBeNull();
     expect(label!.textContent).toBe("REPOSITORIES");
     // Label is not a button (not clickable)
     expect(label!.tagName.toLowerCase()).not.toBe("button");
     // Only actual nav items are buttons, not the label
-    const navItems = container.querySelectorAll(".settings-nav-item");
+    const navItems = container.querySelectorAll(".navItem");
     expect(navItems.length).toBe(2); // a and b, not the label
   });
 
@@ -141,7 +141,7 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const repoItem = container.querySelector(".settings-nav-item--repo");
+    const repoItem = container.querySelector(".navItemRepo");
     expect(repoItem).not.toBeNull();
     expect(repoItem!.textContent).toBe("my-repo");
   });
@@ -157,8 +157,8 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const navItems = container.querySelectorAll(".settings-nav-item");
-    const separator = container.querySelector(".settings-nav-separator");
+    const navItems = container.querySelectorAll(".navItem");
+    const separator = container.querySelector(".navSeparator");
     expect(navItems.length).toBe(2);
     expect(separator).not.toBeNull();
   });
@@ -170,7 +170,7 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    fireEvent.click(container.querySelector(".settings-close")!);
+    fireEvent.click(container.querySelector(".close")!);
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -181,7 +181,7 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    fireEvent.click(container.querySelector(".settings-overlay")!);
+    fireEvent.click(container.querySelector(".overlay")!);
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -191,7 +191,7 @@ describe("SettingsShell", () => {
         <p class="test-child">hello</p>
       </SettingsShell>
     ));
-    const child = container.querySelector(".settings-content .test-child");
+    const child = container.querySelector(".content .test-child");
     expect(child).not.toBeNull();
     expect(child!.textContent).toBe("hello");
   });
@@ -214,8 +214,8 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const header = container.querySelector(".settings-header");
-    expect(header!.classList.contains("settings-header--repo")).toBe(true);
+    const header = container.querySelector(".header");
+    expect(header!.classList.contains("headerRepo")).toBe(true);
   });
 
   it("nav sidebar renders with default width when navWidth not provided", () => {
@@ -224,7 +224,7 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const nav = container.querySelector(".settings-nav") as HTMLElement | null;
+    const nav = container.querySelector(".nav") as HTMLElement | null;
     expect(nav).not.toBeNull();
   });
 
@@ -234,10 +234,10 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    const body = container.querySelector(".settings-body");
+    const body = container.querySelector(".body");
     expect(body).not.toBeNull();
-    expect(body!.querySelector(".settings-nav")).not.toBeNull();
-    expect(body!.querySelector(".settings-content")).not.toBeNull();
+    expect(body!.querySelector(".nav")).not.toBeNull();
+    expect(body!.querySelector(".content")).not.toBeNull();
   });
 
   it("renders resize handle inside nav", () => {
@@ -246,6 +246,6 @@ describe("SettingsShell", () => {
         <p>content</p>
       </SettingsShell>
     ));
-    expect(container.querySelector(".settings-nav-resize-handle")).not.toBeNull();
+    expect(container.querySelector(".navResizeHandle")).not.toBeNull();
   });
 });

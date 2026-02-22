@@ -1,6 +1,10 @@
 import { Component, For, Show, createSignal, onMount } from "solid-js";
 import { dictationStore, WHISPER_LANGUAGES } from "../../stores/dictation";
 import type { ModelInfo } from "../../stores/dictation";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import s from "./Settings.module.css";
+import d from "./DictationSettings.module.css";
 
 /** Single model row in the model selector list */
 const ModelRow: Component<{ model: ModelInfo }> = (props) => {
@@ -14,54 +18,54 @@ const ModelRow: Component<{ model: ModelInfo }> = (props) => {
       : `~${props.model.size_hint_mb} MB`;
 
   return (
-    <div class={`dictation-model-row${isSelected() ? " active" : ""}`}>
-      <div class="dictation-model-info">
-        <span class="dictation-model-name">{props.model.display_name}</span>
-        <span class="dictation-model-size">{sizeLabel()}</span>
+    <div class={cx(d.modelRow, isSelected() && d.active)}>
+      <div class={d.modelInfo}>
+        <span class={d.modelName}>{props.model.display_name}</span>
+        <span class={d.modelSize}>{sizeLabel()}</span>
       </div>
       <Show when={!isDownloading()}>
-        <span class={`dictation-model-badge${props.model.downloaded ? " downloaded" : ""}`}>
-          {props.model.downloaded ? "Downloaded" : "Not downloaded"}
+        <span class={cx(d.modelBadge, props.model.downloaded && d.downloaded)}>
+          {props.model.downloaded ? t("dictation.downloaded", "Downloaded") : t("dictation.notDownloaded", "Not Downloaded")}
         </span>
       </Show>
-      <div class="dictation-model-actions">
+      <div class={d.modelActions}>
         <Show when={props.model.downloaded && !isSelected()}>
           <button
-            class="dictation-model-select"
+            class={d.modelSelect}
             onClick={() => dictationStore.setModel(props.model.name)}
           >
-            Use
+            {t("dictation.use", "Use")}
           </button>
         </Show>
         <Show when={props.model.downloaded && isSelected()}>
-          <span class="dictation-model-active-label">Active</span>
+          <span class={d.modelActiveLabel}>{t("dictation.active", "Active")}</span>
         </Show>
         <Show when={!props.model.downloaded && !isDownloading()}>
           <button
-            class="dictation-model-download"
+            class={d.modelDownload}
             onClick={() => dictationStore.downloadModel(props.model.name)}
           >
-            Download
+            {t("dictation.download", "Download")}
           </button>
         </Show>
         <Show when={isDownloading()}>
-          <div class="dictation-download-progress">
-            <div class="dictation-progress-bar">
+          <div class={d.downloadProgress}>
+            <div class={d.progressBar}>
               <div
-                class="dictation-progress-fill"
+                class={d.progressFill}
                 style={{ width: `${dictationStore.state.downloadPercent}%` }}
               />
             </div>
-            <span class="dictation-progress-text">
+            <span class={d.progressText}>
               {dictationStore.state.downloadPercent}%
             </span>
           </div>
         </Show>
         <Show when={props.model.downloaded}>
           <button
-            class="dictation-model-delete"
+            class={d.modelDelete}
             onClick={() => dictationStore.deleteModel(props.model.name)}
-            title="Delete model"
+            title={t("dictation.deleteModel", "Delete model")}
           >
             &times;
           </button>
@@ -161,29 +165,29 @@ export const DictationSettings: Component = () => {
   };
 
   return (
-    <div class="settings-section">
-      <h3>Voice Dictation</h3>
+    <div class={s.section}>
+      <h3>{t("dictation.title", "Dictation Settings")}</h3>
 
       {/* Enable toggle */}
-      <div class="settings-group">
-        <label>Enable Dictation</label>
-        <div class="settings-toggle">
+      <div class={s.group}>
+        <label>{t("dictation.enableLabel", "Enable Dictation")}</label>
+        <div class={s.toggle}>
           <input
             type="checkbox"
             checked={dictationStore.state.enabled}
             onChange={(e) => dictationStore.setEnabled(e.currentTarget.checked)}
           />
-          <span>Enable push-to-talk voice dictation into terminals</span>
+          <span>{t("dictation.enableHint", "Enable voice-to-text dictation")}</span>
         </div>
       </div>
 
       {/* Model selector */}
-      <div class="settings-group">
-        <label>Whisper Model</label>
-        <p class="settings-hint" style={{ "margin-bottom": "8px" }}>
-          Select a model for local transcription. Larger models are more accurate but use more disk space and memory.
+      <div class={s.group}>
+        <label>{t("dictation.modelLabel", "Whisper Model")}</label>
+        <p class={s.hint} style={{ "margin-bottom": "8px" }}>
+          {t("dictation.modelHint", "Choose a model. Larger models are more accurate but slower.")}
         </p>
-        <div class="dictation-model-list">
+        <div class={d.modelList}>
           <For each={dictationStore.state.models}>
             {(model: ModelInfo) => (
               <ModelRow model={model} />
@@ -193,24 +197,24 @@ export const DictationSettings: Component = () => {
       </div>
 
       {/* Hotkey */}
-      <div class="settings-group">
-        <label>Push-to-Talk Hotkey</label>
-        <div class="dictation-hotkey-row">
+      <div class={s.group}>
+        <label>{t("dictation.hotkeyLabel", "Hotkey")}</label>
+        <div class={d.hotkeyRow}>
           <Show
             when={dictationStore.state.capturingHotkey}
             fallback={
               <button
-                class="dictation-hotkey-display"
+                class={d.hotkeyDisplay}
                 onClick={() => dictationStore.setCapturingHotkey(true)}
-                title="Click to change hotkey"
+                title={t("dictation.hotkeyChangeTitle", "Click to change hotkey")}
               >
                 {dictationStore.state.hotkey}
               </button>
             }
           >
             <input
-              class="dictation-hotkey-input"
-              placeholder="Press a key or combo..."
+              class={d.hotkeyInput}
+              placeholder={t("dictation.hotkeyPlaceholder", "Press a key combination...")}
               onKeyDown={handleHotkeyCapture}
               onBlur={() => dictationStore.setCapturingHotkey(false)}
               ref={(el) => requestAnimationFrame(() => el.focus())}
@@ -218,14 +222,14 @@ export const DictationSettings: Component = () => {
             />
           </Show>
         </div>
-        <p class="settings-hint">
-          Hold this key to record, release to transcribe and inject into the active terminal
+        <p class={s.hint}>
+          {t("dictation.hotkeyHint", "Press to start/stop recording. Works globally.")}
         </p>
       </div>
 
       {/* Language */}
-      <div class="settings-group">
-        <label>Language</label>
+      <div class={s.group}>
+        <label>{t("dictation.languageLabel", "Language")}</label>
         <select
           value={dictationStore.state.language}
           onChange={(e) => dictationStore.setLanguage(e.currentTarget.value)}
@@ -234,27 +238,27 @@ export const DictationSettings: Component = () => {
             {([value, label]) => <option value={value}>{label}</option>}
           </For>
         </select>
-        <p class="settings-hint">
-          Language hint for Whisper. Auto-detect works for most cases.
+        <p class={s.hint}>
+          {t("dictation.languageHint", "Auto-detect works well for most languages.")}
         </p>
       </div>
 
       {/* Audio devices */}
-      <div class="settings-group">
-        <label>Microphone</label>
+      <div class={s.group}>
+        <label>{t("dictation.microphoneLabel", "Microphone")}</label>
         <Show
           when={dictationStore.state.devices.length > 0}
           fallback={
             <div>
               <button
-                class="settings-download-btn"
+                class={s.downloadBtn}
                 onClick={() => dictationStore.refreshDevices()}
                 style={{ background: "var(--bg-tertiary)", color: "var(--fg-secondary)", border: "1px solid var(--border)" }}
               >
-                Detect Microphones
+                {t("dictation.detectMicrophones", "Detect Microphones")}
               </button>
-              <p class="settings-hint">
-                Click to scan for audio input devices (requires microphone permission)
+              <p class={s.hint}>
+                {t("dictation.detectMicrophonesHint", "Triggers macOS microphone permission dialog.")}
               </p>
             </div>
           }
@@ -264,41 +268,41 @@ export const DictationSettings: Component = () => {
               {(device) => (
                 <option selected={device.is_default}>
                   {device.name}
-                  {device.is_default ? " (default)" : ""}
+                  {device.is_default ? ` ${t("dictation.defaultDevice", "(Default)")}` : ""}
                 </option>
               )}
             </For>
           </select>
-          <p class="settings-hint">
-            Currently using the system default microphone
+          <p class={s.hint}>
+            {t("dictation.microphoneHint", "The default input device is used.")}
           </p>
         </Show>
       </div>
 
       {/* Correction map */}
-      <div class="settings-group">
-        <label>Text Corrections</label>
-        <p class="settings-hint" style={{ "margin-bottom": "8px" }}>
-          Automatic replacements applied after transcription (longest match first)
+      <div class={s.group}>
+        <label>{t("dictation.correctionsLabel", "Auto-Corrections")}</label>
+        <p class={s.hint} style={{ "margin-bottom": "8px" }}>
+          {t("dictation.correctionsHint", "Automatically replace dictation output. Useful for technical terms.")}
         </p>
 
         {/* Existing corrections */}
         <Show when={Object.keys(dictationStore.state.corrections).length > 0}>
-          <div class="dictation-corrections-table">
-            <div class="dictation-corrections-header">
-              <span>From</span>
-              <span>To</span>
+          <div class={d.correctionsTable}>
+            <div class={d.correctionsHeader}>
+              <span>{t("dictation.correctionsFrom", "From")}</span>
+              <span>{t("dictation.correctionsTo", "To")}</span>
               <span />
             </div>
             <For each={Object.entries(dictationStore.state.corrections)}>
               {([from, to]) => (
-                <div class="dictation-corrections-row">
-                  <span class="dictation-correction-text">{from}</span>
-                  <span class="dictation-correction-text">{to}</span>
+                <div class={d.correctionsRow}>
+                  <span class={d.correctionText}>{from}</span>
+                  <span class={d.correctionText}>{to}</span>
                   <button
-                    class="dictation-correction-delete"
+                    class={d.correctionDelete}
                     onClick={() => handleRemoveCorrection(from)}
-                    title="Remove"
+                    title={t("dictation.removeCorrection", "Remove correction")}
                   >
                     &times;
                   </button>
@@ -309,35 +313,35 @@ export const DictationSettings: Component = () => {
         </Show>
 
         {/* Add new correction */}
-        <div class="dictation-correction-add">
+        <div class={d.correctionAdd}>
           <input
             type="text"
-            placeholder="From..."
+            placeholder={t("dictation.correctionFromPlaceholder", "Heard text...")}
             value={newFrom()}
             onInput={(e) => setNewFrom(e.currentTarget.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAddCorrection()}
           />
-          <span class="dictation-correction-arrow">&rarr;</span>
+          <span class={d.correctionArrow}>&rarr;</span>
           <input
             type="text"
-            placeholder="To..."
+            placeholder={t("dictation.correctionToPlaceholder", "Replace with...")}
             value={newTo()}
             onInput={(e) => setNewTo(e.currentTarget.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAddCorrection()}
           />
           <button
-            class="dictation-correction-add-btn"
+            class={d.correctionAddBtn}
             onClick={handleAddCorrection}
             disabled={!newFrom().trim() || !newTo().trim()}
           >
-            Add
+            {t("dictation.addCorrection", "Add")}
           </button>
         </div>
 
         {/* Import/Export */}
-        <div class="settings-actions" style={{ "margin-top": "8px" }}>
-          <button onClick={handleImportCorrections}>Import</button>
-          <button onClick={handleExportCorrections}>Export</button>
+        <div class={s.actions} style={{ "margin-top": "8px" }}>
+          <button onClick={handleImportCorrections}>{t("dictation.import", "Import")}</button>
+          <button onClick={handleExportCorrections}>{t("dictation.export", "Export")}</button>
         </div>
       </div>
     </div>

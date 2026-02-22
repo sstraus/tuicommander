@@ -1,6 +1,9 @@
 import { Component, For, Show, createSignal, createResource, createMemo, createEffect, onMount, onCleanup } from "solid-js";
 import { rpc } from "../../../transport";
 import QRCode from "qrcode";
+import { t } from "../../../i18n";
+import { cx } from "../../../utils";
+import s from "../Settings.module.css";
 
 interface McpStatus {
   enabled: boolean;
@@ -144,68 +147,67 @@ export const ServicesTab: Component = () => {
   };
 
   return (
-    <div class="settings-section">
-      <h3>MCP Services</h3>
+    <div class={s.section}>
+      <h3>{t("services.heading.mcpServices", "MCP Services")}</h3>
 
-      <div class="settings-group">
-        <label>HTTP API Server</label>
-        <div class="settings-toggle">
+      <div class={s.group}>
+        <label>{t("services.label.httpApiServer", "HTTP API Server")}</label>
+        <div class={s.toggle}>
           <input
             type="checkbox"
             checked={status()?.enabled ?? false}
             disabled={saving()}
             onChange={(e) => toggleMcp(e.currentTarget.checked)}
           />
-          <span>Enable MCP HTTP API on localhost for external tool integration</span>
+          <span>{t("services.toggle.enableMcp", "Enable MCP server")}</span>
         </div>
-        <p class="settings-hint">
-          Exposes terminal sessions, git operations, and agent spawning to Claude Code, Cursor, and other MCP-capable tools.
+        <p class={s.hint}>
+          {t("services.hint.mcpDescription", "Exposes a local HTTP API for AI agents and automation tools")}
         </p>
       </div>
 
       <Show when={status()}>
-        {(s) => (
+        {(st) => (
           <>
-            <div class="settings-group">
-              <label>Server Status</label>
-              <div class="mcp-status-row">
-                <span class={`mcp-status-dot ${s().running ? "running" : "stopped"}`} />
-                <span class="mcp-status-text">
-                  {s().running ? "Running" : s().enabled ? "Pending restart" : "Stopped"}
+            <div class={s.group}>
+              <label>{t("services.label.serverStatus", "Server Status")}</label>
+              <div class={s.mcpStatusRow}>
+                <span class={cx(s.mcpStatusDot, st().running && s.running)} />
+                <span class={s.mcpStatusText}>
+                  {st().running ? t("services.status.running", "Running") : st().enabled ? t("services.status.pendingRestart", "Pending restart") : t("services.status.stopped", "Stopped")}
                 </span>
-                <Show when={s().running && s().port}>
-                  <span class="mcp-status-port">Port {s().port}</span>
+                <Show when={st().running && st().port}>
+                  <span class={s.mcpStatusPort}>{t("services.label.port", "Port")} {st().port}</span>
                 </Show>
               </div>
             </div>
 
-            <Show when={s().running}>
-              <div class="settings-group">
-                <label>Active Sessions</label>
-                <div class="mcp-sessions-bar">
+            <Show when={st().running}>
+              <div class={s.group}>
+                <label>{t("services.label.activeSessions", "Active Sessions")}</label>
+                <div class={s.mcpSessionsBar}>
                   <div
-                    class="mcp-sessions-fill"
-                    style={{ width: `${Math.min(100, (s().active_sessions / s().max_sessions) * 100)}%` }}
+                    class={s.mcpSessionsFill}
+                    style={{ width: `${Math.min(100, (st().active_sessions / st().max_sessions) * 100)}%` }}
                   />
-                  <span class="mcp-sessions-label">
-                    {s().active_sessions} / {s().max_sessions}
+                  <span class={s.mcpSessionsLabel}>
+                    {st().active_sessions} / {st().max_sessions}
                   </span>
                 </div>
               </div>
 
-              <div class="settings-group">
-                <label>API Endpoints</label>
-                <p class="settings-hint">
-                  {21} HTTP routes available — sessions, git, config, agents.
+              <div class={s.group}>
+                <label>{t("services.label.apiEndpoints", "API Endpoints")}</label>
+                <p class={s.hint}>
+                  {t("services.hint.apiEndpoints", "Exposes {count} API endpoints.", { count: "21" })}
                   See <code>pty.md</code> for complete API reference.
                 </p>
               </div>
 
-              <div class="settings-group">
-                <label>MCP Bridge</label>
-                <p class="settings-hint">
-                  Configure in Claude Code: add <code>tui-mcp-bridge</code> binary to MCP server settings.
-                  20 tools available for terminal control, git operations, and agent orchestration.
+              <div class={s.group}>
+                <label>{t("services.label.mcpBridge", "MCP Bridge")}</label>
+                <p class={s.hint}>
+                  {t("services.hint.mcpBridge", "Connects AI coding assistants via the Model Context Protocol")}
                 </p>
               </div>
             </Show>
@@ -213,66 +215,66 @@ export const ServicesTab: Component = () => {
         )}
       </Show>
 
-      <h3 style={{ "margin-top": "24px" }}>Remote Access</h3>
+      <h3 style={{ "margin-top": "24px" }}>{t("services.heading.remoteAccess", "Remote Access")}</h3>
 
-      <div class="settings-group">
-        <div class="settings-toggle">
+      <div class={s.group}>
+        <div class={s.toggle}>
           <input
             type="checkbox"
             checked={raEnabled()}
             onChange={(e) => setRaEnabled(e.currentTarget.checked)}
           />
-          <span>Enable remote access via HTTP/WebSocket</span>
+          <span>{t("services.toggle.enableRemoteAccess", "Enable remote access")}</span>
         </div>
-        <p class="settings-hint" style={{ color: "var(--warning, #e5c07b)" }}>
-          Warning: This exposes your terminal sessions to the network. Only enable on trusted networks and always set a strong password.
+        <p class={s.hint} style={{ color: "var(--warning, #e5c07b)" }}>
+          {t("services.hint.remoteAccessWarning", "Warning: exposes a web interface on your local network. Secure with a strong password.")}
         </p>
       </div>
 
       <Show when={raEnabled()}>
-        <div class="settings-ra-body">
-          <div class="settings-ra-fields">
-            <div class="settings-group">
-              <label>Port</label>
+        <div class={s.raBody}>
+          <div class={s.raFields}>
+            <div class={s.group}>
+              <label>{t("services.label.port", "Port")}</label>
               <input
                 type="number"
-                class="settings-input"
+                class={s.input}
                 value={raPort()}
                 min={1024}
                 max={65535}
                 onInput={(e) => setRaPort(parseInt(e.currentTarget.value) || 9876)}
               />
-              <p class="settings-hint">
-                Port for remote HTTP/WebSocket connections (default: 9876)
+              <p class={s.hint}>
+                {t("services.hint.port", "TCP port for the remote access web server")}
               </p>
             </div>
 
             {/* Username + Password side by side */}
-            <div class="settings-credentials-row">
-              <div class="settings-group" style={{ flex: "1", "min-width": 0 }}>
-                <label>Username</label>
+            <div class={s.credentialsRow}>
+              <div class={s.group} style={{ flex: "1", "min-width": 0 }}>
+                <label>{t("services.label.username", "Username")}</label>
                 <input
                   type="text"
-                  class="settings-input"
+                  class={s.input}
                   value={raUsername()}
-                  placeholder="admin"
+                  placeholder={t("services.placeholder.username", "admin")}
                   onInput={(e) => setRaUsername(e.currentTarget.value)}
                 />
               </div>
-              <div class="settings-group" style={{ flex: "1", "min-width": 0 }}>
-                <label>Password</label>
-                <div class="settings-password-row">
+              <div class={s.group} style={{ flex: "1", "min-width": 0 }}>
+                <label>{t("services.label.password", "Password")}</label>
+                <div class={s.passwordRow}>
                   <input
                     type={raShowPassword() ? "text" : "password"}
-                    class="settings-input"
+                    class={s.input}
                     value={raPassword()}
-                    placeholder={raHasPassword() ? "(password set)" : "Enter password..."}
+                    placeholder={raHasPassword() ? t("services.placeholder.passwordSet", "Password set — enter to change") : t("services.placeholder.passwordEnter", "Enter password")}
                     onInput={(e) => setRaPassword(e.currentTarget.value)}
                   />
                   <button
-                    class="settings-toggle-btn"
+                    class={s.toggleBtn}
                     onClick={() => setRaShowPassword(!raShowPassword())}
-                    title={raShowPassword() ? "Hide password" : "Show password"}
+                    title={raShowPassword() ? t("services.btn.hidePassword", "Hide password") : t("services.btn.showPassword", "Show password")}
                   >
                     {raShowPassword()
                       ? /* eye-slash */ <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7.028 7.028 0 0 0-2.79.588l.77.771A5.944 5.944 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.134 13.134 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755-.165.165-.337.328-.517.486l.708.709z"/><path d="M11.297 9.176a3.5 3.5 0 0 0-4.474-4.474l.823.823a2.5 2.5 0 0 1 2.829 2.829l.822.822zm-2.943 1.299.822.822a3.5 3.5 0 0 1-4.474-4.474l.823.823a2.5 2.5 0 0 0 2.829 2.829z"/><path d="M3.35 5.47c-.18.16-.353.322-.518.487A13.134 13.134 0 0 0 1.172 8l.195.288c.335.48.83 1.12 1.465 1.755C4.121 11.332 5.881 12.5 8 12.5c.716 0 1.39-.133 2.02-.36l.77.772A7.029 7.029 0 0 1 8 13.5C3 13.5 0 8 0 8s.939-1.721 2.641-3.238l.708.709zm10.296 8.884-12-12 .708-.708 12 12-.708.708z"/></svg>
@@ -280,18 +282,18 @@ export const ServicesTab: Component = () => {
                     }
                   </button>
                 </div>
-                <p class="settings-hint">Leave blank to keep existing.</p>
+                <p class={s.hint}>{t("services.hint.passwordLeaveBlank", "Leave blank to keep the current password")}</p>
               </div>
             </div>
 
             <Show when={status()?.running && status()?.port}>
-              <div class="settings-group">
-                <label>Network Interface</label>
+              <div class={s.group}>
+                <label>{t("services.label.networkInterface", "Network Interface")}</label>
                 <Show when={(localIps()?.length ?? 0) > 1} fallback={
-                  <code class="settings-url">{activeIp() ?? "…"}</code>
+                  <code class={s.url}>{activeIp() ?? "…"}</code>
                 }>
                   <select
-                    class="settings-input"
+                    class={s.input}
                     value={selectedIp()}
                     onChange={(e) => setSelectedIp(e.currentTarget.value)}
                   >
@@ -300,17 +302,17 @@ export const ServicesTab: Component = () => {
                     </For>
                   </select>
                 </Show>
-                <p class="settings-hint" style={{ "margin-top": "4px" }}>
-                  Scan the QR code — the auth token is embedded automatically.
+                <p class={s.hint} style={{ "margin-top": "4px" }}>
+                  {t("services.hint.qrScan", "Scan the QR code to connect from another device")}
                 </p>
                 <Show when={status()?.reachable === false}>
-                  <p class="settings-hint" style={{ color: "var(--warning, #e5c07b)", "margin-top": "4px" }}>
-                    Firewall may be blocking incoming connections. On macOS: System Settings → Network → Firewall → Options → allow this app. On Linux: check iptables/ufw. On Windows: check Windows Defender Firewall.
+                  <p class={s.hint} style={{ color: "var(--warning, #e5c07b)", "margin-top": "4px" }}>
+                    {t("services.hint.firewallWarning", "Port may be blocked by a firewall")}
                   </p>
                 </Show>
                 <Show when={status()?.reachable === true}>
-                  <p class="settings-hint" style={{ color: "var(--green, #98c379)", "margin-top": "4px" }}>
-                    Server is reachable from the network.
+                  <p class={s.hint} style={{ color: "var(--green, #98c379)", "margin-top": "4px" }}>
+                    {t("services.hint.serverReachable", "Server is reachable from the network")}
                   </p>
                 </Show>
               </div>
@@ -319,27 +321,27 @@ export const ServicesTab: Component = () => {
 
           <Show when={status()?.running && qrDataUrl()}>
             {(url) => (
-              <div class="settings-qr">
-                <img src={url()} width={120} height={120} alt="QR code for remote access" title="Scan to open on tablet" />
-                <span class="settings-qr-label">Scan to connect</span>
+              <div class={s.qr}>
+                <img src={url()} width={120} height={120} alt={t("services.alt.qrCode", "QR code")} title={t("services.title.qrCode", "Scan to connect")} />
+                <span class={s.qrLabel}>{t("services.label.scanToConnect", "Scan to connect")}</span>
               </div>
             )}
           </Show>
         </div>
       </Show>
 
-      <div class="settings-actions" style={{ "margin-top": "12px" }}>
+      <div class={s.actions} style={{ "margin-top": "12px" }}>
         <button
-          class="settings-save-btn"
+          class={s.saveBtn}
           disabled={raSaving()}
           onClick={saveRemoteAccess}
         >
-          {raSaving() ? "Saving..." : raSaved() ? "Saved" : "Save Remote Access"}
+          {raSaving() ? t("services.btn.saving", "Saving...") : raSaved() ? t("services.btn.saved", "Saved!") : t("services.btn.saveRemoteAccess", "Save Remote Access Settings")}
         </button>
       </div>
 
-      <p class="settings-hint" style={{ "margin-top": "16px" }}>
-        The HTTP server starts automatically when either MCP or Remote Access is enabled. Save applies changes immediately — no restart required.
+      <p class={s.hint} style={{ "margin-top": "16px" }}>
+        {t("services.hint.serverStartsAutomatically", "The server starts automatically when the app launches if enabled")}
       </p>
     </div>
   );

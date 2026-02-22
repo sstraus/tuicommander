@@ -3,6 +3,9 @@ import type { RepoSettings } from "../../../stores/repoSettings";
 import type { RepoDefaults } from "../../../stores/repoDefaults";
 import { PRESET_COLORS } from "./GroupsTab";
 import { isMacOS } from "../../../platform";
+import { t } from "../../../i18n";
+import { cx } from "../../../utils";
+import s from "../Settings.module.css";
 
 export interface RepoTabProps {
   settings: RepoSettings;
@@ -17,7 +20,7 @@ function effectiveBool(override: boolean | null, fallback: boolean): boolean {
 
 export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
   const branchOptions = [
-    { value: "automatic", label: "Automatic (origin/main or origin/master)" },
+    { value: "automatic", label: t("repoWorktree.baseBranch.automatic", "Automatic") },
     { value: "main", label: "main" },
     { value: "master", label: "master" },
     { value: "develop", label: "develop" },
@@ -33,27 +36,27 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
   };
 
   return (
-    <div class="settings-section">
-      <h3>Repository</h3>
+    <div class={s.section}>
+      <h3>{t("repoWorktree.heading.repository", "Repository")}</h3>
 
-      <div class="settings-group">
-        <label>Display Name</label>
+      <div class={s.group}>
+        <label>{t("repoWorktree.label.displayName", "Display Name")}</label>
         <input
           type="text"
           value={props.settings.displayName ?? ""}
           onInput={(e) => props.onUpdate("displayName", e.currentTarget.value)}
-          placeholder="Repository name"
+          placeholder={t("repoWorktree.placeholder.displayName", "Custom name...")}
         />
-        <p class="settings-hint">Name shown in sidebar and tabs</p>
+        <p class={s.hint}>{t("repoWorktree.hint.displayName", "Shown in sidebar instead of folder name")}</p>
       </div>
 
-      <div class="settings-group">
-        <label>Sidebar Color</label>
-        <div class="group-color-picker">
+      <div class={s.group}>
+        <label>{t("repoWorktree.label.sidebarColor", "Sidebar Color")}</label>
+        <div class={s.groupColorPicker}>
           <For each={PRESET_COLORS}>
             {(preset) => (
               <button
-                class={`color-swatch ${props.settings.color === preset.hex ? "active" : ""}`}
+                class={cx(s.colorSwatch, props.settings.color === preset.hex && s.active)}
                 style={{ background: preset.hex }}
                 onClick={() => props.onUpdate("color", preset.hex)}
                 title={preset.name}
@@ -61,13 +64,13 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
             )}
           </For>
           <label
-            class={`color-swatch custom ${props.settings.color && !PRESET_COLORS.some((p) => p.hex === props.settings.color) ? "active" : ""}`}
+            class={cx(s.colorSwatch, s.colorSwatchCustom, props.settings.color && !PRESET_COLORS.some((p) => p.hex === props.settings.color) && s.active)}
             style={{
               background: props.settings.color && !PRESET_COLORS.some((p) => p.hex === props.settings.color)
                 ? props.settings.color
                 : "var(--bg-tertiary)",
             }}
-            title="Custom color"
+            title={t("repoWorktree.btn.customColor", "Custom color")}
           >
             <input
               type="color"
@@ -75,84 +78,84 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
               onInput={(e) => props.onUpdate("color", e.currentTarget.value)}
             />
             <Show when={!props.settings.color || PRESET_COLORS.some((p) => p.hex === props.settings.color)}>
-              <span class="color-swatch-label">⋯</span>
+              <span class={s.colorSwatchLabel}>⋯</span>
             </Show>
           </label>
           <button
-            class={`color-swatch clear ${!props.settings.color ? "active" : ""}`}
+            class={cx(s.colorSwatch, s.colorSwatchClear, !props.settings.color && s.active)}
             onClick={() => props.onUpdate("color", "")}
-            title="Default"
+            title={t("repoWorktree.btn.defaultColor", "Use default color")}
           >
             ×
           </button>
         </div>
-        <p class="settings-hint">Custom color for repository name in sidebar</p>
+        <p class={s.hint}>{t("repoWorktree.hint.sidebarColor", "Color-code this repo in the sidebar")}</p>
       </div>
 
-      <h3>Worktree Configuration</h3>
+      <h3>{t("repoWorktree.heading.worktreeConfiguration", "Worktree Configuration")}</h3>
 
-      <div class="settings-group">
-        <label>Branch new workspaces from</label>
+      <div class={s.group}>
+        <label>{t("repoWorktree.label.branchFrom", "Branch From")}</label>
         <select
           value={baseBranchValue()}
           onChange={(e) => handleBaseBranchChange(e.currentTarget.value)}
         >
           <option value={INHERIT}>
-            Use global default ({props.defaults.baseBranch})
+            {t("repoWorktree.baseBranch.useGlobalDefault", "Use global default ({default})", { default: props.defaults.baseBranch })}
           </option>
           <For each={branchOptions}>
             {(opt) => <option value={opt.value}>{opt.label}</option>}
           </For>
         </select>
-        <p class="settings-hint">Base branch for new worktrees</p>
+        <p class={s.hint}>{t("repoWorktree.hint.branchFrom", "Base branch for new worktrees")}</p>
       </div>
 
-      <div class="settings-group">
-        <label>File Handling</label>
+      <div class={s.group}>
+        <label>{t("repoWorktree.label.fileHandling", "File Handling")}</label>
 
-        <div class="settings-toggle">
+        <div class={s.toggle}>
           <input
             type="checkbox"
             checked={effectiveBool(props.settings.copyIgnoredFiles, props.defaults.copyIgnoredFiles)}
             onChange={(e) => props.onUpdate("copyIgnoredFiles", e.currentTarget.checked)}
           />
           <span>
-            Copy ignored files to new worktrees
+            {t("repoWorktree.toggle.copyIgnoredFiles", "Copy ignored files")}
             <Show when={props.settings.copyIgnoredFiles === null}>
-              <span class="settings-hint-inline"> (global default)</span>
+              <span class={s.hintInline}> {t("repoWorktree.hint.globalDefault", "(Global Default)")}</span>
             </Show>
           </span>
         </div>
 
-        <div class="settings-toggle">
+        <div class={s.toggle}>
           <input
             type="checkbox"
             checked={effectiveBool(props.settings.copyUntrackedFiles, props.defaults.copyUntrackedFiles)}
             onChange={(e) => props.onUpdate("copyUntrackedFiles", e.currentTarget.checked)}
           />
           <span>
-            Copy untracked files to new worktrees
+            {t("repoWorktree.toggle.copyUntrackedFiles", "Copy untracked files")}
             <Show when={props.settings.copyUntrackedFiles === null}>
-              <span class="settings-hint-inline"> (global default)</span>
+              <span class={s.hintInline}> {t("repoWorktree.hint.globalDefault", "(Global Default)")}</span>
             </Show>
           </span>
         </div>
       </div>
 
       <Show when={isMacOS()}>
-        <div class="settings-group">
-          <label>Terminal</label>
+        <div class={s.group}>
+          <label>{t("repoWorktree.label.terminal", "Terminal")}</label>
 
-          <div class="settings-toggle">
+          <div class={s.toggle}>
             <input
               type="checkbox"
               checked={effectiveBool(props.settings.terminalMetaHotkeys, true)}
               onChange={(e) => props.onUpdate("terminalMetaHotkeys", e.currentTarget.checked)}
             />
             <span>
-              Left Option key sends meta sequences (Alt+B, Alt+F, Alt+P…)
+              {t("repoWorktree.toggle.terminalMetaHotkeys", "Enable Cmd+1-9 terminal hotkeys")}
               <Show when={props.settings.terminalMetaHotkeys === null}>
-                <span class="settings-hint-inline"> (default: on)</span>
+                <span class={s.hintInline}> {t("repoWorktree.hint.terminalMetaDefault", "(Default: On)")}</span>
               </Show>
             </span>
           </div>

@@ -95,7 +95,7 @@ describe("SettingsPanel", () => {
     const { container } = render(() => (
       <SettingsPanel visible={false} onClose={() => {}} />
     ));
-    const overlay = container.querySelector(".settings-overlay");
+    const overlay = container.querySelector(".overlay");
     expect(overlay).toBeNull();
   });
 
@@ -103,7 +103,7 @@ describe("SettingsPanel", () => {
     const { container } = render(() => (
       <SettingsPanel visible={true} onClose={() => {}} />
     ));
-    const overlay = container.querySelector(".settings-overlay");
+    const overlay = container.querySelector(".overlay");
     expect(overlay).not.toBeNull();
   });
 
@@ -111,7 +111,7 @@ describe("SettingsPanel", () => {
     const { container } = render(() => (
       <SettingsPanel visible={true} onClose={() => {}} />
     ));
-    const heading = container.querySelector(".settings-header h2");
+    const heading = container.querySelector(".header h2");
     expect(heading).not.toBeNull();
     expect(heading!.textContent).toBe("Settings");
   });
@@ -120,7 +120,7 @@ describe("SettingsPanel", () => {
     const { container } = render(() => (
       <SettingsPanel visible={true} onClose={() => {}} />
     ));
-    const navItems = container.querySelectorAll(".settings-nav-item");
+    const navItems = container.querySelectorAll(".navItem");
     const labels = Array.from(navItems).map((n) => n.textContent);
     expect(labels).toContain("General");
     expect(labels).toContain("Notifications");
@@ -133,7 +133,7 @@ describe("SettingsPanel", () => {
     const { container } = render(() => (
       <SettingsPanel visible={true} onClose={onClose} />
     ));
-    const closeBtn = container.querySelector(".settings-close")!;
+    const closeBtn = container.querySelector(".close")!;
     fireEvent.click(closeBtn);
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -143,7 +143,7 @@ describe("SettingsPanel", () => {
     const { container } = render(() => (
       <SettingsPanel visible={true} onClose={onClose} />
     ));
-    const overlay = container.querySelector(".settings-overlay")!;
+    const overlay = container.querySelector(".overlay")!;
     fireEvent.click(overlay);
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -154,7 +154,7 @@ describe("SettingsPanel", () => {
     ));
 
     // Default is General
-    const headings = container.querySelectorAll(".settings-section h3");
+    const headings = container.querySelectorAll(".section h3");
     expect(headings.length).toBeGreaterThanOrEqual(6);
     expect(headings[0]!.textContent).toBe("General");
     expect(headings[1]!.textContent).toBe("Confirmations");
@@ -164,10 +164,10 @@ describe("SettingsPanel", () => {
     expect(headings[5]!.textContent).toBe("Appearance");
 
     // Click Notifications nav item
-    const navItems = container.querySelectorAll(".settings-nav-item");
+    const navItems = container.querySelectorAll(".navItem");
     const notificationsItem = Array.from(navItems).find((n) => n.textContent === "Notifications")!;
     fireEvent.click(notificationsItem);
-    const sectionTitle = container.querySelector(".settings-section h3");
+    const sectionTitle = container.querySelector(".section h3");
     expect(sectionTitle!.textContent).toBe("Notification Settings");
   });
 
@@ -175,7 +175,7 @@ describe("SettingsPanel", () => {
     const { container } = render(() => (
       <SettingsPanel visible={true} onClose={() => {}} />
     ));
-    const repoItems = container.querySelectorAll(".settings-nav-item--repo");
+    const repoItems = container.querySelectorAll(".navItemRepo");
     const labels = Array.from(repoItems).map((n) => n.textContent);
     expect(labels).toContain("Alpha");
     expect(labels).toContain("Beta");
@@ -185,7 +185,7 @@ describe("SettingsPanel", () => {
     const { container } = render(() => (
       <SettingsPanel visible={true} onClose={() => {}} />
     ));
-    const label = container.querySelector(".settings-nav-label");
+    const label = container.querySelector(".navLabel");
     expect(label).not.toBeNull();
     expect(label!.textContent).toBe("REPOSITORIES");
   });
@@ -194,7 +194,7 @@ describe("SettingsPanel", () => {
     const { container } = render(() => (
       <SettingsPanel visible={true} onClose={() => {}} />
     ));
-    const activeItem = container.querySelector(".settings-nav-item.active");
+    const activeItem = container.querySelector(".navItem.active");
     expect(activeItem!.textContent).toBe("General");
   });
 
@@ -206,8 +206,8 @@ describe("SettingsPanel", () => {
         context={{ kind: "repo", repoPath: "/repo/alpha" }}
       />
     ));
-    const activeItem = container.querySelector(".settings-nav-item.active");
-    expect(activeItem!.classList.contains("settings-nav-item--repo")).toBe(true);
+    const activeItem = container.querySelector(".navItem.active");
+    expect(activeItem!.classList.contains("navItemRepo")).toBe(true);
     expect(activeItem!.textContent).toBe("Alpha");
   });
 
@@ -220,7 +220,7 @@ describe("SettingsPanel", () => {
       />
     ));
     // RepoWorktreeTab has a h3 "Repository"
-    const h3 = container.querySelector(".settings-section h3");
+    const h3 = container.querySelector(".section h3");
     expect(h3!.textContent).toBe("Repository");
   });
 
@@ -229,7 +229,7 @@ describe("SettingsPanel", () => {
       <SettingsPanel visible={true} onClose={() => {}} />
     ));
     // Global context → no Reset button
-    expect(container.querySelector(".settings-footer-reset")).toBeNull();
+    expect(container.querySelector(".footerReset")).toBeNull();
   });
 
   it("shows Reset to Defaults when repo nav item is active", () => {
@@ -240,15 +240,15 @@ describe("SettingsPanel", () => {
         context={{ kind: "repo", repoPath: "/repo/alpha" }}
       />
     ));
-    expect(container.querySelector(".settings-footer-reset")).not.toBeNull();
+    expect(container.querySelector(".footerReset")).not.toBeNull();
   });
 
   it("renders split layout with nav sidebar", () => {
     const { container } = render(() => (
       <SettingsPanel visible={true} onClose={() => {}} />
     ));
-    expect(container.querySelector(".settings-body")).not.toBeNull();
-    expect(container.querySelector(".settings-nav")).not.toBeNull();
-    expect(container.querySelector(".settings-content")).not.toBeNull();
+    expect(container.querySelector(".body")).not.toBeNull();
+    expect(container.querySelector(".nav")).not.toBeNull();
+    expect(container.querySelector(".content")).not.toBeNull();
   });
 });

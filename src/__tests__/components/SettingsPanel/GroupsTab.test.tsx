@@ -39,9 +39,9 @@ describe("GroupsTab", () => {
 
   it("renders empty state message when no groups", () => {
     const { container } = render(() => <GroupsTab />);
-    const empty = container.querySelector(".groups-empty");
+    const empty = container.querySelector(".groupsEmpty");
     expect(empty).not.toBeNull();
-    expect(empty!.textContent).toContain("No groups");
+    expect(empty!.textContent).toContain("No groups yet");
   });
 
   it("renders list of existing groups", () => {
@@ -53,13 +53,13 @@ describe("GroupsTab", () => {
       ["g1", "g2"],
     );
     const { container } = render(() => <GroupsTab />);
-    const items = container.querySelectorAll(".group-settings-item");
+    const items = container.querySelectorAll(".groupItem");
     expect(items.length).toBe(2);
   });
 
   it("Add Group button creates new group", () => {
     const { container } = render(() => <GroupsTab />);
-    const addBtn = container.querySelector(".groups-add-btn")!;
+    const addBtn = container.querySelector(".groupsAddBtn")!;
     fireEvent.click(addBtn);
     expect(mockCreateGroup).toHaveBeenCalledWith("New Group");
   });
@@ -70,7 +70,7 @@ describe("GroupsTab", () => {
       ["g1"],
     );
     const { container } = render(() => <GroupsTab />);
-    const deleteBtn = container.querySelector(".group-delete-btn")!;
+    const deleteBtn = container.querySelector(".groupDeleteBtn")!;
     fireEvent.click(deleteBtn);
     expect(mockDeleteGroup).toHaveBeenCalledWith("g1");
   });
@@ -81,7 +81,7 @@ describe("GroupsTab", () => {
       ["g1"],
     );
     const { container } = render(() => <GroupsTab />);
-    const swatches = container.querySelectorAll(".color-swatch");
+    const swatches = container.querySelectorAll(".colorSwatch");
     // 5 presets + 1 clear option
     expect(swatches.length).toBeGreaterThanOrEqual(5);
   });
@@ -92,7 +92,7 @@ describe("GroupsTab", () => {
       ["g1"],
     );
     const { container } = render(() => <GroupsTab />);
-    const firstSwatch = container.querySelector(".color-swatch")!;
+    const firstSwatch = container.querySelector(".colorSwatch")!;
     fireEvent.click(firstSwatch);
     expect(mockSetGroupColor).toHaveBeenCalledWith("g1", expect.any(String));
   });

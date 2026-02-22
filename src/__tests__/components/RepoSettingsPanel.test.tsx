@@ -97,7 +97,7 @@ describe("SettingsPanel — repo context", () => {
     const { container } = render(() => (
       <SettingsPanel {...defaultProps} />
     ));
-    const heading = container.querySelector(".settings-header h2");
+    const heading = container.querySelector(".header h2");
     expect(heading!.textContent).toBe("Settings");
   });
 
@@ -105,8 +105,8 @@ describe("SettingsPanel — repo context", () => {
     const { container } = render(() => (
       <SettingsPanel {...defaultProps} />
     ));
-    const activeItem = container.querySelector(".settings-nav-item.active");
-    expect(activeItem!.classList.contains("settings-nav-item--repo")).toBe(true);
+    const activeItem = container.querySelector(".navItem.active");
+    expect(activeItem!.classList.contains("navItemRepo")).toBe(true);
     expect(activeItem!.textContent).toBe("my-repo");
   });
 
@@ -115,7 +115,7 @@ describe("SettingsPanel — repo context", () => {
       <SettingsPanel {...defaultProps} />
     ));
     // RepoWorktreeTab renders h3 "Repository"
-    const headings = Array.from(container.querySelectorAll(".settings-section h3")).map(h => h.textContent);
+    const headings = Array.from(container.querySelectorAll(".section h3")).map(h => h.textContent);
     expect(headings).toContain("Repository");
     // RepoScriptsTab renders h3 "Automation Scripts"
     expect(headings).toContain("Automation Scripts");
@@ -126,7 +126,7 @@ describe("SettingsPanel — repo context", () => {
     const { container } = render(() => (
       <SettingsPanel {...defaultProps} onClose={onClose} />
     ));
-    const doneBtn = container.querySelector(".settings-footer-done")!;
+    const doneBtn = container.querySelector(".footerDone")!;
     fireEvent.click(doneBtn);
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -135,7 +135,7 @@ describe("SettingsPanel — repo context", () => {
     const { container } = render(() => (
       <SettingsPanel {...defaultProps} />
     ));
-    const resetBtn = container.querySelector(".settings-footer-reset")!;
+    const resetBtn = container.querySelector(".footerReset")!;
     expect(resetBtn).not.toBeNull();
     fireEvent.click(resetBtn);
     expect(repoSettingsStore.reset).toHaveBeenCalledWith("/repo");
@@ -145,12 +145,12 @@ describe("SettingsPanel — repo context", () => {
     const { container } = render(() => (
       <SettingsPanel {...defaultProps} />
     ));
-    const generalItem = Array.from(container.querySelectorAll(".settings-nav-item"))
+    const generalItem = Array.from(container.querySelectorAll(".navItem"))
       .find((n) => n.textContent === "General")!;
     fireEvent.click(generalItem);
-    const h3 = container.querySelector(".settings-section h3");
+    const h3 = container.querySelector(".section h3");
     expect(h3!.textContent).toBe("General");
     // Reset button gone when on global section
-    expect(container.querySelector(".settings-footer-reset")).toBeNull();
+    expect(container.querySelector(".footerReset")).toBeNull();
   });
 });

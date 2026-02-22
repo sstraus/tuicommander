@@ -1,4 +1,6 @@
 import { Component, For, Show, type JSX } from "solid-js";
+import { cx } from "../../utils";
+import s from "./Settings.module.css";
 
 const NAV_MIN_WIDTH = 140;
 const NAV_MAX_WIDTH = 280;
@@ -61,43 +63,43 @@ export const SettingsShell: Component<SettingsShellProps> = (props) => {
 
   return (
     <Show when={props.visible}>
-      <div class="settings-overlay" onClick={props.onClose}>
-        <div class="settings-panel" onClick={(e) => e.stopPropagation()}>
+      <div class={s.overlay} onClick={props.onClose}>
+        <div class={s.panel} onClick={(e) => e.stopPropagation()}>
           {/* Header */}
-          <div class={`settings-header${hasRepoHeader() ? " settings-header--repo" : ""}`}>
+          <div class={cx(s.header, hasRepoHeader() && s.headerRepo)}>
             <Show
               when={hasRepoHeader()}
               fallback={<h2>{props.title}</h2>}
             >
-              <div class="settings-title--repo">
+              <div class={s.titleRepo}>
                 <Show when={props.icon}>
-                  <span class="settings-icon--repo">{props.icon}</span>
+                  <span class={s.iconRepo}>{props.icon}</span>
                 </Show>
                 <div>
                   <h2>{props.title}</h2>
                   <Show when={props.subtitle}>
-                    <p class="settings-path--repo">{props.subtitle}</p>
+                    <p class={s.pathRepo}>{props.subtitle}</p>
                   </Show>
                 </div>
               </div>
             </Show>
-            <button class="settings-close" onClick={props.onClose}>
+            <button class={s.close} onClick={props.onClose}>
               &times;
             </button>
           </div>
 
           {/* Body: nav sidebar + scrollable content */}
-          <div class="settings-body">
-            <nav class="settings-nav" style={{ width: `${navWidth()}px` }}>
+          <div class={s.body}>
+            <nav class={s.nav} style={{ width: `${navWidth()}px` }}>
               <For each={props.tabs}>
                 {(tab) =>
                   tab.key === "__sep__" ? (
-                    <div class="settings-nav-separator" />
+                    <div class={s.navSeparator} />
                   ) : tab.key.startsWith("__label__:") ? (
-                    <div class="settings-nav-label">{tab.label}</div>
+                    <div class={s.navLabel}>{tab.label}</div>
                   ) : (
                     <button
-                      class={`settings-nav-item${tab.key.startsWith("repo:") ? " settings-nav-item--repo" : ""}${props.activeTab === tab.key ? " active" : ""}`}
+                      class={cx(s.navItem, tab.key.startsWith("repo:") && s.navItemRepo, props.activeTab === tab.key && s.active)}
                       style={tab.color ? { color: tab.color } : undefined}
                       onClick={() => props.onTabChange(tab.key)}
                     >
@@ -106,11 +108,11 @@ export const SettingsShell: Component<SettingsShellProps> = (props) => {
                   )
                 }
               </For>
-              <div class="settings-nav-resize-handle" onMouseDown={handleNavResizeStart} />
+              <div class={s.navResizeHandle} onMouseDown={handleNavResizeStart} />
             </nav>
 
             {/* Content */}
-            <div class="settings-content">
+            <div class={s.content}>
               {props.children}
             </div>
           </div>

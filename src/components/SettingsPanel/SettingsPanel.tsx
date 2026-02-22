@@ -15,6 +15,8 @@ import {
   RepoWorktreeTab,
   RepoScriptsTab,
 } from "./tabs";
+import { t } from "../../i18n";
+import s from "./Settings.module.css";
 
 /** Context for initial selection when opening the panel */
 export type SettingsContext =
@@ -29,11 +31,11 @@ export interface SettingsPanelProps {
 }
 
 const GLOBAL_TABS: SettingsShellTab[] = [
-  { key: "general", label: "General" },
-  { key: "groups", label: "Groups" },
-  { key: "notifications", label: "Notifications" },
-  { key: "dictation", label: "Dictation" },
-  { key: "services", label: "Services" },
+  { key: "general", label: t("settings.general", "General") },
+  { key: "groups", label: t("settings.groups", "Groups") },
+  { key: "notifications", label: t("settings.notifications", "Notifications") },
+  { key: "dictation", label: t("settings.dictation", "Dictation") },
+  { key: "services", label: t("settings.services", "Services") },
 ];
 
 function defaultTab(ctx: SettingsContext): string {
@@ -51,7 +53,7 @@ function buildNavItems(): SettingsShellTab[] {
 
   if (repos.length > 0) {
     items.push({ key: "__sep__", label: "─" });
-    items.push({ key: "__label__:Repositories", label: "REPOSITORIES" });
+    items.push({ key: "__label__:Repositories", label: t("settings.repositories", "REPOSITORIES") });
     for (const repo of repos) {
       const label = repo.displayName || repo.path.split("/").pop() || repo.path;
       const color =
@@ -97,19 +99,19 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
   const footer = () => {
     const path = activeRepoPath();
     return (
-      <div class="settings-footer">
+      <div class={s.footer}>
         <Show when={path} fallback={<span />}>
           {(p) => (
             <button
-              class="settings-footer-reset"
+              class={s.footerReset}
               onClick={() => repoSettingsStore.reset(p())}
             >
-              Reset to Defaults
+              {t("settings.resetToDefaults", "Reset to Defaults")}
             </button>
           )}
         </Show>
-        <button class="settings-footer-done" onClick={props.onClose}>
-          Done
+        <button class={s.footerDone} onClick={props.onClose}>
+          {t("settings.done", "Done")}
         </button>
       </div>
     );
@@ -119,7 +121,7 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
     <SettingsShell
       visible={props.visible}
       onClose={props.onClose}
-      title="Settings"
+      title={t("settings.title", "Settings")}
       tabs={buildNavItems()}
       activeTab={activeTab()}
       onTabChange={setActiveTab}

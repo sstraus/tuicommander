@@ -93,7 +93,7 @@ describe("GeneralTab — Repository Defaults section", () => {
     // The repo defaults select is the one with an "Automatic (origin/main" option
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const baseBranchSelect = selects.find(s =>
-      Array.from(s.options).some(o => o.text.includes("Automatic (origin/main"))
+      Array.from(s.options).some(o => o.text.includes("Automatic"))
     );
     expect(baseBranchSelect).not.toBeUndefined();
     expect(baseBranchSelect!.value).toBe("automatic");
@@ -103,7 +103,7 @@ describe("GeneralTab — Repository Defaults section", () => {
     const { container } = render(() => <GeneralTab />);
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const baseBranchSelect = selects.find(s =>
-      Array.from(s.options).some(o => o.text.includes("Automatic (origin/main"))
+      Array.from(s.options).some(o => o.text.includes("Automatic"))
     )!;
     fireEvent.change(baseBranchSelect, { target: { value: "main" } });
     expect(mockSetBaseBranch).toHaveBeenCalledWith("main");
