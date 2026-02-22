@@ -1,0 +1,79 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.hidden {
+  display: none;
+}
+
+.dialog {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  min-width: 400px;
+  max-width: 600px;
+  box-shadow: var(--shadow-dropdown);
+}
+
+.hint {
+  padding: 8px 16px 12px;
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+}
+
+.question {
+  padding: 16px;
+  font-size: var(--font-base);
+  color: var(--fg-secondary);
+  line-height: 1.5;
+}
+
+.options {
+  padding: 0 16px 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.option:hover {
+  background: var(--bg-highlight);
+}
+
+.selected {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.optionKey {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+}
+
+.selected .optionKey {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--text-on-accent);
+}
+
+.optionText {
+  flex: 1;
+  font-size: var(--font-base);
+}

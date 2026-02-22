@@ -21,7 +21,7 @@ describe("ContextMenu", () => {
         onClose={() => {}}
       />
     ));
-    const menu = container.querySelector(".context-menu");
+    const menu = container.querySelector(".menu");
     expect(menu).toBeNull();
   });
 
@@ -35,7 +35,7 @@ describe("ContextMenu", () => {
         onClose={() => {}}
       />
     ));
-    const items = container.querySelectorAll(".context-menu-item");
+    const items = container.querySelectorAll(".item");
     expect(items.length).toBe(3);
   });
 
@@ -49,7 +49,7 @@ describe("ContextMenu", () => {
         onClose={() => {}}
       />
     ));
-    const labels = container.querySelectorAll(".context-menu-label");
+    const labels = container.querySelectorAll(".label");
     expect(labels[0].textContent).toBe("Copy");
     expect(labels[1].textContent).toBe("Paste");
     expect(labels[2].textContent).toBe("Delete");
@@ -65,7 +65,7 @@ describe("ContextMenu", () => {
         onClose={() => {}}
       />
     ));
-    const shortcuts = container.querySelectorAll(".context-menu-shortcut");
+    const shortcuts = container.querySelectorAll(".shortcut");
     expect(shortcuts.length).toBe(2); // Copy and Paste have shortcuts
     expect(shortcuts[0].textContent).toBe("\u2318C");
   });
@@ -85,7 +85,7 @@ describe("ContextMenu", () => {
         onClose={handleClose}
       />
     ));
-    const btn = container.querySelector(".context-menu-item")!;
+    const btn = container.querySelector(".item")!;
     fireEvent.click(btn);
     expect(action).toHaveBeenCalledOnce();
     expect(handleClose).toHaveBeenCalledOnce();
@@ -105,7 +105,7 @@ describe("ContextMenu", () => {
         onClose={() => {}}
       />
     ));
-    const btn = container.querySelector(".context-menu-item")!;
+    const btn = container.querySelector(".item")!;
     fireEvent.click(btn);
     expect(action).not.toHaveBeenCalled();
   });
@@ -124,7 +124,7 @@ describe("ContextMenu", () => {
         onClose={() => {}}
       />
     ));
-    const separators = container.querySelectorAll(".context-menu-separator");
+    const separators = container.querySelectorAll(".separator");
     expect(separators.length).toBe(1);
   });
 
@@ -175,7 +175,7 @@ describe("ContextMenu", () => {
         onClose={() => {}}
       />
     ));
-    const menu = container.querySelector(".context-menu") as HTMLElement;
+    const menu = container.querySelector(".menu") as HTMLElement;
     // x should be clamped: 200 - 180 - 8 = 12
     expect(parseInt(menu.style.left)).toBeLessThan(190);
     // y should be clamped
@@ -196,7 +196,7 @@ describe("ContextMenu", () => {
         onClose={() => {}}
       />
     ));
-    const menu = container.querySelector(".context-menu") as HTMLElement;
+    const menu = container.querySelector(".menu") as HTMLElement;
     expect(menu.style.left).toBe("150px");
     expect(menu.style.top).toBe("250px");
   });
@@ -218,7 +218,7 @@ describe("ContextMenu submenus", () => {
     const { container } = render(() => (
       <ContextMenu items={items} x={0} y={0} visible={true} onClose={() => {}} />
     ));
-    const arrows = container.querySelectorAll(".context-menu-arrow");
+    const arrows = container.querySelectorAll(".arrow");
     expect(arrows.length).toBe(1);
   });
 
@@ -235,9 +235,9 @@ describe("ContextMenu submenus", () => {
     const { container } = render(() => (
       <ContextMenu items={items} x={0} y={0} visible={true} onClose={() => {}} />
     ));
-    const parentWrap = container.querySelector(".context-menu-item-wrap")!;
+    const parentWrap = container.querySelector(".itemWrap")!;
     fireEvent.mouseEnter(parentWrap);
-    const submenu = container.querySelector(".context-submenu");
+    const submenu = container.querySelector(".submenu");
     expect(submenu).not.toBeNull();
   });
 
@@ -257,10 +257,10 @@ describe("ContextMenu submenus", () => {
       <ContextMenu items={items} x={0} y={0} visible={true} onClose={handleClose} />
     ));
     // Show submenu
-    const parentWrap = container.querySelector(".context-menu-item-wrap")!;
+    const parentWrap = container.querySelector(".itemWrap")!;
     fireEvent.mouseEnter(parentWrap);
     // Click submenu item
-    const submenuItem = container.querySelector(".context-submenu .context-menu-item")!;
+    const submenuItem = container.querySelector(".submenu .item")!;
     fireEvent.click(submenuItem);
     expect(childAction).toHaveBeenCalledOnce();
     expect(handleClose).toHaveBeenCalledOnce();
@@ -280,7 +280,7 @@ describe("ContextMenu submenus", () => {
     const { container } = render(() => (
       <ContextMenu items={items} x={0} y={0} visible={true} onClose={() => {}} />
     ));
-    const parentItem = container.querySelector(".context-menu-item")!;
+    const parentItem = container.querySelector(".item")!;
     fireEvent.click(parentItem);
     expect(parentAction).not.toHaveBeenCalled();
   });

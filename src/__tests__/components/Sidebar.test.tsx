@@ -382,10 +382,10 @@ describe("Sidebar", () => {
       const menuBtn = container.querySelector(".repo-action-btn")!;
       fireEvent.click(menuBtn);
 
-      const menu = container.querySelector(".context-menu");
+      const menu = container.querySelector(".menu");
       expect(menu).not.toBeNull();
 
-      const menuItems = menu!.querySelectorAll(".context-menu-item");
+      const menuItems = menu!.querySelectorAll(".item");
       expect(menuItems.length).toBe(3);
       expect(menuItems[0].textContent).toContain("Repo Settings");
       expect(menuItems[1].textContent).toContain("Move to Group");
@@ -401,7 +401,7 @@ describe("Sidebar", () => {
       fireEvent.click(menuBtn);
 
       // Click settings
-      const menuItems = container.querySelectorAll(".context-menu-item");
+      const menuItems = container.querySelectorAll(".item");
       fireEvent.click(menuItems[0]);
       expect(onRepoSettings).toHaveBeenCalledWith("/repo1");
     });
@@ -415,7 +415,7 @@ describe("Sidebar", () => {
       fireEvent.click(menuBtn);
 
       // Click remove — index 2 (after "Repo Settings" and "Move to Group")
-      const menuItems = container.querySelectorAll(".context-menu-item");
+      const menuItems = container.querySelectorAll(".item");
       fireEvent.click(menuItems[2]);
       expect(onRemoveRepo).toHaveBeenCalledWith("/repo1");
     });
@@ -426,14 +426,14 @@ describe("Sidebar", () => {
       // Open menu
       const menuBtn = container.querySelector(".repo-action-btn")!;
       fireEvent.click(menuBtn);
-      expect(container.querySelector(".context-menu")).not.toBeNull();
+      expect(container.querySelector(".menu")).not.toBeNull();
 
       // Click settings to close menu
-      const menuItems = container.querySelectorAll(".context-menu-item");
+      const menuItems = container.querySelectorAll(".item");
       fireEvent.click(menuItems[0]);
 
       // Menu should be closed
-      expect(container.querySelector(".context-menu")).toBeNull();
+      expect(container.querySelector(".menu")).toBeNull();
     });
 
     it("repo menu closes on Escape", () => {
@@ -442,11 +442,11 @@ describe("Sidebar", () => {
       // Open menu
       const menuBtn = container.querySelector(".repo-action-btn")!;
       fireEvent.click(menuBtn);
-      expect(container.querySelector(".context-menu")).not.toBeNull();
+      expect(container.querySelector(".menu")).not.toBeNull();
 
       // Press Escape
       fireEvent.keyDown(document, { key: "Escape" });
-      expect(container.querySelector(".context-menu")).toBeNull();
+      expect(container.querySelector(".menu")).toBeNull();
     });
 
     it("repo menu toggles on repeated clicks", () => {
@@ -456,11 +456,11 @@ describe("Sidebar", () => {
 
       // Open
       fireEvent.click(menuBtn);
-      expect(container.querySelector(".context-menu")).not.toBeNull();
+      expect(container.querySelector(".menu")).not.toBeNull();
 
       // Close
       fireEvent.click(menuBtn);
-      expect(container.querySelector(".context-menu")).toBeNull();
+      expect(container.querySelector(".menu")).toBeNull();
     });
 
     it("repo header right-click opens context menu with Settings and Remove options", () => {
@@ -468,10 +468,10 @@ describe("Sidebar", () => {
       const header = container.querySelector(".repo-header")!;
       fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
 
-      const menu = container.querySelector(".context-menu");
+      const menu = container.querySelector(".menu");
       expect(menu).not.toBeNull();
 
-      const menuItems = menu!.querySelectorAll(".context-menu-item");
+      const menuItems = menu!.querySelectorAll(".item");
       expect(menuItems.length).toBe(3);
       expect(menuItems[0].textContent).toContain("Repo Settings");
       expect(menuItems[1].textContent).toContain("Move to Group");
@@ -856,11 +856,11 @@ describe("Sidebar", () => {
       // Open menu
       const menuBtn = container.querySelector(".repo-action-btn")!;
       fireEvent.click(menuBtn);
-      expect(container.querySelector(".context-menu")).not.toBeNull();
+      expect(container.querySelector(".menu")).not.toBeNull();
 
       // Click somewhere outside the menu (on the sidebar itself)
       fireEvent.mouseDown(container.querySelector("#sidebar")!);
-      expect(container.querySelector(".context-menu")).toBeNull();
+      expect(container.querySelector(".menu")).toBeNull();
     });
   });
 
@@ -871,10 +871,10 @@ describe("Sidebar", () => {
       const branchItem = container.querySelector(".branch-item")!;
       fireEvent.contextMenu(branchItem, { clientX: 100, clientY: 200 });
 
-      const contextMenu = container.querySelector(".context-menu");
+      const contextMenu = container.querySelector(".menu");
       expect(contextMenu).not.toBeNull();
 
-      const items = contextMenu!.querySelectorAll(".context-menu-item");
+      const items = contextMenu!.querySelectorAll(".item");
       // Copy Path, Add Terminal, Rename Branch (no Delete Worktree for main)
       expect(items.length).toBe(3);
     });
@@ -898,11 +898,11 @@ describe("Sidebar", () => {
       const branchItem = container.querySelector(".branch-item")!;
       fireEvent.contextMenu(branchItem, { clientX: 100, clientY: 200 });
 
-      const contextMenu = container.querySelector(".context-menu");
-      const items = contextMenu!.querySelectorAll(".context-menu-item");
+      const contextMenu = container.querySelector(".menu");
+      const items = contextMenu!.querySelectorAll(".item");
       // Find "Copy Path" item
       const copyPathItem = Array.from(items).find((i) =>
-        i.querySelector(".context-menu-label")?.textContent === "Copy Path"
+        i.querySelector(".label")?.textContent === "Copy Path"
       )!;
       fireEvent.click(copyPathItem);
 
@@ -924,10 +924,10 @@ describe("Sidebar", () => {
       const branchItem = container.querySelector(".branch-item")!;
       fireEvent.contextMenu(branchItem, { clientX: 100, clientY: 200 });
 
-      const contextMenu = container.querySelector(".context-menu");
-      const items = contextMenu!.querySelectorAll(".context-menu-item");
+      const contextMenu = container.querySelector(".menu");
+      const items = contextMenu!.querySelectorAll(".item");
       const copyPathItem = Array.from(items).find((i) =>
-        i.querySelector(".context-menu-label")?.textContent === "Copy Path"
+        i.querySelector(".label")?.textContent === "Copy Path"
       )!;
       expect(copyPathItem.hasAttribute("disabled")).toBe(true);
     });
@@ -945,11 +945,11 @@ describe("Sidebar", () => {
       const branchItems = container.querySelectorAll(".branch-item");
       fireEvent.contextMenu(branchItems[1], { clientX: 100, clientY: 200 });
 
-      const contextMenu = container.querySelector(".context-menu");
-      const items = contextMenu!.querySelectorAll(".context-menu-item");
+      const contextMenu = container.querySelector(".menu");
+      const items = contextMenu!.querySelectorAll(".item");
       // Copy Path, Add Terminal, Rename Branch (NO Delete Worktree)
       expect(items.length).toBe(3);
-      const labels = Array.from(items).map((i) => i.querySelector(".context-menu-label")!.textContent);
+      const labels = Array.from(items).map((i) => i.querySelector(".label")!.textContent);
       expect(labels).not.toContain("Delete Worktree");
     });
 
@@ -967,11 +967,11 @@ describe("Sidebar", () => {
       // feature/x is second (sorted after main)
       fireEvent.contextMenu(branchItems[1], { clientX: 100, clientY: 200 });
 
-      const contextMenu = container.querySelector(".context-menu");
-      const items = contextMenu!.querySelectorAll(".context-menu-item");
+      const contextMenu = container.querySelector(".menu");
+      const items = contextMenu!.querySelectorAll(".item");
       // Copy Path, Add Terminal, Rename Branch, Delete Worktree
       expect(items.length).toBe(4);
-      const labels = Array.from(items).map((i) => i.querySelector(".context-menu-label")!.textContent);
+      const labels = Array.from(items).map((i) => i.querySelector(".label")!.textContent);
       expect(labels).toContain("Delete Worktree");
     });
   });
@@ -1137,9 +1137,9 @@ describe("Sidebar", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       const header = container.querySelector(".group-header")!;
       fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
-      const menu = container.querySelector(".context-menu");
+      const menu = container.querySelector(".menu");
       expect(menu).not.toBeNull();
-      const labels = Array.from(menu!.querySelectorAll(".context-menu-label")).map((el) => el.textContent);
+      const labels = Array.from(menu!.querySelectorAll(".label")).map((el) => el.textContent);
       expect(labels).toContain("Rename Group");
       expect(labels).toContain("Change Color");
       expect(labels).toContain("Delete Group");
@@ -1158,9 +1158,9 @@ describe("Sidebar", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       const header = container.querySelector(".group-header")!;
       fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
-      const menuItems = container.querySelectorAll(".context-menu .context-menu-item");
+      const menuItems = container.querySelectorAll(".menu .item");
       const deleteItem = Array.from(menuItems).find(
-        (el) => el.querySelector(".context-menu-label")?.textContent === "Delete Group"
+        (el) => el.querySelector(".label")?.textContent === "Delete Group"
       )!;
       fireEvent.click(deleteItem);
       expect(mockDeleteGroup).toHaveBeenCalledWith("g1");
@@ -1179,7 +1179,7 @@ describe("Sidebar", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       const header = container.querySelector(".repo-header")!;
       fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
-      const labels = Array.from(container.querySelectorAll(".context-menu-label")).map((el) => el.textContent);
+      const labels = Array.from(container.querySelectorAll(".label")).map((el) => el.textContent);
       expect(labels).toContain("Move to Group");
     });
 

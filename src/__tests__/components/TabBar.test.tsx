@@ -95,9 +95,9 @@ describe("TabBar", () => {
       left: 100, bottom: 50, top: 20, right: 150, width: 50, height: 30, x: 100, y: 20, toJSON: () => {},
     } as DOMRect);
     fireEvent.contextMenu(btn);
-    const menus = container.querySelectorAll(".context-menu");
+    const menus = container.querySelectorAll(".menu");
     expect(menus.length).toBeGreaterThan(0);
-    const labels = Array.from(menus[menus.length - 1].querySelectorAll(".context-menu-label"));
+    const labels = Array.from(menus[menus.length - 1].querySelectorAll(".label"));
     const labelTexts = labels.map(l => l.textContent);
     expect(labelTexts).toContain("New Tab");
     expect(labelTexts).toContain("Split Vertically");
@@ -697,7 +697,7 @@ describe("TabBar", () => {
       ));
       const tab = container.querySelector(".tab")!;
       fireEvent.contextMenu(tab);
-      const menu = container.querySelector(".context-menu");
+      const menu = container.querySelector(".menu");
       expect(menu).not.toBeNull();
     });
   });
@@ -721,9 +721,9 @@ describe("TabBar", () => {
         left: 100, bottom: 50, top: 20, right: 150, width: 50, height: 30, x: 100, y: 20, toJSON: () => {},
       } as DOMRect);
       fireEvent.contextMenu(btn);
-      const menus = container.querySelectorAll(".context-menu");
+      const menus = container.querySelectorAll(".menu");
       const menu = menus[menus.length - 1];
-      const items = menu.querySelectorAll(".context-menu-item");
+      const items = menu.querySelectorAll(".item");
       // Items: New Tab, Split Vertically, Split Horizontally
       // The split items (last two non-separator) should be disabled
       const splitItems = Array.from(items).filter(i => i.textContent?.includes("Split"));
@@ -748,9 +748,9 @@ describe("TabBar", () => {
         left: 100, bottom: 50, top: 20, right: 150, width: 50, height: 30, x: 100, y: 20, toJSON: () => {},
       } as DOMRect);
       fireEvent.contextMenu(btn);
-      const menus = container.querySelectorAll(".context-menu");
+      const menus = container.querySelectorAll(".menu");
       const menu = menus[menus.length - 1];
-      const splitBtn = Array.from(menu.querySelectorAll(".context-menu-item")).find(
+      const splitBtn = Array.from(menu.querySelectorAll(".item")).find(
         i => i.textContent?.includes("Split Vertically")
       );
       fireEvent.click(splitBtn!);

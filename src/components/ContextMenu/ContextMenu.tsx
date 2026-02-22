@@ -1,4 +1,6 @@
 import { Component, For, Show, createSignal, onCleanup, createEffect } from "solid-js";
+import { cx } from "../../utils";
+import s from "./ContextMenu.module.css";
 
 export interface ContextMenuItem {
   label: string;
@@ -28,15 +30,15 @@ const MenuItem: Component<{
   return (
     <>
       <Show when={props.item.separator}>
-        <div class="context-menu-separator" />
+        <div class={s.separator} />
       </Show>
       <div
-        class="context-menu-item-wrap"
+        class={s.itemWrap}
         onMouseEnter={() => hasChildren() && setSubmenuOpen(true)}
         onMouseLeave={() => setSubmenuOpen(false)}
       >
         <button
-          class={`context-menu-item ${props.item.disabled ? "disabled" : ""} ${hasChildren() ? "has-children" : ""}`}
+          class={cx(s.item, props.item.disabled && s.disabled)}
           onClick={() => {
             if (props.item.disabled || hasChildren()) return;
             props.item.action();
@@ -44,16 +46,16 @@ const MenuItem: Component<{
           }}
           disabled={props.item.disabled}
         >
-          <span class="context-menu-label">{props.item.label}</span>
+          <span class={s.label}>{props.item.label}</span>
           <Show when={props.item.shortcut}>
-            <span class="context-menu-shortcut">{props.item.shortcut}</span>
+            <span class={s.shortcut}>{props.item.shortcut}</span>
           </Show>
           <Show when={hasChildren()}>
-            <span class="context-menu-arrow">{"\u203A"}</span>
+            <span class={s.arrow}>{"\u203A"}</span>
           </Show>
         </button>
         <Show when={submenuOpen() && props.item.children}>
-          <div class="context-submenu">
+          <div class={s.submenu}>
             <For each={props.item.children}>
               {(child) => (
                 <MenuItem item={child} onClose={props.onClose} />
@@ -119,7 +121,7 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
     <Show when={props.visible}>
       <div
         ref={menuRef}
-        class="context-menu"
+        class={s.menu}
         style={{
           left: `${getPosition().x}px`,
           top: `${getPosition().y}px`,

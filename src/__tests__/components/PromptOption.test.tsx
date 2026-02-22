@@ -7,7 +7,7 @@ describe("PromptOption", () => {
     const { container } = render(() => (
       <PromptOption index={0} label="Option A" selected={false} onClick={() => {}} />
     ));
-    const text = container.querySelector(".prompt-option-text");
+    const text = container.querySelector(".optionText");
     expect(text).not.toBeNull();
     expect(text!.textContent).toBe("Option A");
   });
@@ -16,7 +16,7 @@ describe("PromptOption", () => {
     const { container } = render(() => (
       <PromptOption index={2} label="Third" selected={false} onClick={() => {}} />
     ));
-    const key = container.querySelector(".prompt-option-key");
+    const key = container.querySelector(".optionKey");
     expect(key).not.toBeNull();
     expect(key!.textContent).toBe("3");
   });
@@ -25,7 +25,7 @@ describe("PromptOption", () => {
     const { container } = render(() => (
       <PromptOption index={0} label="Selected" selected={true} onClick={() => {}} />
     ));
-    const div = container.querySelector(".prompt-option");
+    const div = container.querySelector(".option");
     expect(div!.classList.contains("selected")).toBe(true);
   });
 
@@ -33,7 +33,7 @@ describe("PromptOption", () => {
     const { container } = render(() => (
       <PromptOption index={0} label="Not selected" selected={false} onClick={() => {}} />
     ));
-    const div = container.querySelector(".prompt-option");
+    const div = container.querySelector(".option");
     expect(div!.classList.contains("selected")).toBe(false);
   });
 
@@ -42,7 +42,7 @@ describe("PromptOption", () => {
     const { container } = render(() => (
       <PromptOption index={0} label="Clickable" selected={false} onClick={handleClick} />
     ));
-    const div = container.querySelector(".prompt-option")!;
+    const div = container.querySelector(".option")!;
     fireEvent.click(div);
     expect(handleClick).toHaveBeenCalledOnce();
   });

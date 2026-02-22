@@ -1,4 +1,6 @@
 import { Component } from "solid-js";
+import { cx } from "../../utils";
+import s from "../PromptOverlay/PromptOverlay.module.css";
 
 export interface PromptOptionProps {
   index: number;
@@ -10,11 +12,11 @@ export interface PromptOptionProps {
 export const PromptOption: Component<PromptOptionProps> = (props) => {
   return (
     <div
-      class={`prompt-option ${props.selected ? "selected" : ""}`}
+      class={cx(s.option, props.selected && s.selected)}
       onClick={props.onClick}
     >
-      <span class="prompt-option-key">{props.index + 1}</span>
-      <span class="prompt-option-text">{props.label}</span>
+      <span class={s.optionKey}>{props.index + 1}</span>
+      <span class={s.optionText}>{props.label}</span>
     </div>
   );
 };

@@ -1,7 +1,9 @@
 import { Component, For, Show, createSignal, createEffect, onCleanup } from "solid-js";
-import { PromptOption } from "../ui";
 import { promptStore } from "../../stores/prompt";
 import { usePty } from "../../hooks/usePty";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import s from "./PromptOverlay.module.css";
 
 export interface PromptOverlayProps {
   onDismiss?: () => void;
@@ -94,26 +96,27 @@ export const PromptOverlay: Component<PromptOverlayProps> = (props) => {
   };
 
   return (
-    <div id="prompt-overlay" class={isVisible() ? "" : "hidden"}>
+    <div class={cx(s.overlay, !isVisible() && s.hidden)}>
       <Show when={prompt()}>
-        <div class="prompt-dialog">
-          <div id="prompt-question">
-            {prompt()?.question || "Select an option:"}
+        <div class={s.dialog}>
+          <div class={s.question}>
+            {prompt()?.question || t("promptOverlay.defaultQuestion", "Select an option:")}
           </div>
-          <div id="prompt-options">
+          <div class={s.options}>
             <For each={prompt()?.options ?? []}>
               {(option, index) => (
-                <PromptOption
-                  index={index()}
-                  label={option}
-                  selected={index() === selectedIndex()}
+                <div
+                  class={cx(s.option, index() === selectedIndex() && s.selected)}
                   onClick={() => selectAndConfirm(index())}
-                />
+                >
+                  <span class={s.optionKey}>{index() + 1}</span>
+                  <span class={s.optionText}>{option}</span>
+                </div>
               )}
             </For>
           </div>
-          <div class="prompt-hint">
-            Press 1-{prompt()?.options.length} or Enter to select, Escape to cancel
+          <div class={s.hint}>
+            {t("promptOverlay.hint", "Press 1-{count} or Enter to select, Escape to cancel", { count: String(prompt()?.options.length ?? 0) })}
           </div>
         </div>
       </Show>

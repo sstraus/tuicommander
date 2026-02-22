@@ -62,7 +62,7 @@ describe("PromptOverlay", () => {
 
   it("has hidden class when no prompt is active", () => {
     const { container } = render(() => <PromptOverlay />);
-    const overlay = container.querySelector("#prompt-overlay");
+    const overlay = container.querySelector(".overlay");
     expect(overlay).not.toBeNull();
     expect(overlay!.classList.contains("hidden")).toBe(true);
   });
@@ -71,10 +71,10 @@ describe("PromptOverlay", () => {
     showTestPrompt(["Hammer", "Wrench", "Screwdriver"], "Choose your tool:");
 
     const { container } = render(() => <PromptOverlay />);
-    const overlay = container.querySelector("#prompt-overlay");
+    const overlay = container.querySelector(".overlay");
     expect(overlay!.classList.contains("hidden")).toBe(false);
 
-    const question = container.querySelector("#prompt-question");
+    const question = container.querySelector(".question");
     expect(question).not.toBeNull();
     expect(question!.textContent).toBe("Choose your tool:");
   });
@@ -83,11 +83,11 @@ describe("PromptOverlay", () => {
     showTestPrompt(["Alpha", "Beta", "Gamma"], "Pick one:");
 
     const { container } = render(() => <PromptOverlay />);
-    const options = container.querySelectorAll(".prompt-option");
+    const options = container.querySelectorAll(".option");
     expect(options.length).toBe(3);
 
     const texts = Array.from(options).map(
-      (o) => o.querySelector(".prompt-option-text")!.textContent
+      (o) => o.querySelector(".optionText")!.textContent
     );
     expect(texts).toEqual(["Alpha", "Beta", "Gamma"]);
   });
@@ -96,7 +96,7 @@ describe("PromptOverlay", () => {
     showTestPrompt(["A", "B"]);
 
     const { container } = render(() => <PromptOverlay />);
-    const keys = container.querySelectorAll(".prompt-option-key");
+    const keys = container.querySelectorAll(".optionKey");
     expect(keys[0].textContent).toBe("1");
     expect(keys[1].textContent).toBe("2");
   });
@@ -105,7 +105,7 @@ describe("PromptOverlay", () => {
     showTestPrompt(["X", "Y", "Z"]);
 
     const { container } = render(() => <PromptOverlay />);
-    const hint = container.querySelector(".prompt-hint");
+    const hint = container.querySelector(".hint");
     expect(hint).not.toBeNull();
     expect(hint!.textContent).toContain("1-3");
   });
@@ -114,7 +114,7 @@ describe("PromptOverlay", () => {
     showTestPrompt();
 
     const { container } = render(() => <PromptOverlay />);
-    const options = container.querySelectorAll(".prompt-option");
+    const options = container.querySelectorAll(".option");
     expect(options[0].classList.contains("selected")).toBe(true);
     expect(options[1].classList.contains("selected")).toBe(false);
     expect(options[2].classList.contains("selected")).toBe(false);
@@ -127,7 +127,7 @@ describe("PromptOverlay", () => {
 
     fireEvent.keyDown(document, { key: "ArrowDown" });
 
-    const options = container.querySelectorAll(".prompt-option");
+    const options = container.querySelectorAll(".option");
     expect(options[0].classList.contains("selected")).toBe(false);
     expect(options[1].classList.contains("selected")).toBe(true);
   });
@@ -141,7 +141,7 @@ describe("PromptOverlay", () => {
     fireEvent.keyDown(document, { key: "ArrowDown" });
     fireEvent.keyDown(document, { key: "ArrowUp" });
 
-    const options = container.querySelectorAll(".prompt-option");
+    const options = container.querySelectorAll(".option");
     expect(options[0].classList.contains("selected")).toBe(true);
   });
 
@@ -152,7 +152,7 @@ describe("PromptOverlay", () => {
 
     fireEvent.keyDown(document, { key: "ArrowUp" });
 
-    const options = container.querySelectorAll(".prompt-option");
+    const options = container.querySelectorAll(".option");
     expect(options[0].classList.contains("selected")).toBe(true);
   });
 
@@ -165,7 +165,7 @@ describe("PromptOverlay", () => {
     fireEvent.keyDown(document, { key: "ArrowDown" });
     fireEvent.keyDown(document, { key: "ArrowDown" });
 
-    const options = container.querySelectorAll(".prompt-option");
+    const options = container.querySelectorAll(".option");
     expect(options[1].classList.contains("selected")).toBe(true);
   });
 
@@ -242,7 +242,7 @@ describe("PromptOverlay", () => {
 
     const { container } = render(() => <PromptOverlay />);
 
-    const options = container.querySelectorAll(".prompt-option");
+    const options = container.querySelectorAll(".option");
     fireEvent.click(options[2]); // Click third option
 
     await vi.waitFor(() => {
@@ -258,7 +258,7 @@ describe("PromptOverlay", () => {
     });
 
     const { container } = render(() => <PromptOverlay />);
-    const question = container.querySelector("#prompt-question");
+    const question = container.querySelector(".question");
     // The component uses prompt()?.question || "Select an option:"
     expect(question!.textContent).toBe("Select an option:");
   });
@@ -290,7 +290,7 @@ describe("PromptOverlay", () => {
 
     // After confirming, prompt is hidden
     expect(promptStore.state.activePrompt).toBeNull();
-    const overlay = container.querySelector("#prompt-overlay");
+    const overlay = container.querySelector(".overlay");
     expect(overlay!.classList.contains("hidden")).toBe(true);
   });
 });
