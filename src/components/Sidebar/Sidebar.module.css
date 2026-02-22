@@ -1,0 +1,627 @@
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar-width);
+  min-width: 200px;
+  max-width: 500px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: width 0.2s ease, min-width 0.2s ease, opacity 0.15s ease;
+  overflow: hidden;
+}
+
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+.resizeHandle:hover {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.repoList {
+  /* container for repo sections */
+}
+
+.footer {
+  padding: 4px 6px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+}
+
+.addRepo {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+  min-width: 0;
+}
+
+.addRepo:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+}
+
+.addRepoIcon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.addRepo:hover .addRepoIcon {
+  opacity: 1;
+}
+
+.footerIcons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.footerAction {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.footerAction:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+}
+
+.empty {
+  padding: 20px 16px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
+.empty p {
+  margin-bottom: 12px;
+}
+
+.empty button {
+  padding: 8px 16px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-lg);
+  color: var(--text-on-accent);
+  font-size: var(--font-md);
+  cursor: pointer;
+}
+
+/* ── Repository Section ── */
+.repoSection {
+  margin-bottom: 4px;
+}
+
+.repoHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 3px;
+  cursor: pointer;
+  position: relative;
+}
+
+.repoInitials {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  border-radius: var(--radius-md);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--text-on-accent);
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.repoInitials:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.repoName {
+  flex: 1;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--fg-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repoActions {
+  display: flex;
+  gap: 2px;
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--bg-secondary);
+  padding-left: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.repoHeader:hover .repoActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.repoChevron {
+  font-size: var(--font-lg);
+  color: var(--fg-muted);
+  transition: transform 150ms ease;
+  transform: rotate(0deg);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.repoChevron.expanded {
+  transform: rotate(90deg);
+}
+
+.repoActionBtn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  font-size: var(--font-md);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.repoActionBtn:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+}
+
+.addBtn {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.addBtn:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+/* Collapsed repository state */
+.collapsed {
+  transition: all 0.2s ease-in-out;
+}
+
+.collapsed .repoHeader {
+  padding: 8px 6px;
+  justify-content: center;
+}
+
+.collapsed .repoInitials {
+  width: 32px;
+  height: 32px;
+  font-size: var(--font-md);
+}
+
+.dragging {
+  opacity: 0.5;
+}
+
+.dragOverTop {
+  border-top: 2px solid var(--accent);
+}
+
+.dragOverBottom {
+  border-bottom: 2px solid var(--accent);
+}
+
+.dragOverTarget {
+  /* placeholder for group drag-over-target */
+}
+
+/* ── Group sections ── */
+.groupSection {
+  margin-bottom: 2px;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--radius-md);
+  transition: background 0.1s;
+}
+
+.groupHeader:hover {
+  background: var(--bg-tertiary);
+}
+
+.groupColorDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.groupName {
+  flex: 1;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.groupCount {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  opacity: 0.6;
+}
+
+.groupChevron {
+  font-size: var(--font-md);
+  color: var(--fg-muted);
+  transition: transform 150ms ease;
+  transform: rotate(0deg);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.groupChevron.expanded {
+  transform: rotate(90deg);
+}
+
+.groupRepos {
+  padding-left: 0;
+}
+
+.groupEmptyHint {
+  padding: 8px 16px;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* ── Branch Item ── */
+.repoBranches {
+  padding-left: 16px;
+  padding-top: 1px;
+}
+
+.repoEmpty {
+  padding: 8px 16px;
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.branchItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  margin: 1px 0 1px 0;
+  transition: background 0.1s;
+  position: relative;
+}
+
+.branchItem:hover {
+  background: var(--bg-highlight);
+}
+
+.branchItem.active {
+  background: var(--bg-highlight);
+  border-left: 2px solid var(--accent);
+  padding-left: 6px;
+}
+
+.branchIcon {
+  font-size: var(--font-md);
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.branchIconMain {
+  color: var(--warning);
+}
+
+.branchIconFeature {
+  color: var(--fg-muted);
+}
+
+.hasActivity .branchIcon {
+  color: var(--accent);
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+.shellIdle .branchIcon {
+  color: var(--success);
+}
+
+.branchIconQuestion {
+  color: #ffd700;
+  animation: pulse-opacity 1s ease-in-out infinite;
+  font-weight: bold;
+}
+
+.branchContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.branchName {
+  display: block;
+  font-size: var(--font-md);
+  font-weight: 500;
+  color: var(--fg-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.branchStats {
+  display: flex;
+  gap: 4px;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2px 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.statAdd {
+  color: var(--success);
+}
+
+.statDel {
+  color: var(--error);
+}
+
+/* PR state badge */
+.prBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  margin-left: 4px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.prReady {
+  background: var(--success);
+  color: var(--text-on-success);
+}
+
+.prOpen {
+  background: var(--success);
+  color: var(--text-on-success);
+}
+
+.prMerged {
+  background: #a371f7;
+  color: var(--text-on-accent);
+}
+
+.prClosed {
+  background: var(--error);
+  color: var(--text-on-error);
+}
+
+.prDraft {
+  background: transparent;
+  border: 1px dashed var(--fg-muted);
+  color: var(--fg-muted);
+}
+
+.prConflict {
+  background: var(--error);
+  color: var(--text-on-error);
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+.prCiFailed {
+  background: var(--error);
+  color: var(--text-on-error);
+}
+
+.prChangesRequested {
+  background: #d29922;
+  color: var(--text-on-accent);
+}
+
+.prReviewRequired {
+  background: transparent;
+  border: 1px solid #d29922;
+  color: #d29922;
+}
+
+.prCiPending {
+  background: transparent;
+  border: 1px solid #e3b341;
+  color: #e3b341;
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+
+/* Branch actions */
+.branchActions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: max-width 0.15s ease, opacity 0.15s ease;
+}
+
+.branchItem:hover .branchActions {
+  max-width: 44px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.branchAddBtn,
+.branchRemoveBtn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.branchAddBtn {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.branchAddBtn:hover {
+  background: var(--accent-hover);
+}
+
+.branchRemoveBtn {
+  background: transparent;
+  color: var(--fg-muted);
+}
+
+.branchRemoveBtn:hover {
+  background: var(--error);
+  color: var(--text-on-error);
+}
+
+.branchShortcut {
+  flex-shrink: 0;
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  margin-left: auto;
+}
+
+/* ── Git Quick Actions ── */
+.gitQuickActions {
+  padding: 4px 6px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+}
+
+.gitQuickLabel {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+  align-self: center;
+}
+
+.gitQuickBtns {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+}
+
+.gitQuickBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 4px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.gitQuickBtn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+}
+
+.gitQuickBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.gitQuickBtn.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.gitQuickIcon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}

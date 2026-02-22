@@ -140,7 +140,7 @@ describe("Sidebar", () => {
     it("renders 'No repositories' and 'Add Repository' button when no repos exist", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
 
-      const emptyDiv = container.querySelector(".sidebar-empty");
+      const emptyDiv = container.querySelector(".empty");
       expect(emptyDiv).not.toBeNull();
       expect(emptyDiv!.textContent).toContain("No repositories");
 
@@ -153,7 +153,7 @@ describe("Sidebar", () => {
       const onAddRepo = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onAddRepo })} />);
 
-      const addButton = container.querySelector(".sidebar-empty button");
+      const addButton = container.querySelector(".empty button");
       expect(addButton).not.toBeNull();
       fireEvent.click(addButton!);
       expect(onAddRepo).toHaveBeenCalledOnce();
@@ -165,7 +165,7 @@ describe("Sidebar", () => {
       const onAddRepo = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onAddRepo })} />);
 
-      const footerAddBtn = container.querySelector(".sidebar-add-repo");
+      const footerAddBtn = container.querySelector(".addRepo");
       expect(footerAddBtn).not.toBeNull();
       fireEvent.click(footerAddBtn!);
       expect(onAddRepo).toHaveBeenCalled();
@@ -175,7 +175,7 @@ describe("Sidebar", () => {
       const onOpenSettings = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onOpenSettings })} />);
 
-      const settingsBtn = container.querySelector('.sidebar-footer-action[title="Settings"]');
+      const settingsBtn = container.querySelector('.footerAction[title="Settings"]');
       expect(settingsBtn).not.toBeNull();
       fireEvent.click(settingsBtn!);
       expect(onOpenSettings).toHaveBeenCalledOnce();
@@ -185,7 +185,7 @@ describe("Sidebar", () => {
       const onOpenHelp = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onOpenHelp })} />);
 
-      const helpBtn = container.querySelector('.sidebar-footer-action[title="Help"]');
+      const helpBtn = container.querySelector('.footerAction[title="Help"]');
       expect(helpBtn).not.toBeNull();
       fireEvent.click(helpBtn!);
       expect(onOpenHelp).toHaveBeenCalledOnce();
@@ -193,8 +193,8 @@ describe("Sidebar", () => {
 
     it("does not render unimplemented Notifications and Tasks buttons", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      expect(container.querySelector('.sidebar-footer-action[title="Notifications"]')).toBeNull();
-      expect(container.querySelector('.sidebar-footer-action[title="Tasks"]')).toBeNull();
+      expect(container.querySelector('.footerAction[title="Notifications"]')).toBeNull();
+      expect(container.querySelector('.footerAction[title="Tasks"]')).toBeNull();
     });
   });
 
@@ -206,18 +206,18 @@ describe("Sidebar", () => {
     it("renders repo sections when repos exist", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
 
-      const repoSections = container.querySelectorAll(".repo-section");
+      const repoSections = container.querySelectorAll(".repoSection");
       expect(repoSections.length).toBe(1);
 
       // Should NOT show empty state
-      const emptyDiv = container.querySelector(".sidebar-empty");
+      const emptyDiv = container.querySelector(".empty");
       expect(emptyDiv).toBeNull();
     });
 
     it("shows repo display name", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
 
-      const repoName = container.querySelector(".repo-name");
+      const repoName = container.querySelector(".repoName");
       expect(repoName).not.toBeNull();
       expect(repoName!.textContent).toBe("Repo One");
     });
@@ -225,10 +225,10 @@ describe("Sidebar", () => {
     it("renders branch items for expanded repo", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
 
-      const branchItems = container.querySelectorAll(".branch-item");
+      const branchItems = container.querySelectorAll(".branchItem");
       expect(branchItems.length).toBe(1);
 
-      const branchName = container.querySelector(".branch-name");
+      const branchName = container.querySelector(".branchName");
       expect(branchName).not.toBeNull();
       expect(branchName!.textContent).toBe("main");
     });
@@ -243,11 +243,11 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const icons = container.querySelectorAll(".branch-icon");
+      const icons = container.querySelectorAll(".branchIcon");
       expect(icons.length).toBe(2);
       // Main branch first (sorted), then feature
-      const mainIcon = Array.from(icons).find((i) => i.classList.contains("main"));
-      const featureIcon = Array.from(icons).find((i) => i.classList.contains("feature"));
+      const mainIcon = Array.from(icons).find((i) => i.classList.contains("branchIconMain"));
+      const featureIcon = Array.from(icons).find((i) => i.classList.contains("branchIconFeature"));
       expect(mainIcon).toBeDefined();
       expect(mainIcon!.querySelector("svg")).not.toBeNull();
       expect(featureIcon).toBeDefined();
@@ -265,7 +265,7 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const names = container.querySelectorAll(".branch-name");
+      const names = container.querySelectorAll(".branchName");
       expect(names.length).toBe(3);
       expect(names[0].textContent).toBe("main");
       expect(names[1].textContent).toBe("feature/a");
@@ -291,7 +291,7 @@ describe("Sidebar", () => {
         return null;
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const names = container.querySelectorAll(".branch-name");
+      const names = container.querySelectorAll(".branchName");
       expect(names.length).toBe(4);
       expect(names[0].textContent).toBe("main");
       expect(names[1].textContent).toBe("feature/active");
@@ -302,7 +302,7 @@ describe("Sidebar", () => {
 
     it("marks active branch with active class", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const branchItem = container.querySelector(".branch-item");
+      const branchItem = container.querySelector(".branchItem");
       expect(branchItem).not.toBeNull();
       expect(branchItem!.classList.contains("active")).toBe(true);
     });
@@ -310,7 +310,7 @@ describe("Sidebar", () => {
     it("branch item click calls onBranchSelect", () => {
       const onBranchSelect = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onBranchSelect })} />);
-      const branchItem = container.querySelector(".branch-item")!;
+      const branchItem = container.querySelector(".branchItem")!;
       fireEvent.click(branchItem);
       expect(onBranchSelect).toHaveBeenCalledWith("/repo1", "main");
     });
@@ -318,14 +318,14 @@ describe("Sidebar", () => {
     it("add terminal button click calls onAddTerminal", () => {
       const onAddTerminal = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onAddTerminal })} />);
-      const addBtn = container.querySelector(".branch-add-btn")!;
+      const addBtn = container.querySelector(".branchAddBtn")!;
       fireEvent.click(addBtn);
       expect(onAddTerminal).toHaveBeenCalledWith("/repo1", "main");
     });
 
     it("main branch has no remove button", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const removeBtn = container.querySelector(".branch-remove-btn");
+      const removeBtn = container.querySelector(".branchRemoveBtn");
       expect(removeBtn).toBeNull();
     });
 
@@ -340,7 +340,7 @@ describe("Sidebar", () => {
       });
       const onRemoveBranch = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onRemoveBranch })} />);
-      const removeBtns = container.querySelectorAll(".branch-remove-btn");
+      const removeBtns = container.querySelectorAll(".branchRemoveBtn");
       expect(removeBtns.length).toBe(1);
       fireEvent.click(removeBtns[0]);
       expect(onRemoveBranch).toHaveBeenCalledWith("/repo1", "feature/x");
@@ -356,14 +356,14 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const removeBtns = container.querySelectorAll(".branch-remove-btn");
+      const removeBtns = container.querySelectorAll(".branchRemoveBtn");
       expect(removeBtns.length).toBe(0);
     });
 
     it("double-click branch name calls onRenameBranch", () => {
       const onRenameBranch = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onRenameBranch })} />);
-      const branchName = container.querySelector(".branch-name")!;
+      const branchName = container.querySelector(".branchName")!;
       fireEvent.dblClick(branchName);
       expect(onRenameBranch).toHaveBeenCalledWith("/repo1", "main");
     });
@@ -371,7 +371,7 @@ describe("Sidebar", () => {
     it("add worktree button click calls onAddWorktree", () => {
       const onAddWorktree = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onAddWorktree })} />);
-      const addBtn = container.querySelector(".add-btn")!;
+      const addBtn = container.querySelector(".addBtn")!;
       fireEvent.click(addBtn);
       expect(onAddWorktree).toHaveBeenCalledWith("/repo1");
     });
@@ -379,7 +379,7 @@ describe("Sidebar", () => {
     it("repo menu opens on click and shows Settings and Remove options", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       // Click the ⋯ button
-      const menuBtn = container.querySelector(".repo-action-btn")!;
+      const menuBtn = container.querySelector(".repoActionBtn")!;
       fireEvent.click(menuBtn);
 
       const menu = container.querySelector(".menu");
@@ -397,7 +397,7 @@ describe("Sidebar", () => {
       const { container } = render(() => <Sidebar {...defaultProps({ onRepoSettings })} />);
 
       // Open menu
-      const menuBtn = container.querySelector(".repo-action-btn")!;
+      const menuBtn = container.querySelector(".repoActionBtn")!;
       fireEvent.click(menuBtn);
 
       // Click settings
@@ -411,7 +411,7 @@ describe("Sidebar", () => {
       const { container } = render(() => <Sidebar {...defaultProps({ onRemoveRepo })} />);
 
       // Open menu
-      const menuBtn = container.querySelector(".repo-action-btn")!;
+      const menuBtn = container.querySelector(".repoActionBtn")!;
       fireEvent.click(menuBtn);
 
       // Click remove — index 2 (after "Repo Settings" and "Move to Group")
@@ -424,7 +424,7 @@ describe("Sidebar", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
 
       // Open menu
-      const menuBtn = container.querySelector(".repo-action-btn")!;
+      const menuBtn = container.querySelector(".repoActionBtn")!;
       fireEvent.click(menuBtn);
       expect(container.querySelector(".menu")).not.toBeNull();
 
@@ -440,7 +440,7 @@ describe("Sidebar", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
 
       // Open menu
-      const menuBtn = container.querySelector(".repo-action-btn")!;
+      const menuBtn = container.querySelector(".repoActionBtn")!;
       fireEvent.click(menuBtn);
       expect(container.querySelector(".menu")).not.toBeNull();
 
@@ -452,7 +452,7 @@ describe("Sidebar", () => {
     it("repo menu toggles on repeated clicks", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
 
-      const menuBtn = container.querySelector(".repo-action-btn")!;
+      const menuBtn = container.querySelector(".repoActionBtn")!;
 
       // Open
       fireEvent.click(menuBtn);
@@ -465,7 +465,7 @@ describe("Sidebar", () => {
 
     it("repo header right-click opens context menu with Settings and Remove options", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const header = container.querySelector(".repo-header")!;
+      const header = container.querySelector(".repoHeader")!;
       fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
 
       const menu = container.querySelector(".menu");
@@ -480,7 +480,7 @@ describe("Sidebar", () => {
 
     it("repo header click calls toggleExpanded", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const header = container.querySelector(".repo-header")!;
+      const header = container.querySelector(".repoHeader")!;
       fireEvent.click(header);
       expect(mockToggleExpanded).toHaveBeenCalledWith("/repo1");
     });
@@ -490,20 +490,20 @@ describe("Sidebar", () => {
         "/repo1": makeRepo({ branches: {} }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const empty = container.querySelector(".repo-empty");
+      const empty = container.querySelector(".repoEmpty");
       expect(empty).not.toBeNull();
       expect(empty!.textContent).toBe("No branches loaded");
     });
 
     it("renders a chevron toggle in the repo header", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const chevron = container.querySelector(".repo-chevron");
+      const chevron = container.querySelector(".repoChevron");
       expect(chevron).not.toBeNull();
     });
 
     it("chevron has expanded class when repo is expanded", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const chevron = container.querySelector(".repo-chevron");
+      const chevron = container.querySelector(".repoChevron");
       expect(chevron!.classList.contains("expanded")).toBe(true);
     });
 
@@ -512,7 +512,7 @@ describe("Sidebar", () => {
         "/repo1": makeRepo({ expanded: false }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const chevron = container.querySelector(".repo-chevron");
+      const chevron = container.querySelector(".repoChevron");
       expect(chevron).not.toBeNull();
       expect(chevron!.classList.contains("expanded")).toBe(false);
     });
@@ -525,15 +525,15 @@ describe("Sidebar", () => {
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
 
-      const initials = container.querySelector(".repo-initials");
+      const initials = container.querySelector(".repoInitials");
       expect(initials).not.toBeNull();
       expect(initials!.textContent).toBe("RO");
 
       // Should not show repo name or branches
-      const repoName = container.querySelector(".repo-name");
+      const repoName = container.querySelector(".repoName");
       expect(repoName).toBeNull();
 
-      const branchItems = container.querySelectorAll(".branch-item");
+      const branchItems = container.querySelectorAll(".branchItem");
       expect(branchItems.length).toBe(0);
     });
 
@@ -542,7 +542,7 @@ describe("Sidebar", () => {
         "/repo1": makeRepo({ collapsed: true }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const section = container.querySelector(".repo-section");
+      const section = container.querySelector(".repoSection");
       expect(section).not.toBeNull();
       expect(section!.classList.contains("collapsed")).toBe(true);
     });
@@ -552,7 +552,7 @@ describe("Sidebar", () => {
         "/repo1": makeRepo({ collapsed: true }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const initials = container.querySelector(".repo-initials")!;
+      const initials = container.querySelector(".repoInitials")!;
       fireEvent.click(initials);
       expect(mockToggleCollapsed).toHaveBeenCalledWith("/repo1");
     });
@@ -564,10 +564,10 @@ describe("Sidebar", () => {
         "/repo1": makeRepo({ expanded: false, collapsed: false }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const branchItems = container.querySelectorAll(".branch-item");
+      const branchItems = container.querySelectorAll(".branchItem");
       expect(branchItems.length).toBe(0);
       // But should still show repo name
-      expect(container.querySelector(".repo-name")!.textContent).toBe("Repo One");
+      expect(container.querySelector(".repoName")!.textContent).toBe("Repo One");
     });
   });
 
@@ -577,17 +577,17 @@ describe("Sidebar", () => {
       setRepos({ "/repo1": makeRepo() });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
 
-      const quickActions = container.querySelector(".git-quick-actions");
+      const quickActions = container.querySelector(".gitQuickActions");
       expect(quickActions).not.toBeNull();
 
-      const buttons = container.querySelectorAll(".git-quick-btn");
+      const buttons = container.querySelectorAll(".gitQuickBtn");
       expect(buttons.length).toBe(4);
     });
 
     it("does not show git quick actions when getActive returns null", () => {
       mockGetActive.mockReturnValue(null);
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const quickActions = container.querySelector(".git-quick-actions");
+      const quickActions = container.querySelector(".gitQuickActions");
       expect(quickActions).toBeNull();
     });
 
@@ -597,7 +597,7 @@ describe("Sidebar", () => {
       const onGitCommand = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onGitCommand })} />);
 
-      const buttons = container.querySelectorAll(".git-quick-btn");
+      const buttons = container.querySelectorAll(".gitQuickBtn");
       const pullBtn = Array.from(buttons).find((b) => b.textContent?.includes("Pull"))!;
       fireEvent.click(pullBtn);
       expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git pull');
@@ -609,7 +609,7 @@ describe("Sidebar", () => {
       const onGitCommand = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onGitCommand })} />);
 
-      const buttons = container.querySelectorAll(".git-quick-btn");
+      const buttons = container.querySelectorAll(".gitQuickBtn");
       const pushBtn = Array.from(buttons).find((b) => b.textContent?.includes("Push"))!;
       fireEvent.click(pushBtn);
       expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git push');
@@ -621,7 +621,7 @@ describe("Sidebar", () => {
       const onGitCommand = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onGitCommand })} />);
 
-      const buttons = container.querySelectorAll(".git-quick-btn");
+      const buttons = container.querySelectorAll(".gitQuickBtn");
       const fetchBtn = Array.from(buttons).find((b) => b.textContent?.includes("Fetch"))!;
       fireEvent.click(fetchBtn);
       expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git fetch --all');
@@ -633,7 +633,7 @@ describe("Sidebar", () => {
       const onGitCommand = vi.fn();
       const { container } = render(() => <Sidebar {...defaultProps({ onGitCommand })} />);
 
-      const buttons = container.querySelectorAll(".git-quick-btn");
+      const buttons = container.querySelectorAll(".gitQuickBtn");
       const stashBtn = Array.from(buttons).find((b) => b.textContent?.includes("Stash"))!;
       fireEvent.click(stashBtn);
       expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git stash');
@@ -645,12 +645,12 @@ describe("Sidebar", () => {
       setRepos({ "/repo1": makeRepo() });
       const { container } = render(() => <Sidebar {...defaultProps({ quickSwitcherActive: true })} />);
 
-      const shortcut = container.querySelector(".branch-shortcut");
+      const shortcut = container.querySelector(".branchShortcut");
       expect(shortcut).not.toBeNull();
       expect(shortcut!.textContent).toContain("1");
 
       // Should not show add/remove buttons
-      const addBtn = container.querySelector(".branch-add-btn");
+      const addBtn = container.querySelector(".branchAddBtn");
       expect(addBtn).toBeNull();
     });
 
@@ -658,7 +658,7 @@ describe("Sidebar", () => {
       setRepos({ "/repo1": makeRepo({ expanded: false }) });
       const { container } = render(() => <Sidebar {...defaultProps({ quickSwitcherActive: true })} />);
 
-      const branchItems = container.querySelectorAll(".branch-item");
+      const branchItems = container.querySelectorAll(".branchItem");
       expect(branchItems.length).toBe(1);
     });
   });
@@ -673,10 +673,10 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const stats = container.querySelector(".branch-stats");
+      const stats = container.querySelector(".branchStats");
       expect(stats).not.toBeNull();
-      const addStat = container.querySelector(".stat-add");
-      const delStat = container.querySelector(".stat-del");
+      const addStat = container.querySelector(".statAdd");
+      const delStat = container.querySelector(".statDel");
       expect(addStat!.textContent).toBe("+10");
       expect(delStat!.textContent).toBe("-5");
     });
@@ -690,7 +690,7 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const stats = container.querySelector(".branch-stats");
+      const stats = container.querySelector(".branchStats");
       expect(stats).toBeNull();
     });
 
@@ -703,7 +703,7 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const stats = container.querySelector(".branch-stats");
+      const stats = container.querySelector(".branchStats");
       expect(stats).not.toBeNull();
     });
 
@@ -716,7 +716,7 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const stats = container.querySelector(".branch-stats");
+      const stats = container.querySelector(".branchStats");
       expect(stats).not.toBeNull();
     });
 
@@ -730,14 +730,14 @@ describe("Sidebar", () => {
       });
       mockGetPrStatus.mockReturnValue({ state: "OPEN", number: 123, title: "Test PR", url: "https://example.com" });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const prBadge = container.querySelector(".branch-pr-badge");
+      const prBadge = container.querySelector(".prBadge");
       expect(prBadge).not.toBeNull();
       expect(prBadge!.getAttribute("title")).toBe("PR #123");
     });
 
     it("does not show PrStateBadge when branch has no PR data", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const prBadge = container.querySelector(".branch-pr-badge");
+      const prBadge = container.querySelector(".prBadge");
       expect(prBadge).toBeNull();
     });
 
@@ -751,9 +751,9 @@ describe("Sidebar", () => {
       });
       mockGetPrStatus.mockReturnValue({ state: "MERGED", number: 42, title: "Test", url: "https://example.com" });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const prBadge = container.querySelector(".branch-pr-badge");
+      const prBadge = container.querySelector(".prBadge");
       expect(prBadge).not.toBeNull();
-      expect(prBadge!.classList.contains("merged")).toBe(true);
+      expect(prBadge!.classList.contains("prMerged")).toBe(true);
       expect(prBadge!.textContent).toBe("Merged");
     });
 
@@ -767,9 +767,9 @@ describe("Sidebar", () => {
       });
       mockGetPrStatus.mockReturnValue({ state: "CLOSED", number: 43, title: "Test", url: "https://example.com" });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const prBadge = container.querySelector(".branch-pr-badge");
+      const prBadge = container.querySelector(".prBadge");
       expect(prBadge).not.toBeNull();
-      expect(prBadge!.classList.contains("closed")).toBe(true);
+      expect(prBadge!.classList.contains("prClosed")).toBe(true);
       expect(prBadge!.textContent).toBe("Closed");
     });
 
@@ -783,9 +783,9 @@ describe("Sidebar", () => {
       });
       mockGetPrStatus.mockReturnValue({ state: "OPEN", number: 45, title: "Draft PR", url: "https://example.com", is_draft: true });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const prBadge = container.querySelector(".branch-pr-badge");
+      const prBadge = container.querySelector(".prBadge");
       expect(prBadge).not.toBeNull();
-      expect(prBadge!.classList.contains("draft")).toBe(true);
+      expect(prBadge!.classList.contains("prDraft")).toBe(true);
       expect(prBadge!.textContent).toBe("Draft");
     });
 
@@ -799,9 +799,9 @@ describe("Sidebar", () => {
       });
       mockGetPrStatus.mockReturnValue({ state: "OPEN", number: 44, title: "Test", url: "https://example.com" });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const prBadge = container.querySelector(".branch-pr-badge");
+      const prBadge = container.querySelector(".prBadge");
       expect(prBadge).not.toBeNull();
-      expect(prBadge!.classList.contains("open")).toBe(true);
+      expect(prBadge!.classList.contains("prOpen")).toBe(true);
       expect(prBadge!.textContent).toBe("#44");
     });
   });
@@ -817,8 +817,8 @@ describe("Sidebar", () => {
       });
       mockTerminalsGet.mockReturnValue({ activity: true });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const branchItem = container.querySelector(".branch-item");
-      expect(branchItem!.classList.contains("has-activity")).toBe(true);
+      const branchItem = container.querySelector(".branchItem");
+      expect(branchItem!.classList.contains("hasActivity")).toBe(true);
     });
 
     it("does not add has-activity class when no terminal activity", () => {
@@ -831,8 +831,8 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const branchItem = container.querySelector(".branch-item");
-      expect(branchItem!.classList.contains("has-activity")).toBe(false);
+      const branchItem = container.querySelector(".branchItem");
+      expect(branchItem!.classList.contains("hasActivity")).toBe(false);
     });
   });
 
@@ -843,7 +843,7 @@ describe("Sidebar", () => {
         "/repo2": makeRepo({ path: "/repo2", displayName: "Repo Two", initials: "RT" }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const repoSections = container.querySelectorAll(".repo-section");
+      const repoSections = container.querySelectorAll(".repoSection");
       expect(repoSections.length).toBe(2);
     });
   });
@@ -854,12 +854,12 @@ describe("Sidebar", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
 
       // Open menu
-      const menuBtn = container.querySelector(".repo-action-btn")!;
+      const menuBtn = container.querySelector(".repoActionBtn")!;
       fireEvent.click(menuBtn);
       expect(container.querySelector(".menu")).not.toBeNull();
 
       // Click somewhere outside the menu (on the sidebar itself)
-      fireEvent.mouseDown(container.querySelector("#sidebar")!);
+      fireEvent.mouseDown(container.querySelector("[data-testid='sidebar']")!);
       expect(container.querySelector(".menu")).toBeNull();
     });
   });
@@ -868,7 +868,7 @@ describe("Sidebar", () => {
     it("opens context menu on right-click of branch item", () => {
       setRepos({ "/repo1": makeRepo() });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const branchItem = container.querySelector(".branch-item")!;
+      const branchItem = container.querySelector(".branchItem")!;
       fireEvent.contextMenu(branchItem, { clientX: 100, clientY: 200 });
 
       const contextMenu = container.querySelector(".menu");
@@ -895,7 +895,7 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const branchItem = container.querySelector(".branch-item")!;
+      const branchItem = container.querySelector(".branchItem")!;
       fireEvent.contextMenu(branchItem, { clientX: 100, clientY: 200 });
 
       const contextMenu = container.querySelector(".menu");
@@ -921,7 +921,7 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const branchItem = container.querySelector(".branch-item")!;
+      const branchItem = container.querySelector(".branchItem")!;
       fireEvent.contextMenu(branchItem, { clientX: 100, clientY: 200 });
 
       const contextMenu = container.querySelector(".menu");
@@ -942,7 +942,7 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const branchItems = container.querySelectorAll(".branch-item");
+      const branchItems = container.querySelectorAll(".branchItem");
       fireEvent.contextMenu(branchItems[1], { clientX: 100, clientY: 200 });
 
       const contextMenu = container.querySelector(".menu");
@@ -963,7 +963,7 @@ describe("Sidebar", () => {
         }),
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const branchItems = container.querySelectorAll(".branch-item");
+      const branchItems = container.querySelectorAll(".branchItem");
       // feature/x is second (sorted after main)
       fireEvent.contextMenu(branchItems[1], { clientX: 100, clientY: 200 });
 
@@ -988,10 +988,10 @@ describe("Sidebar", () => {
         ungrouped: [],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const header = container.querySelector(".group-header");
+      const header = container.querySelector(".groupHeader");
       expect(header).not.toBeNull();
-      expect(container.querySelector(".group-name")!.textContent).toBe("Work");
-      expect(container.querySelector(".group-chevron")).not.toBeNull();
+      expect(container.querySelector(".groupName")!.textContent).toBe("Work");
+      expect(container.querySelector(".groupChevron")).not.toBeNull();
     });
 
     it("renders repos inside group", () => {
@@ -1005,9 +1005,9 @@ describe("Sidebar", () => {
         ungrouped: [],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const groupSection = container.querySelector(".group-section");
+      const groupSection = container.querySelector(".groupSection");
       expect(groupSection).not.toBeNull();
-      const repoSections = groupSection!.querySelectorAll(".repo-section");
+      const repoSections = groupSection!.querySelectorAll(".repoSection");
       expect(repoSections.length).toBe(1);
     });
 
@@ -1022,7 +1022,7 @@ describe("Sidebar", () => {
         ungrouped: [],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const header = container.querySelector(".group-header")!;
+      const header = container.querySelector(".groupHeader")!;
       fireEvent.click(header);
       expect(mockToggleGroupCollapsed).toHaveBeenCalledWith("g1");
     });
@@ -1038,7 +1038,7 @@ describe("Sidebar", () => {
         ungrouped: [],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const groupRepos = container.querySelector(".group-repos");
+      const groupRepos = container.querySelector(".groupRepos");
       expect(groupRepos).toBeNull();
     });
 
@@ -1053,7 +1053,7 @@ describe("Sidebar", () => {
         ungrouped: [],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const dot = container.querySelector(".group-color-dot");
+      const dot = container.querySelector(".groupColorDot");
       expect(dot).not.toBeNull();
     });
 
@@ -1068,7 +1068,7 @@ describe("Sidebar", () => {
         ungrouped: [],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const dot = container.querySelector(".group-color-dot");
+      const dot = container.querySelector(".groupColorDot");
       expect(dot).toBeNull();
     });
 
@@ -1084,7 +1084,7 @@ describe("Sidebar", () => {
         ungrouped: [],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const count = container.querySelector(".group-count");
+      const count = container.querySelector(".groupCount");
       expect(count).not.toBeNull();
       expect(count!.textContent).toBe("2");
     });
@@ -1101,9 +1101,9 @@ describe("Sidebar", () => {
         ungrouped: [repo2],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const repoList = container.querySelector("#repo-list")!;
-      const groupSection = repoList.querySelector(".group-section");
-      const repoSections = repoList.querySelectorAll(":scope > .repo-section");
+      const repoList = container.querySelector(".repoList")!;
+      const groupSection = repoList.querySelector(".groupSection");
+      const repoSections = repoList.querySelectorAll(":scope > .repoSection");
       // Group section should exist
       expect(groupSection).not.toBeNull();
       // Ungrouped repo should render as direct child repo-section
@@ -1120,7 +1120,7 @@ describe("Sidebar", () => {
         ungrouped: [],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const hint = container.querySelector(".group-empty-hint");
+      const hint = container.querySelector(".groupEmptyHint");
       expect(hint).not.toBeNull();
     });
 
@@ -1135,7 +1135,7 @@ describe("Sidebar", () => {
         ungrouped: [],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const header = container.querySelector(".group-header")!;
+      const header = container.querySelector(".groupHeader")!;
       fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
       const menu = container.querySelector(".menu");
       expect(menu).not.toBeNull();
@@ -1156,7 +1156,7 @@ describe("Sidebar", () => {
         ungrouped: [],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const header = container.querySelector(".group-header")!;
+      const header = container.querySelector(".groupHeader")!;
       fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
       const menuItems = container.querySelectorAll(".menu .item");
       const deleteItem = Array.from(menuItems).find(
@@ -1177,7 +1177,7 @@ describe("Sidebar", () => {
         ungrouped: [repo],
       });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const header = container.querySelector(".repo-header")!;
+      const header = container.querySelector(".repoHeader")!;
       fireEvent.contextMenu(header, { clientX: 100, clientY: 200 });
       const labels = Array.from(container.querySelectorAll(".label")).map((el) => el.textContent);
       expect(labels).toContain("Move to Group");
@@ -1189,9 +1189,9 @@ describe("Sidebar", () => {
       // setRepos defaults to all ungrouped, which is correct here
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       // No group sections
-      expect(container.querySelector(".group-section")).toBeNull();
+      expect(container.querySelector(".groupSection")).toBeNull();
       // But repos still render
-      expect(container.querySelectorAll(".repo-section").length).toBe(1);
+      expect(container.querySelectorAll(".repoSection").length).toBe(1);
     });
   });
 
@@ -1228,7 +1228,7 @@ describe("Sidebar", () => {
       (repositoriesStore.state as any).groups = { g1: group };
 
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const repoSections = container.querySelectorAll(".repo-section");
+      const repoSections = container.querySelectorAll(".repoSection");
       expect(repoSections.length).toBe(2);
 
       const dt = makeDataTransfer();
@@ -1267,8 +1267,8 @@ describe("Sidebar", () => {
       mockGetGroupForRepo.mockReturnValue(undefined);
 
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const repoSection = container.querySelector(".repo-section")!;
-      const groupHeaders = container.querySelectorAll(".group-header");
+      const repoSection = container.querySelector(".repoSection")!;
+      const groupHeaders = container.querySelectorAll(".groupHeader");
       expect(groupHeaders.length).toBe(2);
 
       const dt = makeDataTransfer();
@@ -1302,8 +1302,8 @@ describe("Sidebar", () => {
       );
 
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const groupRepoSections = container.querySelector(".group-repos")!.querySelectorAll(".repo-section");
-      const ungroupedRepoSections = container.querySelectorAll("#repo-list > .repo-section");
+      const groupRepoSections = container.querySelector(".groupRepos")!.querySelectorAll(".repoSection");
+      const ungroupedRepoSections = container.querySelectorAll(".repoList > .repoSection");
 
       expect(groupRepoSections.length).toBe(1);
       expect(ungroupedRepoSections.length).toBe(1);
@@ -1345,11 +1345,11 @@ describe("Sidebar", () => {
       (repositoriesStore.state as any).groups = { g1, g2 };
 
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const groupSections = container.querySelectorAll(".group-section");
+      const groupSections = container.querySelectorAll(".groupSection");
       expect(groupSections.length).toBe(2);
 
-      const g1Repos = groupSections[0].querySelectorAll(".repo-section");
-      const g2Repos = groupSections[1].querySelectorAll(".repo-section");
+      const g1Repos = groupSections[0].querySelectorAll(".repoSection");
+      const g2Repos = groupSections[1].querySelectorAll(".repoSection");
       expect(g1Repos.length).toBe(1);
       expect(g2Repos.length).toBe(2);
 
@@ -1382,7 +1382,7 @@ describe("Sidebar", () => {
       (repositoriesStore.state as any).groupOrder = ["g1", "g2"];
 
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const groupSections = container.querySelectorAll(".group-section");
+      const groupSections = container.querySelectorAll(".groupSection");
       expect(groupSections.length).toBe(2);
 
       const dt = makeDataTransfer();
@@ -1403,7 +1403,7 @@ describe("Sidebar", () => {
       const repo = makeRepo();
       setRepos({ "/repo1": repo });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const repoSection = container.querySelector(".repo-section")!;
+      const repoSection = container.querySelector(".repoSection")!;
 
       const dt = makeDataTransfer();
 
@@ -1425,7 +1425,7 @@ describe("Sidebar", () => {
   describe("resize handle", () => {
     it("renders a resize handle element", () => {
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const handle = container.querySelector(".sidebar-resize-handle");
+      const handle = container.querySelector(".resizeHandle");
       expect(handle).not.toBeNull();
     });
 

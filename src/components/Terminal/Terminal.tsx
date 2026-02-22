@@ -13,6 +13,7 @@ import { notificationsStore } from "../../stores/notifications";
 import { invoke } from "../../invoke";
 import { isMacOS } from "../../platform";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
+import s from "./Terminal.module.css";
 
 
 /** Structured events parsed by Rust OutputParser, received via pty-parsed-{sessionId} */
@@ -743,7 +744,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   return (
     <div
       ref={containerRef}
-      class="terminal-content"
+      class={s.content}
       data-terminal-id={props.id}
       style={{ width: "100%", height: "100%" }}
     />

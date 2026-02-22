@@ -1,0 +1,10 @@
+/* Terminal component */
+.content {
+  width: 100%;
+  height: 100%;
+  padding: 8px;
+}
+
+.content :global(.xterm) {
+  height: 100%;
+}

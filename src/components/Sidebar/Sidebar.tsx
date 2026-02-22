@@ -12,7 +12,9 @@ import type { ContextMenuItem } from "../ContextMenu";
 import { PromptDialog } from "../PromptDialog";
 import { getModifierSymbol } from "../../platform";
 import { compareBranches } from "../../utils/branchSort";
-import { escapeShellArg } from "../../utils";
+import { escapeShellArg, cx } from "../../utils";
+import { t } from "../../i18n";
+import s from "./Sidebar.module.css";
 
 export interface SidebarProps {
   quickSwitcherActive?: boolean;
@@ -30,9 +32,34 @@ export interface SidebarProps {
   onGitCommand?: (command: string) => void;
 }
 
+const BRANCH_ICON_CLASSES: Record<string, string> = {
+  main: s.branchIconMain,
+  feature: s.branchIconFeature,
+  question: s.branchIconQuestion,
+};
+
+const PR_BADGE_CLASSES: Record<string, string> = {
+  ready: s.prReady,
+  open: s.prOpen,
+  merged: s.prMerged,
+  closed: s.prClosed,
+  draft: s.prDraft,
+  conflict: s.prConflict,
+  "ci-failed": s.prCiFailed,
+  "changes-requested": s.prChangesRequested,
+  "review-required": s.prReviewRequired,
+  "ci-pending": s.prCiPending,
+};
+
+const DRAG_CLASSES: Record<string, string> = {
+  top: s.dragOverTop,
+  bottom: s.dragOverBottom,
+  target: s.dragOverTarget,
+};
+
 /** Branch icon component — shows ? when any terminal in the branch awaits input */
 const BranchIcon: Component<{ isMain: boolean; hasQuestion?: boolean }> = (props) => (
-  <span class={`branch-icon ${props.hasQuestion ? "question" : props.isMain ? "main" : "feature"}`}>
+  <span class={cx(s.branchIcon, BRANCH_ICON_CLASSES[props.hasQuestion ? "question" : props.isMain ? "main" : "feature"])}>
     {props.hasQuestion ? "?" : props.isMain
       ? <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M9.2 1.2v4.4L13 3.2a1.3 1.3 0 1 1 1.3 2.3L10.5 8l3.8 2.5a1.3 1.3 0 1 1-1.3 2.3L9.2 10.4v4.4a1.2 1.2 0 0 1-2.4 0v-4.4L3 13a1.3 1.3 0 1 1-1.3-2.3L5.5 8 1.7 5.5A1.3 1.3 0 0 1 3 3.2l3.8 2.4V1.2a1.2 1.2 0 0 1 2.4 0z"/></svg>
       : <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/></svg>}
@@ -42,9 +69,9 @@ const BranchIcon: Component<{ isMain: boolean; hasQuestion?: boolean }> = (props
 /** Stats badge component - shows additions/deletions */
 const StatsBadge: Component<{ additions: number; deletions: number }> = (props) => (
   <Show when={props.additions > 0 || props.deletions > 0}>
-    <div class="branch-stats">
-      <span class="stat-add">+{props.additions}</span>
-      <span class="stat-del">-{props.deletions}</span>
+    <div class={s.branchStats}>
+      <span class={s.statAdd}>+{props.additions}</span>
+      <span class={s.statDel}>-{props.deletions}</span>
     </div>
   </Show>
 );
@@ -64,9 +91,9 @@ const PrStateBadge: Component<{
   const badge = (): { label: string; cls: string } => {
     // Terminal states
     if (props.isDraft) return { label: "Draft", cls: "draft" };
-    const s = props.state?.toLowerCase();
-    if (s === "merged") return { label: "Merged", cls: "merged" };
-    if (s === "closed") return { label: "Closed", cls: "closed" };
+    const state = props.state?.toLowerCase();
+    if (state === "merged") return { label: "Merged", cls: "merged" };
+    if (state === "closed") return { label: "Closed", cls: "closed" };
     // Action-required states (priority order)
     if (props.mergeable === "CONFLICTING") return { label: "Conflicts", cls: "conflict" };
     if ((props.ciFailed ?? 0) > 0) return { label: "CI Failed", cls: "ci-failed" };
@@ -78,7 +105,7 @@ const PrStateBadge: Component<{
   };
 
   return (
-    <span class={`branch-pr-badge ${badge().cls}`} title={`PR #${props.prNumber}`}>
+    <span class={cx(s.prBadge, PR_BADGE_CLASSES[badge().cls])} title={`PR #${props.prNumber}`}>
       {badge().label}
     </span>
   );
@@ -172,7 +199,7 @@ const RepoSection: Component<{
 
   return (
     <div
-      class={`repo-section ${props.repo.collapsed ? "collapsed" : ""} ${props.isDragging ? "dragging" : ""} ${props.dragOverClass || ""}`}
+      class={cx(s.repoSection, props.repo.collapsed && s.collapsed, props.isDragging && s.dragging, props.dragOverClass)}
       draggable={true}
       onDragStart={(e) => { e.stopPropagation(); props.onDragStart(e); }}
       onDragOver={(e) => { e.stopPropagation(); props.onDragOver(e); }}
@@ -180,48 +207,48 @@ const RepoSection: Component<{
       onDragEnd={props.onDragEnd}
     >
       {/* Repo header */}
-      <div class="repo-header" onClick={props.onToggle} onContextMenu={repoMenu.open}>
+      <div class={s.repoHeader} onClick={props.onToggle} onContextMenu={repoMenu.open}>
         <Show when={props.repo.collapsed}>
           <span
-            class="repo-initials"
+            class={s.repoInitials}
             onClick={(e) => {
               e.stopPropagation();
               props.onToggleCollapsed();
             }}
-            title="Click to expand"
+            title={t("sidebar.clickToExpand", "Click to expand")}
           >
             {props.repo.initials}
           </span>
         </Show>
         <Show when={!props.repo.collapsed}>
-          <span class="repo-name" style={props.nameColor ? { color: props.nameColor } : undefined}>{props.repo.displayName}</span>
-          <div class="repo-actions">
+          <span class={s.repoName} style={props.nameColor ? { color: props.nameColor } : undefined}>{props.repo.displayName}</span>
+          <div class={s.repoActions}>
               <button
-                class="repo-action-btn"
+                class={s.repoActionBtn}
                 onClick={handleMenuToggle}
-                title="Repository options"
+                title={t("sidebar.repoOptions", "Repository options")}
               >
                 ⋯
               </button>
             <button
-              class="repo-action-btn add-btn"
+              class={cx(s.repoActionBtn, s.addBtn)}
               disabled={props.isCreatingWorktree}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onAddWorktree();
               }}
-              title={props.isCreatingWorktree ? "Creating worktree…" : "Add worktree"}
+              title={props.isCreatingWorktree ? t("sidebar.creatingWorktree", "Creating worktree…") : t("sidebar.addWorktree", "Add worktree")}
             >
               {props.isCreatingWorktree ? "…" : "+"}
             </button>
           </div>
-          <span class={`repo-chevron ${props.repo.expanded ? "expanded" : ""}`}>{"\u203A"}</span>
+          <span class={cx(s.repoChevron, props.repo.expanded && s.expanded)}>{"\u203A"}</span>
         </Show>
       </div>
 
       {/* Branches - force expanded in quick switcher mode */}
       <Show when={(props.repo.expanded && !props.repo.collapsed) || props.quickSwitcherActive}>
-        <div class="repo-branches">
+        <div class={s.repoBranches}>
           <For each={sortedBranches()}>
             {(branch, index) => (
               <BranchItem
@@ -239,7 +266,7 @@ const RepoSection: Component<{
             )}
           </For>
           <Show when={sortedBranches().length === 0}>
-            <div class="repo-empty">No branches loaded</div>
+            <div class={s.repoEmpty}>{t("sidebar.noBranches", "No branches loaded")}</div>
           </Show>
         </div>
       </Show>
@@ -317,14 +344,14 @@ const BranchItem: Component<{
 
   return (
     <div
-      class={`branch-item ${props.isActive ? "active" : ""} ${hasActivity() ? "has-activity" : ""} ${hasIdle() ? "shell-idle" : ""}`}
+      class={cx(s.branchItem, props.isActive && s.active, hasActivity() && s.hasActivity, hasIdle() && s.shellIdle)}
       onClick={props.onSelect}
       onContextMenu={ctxMenu.open}
     >
       <BranchIcon isMain={props.branch.isMain} hasQuestion={hasQuestion()} />
-      <div class="branch-content">
+      <div class={s.branchContent}>
         <span
-          class="branch-name"
+          class={s.branchName}
           onDblClick={handleDoubleClick}
           title={props.branch.name}
         >
@@ -352,32 +379,32 @@ const BranchItem: Component<{
       </Show>
       <StatsBadge additions={props.branch.additions} deletions={props.branch.deletions} />
       <Show when={props.shortcutIndex !== undefined} fallback={
-        <div class="branch-actions">
+        <div class={s.branchActions}>
           <button
-            class="branch-add-btn"
+            class={s.branchAddBtn}
             onClick={(e) => {
               e.stopPropagation();
               props.onAddTerminal();
             }}
-            title="Add terminal"
+            title={t("sidebar.addTerminal", "Add terminal")}
           >
             +
           </button>
           <Show when={!props.branch.isMain && props.branch.worktreePath && props.canRemove}>
             <button
-              class="branch-remove-btn"
+              class={s.branchRemoveBtn}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onRemove();
               }}
-              title="Remove worktree"
+              title={t("sidebar.removeWorktree", "Remove worktree")}
             >
               ×
             </button>
           </Show>
         </div>
       }>
-        <span class="branch-shortcut">{getModifierSymbol()}^{props.shortcutIndex}</span>
+        <span class={s.branchShortcut}>{getModifierSymbol()}^{props.shortcutIndex}</span>
       </Show>
       <ContextMenu
         items={contextMenuItems()}
@@ -416,7 +443,7 @@ const GroupSection: Component<{
 
   return (
     <div
-      class={`group-section ${props.dragOverClass || ""}`}
+      class={cx(s.groupSection, props.dragOverClass)}
       draggable={true}
       onDragStart={props.onDragStart}
       onDragOver={props.onDragOver}
@@ -424,23 +451,23 @@ const GroupSection: Component<{
       onDragEnd={props.onDragEnd}
     >
       <div
-        class="group-header"
+        class={s.groupHeader}
         onClick={() => repositoriesStore.toggleGroupCollapsed(props.group.id)}
         onContextMenu={groupMenu.open}
         onDragOver={(e: DragEvent) => { e.stopPropagation(); props.onHeaderDragOver?.(e); }}
         onDrop={(e: DragEvent) => { e.stopPropagation(); props.onHeaderDrop?.(e); }}
       >
         <Show when={props.group.color}>
-          <span class="group-color-dot" style={{ background: props.group.color }} />
+          <span class={s.groupColorDot} style={{ background: props.group.color }} />
         </Show>
-        <span class="group-name">{props.group.name}</span>
-        <span class="group-count">{props.repos.length}</span>
-        <span class={`group-chevron ${props.group.collapsed ? "" : "expanded"}`}>{"\u203A"}</span>
+        <span class={s.groupName}>{props.group.name}</span>
+        <span class={s.groupCount}>{props.repos.length}</span>
+        <span class={cx(s.groupChevron, !props.group.collapsed && s.expanded)}>{"\u203A"}</span>
       </div>
       <Show when={!props.group.collapsed || props.quickSwitcherActive}>
-        <div class="group-repos">
+        <div class={s.groupRepos}>
           <Show when={props.repos.length === 0}>
-            <div class="group-empty-hint">Drag repos here</div>
+            <div class={s.groupEmptyHint}>{t("sidebar.dragReposHere", "Drag repos here")}</div>
           </Show>
           {props.children}
         </div>
@@ -661,7 +688,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     const startX = e.clientX;
     const startWidth = uiStore.state.sidebarWidth;
 
-    const sidebar = document.getElementById("sidebar");
+    const sidebar = document.querySelector<HTMLElement>(`[data-testid="sidebar"]`);
     if (sidebar) sidebar.style.transition = "none";
 
     let lastWidth = startWidth;
@@ -737,7 +764,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         isCreatingWorktree={props.creatingWorktreeRepos?.has(repo.path)}
         dragOverClass={
           dragOverRepoPath() === repo.path && draggedRepoPath() !== repo.path
-            ? `drag-over-${dragOverSide()}`
+            ? DRAG_CLASSES[dragOverSide() ?? ""] ?? undefined
             : undefined
         }
         quickSwitcherActive={props.quickSwitcherActive}
@@ -761,12 +788,12 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   };
 
   return (
-    <aside id="sidebar">
+    <aside id="sidebar" class={s.sidebar} data-testid="sidebar">
       {/* Content */}
-      <div class="sidebar-content">
+      <div class={s.content}>
         {/* Repository Section */}
-        <div class="section">
-          <div id="repo-list">
+        <div>
+          <div class={s.repoList}>
             {/* Grouped repos */}
             <For each={groupedLayout().groups}>
               {(entry) => (
@@ -784,9 +811,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   onHeaderDrop={(e) => handleGroupDrop(e, entry.group.id)}
                   dragOverClass={
                     dragOverGroupId() === entry.group.id && dragPayload()?.type !== "repo"
-                      ? `drag-over-${dragOverGroupSide()}`
+                      ? DRAG_CLASSES[dragOverGroupSide() ?? ""] ?? undefined
                       : dragOverGroupId() === entry.group.id && dragPayload()?.type === "repo"
-                        ? "drag-over-target"
+                        ? DRAG_CLASSES["target"]
                         : undefined
                   }
                 >
@@ -801,9 +828,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               {(repo) => renderRepoSection(repo)}
             </For>
             <Show when={repos().length === 0}>
-              <div class="sidebar-empty">
-                <p>No repositories</p>
-                <button onClick={props.onAddRepo}>Add Repository</button>
+              <div class={s.empty}>
+                <p>{t("sidebar.noRepositories", "No repositories")}</p>
+                <button onClick={props.onAddRepo}>{t("sidebar.addRepository", "Add Repository")}</button>
               </div>
             </Show>
           </div>
@@ -812,8 +839,8 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
       {/* Git Quick Actions (Story 050) */}
       <Show when={repositoriesStore.getActive()}>
-        <div class="git-quick-actions">
-          <svg class="git-quick-label" width="10" height="28" viewBox="0 0 10 28" aria-hidden="true">
+        <div class={s.gitQuickActions}>
+          <svg class={s.gitQuickLabel} width="10" height="28" viewBox="0 0 10 28" aria-hidden="true">
             <text
               x="5" y="14"
               transform="rotate(-90 5 14)"
@@ -826,80 +853,80 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               font-family="system-ui,-apple-system,sans-serif"
             >GIT</text>
           </svg>
-          <div class="git-quick-actions-btns">
+          <div class={s.gitQuickBtns}>
             <button
-              class="git-quick-btn"
+              class={s.gitQuickBtn}
               onClick={() => {
                 const repo = repositoriesStore.getActive();
                 if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git pull`);
               }}
-              title="Pull latest changes"
+              title={t("sidebar.gitPull", "Pull latest changes")}
             >
-              <span class="git-quick-icon">
+              <span class={s.gitQuickIcon}>
                 {/* arrow-down-to-line */}
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2v9M4 8l4 4 4-4M2 14h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </span>
-              Pull
+              {t("sidebar.gitPullLabel", "Pull")}
             </button>
             <button
-              class="git-quick-btn"
+              class={s.gitQuickBtn}
               onClick={() => {
                 const repo = repositoriesStore.getActive();
                 if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git push`);
               }}
-              title="Push commits"
+              title={t("sidebar.gitPush", "Push commits")}
             >
-              <span class="git-quick-icon">
+              <span class={s.gitQuickIcon}>
                 {/* arrow-up-from-line */}
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 14V5M4 8l4-4 4 4M2 2h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </span>
-              Push
+              {t("sidebar.gitPushLabel", "Push")}
             </button>
             <button
-              class="git-quick-btn"
+              class={s.gitQuickBtn}
               onClick={() => {
                 const repo = repositoriesStore.getActive();
                 if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git fetch --all`);
               }}
-              title="Fetch from all remotes"
+              title={t("sidebar.gitFetch", "Fetch from all remotes")}
             >
-              <span class="git-quick-icon">
+              <span class={s.gitQuickIcon}>
                 {/* refresh-cw */}
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M1 4s.5-1 3-2.5A7 7 0 0 1 15 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M15 12s-.5 1-3 2.5A7 7 0 0 1 1 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M1 1v3h3M15 15v-3h-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </span>
-              Fetch
+              {t("sidebar.gitFetchLabel", "Fetch")}
             </button>
             <button
-              class="git-quick-btn"
+              class={s.gitQuickBtn}
               onClick={() => {
                 const repo = repositoriesStore.getActive();
                 if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git stash`);
               }}
-              title="Stash changes"
+              title={t("sidebar.gitStash", "Stash changes")}
             >
-              <span class="git-quick-icon">
+              <span class={s.gitQuickIcon}>
                 {/* layers/stash */}
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M1.5 6 8 9.5 14.5 6M1.5 10 8 13.5 14.5 10M8 2.5 14.5 6 8 9.5 1.5 6 8 2.5Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
               </span>
-              Stash
+              {t("sidebar.gitStashLabel", "Stash")}
             </button>
           </div>
         </div>
       </Show>
 
       {/* Footer */}
-      <div class="sidebar-footer">
-        <button class="sidebar-add-repo" onClick={props.onAddRepo} title="Add Repository">
-          <svg class="sidebar-add-repo-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <div class={s.footer}>
+        <button class={s.addRepo} onClick={props.onAddRepo} title={t("sidebar.addRepository", "Add Repository")}>
+          <svg class={s.addRepoIcon} width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M1.5 2A1.5 1.5 0 0 1 3 .5h3.379a1.5 1.5 0 0 1 1.06.44l1.122 1.12H13A1.5 1.5 0 0 1 14.5 3.5v9a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 12.5V2Z" stroke="currentColor" stroke-width="1.2"/>
           </svg>
-          Add Repository
+          {t("sidebar.addRepository", "Add Repository")}
         </button>
-        <div class="sidebar-footer-icons">
+        <div class={s.footerIcons}>
           <button
-            class="sidebar-footer-action"
+            class={s.footerAction}
             onClick={props.onOpenHelp}
-            title="Help"
+            title={t("sidebar.help", "Help")}
           >
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
               <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/>
@@ -908,9 +935,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
             </svg>
           </button>
           <button
-            class="sidebar-footer-action"
+            class={s.footerAction}
             onClick={props.onOpenSettings}
-            title="Settings"
+            title={t("sidebar.settings", "Settings")}
           >
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
               <path d="M6.5 1.5h3l.4 1.8a5 5 0 011.2.7l1.7-.6 1.5 2.6-1.3 1.2a5 5 0 010 1.4l1.3 1.2-1.5 2.6-1.7-.6a5 5 0 01-1.2.7l-.4 1.8h-3l-.4-1.8a5 5 0 01-1.2-.7l-1.7.6-1.5-2.6 1.3-1.2a5 5 0 010-1.4L1.7 5.7l1.5-2.6 1.7.6a5 5 0 011.2-.7z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
@@ -960,7 +987,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       />
 
       {/* Drag handle for resizing */}
-      <div class="sidebar-resize-handle" onMouseDown={handleResizeStart} />
+      <div class={s.resizeHandle} onMouseDown={handleResizeStart} />
     </aside>
   );
 };
