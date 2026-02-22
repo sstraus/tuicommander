@@ -14,6 +14,9 @@ import { planPlugin } from "../../plugins/planPlugin";
 
 const mockedInvoke = vi.mocked(invoke);
 
+/** Flush pending queueMicrotask callbacks so deferred dispatch handlers run */
+const flushMicrotasks = () => new Promise<void>((resolve) => queueMicrotask(resolve));
+
 beforeEach(() => {
   pluginRegistry.clear();
   activityStore.clearAll();
@@ -63,8 +66,9 @@ describe("plan-file structured event", () => {
     pluginRegistry.register(planPlugin);
   });
 
-  it("adds an ActivityItem to activityStore on plan-file event", () => {
+  it("adds an ActivityItem to activityStore on plan-file event", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
+    await flushMicrotasks();
     const items = activityStore.getForSection("plan");
     expect(items).toHaveLength(1);
     expect(items[0].sectionId).toBe("plan");
@@ -72,53 +76,64 @@ describe("plan-file structured event", () => {
     expect(items[0].dismissible).toBe(true);
   });
 
-  it("item title is the plan display name (basename without extension)", () => {
+  it("item title is the plan display name (basename without extension)", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/my-cool-plan.md" }, "s1");
+    await flushMicrotasks();
     const item = activityStore.getForSection("plan")[0];
     expect(item.title).toBe("my-cool-plan");
   });
 
-  it("item subtitle is the full path", () => {
+  it("item subtitle is the full path", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
+    await flushMicrotasks();
     const item = activityStore.getForSection("plan")[0];
     expect(item.subtitle).toBe("/repo/plans/foo.md");
   });
 
-  it("deduplicates: second event with same path updates, not adds", () => {
+  it("deduplicates: second event with same path updates, not adds", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
+    await flushMicrotasks();
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
+    await flushMicrotasks();
     expect(activityStore.getForSection("plan")).toHaveLength(1);
   });
 
-  it("different paths create separate items", () => {
+  it("different paths create separate items", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/a.md" }, "s1");
+    await flushMicrotasks();
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/b.md" }, "s1");
+    await flushMicrotasks();
     expect(activityStore.getForSection("plan")).toHaveLength(2);
   });
 
-  it("item has an icon (non-empty SVG string)", () => {
+  it("item has an icon (non-empty SVG string)", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/foo.md" }, "s1");
+    await flushMicrotasks();
     const item = activityStore.getForSection("plan")[0];
     expect(item.icon).toContain("<svg");
   });
 
-  it("ignores null payload", () => {
+  it("ignores null payload", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", null, "s1");
+    await flushMicrotasks();
     expect(activityStore.getForSection("plan")).toHaveLength(0);
   });
 
-  it("ignores payload with non-string path", () => {
+  it("ignores payload with non-string path", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: 42 }, "s1");
+    await flushMicrotasks();
     expect(activityStore.getForSection("plan")).toHaveLength(0);
   });
 
-  it("ignores payload without path property", () => {
+  it("ignores payload without path property", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { file: "/foo.md" }, "s1");
+    await flushMicrotasks();
     expect(activityStore.getForSection("plan")).toHaveLength(0);
   });
 
-  it("ignores string payload (not object)", () => {
+  it("ignores string payload (not object)", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", "/foo.md", "s1");
+    await flushMicrotasks();
     expect(activityStore.getForSection("plan")).toHaveLength(0);
   });
 });

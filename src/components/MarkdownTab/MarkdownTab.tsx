@@ -1,5 +1,6 @@
 import { Component, createEffect, createSignal, Show } from "solid-js";
 import { MarkdownRenderer } from "../ui";
+import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { useRepository } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { editorTabsStore } from "../../stores/editorTabs";
@@ -19,6 +20,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const repo = useRepository();
+  const contextMenu = createContextMenu();
 
   createEffect(() => {
     const tab = props.tab;
@@ -97,9 +99,30 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     return tab.type === "file" ? tab.filePath : tab.title;
   };
 
+  /** Full path for clipboard copy (repoPath + filePath) */
+  const fullPath = () => {
+    const tab = props.tab;
+    if (tab.type !== "file") return null;
+    return `${tab.repoPath}/${tab.filePath}`;
+  };
+
+  const handleCopyPath = () => {
+    const path = fullPath();
+    if (!path) return;
+    navigator.clipboard.writeText(path).catch((err) =>
+      console.error("Failed to copy path:", err),
+    );
+  };
+
+  const handleHeaderContextMenu = (ev: MouseEvent) => {
+    if (!fullPath()) return;
+    ev.preventDefault();
+    contextMenu.open(ev);
+  };
+
   return (
     <div class={s.wrapper}>
-      <div class={e.header}>
+      <div class={e.header} onContextMenu={handleHeaderContextMenu}>
         <span class={e.filename} title={displayPath()}>
           {displayPath()}
         </span>
@@ -125,6 +148,14 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
           }
         />
       </div>
+
+      <ContextMenu
+        items={[{ label: t("markdownTab.copyPath", "Copy Path"), action: handleCopyPath }]}
+        x={contextMenu.position().x}
+        y={contextMenu.position().y}
+        visible={contextMenu.visible()}
+        onClose={contextMenu.close}
+      />
     </div>
   );
 };

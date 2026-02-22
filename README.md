@@ -132,7 +132,9 @@ Need VS Code? Launch it with one click from any repo. But you'll find you need i
 
 ### Download
 
-Grab the latest build from [Releases](https://github.com/sstraus/tui-commander/releases). macOS builds are signed and notarized.
+Grab the latest stable build from [Releases](https://github.com/sstraus/tui-commander/releases/latest). macOS builds are signed and notarized.
+
+Want the bleeding edge? The **[Nightly build](https://github.com/sstraus/tui-commander/releases/tag/tip)** is rebuilt on every push to `main` — same signing and notarization, fresh off the branch.
 
 ### Build from Source
 

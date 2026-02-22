@@ -14,6 +14,9 @@ import { createWizStoriesPlugin } from "../../plugins/wizStoriesPlugin";
 
 const mockedInvoke = vi.mocked(invoke);
 
+/** Flush pending queueMicrotask callbacks so deferred dispatch handlers run */
+const flushMicrotasks = () => new Promise<void>((resolve) => queueMicrotask(resolve));
+
 // Inject a controlled storiesDir so tests don't depend on real stores
 const TEST_STORIES_DIR = "/test/repo/stories";
 function makePlugin() {
@@ -81,92 +84,103 @@ describe("STATUS_PATTERN watcher", () => {
     pluginRegistry.register(makePlugin());
   });
 
-  it("adds ActivityItem when status transition is detected", () => {
+  it("adds ActivityItem when status transition is detected", async () => {
     pluginRegistry.processRawOutput(
       "✓ Updated: 324-9b46 ready → in_progress\n",
       "session-1",
     );
+    await flushMicrotasks();
     const items = activityStore.getForSection("stories");
     expect(items).toHaveLength(1);
   });
 
-  it("item id is stable across updates (stories:{id})", () => {
+  it("item id is stable across updates (stories:{id})", async () => {
     pluginRegistry.processRawOutput(
       "✓ Updated: 324-9b46 ready → in_progress\n",
       "session-1",
     );
+    await flushMicrotasks();
     const item = activityStore.getForSection("stories")[0];
     expect(item.id).toBe("stories:324-9b46");
   });
 
-  it("item subtitle shows story id and new status", () => {
+  it("item subtitle shows story id and new status", async () => {
     pluginRegistry.processRawOutput(
       "✓ Updated: 324-9b46 ready → in_progress\n",
       "session-1",
     );
+    await flushMicrotasks();
     const item = activityStore.getForSection("stories")[0];
     expect(item.subtitle).toContain("324-9b46");
     expect(item.subtitle).toContain("in_progress");
   });
 
-  it("item contentUri encodes id and dir", () => {
+  it("item contentUri encodes id and dir", async () => {
     pluginRegistry.processRawOutput(
       "✓ Updated: 324-9b46 ready → in_progress\n",
       "session-1",
     );
+    await flushMicrotasks();
     const item = activityStore.getForSection("stories")[0];
     expect(item.contentUri).toContain("stories:detail");
     expect(item.contentUri).toContain("id=324-9b46");
     expect(item.contentUri).toContain(encodeURIComponent(TEST_STORIES_DIR));
   });
 
-  it("item has an icon (SVG)", () => {
+  it("item has an icon (SVG)", async () => {
     pluginRegistry.processRawOutput(
       "✓ Updated: 324-9b46 ready → in_progress\n",
       "session-1",
     );
+    await flushMicrotasks();
     const item = activityStore.getForSection("stories")[0];
     expect(item.icon).toContain("<svg");
   });
 
-  it("item is dismissible", () => {
+  it("item is dismissible", async () => {
     pluginRegistry.processRawOutput(
       "✓ Updated: 324-9b46 ready → in_progress\n",
       "session-1",
     );
+    await flushMicrotasks();
     const item = activityStore.getForSection("stories")[0];
     expect(item.dismissible).toBe(true);
   });
 
-  it("second status transition for same id updates, not duplicates", () => {
+  it("second status transition for same id updates, not duplicates", async () => {
     pluginRegistry.processRawOutput(
       "✓ Updated: 324-9b46 ready → in_progress\n",
       "session-1",
     );
+    await flushMicrotasks();
     pluginRegistry.processRawOutput(
       "✓ Updated: 324-9b46 in_progress → complete\n",
       "session-1",
     );
+    await flushMicrotasks();
     expect(activityStore.getForSection("stories")).toHaveLength(1);
     const item = activityStore.getForSection("stories")[0];
     expect(item.subtitle).toContain("complete");
   });
 
-  it("different story ids create separate items", () => {
+  it("different story ids create separate items", async () => {
     pluginRegistry.processRawOutput(
       "✓ Updated: 324-9b46 ready → in_progress\n",
       "session-1",
     );
+    await flushMicrotasks();
     pluginRegistry.processRawOutput(
       "✓ Updated: 325-abcd pending → ready\n",
       "session-1",
     );
+    await flushMicrotasks();
     expect(activityStore.getForSection("stories")).toHaveLength(2);
   });
 
-  it("does not match unrelated PTY lines", () => {
+  it("does not match unrelated PTY lines", async () => {
     pluginRegistry.processRawOutput("Running npm test...\n", "session-1");
     pluginRegistry.processRawOutput("All tests passed\n", "session-1");
+    await flushMicrotasks();
     expect(activityStore.getForSection("stories")).toHaveLength(0);
   });
 });
@@ -180,24 +194,27 @@ describe("WORKLOG_PATTERN watcher", () => {
     pluginRegistry.register(makePlugin());
   });
 
-  it("adds ActivityItem when worklog is detected", () => {
+  it("adds ActivityItem when worklog is detected", async () => {
     pluginRegistry.processRawOutput(
       "✓ Added worklog to 324-9b46: Starting implementation\n",
       "session-1",
     );
+    await flushMicrotasks();
     const items = activityStore.getForSection("stories");
     expect(items).toHaveLength(1);
   });
 
-  it("worklog for existing story updates the item", () => {
+  it("worklog for existing story updates the item", async () => {
     pluginRegistry.processRawOutput(
       "✓ Updated: 324-9b46 ready → in_progress\n",
       "session-1",
     );
+    await flushMicrotasks();
     pluginRegistry.processRawOutput(
       "✓ Added worklog to 324-9b46: Making progress\n",
       "session-1",
     );
+    await flushMicrotasks();
     expect(activityStore.getForSection("stories")).toHaveLength(1);
   });
 });

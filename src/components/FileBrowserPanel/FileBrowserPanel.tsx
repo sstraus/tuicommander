@@ -214,9 +214,23 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     }
   };
 
+  const handleCopyPath = (entry: DirEntry) => {
+    const repoPath = props.repoPath;
+    if (!repoPath) return;
+    const fullPath = `${repoPath}/${entry.path}`;
+    navigator.clipboard.writeText(fullPath).catch((err) =>
+      console.error("Failed to copy path:", err),
+    );
+  };
+
   const getContextMenuItems = (entry: DirEntry): ContextMenuItem[] => {
     const mod = getModifierSymbol();
     const items: ContextMenuItem[] = [];
+
+    items.push({
+      label: t("fileBrowser.copyPath", "Copy Path"),
+      action: () => handleCopyPath(entry),
+    });
 
     if (!entry.is_dir) {
       items.push({

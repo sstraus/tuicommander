@@ -8,6 +8,7 @@ import type { LanguageSupport } from "@codemirror/language";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
+import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { codeEditorTheme } from "./theme";
 import { detectLanguage } from "./languageDetection";
 import { t } from "../../i18n";
@@ -33,6 +34,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   const [isReadOnly, setIsReadOnly] = createSignal(false);
   /** True when the file changed on disk while editor has unsaved changes */
   const [diskConflict, setDiskConflict] = createSignal(false);
+  const contextMenu = createContextMenu();
   const fb = useFileBrowser();
 
   const isDirty = () => code() !== savedContent();
@@ -192,7 +194,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
   return (
     <div class={s.tabContent} data-editor-tab-id={props.id}>
-      <div class={e.header}>
+      <div class={e.header} onContextMenu={(ev) => { ev.preventDefault(); contextMenu.open(ev); }}>
         <span class={e.filename} title={props.filePath}>
           {props.filePath}
         </span>
@@ -234,6 +236,22 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
       <Show when={!loading() && !error()}>
         <div class={s.editorContent} ref={ref} />
       </Show>
+
+      <ContextMenu
+        items={[{
+          label: t("codeEditor.copyPath", "Copy Path"),
+          action: () => {
+            const fullPath = `${props.repoPath}/${props.filePath}`;
+            navigator.clipboard.writeText(fullPath).catch((err) =>
+              console.error("Failed to copy path:", err),
+            );
+          },
+        }]}
+        x={contextMenu.position().x}
+        y={contextMenu.position().y}
+        visible={contextMenu.visible()}
+        onClose={contextMenu.close}
+      />
     </div>
   );
 };

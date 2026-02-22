@@ -15,6 +15,9 @@ vi.mock("../../invoke", () => ({
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Flush pending queueMicrotask callbacks so deferred dispatch handlers run */
+const flushMicrotasks = () => new Promise<void>((resolve) => queueMicrotask(resolve));
+
 function makePlugin(id: string, onload?: (host: PluginHost) => void, onunload?: () => void): TuiPlugin {
   return {
     id,
@@ -167,47 +170,53 @@ describe("PluginHost.registerMarkdownProvider", () => {
 // ---------------------------------------------------------------------------
 
 describe("dispatchLine", () => {
-  it("calls matching watcher with match and sessionId", () => {
+  it("calls matching watcher with match and sessionId", async () => {
     const onMatch = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerOutputWatcher({ pattern: /hello (\w+)/, onMatch });
     }));
     pluginRegistry.dispatchLine("hello world", "session-1");
+    await flushMicrotasks();
     expect(onMatch).toHaveBeenCalledOnce();
     expect(onMatch.mock.calls[0][0][1]).toBe("world");
     expect(onMatch.mock.calls[0][1]).toBe("session-1");
   });
 
-  it("does not call watcher when pattern does not match", () => {
+  it("does not call watcher when pattern does not match", async () => {
     const onMatch = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerOutputWatcher({ pattern: /hello/, onMatch });
     }));
     pluginRegistry.dispatchLine("goodbye world", "s1");
+    await flushMicrotasks();
     expect(onMatch).not.toHaveBeenCalled();
   });
 
-  it("resets lastIndex on global regex before each test", () => {
+  it("resets lastIndex on global regex before each test", async () => {
     const onMatch = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerOutputWatcher({ pattern: /foo/g, onMatch });
     }));
     pluginRegistry.dispatchLine("foo bar", "s1");
+    await flushMicrotasks();
     pluginRegistry.dispatchLine("foo bar", "s1");
+    await flushMicrotasks();
     expect(onMatch).toHaveBeenCalledTimes(2);
   });
 
-  it("catches and does not rethrow watcher exceptions", () => {
+  it("catches and does not rethrow watcher exceptions", async () => {
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerOutputWatcher({
         pattern: /anything/,
         onMatch: () => { throw new Error("watcher boom"); },
       });
     }));
-    expect(() => pluginRegistry.dispatchLine("anything", "s1")).not.toThrow();
+    pluginRegistry.dispatchLine("anything", "s1");
+    await flushMicrotasks();
+    // Exception is caught inside the microtask — no unhandled error
   });
 
-  it("continues dispatching to other watchers after one throws", () => {
+  it("continues dispatching to other watchers after one throws", async () => {
     const onMatch = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerOutputWatcher({
@@ -217,16 +226,18 @@ describe("dispatchLine", () => {
       host.registerOutputWatcher({ pattern: /anything/, onMatch });
     }));
     pluginRegistry.dispatchLine("anything", "s1");
+    await flushMicrotasks();
     expect(onMatch).toHaveBeenCalledOnce();
   });
 
-  it("unregistering plugin removes its watchers", () => {
+  it("unregistering plugin removes its watchers", async () => {
     const onMatch = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerOutputWatcher({ pattern: /hello/, onMatch });
     }));
     pluginRegistry.unregister("p1");
     pluginRegistry.dispatchLine("hello", "s1");
+    await flushMicrotasks();
     expect(onMatch).not.toHaveBeenCalled();
   });
 });
@@ -236,27 +247,30 @@ describe("dispatchLine", () => {
 // ---------------------------------------------------------------------------
 
 describe("processRawOutput", () => {
-  it("reassembles lines and dispatches clean (ANSI-stripped) lines to watchers", () => {
+  it("reassembles lines and dispatches clean (ANSI-stripped) lines to watchers", async () => {
     const onMatch = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerOutputWatcher({ pattern: /hello/, onMatch });
     }));
     // Raw chunk with ANSI color + newline
     pluginRegistry.processRawOutput("\x1b[32mhello world\x1b[0m\n", "s1");
+    await flushMicrotasks();
     expect(onMatch).toHaveBeenCalledOnce();
     // First arg is RegExpExecArray, match[0] should be the clean text match
     expect(onMatch.mock.calls[0][0][0]).toBe("hello");
     expect(onMatch.mock.calls[0][1]).toBe("s1");
   });
 
-  it("holds partial lines until newline arrives", () => {
+  it("holds partial lines until newline arrives", async () => {
     const onMatch = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerOutputWatcher({ pattern: /hello/, onMatch });
     }));
     pluginRegistry.processRawOutput("hel", "s1");
+    await flushMicrotasks();
     expect(onMatch).not.toHaveBeenCalled();
     pluginRegistry.processRawOutput("lo\n", "s1");
+    await flushMicrotasks();
     expect(onMatch).toHaveBeenCalledOnce();
   });
 
@@ -265,15 +279,17 @@ describe("processRawOutput", () => {
     expect(() => pluginRegistry.processRawOutput("anything\n", "s1")).not.toThrow();
   });
 
-  it("maintains separate LineBuffers per sessionId", () => {
+  it("maintains separate LineBuffers per sessionId", async () => {
     const onMatch = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerOutputWatcher({ pattern: /done/, onMatch });
     }));
     pluginRegistry.processRawOutput("do", "session-a");
     pluginRegistry.processRawOutput("ne\n", "session-b"); // different session
+    await flushMicrotasks();
     expect(onMatch).not.toHaveBeenCalled(); // "done" not complete in session-b's buffer
     pluginRegistry.processRawOutput("ne\n", "session-a");  // completes in session-a
+    await flushMicrotasks();
     expect(onMatch).toHaveBeenCalledOnce();
   });
 });
@@ -283,25 +299,27 @@ describe("processRawOutput", () => {
 // ---------------------------------------------------------------------------
 
 describe("dispatchStructuredEvent", () => {
-  it("calls handler for matching type", () => {
+  it("calls handler for matching type", async () => {
     const handler = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerStructuredEventHandler("plan-file", handler);
     }));
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/foo.md" }, "s1");
+    await flushMicrotasks();
     expect(handler).toHaveBeenCalledWith({ path: "/foo.md" }, "s1");
   });
 
-  it("does not call handler for non-matching type", () => {
+  it("does not call handler for non-matching type", async () => {
     const handler = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerStructuredEventHandler("plan-file", handler);
     }));
     pluginRegistry.dispatchStructuredEvent("rate-limit", {}, "s1");
+    await flushMicrotasks();
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it("calls all handlers registered for the same type", () => {
+  it("calls all handlers registered for the same type", async () => {
     const h1 = vi.fn();
     const h2 = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
@@ -311,28 +329,32 @@ describe("dispatchStructuredEvent", () => {
       host.registerStructuredEventHandler("plan-file", h2);
     }));
     pluginRegistry.dispatchStructuredEvent("plan-file", {}, "s1");
+    await flushMicrotasks();
     expect(h1).toHaveBeenCalledOnce();
     expect(h2).toHaveBeenCalledOnce();
   });
 
-  it("unregistering plugin removes its structured event handlers", () => {
+  it("unregistering plugin removes its structured event handlers", async () => {
     const handler = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerStructuredEventHandler("plan-file", handler);
     }));
     pluginRegistry.unregister("p1");
     pluginRegistry.dispatchStructuredEvent("plan-file", {}, "s1");
+    await flushMicrotasks();
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it("catches and does not rethrow handler exceptions", () => {
+  it("catches and does not rethrow handler exceptions", async () => {
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerStructuredEventHandler("plan-file", () => { throw new Error("handler boom"); });
     }));
-    expect(() => pluginRegistry.dispatchStructuredEvent("plan-file", {}, "s1")).not.toThrow();
+    pluginRegistry.dispatchStructuredEvent("plan-file", {}, "s1");
+    await flushMicrotasks();
+    // Exception is caught inside the microtask — no unhandled error
   });
 
-  it("continues dispatching to other handlers after one throws", () => {
+  it("continues dispatching to other handlers after one throws", async () => {
     const h2 = vi.fn();
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerStructuredEventHandler("plan-file", () => { throw new Error("boom"); });
@@ -341,6 +363,7 @@ describe("dispatchStructuredEvent", () => {
       host.registerStructuredEventHandler("plan-file", h2);
     }));
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/foo.md" }, "s1");
+    await flushMicrotasks();
     expect(h2).toHaveBeenCalledOnce();
   });
 });
@@ -606,7 +629,7 @@ describe("error capture in plugin logger", () => {
     expect(entries.some((e) => e.level === "error" && e.message.includes("onload"))).toBe(true);
   });
 
-  it("captures watcher errors in the plugin logger", () => {
+  it("captures watcher errors in the plugin logger", async () => {
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerOutputWatcher({
         pattern: /boom/,
@@ -614,15 +637,17 @@ describe("error capture in plugin logger", () => {
       });
     }));
     pluginRegistry.dispatchLine("boom", "s1");
+    await flushMicrotasks();
     const logger = pluginStore.getLogger("p1");
     expect(logger.getEntries().some((e) => e.level === "error" && e.message.includes("OutputWatcher"))).toBe(true);
   });
 
-  it("captures structured handler errors in the plugin logger", () => {
+  it("captures structured handler errors in the plugin logger", async () => {
     pluginRegistry.register(makePlugin("p1", (host) => {
       host.registerStructuredEventHandler("test-type", () => { throw new Error("handler error"); });
     }));
     pluginRegistry.dispatchStructuredEvent("test-type", {}, "s1");
+    await flushMicrotasks();
     const logger = pluginStore.getLogger("p1");
     expect(logger.getEntries().some((e) => e.level === "error" && e.message.includes("handler error"))).toBe(true);
   });

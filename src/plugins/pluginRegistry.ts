@@ -315,7 +315,8 @@ function createPluginRegistry() {
 
   /**
    * Dispatch a clean (ANSI-stripped) PTY line to all registered OutputWatchers.
-   * Called synchronously in the PTY hot path — watchers MUST be fast.
+   * Regex matching runs synchronously (cheap), but onMatch callbacks are
+   * deferred via queueMicrotask so slow handlers don't block terminal.write().
    */
   function dispatchLine(cleanLine: string, sessionId: string): void {
     for (const { pluginId, watcher } of outputWatchers) {
@@ -324,13 +325,15 @@ function createPluginRegistry() {
       if (pattern.global) pattern.lastIndex = 0;
       const match = pattern.exec(cleanLine);
       if (match) {
-        try {
-          onMatch(match, sessionId);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.error("[pluginRegistry] watcher threw:", err);
-          pluginStore.getLogger(pluginId).error(`OutputWatcher threw: ${msg}`, err);
-        }
+        queueMicrotask(() => {
+          try {
+            onMatch(match, sessionId);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error("[pluginRegistry] watcher threw:", err);
+            pluginStore.getLogger(pluginId).error(`OutputWatcher threw: ${msg}`, err);
+          }
+        });
       }
     }
   }
@@ -358,18 +361,21 @@ function createPluginRegistry() {
 
   /**
    * Dispatch a structured Tauri event to all registered handlers for the type.
+   * Handlers are deferred via queueMicrotask to avoid blocking the event loop.
    */
   function dispatchStructuredEvent(type: string, payload: unknown, sessionId: string): void {
     const handlers = structuredHandlers.get(type);
     if (!handlers) return;
     for (const { pluginId, handler } of handlers) {
-      try {
-        handler(payload, sessionId);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[pluginRegistry] structured handler (plugin "${pluginId}", type "${type}") threw:`, err);
-        pluginStore.getLogger(pluginId).error(`Structured handler "${type}" threw: ${msg}`, err);
-      }
+      queueMicrotask(() => {
+        try {
+          handler(payload, sessionId);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[pluginRegistry] structured handler (plugin "${pluginId}", type "${type}") threw:`, err);
+          pluginStore.getLogger(pluginId).error(`Structured handler "${type}" threw: ${msg}`, err);
+        }
+      });
     }
   }
 
