@@ -11,7 +11,3 @@
   overflow: auto;
   padding: 24px;
 }
-
-.content:focus {
-  outline: none;
-}

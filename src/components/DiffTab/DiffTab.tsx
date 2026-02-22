@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, onMount } from "solid-js";
+import { Component, createEffect, createSignal } from "solid-js";
 import { DiffViewer } from "../ui";
 import { useRepository } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
@@ -9,7 +9,6 @@ export interface DiffTabProps {
   repoPath: string;
   filePath: string;
   scope?: string;
-  active?: boolean;
   onClose?: () => void;
 }
 
@@ -18,12 +17,6 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const repo = useRepository();
-  let contentRef!: HTMLDivElement;
-
-  onMount(() => contentRef?.focus({ preventScroll: true }));
-  createEffect(() => {
-    if (props.active) contentRef?.focus({ preventScroll: true });
-  });
 
   // Load file diff when props change or the repo revision bumps (git index/HEAD changed)
   createEffect(() => {
@@ -54,7 +47,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
   });
 
   return (
-    <div ref={contentRef} tabIndex={-1} class={s.content}>
+    <div class={s.content}>
       <DiffViewer
         diff={diff()}
         emptyMessage={
