@@ -17,6 +17,8 @@ export interface RepoSettings {
   /** null = inherit from repoDefaultsStore */
   runScript: string | null;
   color: string;
+  /** null = inherit global default (true on macOS). When false: left-Option sends composition chars instead of meta sequences */
+  terminalMetaHotkeys: boolean | null;
 }
 
 /** Fully resolved settings with no nulls — use getEffective() to obtain */
@@ -29,18 +31,20 @@ export interface EffectiveRepoSettings {
   setupScript: string;
   runScript: string;
   color: string;
+  terminalMetaHotkeys: boolean;
 }
 
 /** Fields that can be overridden per-repo (all others are repo-specific) */
 const OVERRIDABLE_NULL_DEFAULTS: Pick<
   RepoSettings,
-  "baseBranch" | "copyIgnoredFiles" | "copyUntrackedFiles" | "setupScript" | "runScript"
+  "baseBranch" | "copyIgnoredFiles" | "copyUntrackedFiles" | "setupScript" | "runScript" | "terminalMetaHotkeys"
 > = {
   baseBranch: null,
   copyIgnoredFiles: null,
   copyUntrackedFiles: null,
   setupScript: null,
   runScript: null,
+  terminalMetaHotkeys: null,
 };
 
 /** Repository settings store state */
@@ -127,6 +131,7 @@ function createRepoSettingsStore() {
         copyUntrackedFiles: settings.copyUntrackedFiles ?? defaults.copyUntrackedFiles,
         setupScript: settings.setupScript ?? defaults.setupScript,
         runScript: settings.runScript ?? defaults.runScript,
+        terminalMetaHotkeys: settings.terminalMetaHotkeys ?? true,
       };
     },
 

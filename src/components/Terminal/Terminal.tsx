@@ -33,6 +33,8 @@ export interface TerminalProps {
   onRateLimit?: (id: string, sessionId: string, retryAfterMs: number | null) => void;
   /** Called when a file path is clicked in terminal output */
   onOpenFilePath?: (absolutePath: string, line?: number, col?: number) => void;
+  /** When false, disables left-Option-as-Meta key sequences (macOS only). Default: true */
+  metaHotkeys?: boolean;
 }
 
 /** Get current theme from settings, with scrollbar defaults */
@@ -398,6 +400,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     let leftOptionHeld = false;
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
       if (!isMacOS()) return true; // Windows/Linux: xterm handles Alt natively
+      if (props.metaHotkeys === false) return true; // disabled for this repo
       if (event.metaKey || event.ctrlKey) return true; // Cmd+Alt or AltGr: pass through
       // AltLeft keyup fires with altKey=false — reset state here before early return
       if (!event.altKey) { leftOptionHeld = false; return true; }

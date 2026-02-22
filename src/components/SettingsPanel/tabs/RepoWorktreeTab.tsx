@@ -2,6 +2,7 @@ import { Component, For, Show } from "solid-js";
 import type { RepoSettings } from "../../../stores/repoSettings";
 import type { RepoDefaults } from "../../../stores/repoDefaults";
 import { PRESET_COLORS } from "./GroupsTab";
+import { isMacOS } from "../../../platform";
 
 export interface RepoTabProps {
   settings: RepoSettings;
@@ -137,6 +138,26 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
           </span>
         </div>
       </div>
+
+      <Show when={isMacOS()}>
+        <div class="settings-group">
+          <label>Terminal</label>
+
+          <div class="settings-toggle">
+            <input
+              type="checkbox"
+              checked={effectiveBool(props.settings.terminalMetaHotkeys, true)}
+              onChange={(e) => props.onUpdate("terminalMetaHotkeys", e.currentTarget.checked)}
+            />
+            <span>
+              Left Option key sends meta sequences (Alt+B, Alt+F, Alt+P…)
+              <Show when={props.settings.terminalMetaHotkeys === null}>
+                <span class="settings-hint-inline"> (default: on)</span>
+              </Show>
+            </span>
+          </div>
+        </div>
+      </Show>
     </div>
   );
 };

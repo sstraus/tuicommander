@@ -88,6 +88,7 @@ describe("SettingsPanel — repo context", () => {
       setupScript: "",
       runScript: "",
       color: "",
+      terminalMetaHotkeys: null,
     };
     vi.mocked(repoSettingsStore.getOrCreate).mockReturnValue(mockSettings);
   });
