@@ -117,114 +117,68 @@ All git endpoints take a `?path=` query parameter specifying the repository path
 |--------|------|-------------|
 | GET | `/agents` | Detect installed agent binaries |
 
-## Available MCP Tools (20)
+### Plugins
 
-### Session Management
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/plugins/docs` | Plugin development guide (AI-optimized reference) |
 
-#### `list_sessions`
-List all active terminal sessions with their IDs, working directories, and worktree info.
+## Available MCP Tools (5 meta-commands)
 
-#### `create_session`
-Create a new terminal session (PTY). Returns `session_id` for subsequent operations.
+All tools except `plugin_dev_guide` require an `action` parameter to select the operation.
 
-**Parameters:**
-- `rows` (optional) - Terminal rows (default: 24)
-- `cols` (optional) - Terminal columns (default: 80)
-- `shell` (optional) - Shell path (default: $SHELL or /bin/zsh)
-- `cwd` (optional) - Working directory
+### `session` — PTY terminal session management
 
-#### `send_input`
-Send text or a special key to a terminal session.
+| Action | Description | Required params |
+|--------|-------------|-----------------|
+| `list` | Returns `[{session_id, cwd, worktree_path, worktree_branch}]` for all active sessions | — |
+| `create` | Creates a new PTY session. Returns `{session_id}` | — |
+| `input` | Sends text and/or a special key to a session | `session_id`, plus `input` and/or `special_key` |
+| `output` | Returns `{data, total_written}` from session ring buffer | `session_id` |
+| `resize` | Resizes PTY dimensions | `session_id`, `rows`, `cols` |
+| `close` | Terminates a session | `session_id` |
+| `pause` | Pauses output buffering | `session_id` |
+| `resume` | Resumes output buffering | `session_id` |
 
-**Parameters:**
-- `session_id` (required) - Terminal session ID
-- `input` (optional) - Text to type
-- `special_key` (optional) - Special key name
+**Optional params for `create`:** `rows`, `cols`, `shell`, `cwd`
+**Optional params for `output`:** `limit` (default 8192, max 65536)
 
-**Supported special keys:**
-`enter`, `tab`, `escape`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `ctrl+c`, `ctrl+d`, `ctrl+z`, `ctrl+l`, `ctrl+a`, `ctrl+e`, `ctrl+k`, `ctrl+u`, `ctrl+w`, `ctrl+r`, `ctrl+p`, `ctrl+n`
+**Special keys for `input`:** `enter`, `tab`, `escape`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `ctrl+c`, `ctrl+d`, `ctrl+z`, `ctrl+l`, `ctrl+a`, `ctrl+e`, `ctrl+k`, `ctrl+u`, `ctrl+w`, `ctrl+r`, `ctrl+p`, `ctrl+n`
 
-#### `get_output`
-Read recent terminal output from a session's ring buffer (default 8KB, max 64KB).
+### `git` — Repository state and GitHub integration
 
-**Parameters:**
-- `session_id` (required) - Terminal session ID
-- `limit` (optional) - Max bytes to read (default: 8192, max: 65536)
+All actions require `path` (absolute path to git repository).
 
-#### `resize_terminal`
-Resize a terminal session.
+| Action | Description |
+|--------|-------------|
+| `info` | Returns `{name, branch, status, remote_url, is_dirty, ahead, behind}` |
+| `diff` | Returns `{diff}` with unified diff of unstaged changes |
+| `files` | Returns `[{path, status, insertions, deletions}]` for changed files |
+| `branches` | Returns `[{name, is_current, is_remote}]` branch list |
+| `github` | Returns GitHub integration data (remote, PR, CI, ahead/behind) |
+| `prs` | Returns all open PR statuses with CI rollup |
 
-**Parameters:** `session_id` (required), `rows` (required), `cols` (required)
+### `agent` — AI agent detection and management
 
-#### `close_session`
-Close a terminal session. Sends Ctrl+C and waits briefly for graceful shutdown.
+| Action | Description | Required params |
+|--------|-------------|-----------------|
+| `detect` | Returns `[{name, path, version}]` for known agents (claude, codex, aider, goose, lazygit) | — |
+| `spawn` | Launches an agent in a new PTY session. Returns `{session_id}` | `prompt` |
+| `stats` | Returns `{active_sessions, max_sessions, available_slots}` | — |
+| `metrics` | Returns cumulative metrics `{total_spawned, total_failed, active_sessions, bytes_emitted, pauses_triggered}` | — |
 
-**Parameters:** `session_id` (required)
+**Optional params for `spawn`:** `cwd`, `model`, `print_mode`, `output_format`, `agent_type`, `binary_path`, `args`, `rows`, `cols`
 
-#### `pause_session` / `resume_session`
-Flow control for the terminal session's output reader.
+### `config` — Application configuration
 
-**Parameters:** `session_id` (required)
+| Action | Description | Required params |
+|--------|-------------|-----------------|
+| `get` | Returns app config (password hash stripped) | — |
+| `save` | Persists configuration. Partial updates OK | `config` (object) |
 
-### Orchestrator
+### `plugin_dev_guide` — Plugin authoring reference
 
-#### `get_stats`
-Get orchestrator stats: active sessions, max sessions, available slots.
-
-#### `get_metrics`
-Get session metrics: total spawned, failed spawns, bytes emitted, pauses triggered.
-
-### Git / GitHub
-
-All git tools require a `path` parameter (repository path).
-
-#### `get_repo_info`
-Get git repository info: branch name, status (clean/dirty/conflict), repo name.
-
-#### `get_git_diff`
-Get unified diff for unstaged changes.
-
-#### `get_changed_files`
-Get list of changed files with status (M/A/D/R) and per-file addition/deletion counts.
-
-#### `get_github_status`
-Get GitHub status: remote info, current branch, PR status, CI status, ahead/behind counts.
-
-#### `get_pr_statuses`
-Get all PR statuses for a repository with CI check rollup, review decision, labels, and draft indicators.
-
-#### `get_branches`
-Get list of git branches (local and remote) with current branch indicator.
-
-### Config
-
-#### `get_config`
-Get TUI Commander application configuration.
-
-#### `save_config`
-Save TUI Commander application configuration.
-
-**Parameters:** `config` (required) - Configuration object
-
-### Agents
-
-#### `detect_agents`
-Detect installed AI agent binaries (claude, codex, aider, goose, lazygit).
-
-#### `spawn_agent`
-Spawn an AI agent in a new terminal session. Returns `session_id` to interact with the agent.
-
-**Parameters:**
-- `prompt` (required) - Prompt/task for the agent
-- `cwd` (optional) - Working directory
-- `model` (optional) - Model to use
-- `print_mode` (optional) - Use --print mode (non-interactive)
-- `output_format` (optional) - Output format (e.g., 'json')
-- `agent_type` (optional) - Agent binary name (default: claude)
-- `binary_path` (optional) - Explicit path to agent binary
-- `args` (optional) - Custom args array (overrides default arg building)
-- `rows` (optional) - Terminal rows (default: 24)
-- `cols` (optional) - Terminal columns (default: 80)
+Returns the complete plugin development reference (manifest format, PluginHost API, structured event types, examples). No `action` parameter needed.
 
 ## Example Usage
 

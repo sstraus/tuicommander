@@ -72,6 +72,12 @@ When enabled, the server:
 |--------|------|-------------|
 | `GET` | `/agents/detect` | Detect installed agents and IDEs |
 
+### Plugins
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/plugins/docs` | Plugin development guide (AI-optimized reference) |
+
 ### Worktrees
 
 | Method | Path | Description |

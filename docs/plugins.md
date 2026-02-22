@@ -179,7 +179,7 @@ host.registerStructuredEventHandler("plan-file", (payload, sessionId) => {
 });
 ```
 
-Known event types: `"plan-file"`, `"rate-limit"`.
+See [Structured Event Types](#structured-event-types) for all types and payload shapes.
 
 #### host.registerMarkdownProvider(scheme, provider) -> Disposable
 
@@ -211,6 +211,7 @@ host.addItem({
   title: "api-server",         // Primary text
   subtitle: "Deployed to prod", // Secondary text (optional)
   icon: '<svg .../>',          // Inline SVG with fill="currentColor"
+  iconColor: "#3fb950",        // Optional CSS color for the icon
   dismissible: true,
   contentUri: "my-scheme:detail?id=api",  // Opens in MarkdownTab on click
   // OR: onClick: () => { ... },          // Mutually exclusive with contentUri
@@ -467,6 +468,107 @@ Activity items use these CSS classes (defined in `src/styles.css`):
 | `activity-last-item-btn` | Shortcut button in toolbar |
 | `activity-last-item-icon` | Shortcut button icon |
 | `activity-last-item-title` | Shortcut button text |
+
+## Structured Event Types
+
+The Rust `OutputParser` detects patterns in terminal output and emits typed events. Handle them with `host.registerStructuredEventHandler(type, handler)`.
+
+### plan-file
+
+Detected when a plan file path appears in terminal output.
+
+```typescript
+{ type: "plan-file", path: string }
+// path: relative or absolute, e.g. "plans/foo.md", ".claude/plans/bar.md"
+```
+
+### rate-limit
+
+Detected when AI API rate limits are hit.
+
+```typescript
+{
+  type: "rate-limit",
+  pattern_name: string,           // e.g. "claude-http-429", "openai-http-429"
+  matched_text: string,           // the matched substring
+  retry_after_ms: number | null,  // ms to wait (default 60000)
+}
+```
+
+Pattern names: `claude-http-429`, `claude-overloaded`, `openai-http-429`, `cursor-rate-limit`, `gemini-resource-exhausted`, `http-429`, `retry-after-header`, `openai-retry-after`, `openai-tpm-limit`, `openai-rpm-limit`.
+
+### status-line
+
+Detected when an AI agent emits a status/progress line.
+
+```typescript
+{
+  type: "status-line",
+  task_name: string,              // e.g. "Reading files"
+  full_line: string,              // complete line trimmed
+  time_info: string | null,       // e.g. "12s"
+  token_info: string | null,      // e.g. "2.4k tokens"
+}
+```
+
+### pr-url
+
+Detected when a GitHub/GitLab PR/MR URL appears in output.
+
+```typescript
+{
+  type: "pr-url",
+  number: number,     // PR/MR number
+  url: string,        // full URL
+  platform: string,   // "github" or "gitlab"
+}
+```
+
+### progress
+
+Detected from OSC 9;4 terminal progress sequences.
+
+```typescript
+{
+  type: "progress",
+  state: number,  // 0=remove, 1=normal, 2=error, 3=indeterminate
+  value: number,  // 0-100
+}
+```
+
+### question
+
+Detected when an interactive prompt appears (Y/N prompts, numbered menus, inquirer-style).
+
+```typescript
+{
+  type: "question",
+  prompt_text: string,  // the question line (ANSI-stripped)
+}
+```
+
+### usage-limit
+
+Detected when Claude Code reports usage limits.
+
+```typescript
+{
+  type: "usage-limit",
+  percentage: number,    // 0-100
+  limit_type: string,    // "weekly" or "session"
+}
+```
+
+## Example Plugins
+
+See `examples/plugins/` for complete working examples:
+
+| Example | Tier | Capabilities | Demonstrates |
+|---------|------|-------------|--------------|
+| `hello-world` | 1 | none | Output watcher, addItem |
+| `auto-confirm` | 1+3 | `pty:write` | Auto-responding to Y/N prompts |
+| `ci-notifier` | 1+3 | `ui:sound`, `ui:markdown` | Sound notifications, markdown panels |
+| `repo-dashboard` | 1+2 | none | Read-only state, dynamic markdown |
 
 ## Troubleshooting
 

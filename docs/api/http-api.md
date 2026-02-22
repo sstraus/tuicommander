@@ -233,6 +233,16 @@ GET /agents/detect
 
 Returns detected agent binaries and installed IDEs.
 
+## Plugin Endpoints
+
+### Plugin Development Guide
+
+```
+GET /plugins/docs
+```
+
+Returns the complete plugin development reference as `{"content": "..."}`. AI-optimized documentation covering manifest format, PluginHost API, structured event types, and example plugins.
+
 ## Worktree Endpoints
 
 ### Create Worktree
