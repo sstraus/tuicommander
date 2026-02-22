@@ -9,7 +9,7 @@ import { AGENTS } from "../agents";
 /** Dependencies injected into useGitOperations */
 export interface GitOperationsDeps {
   repo: {
-    getInfo: (path: string) => Promise<{ path: string; name: string; initials: string; branch: string; status: string }>;
+    getInfo: (path: string) => Promise<{ path: string; name: string; initials: string; branch: string; status: "clean" | "dirty" | "conflict" | "merge" | "not-git" | "unknown" }>;
     getDiffStats: (path: string) => Promise<{ additions: number; deletions: number }>;
     getWorktreePaths: (repoPath: string) => Promise<Record<string, string>>;
     removeWorktree: (repoPath: string, branchName: string) => Promise<void>;
@@ -48,6 +48,13 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
       const currentRepo = repositoriesStore.get(repoPath);
       if (currentRepo) {
+        const branchCount = Object.keys(currentRepo.branches).length;
+        // Guard: an empty worktree response when branches exist likely indicates a
+        // backend error. Clearing branches in that case would destroy UI state.
+        if (Object.keys(worktreePaths).length === 0 && branchCount > 0) {
+          console.warn(`[refreshAllBranchStats] getWorktreePaths returned empty for ${repoPath} with ${branchCount} branch(es) — skipping clear`);
+          return;
+        }
         for (const branchName of Object.keys(currentRepo.branches)) {
           if (!(branchName in worktreePaths)) {
             repositoriesStore.removeBranch(repoPath, branchName);
@@ -289,7 +296,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       repositoriesStore.setActive(info.path);
       setCurrentRepoPath(info.path);
       setCurrentBranch(info.branch);
-      setRepoStatus(info.status as "clean" | "dirty" | "conflict" | "merge" | "unknown");
+      setRepoStatus(info.status === "not-git" ? "unknown" : info.status);
 
       refreshAllBranchStats();
     } catch (err) {

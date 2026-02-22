@@ -559,7 +559,7 @@ describe("TabBar", () => {
 
   describe("diff tabs", () => {
     it("renders diff tabs", () => {
-      diffTabsStore.add("/repo", "/repo/file.ts", "modified");
+      diffTabsStore.add("/repo", "/repo/file.ts", "M");
 
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
@@ -570,7 +570,7 @@ describe("TabBar", () => {
     });
 
     it("clicking diff tab selects it", () => {
-      const id = diffTabsStore.add("/repo", "/repo/file.ts", "modified");
+      const id = diffTabsStore.add("/repo", "/repo/file.ts", "M");
       const handleSelect = vi.fn();
 
       const { container } = render(() => (
@@ -582,7 +582,7 @@ describe("TabBar", () => {
     });
 
     it("closing diff tab via close button", () => {
-      const id = diffTabsStore.add("/repo", "/repo/file.ts", "modified");
+      const id = diffTabsStore.add("/repo", "/repo/file.ts", "M");
       const handleClose = vi.fn();
 
       const { container } = render(() => (
@@ -594,7 +594,7 @@ describe("TabBar", () => {
     });
 
     it("middle-click closes diff tab", () => {
-      const id = diffTabsStore.add("/repo", "/repo/file.ts", "modified");
+      const id = diffTabsStore.add("/repo", "/repo/file.ts", "M");
       const handleClose = vi.fn();
 
       const { container } = render(() => (

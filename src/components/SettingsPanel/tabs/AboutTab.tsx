@@ -1,20 +1,11 @@
 import { Component } from "solid-js";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { t } from "../../../i18n";
-import { isTauri } from "../../../transport";
+import { handleOpenUrl } from "../../../utils/openUrl";
 import s from "../Settings.module.css";
 
 const APP_VERSION = __APP_VERSION__;
 const GITHUB_URL = "https://github.com/sstraus/tui-commander";
 const DOCS_URL = "https://github.com/sstraus/tui-commander/wiki";
-
-function handleOpenUrl(url: string) {
-  if (isTauri()) {
-    openUrl(url).catch((err) => console.error("Failed to open URL:", err));
-  } else {
-    window.open(url, "_blank");
-  }
-}
 
 export const AboutTab: Component = () => {
   return (

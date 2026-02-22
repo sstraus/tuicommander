@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, createMemo, onCleanup } from "solid-js";
+import { Component, Show, createSignal, createMemo, onCleanup, onMount } from "solid-js";
 import { ZoomIndicator, BranchBadge, PrBadge, CiBadge } from "../ui";
 import { terminalsStore } from "../../stores/terminals";
 import { AGENT_DISPLAY } from "../../agents";
@@ -39,13 +39,15 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 
   // Rate limit countdown — tick every second while any rate limit is active
   const [rlTick, setRlTick] = createSignal(0);
-  const rlTimer = setInterval(() => {
-    if (rateLimitStore.getRateLimitedCount() > 0) {
-      setRlTick((t) => t + 1);
-      rateLimitStore.cleanupExpired();
-    }
-  }, 1000);
-  onCleanup(() => clearInterval(rlTimer));
+  onMount(() => {
+    const rlTimer = setInterval(() => {
+      if (rateLimitStore.getRateLimitedCount() > 0) {
+        setRlTick((t) => t + 1);
+        rateLimitStore.cleanupExpired();
+      }
+    }, 1000);
+    onCleanup(() => clearInterval(rlTimer));
+  });
 
   const rateLimitWarning = createMemo(() => {
     rlTick(); // Subscribe to ticks for reactivity

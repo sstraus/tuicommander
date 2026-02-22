@@ -360,14 +360,45 @@ describe("repositoriesStore", () => {
 
     it("handles hydration failure gracefully", async () => {
       mockInvoke.mockRejectedValueOnce(new Error("load failed"));
-      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       await createRoot(async (dispose) => {
         await store.hydrate(); // Should not throw
         expect(store.getPaths()).toEqual([]);
-        debugSpy.mockRestore();
+        expect(errorSpy).toHaveBeenCalledWith("Failed to hydrate repositories:", expect.any(Error));
+        errorSpy.mockRestore();
         dispose();
       });
+    });
+
+    it("blocks save after hydration failure", async () => {
+      // Reset hydrated flag to false — beforeEach sets it to true for other tests,
+      // but this test specifically checks that a failed hydration blocks saves.
+      store._testSetHydrated(false);
+      mockInvoke.mockRejectedValueOnce(new Error("load failed"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      await createRoot(async (dispose) => {
+        await store.hydrate();
+        expect(store.getPaths()).toEqual([]);
+
+        // Clear mock calls from the hydrate attempt
+        mockInvoke.mockClear();
+
+        // Attempt a mutation after failed hydration
+        store.add({ path: "/test-repo", displayName: "Test" });
+
+        // Advance timers to trigger any debounced saves
+        vi.advanceTimersByTime(1000);
+
+        // Save should NOT have been called (hydrated flag is false)
+        const saveCalls = mockInvoke.mock.calls.filter((c: unknown[]) => c[0] === "save_repositories");
+        expect(saveCalls).toHaveLength(0);
+
+        dispose();
+      });
+
+      errorSpy.mockRestore();
     });
 
     it("migrates from localStorage on first run", async () => {
@@ -415,6 +446,27 @@ describe("repositoriesStore", () => {
       createRoot((dispose) => {
         store.add({ path: "/repo", displayName: "test" });
         expect(store.isEmpty()).toBe(false);
+        dispose();
+      });
+    });
+  });
+
+  describe("revision tracking", () => {
+    it("returns 0 for unknown repo", () => {
+      createRoot((dispose) => {
+        expect(store.getRevision("/unknown-repo")).toBe(0);
+        dispose();
+      });
+    });
+
+    it("increments revision on bumpRevision", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/test", displayName: "test" });
+        expect(store.getRevision("/test")).toBe(0);
+        store.bumpRevision("/test");
+        expect(store.getRevision("/test")).toBe(1);
+        store.bumpRevision("/test");
+        expect(store.getRevision("/test")).toBe(2);
         dispose();
       });
     });

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use super::types::*;
 
 pub(super) async fn get_config(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let config = state.config.read().unwrap().clone();
+    let config = state.config.read().clone();
     let mut json = serde_json::to_value(config).unwrap_or_default();
     // Strip sensitive fields from HTTP responses
     if let Some(obj) = json.as_object_mut() {
@@ -32,7 +32,7 @@ pub(super) async fn put_config(
     }
     match crate::config::save_app_config(config.clone()) {
         Ok(()) => {
-            *state.config.write().unwrap() = config;
+            *state.config.write() = config;
             (StatusCode::OK, Json(serde_json::json!({"ok": true})))
         }
         Err(e) => (
@@ -148,7 +148,7 @@ pub(super) async fn put_prompt_library(
 }
 
 pub(super) async fn get_mcp_status_http(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let config = state.config.read().unwrap().clone();
+    let config = state.config.read().clone();
     let port_file = crate::config::config_dir().join("mcp-port");
     let port = std::fs::read_to_string(&port_file)
         .ok()

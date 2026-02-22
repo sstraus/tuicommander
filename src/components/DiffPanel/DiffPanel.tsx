@@ -1,7 +1,7 @@
 import { Component, createEffect, createSignal, For, Show } from "solid-js";
 import { useRepository, type ChangedFile } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
-import { diffTabsStore } from "../../stores/diffTabs";
+import { diffTabsStore, type DiffStatus } from "../../stores/diffTabs";
 import { getModifierSymbol } from "../../platform";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { t } from "../../i18n";
@@ -77,7 +77,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
 
   const handleFileClick = (file: ChangedFile) => {
     if (!props.repoPath) return;
-    diffTabsStore.add(props.repoPath, file.path, file.status, scope());
+    diffTabsStore.add(props.repoPath, file.path, file.status as DiffStatus, scope());
   };
 
   const getStatusDisplay = (status: string): { label: string; className: string } => {

@@ -6,7 +6,7 @@
 
 ### Files to update:
 - `docs/FEATURES.md` - Canonical feature inventory (add/update/remove entries)
-- `src/components/HelpPanel/HelpPanel.tsx` - Add new shortcuts/features to the help content
+- `src/actions/actionRegistry.ts` - Register new actions in `ACTION_META` (auto-populates Settings → Keyboard Shortcuts)
 - `SPEC.md` - Update feature status
 
 ### What to document:
@@ -20,7 +20,7 @@
 - [ ] Feature works correctly
 - [ ] Keyboard shortcut added (if applicable)
 - [ ] `docs/FEATURES.md` updated with new feature entry
-- [ ] HelpPanel updated with new shortcut/feature
+- [ ] New action added to `ACTION_META` in `actionRegistry.ts` (auto-populates Settings → Keyboard Shortcuts)
 - [ ] SPEC.md feature status updated
 
 ## Testing Tracker

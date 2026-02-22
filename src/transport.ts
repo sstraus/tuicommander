@@ -321,6 +321,9 @@ export async function rpc<T>(command: string, args: Record<string, unknown> = {}
   if (mapping.transform) {
     return mapping.transform(data) as T;
   }
+  if (data === null || data === undefined) {
+    throw new Error(`RPC ${command}: empty response body`);
+  }
   return data as T;
 }
 

@@ -117,6 +117,12 @@
 - Hold `Cmd+Ctrl` (macOS) or `Ctrl+Alt` (Win/Linux): show numbered overlay
 - `Cmd+Ctrl+1-9`: switch to branch by index
 
+### 2.7 Park Repos
+- Right-click any repo in the sidebar to park or unpark it
+- Parked repos are hidden from the main repository list
+- Sidebar footer button opens a popover showing all parked repos
+- Unpark a repo from the popover to restore it to the main list
+
 ---
 
 ## 3. Panels
@@ -166,8 +172,8 @@
 - Data persisted to Rust config backend
 
 ### 3.7 Help Panel (`Cmd+?`)
-- In-app keyboard shortcut reference
-- Organized by category: Terminal, Zoom, Panels, Git, Splits, File Browser, Dictation, Mouse
+- Shows app info and links (About, GitHub, docs)
+- Keyboard shortcuts are now in Settings > Keyboard Shortcuts tab (auto-generated from `actionRegistry.ts`)
 
 ### 3.8 Git Operations Panel (`Cmd+Shift+G`)
 - Quick actions: Pull, Push, Fetch
@@ -179,6 +185,21 @@
 ### 3.9 Task Queue Panel (`Cmd+J`)
 - Task management with status tracking (pending, running, completed, failed, cancelled)
 - Drag-and-drop task reordering
+
+### 3.10 Command Palette (`Cmd+Shift+P`)
+- Fuzzy-search across all app actions by name
+- Recency-weighted ranking: recently used actions surface first
+- Each row shows action label, category badge, and keybinding hint
+- Keyboard-navigable: `↑/↓` to move, `Enter` to execute, `Esc` to close
+- Powered by `actionRegistry.ts` (`ACTION_META` map)
+
+### 3.11 Activity Dashboard (`Cmd+Shift+A`)
+- Real-time view of all active terminal sessions in a compact list
+- Each row shows: terminal name, agent type, status, last activity time
+- Status color codes: green=working, yellow=waiting, red=rate-limited, gray=idle
+- Rate limit indicators with countdown timers
+- Click any row to switch to that terminal and close the dashboard
+- Relative timestamps auto-refresh ("2s ago", "1m ago")
 
 ---
 
@@ -439,6 +460,13 @@
 - Per-event: question, error, completed, warning
 - Test buttons per sound
 - Reset to defaults
+
+### 11.6 Keyboard Shortcuts
+- Settings > Keyboard Shortcuts tab (`Cmd+,` to open Settings)
+- All app actions listed with their current keybinding
+- Any action can be rebound by clicking it and pressing the new key combination
+- Custom bindings stored in `keybindings.json` in the platform config directory
+- Auto-populated from `actionRegistry.ts` (`ACTION_META` map) — new actions appear automatically
 
 ---
 

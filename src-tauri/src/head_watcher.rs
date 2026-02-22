@@ -52,7 +52,13 @@ pub(crate) fn start_watching(
     let mut debouncer = new_debouncer(
         Duration::from_millis(DEBOUNCE_MS),
         move |events: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
-            let Ok(events) = events else { return };
+            let events = match events {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("Error: Head watcher error: {e:?}");
+                    return;
+                }
+            };
 
             // Only care about data-change events (content writes)
             let dominated = events

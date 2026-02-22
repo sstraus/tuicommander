@@ -94,10 +94,10 @@ fn has_valid_url_token(req: &Request<axum::body::Body>, session_token: &str) -> 
 /// Build a Set-Cookie header value for the session token.
 fn session_cookie_value(token: &str) -> String {
     // HttpOnly: JS cannot read the cookie (XSS protection)
-    // SameSite=Lax: sent on same-origin requests and top-level navigation
+    // SameSite=Strict: only sent on same-origin requests (stronger CSRF protection)
     // Path=/: valid for all routes
     // Max-Age=86400: 24 hours (auto-re-auth after a day)
-    format!("{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400")
+    format!("{SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400")
 }
 
 /// Basic Auth middleware that validates credentials against config.
@@ -143,7 +143,7 @@ pub async fn basic_auth_middleware(
 
     // Fallback: Basic Auth (if username+password are configured)
     let (username, hash) = {
-        let config = state.config.read().unwrap();
+        let config = state.config.read();
         (
             config.remote_access_username.clone(),
             config.remote_access_password_hash.clone(),

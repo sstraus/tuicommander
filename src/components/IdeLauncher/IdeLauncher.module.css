@@ -19,7 +19,7 @@
   color: var(--fg-secondary);
   font-size: var(--font-xs);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .main {
@@ -98,7 +98,7 @@
   font-size: var(--font-md);
   cursor: pointer;
   text-align: left;
-  transition: all 0.1s;
+  transition: background 0.1s, color 0.1s;
 }
 
 .item:hover:not(:disabled) {

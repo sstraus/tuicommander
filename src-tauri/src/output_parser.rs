@@ -52,6 +52,7 @@ pub struct OutputParser {
     rate_limit_patterns: Vec<RateLimitPattern>,
 }
 
+#[derive(Clone)]
 struct RateLimitPattern {
     name: &'static str,
     regex: regex::Regex,
@@ -59,10 +60,15 @@ struct RateLimitPattern {
     has_retry_capture: bool,
 }
 
+lazy_static::lazy_static! {
+    /// Pre-built rate limit patterns — compiled once at first use.
+    static ref RATE_LIMIT_PATTERNS: Vec<RateLimitPattern> = build_rate_limit_patterns();
+}
+
 impl OutputParser {
     pub fn new() -> Self {
         Self {
-            rate_limit_patterns: build_rate_limit_patterns(),
+            rate_limit_patterns: RATE_LIMIT_PATTERNS.clone(),
         }
     }
 
@@ -70,38 +76,41 @@ impl OutputParser {
     pub fn parse(&self, text: &str) -> Vec<ParsedEvent> {
         let mut events = Vec::new();
 
-        // OSC 9;4 progress (cheap byte scan first)
+        // OSC 9;4 progress (cheap byte scan first, no stripping needed)
         if let Some(evt) = parse_osc94(text) {
             events.push(evt);
         }
 
-        // PR/MR URL detection
+        // PR/MR URL detection (no stripping needed)
         if let Some(evt) = parse_pr_url(text) {
             events.push(evt);
         }
 
-        // Status line detection (needs ANSI stripping)
-        if let Some(evt) = parse_status_line(text) {
+        // Strip ANSI once for all parsers that need clean text
+        let clean = strip_ansi(text);
+
+        // Status line detection
+        if let Some(evt) = parse_status_line(&clean) {
             events.push(evt);
         }
 
-        // Rate limit detection
+        // Rate limit detection (operates on raw text — patterns target structured error codes)
         if let Some(evt) = self.parse_rate_limit(text) {
             events.push(evt);
         }
 
-        // Usage limit detection (must run before rate limit to avoid false positives)
-        if let Some(evt) = parse_usage_limit(text) {
+        // Usage limit detection
+        if let Some(evt) = parse_usage_limit(&clean) {
             events.push(evt);
         }
 
         // Question/attention detection
-        if let Some(evt) = parse_question(text) {
+        if let Some(evt) = parse_question(&clean) {
             events.push(evt);
         }
 
         // Plan file detection
-        if let Some(evt) = parse_plan_file(text) {
+        if let Some(evt) = parse_plan_file(&clean) {
             events.push(evt);
         }
 
@@ -221,9 +230,8 @@ pub(crate) fn strip_ansi(text: &str) -> String {
     String::from_utf8(stripped).unwrap_or_else(|_| text.to_string())
 }
 
-/// Parse status line patterns from terminal output
-fn parse_status_line(text: &str) -> Option<ParsedEvent> {
-    let clean = strip_ansi(text);
+/// Parse status line patterns from pre-stripped terminal output.
+fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
     lazy_static::lazy_static! {
         // Claude Code: "* Task name... (time)"
         static ref CLAUDE_STATUS_RE: regex::Regex =
@@ -265,10 +273,9 @@ fn parse_status_line(text: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Detect Claude Code usage limit messages:
+/// Detect Claude Code usage limit messages from pre-stripped text:
 /// "You've used 78% of your weekly limit" or "You've used 45% of your session limit"
-fn parse_usage_limit(text: &str) -> Option<ParsedEvent> {
-    let clean = strip_ansi(text);
+fn parse_usage_limit(clean: &str) -> Option<ParsedEvent> {
     // Fast path
     if !clean.contains("% of your") {
         return None;
@@ -290,9 +297,8 @@ fn parse_usage_limit(text: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Detect when an agent is waiting for user input (question, confirmation, menu choice).
-fn parse_question(text: &str) -> Option<ParsedEvent> {
-    let clean = strip_ansi(text);
+/// Detect when an agent is waiting for user input from pre-stripped text (question, confirmation, menu choice).
+fn parse_question(clean: &str) -> Option<ParsedEvent> {
     lazy_static::lazy_static! {
         // Claude Code: "Would you like to proceed?" / "Do you want to..."
         static ref QUESTION_RE: regex::Regex =
@@ -353,14 +359,13 @@ pub(crate) fn extract_last_question_line(text: &str) -> Option<String> {
     }
 }
 
-/// Detect plan file paths in terminal output.
+/// Detect plan file paths in pre-stripped terminal output.
 /// Matches paths like `plans/foo.md`, `.claude/plans/bar.md`, absolute paths ending in plans/*.md
-fn parse_plan_file(text: &str) -> Option<ParsedEvent> {
+fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
     // Fast path: must contain "plans/" and ".md"
-    if !text.contains("plans/") || !text.contains(".md") {
+    if !clean.contains("plans/") || !clean.contains(".md") {
         return None;
     }
-    let clean = strip_ansi(text);
     lazy_static::lazy_static! {
         // Match plan file paths: optional leading path, then plans/<name>.md(x)
         // Captures the full path including any prefix directory

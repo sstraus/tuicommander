@@ -26,7 +26,9 @@ export async function testInScopeAsync<T>(fn: () => Promise<T>): Promise<T> {
     dispose = d;
     result = fn();
   });
-  const resolved = await result;
-  dispose();
-  return resolved;
+  try {
+    return await result;
+  } finally {
+    dispose();
+  }
 }

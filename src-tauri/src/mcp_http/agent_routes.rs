@@ -1,12 +1,13 @@
 use crate::pty::spawn_headless_reader_thread;
 use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
 use crate::state::OUTPUT_RING_BUFFER_CAPACITY;
-use axum::extract::{Query, State};
+use axum::extract::{ConnectInfo, Query, State};
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::Json;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -29,12 +30,16 @@ pub(super) async fn detect_agents() -> impl IntoResponse {
     Json(results)
 }
 
-pub(super) async fn detect_agent_binary_http(Query(q): Query<DetectBinaryQuery>) -> impl IntoResponse {
+pub(super) async fn detect_agent_binary_http(Query(q): Query<DetectBinaryQuery>) -> Response {
+    const KNOWN_AGENTS: &[&str] = &["claude", "codex", "aider", "goose", "lazygit"];
+    if !KNOWN_AGENTS.contains(&q.binary.as_str()) {
+        return Json(serde_json::json!({"error": "Unknown agent"})).into_response();
+    }
     let detection = crate::agent::detect_agent_binary(q.binary);
     Json(serde_json::json!({
         "path": detection.path,
         "version": detection.version,
-    }))
+    })).into_response()
 }
 
 pub(super) async fn detect_installed_ides_http() -> impl IntoResponse {
@@ -53,13 +58,20 @@ pub(super) async fn extract_prompt_variables_http(
 
 pub(super) async fn spawn_agent_session(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<SpawnAgentRequest>,
-) -> impl IntoResponse {
+) -> Response {
+    if !addr.ip().is_loopback() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "Agent session spawning is only allowed from localhost"})),
+        ).into_response();
+    }
     if state.sessions.len() >= MAX_CONCURRENT_SESSIONS {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(serde_json::json!({"error": "Max concurrent sessions reached"})),
-        );
+        ).into_response();
     }
 
     // Determine binary path
@@ -69,13 +81,13 @@ pub(super) async fn spawn_agent_session(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"error": "binary_path must be an absolute path"})),
-            );
+            ).into_response();
         }
         if !p.is_file() {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"error": "binary_path does not point to an existing file"})),
-            );
+            ).into_response();
         }
         path.clone()
     } else if let Some(ref agent_type) = body.agent_type {
@@ -86,7 +98,7 @@ pub(super) async fn spawn_agent_session(
                 return (
                     StatusCode::BAD_REQUEST,
                     Json(serde_json::json!({"error": format!("Agent binary '{}' not found", agent_type)})),
-                )
+                ).into_response()
             }
         }
     } else {
@@ -98,7 +110,7 @@ pub(super) async fn spawn_agent_session(
                 return (
                     StatusCode::BAD_REQUEST,
                     Json(serde_json::json!({"error": "Claude binary not found. Install with: npm install -g @anthropic-ai/claude-code"})),
-                )
+                ).into_response()
             }
         }
     };
@@ -106,7 +118,7 @@ pub(super) async fn spawn_agent_session(
     let rows = body.rows.unwrap_or(24);
     let cols = body.cols.unwrap_or(80);
     if let Err(msg) = super::validate_terminal_size(rows, cols) {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg})));
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg}))).into_response();
     }
     let session_id = Uuid::new_v4().to_string();
     let pty_system = native_pty_system();
@@ -122,7 +134,7 @@ pub(super) async fn spawn_agent_session(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("Failed to open PTY: {}", e)})),
-            )
+            ).into_response()
         }
     };
 
@@ -157,7 +169,7 @@ pub(super) async fn spawn_agent_session(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("Failed to spawn agent: {}", e)})),
-            )
+            ).into_response()
         }
     };
 
@@ -167,7 +179,7 @@ pub(super) async fn spawn_agent_session(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("Failed to get PTY writer: {}", e)})),
-            )
+            ).into_response()
         }
     };
 
@@ -177,7 +189,7 @@ pub(super) async fn spawn_agent_session(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("Failed to get PTY reader: {}", e)})),
-            )
+            ).into_response()
         }
     };
 
@@ -206,5 +218,5 @@ pub(super) async fn spawn_agent_session(
     (
         StatusCode::CREATED,
         Json(serde_json::json!({"session_id": session_id})),
-    )
+    ).into_response()
 }

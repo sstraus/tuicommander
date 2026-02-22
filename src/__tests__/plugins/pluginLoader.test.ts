@@ -20,8 +20,19 @@ vi.mock("../../plugins/pluginRegistry", () => ({
   },
 }));
 
+// Mock pluginStore
+vi.mock("../../stores/pluginStore", () => ({
+  pluginStore: {
+    registerPlugin: vi.fn(),
+    updatePlugin: vi.fn(),
+    getLogger: vi.fn(() => ({ info: vi.fn(), error: vi.fn(), warn: vi.fn() })),
+    removePlugin: vi.fn(),
+  },
+}));
+
 import { invoke, listen } from "../../invoke";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
+import { pluginStore } from "../../stores/pluginStore";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -149,5 +160,26 @@ describe("loadUserPlugins", () => {
     (invoke as Mock).mockRejectedValue(new Error("Tauri not available"));
     // Should not throw — just log and return
     await expect(loadUserPlugins()).resolves.toBeUndefined();
+  });
+
+  it("registers disabled plugins in store without loading them", async () => {
+    const manifest = validManifest({ id: "disabled-plugin" });
+    (invoke as Mock).mockImplementation((cmd: string) => {
+      if (cmd === "load_config") return Promise.resolve({ disabled_plugin_ids: ["disabled-plugin"] });
+      if (cmd === "list_user_plugins") return Promise.resolve([manifest]);
+      return Promise.resolve(undefined);
+    });
+
+    await loadUserPlugins();
+
+    // Plugin is disabled — should NOT be loaded into registry
+    expect(pluginRegistry.register).not.toHaveBeenCalled();
+
+    // Plugin IS registered in pluginStore as disabled
+    expect(pluginStore.registerPlugin).toHaveBeenCalledWith("disabled-plugin", expect.objectContaining({
+      manifest,
+      enabled: false,
+      loaded: false,
+    }));
   });
 });

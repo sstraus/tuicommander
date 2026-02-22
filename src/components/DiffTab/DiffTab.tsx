@@ -1,6 +1,7 @@
 import { Component, createEffect, createSignal } from "solid-js";
 import { DiffViewer } from "../ui";
 import { useRepository } from "../../hooks/useRepository";
+import { repositoriesStore } from "../../stores/repositories";
 import { t } from "../../i18n";
 import s from "./DiffTab.module.css";
 
@@ -17,11 +18,12 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
   const [error, setError] = createSignal<string | null>(null);
   const repo = useRepository();
 
-  // Load file diff when props change
+  // Load file diff when props change or the repo revision bumps (git index/HEAD changed)
   createEffect(() => {
     const repoPath = props.repoPath;
     const filePath = props.filePath;
     const scope = props.scope;
+    void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 
     if (!repoPath || !filePath) {
       setDiff("");

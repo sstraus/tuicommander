@@ -8,7 +8,7 @@ import type { TuiPlugin } from "./types";
  * Built-in plugins shipped with TUI Commander.
  * wiz-stories was extracted to an external plugin (examples/plugins/wiz-stories).
  */
-export const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin];
+const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin];
 
 /**
  * Register all built-in plugins, then discover and load user plugins.

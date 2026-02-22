@@ -1,7 +1,7 @@
 use crate::pty::{build_shell_command, resolve_shell, spawn_headless_reader_thread};
 use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
 use crate::state::OUTPUT_RING_BUFFER_CAPACITY;
-use axum::extract::{Query, State};
+use axum::extract::{ConnectInfo, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
@@ -11,6 +11,7 @@ use parking_lot::Mutex;
 use portable_pty::{native_pty_system, PtySize};
 use std::convert::Infallible;
 use std::io::Write;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -140,12 +141,12 @@ fn require_path(args: &serde_json::Value, action: &str) -> Result<String, serde_
 }
 
 /// Handle an MCP tools/call request, executing against the app state directly (no HTTP round-trip)
-fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Value) -> serde_json::Value {
+fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value) -> serde_json::Value {
     match name {
         "session" => handle_session(state, args),
         "git" => handle_git(state, args),
         "agent" => handle_agent(state, args),
-        "config" => handle_config(state, args),
+        "config" => handle_config(state, addr, args),
         "plugin_dev_guide" => {
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
         }
@@ -446,14 +447,14 @@ fn handle_agent(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::
     }
 }
 
-fn handle_config(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+fn handle_config(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value) -> serde_json::Value {
     let action = match require_action(args, "config", CONFIG_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
     match action {
         "get" => {
-            let config = state.config.read().unwrap().clone();
+            let config = state.config.read().clone();
             let mut json = serde_json::to_value(config).unwrap_or_default();
             if let Some(obj) = json.as_object_mut() {
                 obj.remove("remote_access_password_hash");
@@ -461,6 +462,9 @@ fn handle_config(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json:
             json
         }
         "save" => {
+            if !addr.ip().is_loopback() {
+                return serde_json::json!({"error": "Config save is restricted to localhost connections"});
+            }
             let config_val = match args.get("config") {
                 Some(c) => c,
                 None => return serde_json::json!({"error": "Action 'save' requires 'config' object"}),
@@ -471,7 +475,7 @@ fn handle_config(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json:
             };
             match crate::config::save_app_config(config.clone()) {
                 Ok(()) => {
-                    *state.config.write().unwrap() = config;
+                    *state.config.write() = config;
                     serde_json::json!({"ok": true})
                 }
                 Err(e) => serde_json::json!({"error": e}),
@@ -515,6 +519,7 @@ pub(super) async fn mcp_sse_connect(
 /// POST /messages?sessionId=xxx — Handle MCP JSON-RPC requests
 pub(super) async fn mcp_messages(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(query): Query<McpSessionQuery>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
@@ -573,7 +578,7 @@ pub(super) async fn mcp_messages(
             let tool_name = params["name"].as_str().unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or(serde_json::json!({}));
 
-            let result = handle_mcp_tool_call(&state, tool_name, &args);
+            let result = handle_mcp_tool_call(&state, addr, tool_name, &args);
             let text = serde_json::to_string_pretty(&result).unwrap_or_default();
 
             let is_error = result.get("error").is_some();

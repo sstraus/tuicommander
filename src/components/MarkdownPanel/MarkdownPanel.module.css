@@ -47,7 +47,7 @@
 }
 
 .fileItem:hover {
-  background: var(--bg-secondary);
+  background: var(--bg-highlight);
 }
 
 .fileIcon {

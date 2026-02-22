@@ -465,7 +465,7 @@ TUI Commander registers the `tuic://` URL scheme for external integration:
 
 ## Plugin Registry
 
-The registry is a JSON file hosted on GitHub (`tui-commander-plugins` repo). The app fetches it on demand (Browse tab) with a 1-hour TTL cache.
+The registry is a JSON file hosted on GitHub (`sstraus/tuicommander-plugins` repo). The app fetches it on demand (Browse tab) with a 1-hour TTL cache.
 
 Registry entries include: `id`, `name`, `description`, `author`, `latestVersion`, `minAppVersion`, `capabilities`, `downloadUrl`.
 

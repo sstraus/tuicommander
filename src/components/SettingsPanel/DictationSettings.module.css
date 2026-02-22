@@ -71,7 +71,7 @@
   color: var(--fg-secondary);
   font-size: var(--font-md);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s, color 0.15s;
 }
 
 .modelSelect:hover {
@@ -148,10 +148,10 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   color: var(--fg-primary);
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-base);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .hotkeyDisplay:hover {
@@ -165,7 +165,7 @@
   border: 2px solid var(--accent);
   border-radius: var(--radius-md);
   color: var(--fg-primary);
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-base);
   outline: none;
   width: 200px;
@@ -259,7 +259,7 @@
   color: var(--fg-secondary);
   cursor: pointer;
   font-size: var(--font-base);
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .correctionAddBtn:hover:not(:disabled) {

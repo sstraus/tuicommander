@@ -30,7 +30,7 @@
   padding: 6px 14px 2px;
   font-size: var(--font-xs);
   font-weight: 600;
-  color: var(--fg-accent);
+  color: var(--accent);
   background: var(--bg-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;

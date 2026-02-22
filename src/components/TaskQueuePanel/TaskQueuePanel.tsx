@@ -2,6 +2,7 @@ import { Component, For, Show, createSignal } from "solid-js";
 import { tasksStore, type TaskData, type TaskStatus } from "../../stores/tasks";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
+import { formatDuration } from "../../utils/time";
 import s from "./TaskQueuePanel.module.css";
 
 export interface TaskQueuePanelProps {
@@ -167,11 +168,7 @@ const TaskItem: Component<TaskItemProps> = (props) => {
   const getDuration = () => {
     if (!props.task.startedAt) return null;
     const end = props.task.completedAt || Date.now();
-    const duration = Math.round((end - props.task.startedAt) / 1000);
-    if (duration < 60) return `${duration}s`;
-    const mins = Math.floor(duration / 60);
-    const secs = duration % 60;
-    return `${mins}m ${secs}s`;
+    return formatDuration(end - props.task.startedAt);
   };
 
   return (

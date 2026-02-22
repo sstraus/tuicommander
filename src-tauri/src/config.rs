@@ -89,15 +89,26 @@ fn copy_dir_recursive(from: &std::path::Path, to: &std::path::Path) -> Result<()
 }
 
 /// Load a JSON config file, returning Default if missing or corrupt.
+/// Logs warnings/errors when the file exists but cannot be read or parsed,
+/// so corrupt files are visible in logs instead of silently resetting state.
 pub(crate) fn load_json_config<T: DeserializeOwned + Default>(filename: &str) -> T {
     let path = config_dir().join(filename);
-    if path.exists() {
-        std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
-    } else {
-        T::default()
+    if !path.exists() {
+        return T::default();
+    }
+    let content = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Warning: Could not read config {}: {e}", path.display());
+            return T::default();
+        }
+    };
+    match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error: Corrupt config {}: {e}. Using defaults.", path.display());
+            T::default()
+        }
     }
 }
 

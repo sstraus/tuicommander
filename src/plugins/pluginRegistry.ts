@@ -117,9 +117,10 @@ function createPluginRegistry() {
       },
 
       registerStructuredEventHandler(type, handler) {
-        if (!structuredHandlers.has(type)) structuredHandlers.set(type, []);
+        const list = structuredHandlers.get(type) ?? [];
+        structuredHandlers.set(type, list);
         const entry = { pluginId, handler };
-        structuredHandlers.get(type)!.push(entry);
+        list.push(entry);
         return track({
           dispose() {
             const list = structuredHandlers.get(type);

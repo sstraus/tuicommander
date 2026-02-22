@@ -2,19 +2,8 @@ import { Component, For, Show, createEffect, createSignal, onCleanup } from "sol
 import { activityDashboardStore } from "../../stores/activityDashboard";
 import { terminalsStore } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
+import { formatRelativeTime } from "../../utils/time";
 import s from "./ActivityDashboard.module.css";
-
-/** Format a timestamp as relative time ("2s ago", "1m ago", "5h ago") */
-function formatRelativeTime(timestamp: number | null): string {
-  if (!timestamp) return "—";
-  const diff = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  const minutes = Math.floor(diff / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
-}
 
 /** Derive status label and CSS class from terminal state */
 function getTerminalStatus(

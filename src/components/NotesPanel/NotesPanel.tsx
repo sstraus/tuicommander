@@ -4,6 +4,7 @@ import { getModifierSymbol } from "../../platform";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
+import { formatRelativeTime } from "../../utils/time";
 import p from "../shared/panel.module.css";
 import s from "./NotesPanel.module.css";
 
@@ -11,22 +12,6 @@ export interface NotesPanelProps {
   visible: boolean;
   onClose: () => void;
   onSendToTerminal: (text: string) => void;
-}
-
-/** Format a timestamp as a short relative or absolute string */
-function formatDate(timestamp: number): string {
-  const now = Date.now();
-  const diffMs = now - timestamp;
-  const diffMin = Math.floor(diffMs / 60_000);
-
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-
-  const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-
-  const date = new Date(timestamp);
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 export const NotesPanel: Component<NotesPanelProps> = (props) => {
@@ -84,7 +69,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
             <div class={s.item}>
               <div class={s.body}>
                 <span class={s.text} title={note.text}>{note.text}</span>
-                <span class={s.date}>{formatDate(note.createdAt)}</span>
+                <span class={s.date}>{formatRelativeTime(note.createdAt, { showDateFallback: true })}</span>
               </div>
               <div class={s.actions}>
                 <button

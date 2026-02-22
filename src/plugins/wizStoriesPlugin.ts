@@ -169,5 +169,3 @@ class WizStoriesPlugin implements TuiPlugin {
   }
 }
 
-/** Default singleton using the standard store-based storiesDir resolver */
-export const wizStoriesPlugin: TuiPlugin = createWizStoriesPlugin();

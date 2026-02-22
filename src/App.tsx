@@ -160,6 +160,10 @@ const App: Component = () => {
   // Poll active terminal for foreground agent detection
   useAgentPolling();
 
+  // Stop GitHub polling on component teardown — registered at body level so
+  // SolidJS can track it synchronously (onCleanup inside async onMount is unreliable).
+  onCleanup(() => githubStore.stopPolling());
+
   onMount(async () => {
     await initApp({
       pty,
@@ -219,8 +223,6 @@ const App: Component = () => {
 
     // Register tuic:// deep link handler
     initDeepLinkHandler({ openSettings });
-
-    onCleanup(() => githubStore.stopPolling());
   });
 
 
@@ -633,7 +635,9 @@ const App: Component = () => {
       }
     };
 
-    setup();
+    setup().catch((err) =>
+      console.error("Failed to register push-to-talk shortcut:", err),
+    );
 
     onCleanup(() => {
       if (registered) {
@@ -804,7 +808,7 @@ const App: Component = () => {
           if (gitOps.currentRepoPath()) {
             repo.getInfo(gitOps.currentRepoPath()!).then((info) => {
               gitOps.setCurrentBranch(info.branch);
-              gitOps.setRepoStatus(info.status as "clean" | "dirty" | "conflict" | "merge" | "unknown");
+              gitOps.setRepoStatus(info.status === "not-git" ? "unknown" : info.status);
             }).catch((err) => {
               console.error("Failed to refresh repo info:", err);
               gitOps.setRepoStatus("unknown");

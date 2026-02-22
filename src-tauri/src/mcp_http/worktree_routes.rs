@@ -71,10 +71,11 @@ pub(super) async fn create_worktree_http(
 pub(super) async fn remove_worktree_http(
     Path(branch): Path<String>,
     Query(q): Query<RemoveWorktreeQuery>,
-) -> impl IntoResponse {
+) -> Response {
+    if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
     match crate::worktree::remove_worktree_by_branch(&q.repo_path, &branch) {
-        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }
 }
 

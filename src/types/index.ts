@@ -26,7 +26,7 @@ export interface RepoInfo {
   name: string;
   initials: string;
   branch: string;
-  status: "clean" | "dirty" | "conflict" | "not-git" | "unknown";
+  status: "clean" | "dirty" | "conflict" | "merge" | "not-git" | "unknown";
   is_git_repo: boolean;
 }
 

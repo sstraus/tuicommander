@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compareBranches, type SortableBranch, type BranchPrState } from "../../utils/branchSort";
+import { compareBranches, type SortableBranch } from "../../utils/branchSort";
 
 function makeBranch(name: string, isMain: boolean): SortableBranch {
   return { name, isMain };
@@ -8,7 +8,7 @@ function makeBranch(name: string, isMain: boolean): SortableBranch {
 /** Sort an array of branches using compareBranches with optional PR state lookup */
 function sortBranches(
   branches: SortableBranch[],
-  prStates: Record<string, BranchPrState> = {},
+  prStates: Record<string, { state?: string }> = {},
 ): SortableBranch[] {
   return [...branches].sort((a, b) =>
     compareBranches(a, b, prStates[a.name] ?? null, prStates[b.name] ?? null),

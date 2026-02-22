@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@solidjs/testing-library";
-import { MarkdownRenderer, stripAnsi, stripEventHandlers } from "../../components/ui/MarkdownRenderer";
+import { MarkdownRenderer, stripEventHandlers } from "../../components/ui/MarkdownRenderer";
+import { stripAnsi } from "../../utils/stripAnsi";
 
 describe("stripAnsi", () => {
   it("strips ANSI escape codes", () => {

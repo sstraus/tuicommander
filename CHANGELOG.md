@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Command Palette** (`Cmd+Shift+P`) — fuzzy search across all app actions with recent-first ordering
+- **Activity Dashboard** (`Cmd+Shift+A`) — real-time view of all terminal sessions and agent status
+- **Park Repos** — right-click any repo to park it; sidebar footer button shows parked repos with badge count
+- **Copy Path context menu action** in Markdown panel
 - **Windows compatibility** - Full cross-platform support: platform-aware shell escaping (cmd.exe vs POSIX), Windows foreground process detection via `CreateToolhelp32Snapshot`, Windows paths in `resolve_cli`, IDE detection/launch for Windows, `if exist` syntax for lazygit config detection
 - **Repository groups context menu** - Right-click any repo to "Move to Group" with "New Group..." option that creates and assigns in one step
 - **PromptDialog component** - Reusable native dialog replacing `window.prompt()` which doesn't work in Tauri's webview; used for terminal rename and group creation

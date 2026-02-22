@@ -203,7 +203,10 @@ pub(crate) fn spawn_reader_thread(
                         );
                     }
                 }
-                Err(_) => break,
+                Err(e) => {
+                    eprintln!("Error: PTY reader error for session {session_id}: {e}");
+                    break;
+                }
             }
         }
         // Signal timer thread to stop
@@ -279,7 +282,10 @@ pub(crate) fn spawn_headless_reader_thread(
                         }
                     }
                 }
-                Err(_) => break,
+                Err(e) => {
+                    eprintln!("Error: PTY reader error for session {session_id}: {e}");
+                    break;
+                }
             }
         }
         let utf8_tail = utf8_buf.flush();

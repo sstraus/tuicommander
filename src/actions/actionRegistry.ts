@@ -6,7 +6,7 @@
  */
 import type { ActionName } from "../keybindingDefaults";
 import { keybindingsStore } from "../stores/keybindings";
-import { comboToDisplay } from "../components/SettingsPanel/tabs/KeyboardShortcutsTab";
+import { comboToDisplay } from "../utils/hotkey";
 import type { ShortcutHandlers } from "../hooks/useKeyboardShortcuts";
 
 export interface ActionEntry {

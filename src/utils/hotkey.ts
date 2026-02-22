@@ -5,6 +5,8 @@
  * Tauri uses "CommandOrControl" (e.g. "CommandOrControl+Shift+D", "F5")
  */
 
+import { getModifierSymbol, isMacOS } from "../platform";
+
 /** Modifier mappings from UI/macOS symbols to Tauri global-shortcut format */
 const MODIFIER_TO_TAURI: Record<string, string> = {
   Cmd: "CommandOrControl",
@@ -44,4 +46,32 @@ export function tauriShortcutToHotkey(shortcut: string): string {
     .split("+")
     .map((part) => (part === "CommandOrControl" ? "Cmd" : part))
     .join("+");
+}
+
+/**
+ * Convert a keybinding combo string (e.g. "Cmd+Shift+D") to a display string
+ * using platform-appropriate symbols (e.g. "⌘⇧D" on macOS, "Ctrl+Shift+D" on others).
+ */
+export function comboToDisplay(combo: string): string {
+  if (!combo) return "";
+  const mod = getModifierSymbol();
+  const mac = isMacOS();
+
+  const parts = combo.split("+");
+  const key = parts.pop()!;
+  const modifiers = parts;
+
+  const displayParts: string[] = [];
+  for (const m of modifiers) {
+    switch (m) {
+      case "Cmd": displayParts.push(mod); break;
+      case "Shift": displayParts.push(mac ? "\u21E7" : "Shift+"); break;
+      case "Alt": displayParts.push(mac ? "\u2325" : "Alt+"); break;
+      case "Ctrl": displayParts.push(mac ? "^" : "Ctrl+"); break;
+      default: displayParts.push(m + "+"); break;
+    }
+  }
+
+  displayParts.push(key.toUpperCase());
+  return displayParts.join("");
 }

@@ -4,7 +4,7 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-dropdown);
   padding: 4px;
   z-index: 1000;
   animation: fadeIn 0.1s ease-out;
@@ -80,7 +80,7 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-dropdown);
   padding: 4px;
   z-index: 1001;
 }

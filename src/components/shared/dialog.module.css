@@ -86,7 +86,7 @@
   font-size: var(--font-md);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .actions button:disabled {

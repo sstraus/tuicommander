@@ -113,7 +113,7 @@
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;
-  color: var(--fg-tertiary);
+  color: var(--fg-muted);
   text-transform: uppercase;
   user-select: none;
 }
@@ -196,7 +196,7 @@
   color: var(--fg-muted);
   font-size: var(--font-md);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .footerReset:hover {
@@ -213,7 +213,7 @@
   font-size: var(--font-md);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s;
 }
 
 .footerDone:hover {
@@ -348,7 +348,7 @@
   height: 20px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-full);
   position: relative;
   cursor: pointer;
   transition: background 0.2s, border-color 0.2s;
@@ -426,7 +426,7 @@
   color: var(--fg-secondary);
   font-size: var(--font-md);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .actions button:hover {
@@ -498,7 +498,7 @@
   color: var(--fg-muted);
   font-size: var(--font-md);
   cursor: pointer;
-  transition: all 0.1s;
+  transition: background 0.1s, color 0.1s;
 }
 
 .groupDeleteBtn:hover {
@@ -524,7 +524,7 @@
   border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: all 0.1s;
+  transition: transform 0.1s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -591,7 +591,7 @@
   color: var(--fg-muted);
   font-size: var(--font-sm);
   cursor: pointer;
-  transition: all 0.1s;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
   margin-top: 8px;
 }
 

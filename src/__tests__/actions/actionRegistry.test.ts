@@ -110,4 +110,28 @@ describe("actionRegistry", () => {
       expect(handlers.zoomIn).toHaveBeenCalled();
     });
   });
+
+  describe("lazygit guard", () => {
+    it("does not call spawnLazygit when lazygitAvailable returns false", () => {
+      const handlers = createMockHandlers();
+      handlers.lazygitAvailable = vi.fn().mockReturnValue(false);
+      const testEntries = getActionEntries(handlers);
+
+      const entry = testEntries.find((e) => e.id === "open-lazygit");
+      entry?.execute();
+
+      expect(handlers.spawnLazygit).not.toHaveBeenCalled();
+    });
+
+    it("calls spawnLazygit when lazygitAvailable returns true", () => {
+      const handlers = createMockHandlers();
+      handlers.lazygitAvailable = vi.fn().mockReturnValue(true);
+      const testEntries = getActionEntries(handlers);
+
+      const entry = testEntries.find((e) => e.id === "open-lazygit");
+      entry?.execute();
+
+      expect(handlers.spawnLazygit).toHaveBeenCalled();
+    });
+  });
 });

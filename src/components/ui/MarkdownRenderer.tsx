@@ -1,17 +1,13 @@
 import { Component, createMemo, Show } from "solid-js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { stripAnsi } from "../../utils/stripAnsi";
 
 export interface MarkdownRendererProps {
   content: string;
   emptyMessage?: string;
   /** Called when a relative .md link is clicked (href passed as argument) */
   onLinkClick?: (href: string) => void;
-}
-
-/** Strip ANSI escape codes from text */
-export function stripAnsi(text: string): string {
-  return text.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
 }
 
 /** Strip event handler attributes (on*) as defense-in-depth before DOMPurify */

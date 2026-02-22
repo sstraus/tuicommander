@@ -194,7 +194,7 @@
 
 .badge[data-type="error"] {
   background: rgba(248, 81, 73, 0.15);
-  color: var(--danger);
+  color: var(--error);
 }
 
 .badge[data-type="warning"] {
@@ -218,7 +218,7 @@
 .pluginError {
   margin: 4px 0 0;
   font-size: var(--font-sm);
-  color: var(--danger);
+  color: var(--error);
 }
 
 .pluginActions {
@@ -293,7 +293,7 @@
 }
 
 .logEntry[data-level="error"] .logLevel {
-  color: var(--danger);
+  color: var(--error);
 }
 
 .logEntry[data-level="warn"] .logLevel {
@@ -328,8 +328,8 @@
 
 .uninstallBtn:hover {
   background: rgba(248, 81, 73, 0.1);
-  color: var(--danger);
-  border-color: var(--danger);
+  color: var(--error);
+  border-color: var(--error);
 }
 
 /* Install row at bottom of tab */

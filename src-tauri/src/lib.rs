@@ -81,22 +81,26 @@ fn ensure_window_visible(window: &WebviewWindow) {
 /// Load configuration from cached AppState
 #[tauri::command]
 fn load_config(state: State<'_, Arc<AppState>>) -> config::AppConfig {
-    state.config.read().unwrap().clone()
+    state.config.read().clone()
 }
 
 /// Save configuration to disk, update the AppState cache, and live-restart the HTTP server
 /// if MCP / Remote Access settings changed (no app restart required).
 #[tauri::command]
 fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Result<(), String> {
-    let old = state.config.read().unwrap().clone();
+    let old = state.config.read().clone();
     let server_changed = old.mcp_server_enabled != config.mcp_server_enabled
         || old.remote_access_enabled != config.remote_access_enabled
         || old.remote_access_port != config.remote_access_port
         || old.remote_access_username != config.remote_access_username
         || old.remote_access_password_hash != config.remote_access_password_hash;
 
-    config::save_app_config(config.clone())?;
-    *state.config.write().unwrap() = config.clone();
+    // Capture flags before moving config into state
+    let mcp_server_enabled = config.mcp_server_enabled;
+    let remote_access_enabled = config.remote_access_enabled;
+
+    config::save_app_config(config.clone())?;  // clone goes to disk
+    *state.config.write() = config;             // move original into state
 
     if server_changed {
         // Shutdown existing server (if any)
@@ -105,9 +109,9 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
         }
 
         // Start fresh server if either mode is now enabled
-        if config.mcp_server_enabled || config.remote_access_enabled {
-            let mcp_enabled = config.mcp_server_enabled;
-            let remote_enabled = config.remote_access_enabled;
+        if mcp_server_enabled || remote_access_enabled {
+            let mcp_enabled = mcp_server_enabled;
+            let remote_enabled = remote_access_enabled;
             let state_arc = state.inner().clone();
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Builder::new_current_thread()
@@ -348,49 +352,67 @@ fn read_file(path: String, file: String) -> Result<String, String> {
     read_file_impl(path, file)
 }
 
-/// Get MCP server status (running, port, active sessions)
+/// Get MCP server status (running, port, active sessions).
+/// Async to avoid blocking the Tauri IPC thread during the TCP self-test.
 #[tauri::command]
-fn get_mcp_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
-    let config = state.config.read().unwrap().clone();
-    let port_file = config::config_dir().join("mcp-port");
+async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
+    // Collect config and session count synchronously first (fast, no I/O)
+    let (remote_enabled, mcp_enabled, active_sessions, session_token) = {
+        let cfg = state.config.read();
+        (
+            cfg.remote_access_enabled,
+            cfg.mcp_server_enabled,
+            state.sessions.len(),
+            state.session_token.clone(),
+        )
+    };
 
+    let port_file = config::config_dir().join("mcp-port");
     let port = std::fs::read_to_string(&port_file)
         .ok()
         .and_then(|s| s.trim().parse::<u16>().ok());
 
-    let server_should_run = config.mcp_server_enabled || config.remote_access_enabled;
+    let server_should_run = mcp_enabled || remote_enabled;
     let running = server_should_run && port.is_some();
-    let active_sessions = state.sessions.len();
 
     // Quick TCP self-test: can we reach the server on the external (non-loopback) IP?
     // A failure here usually means a firewall is blocking incoming connections.
     // Only runs when remote is enabled and we have an IP and port.
-    let reachable = if config.remote_access_enabled {
-        port.and_then(|p| {
-            get_local_ip().and_then(|ip| {
-                let addr = format!("{ip}:{p}");
-                let timeout = std::time::Duration::from_millis(800);
-                addr.parse::<std::net::SocketAddr>()
-                    .ok()
-                    .map(|sa| std::net::TcpStream::connect_timeout(&sa, timeout).is_ok())
+    // Uses spawn_blocking to avoid blocking the async executor during the TCP connect.
+    let reachable = if remote_enabled {
+        if let (Some(p), Some(ip)) = (port, get_local_ip()) {
+            let addr = format!("{ip}:{p}");
+            tokio::task::spawn_blocking(move || {
+                addr.parse::<std::net::SocketAddr>().ok().map(|sa| {
+                    std::net::TcpStream::connect_timeout(
+                        &sa,
+                        std::time::Duration::from_millis(200),
+                    )
+                    .is_ok()
+                })
             })
-        })
+            .await
+            .ok()
+            .flatten()
+        } else {
+            None
+        }
     } else {
         None
     };
 
-    serde_json::json!({
-        "enabled": config.mcp_server_enabled,
+    Ok(serde_json::json!({
+        "enabled": mcp_enabled,
         "running": running,
         "port": port,
         "active_sessions": active_sessions,
         "max_sessions": MAX_CONCURRENT_SESSIONS,
         // session_token is the primary auth credential — included in the QR code URL.
         // Only exposed via this Tauri command (local IPC), never via the HTTP API.
-        "session_token": state.session_token,
+        "session_token": session_token,
         // null = remote disabled, true = TCP connect succeeded, false = likely firewalled
         "reachable": reachable,
-    })
+    }))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -412,7 +434,7 @@ pub fn run() {
         output_buffers: DashMap::new(),
         mcp_sse_sessions: DashMap::new(),
         ws_clients: DashMap::new(),
-        config: std::sync::RwLock::new(config.clone()),
+        config: parking_lot::RwLock::new(config.clone()),
         repo_info_cache: DashMap::new(),
         github_status_cache: DashMap::new(),
         head_watchers: DashMap::new(),
@@ -584,8 +606,6 @@ pub fn run() {
             config::save_keybindings,
             prompt::extract_prompt_variables,
             prompt::process_prompt_content,
-            error_classification::classify_error_message,
-            error_classification::calculate_backoff_delay_cmd,
             head_watcher::start_head_watcher,
             head_watcher::stop_head_watcher,
             repo_watcher::start_repo_watcher,

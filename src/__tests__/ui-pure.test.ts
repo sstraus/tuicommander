@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stripAnsi } from "../components/ui/MarkdownRenderer";
+import { stripAnsi } from "../utils/stripAnsi";
 import { parseDiff } from "../components/ui/DiffViewer";
 import { validateBranchName } from "../components/RenameBranchDialog/RenameBranchDialog";
 import { cleanOscTitle } from "../components/Terminal/Terminal";

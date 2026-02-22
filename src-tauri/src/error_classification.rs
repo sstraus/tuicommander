@@ -44,8 +44,7 @@ pub(crate) fn classify_error(message: &str) -> &'static str {
     "unknown"
 }
 
-/// Tauri command wrapper for error classification.
-#[tauri::command]
+/// Wrapper for error classification (kept for test coverage).
 pub(crate) fn classify_error_message(message: String) -> String {
     classify_error(&message).to_string()
 }
@@ -69,8 +68,7 @@ pub(crate) fn calculate_backoff_delay(
     (delay + jitter).min(max_delay_ms)
 }
 
-/// Tauri command wrapper for backoff delay calculation.
-#[tauri::command]
+/// Wrapper for backoff delay calculation (kept for test coverage).
 pub(crate) fn calculate_backoff_delay_cmd(
     retry_count: u32,
     base_delay_ms: f64,

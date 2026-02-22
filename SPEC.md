@@ -123,18 +123,6 @@ interface PromptVariable {
 }
 ```
 
-#### agentFallbackStore
-Fallback chain configuration for rate limit resilience.
-
-```typescript
-interface FallbackChainConfig {
-  primary: AgentType;
-  fallbacks: AgentType[];
-  recoveryIntervalMs: number;
-  autoRecovery: boolean;
-}
-```
-
 #### rateLimitStore
 Tracks rate limit status per session.
 
@@ -254,12 +242,25 @@ Features:
 | Cmd+T | New terminal |
 | Cmd+W | Close terminal |
 | Cmd+K | Open prompt library |
-| Cmd+D | Toggle diff panel |
+| Cmd+Shift+D | Toggle diff panel |
 | Cmd+M | Toggle markdown panel |
 | Cmd+N | Toggle Ideas panel |
 | Cmd+1-9 | Switch to tab N |
 | Cmd++/- | Zoom in/out |
 | Cmd+0 | Reset zoom |
+| Cmd+F | Find in terminal |
+| Cmd+E | Toggle file browser |
+| Cmd+[ | Toggle sidebar |
+| Cmd+? | Toggle help panel |
+| Cmd+G | Open lazygit |
+| Cmd+Shift+G | Git operations panel |
+| Cmd+Shift+L | Lazygit split pane |
+| Cmd+Shift+[ | Previous tab |
+| Cmd+Shift+] | Next tab |
+| Cmd+Shift+T | Reopen closed tab |
+| Cmd+Shift+P | Command palette |
+| Cmd+Shift+A | Activity dashboard |
+| Cmd+, | Settings |
 
 ### Prompt Library
 | Shortcut | Action |
@@ -279,7 +280,6 @@ All stores persist to localStorage:
 |-----|-------|---------|
 | `tui-commander-settings` | settingsStore | IDE, font, preferences |
 | `tui-commander-prompt-library` | promptLibraryStore | Saved prompts |
-| `tui-commander-agent-fallback` | agentFallbackStore | Fallback configuration |
 
 ## Feature Status
 
@@ -320,6 +320,16 @@ All stores persist to localStorage:
 - [x] Windows compatibility (shell escaping, process detection, resolve_cli, IDE detection)
 - [x] Repo watcher for automatic GitOperationsPanel refresh
 - [x] Context menu submenus and "New Group..." via PromptDialog
+- [x] File Browser panel (`Cmd+E`)
+- [x] CodeMirror code editor
+- [x] Find in terminal (`Cmd+F`)
+- [x] Configurable keybindings system
+- [x] Command palette (`Cmd+Shift+P`)
+- [x] Activity dashboard (`Cmd+Shift+A`)
+- [x] Park repos feature
+- [x] Plugin system (see FEATURES.md section 17)
+- [x] Remote access / HTTP server
+- [x] Copy Path in Markdown panel
 
 ### Completed (Voice Dictation)
 - [x] Local Whisper inference via whisper-rs (Metal GPU acceleration)

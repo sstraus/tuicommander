@@ -277,13 +277,28 @@ impl OutputRingBuffer {
         }
     }
 
-    /// Append data to the ring buffer.
+    /// Append data to the ring buffer using bulk copy to avoid per-byte overhead.
     pub fn write(&mut self, data: &[u8]) {
-        for &byte in data {
-            self.buf[self.write_pos] = byte;
-            self.write_pos = (self.write_pos + 1) % self.capacity;
+        let len = data.len();
+        if len == 0 {
+            return;
         }
-        self.total_written += data.len() as u64;
+        // How many bytes fit from write_pos to end of buffer
+        let first_chunk = (self.capacity - self.write_pos).min(len);
+        self.buf[self.write_pos..self.write_pos + first_chunk]
+            .copy_from_slice(&data[..first_chunk]);
+        if first_chunk < len {
+            // Wrap around: copy the remainder starting at index 0
+            let second_chunk = len - first_chunk;
+            self.buf[..second_chunk].copy_from_slice(&data[first_chunk..]);
+            self.write_pos = second_chunk;
+        } else {
+            self.write_pos += first_chunk;
+            if self.write_pos == self.capacity {
+                self.write_pos = 0;
+            }
+        }
+        self.total_written += len as u64;
     }
 
     /// Read the last `limit` bytes (or fewer if not enough data).
@@ -369,7 +384,7 @@ pub struct AppState {
     /// WebSocket clients per PTY session for streaming output
     pub ws_clients: DashMap<String, Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
     /// Cached AppConfig to avoid re-reading from disk on every request
-    pub(crate) config: std::sync::RwLock<crate::config::AppConfig>,
+    pub(crate) config: parking_lot::RwLock<crate::config::AppConfig>,
     /// TTL cache for get_repo_info results, keyed by repo path
     pub(crate) repo_info_cache: DashMap<String, (crate::git::RepoInfo, Instant)>,
     /// TTL cache for get_repo_pr_statuses results, keyed by repo path
@@ -744,7 +759,7 @@ mod tests {
             output_buffers: dashmap::DashMap::new(),
             mcp_sse_sessions: dashmap::DashMap::new(),
             ws_clients: dashmap::DashMap::new(),
-            config: std::sync::RwLock::new(crate::config::AppConfig::default()),
+            config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
             repo_info_cache: dashmap::DashMap::new(),
             github_status_cache: dashmap::DashMap::new(),
             head_watchers: dashmap::DashMap::new(),
@@ -760,7 +775,7 @@ mod tests {
     #[test]
     fn test_cached_config_returns_default() {
         let state = make_test_app_state();
-        let config = state.config.read().unwrap();
+        let config = state.config.read();
         assert_eq!(config.font_family, "JetBrains Mono");
         assert_eq!(config.theme, "vscode-dark");
         assert!(!config.mcp_server_enabled);
@@ -770,11 +785,11 @@ mod tests {
     fn test_cached_config_write_updates_cache() {
         let state = make_test_app_state();
         {
-            let mut config = state.config.write().unwrap();
+            let mut config = state.config.write();
             config.font_size = 20;
             config.theme = "dracula".to_string();
         }
-        let config = state.config.read().unwrap();
+        let config = state.config.read();
         assert_eq!(config.font_size, 20);
         assert_eq!(config.theme, "dracula");
     }
@@ -787,9 +802,9 @@ mod tests {
             font_family: "Fira Code".to_string(),
             ..crate::config::AppConfig::default()
         };
-        *state.config.write().unwrap() = new_config;
+        *state.config.write() = new_config;
 
-        let config = state.config.read().unwrap();
+        let config = state.config.read();
         assert!(config.mcp_server_enabled);
         assert_eq!(config.font_family, "Fira Code");
     }

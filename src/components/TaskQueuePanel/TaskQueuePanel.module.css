@@ -43,7 +43,7 @@
   color: var(--fg-muted);
   font-size: var(--font-sm);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .clearBtn:hover {
@@ -63,7 +63,7 @@
   font-size: 18px;
   cursor: pointer;
   border-radius: var(--radius-md);
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .closeBtn:hover {
@@ -130,7 +130,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .item:hover {
@@ -225,7 +225,7 @@
   font-size: var(--font-md);
   cursor: pointer;
   border-radius: var(--radius-md);
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .itemCancel:hover {

@@ -84,7 +84,7 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
-  transition: all 0.1s;
+  transition: background 0.1s, color 0.1s;
   opacity: 0;
   margin-left: auto;
   flex-shrink: 0;
@@ -110,7 +110,7 @@
   color: var(--fg-muted);
   font-size: var(--font-xl);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s;
   margin-left: auto;
   align-self: stretch;
 }

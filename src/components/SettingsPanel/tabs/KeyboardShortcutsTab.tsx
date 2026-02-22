@@ -3,6 +3,7 @@ import { getModifierSymbol, isMacOS } from "../../../platform";
 import { t } from "../../../i18n";
 import { keybindingsStore } from "../../../stores/keybindings";
 import type { ActionName } from "../../../keybindingDefaults";
+import { comboToDisplay } from "../../../utils/hotkey";
 import s from "../Settings.module.css";
 
 interface ShortcutEntry {
@@ -13,34 +14,6 @@ interface ShortcutEntry {
 interface ShortcutSection {
   title: string;
   shortcuts: ShortcutEntry[];
-}
-
-/**
- * Convert a keybinding combo string (e.g. "Cmd+Shift+D") to a display string
- * using platform-appropriate symbols (e.g. "⌘⇧D" on macOS, "Ctrl+Shift+D" on others).
- */
-export function comboToDisplay(combo: string): string {
-  if (!combo) return "";
-  const mod = getModifierSymbol();
-  const mac = isMacOS();
-
-  const parts = combo.split("+");
-  const key = parts.pop()!;
-  const modifiers = parts;
-
-  const displayParts: string[] = [];
-  for (const m of modifiers) {
-    switch (m) {
-      case "Cmd": displayParts.push(mod); break;
-      case "Shift": displayParts.push(mac ? "\u21E7" : "Shift+"); break;
-      case "Alt": displayParts.push(mac ? "\u2325" : "Alt+"); break;
-      case "Ctrl": displayParts.push(mac ? "^" : "Ctrl+"); break;
-      default: displayParts.push(m + "+"); break;
-    }
-  }
-
-  displayParts.push(key.toUpperCase());
-  return displayParts.join("");
 }
 
 /** Get display string for an action from the keybindings store, or fallback */

@@ -27,15 +27,23 @@ pub(super) async fn serve_index() -> Response {
 fn serve_file(path: &str) -> Response {
     #[cfg(debug_assertions)]
     {
-        let disk_path = format!("{}/{}", DEV_DIST_PATH, path);
-        if let Ok(bytes) = std::fs::read(&disk_path) {
-            let mime = mime_guess::from_path(path)
-                .first_or_octet_stream()
-                .to_string();
-            return (StatusCode::OK, [(header::CONTENT_TYPE, mime)], bytes).into_response();
+        let base = match std::path::Path::new(DEV_DIST_PATH).canonicalize() {
+            Ok(p) => p,
+            Err(_) => std::path::PathBuf::from(DEV_DIST_PATH),
+        };
+        let candidate = base.join(path);
+        if let Ok(canonical) = candidate.canonicalize() {
+            if canonical.starts_with(&base) {
+                if let Ok(bytes) = std::fs::read(&canonical) {
+                    let mime = mime_guess::from_path(path)
+                        .first_or_octet_stream()
+                        .to_string();
+                    return (StatusCode::OK, [(header::CONTENT_TYPE, mime)], bytes).into_response();
+                }
+            }
         }
         // path not found on disk → SPA fallback to index.html from disk
-        let index_path = format!("{}/index.html", DEV_DIST_PATH);
+        let index_path = base.join("index.html");
         if let Ok(bytes) = std::fs::read(&index_path) {
             return (
                 StatusCode::OK,

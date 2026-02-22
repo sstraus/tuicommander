@@ -15,11 +15,6 @@ export interface SortableBranch {
   isMain: boolean;
 }
 
-/** PR state used for sorting (only merged/closed matter) */
-export interface BranchPrState {
-  state?: string;
-}
-
 /**
  * Compare two branches for sorting.
  * Main branches first, then merged/closed PRs to bottom, then alphabetical.
@@ -27,8 +22,8 @@ export interface BranchPrState {
 export function compareBranches(
   a: SortableBranch,
   b: SortableBranch,
-  aPr: BranchPrState | null | undefined,
-  bPr: BranchPrState | null | undefined,
+  aPr: { state?: string } | null | undefined,
+  bPr: { state?: string } | null | undefined,
 ): number {
   // Main branches first
   if (a.isMain && !b.isMain) return -1;

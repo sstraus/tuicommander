@@ -17,7 +17,7 @@
   background: var(--bg-secondary);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-popup);
   display: flex;
   flex-direction: column;
 }
@@ -106,17 +106,17 @@
 }
 
 .statusWorking {
-  background: rgba(var(--success-rgb, 76, 175, 80), 0.15);
+  background: rgba(78, 201, 176, 0.15);
   color: var(--success);
 }
 
 .statusWaiting {
-  background: rgba(var(--warning-rgb, 255, 183, 77), 0.15);
+  background: rgba(220, 220, 170, 0.2);
   color: var(--warning);
 }
 
 .statusRateLimited {
-  background: rgba(var(--error-rgb, 244, 67, 54), 0.15);
+  background: rgba(244, 135, 113, 0.2);
   color: var(--error);
 }
 
