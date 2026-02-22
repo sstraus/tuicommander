@@ -202,6 +202,9 @@ pub(crate) struct AppConfig {
     /// UI language code (e.g. "en", "it", "de")
     #[serde(default = "default_language")]
     pub(crate) language: String,
+    /// Plugin IDs that the user has disabled (not loaded on startup)
+    #[serde(default)]
+    pub(crate) disabled_plugin_ids: Vec<String>,
 }
 
 fn default_language() -> String {
@@ -243,6 +246,7 @@ impl Default for AppConfig {
             prevent_sleep_when_busy: false,
             auto_update_enabled: true,
             language: default_language(),
+            disabled_plugin_ids: Vec::new(),
         }
     }
 }
@@ -606,6 +610,7 @@ mod tests {
             prevent_sleep_when_busy: true,
             auto_update_enabled: false,
             language: "it".to_string(),
+            disabled_plugin_ids: vec!["test-disabled".to_string()],
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -624,6 +629,7 @@ mod tests {
         assert!(loaded.prevent_sleep_when_busy);
         assert!(!loaded.auto_update_enabled);
         assert_eq!(loaded.language, "it");
+        assert_eq!(loaded.disabled_plugin_ids, vec!["test-disabled".to_string()]);
     }
 
     #[test]

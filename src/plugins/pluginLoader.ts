@@ -91,6 +91,72 @@ export function validateModule(mod: unknown, expectedId: string): string | null 
 }
 
 // ---------------------------------------------------------------------------
+// Disabled plugin tracking
+// ---------------------------------------------------------------------------
+
+/** Cached set of disabled plugin IDs (synced from AppConfig) */
+let disabledPluginIds = new Set<string>();
+
+/** Fetch the disabled plugin list from Rust config */
+async function syncDisabledList(): Promise<void> {
+  try {
+    const config = await invoke<{ disabled_plugin_ids?: string[] }>("load_config");
+    disabledPluginIds = new Set(config.disabled_plugin_ids ?? []);
+  } catch {
+    // Config not available (e.g. in tests) — treat all as enabled
+    disabledPluginIds = new Set();
+  }
+}
+
+/** Check if a plugin ID is disabled in config */
+export function isPluginDisabled(id: string): boolean {
+  return disabledPluginIds.has(id);
+}
+
+/**
+ * Enable or disable a plugin. Updates config and loads/unloads immediately.
+ */
+export async function setPluginEnabled(id: string, enabled: boolean): Promise<void> {
+  // Update Rust config
+  const config = await invoke<Record<string, unknown>>("load_config");
+  const list = new Set<string>((config.disabled_plugin_ids as string[]) ?? []);
+
+  if (enabled) {
+    list.delete(id);
+  } else {
+    list.add(id);
+  }
+
+  await invoke("save_config", {
+    config: { ...config, disabled_plugin_ids: [...list] },
+  });
+
+  disabledPluginIds = list;
+  pluginStore.updatePlugin(id, { enabled });
+
+  if (enabled) {
+    // Load the plugin if it has a manifest
+    const manifests = await invoke<PluginManifest[]>("list_user_plugins");
+    const manifest = manifests.find((m) => m.id === id);
+    if (manifest) {
+      const error = validateManifest(manifest);
+      if (error) {
+        pluginStore.getLogger(id).error(error);
+        pluginStore.updatePlugin(id, { error, loaded: false });
+      } else {
+        await loadPlugin(manifest);
+      }
+    }
+  } else {
+    // Unload the plugin
+    if (loadedPluginIds.has(id)) {
+      pluginRegistry.unregister(id);
+      loadedPluginIds.delete(id);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Loading
 // ---------------------------------------------------------------------------
 
@@ -181,6 +247,17 @@ async function handlePluginChanged(event: { payload: string[] }): Promise<void> 
       continue;
     }
 
+    // Don't reload disabled plugins
+    if (disabledPluginIds.has(pluginId)) {
+      pluginStore.registerPlugin(pluginId, {
+        manifest,
+        builtIn: false,
+        enabled: false,
+        loaded: false,
+      });
+      continue;
+    }
+
     await loadPlugin(manifest);
   }
 }
@@ -194,6 +271,9 @@ async function handlePluginChanged(event: { payload: string[] }): Promise<void> 
  * Call once at app startup after built-in plugins are registered.
  */
 export async function loadUserPlugins(): Promise<void> {
+  // Sync disabled list from config
+  await syncDisabledList();
+
   // Set up hot reload listener
   try {
     await listen("plugin-changed", handlePluginChanged);
@@ -210,13 +290,25 @@ export async function loadUserPlugins(): Promise<void> {
     return;
   }
 
-  // Load each valid plugin
+  // Load each valid plugin (register disabled ones in store but don't load)
   for (const manifest of manifests) {
     const error = validateManifest(manifest);
     if (error) {
       console.error(`[pluginLoader] skipping plugin: ${error}`);
       continue;
     }
+
+    if (disabledPluginIds.has(manifest.id)) {
+      pluginStore.registerPlugin(manifest.id, {
+        manifest,
+        builtIn: false,
+        enabled: false,
+        loaded: false,
+      });
+      console.log(`[pluginLoader] plugin "${manifest.id}" is disabled, skipping load`);
+      continue;
+    }
+
     await loadPlugin(manifest);
   }
 }
