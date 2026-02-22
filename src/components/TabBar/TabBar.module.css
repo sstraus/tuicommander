@@ -174,7 +174,10 @@
 }
 
 .tab.diffTab .tabIcon {
-  font-size: var(--font-lg);
+  color: #ef4444;
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
 }
 
 /* Editor tabs */
@@ -197,7 +200,10 @@
 }
 
 .tab.editTab .tabIcon {
-  font-size: var(--font-lg);
+  color: var(--accent);
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
 }
 
 /* Markdown tabs */
@@ -221,7 +227,10 @@
 }
 
 .tab.mdTab .tabIcon {
-  font-size: var(--font-lg);
+  color: #22c55e;
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
 }
 
 /* Drag & drop */

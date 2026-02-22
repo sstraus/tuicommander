@@ -27,7 +27,7 @@ describe("settingsStore", () => {
       createRoot((dispose) => {
         expect(store.state.ide).toBe("vscode");
         expect(store.state.font).toBe("JetBrains Mono");
-        expect(store.state.defaultFontSize).toBe(12);
+        expect(store.state.defaultFontSize).toBe(13);
         expect(store.state.confirmBeforeQuit).toBe(true);
         expect(store.state.confirmBeforeClosingTab).toBe(true);
         expect(store.state.splitTabMode).toBe("separate");
@@ -358,7 +358,7 @@ describe("settingsStore", () => {
 
       await createRoot(async (dispose) => {
         await store.setTheme("nord");
-        expect(store.state.theme).toBe("vscode-dark");
+        expect(store.state.theme).toBe("commander");
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
         dispose();

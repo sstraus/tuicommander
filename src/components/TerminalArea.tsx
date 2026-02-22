@@ -1,4 +1,4 @@
-import { Component, For, JSX, Show } from "solid-js";
+import { Component, createEffect, For, JSX, Show } from "solid-js";
 import { Terminal } from "./Terminal";
 import { DiffTab } from "./DiffTab";
 import { MarkdownTab } from "./MarkdownTab";
@@ -44,6 +44,20 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
     if (!path) return undefined;
     return repoSettingsStore.getEffective(path)?.terminalMetaHotkeys;
   };
+
+  // When a non-terminal tab becomes active, release focus from xterm's textarea.
+  // On macOS WKWebView, wheel events follow focus rather than cursor position,
+  // so xterm retains focus (even inside display:none) and captures wheel events.
+  // A simple blur() releases it, allowing normal cursor-position wheel routing.
+  createEffect(() => {
+    const hasFocus =
+      mdTabsStore.state.activeId !== null ||
+      diffTabsStore.state.activeId !== null ||
+      editorTabsStore.state.activeId !== null;
+    if (hasFocus) {
+      (document.activeElement as HTMLElement | null)?.blur();
+    }
+  });
 
   return (
     <div id="terminal-container">

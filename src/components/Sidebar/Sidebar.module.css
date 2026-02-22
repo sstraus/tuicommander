@@ -131,8 +131,8 @@
 .repoHeader {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px 3px;
+  gap: 8px;
+  padding: 8px 12px 4px;
   cursor: pointer;
   position: relative;
 }
@@ -160,7 +160,7 @@
 
 .repoName {
   flex: 1;
-  font-size: var(--font-sm);
+  font-size: var(--font-md);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -291,7 +291,7 @@
 
 .groupName {
   flex: 1;
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -349,10 +349,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 8px;
+  padding: 5px 8px;
   cursor: pointer;
   border-radius: var(--radius-md);
-  margin: 1px 0 1px 0;
+  margin: 1px 0;
   transition: background 0.1s;
   position: relative;
 }
@@ -407,7 +407,7 @@
 
 .branchName {
   display: block;
-  font-size: var(--font-md);
+  font-size: var(--font-base);
   font-weight: 500;
   color: var(--fg-primary);
   white-space: nowrap;

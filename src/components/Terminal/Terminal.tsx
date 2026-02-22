@@ -413,8 +413,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
     terminal = new XTerm({
       fontSize: settingsStore.state.defaultFontSize,
       fontFamily: getFontFamily(),
-      fontWeight: "300",
-      fontWeightBold: "500",
+      fontWeight: "normal",
+      fontWeightBold: "bold",
+      lineHeight: 1.2,
       theme: currentTheme(),
       cursorBlink: true,
       allowProposedApi: true,
@@ -727,6 +728,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const fontSize = terminalsStore.state.terminals[props.id]?.fontSize;
     if (terminal && fontSize !== undefined) {
       terminal.options.fontSize = fontSize;
+      doFit();
+    }
+  });
+
+  // Handle default font size changes (global setting from Appearance)
+  createEffect(() => {
+    const defaultSize = settingsStore.state.defaultFontSize;
+    const perTerminalSize = terminalsStore.state.terminals[props.id]?.fontSize;
+    // Only apply default if terminal has no per-terminal zoom override
+    if (terminal && perTerminalSize === undefined) {
+      terminal.options.fontSize = defaultSize;
       doFit();
     }
   });

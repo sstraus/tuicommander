@@ -1,4 +1,5 @@
 import { Component, createMemo, Show } from "solid-js";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { stripAnsi } from "../../utils/stripAnsi";
@@ -8,6 +9,8 @@ export interface MarkdownRendererProps {
   emptyMessage?: string;
   /** Called when a relative .md link is clicked (href passed as argument) */
   onLinkClick?: (href: string) => void;
+  /** Absolute directory path of the source file, used to resolve relative image src attributes */
+  baseDir?: string;
 }
 
 /** Strip event handler attributes (on*) as defense-in-depth before DOMPurify */
@@ -26,7 +29,18 @@ export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
   const processedContent = createMemo(() => {
     const cleaned = stripAnsi(props.content);
     try {
-      const html = marked.parse(cleaned, { async: false }) as string;
+      let html = marked.parse(cleaned, { async: false }) as string;
+      // Rewrite relative image src attributes to loadable asset:// URLs.
+      // Relative paths (not starting with http/data/asset) are resolved
+      // against baseDir so images render correctly in the Tauri WebView.
+      const baseDir = props.baseDir;
+      if (baseDir) {
+        html = html.replace(
+          /(<img\b[^>]*\ssrc=")(?!https?:\/\/|data:|asset:\/\/)([^"]+)"/gi,
+          (_, prefix, relativePath) =>
+            `${prefix}${convertFileSrc(`${baseDir}/${relativePath}`)}"`,
+        );
+      }
       return DOMPurify.sanitize(stripEventHandlers(html));
     } catch (err) {
       console.error("Markdown parsing error:", err);

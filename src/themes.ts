@@ -2,6 +2,29 @@ import type { ITheme } from "@xterm/xterm";
 
 /** Available terminal color themes */
 export const TERMINAL_THEMES: Record<string, ITheme> = {
+  "commander": {
+    background: "#1e1e1e",
+    foreground: "#d4d4d4",
+    cursor: "#d4d4d4",
+    cursorAccent: "#1e1e1e",
+    selectionBackground: "#264f78",
+    black: "#1e1e1e",
+    red: "#f14c4c",
+    green: "#23d18b",
+    yellow: "#e5e510",
+    blue: "#3b8eea",
+    magenta: "#d670d6",
+    cyan: "#29b8db",
+    white: "#d4d4d4",
+    brightBlack: "#666666",
+    brightRed: "#f14c4c",
+    brightGreen: "#23d18b",
+    brightYellow: "#f5f543",
+    brightBlue: "#3b8eea",
+    brightMagenta: "#d670d6",
+    brightCyan: "#29b8db",
+    brightWhite: "#ffffff",
+  },
   "vscode-dark": {
     background: "#1e1e1e",
     foreground: "#cccccc",
@@ -213,6 +236,7 @@ export const TERMINAL_THEMES: Record<string, ITheme> = {
 
 /** Display names for theme selector */
 export const THEME_NAMES: Record<string, string> = {
+  "commander": "Commander",
   "vscode-dark": "VS Code Dark",
   "tokyo-night": "Tokyo Night",
   "vscode-light": "VS Code Light",
@@ -279,6 +303,24 @@ export interface IAppTheme {
 
 /** App chrome colors for each theme, derived from official palettes */
 export const APP_THEMES: Record<string, IAppTheme> = {
+  "commander": {
+    bgPrimary: "#1b1b1b",
+    bgSecondary: "#222222",
+    bgTertiary: "#2a2a2a",
+    bgHighlight: "#353535",
+    fgPrimary: "#d4d4d4",
+    fgSecondary: "#a0a0a0",
+    fgMuted: "#737373",
+    accent: "#2563b8",
+    accentHover: "#3b8eea",
+    border: "#2e2e2e",
+    success: "#23d18b",
+    warning: "#e5e510",
+    error: "#f14c4c",
+    textOnAccent: "#ffffff",
+    textOnError: "#000000",
+    textOnSuccess: "#000000",
+  },
   "vscode-dark": {
     bgPrimary: "#1e1e1e",
     bgSecondary: "#252526",

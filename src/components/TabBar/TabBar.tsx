@@ -344,7 +344,11 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={diffTab()?.filePath}
               >
-                <span class={s.tabIcon}>📄</span>
+                <span class={s.tabIcon}>
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                    <path fill-rule="evenodd" d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM8 6a.5.5 0 01.5.5v1h1a.5.5 0 010 1h-1v1a.5.5 0 01-1 0v-1h-1a.5.5 0 010-1h1v-1A.5.5 0 018 6zm-3 5a.5.5 0 000 1h5a.5.5 0 000-1H5z"/>
+                  </svg>
+                </span>
                 <span class={s.tabName}>{diffTab()?.fileName}{diffTab()?.scope ? ` (${diffTab()?.scope?.slice(0, 7)})` : ""}</span>
                 <button
                   class={s.tabClose}
@@ -381,7 +385,11 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={(() => { const tab = mdTab(); return tab?.type === "file" ? tab.filePath : tab?.title; })()}
               >
-                <span class={s.tabIcon}>📝</span>
+                <span class={s.tabIcon}>
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                    <path fill-rule="evenodd" d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM4.5 7.5h7a.5.5 0 010 1h-7a.5.5 0 010-1zm0 2.5h7a.5.5 0 010 1h-7a.5.5 0 010-1zm0 2.5h4a.5.5 0 010 1h-4a.5.5 0 010-1z"/>
+                  </svg>
+                </span>
                 <span class={s.tabName}>{(() => { const tab = mdTab(); return tab?.type === "file" ? tab.fileName : tab?.title; })()}</span>
                 <button
                   class={s.tabClose}
@@ -418,7 +426,12 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={editTab()?.filePath}
               >
-                <span class={s.tabIcon}>{editTab()?.isDirty ? "●" : "✎"}</span>
+                <span class={s.tabIcon}>
+                  {editTab()?.isDirty
+                    ? <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><circle cx="4" cy="4" r="4"/></svg>
+                    : <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M11.13 1.47a1.5 1.5 0 012.12 0l1.28 1.28a1.5 1.5 0 010 2.12L5.9 13.5a1 1 0 01-.5.27l-3.5.87a.5.5 0 01-.6-.6l.87-3.5a1 1 0 01.27-.5L11.13 1.47zm1.07 1.06L3.74 11l-.58 2.34 2.34-.58 8.47-8.46-1.77-1.77z"/></svg>
+                  }
+                </span>
                 <span class={s.tabName}>{editTab()?.fileName}</span>
                 <button
                   class={s.tabClose}

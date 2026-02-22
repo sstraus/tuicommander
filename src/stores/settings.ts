@@ -32,7 +32,7 @@ interface RustAppConfig {
 const DEFAULTS = {
   ide: "vscode" as const,
   font: "JetBrains Mono" as const,
-  fontSize: 12,
+  fontSize: 13,
 };
 
 /** IDE options */
@@ -225,7 +225,7 @@ function createSettingsStore() {
     font: DEFAULTS.font,
     defaultFontSize: DEFAULTS.fontSize,
     shell: null,
-    theme: "vscode-dark",
+    theme: "commander",
     confirmBeforeQuit: true,
     confirmBeforeClosingTab: true,
     maxTabNameLength: 25,
@@ -312,9 +312,19 @@ function createSettingsStore() {
       }
     },
 
-    /** Set default font size */
-    setDefaultFontSize(size: number): void {
-      setState("defaultFontSize", Math.max(8, Math.min(32, size)));
+    /** Set default font size and persist to Rust config */
+    async setDefaultFontSize(size: number): Promise<void> {
+      const clamped = Math.max(8, Math.min(32, size));
+      const prev = state.defaultFontSize;
+      setState("defaultFontSize", clamped);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.default_font_size = clamped;
+        await invoke("save_config", { config });
+      } catch (err) {
+        console.error("Failed to persist defaultFontSize:", err);
+        setState("defaultFontSize", prev);
+      }
     },
 
     /** Set custom shell override (null = use system default) */

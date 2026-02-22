@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, Show } from "solid-js";
+import { Component, createEffect, createSignal, Show, onMount } from "solid-js";
 import { MarkdownRenderer } from "../ui";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { useRepository } from "../../hooks/useRepository";
@@ -21,6 +21,21 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const [error, setError] = createSignal<string | null>(null);
   const repo = useRepository();
   const contextMenu = createContextMenu();
+  let wrapperRef: HTMLDivElement | undefined;
+
+  // When this tab is active, focus the wrapper so wheel events route by cursor
+  // position rather than following xterm's retained textarea focus.
+  // We focus .wrapper (no overflow) not .content (overflow:auto) to avoid
+  // triggering a spurious scrollbar.
+  const focusWrapper = () => requestAnimationFrame(() => wrapperRef?.focus({ preventScroll: true }));
+
+  onMount(() => {
+    if (mdTabsStore.state.activeId === props.tab.id) focusWrapper();
+  });
+
+  createEffect(() => {
+    if (mdTabsStore.state.activeId === props.tab.id) focusWrapper();
+  });
 
   createEffect(() => {
     const tab = props.tab;
@@ -99,6 +114,16 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     return tab.type === "file" ? tab.filePath : tab.title;
   };
 
+  /** Absolute directory containing the source file, for resolving relative image paths */
+  const baseDir = () => {
+    const tab = props.tab;
+    if (tab.type !== "file") return undefined;
+    const dir = tab.filePath.includes("/")
+      ? tab.filePath.slice(0, tab.filePath.lastIndexOf("/"))
+      : "";
+    return dir ? `${tab.repoPath}/${dir}` : tab.repoPath;
+  };
+
   /** Full path for clipboard copy (repoPath + filePath) */
   const fullPath = () => {
     const tab = props.tab;
@@ -121,7 +146,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   };
 
   return (
-    <div class={s.wrapper}>
+    <div ref={wrapperRef} class={s.wrapper} tabIndex={-1}>
       <div class={e.header} onContextMenu={handleHeaderContextMenu}>
         <span class={e.filename} title={displayPath()}>
           {displayPath()}
@@ -138,6 +163,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
       <div class={s.content}>
         <MarkdownRenderer
           content={content()}
+          baseDir={baseDir()}
           onLinkClick={handleMdLink}
           emptyMessage={
             loading()

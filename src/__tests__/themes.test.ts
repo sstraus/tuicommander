@@ -17,6 +17,12 @@ describe("themes", () => {
   });
 
   describe("getTerminalTheme()", () => {
+    it("returns the commander theme", () => {
+      const theme = getTerminalTheme("commander");
+      expect(theme.background).toBe("#1e1e1e");
+      expect(theme.foreground).toBe("#d4d4d4");
+    });
+
     it("returns the requested theme", () => {
       const theme = getTerminalTheme("dracula");
       expect(theme.background).toBe("#282a36");
