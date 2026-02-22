@@ -1,0 +1,13 @@
+{
+  "id": "wiz-reviews",
+  "name": "Wiz Reviews",
+  "version": "1.0.0",
+  "minAppVersion": "0.3.0",
+  "main": "main.js",
+  "description": "Watches for code review output and links to review markdown files in the Activity Center.",
+  "author": "Wiz / Lansweeper",
+  "capabilities": [
+    "invoke:read_file",
+    "ui:markdown"
+  ]
+}

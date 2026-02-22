@@ -243,6 +243,9 @@ export interface PluginHost {
   /** Get the active terminal's session ID, or null if none active */
   getActiveTerminalSessionId(): string | null;
 
+  /** Get the repository path that owns a terminal session, or null if not found */
+  getRepoPathForSession(sessionId: string): string | null;
+
   /** Get active (non-dismissed) PR notifications */
   getPrNotifications(): PrNotificationSnapshot[];
 

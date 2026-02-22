@@ -2,14 +2,13 @@ import { pluginRegistry } from "./pluginRegistry";
 import { pluginStore } from "../stores/pluginStore";
 import { loadUserPlugins } from "./pluginLoader";
 import { planPlugin } from "./planPlugin";
-import { wizStoriesPlugin } from "./wizStoriesPlugin";
 import type { TuiPlugin } from "./types";
 
 /**
- * All built-in plugins shipped with TUI Commander.
- * Order does not matter — plugins are independent.
+ * Built-in plugins shipped with TUI Commander.
+ * wiz-stories was extracted to an external plugin (examples/plugins/wiz-stories).
  */
-const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin, wizStoriesPlugin];
+const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin];
 
 /**
  * Register all built-in plugins, then discover and load user plugins.

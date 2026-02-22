@@ -172,6 +172,21 @@ function createPluginRegistry() {
         return terminal?.sessionId ?? null;
       },
 
+      getRepoPathForSession(sessionId: string): string | null {
+        const termId = terminalsStore.getIds().find(
+          (id: string) => terminalsStore.get(id)?.sessionId === sessionId,
+        );
+        if (!termId) return null;
+        for (const repoPath of repositoriesStore.getPaths()) {
+          const repo = repositoriesStore.get(repoPath);
+          if (!repo) continue;
+          for (const branch of Object.values(repo.branches)) {
+            if (branch.terminals.includes(termId)) return repoPath;
+          }
+        }
+        return null;
+      },
+
       getPrNotifications(): PrNotificationSnapshot[] {
         return prNotificationsStore.getActive().map((n) => ({
           id: n.id,
