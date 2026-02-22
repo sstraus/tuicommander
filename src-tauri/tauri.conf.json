@@ -46,6 +46,11 @@
     "createUpdaterArtifacts": true
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["tuic"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1MEM3NkIyREQzNDMwMDMKUldRRE1EVGRzbllNNWMxR2xrSFpzblI5clZHd1hCZEV0TGg4WlFaNVp2QjY2bWlUQ1R6Mkt3cWcK",
       "endpoints": [

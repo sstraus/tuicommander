@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { Component, For, JSX, Show } from "solid-js";
 import { Terminal } from "./Terminal";
 import { DiffTab } from "./DiffTab";
 import { MarkdownTab } from "./MarkdownTab";
@@ -24,6 +24,7 @@ export interface TerminalAreaProps {
   lazygitCmd: string | null;
   onLazygitFloat: () => void;
   onLazygitClose: () => void;
+  children?: JSX.Element;
 }
 
 export const TerminalArea: Component<TerminalAreaProps> = (props) => {
@@ -247,6 +248,9 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
           </div>
         </div>
       </Show>
+
+      {/* Side panels (must be inside #terminal-container for flex row layout) */}
+      {props.children}
     </div>
   );
 };

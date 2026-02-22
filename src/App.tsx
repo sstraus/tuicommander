@@ -67,6 +67,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke, listen } from "./invoke";
 import { isTauri } from "./transport";
 import { setLastMenuActionTime } from "./menuDedup";
+import { initDeepLinkHandler } from "./deep-link-handler";
 
 const getDefaultFontSize = () => settingsStore.state.defaultFontSize;
 const getMaxTabNameLength = () => settingsStore.state.maxTabNameLength;
@@ -209,6 +210,9 @@ const App: Component = () => {
     if (settingsStore.state.autoUpdateEnabled) {
       updaterStore.checkForUpdate().catch((err) => console.debug("[Updater] Auto-check failed:", err));
     }
+
+    // Register tuic:// deep link handler
+    initDeepLinkHandler({ openSettings });
 
     onCleanup(() => githubStore.stopPolling());
   });
@@ -641,16 +645,16 @@ const App: Component = () => {
           lazygitCmd={gitOps.currentRepoPath() ? lazygit.buildLazygitCmd(gitOps.currentRepoPath()!) : null}
           onLazygitFloat={() => lazygit.setLazygitFloating(true)}
           onLazygitClose={lazygit.closeLazygitPane}
-        />
-
-        {/* Side panels */}
-        <PanelOrchestrator
-          repoPath={gitOps.currentRepoPath() || null}
-          onFileOpen={(repoPath, filePath) => {
-            const tabId = editorTabsStore.add(repoPath, filePath);
-            terminalLifecycle.handleTerminalSelect(tabId);
-          }}
-        />
+        >
+          {/* Side panels (right panes inside #terminal-container) */}
+          <PanelOrchestrator
+            repoPath={gitOps.currentRepoPath() || null}
+            onFileOpen={(repoPath, filePath) => {
+              const tabId = editorTabsStore.add(repoPath, filePath);
+              terminalLifecycle.handleTerminalSelect(tabId);
+            }}
+          />
+        </TerminalArea>
 
         {/* Status bar */}
         <StatusBar

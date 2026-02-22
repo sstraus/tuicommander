@@ -461,6 +461,7 @@ pub fn run() {
         .manage(state)
         .manage(dictation::DictationState::new())
         .manage(sleep_prevention::SleepBlocker::new())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // Focus existing window when another instance is launched (Story 065)
             if let Some(window) = app.get_webview_window("main") {
