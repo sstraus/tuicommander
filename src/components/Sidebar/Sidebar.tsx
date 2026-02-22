@@ -813,6 +813,19 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       {/* Git Quick Actions (Story 050) */}
       <Show when={repositoriesStore.getActive()}>
         <div class="git-quick-actions">
+          <svg class="git-quick-label" width="10" height="28" viewBox="0 0 10 28" aria-hidden="true">
+            <text
+              x="5" y="14"
+              transform="rotate(-90 5 14)"
+              text-anchor="middle"
+              dominant-baseline="central"
+              fill="currentColor"
+              font-size="8.5"
+              font-weight="700"
+              letter-spacing="0.12em"
+              font-family="system-ui,-apple-system,sans-serif"
+            >GIT</text>
+          </svg>
           <div class="git-quick-actions-btns">
             <button
               class="git-quick-btn"

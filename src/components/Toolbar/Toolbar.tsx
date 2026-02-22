@@ -135,6 +135,19 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   return (
     <div id="toolbar" data-tauri-drag-region>
       <div class="toolbar-left" data-tauri-drag-region>
+        {/* Embossed app name — dark shadow below, lighter highlight above; TUIC slightly brighter */}
+        <svg class="toolbar-app-name" data-tauri-drag-region viewBox="0 0 110 16" width="110" height="16" aria-label="TUICommander">
+          <defs>
+            <linearGradient id="toolbar-name-grad" x1="0" y1="0" x2="110" y2="0" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#909090" />
+              <stop offset="32%" stop-color="#767676" />
+              <stop offset="100%" stop-color="#5a5a5a" />
+            </linearGradient>
+          </defs>
+          <text x="0" y="12" fill="#060606" font-size="11" font-weight="700" letter-spacing="0.09em" font-family="system-ui,-apple-system,sans-serif" dx="1" dy="1">TUICommander</text>
+          <text x="0" y="12" fill="#3e3e3e" font-size="11" font-weight="700" letter-spacing="0.09em" font-family="system-ui,-apple-system,sans-serif" dx="-0.5" dy="-0.5">TUICommander</text>
+          <text x="0" y="12" fill="url(#toolbar-name-grad)" font-size="11" font-weight="700" letter-spacing="0.09em" font-family="system-ui,-apple-system,sans-serif">TUICommander</text>
+        </svg>
         <button
           class="toolbar-sidebar-toggle"
           onClick={() => uiStore.toggleSidebar()}
