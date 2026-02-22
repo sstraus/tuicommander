@@ -73,7 +73,9 @@ export function useAppLazygit(deps: AppLazygitDeps) {
       awaitingInput: null,
     });
     setLazygitTermId(id);
-    terminalsStore.setActive(id);
+    // Don't setActive — lazygit lives in its own pane, not in the regular tab bar.
+    // Setting it active would cause it to render in both the lazygit pane AND
+    // the regular terminal pane list (double rendering + ghost terminal on close).
     setLazygitPaneVisible(true);
   };
 

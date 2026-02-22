@@ -236,6 +236,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
             <Terminal
               id={props.lazygitTermId!}
               cwd={props.lazygitRepoPath}
+              alwaysVisible
               onSessionCreated={(id, _sid) => {
                 requestAnimationFrame(() => {
                   const lgTerm = terminalsStore.get(id);

@@ -823,6 +823,7 @@ const App: Component = () => {
             <Terminal
               id={lazygit.lazygitTermId()!}
               cwd={gitOps.currentRepoPath() || null}
+              alwaysVisible
             />
           </div>
         </div>
