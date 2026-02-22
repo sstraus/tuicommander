@@ -1,6 +1,5 @@
 import {
   Component,
-  For,
   Show,
   createEffect,
   createMemo,
@@ -13,14 +12,9 @@ import { Sidebar } from "./components/Sidebar";
 import { Toolbar } from "./components/Toolbar";
 import { TabBar } from "./components/TabBar";
 import { StatusBar } from "./components/StatusBar";
-import { DiffPanel } from "./components/DiffPanel";
-import { FileBrowserPanel } from "./components/FileBrowserPanel";
-import { CodeEditorTab } from "./components/CodeEditorPanel";
+import { TerminalArea } from "./components/TerminalArea";
+import { PanelOrchestrator } from "./components/PanelOrchestrator";
 import { editorTabsStore } from "./stores/editorTabs";
-import { DiffTab } from "./components/DiffTab";
-import { MarkdownPanel } from "./components/MarkdownPanel";
-import { NotesPanel } from "./components/NotesPanel";
-import { MarkdownTab } from "./components/MarkdownTab";
 import { PromptOverlay } from "./components/PromptOverlay";
 import { PromptDrawer } from "./components/PromptDrawer";
 import { SettingsPanel, type SettingsContext } from "./components/SettingsPanel";
@@ -31,11 +25,9 @@ import { RenameBranchDialog } from "./components/RenameBranchDialog";
 import { PromptDialog } from "./components/PromptDialog";
 import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
-import noTuiOpenImg from "./assets/no-tui-open.png";
 import { promptLibraryStore } from "./stores/promptLibrary";
 import { terminalsStore } from "./stores/terminals";
 import { repositoriesStore } from "./stores/repositories";
-import { diffTabsStore } from "./stores/diffTabs";
 import { mdTabsStore } from "./stores/mdTabs";
 import { uiStore } from "./stores/ui";
 import { settingsStore } from "./stores/settings";
@@ -579,253 +571,28 @@ const App: Component = () => {
         </div>
 
         {/* Terminal container - render ALL terminals so they never unmount (preserves PTY sessions) */}
-        <div id="terminal-container">
-          {/* Empty state when no tabs are open */}
-          <Show when={!terminalsStore.state.activeId && !diffTabsStore.state.activeId && !mdTabsStore.state.activeId && !editorTabsStore.state.activeId}>
-            <div class="empty-terminal-state">
-              <img src={noTuiOpenImg} alt="No TUI Open" class="empty-terminal-icon" />
-            </div>
-          </Show>
-          <div
-            id="terminal-panes"
-            classList={{
-              "split-vertical": terminalsStore.state.layout.direction === "vertical",
-              "split-horizontal": terminalsStore.state.layout.direction === "horizontal",
-            }}
-            onContextMenu={contextMenu.open}
-          >
-            <For each={terminalsStore.getIds()}>
-              {(id) => {
-                const terminal = terminalsStore.get(id);
-                const repoPathForTerminal = () => {
-                  for (const [path, repo] of Object.entries(repositoriesStore.state.repositories)) {
-                    for (const branch of Object.values(repo.branches)) {
-                      if (branch.terminals.includes(id)) return path;
-                    }
-                  }
-                  return null;
-                };
-                const terminalMetaHotkeys = () => {
-                  const path = repoPathForTerminal();
-                  if (!path) return undefined;
-                  return repoSettingsStore.getEffective(path)?.terminalMetaHotkeys;
-                };
-                const isSplitPane = () => terminalsStore.state.layout.panes.includes(id);
-                const isActivePaneInSplit = () => {
-                  const layout = terminalsStore.state.layout;
-                  return layout.direction !== "none" && layout.panes[layout.activePaneIndex] === id;
-                };
-                const paneIndex = () => terminalsStore.state.layout.panes.indexOf(id);
-                const splitRatio = () => terminalsStore.state.layout.ratio;
-                return (
-                  <div
-                    class="terminal-pane"
-                    classList={{
-                      active: terminalsStore.state.activeId === id,
-                      "split-pane": isSplitPane(),
-                      "split-pane-active": isActivePaneInSplit(),
-                    }}
-                    style={isSplitPane() ? {
-                      flex: paneIndex() === 0
-                        ? `${splitRatio() * 100} 1 0%`
-                        : `${(1 - splitRatio()) * 100} 1 0%`,
-                      order: paneIndex() === 0 ? 0 : 2,
-                    } : undefined}
-                  >
-                    <Terminal
-                      id={id}
-                      cwd={terminal?.cwd || null}
-                      onFocus={terminalLifecycle.handleTerminalFocus}
-                      onSessionCreated={() => {}}
-                      onOpenFilePath={handleOpenFilePath}
-                      metaHotkeys={terminalMetaHotkeys()}
-                    />
-                  </div>
-                );
-              }}
-            </For>
+        <TerminalArea
+          onTerminalFocus={terminalLifecycle.handleTerminalFocus}
+          onCloseTab={terminalLifecycle.closeTerminal}
+          onOpenFilePath={handleOpenFilePath}
+          onContextMenu={contextMenu.open}
+          lazygitPaneVisible={lazygit.lazygitPaneVisible()}
+          lazygitTermId={lazygit.lazygitTermId()}
+          lazygitFloating={lazygit.lazygitFloating()}
+          lazygitRepoPath={gitOps.currentRepoPath() || null}
+          lazygitCmd={gitOps.currentRepoPath() ? lazygit.buildLazygitCmd(gitOps.currentRepoPath()!) : null}
+          onLazygitFloat={() => lazygit.setLazygitFloating(true)}
+          onLazygitClose={lazygit.closeLazygitPane}
+        />
 
-            {/* Resize handle between split panes */}
-            <Show when={terminalsStore.state.layout.direction !== "none"}>
-              <div
-                class="split-resize-handle"
-                classList={{
-                  vertical: terminalsStore.state.layout.direction === "vertical",
-                  horizontal: terminalsStore.state.layout.direction === "horizontal",
-                }}
-                style={{ order: 1 }}
-                onMouseDown={(startEvent) => {
-                  startEvent.preventDefault();
-                  const container = document.getElementById("terminal-panes");
-                  if (!container) return;
-
-                  const isVertical = terminalsStore.state.layout.direction === "vertical";
-                  const rect = container.getBoundingClientRect();
-
-                  const onMouseMove = (e: MouseEvent) => {
-                    const ratio = isVertical
-                      ? (e.clientX - rect.left) / rect.width
-                      : (e.clientY - rect.top) / rect.height;
-                    terminalsStore.setSplitRatio(ratio);
-                  };
-
-                  const onMouseUp = () => {
-                    document.removeEventListener("mousemove", onMouseMove);
-                    document.removeEventListener("mouseup", onMouseUp);
-                    document.body.style.cursor = "";
-                    document.body.style.userSelect = "";
-                    // Fit both terminals after resize
-                    for (const paneId of terminalsStore.state.layout.panes) {
-                      terminalsStore.get(paneId)?.ref?.fit();
-                    }
-                  };
-
-                  document.body.style.cursor = isVertical ? "col-resize" : "row-resize";
-                  document.body.style.userSelect = "none";
-                  document.addEventListener("mousemove", onMouseMove);
-                  document.addEventListener("mouseup", onMouseUp);
-                }}
-              />
-            </Show>
-
-            {/* Diff tabs */}
-            <For each={diffTabsStore.getIds()}>
-              {(id) => {
-                const diffTab = diffTabsStore.get(id);
-                return (
-                  <div
-                    class="terminal-pane diff-pane"
-                    classList={{ active: diffTabsStore.state.activeId === id }}
-                  >
-                    {diffTab && (
-                      <DiffTab
-                        repoPath={diffTab.repoPath}
-                        filePath={diffTab.filePath}
-                        scope={diffTab.scope}
-                        onClose={() => terminalLifecycle.closeTerminal(id)}
-                      />
-                    )}
-                  </div>
-                );
-              }}
-            </For>
-
-            {/* Markdown tabs */}
-            <For each={mdTabsStore.getIds()}>
-              {(id) => {
-                const mdTab = mdTabsStore.get(id);
-                return (
-                  <div
-                    class="terminal-pane md-pane"
-                    classList={{ active: mdTabsStore.state.activeId === id }}
-                  >
-                    {mdTab && (
-                      <MarkdownTab
-                        tab={mdTab}
-                        onClose={() => terminalLifecycle.closeTerminal(id)}
-                      />
-                    )}
-                  </div>
-                );
-              }}
-            </For>
-
-            {/* Editor tabs */}
-            <For each={editorTabsStore.getIds()}>
-              {(id) => {
-                const editTab = editorTabsStore.get(id);
-                return (
-                  <div
-                    class="terminal-pane edit-pane"
-                    classList={{ active: editorTabsStore.state.activeId === id }}
-                  >
-                    {editTab && (
-                      <CodeEditorTab
-                        id={id}
-                        repoPath={editTab.repoPath}
-                        filePath={editTab.filePath}
-                        onClose={() => terminalLifecycle.closeTerminal(id)}
-                      />
-                    )}
-                  </div>
-                );
-              }}
-            </For>
-          </div>
-
-          {/* Lazygit split pane / floating window (Story 047 / 051) */}
-          <Show when={lazygit.lazygitPaneVisible() && lazygit.lazygitTermId() && !lazygit.lazygitFloating()}>
-            <div class="lazygit-pane">
-              <div class="lazygit-pane-header">
-                <span class="lazygit-pane-title">
-                  <span>⎇</span> lazygit
-                </span>
-                <div style={{ display: "flex", gap: "4px" }}>
-                  <button
-                    class="lazygit-pane-close"
-                    onClick={() => lazygit.setLazygitFloating(true)}
-                    title="Float (detach)"
-                  >
-                    ⇱
-                  </button>
-                  <button class="lazygit-pane-close" onClick={lazygit.closeLazygitPane}>
-                    &times;
-                  </button>
-                </div>
-              </div>
-              <div class="lazygit-pane-content">
-                <Terminal
-                  id={lazygit.lazygitTermId()!}
-                  cwd={gitOps.currentRepoPath() || null}
-                  onSessionCreated={(id, _sid) => {
-                    requestAnimationFrame(() => {
-                      const lgTerm = terminalsStore.get(id);
-                      const repoPath = gitOps.currentRepoPath();
-                      if (lgTerm?.ref && repoPath) {
-                        lgTerm.ref.write(`${lazygit.buildLazygitCmd(repoPath)}\r`);
-                      }
-                    });
-                  }}
-                />
-              </div>
-            </div>
-          </Show>
-
-          {/* File browser panel */}
-          <FileBrowserPanel
-            visible={uiStore.state.fileBrowserPanelVisible}
-            repoPath={gitOps.currentRepoPath() || null}
-            onClose={() => uiStore.toggleFileBrowserPanel()}
-            onFileOpen={(repoPath, filePath) => {
-              const tabId = editorTabsStore.add(repoPath, filePath);
-              terminalLifecycle.handleTerminalSelect(tabId);
-            }}
-          />
-
-          {/* Markdown panel */}
-          <MarkdownPanel
-            visible={uiStore.state.markdownPanelVisible}
-            repoPath={gitOps.currentRepoPath() || null}
-            onClose={() => uiStore.toggleMarkdownPanel()}
-          />
-
-          {/* Notes panel */}
-          <NotesPanel
-            visible={uiStore.state.notesPanelVisible}
-            onClose={() => uiStore.toggleNotesPanel()}
-            onSendToTerminal={(text) => {
-              const active = terminalsStore.getActive();
-              if (active?.ref) active.ref.write(`${text}\r`);
-            }}
-          />
-
-          {/* Diff panel */}
-          <DiffPanel
-            visible={uiStore.state.diffPanelVisible}
-            repoPath={gitOps.currentRepoPath() || null}
-            onClose={() => uiStore.toggleDiffPanel()}
-          />
-        </div>
+        {/* Side panels */}
+        <PanelOrchestrator
+          repoPath={gitOps.currentRepoPath() || null}
+          onFileOpen={(repoPath, filePath) => {
+            const tabId = editorTabsStore.add(repoPath, filePath);
+            terminalLifecycle.handleTerminalSelect(tabId);
+          }}
+        />
 
         {/* Status bar */}
         <StatusBar
