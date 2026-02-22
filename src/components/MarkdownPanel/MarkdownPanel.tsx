@@ -2,6 +2,7 @@ import { Component, createEffect, createSignal, For, Show } from "solid-js";
 import { useRepository } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { mdTabsStore } from "../../stores/mdTabs";
+import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { getModifierSymbol } from "../../platform";
 import { globToRegex } from "../../utils";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
@@ -39,6 +40,8 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
   const [error, setError] = createSignal<string | null>(null);
   const [searchQuery, setSearchQuery] = createSignal("");
   const repo = useRepository();
+  const contextMenu = createContextMenu();
+  const [contextEntry, setContextEntry] = createSignal<MdFileEntry | null>(null);
 
   /** Files filtered by search query (supports glob wildcards) */
   const filteredFiles = () => {
@@ -98,6 +101,26 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
     }
 
     return groups;
+  };
+
+  const handleContextMenu = (ev: MouseEvent, entry: MdFileEntry) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    setContextEntry(entry);
+    contextMenu.open(ev);
+  };
+
+  const getContextMenuItems = (): ContextMenuItem[] => {
+    const entry = contextEntry();
+    if (!entry || !props.repoPath) return [];
+    return [{
+      label: t("markdownPanel.copyPath", "Copy Path"),
+      action: () => {
+        navigator.clipboard.writeText(`${props.repoPath}/${entry.path}`).catch((err) =>
+          console.error("Failed to copy path:", err),
+        );
+      },
+    }];
   };
 
   return (
@@ -169,6 +192,7 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
                         <div
                           class={s.fileItem}
                           onClick={() => handleFileClick(entry.path)}
+                          onContextMenu={(ev) => handleContextMenu(ev, entry)}
                           title={entry.path}
                         >
                           <span class={s.fileIcon}>{"\u{1F4C4}"}</span>
@@ -186,6 +210,14 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
           </div>
         </Show>
       </div>
+
+      <ContextMenu
+        items={getContextMenuItems()}
+        x={contextMenu.position().x}
+        y={contextMenu.position().y}
+        visible={contextMenu.visible()}
+        onClose={contextMenu.close}
+      />
     </div>
   );
 };
