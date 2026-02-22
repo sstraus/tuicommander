@@ -32,15 +32,14 @@ fn serve_file(path: &str) -> Response {
             Err(_) => std::path::PathBuf::from(DEV_DIST_PATH),
         };
         let candidate = base.join(path);
-        if let Ok(canonical) = candidate.canonicalize() {
-            if canonical.starts_with(&base) {
-                if let Ok(bytes) = std::fs::read(&canonical) {
-                    let mime = mime_guess::from_path(path)
-                        .first_or_octet_stream()
-                        .to_string();
-                    return (StatusCode::OK, [(header::CONTENT_TYPE, mime)], bytes).into_response();
-                }
-            }
+        if let Ok(canonical) = candidate.canonicalize()
+            && canonical.starts_with(&base)
+            && let Ok(bytes) = std::fs::read(&canonical)
+        {
+            let mime = mime_guess::from_path(path)
+                .first_or_octet_stream()
+                .to_string();
+            return (StatusCode::OK, [(header::CONTENT_TYPE, mime)], bytes).into_response();
         }
         // path not found on disk → SPA fallback to index.html from disk
         let index_path = base.join("index.html");
