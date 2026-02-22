@@ -615,22 +615,22 @@ mod tests {
         let msg = rx.try_recv().unwrap();
         let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 21);
+        assert_eq!(tools.len(), 5);
 
-        // Verify key tools are present
+        // Verify meta-commands are present
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert!(names.contains(&"list_sessions"));
-        assert!(names.contains(&"send_input"));
-        assert!(names.contains(&"get_output"));
-        assert!(names.contains(&"get_repo_info"));
-        assert!(names.contains(&"spawn_agent"));
+        assert!(names.contains(&"session"));
+        assert!(names.contains(&"git"));
+        assert!(names.contains(&"agent"));
+        assert!(names.contains(&"config"));
+        assert!(names.contains(&"plugin_dev_guide"));
     }
 
     #[test]
     fn test_mcp_tool_definitions_count() {
         let tools = mcp_transport::test_mcp_tool_definitions();
         let arr = tools.as_array().unwrap();
-        assert_eq!(arr.len(), 21);
+        assert_eq!(arr.len(), 5);
     }
 
     #[test]
@@ -682,25 +682,28 @@ mod tests {
         serde_json::from_str(text).unwrap_or_else(|_| serde_json::json!(text))
     }
 
+    // --- Session meta-command tests ---
+
     #[tokio::test]
-    async fn test_tool_list_sessions_empty() {
+    async fn test_session_list_empty() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "list_sessions", serde_json::json!({})).await;
+        let result = call_mcp_tool(&state, "session", serde_json::json!({"action": "list"})).await;
         let sessions = result.as_array().unwrap();
         assert!(sessions.is_empty(), "Expected empty sessions list");
     }
 
     #[tokio::test]
-    async fn test_tool_send_input_missing_session_id() {
+    async fn test_session_input_missing_session_id() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "send_input", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing session_id");
+        let result = call_mcp_tool(&state, "session", serde_json::json!({"action": "input"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'session_id'"));
     }
 
     #[tokio::test]
-    async fn test_tool_send_input_nonexistent_session() {
+    async fn test_session_input_nonexistent_session() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "send_input", serde_json::json!({
+        let result = call_mcp_tool(&state, "session", serde_json::json!({
+            "action": "input",
             "session_id": "nonexistent",
             "input": "hello"
         })).await;
@@ -708,18 +711,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_tool_send_input_no_input_or_key() {
+    async fn test_session_input_no_input_or_key() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "send_input", serde_json::json!({
+        let result = call_mcp_tool(&state, "session", serde_json::json!({
+            "action": "input",
             "session_id": "some-id"
         })).await;
-        assert_eq!(result["error"], "Either 'input' or 'special_key' must be provided");
+        assert!(result["error"].as_str().unwrap().contains("'input'"));
     }
 
     #[tokio::test]
-    async fn test_tool_send_input_unknown_special_key() {
+    async fn test_session_input_unknown_special_key() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "send_input", serde_json::json!({
+        let result = call_mcp_tool(&state, "session", serde_json::json!({
+            "action": "input",
             "session_id": "some-id",
             "special_key": "nonexistent_key"
         })).await;
@@ -727,32 +732,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_tool_get_output_missing_session_id() {
+    async fn test_session_output_missing_session_id() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "get_output", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing session_id");
+        let result = call_mcp_tool(&state, "session", serde_json::json!({"action": "output"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'session_id'"));
     }
 
     #[tokio::test]
-    async fn test_tool_get_output_nonexistent_session() {
+    async fn test_session_output_nonexistent_session() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "get_output", serde_json::json!({
+        let result = call_mcp_tool(&state, "session", serde_json::json!({
+            "action": "output",
             "session_id": "nonexistent"
         })).await;
         assert_eq!(result["error"], "Session not found");
     }
 
     #[tokio::test]
-    async fn test_tool_resize_terminal_missing_session_id() {
+    async fn test_session_resize_missing_session_id() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "resize_terminal", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing session_id");
+        let result = call_mcp_tool(&state, "session", serde_json::json!({"action": "resize"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'session_id'"));
     }
 
     #[tokio::test]
-    async fn test_tool_resize_terminal_nonexistent_session() {
+    async fn test_session_resize_nonexistent_session() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "resize_terminal", serde_json::json!({
+        let result = call_mcp_tool(&state, "session", serde_json::json!({
+            "action": "resize",
             "session_id": "nonexistent",
             "rows": 40,
             "cols": 120
@@ -761,152 +768,78 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_tool_close_session_missing_session_id() {
+    async fn test_session_close_missing_session_id() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "close_session", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing session_id");
+        let result = call_mcp_tool(&state, "session", serde_json::json!({"action": "close"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'session_id'"));
     }
 
     #[tokio::test]
-    async fn test_tool_close_session_nonexistent() {
+    async fn test_session_close_nonexistent() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "close_session", serde_json::json!({
+        let result = call_mcp_tool(&state, "session", serde_json::json!({
+            "action": "close",
             "session_id": "nonexistent"
         })).await;
         assert_eq!(result["error"], "Session not found");
     }
 
     #[tokio::test]
-    async fn test_tool_pause_session_missing_session_id() {
+    async fn test_session_pause_missing_session_id() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "pause_session", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing session_id");
+        let result = call_mcp_tool(&state, "session", serde_json::json!({"action": "pause"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'session_id'"));
     }
 
     #[tokio::test]
-    async fn test_tool_pause_session_nonexistent() {
+    async fn test_session_pause_nonexistent() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "pause_session", serde_json::json!({
+        let result = call_mcp_tool(&state, "session", serde_json::json!({
+            "action": "pause",
             "session_id": "nonexistent"
         })).await;
         assert_eq!(result["error"], "Session not found");
     }
 
     #[tokio::test]
-    async fn test_tool_resume_session_missing_session_id() {
+    async fn test_session_resume_missing_session_id() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "resume_session", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing session_id");
+        let result = call_mcp_tool(&state, "session", serde_json::json!({"action": "resume"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'session_id'"));
     }
 
     #[tokio::test]
-    async fn test_tool_resume_session_nonexistent() {
+    async fn test_session_resume_nonexistent() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "resume_session", serde_json::json!({
+        let result = call_mcp_tool(&state, "session", serde_json::json!({
+            "action": "resume",
             "session_id": "nonexistent"
         })).await;
         assert_eq!(result["error"], "Session not found");
     }
 
+    // --- Agent meta-command tests ---
+
     #[tokio::test]
-    async fn test_tool_get_stats() {
+    async fn test_agent_stats() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "get_stats", serde_json::json!({})).await;
+        let result = call_mcp_tool(&state, "agent", serde_json::json!({"action": "stats"})).await;
         assert_eq!(result["active_sessions"], 0);
         assert_eq!(result["max_sessions"], MAX_CONCURRENT_SESSIONS);
     }
 
     #[tokio::test]
-    async fn test_tool_get_metrics() {
+    async fn test_agent_metrics() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "get_metrics", serde_json::json!({})).await;
+        let result = call_mcp_tool(&state, "agent", serde_json::json!({"action": "metrics"})).await;
         assert_eq!(result["total_spawned"], 0);
         assert_eq!(result["active_sessions"], 0);
     }
 
     #[tokio::test]
-    async fn test_tool_get_config() {
+    async fn test_agent_detect() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "get_config", serde_json::json!({})).await;
-        // Should have config fields but no password hash
-        assert!(result["font_family"].as_str().is_some());
-        assert!(result.get("remote_access_password_hash").is_none(),
-            "Password hash should be stripped from MCP tool response");
-    }
-
-    #[tokio::test]
-    async fn test_tool_save_config_missing_config() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "save_config", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing config");
-    }
-
-    #[tokio::test]
-    async fn test_tool_save_config_invalid_config() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "save_config", serde_json::json!({
-            "config": "not an object"
-        })).await;
-        assert!(result["error"].as_str().unwrap().contains("Invalid config"));
-    }
-
-    #[tokio::test]
-    async fn test_tool_get_repo_info_missing_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "get_repo_info", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing path");
-    }
-
-    #[tokio::test]
-    async fn test_tool_get_repo_info_nonexistent_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "get_repo_info", serde_json::json!({
-            "path": "/nonexistent/repo/path"
-        })).await;
-        // get_repo_info_impl returns a RepoInfo struct; for nonexistent path it
-        // should have empty/error values rather than an error key
-        assert!(result.is_object(), "Expected a JSON object for nonexistent repo path");
-    }
-
-    #[tokio::test]
-    async fn test_tool_get_git_diff_missing_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "get_git_diff", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing path");
-    }
-
-    #[tokio::test]
-    async fn test_tool_get_changed_files_missing_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "get_changed_files", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing path");
-    }
-
-    #[tokio::test]
-    async fn test_tool_get_github_status_missing_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "get_github_status", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing path");
-    }
-
-    #[tokio::test]
-    async fn test_tool_get_pr_statuses_missing_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "get_pr_statuses", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing path");
-    }
-
-    #[tokio::test]
-    async fn test_tool_get_branches_missing_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "get_branches", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing path");
-    }
-
-    #[tokio::test]
-    async fn test_tool_detect_agents() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "detect_agents", serde_json::json!({})).await;
+        let result = call_mcp_tool(&state, "agent", serde_json::json!({"action": "detect"})).await;
         let agents = result.as_array().unwrap();
         assert_eq!(agents.len(), 5, "Should detect 5 known agents");
         let names: Vec<&str> = agents.iter().map(|a| a["name"].as_str().unwrap()).collect();
@@ -915,32 +848,148 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_tool_spawn_agent_missing_prompt() {
+    async fn test_agent_spawn_missing_prompt() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "spawn_agent", serde_json::json!({})).await;
-        assert_eq!(result["error"], "missing prompt");
+        let result = call_mcp_tool(&state, "agent", serde_json::json!({"action": "spawn"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'prompt'"));
     }
 
     #[tokio::test]
-    async fn test_tool_spawn_agent_not_implemented_via_sse() {
+    async fn test_agent_spawn_not_implemented_via_sse() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "spawn_agent", serde_json::json!({
+        let result = call_mcp_tool(&state, "agent", serde_json::json!({
+            "action": "spawn",
             "prompt": "test task"
         })).await;
-        // spawn_agent via SSE returns a "not yet implemented" error
         assert!(result["error"].as_str().unwrap().contains("not yet implemented"));
     }
 
+    // --- Config meta-command tests ---
+
     #[tokio::test]
-    async fn test_tool_unknown_tool() {
+    async fn test_config_get() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "nonexistent_tool", serde_json::json!({})).await;
-        assert!(result["error"].as_str().unwrap().contains("Unknown tool"));
+        let result = call_mcp_tool(&state, "config", serde_json::json!({"action": "get"})).await;
+        assert!(result["font_family"].as_str().is_some());
+        assert!(result.get("remote_access_password_hash").is_none(),
+            "Password hash should be stripped from MCP tool response");
     }
 
     #[tokio::test]
+    async fn test_config_save_missing_config() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "config", serde_json::json!({"action": "save"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'config'"));
+    }
+
+    #[tokio::test]
+    async fn test_config_save_invalid_config() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "config", serde_json::json!({
+            "action": "save",
+            "config": "not an object"
+        })).await;
+        assert!(result["error"].as_str().unwrap().contains("Invalid config"));
+    }
+
+    // --- Git meta-command tests ---
+
+    #[tokio::test]
+    async fn test_git_info_missing_path() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "info"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
+    }
+
+    #[tokio::test]
+    async fn test_git_info_nonexistent_path() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "git", serde_json::json!({
+            "action": "info",
+            "path": "/nonexistent/repo/path"
+        })).await;
+        assert!(result.is_object(), "Expected a JSON object for nonexistent repo path");
+    }
+
+    #[tokio::test]
+    async fn test_git_diff_missing_path() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "diff"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
+    }
+
+    #[tokio::test]
+    async fn test_git_files_missing_path() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "files"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
+    }
+
+    #[tokio::test]
+    async fn test_git_github_missing_path() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "github"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
+    }
+
+    #[tokio::test]
+    async fn test_git_prs_missing_path() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "prs"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
+    }
+
+    #[tokio::test]
+    async fn test_git_branches_missing_path() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "branches"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
+    }
+
+    // --- Action routing error tests ---
+
+    #[tokio::test]
+    async fn test_session_missing_action() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "session", serde_json::json!({})).await;
+        assert!(result["error"].as_str().unwrap().contains("Missing 'action'"));
+        assert!(result["error"].as_str().unwrap().contains("list, create"));
+    }
+
+    #[tokio::test]
+    async fn test_session_unknown_action() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "session", serde_json::json!({"action": "status"})).await;
+        assert!(result["error"].as_str().unwrap().contains("Unknown action 'status'"));
+        assert!(result["error"].as_str().unwrap().contains("session"));
+    }
+
+    #[tokio::test]
+    async fn test_git_missing_action() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "git", serde_json::json!({})).await;
+        assert!(result["error"].as_str().unwrap().contains("Missing 'action'"));
+    }
+
+    #[tokio::test]
+    async fn test_git_unknown_action() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "commit"})).await;
+        assert!(result["error"].as_str().unwrap().contains("Unknown action 'commit'"));
+    }
+
+    #[tokio::test]
+    async fn test_unknown_tool() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "nonexistent_tool", serde_json::json!({})).await;
+        assert!(result["error"].as_str().unwrap().contains("Unknown tool"));
+        assert!(result["error"].as_str().unwrap().contains("session, git, agent, config"));
+    }
+
+    // --- isError flag tests ---
+
+    #[tokio::test]
     async fn test_tool_call_is_error_flag() {
-        // Verify that error responses set isError=true in the MCP envelope
         let state = test_state();
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -975,7 +1024,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_success_flag() {
-        // Verify that successful responses set isError=false
         let state = test_state();
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -987,8 +1035,8 @@ mod tests {
             "id": 51,
             "method": "tools/call",
             "params": {
-                "name": "list_sessions",
-                "arguments": {}
+                "name": "session",
+                "arguments": {"action": "list"}
             }
         });
         let app = build_router(state.clone(), false, true);

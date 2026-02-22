@@ -23,155 +23,66 @@ fn validate_mcp_repo_path(path: &str) -> Result<(), serde_json::Value> {
         .map_err(|msg| serde_json::json!({"error": msg}))
 }
 
-/// MCP tool definitions — mirrors tui_mcp_bridge tool_definitions()
+const SESSION_ACTIONS: &str = "list, create, input, output, resize, close, pause, resume";
+const GIT_ACTIONS: &str = "info, diff, files, branches, github, prs";
+const AGENT_ACTIONS: &str = "detect, spawn, stats, metrics";
+const CONFIG_ACTIONS: &str = "get, save";
+
+/// MCP tool definitions — 5 meta-commands mirroring tui_mcp_bridge
 fn mcp_tool_definitions() -> serde_json::Value {
     serde_json::json!([
         {
-            "name": "list_sessions",
-            "description": "List all active terminal sessions with their IDs, working directories, and worktree info",
+            "name": "session",
+            "description": "Manage PTY terminal sessions.\n\nActions (pass as 'action' parameter):\n- list: Returns [{session_id, cwd, worktree_path, worktree_branch}] for all active sessions. Call first to discover IDs.\n- create: Creates a new PTY session. Returns {session_id}. Optional: rows, cols, shell, cwd.\n- input: Sends text and/or a special key to a session. Requires session_id, plus input and/or special_key.\n- output: Returns {data, total_written} from session ring buffer. Requires session_id. Optional: limit.\n- resize: Resizes PTY dimensions. Requires session_id, rows, cols.\n- close: Terminates a session. Requires session_id.\n- pause: Pauses output buffering. Requires session_id.\n- resume: Resumes output buffering. Requires session_id.",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: list, create, input, output, resize, close, pause, resume" },
+                "session_id": { "type": "string", "description": "Session ID (required for input, output, resize, close, pause, resume)" },
+                "input": { "type": "string", "description": "Raw text to write (action=input)" },
+                "special_key": { "type": "string", "description": "Special key: enter, tab, ctrl+c, ctrl+d, ctrl+z, ctrl+l, ctrl+a, ctrl+e, ctrl+k, ctrl+u, ctrl+w, ctrl+r, up, down, left, right, home, end, backspace, delete, escape (action=input)" },
+                "rows": { "type": "integer", "description": "Terminal rows (action=create or resize)" },
+                "cols": { "type": "integer", "description": "Terminal cols (action=create or resize)" },
+                "shell": { "type": "string", "description": "Shell binary path (action=create)" },
+                "cwd": { "type": "string", "description": "Working directory (action=create)" },
+                "limit": { "type": "integer", "description": "Bytes to read, default 8192 (action=output)" }
+            }, "required": ["action"] }
+        },
+        {
+            "name": "git",
+            "description": "Query git repository state and GitHub integration.\n\nActions (pass as 'action' parameter):\n- info: Returns {name, branch, status, remote_url, is_dirty, ahead, behind}. Requires path.\n- diff: Returns {diff} with unified diff of unstaged changes. Requires path.\n- files: Returns [{path, status, insertions, deletions}] for changed files. Requires path.\n- branches: Returns [{name, is_current, is_remote}] branch list. Requires path.\n- github: Returns GitHub integration data (remote, PR, CI, ahead/behind). Requires path.\n- prs: Returns all open PR statuses with CI rollup. Requires path.",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: info, diff, files, branches, github, prs" },
+                "path": { "type": "string", "description": "Absolute path to git repository (required for all actions)" }
+            }, "required": ["action"] }
+        },
+        {
+            "name": "agent",
+            "description": "Detect and manage AI agents.\n\nActions (pass as 'action' parameter):\n- detect: Returns [{name, path, version}] for known agents (claude, codex, aider, goose, lazygit).\n- spawn: Launches an agent in a new PTY session. Requires prompt. Returns {session_id}. Use session action=input/output to interact.\n- stats: Returns {active_sessions, max_sessions, available_slots}.\n- metrics: Returns cumulative metrics {total_spawned, total_failed, active_sessions, bytes_emitted, pauses_triggered}.",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: detect, spawn, stats, metrics" },
+                "prompt": { "type": "string", "description": "Task prompt for the agent (action=spawn)" },
+                "cwd": { "type": "string", "description": "Working directory (action=spawn)" },
+                "model": { "type": "string", "description": "Model override (action=spawn)" },
+                "print_mode": { "type": "boolean", "description": "Non-interactive mode (action=spawn)" },
+                "output_format": { "type": "string", "description": "Output format, e.g. 'json' (action=spawn)" },
+                "agent_type": { "type": "string", "description": "Agent binary: claude, codex, aider, goose (action=spawn)" },
+                "binary_path": { "type": "string", "description": "Override agent binary path (action=spawn)" },
+                "args": { "type": "array", "items": { "type": "string" }, "description": "Raw CLI args (action=spawn)" },
+                "rows": { "type": "integer", "description": "Terminal rows (action=spawn)" },
+                "cols": { "type": "integer", "description": "Terminal cols (action=spawn)" }
+            }, "required": ["action"] }
+        },
+        {
+            "name": "config",
+            "description": "Read or write app configuration.\n\nActions (pass as 'action' parameter):\n- get: Returns app config (shell, font, theme, worktree_dir, etc.). Password hash is stripped.\n- save: Persists configuration. Requires config object. Partial updates OK.",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: get, save" },
+                "config": { "type": "object", "description": "Config fields to save (action=save)" }
+            }, "required": ["action"] }
+        },
+        {
+            "name": "plugin_dev_guide",
+            "description": "Returns comprehensive plugin authoring reference: manifest format, PluginHost API (all 4 tiers), structured event types, and working examples. Call before writing any plugin code.",
             "inputSchema": { "type": "object", "properties": {}, "required": [] }
-        },
-        {
-            "name": "create_session",
-            "description": "Create a new terminal session (PTY). Returns session_id for subsequent operations.",
-            "inputSchema": { "type": "object", "properties": {
-                "rows": { "type": "integer", "description": "Terminal rows (default: 24)" },
-                "cols": { "type": "integer", "description": "Terminal columns (default: 80)" },
-                "shell": { "type": "string", "description": "Shell path (default: platform shell)" },
-                "cwd": { "type": "string", "description": "Working directory for the session" }
-            }, "required": [] }
-        },
-        {
-            "name": "send_input",
-            "description": "Send text or a special key to a terminal session. Use 'input' for text, 'special_key' for keys like 'enter', 'ctrl+c', 'tab', 'up', 'down', etc.",
-            "inputSchema": { "type": "object", "properties": {
-                "session_id": { "type": "string", "description": "Terminal session ID" },
-                "input": { "type": "string", "description": "Text to type into the terminal" },
-                "special_key": { "type": "string", "description": "Special key: enter, tab, ctrl+c, ctrl+d, ctrl+z, ctrl+l, ctrl+a, ctrl+e, ctrl+k, ctrl+u, ctrl+w, ctrl+r, up, down, left, right, home, end, backspace, delete, escape" }
-            }, "required": ["session_id"] }
-        },
-        {
-            "name": "get_output",
-            "description": "Read recent terminal output from a session's ring buffer (default 8KB, max 64KB)",
-            "inputSchema": { "type": "object", "properties": {
-                "session_id": { "type": "string", "description": "Terminal session ID" },
-                "limit": { "type": "integer", "description": "Max bytes to read (default 8192, max 65536)" }
-            }, "required": ["session_id"] }
-        },
-        {
-            "name": "resize_terminal",
-            "description": "Resize a terminal session",
-            "inputSchema": { "type": "object", "properties": {
-                "session_id": { "type": "string", "description": "Terminal session ID" },
-                "rows": { "type": "integer", "description": "Number of rows" },
-                "cols": { "type": "integer", "description": "Number of columns" }
-            }, "required": ["session_id", "rows", "cols"] }
-        },
-        {
-            "name": "close_session",
-            "description": "Close a terminal session. Sends Ctrl+C and waits briefly for graceful shutdown.",
-            "inputSchema": { "type": "object", "properties": {
-                "session_id": { "type": "string", "description": "Terminal session ID" }
-            }, "required": ["session_id"] }
-        },
-        {
-            "name": "pause_session",
-            "description": "Pause a terminal session's output reader (flow control)",
-            "inputSchema": { "type": "object", "properties": {
-                "session_id": { "type": "string", "description": "Terminal session ID" }
-            }, "required": ["session_id"] }
-        },
-        {
-            "name": "resume_session",
-            "description": "Resume a paused terminal session's output reader (flow control)",
-            "inputSchema": { "type": "object", "properties": {
-                "session_id": { "type": "string", "description": "Terminal session ID" }
-            }, "required": ["session_id"] }
-        },
-        {
-            "name": "get_stats",
-            "description": "Get orchestrator stats: active sessions, max sessions, available slots",
-            "inputSchema": { "type": "object", "properties": {}, "required": [] }
-        },
-        {
-            "name": "get_metrics",
-            "description": "Get session metrics: total spawned, failed spawns, bytes emitted, pauses triggered",
-            "inputSchema": { "type": "object", "properties": {}, "required": [] }
-        },
-        {
-            "name": "get_repo_info",
-            "description": "Get git repository info (branch, status, name) for a path",
-            "inputSchema": { "type": "object", "properties": {
-                "path": { "type": "string", "description": "Repository path" }
-            }, "required": ["path"] }
-        },
-        {
-            "name": "get_git_diff",
-            "description": "Get unified diff for a repository (unstaged changes)",
-            "inputSchema": { "type": "object", "properties": {
-                "path": { "type": "string", "description": "Repository path" }
-            }, "required": ["path"] }
-        },
-        {
-            "name": "get_changed_files",
-            "description": "Get list of changed files with status and per-file +/- stats",
-            "inputSchema": { "type": "object", "properties": {
-                "path": { "type": "string", "description": "Repository path" }
-            }, "required": ["path"] }
-        },
-        {
-            "name": "get_github_status",
-            "description": "Get GitHub status: remote info, current branch, PR status, CI status, ahead/behind counts",
-            "inputSchema": { "type": "object", "properties": {
-                "path": { "type": "string", "description": "Repository path" }
-            }, "required": ["path"] }
-        },
-        {
-            "name": "get_pr_statuses",
-            "description": "Get all PR statuses for a repository (branch, title, state, CI checks, review decision)",
-            "inputSchema": { "type": "object", "properties": {
-                "path": { "type": "string", "description": "Repository path" }
-            }, "required": ["path"] }
-        },
-        {
-            "name": "get_branches",
-            "description": "Get list of git branches (local and remote) with current branch indicator",
-            "inputSchema": { "type": "object", "properties": {
-                "path": { "type": "string", "description": "Repository path" }
-            }, "required": ["path"] }
-        },
-        {
-            "name": "get_config",
-            "description": "Get TUI Commander application configuration",
-            "inputSchema": { "type": "object", "properties": {}, "required": [] }
-        },
-        {
-            "name": "save_config",
-            "description": "Save TUI Commander application configuration",
-            "inputSchema": { "type": "object", "properties": {
-                "config": { "type": "object", "description": "Configuration object with fields: shell, font_family, font_size, theme, worktree_dir, mcp_server_enabled" }
-            }, "required": ["config"] }
-        },
-        {
-            "name": "detect_agents",
-            "description": "Detect installed AI agent binaries (claude, codex, aider, goose, lazygit)",
-            "inputSchema": { "type": "object", "properties": {}, "required": [] }
-        },
-        {
-            "name": "spawn_agent",
-            "description": "Spawn an AI agent in a new terminal session. Returns session_id to interact with the agent.",
-            "inputSchema": { "type": "object", "properties": {
-                "prompt": { "type": "string", "description": "Prompt/task for the agent" },
-                "cwd": { "type": "string", "description": "Working directory" },
-                "model": { "type": "string", "description": "Model to use (if supported by agent)" },
-                "print_mode": { "type": "boolean", "description": "Use --print mode (non-interactive)" },
-                "output_format": { "type": "string", "description": "Output format (e.g., 'json')" },
-                "agent_type": { "type": "string", "description": "Agent binary name (default: claude)" },
-                "binary_path": { "type": "string", "description": "Explicit path to agent binary" },
-                "args": { "type": "array", "items": { "type": "string" }, "description": "Custom args (overrides default arg building)" },
-                "rows": { "type": "integer", "description": "Terminal rows (default: 24)" },
-                "cols": { "type": "integer", "description": "Terminal columns (default: 80)" }
-            }, "required": ["prompt"] }
         }
     ])
 }
@@ -206,10 +117,51 @@ fn translate_special_key(key: &str) -> Option<&'static str> {
     }
 }
 
+/// Extract action from args, returning a guidance error if missing
+fn require_action<'a>(args: &'a serde_json::Value, tool: &str, available: &str) -> Result<&'a str, serde_json::Value> {
+    args["action"]
+        .as_str()
+        .ok_or_else(|| serde_json::json!({"error": format!("Missing 'action'. Available actions for '{}': {}", tool, available)}))
+}
+
+/// Extract session_id from args with guidance error
+fn require_session_id<'a>(args: &'a serde_json::Value, action: &str) -> Result<&'a str, serde_json::Value> {
+    args["session_id"]
+        .as_str()
+        .ok_or_else(|| serde_json::json!({"error": format!("Action '{}' requires 'session_id'. Get valid IDs with session action='list'", action)}))
+}
+
+/// Extract path from args with guidance error
+fn require_path(args: &serde_json::Value, action: &str) -> Result<String, serde_json::Value> {
+    args["path"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| serde_json::json!({"error": format!("Action '{}' requires 'path' (absolute path to git repository)", action)}))
+}
+
 /// Handle an MCP tools/call request, executing against the app state directly (no HTTP round-trip)
 fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Value) -> serde_json::Value {
     match name {
-        "list_sessions" => {
+        "session" => handle_session(state, args),
+        "git" => handle_git(state, args),
+        "agent" => handle_agent(state, args),
+        "config" => handle_config(state, args),
+        "plugin_dev_guide" => {
+            serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
+        }
+        _ => serde_json::json!({"error": format!(
+            "Unknown tool '{}'. Available: session, git, agent, config, plugin_dev_guide", name
+        )}),
+    }
+}
+
+fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "session", SESSION_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "list" => {
             let sessions: Vec<serde_json::Value> = state.sessions.iter().map(|entry| {
                 let id = entry.key().clone();
                 let s = entry.value().lock();
@@ -222,8 +174,7 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
             }).collect();
             serde_json::json!(sessions)
         }
-        "create_session" => {
-            // Delegate to the HTTP handler logic by creating the session directly
+        "create" => {
             if state.sessions.len() >= MAX_CONCURRENT_SESSIONS {
                 return serde_json::json!({"error": "Max concurrent sessions reached"});
             }
@@ -265,10 +216,10 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
             spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
             serde_json::json!({"session_id": session_id})
         }
-        "send_input" => {
-            let session_id = match args["session_id"].as_str() {
-                Some(id) => id,
-                None => return serde_json::json!({"error": "missing session_id"}),
+        "input" => {
+            let session_id = match require_session_id(args, "input") {
+                Ok(id) => id,
+                Err(e) => return e,
             };
             let mut data = String::new();
             if let Some(input) = args["input"].as_str() { data.push_str(input); }
@@ -279,7 +230,7 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
                 }
             }
             if data.is_empty() {
-                return serde_json::json!({"error": "Either 'input' or 'special_key' must be provided"});
+                return serde_json::json!({"error": "Action 'input' requires 'input' (text) and/or 'special_key'"});
             }
             let entry = match state.sessions.get(session_id) {
                 Some(e) => e,
@@ -294,10 +245,10 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
             }
             serde_json::json!({"ok": true})
         }
-        "get_output" => {
-            let session_id = match args["session_id"].as_str() {
-                Some(id) => id,
-                None => return serde_json::json!({"error": "missing session_id"}),
+        "output" => {
+            let session_id = match require_session_id(args, "output") {
+                Ok(id) => id,
+                Err(e) => return e,
             };
             let limit = args["limit"].as_u64().unwrap_or(8192) as usize;
             let ring = match state.output_buffers.get(session_id) {
@@ -308,10 +259,10 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
             let data = String::from_utf8_lossy(&bytes).to_string();
             serde_json::json!({"data": data, "total_written": total_written})
         }
-        "resize_terminal" => {
-            let session_id = match args["session_id"].as_str() {
-                Some(id) => id,
-                None => return serde_json::json!({"error": "missing session_id"}),
+        "resize" => {
+            let session_id = match require_session_id(args, "resize") {
+                Ok(id) => id,
+                Err(e) => return e,
             };
             let rows = args["rows"].as_u64().unwrap_or(24) as u16;
             let cols = args["cols"].as_u64().unwrap_or(80) as u16;
@@ -327,10 +278,10 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
             }
             serde_json::json!({"ok": true})
         }
-        "close_session" => {
-            let session_id = match args["session_id"].as_str() {
-                Some(id) => id,
-                None => return serde_json::json!({"error": "missing session_id"}),
+        "close" => {
+            let session_id = match require_session_id(args, "close") {
+                Ok(id) => id,
+                Err(e) => return e,
             };
             if let Some((_, session_mutex)) = state.sessions.remove(session_id) {
                 state.output_buffers.remove(session_id);
@@ -343,10 +294,10 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
                 serde_json::json!({"error": "Session not found"})
             }
         }
-        "pause_session" => {
-            let session_id = match args["session_id"].as_str() {
-                Some(id) => id,
-                None => return serde_json::json!({"error": "missing session_id"}),
+        "pause" => {
+            let session_id = match require_session_id(args, "pause") {
+                Ok(id) => id,
+                Err(e) => return e,
             };
             let entry = match state.sessions.get(session_id) {
                 Some(e) => e,
@@ -355,10 +306,10 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
             entry.lock().paused.store(true, Ordering::Relaxed);
             serde_json::json!({"ok": true})
         }
-        "resume_session" => {
-            let session_id = match args["session_id"].as_str() {
-                Some(id) => id,
-                None => return serde_json::json!({"error": "missing session_id"}),
+        "resume" => {
+            let session_id = match require_session_id(args, "resume") {
+                Ok(id) => id,
+                Err(e) => return e,
             };
             let entry = match state.sessions.get(session_id) {
                 Some(e) => e,
@@ -367,27 +318,31 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
             entry.lock().paused.store(false, Ordering::Relaxed);
             serde_json::json!({"ok": true})
         }
-        "get_stats" => {
-            let stats = state.orchestrator_stats();
-            serde_json::to_value(stats).unwrap_or_default()
-        }
-        "get_metrics" => {
-            let metrics = state.session_metrics_json();
-            serde_json::to_value(metrics).unwrap_or_default()
-        }
-        "get_repo_info" => {
-            let path = match args["path"].as_str() {
-                Some(p) => p.to_string(),
-                None => return serde_json::json!({"error": "missing path"}),
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'session'. Available: {}", other, SESSION_ACTIONS
+        )}),
+    }
+}
+
+fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "git", GIT_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "info" => {
+            let path = match require_path(args, "info") {
+                Ok(p) => p,
+                Err(e) => return e,
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             let info = crate::git::get_repo_info_impl(&path);
             serde_json::to_value(info).unwrap_or_default()
         }
-        "get_git_diff" => {
-            let path = match args["path"].as_str() {
-                Some(p) => p.to_string(),
-                None => return serde_json::json!({"error": "missing path"}),
+        "diff" => {
+            let path = match require_path(args, "diff") {
+                Ok(p) => p,
+                Err(e) => return e,
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             match crate::git::get_git_diff(path, None) {
@@ -395,10 +350,10 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
                 Err(e) => serde_json::json!({"error": e}),
             }
         }
-        "get_changed_files" => {
-            let path = match args["path"].as_str() {
-                Some(p) => p.to_string(),
-                None => return serde_json::json!({"error": "missing path"}),
+        "files" => {
+            let path = match require_path(args, "files") {
+                Ok(p) => p,
+                Err(e) => return e,
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             match crate::git::get_changed_files(path, None) {
@@ -406,19 +361,30 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
                 Err(e) => serde_json::json!({"error": e}),
             }
         }
-        "get_github_status" => {
-            let path = match args["path"].as_str() {
-                Some(p) => p.to_string(),
-                None => return serde_json::json!({"error": "missing path"}),
+        "branches" => {
+            let path = match require_path(args, "branches") {
+                Ok(p) => p,
+                Err(e) => return e,
+            };
+            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
+            match crate::git::get_git_branches(path) {
+                Ok(branches) => serde_json::to_value(branches).unwrap_or_default(),
+                Err(e) => serde_json::json!({"error": e}),
+            }
+        }
+        "github" => {
+            let path = match require_path(args, "github") {
+                Ok(p) => p,
+                Err(e) => return e,
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             let status = crate::github::get_github_status_impl(&path);
             serde_json::to_value(status).unwrap_or_default()
         }
-        "get_pr_statuses" => {
-            let path = match args["path"].as_str() {
-                Some(p) => p.to_string(),
-                None => return serde_json::json!({"error": "missing path"}),
+        "prs" => {
+            let path = match require_path(args, "prs") {
+                Ok(p) => p,
+                Err(e) => return e,
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             let statuses = crate::github::get_repo_pr_statuses_impl(
@@ -427,43 +393,19 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
             );
             serde_json::to_value(statuses).unwrap_or_default()
         }
-        "get_branches" => {
-            let path = match args["path"].as_str() {
-                Some(p) => p.to_string(),
-                None => return serde_json::json!({"error": "missing path"}),
-            };
-            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
-            match crate::git::get_git_branches(path) {
-                Ok(branches) => serde_json::to_value(branches).unwrap_or_default(),
-                Err(e) => serde_json::json!({"error": e}),
-            }
-        }
-        "get_config" => {
-            let config = state.config.read().unwrap().clone();
-            let mut json = serde_json::to_value(config).unwrap_or_default();
-            if let Some(obj) = json.as_object_mut() {
-                obj.remove("remote_access_password_hash");
-            }
-            json
-        }
-        "save_config" => {
-            let config_val = match args.get("config") {
-                Some(c) => c,
-                None => return serde_json::json!({"error": "missing config"}),
-            };
-            let config: crate::config::AppConfig = match serde_json::from_value(config_val.clone()) {
-                Ok(c) => c,
-                Err(e) => return serde_json::json!({"error": format!("Invalid config: {}", e)}),
-            };
-            match crate::config::save_app_config(config.clone()) {
-                Ok(()) => {
-                    *state.config.write().unwrap() = config;
-                    serde_json::json!({"ok": true})
-                }
-                Err(e) => serde_json::json!({"error": e}),
-            }
-        }
-        "detect_agents" => {
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'git'. Available: {}", other, GIT_ACTIONS
+        )}),
+    }
+}
+
+fn handle_agent(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "agent", AGENT_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "detect" => {
             let known = ["claude", "codex", "aider", "goose", "lazygit"];
             let results: Vec<serde_json::Value> = known.iter().map(|name| {
                 let det = crate::agent::detect_agent_binary(name.to_string());
@@ -471,10 +413,10 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
             }).collect();
             serde_json::json!(results)
         }
-        "spawn_agent" => {
+        "spawn" => {
             let prompt = match args["prompt"].as_str() {
                 Some(p) => p.to_string(),
-                None => return serde_json::json!({"error": "missing prompt"}),
+                None => return serde_json::json!({"error": "Action 'spawn' requires 'prompt'"}),
             };
             let _body = SpawnAgentRequest {
                 rows: args["rows"].as_u64().map(|v| v as u16),
@@ -488,10 +430,56 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, name: &str, args: &serde_json::Va
                 binary_path: args["binary_path"].as_str().map(|s| s.to_string()),
                 args: args.get("args").and_then(|a| serde_json::from_value(a.clone()).ok()),
             };
-            // Reuse the HTTP handler's agent spawn logic is complex; call it inline
-            serde_json::json!({"error": "spawn_agent via SSE not yet implemented — use REST API"})
+            serde_json::json!({"error": "agent action='spawn' via SSE not yet implemented — use the bridge binary or REST API POST /sessions/agent"})
         }
-        _ => serde_json::json!({"error": format!("Unknown tool: {}", name)}),
+        "stats" => {
+            let stats = state.orchestrator_stats();
+            serde_json::to_value(stats).unwrap_or_default()
+        }
+        "metrics" => {
+            let metrics = state.session_metrics_json();
+            serde_json::to_value(metrics).unwrap_or_default()
+        }
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'agent'. Available: {}", other, AGENT_ACTIONS
+        )}),
+    }
+}
+
+fn handle_config(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "config", CONFIG_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "get" => {
+            let config = state.config.read().unwrap().clone();
+            let mut json = serde_json::to_value(config).unwrap_or_default();
+            if let Some(obj) = json.as_object_mut() {
+                obj.remove("remote_access_password_hash");
+            }
+            json
+        }
+        "save" => {
+            let config_val = match args.get("config") {
+                Some(c) => c,
+                None => return serde_json::json!({"error": "Action 'save' requires 'config' object"}),
+            };
+            let config: crate::config::AppConfig = match serde_json::from_value(config_val.clone()) {
+                Ok(c) => c,
+                Err(e) => return serde_json::json!({"error": format!("Invalid config: {}", e)}),
+            };
+            match crate::config::save_app_config(config.clone()) {
+                Ok(()) => {
+                    *state.config.write().unwrap() = config;
+                    serde_json::json!({"ok": true})
+                }
+                Err(e) => serde_json::json!({"error": e}),
+            }
+        }
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'config'. Available: {}", other, CONFIG_ACTIONS
+        )}),
     }
 }
 

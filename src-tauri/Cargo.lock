@@ -5647,6 +5647,7 @@ dependencies = [
  "include_dir",
  "keepawake",
  "lazy_static",
+ "libc",
  "mime_guess",
  "notify",
  "notify-debouncer-mini",
