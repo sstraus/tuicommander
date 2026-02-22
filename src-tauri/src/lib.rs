@@ -13,6 +13,7 @@ mod menu;
 mod output_parser;
 pub(crate) mod plugins;
 pub(crate) mod prompt;
+pub(crate) mod registry;
 pub(crate) mod pty;
 pub(crate) mod sleep_prevention;
 pub(crate) mod state;
@@ -606,7 +607,8 @@ pub fn run() {
             plugins::delete_plugin_data,
             plugins::install_plugin_from_zip,
             plugins::install_plugin_from_url,
-            plugins::uninstall_plugin
+            plugins::uninstall_plugin,
+            registry::fetch_plugin_registry
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

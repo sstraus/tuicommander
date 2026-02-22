@@ -1,4 +1,109 @@
-/* PluginsTab — plugin list and log viewer styles */
+/* PluginsTab — plugin list, browse, and log viewer styles */
+
+/* Sub-tab switcher */
+
+.subTabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.subTab {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  padding: 4px 12px 6px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.subTab:hover {
+  color: var(--fg-primary);
+}
+
+.subTab.subTabActive {
+  color: var(--fg-primary);
+  border-bottom-color: var(--accent);
+}
+
+/* Browse view */
+
+.browseHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.refreshBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.refreshBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.refreshBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.browseRow {
+  background: var(--bg-primary);
+}
+
+.installBtn {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: var(--font-sm);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.installBtn:hover {
+  background: rgba(88, 166, 255, 0.1);
+}
+
+.installBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.updateBadge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent);
+}
+
+.installedBadge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+}
 
 .pluginList {
   display: flex;

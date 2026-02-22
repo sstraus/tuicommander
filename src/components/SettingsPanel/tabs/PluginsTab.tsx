@@ -1,6 +1,7 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { pluginStore } from "../../../stores/pluginStore";
+import { registryStore, type RegistryEntry } from "../../../stores/registryStore";
 import { setPluginEnabled } from "../../../plugins/pluginLoader";
 import { invoke } from "../../../invoke";
 import type { PluginState } from "../../../stores/pluginStore";
@@ -143,6 +144,69 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
   );
 };
 
+/** Single row in the Browse registry view */
+const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
+  const [installing, setInstalling] = createSignal(false);
+
+  const installed = () => pluginStore.getPlugin(props.entry.id);
+  const isInstalled = () => !!installed();
+  const updateAvailable = () => {
+    const p = installed();
+    if (!p?.manifest?.version) return false;
+    return registryStore.hasUpdate(props.entry.id, p.manifest.version) !== null;
+  };
+
+  const handleInstall = async () => {
+    if (installing()) return;
+    setInstalling(true);
+    try {
+      await invoke("install_plugin_from_url", { url: props.entry.downloadUrl });
+    } catch (err) {
+      console.error(`Failed to install plugin "${props.entry.id}":`, err);
+      alert(`Installation failed: ${err}`);
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  return (
+    <div class={ps.browseRow}>
+      <div class={ps.pluginHeader}>
+        <div class={ps.pluginInfo}>
+          <div class={ps.pluginNameRow}>
+            <span class={ps.pluginName}>{props.entry.name}</span>
+            <span class={ps.pluginVersion}>v{props.entry.latestVersion}</span>
+            <Show when={isInstalled() && !updateAvailable()}>
+              <span class={ps.installedBadge}>Installed</span>
+            </Show>
+            <Show when={updateAvailable()}>
+              <span class={ps.updateBadge}>Update available</span>
+            </Show>
+          </div>
+          <Show when={props.entry.description}>
+            <p class={ps.pluginDescription}>{props.entry.description}</p>
+          </Show>
+          <Show when={props.entry.author}>
+            <p class={ps.pluginCapabilities}>by {props.entry.author}</p>
+          </Show>
+        </div>
+
+        <div class={ps.pluginActions}>
+          <Show when={!isInstalled() || updateAvailable()}>
+            <button
+              class={ps.installBtn}
+              onClick={handleInstall}
+              disabled={installing()}
+            >
+              {installing() ? "..." : updateAvailable() ? "Update" : "Install"}
+            </button>
+          </Show>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ---------------------------------------------------------------------------
 // Main tab
 // ---------------------------------------------------------------------------
@@ -150,6 +214,13 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
 export const PluginsTab: Component = () => {
   const plugins = () => pluginStore.getAll();
   const [installing, setInstalling] = createSignal(false);
+  const [activeSubTab, setActiveSubTab] = createSignal<"installed" | "browse">("installed");
+
+  // Fetch registry when Browse tab is first shown
+  const handleBrowse = () => {
+    setActiveSubTab("browse");
+    registryStore.fetch();
+  };
 
   const handleInstallFromFile = async () => {
     if (installing()) return;
@@ -175,28 +246,83 @@ export const PluginsTab: Component = () => {
     <div class={s.section}>
       <h3>Plugins</h3>
 
-      <Show
-        when={plugins().length > 0}
-        fallback={
-          <p class={s.hint}>No plugins installed. Place plugin folders in the plugins directory or install from a ZIP file.</p>
-        }
-      >
-        <div class={ps.pluginList}>
-          <For each={plugins() as PluginState[]}>
-            {(plugin) => <PluginRow plugin={plugin} />}
-          </For>
+      <div class={ps.subTabs}>
+        <button
+          class={ps.subTab}
+          classList={{ [ps.subTabActive]: activeSubTab() === "installed" }}
+          onClick={() => setActiveSubTab("installed")}
+        >
+          Installed
+        </button>
+        <button
+          class={ps.subTab}
+          classList={{ [ps.subTabActive]: activeSubTab() === "browse" }}
+          onClick={handleBrowse}
+        >
+          Browse
+        </button>
+      </div>
+
+      {/* Installed tab */}
+      <Show when={activeSubTab() === "installed"}>
+        <Show
+          when={plugins().length > 0}
+          fallback={
+            <p class={s.hint}>No plugins installed. Place plugin folders in the plugins directory or install from a ZIP file.</p>
+          }
+        >
+          <div class={ps.pluginList}>
+            <For each={plugins() as PluginState[]}>
+              {(plugin) => <PluginRow plugin={plugin} />}
+            </For>
+          </div>
+        </Show>
+
+        <div class={ps.installRow}>
+          <button
+            class={s.testBtn}
+            onClick={handleInstallFromFile}
+            disabled={installing()}
+          >
+            {installing() ? "Installing..." : "Install from file..."}
+          </button>
         </div>
       </Show>
 
-      <div class={ps.installRow}>
-        <button
-          class={s.testBtn}
-          onClick={handleInstallFromFile}
-          disabled={installing()}
+      {/* Browse tab */}
+      <Show when={activeSubTab() === "browse"}>
+        <div class={ps.browseHeader}>
+          <p class={s.hint} style={{ margin: "0" }}>
+            Discover plugins from the community registry.
+          </p>
+          <button
+            class={ps.refreshBtn}
+            onClick={() => registryStore.refresh()}
+            disabled={registryStore.state.loading}
+          >
+            {registryStore.state.loading ? "Loading..." : "Refresh"}
+          </button>
+        </div>
+
+        <Show when={registryStore.state.error}>
+          <p class={ps.pluginError}>{registryStore.state.error}</p>
+        </Show>
+
+        <Show
+          when={registryStore.state.entries.length > 0}
+          fallback={
+            <Show when={!registryStore.state.loading && !registryStore.state.error}>
+              <p class={s.hint}>No plugins available in the registry yet.</p>
+            </Show>
+          }
         >
-          {installing() ? "Installing..." : "Install from file..."}
-        </button>
-      </div>
+          <div class={ps.pluginList}>
+            <For each={registryStore.state.entries}>
+              {(entry) => <BrowseRow entry={entry} />}
+            </For>
+          </div>
+        </Show>
+      </Show>
     </div>
   );
 };
