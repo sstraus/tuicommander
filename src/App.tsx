@@ -371,6 +371,11 @@ const App: Component = () => {
       terminalsStore.reattach(tabId);
       terminalLifecycle.handleTerminalSelect(tabId);
       setStatusInfo("Tab reattached");
+      // Force fit after the pane becomes visible again — the xterm canvas
+      // may have lost its WebGL context while hidden with display:none.
+      setTimeout(() => {
+        terminalsStore.get(tabId)?.ref?.fit();
+      }, 150);
     }).then((fn) => { unlisten = fn; }).catch((err) => console.error("[Reattach] Failed to listen:", err));
 
     onCleanup(() => unlisten?.());

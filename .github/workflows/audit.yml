@@ -1,0 +1,80 @@
+name: Dependency Audit
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  audit:
+    name: Security audit
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: npm audit
+        id: npm_audit
+        continue-on-error: true
+        run: |
+          set +e
+          OUTPUT=$(npm audit --audit-level=high 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          # Save output for issue body (truncate if huge)
+          echo "$OUTPUT" | head -100 > /tmp/npm-audit.txt
+
+      - name: cargo audit
+        id: cargo_audit
+        continue-on-error: true
+        working-directory: src-tauri
+        run: |
+          set +e
+          OUTPUT=$(cargo audit 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          echo "$OUTPUT" | head -100 > /tmp/cargo-audit.txt
+
+      - name: Create issue if vulnerabilities found
+        if: steps.npm_audit.outputs.exit_code != '0' || steps.cargo_audit.outputs.exit_code != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BODY="## Dependency Audit — $(date -u +%Y-%m-%d)"
+          BODY="$BODY"$'\n\n'"Automated weekly audit found vulnerabilities."
+
+          if [ "${{ steps.npm_audit.outputs.exit_code }}" != "0" ]; then
+            BODY="$BODY"$'\n\n'"### npm audit"$'\n\n'"<details><summary>Output</summary>"$'\n\n'"\`\`\`"$'\n'"$(cat /tmp/npm-audit.txt)"$'\n'"\`\`\`"$'\n'"</details>"
+          fi
+
+          if [ "${{ steps.cargo_audit.outputs.exit_code }}" != "0" ]; then
+            BODY="$BODY"$'\n\n'"### cargo audit"$'\n\n'"<details><summary>Output</summary>"$'\n\n'"\`\`\`"$'\n'"$(cat /tmp/cargo-audit.txt)"$'\n'"\`\`\`"$'\n'"</details>"
+          fi
+
+          # Check if an open audit issue already exists to avoid duplicates
+          EXISTING=$(gh issue list --label "security" --state open --search "Dependency Audit" --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+            echo "Updated existing issue #$EXISTING"
+          else
+            gh issue create \
+              --title "Dependency Audit: vulnerabilities found ($(date -u +%Y-%m-%d))" \
+              --body "$BODY" \
+              --label "security,P1: high"
+          fi
