@@ -1,0 +1,33 @@
+/* Shared git status indicators (FileBrowserPanel, MarkdownPanel) */
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.modified {
+  background: #5e98f7;
+}
+
+.staged {
+  background: #22c55e;
+}
+
+.untracked {
+  background: #9ca3af;
+}
+
+.legend {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+}

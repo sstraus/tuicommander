@@ -5,6 +5,11 @@ import { mdTabsStore } from "../../stores/mdTabs";
 import { getModifierSymbol } from "../../platform";
 import { globToRegex } from "../../utils";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import p from "../shared/panel.module.css";
+import g from "../shared/git-status.module.css";
+import s from "./MarkdownPanel.module.css";
 
 /** Markdown file entry from Rust backend */
 interface MdFileEntry {
@@ -21,9 +26,9 @@ export interface MarkdownPanelProps {
 /** Git status badge CSS class (shared pattern with FileBrowser) */
 const getStatusClass = (status: string): string => {
   switch (status) {
-    case "modified": return "fb-status-modified";
-    case "staged": return "fb-status-staged";
-    case "untracked": return "fb-status-untracked";
+    case "modified": return g.modified;
+    case "staged": return g.staged;
+    case "untracked": return g.untracked;
     default: return "";
   }
 };
@@ -47,7 +52,6 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
   createEffect(() => {
     const visible = props.visible;
     const repoPath = props.repoPath;
-    // Track repo revision so this effect re-runs on git operations
     void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 
     if (!visible || !repoPath) {
@@ -71,7 +75,6 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
     })();
   });
 
-  // Handle file click - open markdown in new tab
   const handleFileClick = (filePath: string) => {
     if (!props.repoPath) return;
     mdTabsStore.add(props.repoPath, filePath);
@@ -98,76 +101,80 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
   };
 
   return (
-    <div id="markdown-panel" class={props.visible ? "" : "hidden"}>
+    <div id="markdown-panel" class={cx(s.panel, !props.visible && s.hidden)}>
       <PanelResizeHandle panelId="markdown-panel" />
-      <div class="panel-header">
-        <div class="panel-header-left">
-          <span class="panel-title">Markdown Files</span>
+      <div class={p.header}>
+        <div class={p.headerLeft}>
+          <span class={p.title}>{t("markdownPanel.title", "Markdown Files")}</span>
           <Show when={!loading() && filteredFiles().length > 0}>
-            <span class="file-count-badge">{filteredFiles().length}</span>
+            <span class={p.fileCountBadge}>{filteredFiles().length}</span>
           </Show>
-          <span class="panel-header-sep" />
-          <div class="fb-legend">
-            <span class="fb-legend-item" title="Modified (unstaged changes)"><span class="fb-status-dot fb-status-modified" /> mod</span>
-            <span class="fb-legend-item" title="Staged for commit"><span class="fb-status-dot fb-status-staged" /> staged</span>
-            <span class="fb-legend-item" title="Untracked (new file)"><span class="fb-status-dot fb-status-untracked" /> new</span>
+          <span class={p.headerSep} />
+          <div class={g.legend}>
+            <span class={g.legendItem} title={t("markdownPanel.modified", "Modified (unstaged changes)")}><span class={cx(g.dot, g.modified)} /> mod</span>
+            <span class={g.legendItem} title={t("markdownPanel.staged", "Staged for commit")}><span class={cx(g.dot, g.staged)} /> staged</span>
+            <span class={g.legendItem} title={t("markdownPanel.untracked", "Untracked (new file)")}><span class={cx(g.dot, g.untracked)} /> new</span>
           </div>
         </div>
-        <button class="panel-close" onClick={props.onClose} title={`Close (${getModifierSymbol()}M)`}>
+        <button class={p.close} onClick={props.onClose} title={`${t("markdownPanel.close", "Close")} (${getModifierSymbol()}M)`}>
           &times;
         </button>
       </div>
 
       {/* Search filter */}
-      <div class="panel-search">
+      <div class={p.search}>
         <input
           type="text"
-          class="panel-search-input"
-          placeholder="Filter... (*, ** wildcards)"
+          class={p.searchInput}
+          placeholder={t("markdownPanel.filter", "Filter... (*, ** wildcards)")}
           value={searchQuery()}
           onInput={(e) => setSearchQuery(e.currentTarget.value)}
         />
         <Show when={searchQuery()}>
-          <button class="panel-search-clear" onClick={() => setSearchQuery("")}>&times;</button>
+          <button class={p.searchClear} onClick={() => setSearchQuery("")}>&times;</button>
         </Show>
       </div>
 
-      <div class="panel-content">
+      <div class={p.content}>
         <Show when={loading()}>
-          <div class="markdown-loading">Loading files...</div>
+          <div class={s.empty}>{t("markdownPanel.loading", "Loading files...")}</div>
         </Show>
 
         <Show when={error()}>
-          <div class="markdown-error">Error: {error()}</div>
+          <div class={s.error}>{t("markdownPanel.error", "Error:")} {error()}</div>
         </Show>
 
         <Show when={!loading() && !error() && filteredFiles().length === 0}>
-          <div class="markdown-empty">
-            {!props.repoPath ? "No repository selected" : searchQuery() ? "No matches" : "No markdown files found"}
+          <div class={s.empty}>
+            {!props.repoPath
+              ? t("markdownPanel.noRepo", "No repository selected")
+              : searchQuery()
+              ? t("markdownPanel.noMatches", "No matches")
+              : t("markdownPanel.noFiles", "No markdown files found")}
           </div>
         </Show>
 
         <Show when={!loading() && !error() && filteredFiles().length > 0}>
-          <div class="file-list md-file-list">
+          <div class={s.fileList}>
             <For each={Object.entries(groupedFiles()).sort(([a], [b]) => a.localeCompare(b))}>
               {([dir, dirEntries]) => (
                 <>
                   <Show when={dir !== "/"}>
-                    <div class="md-dir-header">{dir}/</div>
+                    <div class={s.dirHeader}>{dir}/</div>
                   </Show>
                   <For each={dirEntries.sort((a, b) => a.path.localeCompare(b.path))}>
                     {(entry) => {
                       const fileName = entry.path.split("/").pop() || entry.path;
                       return (
                         <div
-                          class="file-item md-file-item"
+                          class={s.fileItem}
                           onClick={() => handleFileClick(entry.path)}
                           title={entry.path}
                         >
-                          <span class="md-file-icon">{"\u{1F4C4}"}</span>
-                          <div class="file-name">{fileName}</div>
+                          <span class={s.fileIcon}>{"\u{1F4C4}"}</span>
+                          <div class={s.fileName}>{fileName}</div>
                           <Show when={entry.git_status}>
-                            <span class={`fb-status-dot ${getStatusClass(entry.git_status)}`} title={entry.git_status} />
+                            <span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />
                           </Show>
                         </div>
                       );

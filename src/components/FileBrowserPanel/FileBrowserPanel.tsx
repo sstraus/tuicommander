@@ -6,7 +6,12 @@ import { globToRegex } from "../../utils";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { PromptDialog } from "../PromptDialog";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
 import type { DirEntry } from "../../types/fs";
+import p from "../shared/panel.module.css";
+import g from "../shared/git-status.module.css";
+import s from "./FileBrowserPanel.module.css";
 
 export interface FileBrowserPanelProps {
   visible: boolean;
@@ -22,6 +27,16 @@ function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/** Git status badge CSS class */
+const getStatusClass = (status: string): string => {
+  switch (status) {
+    case "modified": return g.modified;
+    case "staged": return g.staged;
+    case "untracked": return g.untracked;
+    default: return "";
+  }
+};
 
 export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   const [entries, setEntries] = createSignal<DirEntry[]>([]);
@@ -125,16 +140,6 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     }
   };
 
-  // Git status badge color
-  const getStatusClass = (status: string): string => {
-    switch (status) {
-      case "modified": return "fb-status-modified";
-      case "staged": return "fb-status-staged";
-      case "untracked": return "fb-status-untracked";
-      default: return "";
-    }
-  };
-
   // Context menu actions
   const handleRename = (entry: DirEntry) => {
     setRenameTarget(entry);
@@ -215,19 +220,19 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
     if (!entry.is_dir) {
       items.push({
-        label: "Copy",
+        label: t("fileBrowser.copy", "Copy"),
         shortcut: `${mod}C`,
         action: () => handleCopy(entry),
       });
       items.push({
-        label: "Cut",
+        label: t("fileBrowser.cut", "Cut"),
         shortcut: `${mod}X`,
         action: () => handleCut(entry),
       });
     }
 
     items.push({
-      label: "Paste",
+      label: t("fileBrowser.paste", "Paste"),
       shortcut: `${mod}V`,
       action: handlePaste,
       disabled: !clipboard(),
@@ -235,19 +240,19 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     });
 
     items.push({
-      label: "Rename\u2026",
+      label: t("fileBrowser.rename", "Rename\u2026"),
       action: () => handleRename(entry),
     });
 
     if (!entry.is_dir) {
       items.push({
-        label: "Delete",
+        label: t("fileBrowser.delete", "Delete"),
         action: () => handleDelete(entry),
       });
     }
 
     items.push({
-      label: "Add to .gitignore",
+      label: t("fileBrowser.addGitignore", "Add to .gitignore"),
       action: () => handleAddToGitignore(entry),
       disabled: entry.is_ignored,
       separator: true,
@@ -326,32 +331,32 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   });
 
   return (
-    <div id="file-browser-panel" class={props.visible ? "" : "hidden"} tabIndex={-1}>
+    <div id="file-browser-panel" class={cx(s.panel, !props.visible && s.hidden)} tabIndex={-1}>
       <PanelResizeHandle panelId="file-browser-panel" />
-      <div class="panel-header">
-        <div class="panel-header-left">
-          <span class="panel-title">Files</span>
+      <div class={p.header}>
+        <div class={p.headerLeft}>
+          <span class={p.title}>{t("fileBrowser.title", "Files")}</span>
           <Show when={!loading() && entries().length > 0}>
-            <span class="file-count-badge">{entries().length}</span>
+            <span class={p.fileCountBadge}>{entries().length}</span>
           </Show>
-          <span class="panel-header-sep" />
-          <div class="fb-legend">
-            <span class="fb-legend-item" title="Modified (unstaged changes)"><span class="fb-status-dot fb-status-modified" /> mod</span>
-            <span class="fb-legend-item" title="Staged for commit"><span class="fb-status-dot fb-status-staged" /> staged</span>
-            <span class="fb-legend-item" title="Untracked (new file)"><span class="fb-status-dot fb-status-untracked" /> new</span>
+          <span class={p.headerSep} />
+          <div class={g.legend}>
+            <span class={g.legendItem} title={t("fileBrowser.modified", "Modified (unstaged changes)")}><span class={cx(g.dot, g.modified)} /> mod</span>
+            <span class={g.legendItem} title={t("fileBrowser.staged", "Staged for commit")}><span class={cx(g.dot, g.staged)} /> staged</span>
+            <span class={g.legendItem} title={t("fileBrowser.untracked", "Untracked (new file)")}><span class={cx(g.dot, g.untracked)} /> new</span>
           </div>
         </div>
-        <button class="panel-close" onClick={props.onClose} title={`Close (${getModifierSymbol()}E)`}>
+        <button class={p.close} onClick={props.onClose} title={`${t("fileBrowser.close", "Close")} (${getModifierSymbol()}E)`}>
           &times;
         </button>
       </div>
 
       {/* Search filter */}
-      <div class="panel-search">
+      <div class={p.search}>
         <input
           type="text"
-          class="panel-search-input"
-          placeholder="Filter... (*, ** wildcards)"
+          class={p.searchInput}
+          placeholder={t("fileBrowser.filter", "Filter... (*, ** wildcards)")}
           value={searchQuery()}
           onInput={(e) => {
             setSearchQuery(e.currentTarget.value);
@@ -359,23 +364,22 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
           }}
         />
         <Show when={searchQuery()}>
-          <button class="panel-search-clear" onClick={() => { setSearchQuery(""); setSelectedIndex(0); }}>&times;</button>
+          <button class={p.searchClear} onClick={() => { setSearchQuery(""); setSelectedIndex(0); }}>&times;</button>
         </Show>
       </div>
 
       {/* Breadcrumb navigation */}
       <Show when={breadcrumbs().length > 0}>
-        <div class="fb-breadcrumb">
-          <span class="fb-breadcrumb-segment fb-breadcrumb-root" onClick={() => handleBreadcrumbClick(-1)}>
+        <div class={s.breadcrumb}>
+          <span class={s.breadcrumbSegment} onClick={() => handleBreadcrumbClick(-1)}>
             /
           </span>
           <For each={breadcrumbs()}>
             {(segment, index) => (
               <>
-                <span class="fb-breadcrumb-sep">/</span>
+                <span class={s.breadcrumbSep}>/</span>
                 <span
-                  class="fb-breadcrumb-segment"
-                  classList={{ "fb-breadcrumb-current": index() === breadcrumbs().length - 1 }}
+                  class={cx(s.breadcrumbSegment, index() === breadcrumbs().length - 1 && s.breadcrumbCurrent)}
                   onClick={() => handleBreadcrumbClick(index())}
                 >
                   {segment}
@@ -386,53 +390,57 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         </div>
       </Show>
 
-      <div class="panel-content">
+      <div class={p.content}>
         <Show when={loading()}>
-          <div class="fb-empty">Loading...</div>
+          <div class={s.empty}>{t("fileBrowser.loading", "Loading...")}</div>
         </Show>
 
         <Show when={error()}>
-          <div class="fb-empty fb-error">Error: {error()}</div>
+          <div class={cx(s.empty, s.error)}>{t("fileBrowser.error", "Error:")} {error()}</div>
         </Show>
 
         <Show when={!loading() && !error() && filteredEntries().length === 0}>
-          <div class="fb-empty">
-            {!props.repoPath ? "No repository selected" : searchQuery() ? "No matches" : "Empty directory"}
+          <div class={s.empty}>
+            {!props.repoPath
+              ? t("fileBrowser.noRepo", "No repository selected")
+              : searchQuery()
+              ? t("fileBrowser.noMatches", "No matches")
+              : t("fileBrowser.emptyDir", "Empty directory")}
           </div>
         </Show>
 
         <Show when={!loading() && !error() && filteredEntries().length > 0}>
           {/* Go up entry when in a subdirectory */}
           <Show when={currentSubdir() !== "." && currentSubdir() !== ""}>
-            <div class="fb-entry fb-entry-up" onClick={navigateUp}>
-              <span class="fb-entry-icon">..</span>
-              <span class="fb-entry-name">(parent)</span>
+            <div class={cx(s.entry, s.entryUp)} onClick={navigateUp}>
+              <span class={s.entryIcon}>..</span>
+              <span class={s.entryName}>{t("fileBrowser.parent", "(parent)")}</span>
             </div>
           </Show>
 
           <For each={filteredEntries()}>
             {(entry, index) => (
               <div
-                class="fb-entry"
-                classList={{
-                  "fb-entry-dir": entry.is_dir,
-                  "fb-entry-selected": selectedIndex() === index(),
-                  "fb-entry-ignored": entry.is_ignored,
-                  "fb-entry-cut": clipboard()?.mode === "cut" && clipboard()?.entry.path === entry.path,
-                }}
+                class={cx(
+                  s.entry,
+                  entry.is_dir && s.entryDir,
+                  selectedIndex() === index() && s.entrySelected,
+                  entry.is_ignored && s.entryIgnored,
+                  clipboard()?.mode === "cut" && clipboard()?.entry.path === entry.path && s.entryCut,
+                )}
                 onClick={() => {
                   setSelectedIndex(index());
                   handleEntryClick(entry);
                 }}
                 onContextMenu={(e) => handleContextMenu(e, entry)}
               >
-                <span class="fb-entry-icon">{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
-                <span class="fb-entry-name" title={entry.path}>{entry.name}</span>
+                <span class={s.entryIcon}>{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
+                <span class={s.entryName} title={entry.path}>{entry.name}</span>
                 <Show when={entry.git_status}>
-                  <span class={`fb-status-dot ${getStatusClass(entry.git_status)}`} title={entry.git_status} />
+                  <span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />
                 </Show>
                 <Show when={!entry.is_dir && entry.size > 0}>
-                  <span class="fb-entry-size">{formatSize(entry.size)}</span>
+                  <span class={s.entrySize}>{formatSize(entry.size)}</span>
                 </Show>
               </div>
             )}
@@ -452,10 +460,10 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       {/* Rename dialog */}
       <PromptDialog
         visible={renameDialogVisible()}
-        title="Rename"
-        placeholder="New name"
+        title={t("fileBrowser.renameTitle", "Rename")}
+        placeholder={t("fileBrowser.renamePlaceholder", "New name")}
         defaultValue={renameTarget()?.name || ""}
-        confirmLabel="Rename"
+        confirmLabel={t("fileBrowser.renameConfirm", "Rename")}
         onClose={() => setRenameDialogVisible(false)}
         onConfirm={handleRenameConfirm}
       />

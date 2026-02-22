@@ -51,7 +51,7 @@ describe("MarkdownPanel", () => {
     const { container } = render(() => (
       <MarkdownPanel visible={true} repoPath="/test/repo" onClose={() => {}} />
     ));
-    const panel = container.querySelector("#markdown-panel");
+    const panel = container.querySelector(".panel");
     expect(panel).not.toBeNull();
   });
 
@@ -59,7 +59,7 @@ describe("MarkdownPanel", () => {
     const { container } = render(() => (
       <MarkdownPanel visible={true} repoPath="/test/repo" onClose={() => {}} />
     ));
-    const title = container.querySelector(".panel-title");
+    const title = container.querySelector(".title");
     expect(title).not.toBeNull();
     expect(title!.textContent).toBe("Markdown Files");
   });
@@ -68,7 +68,7 @@ describe("MarkdownPanel", () => {
     const { container } = render(() => (
       <MarkdownPanel visible={true} repoPath="/test/repo" onClose={() => {}} />
     ));
-    const closeBtn = container.querySelector(".panel-close");
+    const closeBtn = container.querySelector(".close");
     expect(closeBtn).not.toBeNull();
   });
 
@@ -77,7 +77,7 @@ describe("MarkdownPanel", () => {
     const { container } = render(() => (
       <MarkdownPanel visible={true} repoPath="/test/repo" onClose={handleClose} />
     ));
-    const closeBtn = container.querySelector(".panel-close")!;
+    const closeBtn = container.querySelector(".close")!;
     fireEvent.click(closeBtn);
     expect(handleClose).toHaveBeenCalledOnce();
   });
@@ -86,7 +86,7 @@ describe("MarkdownPanel", () => {
     const { container } = render(() => (
       <MarkdownPanel visible={false} repoPath={null} onClose={() => {}} />
     ));
-    const panel = container.querySelector("#markdown-panel");
+    const panel = container.querySelector(".panel");
     expect(panel!.classList.contains("hidden")).toBe(true);
   });
 
@@ -94,7 +94,7 @@ describe("MarkdownPanel", () => {
     const { container } = render(() => (
       <MarkdownPanel visible={true} repoPath="/test/repo" onClose={() => {}} />
     ));
-    const content = container.querySelector(".panel-content");
+    const content = container.querySelector(".content");
     expect(content).not.toBeNull();
   });
 });

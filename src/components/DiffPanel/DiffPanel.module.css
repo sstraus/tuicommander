@@ -1,0 +1,50 @@
+/* Git Diff Panel */
+.panel {
+  position: relative;
+  width: 400px;
+  min-width: 300px;
+  max-width: 50%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hidden {
+  display: none;
+}
+
+.scopeBar {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.scopeSelect {
+  width: 100%;
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 3px 6px;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+
+.scopeSelect:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
+.emptyError {
+  padding: 20px;
+  text-align: center;
+  color: var(--error);
+}

@@ -4,6 +4,10 @@ import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { getModifierSymbol } from "../../platform";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import p from "../shared/panel.module.css";
+import s from "./DiffPanel.module.css";
 
 /** Recent commit info from Rust */
 interface RecentCommit {
@@ -22,7 +26,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
   const [files, setFiles] = createSignal<ChangedFile[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const [scope, setScope] = createSignal<string | undefined>(undefined); // undefined = working tree, hash = specific commit
+  const [scope, setScope] = createSignal<string | undefined>(undefined);
   const [commits, setCommits] = createSignal<RecentCommit[]>([]);
   const repo = useRepository();
 
@@ -48,7 +52,6 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     const visible = props.visible;
     const repoPath = props.repoPath;
     const currentScope = scope();
-    // Track repo revision so this effect re-runs on git operations
     void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 
     if (!visible || !repoPath) {
@@ -72,29 +75,26 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     })();
   });
 
-  // Handle file click - open diff in new tab
   const handleFileClick = (file: ChangedFile) => {
     if (!props.repoPath) return;
     diffTabsStore.add(props.repoPath, file.path, file.status, scope());
   };
 
-  // Get status badge color and label
   const getStatusDisplay = (status: string): { label: string; className: string } => {
     switch (status) {
       case "M":
-        return { label: "M", className: "status-modified" };
+        return { label: "M", className: p.statusModified };
       case "A":
-        return { label: "A", className: "status-added" };
+        return { label: "A", className: p.statusAdded };
       case "D":
-        return { label: "D", className: "status-deleted" };
+        return { label: "D", className: p.statusDeleted };
       case "R":
-        return { label: "R", className: "status-renamed" };
+        return { label: "R", className: p.statusRenamed };
       default:
-        return { label: status, className: "status-unknown" };
+        return { label: status, className: p.statusUnknown };
     }
   };
 
-  // Format stats display
   const formatStats = (additions: number, deletions: number): string => {
     const parts: string[] = [];
     if (additions > 0) parts.push(`+${additions}`);
@@ -108,24 +108,24 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
   };
 
   return (
-    <div id="diff-panel" class={props.visible ? "" : "hidden"}>
+    <div id="diff-panel" class={cx(s.panel, !props.visible && s.hidden)}>
       <PanelResizeHandle panelId="diff-panel" />
-      <div class="panel-header">
-        <div class="panel-header-left">
-          <span class="panel-title">Changes</span>
+      <div class={p.header}>
+        <div class={p.headerLeft}>
+          <span class={p.title}>{t("diffPanel.title", "Changes")}</span>
           <Show when={!loading() && files().length > 0}>
-            <span class="file-count-badge">{files().length}</span>
+            <span class={p.fileCountBadge}>{files().length}</span>
           </Show>
         </div>
-        <button class="panel-close" onClick={props.onClose} title={`Close (${getModifierSymbol()}D)`}>
+        <button class={p.close} onClick={props.onClose} title={`${t("diffPanel.close", "Close")} (${getModifierSymbol()}D)`}>
           &times;
         </button>
       </div>
 
       {/* Scope selector: Working tree or a recent commit */}
-      <div class="diff-scope-bar">
-        <select class="diff-scope-select" value={scope() ?? ""} onChange={handleScopeChange}>
-          <option value="">Working tree</option>
+      <div class={s.scopeBar}>
+        <select class={s.scopeSelect} value={scope() ?? ""} onChange={handleScopeChange}>
+          <option value="">{t("diffPanel.workingTree", "Working tree")}</option>
           <For each={commits()}>
             {(commit) => (
               <option value={commit.hash}>
@@ -136,39 +136,43 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
         </select>
       </div>
 
-      <div class="panel-content">
+      <div class={p.content}>
         <Show when={loading()}>
-          <div class="diff-empty">Loading changes...</div>
+          <div class={s.empty}>{t("diffPanel.loading", "Loading changes...")}</div>
         </Show>
 
         <Show when={error()}>
-          <div class="diff-empty error">Error: {error()}</div>
+          <div class={s.emptyError}>{t("diffPanel.error", "Error:")} {error()}</div>
         </Show>
 
         <Show when={!loading() && !error() && files().length === 0}>
-          <div class="diff-empty">
-            {!props.repoPath ? "No repository selected" : scope() ? "No changes in this commit" : "No changes"}
+          <div class={s.empty}>
+            {!props.repoPath
+              ? t("diffPanel.noRepo", "No repository selected")
+              : scope()
+              ? t("diffPanel.noCommitChanges", "No changes in this commit")
+              : t("diffPanel.noChanges", "No changes")}
           </div>
         </Show>
 
         <Show when={!loading() && !error() && files().length > 0}>
-          <div class="file-list">
+          <div class={p.fileList}>
             <For each={files()}>
               {(file) => {
                 const statusDisplay = getStatusDisplay(file.status);
                 return (
                   <div
-                    class="file-item"
+                    class={p.fileItem}
                     onClick={() => handleFileClick(file)}
                     title={file.path}
                   >
-                    <div class="file-status-container">
-                      <span class={`file-status ${statusDisplay.className}`}>
+                    <div class={p.fileStatusContainer}>
+                      <span class={cx(p.fileStatus, statusDisplay.className)}>
                         {statusDisplay.label}
                       </span>
                     </div>
-                    <div class="file-name">{file.path}</div>
-                    <div class="file-stats">
+                    <div class={p.fileName}>{file.path}</div>
+                    <div class={p.fileStats}>
                       {formatStats(file.additions, file.deletions)}
                     </div>
                   </div>

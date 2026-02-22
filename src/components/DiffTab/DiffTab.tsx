@@ -1,6 +1,8 @@
 import { Component, createEffect, createSignal } from "solid-js";
 import { DiffViewer } from "../ui";
 import { useRepository } from "../../hooks/useRepository";
+import { t } from "../../i18n";
+import s from "./DiffTab.module.css";
 
 export interface DiffTabProps {
   repoPath: string;
@@ -43,15 +45,15 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
   });
 
   return (
-    <div class="diff-tab-content">
+    <div class={s.content}>
       <DiffViewer
         diff={diff()}
         emptyMessage={
           loading()
-            ? "Loading diff..."
+            ? t("diffTab.loading", "Loading diff...")
             : error()
-              ? `Error: ${error()}`
-              : "No changes"
+              ? `${t("diffTab.error", "Error:")} ${error()}`
+              : t("diffTab.noChanges", "No changes")
         }
       />
     </div>

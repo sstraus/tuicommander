@@ -1,0 +1,128 @@
+/* FileBrowserPanel */
+.panel {
+  position: relative;
+  width: 300px;
+  min-width: 200px;
+  max-width: 50%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hidden {
+  display: none;
+}
+
+.panel:focus {
+  outline: none;
+}
+
+/* Breadcrumb navigation */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 12px;
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.breadcrumbSegment {
+  cursor: pointer;
+  color: var(--fg-muted);
+  padding: 1px 3px;
+  border-radius: var(--radius-sm);
+}
+
+.breadcrumbSegment:hover {
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+}
+
+.breadcrumbCurrent {
+  color: var(--fg-secondary);
+  font-weight: 500;
+}
+
+.breadcrumbSep {
+  color: var(--fg-muted);
+  opacity: 0.5;
+}
+
+/* Empty states */
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
+.error {
+  color: var(--error);
+}
+
+/* File entries */
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: var(--font-base);
+  transition: background 0.1s;
+}
+
+.entry:hover {
+  background: var(--bg-highlight);
+}
+
+.entrySelected {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.entryIgnored {
+  opacity: 0.4;
+}
+
+.entryCut {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.entryUp {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.entryIcon {
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+  font-size: var(--font-sm);
+}
+
+.entryName {
+  flex: 1;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-primary);
+}
+
+.entryDir .entryName {
+  font-weight: 500;
+}
+
+.entrySize {
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}

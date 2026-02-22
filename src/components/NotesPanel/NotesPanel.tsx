@@ -2,6 +2,10 @@ import { Component, For, Show, createSignal } from "solid-js";
 import { notesStore } from "../../stores/notes";
 import { getModifierSymbol } from "../../platform";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
+import { t } from "../../i18n";
+import { cx } from "../../utils";
+import p from "../shared/panel.module.css";
+import s from "./NotesPanel.module.css";
 
 export interface NotesPanelProps {
   visible: boolean;
@@ -57,50 +61,50 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
   };
 
   return (
-    <div id="notes-panel" class={props.visible ? "" : "hidden"}>
+    <div id="notes-panel" class={cx(s.panel, !props.visible && s.hidden)}>
       <PanelResizeHandle panelId="notes-panel" />
-      <div class="panel-header">
-        <div class="panel-header-left">
-          <span class="panel-title"><span style={{ filter: "grayscale(1) brightness(1.5)", "font-style": "normal" }}>💡</span> Ideas</span>
+      <div class={p.header}>
+        <div class={p.headerLeft}>
+          <span class={p.title}><span style={{ filter: "grayscale(1) brightness(1.5)", "font-style": "normal" }}>💡</span> {t("notesPanel.title", "Ideas")}</span>
           <Show when={notesStore.count() > 0}>
-            <span class="file-count-badge">{notesStore.count()}</span>
+            <span class={p.fileCountBadge}>{notesStore.count()}</span>
           </Show>
         </div>
-        <button class="panel-close" onClick={props.onClose} title={`Close (${getModifierSymbol()}N)`}>
+        <button class={p.close} onClick={props.onClose} title={`${t("notesPanel.close", "Close")} (${getModifierSymbol()}N)`}>
           &times;
         </button>
       </div>
 
-      <div class="panel-content notes-list">
+      <div class={cx(p.content, s.list)}>
         <Show when={notesStore.state.notes.length === 0}>
-          <div class="notes-empty">No ideas yet. Add one below.</div>
+          <div class={s.empty}>{t("notesPanel.empty", "No ideas yet. Add one below.")}</div>
         </Show>
         <For each={notesStore.state.notes}>
           {(note) => (
-            <div class="note-item">
-              <div class="note-body">
-                <span class="note-text" title={note.text}>{note.text}</span>
-                <span class="note-date">{formatDate(note.createdAt)}</span>
+            <div class={s.item}>
+              <div class={s.body}>
+                <span class={s.text} title={note.text}>{note.text}</span>
+                <span class={s.date}>{formatDate(note.createdAt)}</span>
               </div>
-              <div class="note-actions">
+              <div class={s.actions}>
                 <button
-                  class="note-action-btn note-edit-btn"
+                  class={cx(s.actionBtn, s.editBtn)}
                   onClick={() => handleEdit(note.id, note.text)}
-                  title="Edit note"
+                  title={t("notesPanel.edit", "Edit note")}
                 >
                   ✎
                 </button>
                 <button
-                  class="note-action-btn note-send-btn"
+                  class={cx(s.actionBtn, s.sendBtn)}
                   onClick={() => props.onSendToTerminal(note.text)}
-                  title="Send to terminal"
+                  title={t("notesPanel.send", "Send to terminal")}
                 >
                   ▶
                 </button>
                 <button
-                  class="note-action-btn note-delete-btn"
+                  class={cx(s.actionBtn, s.deleteBtn)}
                   onClick={() => notesStore.removeNote(note.id)}
-                  title="Delete note"
+                  title={t("notesPanel.delete", "Delete note")}
                 >
                   ✕
                 </button>
@@ -110,17 +114,17 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
         </For>
       </div>
 
-      <div class="note-input-area">
+      <div class={s.inputArea}>
         <textarea
           ref={textareaRef}
-          class="note-input"
+          class={s.input}
           rows={5}
-          placeholder="Type an idea and press Enter..."
+          placeholder={t("notesPanel.placeholder", "Type an idea and press Enter...")}
           value={inputText()}
           onInput={(e) => setInputText(e.currentTarget.value)}
           onKeyDown={handleKeyDown}
         />
-        <button class="note-submit-btn" onClick={handleSubmit} disabled={!inputText().trim()} title="Add note (Enter)">
+        <button class={s.submitBtn} onClick={handleSubmit} disabled={!inputText().trim()} title={t("notesPanel.submit", "Add note (Enter)")}>
           +
         </button>
       </div>

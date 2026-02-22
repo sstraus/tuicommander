@@ -1,0 +1,76 @@
+/* Markdown Panel */
+.panel {
+  position: relative;
+  width: 400px;
+  min-width: 300px;
+  max-width: 50%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hidden {
+  display: none;
+}
+
+.fileList {
+  padding: 12px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.dirHeader {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 12px 4px;
+  margin-top: 12px;
+}
+
+.dirHeader:first-child {
+  margin-top: 0;
+}
+
+.fileItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  font-size: var(--font-md);
+  transition: background 0.15s;
+}
+
+.fileItem:hover {
+  background: var(--bg-secondary);
+}
+
+.fileIcon {
+  font-size: var(--font-lg);
+  flex-shrink: 0;
+}
+
+.fileName {
+  flex: 1;
+  color: var(--fg-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
+.error {
+  padding: 20px;
+  text-align: center;
+  color: var(--error);
+}

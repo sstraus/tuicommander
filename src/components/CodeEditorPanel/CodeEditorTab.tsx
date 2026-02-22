@@ -10,6 +10,9 @@ import { repositoriesStore } from "../../stores/repositories";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { codeEditorTheme } from "./theme";
 import { detectLanguage } from "./languageDetection";
+import { t } from "../../i18n";
+import e from "../shared/editor-header.module.css";
+import s from "./CodeEditorTab.module.css";
 
 export interface CodeEditorTabProps {
   id: string;
@@ -188,48 +191,48 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   });
 
   return (
-    <div class="editor-tab-content" data-editor-tab-id={props.id}>
-      <div class="editor-header">
-        <span class="editor-filename" title={props.filePath}>
+    <div class={s.tabContent} data-editor-tab-id={props.id}>
+      <div class={e.header}>
+        <span class={e.filename} title={props.filePath}>
           {props.filePath}
         </span>
         <Show when={isDirty()}>
-          <span class="editor-dirty-dot" title="Unsaved changes" />
+          <span class={e.dirtyDot} title={t("codeEditor.unsaved", "Unsaved changes")} />
         </Show>
         <button
-          class="editor-btn"
+          class={e.btn}
           onClick={() => setIsReadOnly((v) => !v)}
-          title={isReadOnly() ? "Unlock editing" : "Lock (read-only)"}
+          title={isReadOnly() ? t("codeEditor.unlock", "Unlock editing") : t("codeEditor.lock", "Lock (read-only)")}
         >
           {isReadOnly() ? "\u{1F512}" : "\u{1F513}"}
         </button>
         <Show when={isDirty() && !isReadOnly()}>
-          <button class="editor-btn editor-btn-save" onClick={handleSave}>
-            Save
+          <button class={e.btnSave} onClick={handleSave}>
+            {t("codeEditor.save", "Save")}
           </button>
         </Show>
       </div>
 
       <Show when={diskConflict()}>
-        <div class="editor-conflict-banner">
-          <span>File changed on disk.</span>
-          <button class="editor-btn" onClick={handleReloadFromDisk}>Reload</button>
-          <button class="editor-btn" onClick={handleKeepLocal}>Keep mine</button>
+        <div class={s.conflictBanner}>
+          <span>{t("codeEditor.fileChanged", "File changed on disk.")}</span>
+          <button class={e.btn} onClick={handleReloadFromDisk}>{t("codeEditor.reload", "Reload")}</button>
+          <button class={e.btn} onClick={handleKeepLocal}>{t("codeEditor.keepMine", "Keep mine")}</button>
         </div>
       </Show>
 
       <Show when={loading()}>
-        <div class="editor-empty">Loading...</div>
+        <div class={s.empty}>{t("codeEditor.loading", "Loading...")}</div>
       </Show>
 
       <Show when={error()}>
-        <div class="editor-empty" style={{ color: "var(--error)" }}>
-          Error: {error()}
+        <div class={s.empty} style={{ color: "var(--error)" }}>
+          {t("codeEditor.error", "Error:")} {error()}
         </div>
       </Show>
 
       <Show when={!loading() && !error()}>
-        <div class="editor-content" ref={ref} />
+        <div class={s.editorContent} ref={ref} />
       </Show>
     </div>
   );
