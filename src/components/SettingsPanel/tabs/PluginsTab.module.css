@@ -1,0 +1,181 @@
+/* PluginsTab — plugin list and log viewer styles */
+
+.pluginList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.pluginRow {
+  background: var(--bg-primary);
+}
+
+.pluginHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 12px;
+  gap: 12px;
+}
+
+.pluginInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.pluginNameRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pluginName {
+  font-weight: 600;
+  font-size: var(--font-base);
+  color: var(--fg-primary);
+}
+
+.pluginVersion {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.badge[data-type="builtin"] {
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+}
+
+.badge[data-type="error"] {
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--danger);
+}
+
+.badge[data-type="warning"] {
+  background: rgba(210, 153, 34, 0.15);
+  color: var(--warning);
+}
+
+.pluginDescription {
+  margin: 4px 0 0;
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+}
+
+.pluginCapabilities {
+  margin: 2px 0 0;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+}
+
+.pluginError {
+  margin: 4px 0 0;
+  font-size: var(--font-sm);
+  color: var(--danger);
+}
+
+.pluginActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.logsBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.logsBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.logsBtn.logsActive {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+  border-color: var(--fg-muted);
+}
+
+/* Log viewer */
+
+.logViewer {
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+}
+
+.logEmpty {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.logEntries {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+}
+
+.logEntry {
+  display: flex;
+  gap: 8px;
+  line-height: 1.4;
+}
+
+.logTime {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.logLevel {
+  flex-shrink: 0;
+  width: 40px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.logEntry[data-level="error"] .logLevel {
+  color: var(--danger);
+}
+
+.logEntry[data-level="warn"] .logLevel {
+  color: var(--warning);
+}
+
+.logEntry[data-level="info"] .logLevel {
+  color: var(--accent);
+}
+
+.logEntry[data-level="debug"] .logLevel {
+  color: var(--fg-muted);
+}
+
+.logMessage {
+  color: var(--fg-secondary);
+  word-break: break-word;
+}

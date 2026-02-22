@@ -13,6 +13,7 @@ import {
   ServicesTab,
   GroupsTab,
   KeyboardShortcutsTab,
+  PluginsTab,
   AboutTab,
   RepoWorktreeTab,
   RepoScriptsTab,
@@ -39,6 +40,7 @@ const GLOBAL_TABS: SettingsShellTab[] = [
   { key: "notifications", label: t("settings.notifications", "Notifications") },
   { key: "dictation", label: t("settings.dictation", "Dictation") },
   { key: "services", label: t("settings.services", "Services") },
+  { key: "plugins", label: t("settings.plugins", "Plugins") },
   { key: "about", label: t("settings.about", "About") },
 ];
 
@@ -163,6 +165,9 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
       </Show>
       <Show when={activeTab() === "services"}>
         <ServicesTab />
+      </Show>
+      <Show when={activeTab() === "plugins"}>
+        <PluginsTab />
       </Show>
       <Show when={activeTab() === "shortcuts"}>
         <KeyboardShortcutsTab />
