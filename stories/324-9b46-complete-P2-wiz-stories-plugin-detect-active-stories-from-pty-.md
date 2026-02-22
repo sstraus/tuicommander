@@ -12,7 +12,7 @@ dependencies: ["320-e879"]
 
 ## Problem Statement
 
-When wiz:work runs a story, TUI Commander should detect it from PTY output and show the active story in the bell dropdown with a virtual markdown view. The plugin watches for story-related output patterns and generates formatted markdown from the story JSON.
+When wiz:work runs a story, TUICommander should detect it from PTY output and show the active story in the bell dropdown with a virtual markdown view. The plugin watches for story-related output patterns and generates formatted markdown from the story JSON.
 
 ## Acceptance Criteria
 

@@ -12,7 +12,7 @@ dependencies: []
 
 ## Problem Statement
 
-TUI Commander status bar is split into three sections (left/middle/right) with visual separators, making it feel fragmented. a competitor presents all status information in a single natural inline flow, providing comprehensive context without visual breaks.
+TUICommander status bar is split into three sections (left/middle/right) with visual separators, making it feel fragmented. a competitor presents all status information in a single natural inline flow, providing comprehensive context without visual breaks.
 
 ## Acceptance Criteria
 

@@ -1,8 +1,8 @@
 # Getting Started
 
-## What is TUI Commander?
+## What is TUICommander?
 
-TUI Commander is a desktop terminal orchestrator for running multiple AI coding agents in parallel (Claude Code, Gemini CLI, Aider, OpenCode, Codex). Built with Tauri + SolidJS + xterm.js + Rust.
+TUICommander is a desktop terminal orchestrator for running multiple AI coding agents in parallel (Claude Code, Gemini CLI, Aider, OpenCode, Codex). Built with Tauri + SolidJS + xterm.js + Rust.
 
 **Key capabilities:**
 - Up to 50 concurrent terminal sessions
@@ -21,7 +21,7 @@ TUI Commander is a desktop terminal orchestrator for running multiple AI coding 
 
 1. **Add a repository** — Click the `+` button at the top of the sidebar, or use the "Add Repository" option. Select a git repository folder.
 
-2. **Select a branch** — Click a branch name in the sidebar. If it's not the main branch, TUI Commander creates a git worktree so you work in an isolated copy.
+2. **Select a branch** — Click a branch name in the sidebar. If it's not the main branch, TUICommander creates a git worktree so you work in an isolated copy.
 
 3. **Start typing** — The terminal is ready. Your default shell is loaded. Type commands, run AI agents, or execute scripts.
 

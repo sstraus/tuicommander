@@ -62,7 +62,7 @@ export function buildHttpUrl(path: string): string
 The transport abstraction enables:
 
 1. **Development:** Run frontend with `npm run dev` against the Rust HTTP server
-2. **Browser mode:** Access TUI Commander from a browser on another device
+2. **Browser mode:** Access TUICommander from a browser on another device
 3. **Testing:** Frontend tests can mock at the invoke level
 4. **MCP integration:** External tools use the same HTTP API
 

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to TUI Commander will be documented in this file.
+All notable changes to TUICommander will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
@@ -178,7 +178,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.1.0] - 2026-02-04
 
 ### Added
-- Initial TUI Commander implementation
+- Initial TUICommander implementation
 - **Multi-terminal support** - Up to 50 concurrent PTY sessions
 - **Repository sidebar** - Hierarchical view of repositories with branches and worktrees
 - **Tab bar** - Terminal tabs with keyboard shortcuts (Cmd+1-9)

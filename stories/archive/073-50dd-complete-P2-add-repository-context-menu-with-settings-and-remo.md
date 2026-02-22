@@ -12,7 +12,7 @@ dependencies: []
 
 ## Problem Statement
 
-Users cannot remove a repository from TUI Commander sidebar. The only option is the settings button but there is no way to remove a repo from the list.
+Users cannot remove a repository from TUICommander sidebar. The only option is the settings button but there is no way to remove a repo from the list.
 
 
 Context menu on repo header (click on ⋯ or right-click):

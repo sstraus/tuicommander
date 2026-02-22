@@ -319,13 +319,22 @@ export const ServicesTab: Component = () => {
             </Show>
           </div>
 
-          <Show when={status()?.running && qrDataUrl()}>
-            {(url) => (
-              <div class={s.qr}>
-                <img src={url()} width={120} height={120} alt={t("services.alt.qrCode", "QR code")} title={t("services.title.qrCode", "Scan to connect")} />
-                <span class={s.qrLabel}>{t("services.label.scanToConnect", "Scan to connect")}</span>
-              </div>
-            )}
+          <Show when={status()?.running && qrContent()}>
+            <div class={s.qr}>
+              <Show when={qrDataUrl()}>
+                {(url) => <img src={url()} width={120} height={120} alt={t("services.alt.qrCode", "QR code")} title={t("services.title.qrCode", "Scan to connect")} />}
+              </Show>
+              <span class={s.qrLabel}>{t("services.label.scanToConnect", "Scan to connect")}</span>
+              <a
+                class={s.qrUrl}
+                href={qrContent()!}
+                target="_blank"
+                rel="noopener"
+                title={t("services.title.openInBrowser", "Open in browser")}
+              >
+                {qrContent()}
+              </a>
+            </div>
           </Show>
         </div>
       </Show>

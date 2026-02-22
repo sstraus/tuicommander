@@ -25,7 +25,7 @@ function CrashScreen(props: { error: Error }) {
       height: "100vh",
       overflow: "auto",
     }}>
-      <h2 style={{ margin: "0 0 12px" }}>TUI Commander crashed</h2>
+      <h2 style={{ margin: "0 0 12px" }}>TUICommander crashed</h2>
       <pre style={{ "white-space": "pre-wrap", color: "#ccc" }}>{props.error.message}</pre>
       <pre style={{ "white-space": "pre-wrap", color: "#888", "font-size": "12px" }}>{props.error.stack}</pre>
       <button

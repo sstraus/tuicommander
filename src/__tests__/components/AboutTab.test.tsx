@@ -11,7 +11,7 @@ describe("AboutTab", () => {
     const { container } = render(() => <AboutTab />);
     const heading = container.querySelector("h3");
     expect(heading).not.toBeNull();
-    expect(heading!.textContent).toBe("About TUI Commander");
+    expect(heading!.textContent).toBe("About TUICommander");
   });
 
   it("displays the version", () => {

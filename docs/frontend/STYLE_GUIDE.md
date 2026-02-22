@@ -1,4 +1,4 @@
-# TUI Commander — Visual Style Guide
+# TUICommander — Visual Style Guide
 
 Reference for all UI/CSS/layout work. Every visual change MUST follow this guide.
 

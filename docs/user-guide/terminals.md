@@ -124,7 +124,7 @@ When an AI agent emits a plan file path (e.g., `PLAN.md`), a button appears in t
 
 ## Working with AI Agents
 
-TUI Commander detects rate limits, prompts, and status messages from AI agents:
+TUICommander detects rate limits, prompts, and status messages from AI agents:
 
 - **Rate limit detection** — Recognizes rate limit messages from Claude, Aider, Gemini, OpenCode, Codex
 - **Prompt interception** — Detects when agents ask yes/no questions or multiple choice

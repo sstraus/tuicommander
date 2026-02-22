@@ -1,8 +1,8 @@
-# TUI Commander Architecture
+# TUICommander Architecture
 
 ## Overview
 
-TUI Commander is a Tauri application that provides a multi-terminal interface with git worktree support. It allows users to manage multiple coding sessions across different branches/worktrees of a repository.
+TUICommander is a Tauri application that provides a multi-terminal interface with git worktree support. It allows users to manage multiple coding sessions across different branches/worktrees of a repository.
 
 ## Tech Stack
 

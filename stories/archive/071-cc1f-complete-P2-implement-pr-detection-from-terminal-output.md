@@ -12,7 +12,7 @@ dependencies: []
 
 ## Problem Statement
 
-Users cannot see which branches have associated Pull Requests without leaving TUI Commander.
+Users cannot see which branches have associated Pull Requests without leaving TUICommander.
 
 
 a competitor detects PRs by **monitoring terminal PTY output** for PR URLs - not by calling gh CLI separately.

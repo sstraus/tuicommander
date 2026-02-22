@@ -63,7 +63,7 @@ The default AI coding agent for new sessions:
 
 ### Auto-Recovery
 
-When enabled, TUI Commander periodically checks if the primary agent becomes available again after switching to a fallback.
+When enabled, TUICommander periodically checks if the primary agent becomes available again after switching to a fallback.
 
 Recovery interval: 5 minutes.
 

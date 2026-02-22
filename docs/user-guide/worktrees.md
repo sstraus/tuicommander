@@ -1,16 +1,16 @@
 # Git Worktrees
 
-TUI Commander uses git worktrees to give each branch an isolated working directory.
+TUICommander uses git worktrees to give each branch an isolated working directory.
 
 ## What Are Worktrees?
 
 Git worktrees let you check out multiple branches simultaneously, each in its own directory. Instead of stashing or committing before switching branches, each branch has its own complete copy of the files.
 
-## How TUI Commander Uses Them
+## How TUICommander Uses Them
 
 When you click a non-main branch in the sidebar:
 
-1. TUI Commander creates a git worktree for that branch
+1. TUICommander creates a git worktree for that branch
 2. A terminal opens in the worktree directory
 3. You work independently without affecting other branches
 
@@ -69,7 +69,7 @@ Removing a worktree:
 
 ## Branch Switching
 
-Switching branches in TUI Commander does not change the working directory of existing terminals. Each branch's terminals stay in their worktree path.
+Switching branches in TUICommander does not change the working directory of existing terminals. Each branch's terminals stay in their worktree path.
 
 When you switch branches:
 - Previous branch's terminals are hidden (but remain alive)

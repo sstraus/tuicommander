@@ -12,7 +12,7 @@ dependencies: []
 
 ## Problem Statement
 
-When a new version of TUI Commander is released, users have no way to know about it or update without manually downloading. The app needs automatic update checking and installation using tauri-plugin-updater.
+When a new version of TUICommander is released, users have no way to know about it or update without manually downloading. The app needs automatic update checking and installation using tauri-plugin-updater.
 
 ## Acceptance Criteria
 

@@ -12,7 +12,7 @@ dependencies: []
 
 ## Problem Statement
 
-TUI Commander has no right-click context menu on tabs. Users can only close via the X button or Cmd+W, and rename via double-click (not discoverable). iTerm2 and other terminal apps offer Close Others, Close to Right, and Rename via right-click — standard tab management UX that users expect.
+TUICommander has no right-click context menu on tabs. Users can only close via the X button or Cmd+W, and rename via double-click (not discoverable). iTerm2 and other terminal apps offer Close Others, Close to Right, and Rename via right-click — standard tab management UX that users expect.
 
 ## Acceptance Criteria
 

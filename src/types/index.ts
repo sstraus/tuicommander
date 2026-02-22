@@ -1,4 +1,4 @@
-// Shared types for TUI Commander
+// Shared types for TUICommander
 
 import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";

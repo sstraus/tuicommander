@@ -1,4 +1,4 @@
-# Code Review: TUI Commander - Whole Project
+# Code Review: TUICommander - Whole Project
 **Date:** 2026-02-16
 **Reviewers:** Multi-Agent (security, performance, architecture, simplicity, silent-failure, test-quality, typescript, rust, data-safety)
 **Target:** Entire codebase (~39K lines, 172 files)

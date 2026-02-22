@@ -1,11 +1,11 @@
-# TUI Commander Specification
+# TUICommander Specification
 
 **Version:** 0.5.0
 **Last Updated:** 2026-02-22
 
 ## Overview
 
-TUI Commander is a multi-agent terminal orchestrator designed to manage multiple AI coding agents (Claude Code, Gemini CLI, OpenCode, Aider, Codex) in parallel. It provides per-pane zoom, git worktree isolation, and GitHub integration.
+TUICommander is a multi-agent terminal orchestrator designed to manage multiple AI coding agents (Claude Code, Gemini CLI, OpenCode, Aider, Codex) in parallel. It provides per-pane zoom, git worktree isolation, and GitHub integration.
 
 ## Goals
 

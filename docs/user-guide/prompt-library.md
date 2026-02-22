@@ -22,7 +22,7 @@ cd {{cwd}} && npm test -- --testPathPattern={{module}}
 
 ## Variables
 
-Use `{{variable_name}}` syntax for dynamic values. When you use the prompt, TUI Commander asks you to fill in each variable.
+Use `{{variable_name}}` syntax for dynamic values. When you use the prompt, TUICommander asks you to fill in each variable.
 
 ### Built-in Variables
 

@@ -12,7 +12,7 @@ dependencies: []
 
 ## Problem Statement
 
-Users cannot rename branches/worktrees from TUI Commander. They must use git commands manually.
+Users cannot rename branches/worktrees from TUICommander. They must use git commands manually.
 
 
 Modal dialog triggered by clicking branch name or context menu:

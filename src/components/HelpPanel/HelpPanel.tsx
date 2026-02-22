@@ -40,7 +40,7 @@ export const HelpPanel: Component<HelpPanelProps> = (props) => {
 
           <div class={s.content}>
             <div class={s.section}>
-              <h3 class={s.sectionTitle}>{t("helpPanel.aboutApp", "TUI Commander")}</h3>
+              <h3 class={s.sectionTitle}>{t("helpPanel.aboutApp", "TUICommander")}</h3>
               <p class={s.desc}>
                 {t("helpPanel.appDescription", "A modern terminal multiplexer and Git worktree manager built with Tauri, SolidJS, and xterm.js.")}
               </p>

@@ -1,4 +1,4 @@
-/// MCP (Model Context Protocol) bridge binary for TUI Commander.
+/// MCP (Model Context Protocol) bridge binary for TUICommander.
 /// Translates MCP JSON-RPC 2.0 over stdio into HTTP calls to the Tauri app's local API.
 /// Designed for consumption by Claude Code, Cursor, and other MCP-capable tools.
 use serde::{Deserialize, Serialize};
@@ -475,7 +475,7 @@ fn read_port() -> Result<u16, String> {
 
     let contents = std::fs::read_to_string(&port_file).map_err(|e| {
         format!(
-            "Cannot read port file at {}: {}. Is TUI Commander running with MCP enabled?",
+            "Cannot read port file at {}: {}. Is TUICommander running with MCP enabled?",
             port_file.display(),
             e
         )
@@ -518,9 +518,9 @@ fn main() {
 
     // Verify connection
     match client.get("/health") {
-        Ok(_) => eprintln!("tui-mcp-bridge: connected to TUI Commander on port {}", port),
+        Ok(_) => eprintln!("tui-mcp-bridge: connected to TUICommander on port {}", port),
         Err(e) => {
-            eprintln!("tui-mcp-bridge: cannot connect to TUI Commander: {}", e);
+            eprintln!("tui-mcp-bridge: cannot connect to TUICommander: {}", e);
             std::process::exit(1);
         }
     }

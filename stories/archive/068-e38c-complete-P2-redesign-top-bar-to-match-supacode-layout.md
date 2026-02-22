@@ -12,7 +12,7 @@ dependencies: []
 
 ## Problem Statement
 
-TUI Commander top bar is cluttered with app name on left, terminal tabs in center, and new tab button on right. a competitor has a cleaner design with repository name centered and IDE selector on top right, providing better focus and visual hierarchy.
+TUICommander top bar is cluttered with app name on left, terminal tabs in center, and new tab button on right. a competitor has a cleaner design with repository name centered and IDE selector on top right, providing better focus and visual hierarchy.
 
 ## Acceptance Criteria
 

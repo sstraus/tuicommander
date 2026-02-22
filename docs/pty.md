@@ -1,21 +1,21 @@
 # MCP PTY Bridge
 
-TUI Commander exposes terminal sessions, git operations, config, and agent spawning to external tools (Claude Code, Cursor, etc.) via the Model Context Protocol (MCP).
+TUICommander exposes terminal sessions, git operations, config, and agent spawning to external tools (Claude Code, Cursor, etc.) via the Model Context Protocol (MCP).
 
 ## Architecture
 
 ```
-Claude Code  <--stdio/JSON-RPC-->  tui-mcp-bridge  <--HTTP-->  TUI Commander (axum on 127.0.0.1)
+Claude Code  <--stdio/JSON-RPC-->  tui-mcp-bridge  <--HTTP-->  TUICommander (axum on 127.0.0.1)
 ```
 
 The system has two components:
 
-1. **HTTP API** - Embedded axum server inside TUI Commander, listening on `127.0.0.1` (localhost only)
+1. **HTTP API** - Embedded axum server inside TUICommander, listening on `127.0.0.1` (localhost only)
 2. **MCP Bridge** - Standalone binary (`tui-mcp-bridge`) that translates MCP protocol to HTTP calls
 
 ## Enabling the MCP Server
 
-The MCP HTTP server is **disabled by default**. Enable it in TUI Commander's config:
+The MCP HTTP server is **disabled by default**. Enable it in TUICommander's config:
 
 Edit `~/.tuicommander/config.json`:
 ```json
@@ -24,7 +24,7 @@ Edit `~/.tuicommander/config.json`:
 }
 ```
 
-Restart TUI Commander after changing this setting. When enabled, the app starts an HTTP server on a random localhost port and writes the port number to `~/.tuicommander/mcp-port`.
+Restart TUICommander after changing this setting. When enabled, the app starts an HTTP server on a random localhost port and writes the port number to `~/.tuicommander/mcp-port`.
 
 ## Building the Bridge Binary
 

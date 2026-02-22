@@ -12,7 +12,7 @@ dependencies: []
 
 ## Problem Statement
 
-TUI Commander sidebar is always expanded, taking fixed width and not allowing users to maximize terminal space. Users cannot collapse repositories to show only icons, reducing available screen real estate for the main terminal area.
+TUICommander sidebar is always expanded, taking fixed width and not allowing users to maximize terminal space. Users cannot collapse repositories to show only icons, reducing available screen real estate for the main terminal area.
 
 ## Acceptance Criteria
 

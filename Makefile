@@ -32,12 +32,12 @@ dev:
 
 # Build .app only (default, fast — skips DMG)
 build:
-	@echo "Building TUI Commander $(VERSION)..."
+	@echo "Building TUICommander $(VERSION)..."
 	npm run tauri build
 
 # Build .app + DMG (for distribution)
 build-dmg:
-	@echo "Building TUI Commander $(VERSION) with DMG..."
+	@echo "Building TUICommander $(VERSION) with DMG..."
 	npm run tauri build -- --bundles app,dmg
 
 # Type-check, lint, and test (no Tauri build)

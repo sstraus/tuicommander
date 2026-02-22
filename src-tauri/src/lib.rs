@@ -496,11 +496,6 @@ pub fn run() {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
 
-            // Guard against corrupted window-state (0x0 dimensions, off-screen position)
-            if let Some(window) = app.get_webview_window("main") {
-                ensure_window_visible(&window);
-            }
-
             let m = menu::build_menu(app)?;
             app.set_menu(m)?;
             app.on_menu_event(|app_handle, event| {
@@ -630,7 +625,17 @@ pub fn run() {
             plugins::uninstall_plugin,
             registry::fetch_plugin_registry
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Guard against corrupted window-state applied by tauri-plugin-window-state.
+            // Must run at Ready (after plugins have restored persisted position/size),
+            // not in setup() which fires before the plugin applies its state.
+            if let tauri::RunEvent::Ready = event {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    ensure_window_visible(&window);
+                }
+            }
+        });
 }
 

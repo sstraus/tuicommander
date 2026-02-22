@@ -111,7 +111,7 @@ jobs:
           CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
         with:
           tagName: v__VERSION__
-          releaseName: 'TUI Commander v__VERSION__'
+          releaseName: 'TUICommander v__VERSION__'
           releaseBody: 'Download the appropriate installer for your platform.'
           releaseDraft: true
           prerelease: false

@@ -1,4 +1,4 @@
-# TUI Commander - Project Instructions
+# TUICommander - Project Instructions
 
 ## Documentation Sync Reminder
 

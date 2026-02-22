@@ -1,6 +1,6 @@
 # GitHub Integration
 
-TUI Commander monitors your GitHub PRs and CI status automatically.
+TUICommander monitors your GitHub PRs and CI status automatically.
 
 ## Requirements
 

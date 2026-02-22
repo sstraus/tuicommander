@@ -174,7 +174,7 @@ pub async fn basic_auth_middleware(
         }
         AuthResult::MissingHeader | AuthResult::NotConfigured => (
             StatusCode::UNAUTHORIZED,
-            [(header::WWW_AUTHENTICATE, "Basic realm=\"TUI Commander\"")],
+            [(header::WWW_AUTHENTICATE, "Basic realm=\"TUICommander\"")],
             "Scan the QR code or authenticate with Basic Auth",
         )
             .into_response(),

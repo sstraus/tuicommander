@@ -33,6 +33,8 @@ export default defineConfig(async () => ({
         /^split-/,
         /^awaiting-/,
         /^platform-/,
+        // CSS module hashed classes (lightningcss generates hash_className names)
+        /^_?[a-zA-Z0-9]{5,8}_/,
       ],
     }),
   ],
@@ -68,7 +70,7 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

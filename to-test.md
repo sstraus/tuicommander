@@ -1,6 +1,6 @@
 # To Test
 
-Features to test when TUI Commander is more usable.
+Features to test when TUICommander is more usable.
 
 ## PR Detection (071-cc1f)
 - [ ] Run `gh pr view` in terminal - verify PR badge appears in sidebar
@@ -190,7 +190,7 @@ Features to test when TUI Commander is more usable.
 - [ ] View menu: Toggle Sidebar, Split Right/Down, Zoom In/Out/Reset, Diff/Markdown panels
 - [ ] Go menu: Next/Previous Tab, Switch to Tab 1-9
 - [ ] Tools menu: Prompt Library, Run/Edit & Run Command, Lazygit, Git Operations, Task Queue
-- [ ] Help menu: Help Panel, About TUI Commander
+- [ ] Help menu: Help Panel, About TUICommander
 - [ ] Clicking menu items triggers correct action (same as keyboard shortcut)
 - [ ] Accelerator labels show correct modifier key per platform (Cmd on macOS, Ctrl on others)
 - [ ] No double-firing: pressing Cmd+T creates one tab, not two

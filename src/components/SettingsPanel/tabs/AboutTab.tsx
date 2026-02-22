@@ -10,7 +10,7 @@ const DOCS_URL = "https://github.com/sstraus/tuicommander/wiki";
 export const AboutTab: Component = () => {
   return (
     <div class={s.section}>
-      <h3>{t("about.title", "About TUI Commander")}</h3>
+      <h3>{t("about.title", "About TUICommander")}</h3>
 
       <div class={s.group}>
         <label>{t("about.version", "Version")}</label>

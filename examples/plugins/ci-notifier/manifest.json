@@ -5,6 +5,6 @@
   "minAppVersion": "0.3.0",
   "main": "main.js",
   "description": "Detects CI failure patterns, plays notification sound, shows details in markdown panel.",
-  "author": "TUI Commander",
+  "author": "TUICommander",
   "capabilities": ["ui:sound", "ui:markdown"]
 }

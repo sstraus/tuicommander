@@ -21,7 +21,7 @@ pub(crate) fn block_sleep(blocker: tauri::State<'_, SleepBlocker>) -> Result<(),
             .idle(true)
             .sleep(true)
             .reason("Agent session active")
-            .app_name("TUI Commander")
+            .app_name("TUICommander")
             .app_reverse_domain("com.tuicommander.app")
             .create()
             .map_err(|e| format!("Failed to block sleep: {e}"))?;

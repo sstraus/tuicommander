@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in TUI Commander
+description: Report a bug in TUICommander
 title: "[Bug] "
 labels: ["type: bug", "needs triage"]
 body:
@@ -23,7 +23,7 @@ body:
       label: Steps to reproduce
       description: How can we reproduce this?
       placeholder: |
-        1. Open TUI Commander
+        1. Open TUICommander
         2. Click on '...'
         3. See error
     validations:
@@ -60,7 +60,7 @@ body:
     id: build
     attributes:
       label: Build type
-      description: How are you running TUI Commander?
+      description: How are you running TUICommander?
       options:
         - Release build (compiled .app / .exe)
         - Dev mode (tauri dev)
@@ -71,7 +71,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: TUI Commander version (check Settings or About)
+      description: TUICommander version (check Settings or About)
       placeholder: "e.g. 0.3.0"
     validations:
       required: true

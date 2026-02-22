@@ -1,6 +1,6 @@
 # Voice Dictation
 
-TUI Commander includes local voice-to-text using Whisper AI. All processing happens on your machine — no cloud services.
+TUICommander includes local voice-to-text using Whisper AI. All processing happens on your machine — no cloud services.
 
 ## Setup
 
@@ -19,7 +19,7 @@ TUI Commander includes local voice-to-text using Whisper AI. All processing happ
 3. **Release** the key/button
 4. Text is transcribed and typed into the active terminal
 
-The hotkey works globally — even when TUI Commander is not focused.
+The hotkey works globally — even when TUICommander is not focused.
 
 ## Models
 

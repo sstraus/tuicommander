@@ -158,7 +158,7 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         help = help.item(&item!("check-for-updates", "Check for Updates…"));
     }
     let help = help
-        .item(&item!("about", "About TUI Commander"))
+        .item(&item!("about", "About TUICommander"))
         .build()?;
 
     // ---------- Assemble ----------
@@ -166,8 +166,8 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
 
     if is_macos {
         // macOS: App menu with standard items
-        let app_menu = SubmenuBuilder::new(app, "TUI Commander")
-            .item(&PredefinedMenuItem::about(app, Some("About TUI Commander"), None)?)
+        let app_menu = SubmenuBuilder::new(app, "TUICommander")
+            .item(&PredefinedMenuItem::about(app, Some("About TUICommander"), None)?)
             .separator()
             .item(&item!("check-for-updates", "Check for Updates…"))
             .separator()

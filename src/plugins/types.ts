@@ -1,5 +1,5 @@
 /**
- * Shared types for the TUI Commander plugin system.
+ * Shared types for the TUICommander plugin system.
  *
  * Plugins implement TuiPlugin and register capabilities via PluginHost.
  * Built-in plugins are compiled with the app; external plugins are loaded

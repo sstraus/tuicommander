@@ -12,7 +12,7 @@ dependencies: []
 
 ## Problem Statement
 
-github.rs calls Command::new("gh") directly without resolve_cli(). When TUI Commander is launched from Finder/Spotlight (not a terminal), /opt/homebrew/bin is not on PATH so gh is not found. GitHub token resolution silently fails, breaking all GitHub API features (PR status, CI checks).
+github.rs calls Command::new("gh") directly without resolve_cli(). When TUICommander is launched from Finder/Spotlight (not a terminal), /opt/homebrew/bin is not on PATH so gh is not found. GitHub token resolution silently fails, breaking all GitHub API features (PR status, CI checks).
 
 ## Acceptance Criteria
 

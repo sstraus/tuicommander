@@ -4,7 +4,7 @@ All shortcuts use `Cmd` on macOS and `Ctrl` on Windows/Linux unless noted.
 
 ## Customizing Keybindings
 
-You can override any keyboard shortcut by creating a `keybindings.json` file in your TUI Commander config directory:
+You can override any keyboard shortcut by creating a `keybindings.json` file in your TUICommander config directory:
 
 - **macOS:** `~/Library/Application Support/tuicommander/keybindings.json`
 - **Windows:** `%APPDATA%\tuicommander\keybindings.json`

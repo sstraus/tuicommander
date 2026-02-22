@@ -908,7 +908,7 @@ const App: Component = () => {
       <Show when={quitDialogVisible()}>
         <div class="quit-dialog-overlay" onClick={() => setQuitDialogVisible(false)}>
           <div class="quit-dialog" onClick={(e) => e.stopPropagation()}>
-            <h3>Quit TUI Commander?</h3>
+            <h3>Quit TUICommander?</h3>
             <p>
               You have {terminalsStore.getIds().filter((id) => terminalsStore.get(id)?.sessionId).length} active
               terminal session(s). Quitting will close all sessions.

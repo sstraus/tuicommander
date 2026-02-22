@@ -5,7 +5,7 @@ import { planPlugin } from "./planPlugin";
 import type { TuiPlugin } from "./types";
 
 /**
- * Built-in plugins shipped with TUI Commander.
+ * Built-in plugins shipped with TUICommander.
  * wiz-stories was extracted to an external plugin (examples/plugins/wiz-stories).
  */
 const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin];

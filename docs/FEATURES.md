@@ -1,4 +1,4 @@
-# TUI Commander — Complete Feature Reference
+# TUICommander — Complete Feature Reference
 
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.

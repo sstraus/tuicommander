@@ -716,6 +716,19 @@
   text-align: center;
 }
 
+.qrUrl {
+  font-size: var(--font-xs);
+  color: var(--accent);
+  text-align: center;
+  word-break: break-all;
+  text-decoration: none;
+  max-width: 160px;
+}
+
+.qrUrl:hover {
+  text-decoration: underline;
+}
+
 .mcpStatusRow {
   display: flex;
   align-items: center;

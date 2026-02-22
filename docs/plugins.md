@@ -1,6 +1,6 @@
 # Plugin Authoring Guide
 
-TUI Commander uses an Obsidian-style plugin system. Plugins extend the Activity Center (bell dropdown), watch terminal output, and interact with app state. Plugins can be **built-in** (compiled with the app) or **external** (loaded at runtime from the user's plugins directory).
+TUICommander uses an Obsidian-style plugin system. Plugins extend the Activity Center (bell dropdown), watch terminal output, and interact with app state. Plugins can be **built-in** (compiled with the app) or **external** (loaded at runtime from the user's plugins directory).
 
 ## Quick Start: External Plugin
 
@@ -104,7 +104,7 @@ File: `~/.config/tuicommander/plugins/{id}/manifest.json`
 | `id` | string | yes | Must match the directory name |
 | `name` | string | yes | Human-readable display name |
 | `version` | string | yes | Plugin semver (e.g. `"1.0.0"`) |
-| `minAppVersion` | string | yes | Minimum TUI Commander version required |
+| `minAppVersion` | string | yes | Minimum TUICommander version required |
 | `main` | string | yes | Entry point filename (e.g. `"main.js"`) |
 | `description` | string | no | Short description |
 | `author` | string | no | Author name |
@@ -453,7 +453,7 @@ Plugins can be distributed as ZIP archives:
 
 ## Deep Link Scheme (`tuic://`)
 
-TUI Commander registers the `tuic://` URL scheme for external integration:
+TUICommander registers the `tuic://` URL scheme for external integration:
 
 | URL | Action |
 |-----|--------|

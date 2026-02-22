@@ -1,6 +1,6 @@
-/// AI-optimized plugin development reference for TUI Commander.
+/// AI-optimized plugin development reference for TUICommander.
 /// Compiled as a const so it's zero-cost at runtime.
-pub const PLUGIN_DOCS: &str = r###"# TUI Commander Plugin Development Reference
+pub const PLUGIN_DOCS: &str = r###"# TUICommander Plugin Development Reference
 
 ## Installation
 

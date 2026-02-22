@@ -18,7 +18,7 @@ pub struct RegistryEntry {
     #[serde(default)]
     pub repo: String,
     pub latest_version: String,
-    /// Minimum TUI Commander version required to run this plugin.
+    /// Minimum TUICommander version required to run this plugin.
     #[serde(default)]
     pub min_app_version: String,
     /// Capabilities the plugin requires.
@@ -68,7 +68,7 @@ mod tests {
             "id": "hello-world",
             "name": "Hello World",
             "description": "Example plugin",
-            "author": "TUI Commander",
+            "author": "TUICommander",
             "repo": "sstraus/hello-world-tuic-plugin",
             "latestVersion": "1.0.0",
             "minAppVersion": "0.4.0",

@@ -6,6 +6,7 @@
 /// Classify an error message into a known error type.
 ///
 /// Returns one of: "rate_limit", "network", "auth", "validation", "unknown".
+#[allow(dead_code)] // Source-of-truth classifier; frontend mirrors these patterns
 pub(crate) fn classify_error(message: &str) -> &'static str {
     let lower = message.to_lowercase();
 
@@ -44,11 +45,6 @@ pub(crate) fn classify_error(message: &str) -> &'static str {
     "unknown"
 }
 
-/// Wrapper for error classification (kept for test coverage).
-pub(crate) fn classify_error_message(message: String) -> String {
-    classify_error(&message).to_string()
-}
-
 /// Calculate delay with exponential backoff.
 ///
 /// Formula: min(base_delay_ms * multiplier^retry_count + jitter, max_delay_ms)
@@ -66,16 +62,6 @@ pub(crate) fn calculate_backoff_delay(
     let delay = (base_delay_ms * backoff_multiplier.powi(retry_count as i32)).min(max_delay_ms);
     let jitter = delay * 0.1 * (rand::random::<f64>() - 0.5);
     (delay + jitter).min(max_delay_ms)
-}
-
-/// Wrapper for backoff delay calculation (kept for test coverage).
-pub(crate) fn calculate_backoff_delay_cmd(
-    retry_count: u32,
-    base_delay_ms: f64,
-    max_delay_ms: f64,
-    backoff_multiplier: f64,
-) -> f64 {
-    calculate_backoff_delay(retry_count, base_delay_ms, max_delay_ms, backoff_multiplier)
 }
 
 #[cfg(test)]
@@ -119,15 +105,9 @@ mod tests {
     }
 
     #[test]
-    fn tauri_command_returns_string() {
-        assert_eq!(
-            classify_error_message("rate limit".to_string()),
-            "rate_limit"
-        );
-        assert_eq!(
-            classify_error_message("unknown issue".to_string()),
-            "unknown"
-        );
+    fn classify_returns_static_str() {
+        assert_eq!(classify_error("rate limit"), "rate_limit");
+        assert_eq!(classify_error("unknown issue"), "unknown");
     }
 
     #[test]
@@ -178,8 +158,8 @@ mod tests {
     }
 
     #[test]
-    fn backoff_delay_tauri_command_works() {
-        let delay = calculate_backoff_delay_cmd(0, 1000.0, 30000.0, 2.0);
-        assert!(delay >= 950.0 && delay <= 1050.0, "cmd wrapper: got {delay}");
+    fn backoff_delay_zero_retry() {
+        let delay = calculate_backoff_delay(0, 1000.0, 30000.0, 2.0);
+        assert!(delay >= 950.0 && delay <= 1050.0, "retry 0 direct: got {delay}");
     }
 }

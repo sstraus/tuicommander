@@ -115,7 +115,7 @@ jobs:
           CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
         with:
           tagName: tip
-          releaseName: 'TUI Commander Nightly'
+          releaseName: 'TUICommander Nightly'
           releaseBody: |
             **Rolling build from `main` — always the latest code.**
 

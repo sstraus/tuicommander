@@ -10,9 +10,9 @@ Research date: 2026-02-22
 
 ---
 
-## TUI Commander Current Shortcuts (for reference)
+## TUICommander Current Shortcuts (for reference)
 
-| Shortcut | TUI Commander |
+| Shortcut | TUICommander |
 |----------|---------------|
 | Cmd+Shift+D | Toggle git diff panel |
 | Cmd+E | Toggle file browser |
@@ -144,7 +144,7 @@ tmux uses a completely different model: prefix key (Ctrl+B by default) followed 
 
 ## Windows Platform Conventions
 
-TUI Commander is cross-platform: macOS uses Cmd, Windows/Linux use Ctrl. This section maps our shortcuts to their Ctrl equivalents and identifies Windows-specific conflicts.
+TUICommander is cross-platform: macOS uses Cmd, Windows/Linux use Ctrl. This section maps our shortcuts to their Ctrl equivalents and identifies Windows-specific conflicts.
 
 ### Windows System Reserved Shortcuts
 
@@ -244,7 +244,7 @@ These are reserved by Windows itself and **must never be used**:
 
 **Verdict: Cmd+D is the WORST possible choice for "toggle diff panel."** Every terminal uses it for splitting, and every code editor uses it for multi-select. Users embedded in any of these tools will have muscle memory conflicts.
 
-### 2. Other Current TUI Commander Conflicts
+### 2. Other Current TUICommander Conflicts
 
 | Our Shortcut | Conflicts With |
 |-------------|----------------|
@@ -293,11 +293,11 @@ Truly safe Cmd+Shift / Ctrl+Shift combos:
 
 **Option C: Cmd+U / Ctrl+U** -- Only VS Code uses it (undo cursor). Low conflict on both platforms. But "U" has no mnemonic connection to "diff."
 
-**Option D: Keep Cmd+D but document the conflict** -- Users in TUI Commander are not simultaneously in VS Code's editor or iTerm2's terminal; TUI Commander IS the terminal. However, users with iTerm2 muscle memory will instinctively hit Cmd+D to split.
+**Option D: Keep Cmd+D but document the conflict** -- Users in TUICommander are not simultaneously in VS Code's editor or iTerm2's terminal; TUICommander IS the terminal. However, users with iTerm2 muscle memory will instinctively hit Cmd+D to split.
 
 **Option E: Cmd+; / Ctrl+;** -- Unused across ALL tools on ALL platforms. Zero conflicts. No system-level reservation. Ergonomically less discoverable but completely safe.
 
-**Recommendation: Cmd+Shift+D / Ctrl+Shift+D** is the pragmatic choice. It's the "diff/debug" mental model (VS Code uses it for Debug/Run panel, which is conceptually adjacent). Terminal emulators use Cmd+Shift+D for horizontal split / duplicate tab, but TUI Commander already uses Cmd+\\ for splitting. The Windows Terminal "duplicate tab" conflict is minor. If you want absolute zero conflicts, use **Cmd+; / Ctrl+;**.
+**Recommendation: Cmd+Shift+D / Ctrl+Shift+D** is the pragmatic choice. It's the "diff/debug" mental model (VS Code uses it for Debug/Run panel, which is conceptually adjacent). Terminal emulators use Cmd+Shift+D for horizontal split / duplicate tab, but TUICommander already uses Cmd+\\ for splitting. The Windows Terminal "duplicate tab" conflict is minor. If you want absolute zero conflicts, use **Cmd+; / Ctrl+;**.
 
 ### 5. Alt+P and Alt+N Analysis
 
@@ -325,7 +325,7 @@ Alt+letter shortcuts are generally safe territory because:
 | Cmd+Space | Spotlight |
 | Cmd+, | Preferences (convention) |
 
-**Note on Cmd+M:** TUI Commander currently uses Cmd+M for "toggle markdown panel." This conflicts with macOS's "Minimize window" system shortcut. Tauri may intercept this before it reaches the app. Worth testing.
+**Note on Cmd+M:** TUICommander currently uses Cmd+M for "toggle markdown panel." This conflicts with macOS's "Minimize window" system shortcut. Tauri may intercept this before it reaches the app. Worth testing.
 
 #### Windows
 

@@ -1,4 +1,4 @@
-/* TUI Commander — Component Styles (being migrated to CSS modules) */
+/* TUICommander — Component Styles (being migrated to CSS modules) */
 
 /* Sidebar hidden state (cross-component: App.tsx controls sidebar visibility) */
 #app.sidebar-hidden #sidebar {
