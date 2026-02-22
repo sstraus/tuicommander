@@ -6,6 +6,7 @@ import { uiStore } from "../../stores/ui";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { githubStore } from "../../stores/github";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
+import { ParkedReposPopover } from "./ParkedReposPopover";
 import { PromptDialog } from "../PromptDialog";
 import { escapeShellArg } from "../../utils";
 import { t } from "../../i18n";
@@ -44,6 +45,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
   // PR detail popover state
   const [prDetailTarget, setPrDetailTarget] = createSignal<{ repoPath: string; branch: string } | null>(null);
+
+  // Parked repos popover state
+  const [parkedPopoverVisible, setParkedPopoverVisible] = createSignal(false);
+  const parkedCount = createMemo(() => repositoriesStore.getParkedRepos().length);
 
   // Auto-show PR popover when active branch has PR data
   createEffect(() => {
@@ -306,6 +311,20 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           {t("sidebar.addRepository", "Add Repository")}
         </button>
         <div class={s.footerIcons}>
+          <Show when={parkedCount() > 0}>
+            <button
+              class={s.footerAction}
+              onClick={() => setParkedPopoverVisible((v) => !v)}
+              title={t("sidebar.parkedRepos", "Parked repositories")}
+              style={{ position: "relative" }}
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <path d="M2 3h12v2H2zM3 5v8h10V5" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M5 8h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+              <span class={s.parkedBadge}>{parkedCount()}</span>
+            </button>
+          </Show>
           <button
             class={s.footerAction}
             onClick={props.onOpenHelp}
@@ -329,6 +348,21 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           </button>
         </div>
       </div>
+
+      {/* Parked repos popover */}
+      <Show when={parkedPopoverVisible()}>
+        <ParkedReposPopover
+          onClose={() => setParkedPopoverVisible(false)}
+          onUnpark={(repoPath) => {
+            repositoriesStore.setPark(repoPath, false);
+            setParkedPopoverVisible(false);
+            repositoriesStore.setActive(repoPath);
+            const repo = repositoriesStore.get(repoPath);
+            const branch = repo?.activeBranch || Object.keys(repo?.branches ?? {})[0];
+            if (branch) props.onBranchSelect(repoPath, branch);
+          }}
+        />
+      </Show>
 
       {/* PR detail popover (triggered from PrStateBadge click) */}
       <Show when={prDetailTarget()}>

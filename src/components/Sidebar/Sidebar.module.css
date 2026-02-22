@@ -625,3 +625,99 @@
   display: flex;
   align-items: center;
 }
+
+/* Parked repos popover */
+.parkedPopover {
+  position: absolute;
+  bottom: 42px;
+  right: 6px;
+  width: 220px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  padding: 4px 0;
+}
+
+.parkedPopoverHeader {
+  padding: 6px 10px 4px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+
+.parkedPopoverEmpty {
+  padding: 12px 10px;
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.parkedPopoverItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.parkedPopoverName {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parkedPopoverName:hover {
+  background: var(--bg-tertiary);
+}
+
+.parkedPopoverUnpark {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.parkedPopoverUnpark:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+}
+
+.parkedBadge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--bg-primary);
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
