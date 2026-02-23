@@ -219,15 +219,20 @@ export function parseUsageApiResponse(json: string): UsageApiResponse | null {
 // Format helpers (exported for testing)
 // ---------------------------------------------------------------------------
 
-/** Format a reset time as relative countdown like "2h 15m" */
+/** Format a reset time as relative countdown like "2h 15m" or "3d 5h" for >48h */
 export function formatResetTime(isoString: string): string {
   const resetMs = new Date(isoString).getTime();
   const nowMs = Date.now();
   const diffMs = resetMs - nowMs;
   if (diffMs <= 0) return "now";
-  const hours = Math.floor(diffMs / 3_600_000);
+  const totalHours = Math.floor(diffMs / 3_600_000);
+  if (totalHours > 48) {
+    const days = Math.floor(totalHours / 24);
+    const remainingHours = totalHours % 24;
+    return `${days}d ${remainingHours}h`;
+  }
   const minutes = Math.floor((diffMs % 3_600_000) / 60_000);
-  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (totalHours > 0) return `${totalHours}h ${minutes}m`;
   return `${minutes}m`;
 }
 

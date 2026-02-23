@@ -202,6 +202,21 @@ describe("formatResetTime", () => {
     expect(formatResetTime(future)).toBe("30m");
   });
 
+  it("formats > 48 hours as days", () => {
+    const future = new Date(Date.now() + 3 * 24 * 3600_000 + 5 * 3600_000).toISOString();
+    expect(formatResetTime(future)).toBe("3d 5h");
+  });
+
+  it("formats exactly 48h as hours", () => {
+    const future = new Date(Date.now() + 48 * 3600_000 + 10 * 60_000).toISOString();
+    expect(formatResetTime(future)).toBe("48h 10m");
+  });
+
+  it("formats > 48h with 0 remaining hours as days only", () => {
+    const future = new Date(Date.now() + 5 * 24 * 3600_000).toISOString();
+    expect(formatResetTime(future)).toBe("5d 0h");
+  });
+
   it("returns 'now' for past times", () => {
     const past = new Date(Date.now() - 60_000).toISOString();
     expect(formatResetTime(past)).toBe("now");
