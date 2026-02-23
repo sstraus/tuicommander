@@ -8,6 +8,7 @@ export interface Note {
   createdAt: number;
   repoPath: string | null;
   repoDisplayName: string | null;
+  usedAt: number | null;
 }
 
 /** Notes store state */
@@ -43,6 +44,7 @@ function createNotesStore() {
             ...n,
             repoPath: n.repoPath ?? null,
             repoDisplayName: n.repoDisplayName ?? null,
+            usedAt: n.usedAt ?? null,
           }));
           setState("notes", migrated);
         }
@@ -62,6 +64,7 @@ function createNotesStore() {
         createdAt: Date.now(),
         repoPath: repoPath ?? null,
         repoDisplayName: repoDisplayName ?? null,
+        usedAt: null,
       };
 
       setState(
@@ -86,6 +89,19 @@ function createNotesStore() {
           if (note) {
             note.repoPath = repoPath;
             note.repoDisplayName = repoDisplayName;
+          }
+        }),
+      );
+      saveNotes(state.notes);
+    },
+
+    /** Mark a note as used (sent to terminal) */
+    markUsed(id: string): void {
+      setState(
+        produce((s) => {
+          const note = s.notes.find((n) => n.id === id);
+          if (note) {
+            note.usedAt = Date.now();
           }
         }),
       );

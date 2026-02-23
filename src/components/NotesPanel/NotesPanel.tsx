@@ -97,9 +97,9 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
         </Show>
         <For each={filteredNotes()}>
           {(note) => (
-            <div class={s.item}>
+            <div class={cx(s.item, !!note.usedAt && s.itemUsed)}>
               <div class={s.body}>
-                <span class={s.text} title={note.text}>{note.text}</span>
+                <span class={s.text} title={note.text}>{note.usedAt ? "✓ " : ""}{note.text}</span>
                 <div class={s.meta}>
                   <span class={s.date}>{formatRelativeTime(note.createdAt, { showDateFallback: true })}</span>
                   <Show when={reassigningId() === note.id} fallback={
@@ -138,7 +138,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
                 </button>
                 <button
                   class={cx(s.actionBtn, s.sendBtn)}
-                  onClick={() => props.onSendToTerminal(note.text)}
+                  onClick={() => { props.onSendToTerminal(note.text); notesStore.markUsed(note.id); }}
                   title={t("notesPanel.send", "Send to terminal")}
                 >
                   ▶

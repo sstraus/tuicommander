@@ -40,6 +40,14 @@
   background: var(--bg-highlight);
 }
 
+.itemUsed {
+  opacity: 0.5;
+}
+
+.itemUsed .text {
+  text-decoration: line-through;
+}
+
 .body {
   flex: 1;
   min-width: 0;

@@ -123,7 +123,7 @@ describe("notesStore", () => {
   describe("hydrate()", () => {
     it("loads notes from backend", async () => {
       const savedNotes = [
-        { id: "note-1", text: "from backend", createdAt: 1000, repoPath: null, repoDisplayName: null },
+        { id: "note-1", text: "from backend", createdAt: 1000, repoPath: null, repoDisplayName: null, usedAt: null },
       ];
       mockInvoke.mockResolvedValueOnce({ notes: savedNotes });
 
@@ -146,13 +146,16 @@ describe("notesStore", () => {
     });
 
     it("keeps empty state on invoke failure", async () => {
+      const consoleSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
       mockInvoke.mockRejectedValueOnce(new Error("backend error"));
 
       await createRoot(async (dispose) => {
         await store.hydrate();
         expect(store.state.notes).toEqual([]);
+        expect(consoleSpy).toHaveBeenCalledWith("Failed to hydrate notes:", expect.any(Error));
         dispose();
       });
+      consoleSpy.mockRestore();
     });
   });
 
@@ -313,7 +316,7 @@ describe("notesStore", () => {
   });
 
   describe("hydrate() migration", () => {
-    it("fills missing repoPath/repoDisplayName with null", async () => {
+    it("fills missing repoPath, repoDisplayName, and usedAt with null", async () => {
       const legacyNotes = [
         { id: "note-1", text: "legacy", createdAt: 1000 },
       ];
@@ -323,6 +326,41 @@ describe("notesStore", () => {
         await store.hydrate();
         expect(store.state.notes[0].repoPath).toBeNull();
         expect(store.state.notes[0].repoDisplayName).toBeNull();
+        expect(store.state.notes[0].usedAt).toBeNull();
+        dispose();
+      });
+    });
+  });
+
+  describe("markUsed()", () => {
+    it("sets usedAt timestamp on the note", () => {
+      createRoot((dispose) => {
+        store.addNote("idea");
+        const id = store.state.notes[0].id;
+        expect(store.state.notes[0].usedAt).toBeNull();
+        const before = Date.now();
+        store.markUsed(id);
+        const after = Date.now();
+        expect(store.state.notes[0].usedAt).toBeGreaterThanOrEqual(before);
+        expect(store.state.notes[0].usedAt).toBeLessThanOrEqual(after);
+        dispose();
+      });
+    });
+
+    it("persists after marking used", () => {
+      createRoot((dispose) => {
+        store.addNote("idea");
+        mockInvoke.mockClear();
+        store.markUsed(store.state.notes[0].id);
+        expect(mockInvoke).toHaveBeenCalledWith("save_notes", expect.anything());
+        dispose();
+      });
+    });
+
+    it("ignores unknown id", () => {
+      createRoot((dispose) => {
+        store.addNote("idea");
+        expect(() => store.markUsed("nonexistent")).not.toThrow();
         dispose();
       });
     });
