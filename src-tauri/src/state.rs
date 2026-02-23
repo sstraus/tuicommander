@@ -385,8 +385,11 @@ pub(crate) fn strip_kitty_sequences(input: &str) -> (String, Vec<KittyAction>) {
 
     let bytes = input.as_bytes();
     let len = bytes.len();
-    let mut output = String::with_capacity(len);
     let mut actions = Vec::new();
+    // Track ranges of the input to KEEP (everything except kitty sequences).
+    // At the end we concatenate these slices to preserve UTF-8 integrity.
+    let mut kept_start = 0; // start of current "keep" span
+    let mut kept_ranges: Vec<(usize, usize)> = Vec::new();
     let mut i = 0;
 
     while i < len {
@@ -394,56 +397,75 @@ pub(crate) fn strip_kitty_sequences(input: &str) -> (String, Vec<KittyAction>) {
             match bytes[i + 2] {
                 b'>' => {
                     // Potential push: ESC [ > digits u
-                    let start = i;
                     let mut j = i + 3;
-                    // Parse digits
                     while j < len && bytes[j].is_ascii_digit() {
                         j += 1;
                     }
                     if j > i + 3 && j < len && bytes[j] == b'u' {
-                        // Valid push sequence
+                        // Valid push — save preceding text, skip sequence
+                        if i > kept_start {
+                            kept_ranges.push((kept_start, i));
+                        }
                         let digits = &input[i + 3..j];
                         if let Ok(flags) = digits.parse::<u32>() {
                             actions.push(KittyAction::Push(flags));
                         }
-                        i = j + 1; // skip past 'u'
+                        i = j + 1;
+                        kept_start = i;
                         continue;
                     }
-                    // Not a kitty push — emit the ESC and continue
-                    output.push(bytes[start] as char);
-                    i = start + 1;
+                    // Not a kitty push — advance past ESC only
+                    i += 1;
                 }
                 b'<' => {
-                    // Potential pop: ESC [ < u
                     if i + 3 < len && bytes[i + 3] == b'u' {
+                        // Valid pop — save preceding text, skip sequence
+                        if i > kept_start {
+                            kept_ranges.push((kept_start, i));
+                        }
                         actions.push(KittyAction::Pop);
-                        i += 4; // skip ESC [ < u
+                        i += 4;
+                        kept_start = i;
                         continue;
                     }
-                    // Not a kitty pop (likely SGR mouse: ESC [ < digit...) — emit ESC
-                    output.push(bytes[i] as char);
                     i += 1;
                 }
                 b'?' => {
-                    // Potential query: ESC [ ? u
                     if i + 3 < len && bytes[i + 3] == b'u' {
+                        // Valid query — save preceding text, skip sequence
+                        if i > kept_start {
+                            kept_ranges.push((kept_start, i));
+                        }
                         actions.push(KittyAction::Query);
-                        i += 4; // skip ESC [ ? u
+                        i += 4;
+                        kept_start = i;
                         continue;
                     }
-                    // Not a kitty query (e.g. DEC private mode) — emit ESC
-                    output.push(bytes[i] as char);
                     i += 1;
                 }
                 _ => {
-                    output.push(bytes[i] as char);
                     i += 1;
                 }
             }
         } else {
-            output.push(bytes[i] as char);
             i += 1;
         }
+    }
+
+    // If no kitty sequences were found, return original string
+    if actions.is_empty() {
+        return (input.to_string(), actions);
+    }
+
+    // Flush trailing kept span
+    if kept_start < len {
+        kept_ranges.push((kept_start, len));
+    }
+
+    // Concatenate kept slices (all are valid UTF-8 sub-slices of input)
+    let mut output = String::with_capacity(len);
+    for (start, end) in &kept_ranges {
+        output.push_str(&input[*start..*end]);
     }
 
     (output, actions)
@@ -1200,5 +1222,39 @@ mod tests {
         // The ESC is emitted, then [>u follows as normal text
         assert_eq!(out, input);
         assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_strip_kitty_preserves_utf8_box_drawing() {
+        // Box-drawing chars (╭│╰) are 3-byte UTF-8 — must not be corrupted
+        let input = "╭──────╮\n│ hello │\n╰──────╯";
+        let (out, actions) = strip_kitty_sequences(input);
+        assert_eq!(out, input);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_strip_kitty_utf8_mixed_with_sequences() {
+        // Kitty sequence embedded between multi-byte UTF-8 text
+        let input = "╭──╮\x1b[>1u╰──╯";
+        let (out, actions) = strip_kitty_sequences(input);
+        assert_eq!(out, "╭──╮╰──╯");
+        assert_eq!(actions, vec![KittyAction::Push(1)]);
+    }
+
+    #[test]
+    fn test_strip_kitty_emoji_passthrough() {
+        let input = "🦀 hello \x1b[?u 🎉";
+        let (out, actions) = strip_kitty_sequences(input);
+        assert_eq!(out, "🦀 hello  🎉");
+        assert_eq!(actions, vec![KittyAction::Query]);
+    }
+
+    #[test]
+    fn test_strip_kitty_cjk_passthrough() {
+        let input = "漢字\x1b[<u日本語";
+        let (out, actions) = strip_kitty_sequences(input);
+        assert_eq!(out, "漢字日本語");
+        assert_eq!(actions, vec![KittyAction::Pop]);
     }
 }
