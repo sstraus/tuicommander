@@ -311,51 +311,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                   </div>
                 </Show>
 
-                {/* PR Updates section */}
-                <Show when={activeNotifs().length > 0}>
-                  <div class={s.notifHeader}>
-                    <span class={s.notifTitle}>{t("toolbar.prUpdates", "PR UPDATES")}</span>
-                    <button class={s.dismissAll} onClick={() => { prNotificationsStore.dismissAll(); setShowNotifPopover(false); }}>
-                      {t("toolbar.dismissAll", "Dismiss All")}
-                    </button>
-                  </div>
-                  <For each={activeNotifs()}>
-                    {(notif) => {
-                      const info = NOTIFICATION_LABELS[notif.type];
-                      return (
-                        <div
-                          class={cx(s.notifItem, info.cls)}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowNotifPopover(false);
-                            requestAnimationFrame(() => {
-                              setPrDetailTarget({ repoPath: notif.repoPath, branch: notif.branch });
-                            });
-                          }}
-                        >
-                          <span class={s.notifIcon}>{info.icon}</span>
-                          <div class={s.notifDetails}>
-                            <span
-                              class={s.notifRepo}
-                              style={(() => {
-                                const color = repoSettingsStore.get(notif.repoPath)?.color
-                                  || repositoriesStore.getGroupForRepo(notif.repoPath)?.color;
-                                return color ? { color } : undefined;
-                              })()}
-                            >
-                              {repositoriesStore.get(notif.repoPath)?.displayName ?? notif.repoPath.split("/").pop()}
-                            </span>
-                            <span class={s.notifPr}>#{notif.prNumber} {info.label}</span>
-                            <span class={s.notifBranch} title={notif.title}>{notif.branch}</span>
-                          </div>
-                          <button class={s.notifClose} onClick={(e) => { e.stopPropagation(); prNotificationsStore.dismiss(notif.id); }}>&times;</button>
-                        </div>
-                      );
-                    }}
-                  </For>
-                </Show>
-
-                {/* Plugin activity sections */}
+                {/* Plugin activity sections (shown above PR updates) */}
                 <For each={activitySections()}>
                   {(section) => {
                     const sectionItems = () => activityStore.getForSection(section.id);
@@ -404,6 +360,50 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                     );
                   }}
                 </For>
+
+                {/* PR Updates section */}
+                <Show when={activeNotifs().length > 0}>
+                  <div class={s.notifHeader}>
+                    <span class={s.notifTitle}>{t("toolbar.prUpdates", "PR UPDATES")}</span>
+                    <button class={s.dismissAll} onClick={() => { prNotificationsStore.dismissAll(); setShowNotifPopover(false); }}>
+                      {t("toolbar.dismissAll", "Dismiss All")}
+                    </button>
+                  </div>
+                  <For each={activeNotifs()}>
+                    {(notif) => {
+                      const info = NOTIFICATION_LABELS[notif.type];
+                      return (
+                        <div
+                          class={cx(s.notifItem, info.cls)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowNotifPopover(false);
+                            requestAnimationFrame(() => {
+                              setPrDetailTarget({ repoPath: notif.repoPath, branch: notif.branch });
+                            });
+                          }}
+                        >
+                          <span class={s.notifIcon}>{info.icon}</span>
+                          <div class={s.notifDetails}>
+                            <span
+                              class={s.notifRepo}
+                              style={(() => {
+                                const color = repoSettingsStore.get(notif.repoPath)?.color
+                                  || repositoriesStore.getGroupForRepo(notif.repoPath)?.color;
+                                return color ? { color } : undefined;
+                              })()}
+                            >
+                              {repositoriesStore.get(notif.repoPath)?.displayName ?? notif.repoPath.split("/").pop()}
+                            </span>
+                            <span class={s.notifPr}>#{notif.prNumber} {info.label}</span>
+                            <span class={s.notifBranch} title={notif.title}>{notif.branch}</span>
+                          </div>
+                          <button class={s.notifClose} onClick={(e) => { e.stopPropagation(); prNotificationsStore.dismiss(notif.id); }}>&times;</button>
+                        </div>
+                      );
+                    }}
+                  </For>
+                </Show>
               </div>
             </Show>
           </div>
