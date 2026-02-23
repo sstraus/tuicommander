@@ -1014,6 +1014,7 @@ const App: Component = () => {
         suggestedName={gitOps.worktreeDialogState()?.suggestedName ?? ""}
         existingBranches={gitOps.worktreeDialogState()?.existingBranches ?? []}
         worktreeBranches={gitOps.worktreeDialogState()?.worktreeBranches ?? []}
+        worktreesDir={gitOps.worktreeDialogState()?.worktreesDir ?? ""}
         onClose={() => gitOps.setWorktreeDialogState(null)}
         onCreate={gitOps.confirmCreateWorktree}
       />

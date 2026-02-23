@@ -23,6 +23,7 @@ export interface GitOperationsDeps {
   pty: {
     canSpawn: () => Promise<boolean>;
     write: (sessionId: string, data: string) => Promise<void>;
+    getWorktreesDir: () => Promise<string>;
   };
   dialogs: {
     confirmRemoveRepo: (repoName: string) => Promise<boolean>;
@@ -47,6 +48,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     suggestedName: string;
     existingBranches: string[];
     worktreeBranches: string[];
+    worktreesDir: string;
   } | null>(null);
 
   const refreshAllBranchStats = async () => {
@@ -163,8 +165,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
     } else if (!branch?.hadTerminals) {
       // First time selecting this branch — auto-spawn a terminal
       await handleAddTerminalToBranch(repoPath, branchName);
+    } else {
+      // hadTerminals && no valid terminals → user closed them all, show empty state.
+      // Clear activeId so the previous branch's terminal doesn't bleed through.
+      terminalsStore.setActive(null);
     }
-    // If hadTerminals && no valid terminals → user closed them all, show empty state
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -330,9 +335,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
     const worktreeBranches = repoState ? Object.keys(repoState.branches) : [];
 
     // Fetch data for the dialog in parallel
-    const [suggestedName, localBranches] = await Promise.all([
+    const [suggestedName, localBranches, worktreesDir] = await Promise.all([
       deps.repo.generateWorktreeName(worktreeBranches),
       deps.repo.listLocalBranches(repoPath),
+      deps.pty.getWorktreesDir(),
     ]);
 
     setWorktreeDialogState({
@@ -340,6 +346,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       suggestedName,
       existingBranches: localBranches,
       worktreeBranches,
+      worktreesDir,
     });
   };
 

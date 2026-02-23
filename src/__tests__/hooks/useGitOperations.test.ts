@@ -29,6 +29,7 @@ describe("useGitOperations", () => {
   const mockPty = {
     canSpawn: vi.fn().mockResolvedValue(true),
     write: vi.fn().mockResolvedValue(undefined),
+    getWorktreesDir: vi.fn().mockResolvedValue("/repos/.worktrees"),
   };
 
   const mockDialogs = {
@@ -95,6 +96,23 @@ describe("useGitOperations", () => {
       // hadTerminals is true but no live terminals → show empty state, no spawn
       const branch = repositoriesStore.get("/repo")?.branches["feature"];
       expect(branch?.terminals.length).toBe(0);
+    });
+
+    it("clears activeId when switching to branch with no terminals", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "develop", { worktreePath: "/repo/wt-dev", hadTerminals: true });
+
+      // Select main first — creates a terminal and sets activeId
+      await gitOps.handleBranchSelect("/repo", "main");
+      const mainTermId = terminalsStore.state.activeId;
+      expect(mainTermId).not.toBeNull();
+
+      // Switch to develop which has hadTerminals but no live terminals
+      await gitOps.handleBranchSelect("/repo", "develop");
+
+      // activeId must be cleared so the old terminal doesn't bleed through
+      expect(terminalsStore.state.activeId).toBeNull();
     });
 
     it("restores terminals from savedTerminals on branch click", async () => {
@@ -349,6 +367,25 @@ describe("useGitOperations", () => {
       expect(repositoriesStore.get("/repo")?.branches["main"]).toBeDefined();
     });
 
+    it("discovers externally created worktrees", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      // Simulate an external `git worktree add` — new branch appears in getWorktreePaths
+      mockRepo.getWorktreePaths.mockResolvedValue({
+        main: "/repo",
+        "feature-external": "/repo/.worktrees/feature-external",
+      });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 2, deletions: 1 });
+
+      await gitOps.refreshAllBranchStats();
+
+      const newBranch = repositoriesStore.get("/repo")?.branches["feature-external"];
+      expect(newBranch).toBeDefined();
+      expect(newBranch?.worktreePath).toBe("/repo/.worktrees/feature-external");
+      expect(newBranch?.additions).toBe(2);
+      expect(newBranch?.deletions).toBe(1);
+    });
+
     it("ignores diff stats errors for individual branches", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
@@ -443,6 +480,7 @@ describe("useGitOperations", () => {
       expect(state?.suggestedName).toBe("bold-nexus-042");
       expect(state?.existingBranches).toEqual(["main", "develop"]);
       expect(state?.worktreeBranches).toEqual(["main"]);
+      expect(state?.worktreesDir).toBe("/repos/.worktrees");
     });
 
     it("passes existing worktree branches to name generator", async () => {

@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect, onCleanup, Show, For } from "solid-js";
+import { Component, createSignal, createEffect, createMemo, onCleanup, Show, For } from "solid-js";
 import { t } from "../../i18n";
 import { validateBranchName } from "../RenameBranchDialog/RenameBranchDialog";
 import d from "../shared/dialog.module.css";
@@ -16,30 +16,59 @@ export interface CreateWorktreeDialogProps {
   existingBranches: string[];
   /** Branches that already have worktrees (cannot be checked out again) */
   worktreeBranches: string[];
+  /** Base directory where worktrees are created */
+  worktreesDir: string;
   onClose: () => void;
   onCreate: (options: WorktreeCreateOptions) => void;
 }
 
+/** Sanitize a branch name for use as a directory name (replace slashes with dashes) */
+function sanitizeForPath(name: string): string {
+  return name.replace(/\//g, "-");
+}
+
 export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props) => {
   const [branchName, setBranchName] = createSignal("");
-  const [useExisting, setUseExisting] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   let inputRef: HTMLInputElement | undefined;
 
-  // Available existing branches: local branches that don't already have a worktree
-  const availableExistingBranches = () =>
-    props.existingBranches.filter((b) => !props.worktreeBranches.includes(b));
+  const trimmedName = () => branchName().trim();
+
+  // Whether the typed name matches an existing local branch
+  const isExistingBranch = createMemo(() =>
+    props.existingBranches.includes(trimmedName()),
+  );
+
+  // Whether the typed name matches a branch that already has a worktree
+  const hasWorktree = createMemo(() =>
+    props.worktreeBranches.includes(trimmedName()),
+  );
+
+  // Filter branches by what the user has typed
+  const filteredBranches = createMemo(() => {
+    const query = trimmedName().toLowerCase();
+    if (!query) return props.existingBranches;
+    return props.existingBranches.filter((b) =>
+      b.toLowerCase().includes(query),
+    );
+  });
+
+  // Path preview
+  const pathPreview = createMemo(() => {
+    const name = trimmedName();
+    if (!name || !props.worktreesDir) return "";
+    const dir = props.worktreesDir.replace(/\/$/, "");
+    return `${dir}/${sanitizeForPath(name)}/`;
+  });
 
   // Reset state when dialog opens
   createEffect(() => {
     if (props.visible) {
-      setBranchName(props.suggestedName);
-      setUseExisting(false);
+      setBranchName("");
       setError(null);
       setTimeout(() => {
         if (inputRef) {
           inputRef.focus();
-          inputRef.select();
         }
       }, 0);
     }
@@ -64,26 +93,23 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
   });
 
   const handleCreate = () => {
-    const name = branchName().trim();
+    const name = trimmedName();
+    if (!name) return;
 
-    if (useExisting()) {
-      if (!name) {
-        setError("Select a branch");
-        return;
-      }
-      if (props.worktreeBranches.includes(name)) {
-        setError("Branch already has a worktree");
-        return;
-      }
+    // Existing branch that already has a worktree — reject
+    if (hasWorktree()) {
+      setError(t("createWorktree.alreadyHasWorktree", "Branch already has a worktree"));
+      return;
+    }
+
+    if (isExistingBranch()) {
+      // Check out existing branch into new worktree
       props.onCreate({ branchName: name, createBranch: false });
     } else {
+      // New branch — validate name
       const validationError = validateBranchName(name);
       if (validationError) {
         setError(validationError);
-        return;
-      }
-      if (props.existingBranches.includes(name)) {
-        setError("Branch already exists — use 'Existing branch' mode");
         return;
       }
       props.onCreate({ branchName: name, createBranch: true });
@@ -96,94 +122,78 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
     if (error()) setError(null);
   };
 
-  const handleSelectChange = (e: Event) => {
-    const value = (e.target as HTMLSelectElement).value;
-    setBranchName(value);
+  const handleBranchClick = (branch: string) => {
+    // Don't allow selecting branches that already have worktrees
+    if (props.worktreeBranches.includes(branch)) return;
+    setBranchName(branch);
     if (error()) setError(null);
   };
 
-  const handleModeToggle = (existing: boolean) => {
-    setUseExisting(existing);
-    setError(null);
-    if (existing) {
-      const available = availableExistingBranches();
-      setBranchName(available[0] ?? "");
-    } else {
-      setBranchName(props.suggestedName);
-      setTimeout(() => {
-        if (inputRef) {
-          inputRef.focus();
-          inputRef.select();
-        }
-      }, 0);
-    }
-  };
-
-  if (!props.visible) return null;
-
   return (
-    <div class={d.overlay} onClick={props.onClose}>
-      <div class={d.popover} onClick={(e) => e.stopPropagation()}>
-        <div class={d.header}>
-          <span class={d.headerIcon}>+</span>
-          <h4>{t("createWorktree.title", "New Worktree")}</h4>
-        </div>
-        <div class={d.body}>
-          <div class={s.modeToggle}>
-            <button
-              class={`${s.modeBtn} ${!useExisting() ? s.active : ""}`}
-              onClick={() => handleModeToggle(false)}
-            >
-              {t("createWorktree.newBranch", "New branch")}
-            </button>
-            <button
-              class={`${s.modeBtn} ${useExisting() ? s.active : ""}`}
-              onClick={() => handleModeToggle(true)}
-              disabled={availableExistingBranches().length === 0}
-              title={availableExistingBranches().length === 0 ? t("createWorktree.noAvailableBranches", "No branches available without worktrees") : undefined}
-            >
-              {t("createWorktree.existingBranch", "Existing branch")}
-            </button>
+    <Show when={props.visible}>
+      <div class={d.overlay} onClick={props.onClose}>
+        <div class={d.popover} onClick={(e) => e.stopPropagation()}>
+          <div class={d.header}>
+            <span class={d.headerIcon}>+</span>
+            <h4>{t("createWorktree.title", "New Worktree")}</h4>
           </div>
-
-          <Show when={!useExisting()}>
+          <div class={d.body}>
             <input
               ref={inputRef}
               type="text"
               value={branchName()}
               onInput={handleInputChange}
-              placeholder={t("createWorktree.branchPlaceholder", "Branch name")}
+              placeholder={t("createWorktree.comboPlaceholder", "Type branch name or select existing...")}
             />
-          </Show>
 
-          <Show when={useExisting()}>
-            <select
-              class={s.branchSelect}
-              value={branchName()}
-              onChange={handleSelectChange}
-            >
-              <For each={availableExistingBranches()}>
-                {(branch) => <option value={branch}>{branch}</option>}
+            <div class={s.branchList}>
+              <For each={filteredBranches()}>
+                {(branch) => {
+                  const isDisabled = () => props.worktreeBranches.includes(branch);
+                  return (
+                    <div
+                      class={`${s.branchItem} ${isDisabled() ? s.disabled : ""} ${trimmedName() === branch ? s.selected : ""}`}
+                      onClick={() => handleBranchClick(branch)}
+                    >
+                      <span>{branch}</span>
+                      <Show when={isDisabled()}>
+                        <span class={s.worktreeTag}>{t("createWorktree.hasWorktree", "(has worktree)")}</span>
+                      </Show>
+                    </div>
+                  );
+                }}
               </For>
-            </select>
-          </Show>
+            </div>
 
-          {error() && <p class={d.error}>{error()}</p>}
-        </div>
-        <div class={d.actions}>
-          <button class={d.cancelBtn} onClick={props.onClose}>
-            {t("createWorktree.cancel", "Cancel")}
-          </button>
-          <button
-            class={d.primaryBtn}
-            onClick={handleCreate}
-            disabled={!branchName().trim()}
-          >
-            {t("createWorktree.create", "Create")}
-          </button>
+            <Show when={trimmedName()}>
+              <div class={s.statusLine}>
+                {isExistingBranch()
+                  ? t("createWorktree.statusExisting", "Will check out existing branch into new worktree")
+                  : t("createWorktree.statusNew", "Will create new branch and worktree")}
+              </div>
+            </Show>
+
+            <Show when={pathPreview()}>
+              <div class={s.pathPreview}>{pathPreview()}</div>
+            </Show>
+
+            {error() && <p class={d.error}>{error()}</p>}
+          </div>
+          <div class={d.actions}>
+            <button class={d.cancelBtn} onClick={props.onClose}>
+              {t("createWorktree.cancel", "Cancel")}
+            </button>
+            <button
+              class={d.primaryBtn}
+              onClick={handleCreate}
+              disabled={!trimmedName()}
+            >
+              {t("createWorktree.create", "Create")}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </Show>
   );
 };
 
