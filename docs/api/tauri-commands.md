@@ -118,9 +118,22 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
 | `plugin_read_file` | `path, plugin_id` | `String` | Read file as UTF-8 (within $HOME, 10 MB limit) |
+| `plugin_read_file_tail` | `path, max_bytes, plugin_id` | `String` | Read last N bytes of file, skip partial first line |
 | `plugin_list_directory` | `path, pattern?, plugin_id` | `Vec<String>` | List filenames in directory (optional glob filter) |
 | `plugin_watch_path` | `path, plugin_id, recursive?, debounce_ms?` | `String` (watch ID) | Start watching path for changes |
 | `plugin_unwatch` | `watch_id, plugin_id` | `()` | Stop watching a path |
+
+## Plugin HTTP (`plugin_http.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `plugin_http_fetch` | `url, method?, headers?, body?, allowed_urls, plugin_id` | `HttpResponse` | Make HTTP request (validated against allowed_urls) |
+
+## Plugin Credentials (`plugin_credentials.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `plugin_read_credential` | `service_name, plugin_id` | `String?` | Read credential from system store (Keychain/file) |
 
 ## Utility Commands (`lib.rs`)
 

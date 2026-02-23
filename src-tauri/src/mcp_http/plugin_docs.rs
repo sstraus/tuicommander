@@ -22,7 +22,8 @@ Hot reload: editing any file in the plugin directory triggers automatic unload +
   "main": "main.js",
   "description": "Optional",
   "author": "Optional",
-  "capabilities": []
+  "capabilities": [],
+  "allowedUrls": ["https://api.example.com/*"]
 }
 ```
 
@@ -30,7 +31,8 @@ Constraints:
 - `id` must match directory name exactly, non-empty
 - `main` must be a filename only (no path separators or `..`)
 - `minAppVersion` must be <= current app version (current: 0.3.x)
-- `capabilities`: subset of `pty:write`, `ui:markdown`, `ui:sound`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`
+- `capabilities`: subset of `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`
+- `allowedUrls`: URL patterns for `net:http` (supports `*` wildcard for path prefix matching)
 - Module default export must have `id`, `onload(host)`, `onunload()`
 
 ## Complete main.js Template
@@ -152,6 +154,14 @@ host.getSettings(repoPath: string) // { path, displayName, baseBranch, color } |
 | `await host.writePty(sessionId: string, data: string): Promise<void>` | `pty:write` |
 | `host.openMarkdownPanel(title: string, contentUri: string): void` | `ui:markdown` |
 | `await host.playNotificationSound(): Promise<void>` | `ui:sound` |
+| `host.openPanel({ id, title, html }): PanelHandle` | `ui:panel` |
+| `host.postTickerMessage({ id, text, icon?, priority?, ttlMs? }): void` | `ui:ticker` |
+| `host.removeTickerMessage(id: string): void` | `ui:ticker` |
+| `await host.readCredential(serviceName: string): Promise<string \| null>` | `credentials:read` |
+| `await host.httpFetch(url: string, options?): Promise<HttpResponse>` | `net:http` |
+
+PanelHandle: `{ tabId, update(html), close() }` — HTML rendered in sandboxed iframe.
+HttpResponse: `{ status: number, headers: Record<string, string>, body: string }` — non-2xx is NOT an error.
 
 ### Tier 3b: Filesystem Operations (capability-gated)
 
@@ -160,6 +170,9 @@ All paths must be absolute and within `$HOME`. Resolved via canonicalize (symlin
 ```typescript
 // Read a file (max 10 MB, UTF-8)
 const content = await host.readFile("/Users/me/.claude/projects/foo/conversation.jsonl");  // requires "fs:read"
+
+// Read last N bytes of a file (skip partial first line)
+const tail = await host.readFileTail("/Users/me/.claude/hud-tracking.jsonl", 512 * 1024);  // requires "fs:read"
 
 // List directory (optional glob filter)
 const files = await host.listDirectory("/Users/me/.claude/projects/foo", "*.jsonl");  // requires "fs:list"
