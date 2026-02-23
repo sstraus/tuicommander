@@ -1,6 +1,6 @@
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { isTauri } from "./transport";
-import { invoke } from "./invoke";
+import { pluginStore } from "./stores/pluginStore";
 import { repositoriesStore } from "./stores/repositories";
 
 /** Callbacks provided by App.tsx to control UI navigation */
@@ -48,7 +48,7 @@ async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): 
       if (!proceed) return;
 
       try {
-        await invoke("install_plugin_from_url", { url });
+        await pluginStore.installFromUrl(url);
         // Open plugins tab so user can see the result
         callbacks.openSettings("plugins");
       } catch (err) {

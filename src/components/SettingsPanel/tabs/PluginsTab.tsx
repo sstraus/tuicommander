@@ -3,8 +3,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { pluginStore } from "../../../stores/pluginStore";
 import { registryStore, type RegistryEntry } from "../../../stores/registryStore";
-import { setPluginEnabled } from "../../../plugins/pluginLoader";
-import { invoke } from "../../../invoke";
 import { isTauri } from "../../../transport";
 import type { PluginState } from "../../../stores/pluginStore";
 import type { LogEntry } from "../../../plugins/pluginLogger";
@@ -52,7 +50,7 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
     if (toggling()) return;
     setToggling(true);
     try {
-      await setPluginEnabled(props.plugin.id, !props.plugin.enabled);
+      await pluginStore.setEnabled(props.plugin.id, !props.plugin.enabled);
     } finally {
       setToggling(false);
     }
@@ -65,8 +63,7 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
     }
     setUninstalling(true);
     try {
-      await invoke("uninstall_plugin", { id: props.plugin.id });
-      pluginStore.removePlugin(props.plugin.id);
+      await pluginStore.uninstall(props.plugin.id);
     } catch (err) {
       console.error(`Failed to uninstall plugin "${props.plugin.id}":`, err);
     } finally {
@@ -162,7 +159,7 @@ const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
     if (installing()) return;
     setInstalling(true);
     try {
-      await invoke("install_plugin_from_url", { url: props.entry.downloadUrl });
+      await pluginStore.installFromUrl(props.entry.downloadUrl);
     } catch (err) {
       console.error(`Failed to install plugin "${props.entry.id}":`, err);
       alert(`Installation failed: ${err}`);
@@ -235,7 +232,7 @@ export const PluginsTab: Component = () => {
 
     setInstalling(true);
     try {
-      await invoke("install_plugin_from_zip", { path: selected });
+      await pluginStore.installFromZip(selected as string);
     } catch (err) {
       console.error("Failed to install plugin:", err);
       alert(`Installation failed: ${err}`);

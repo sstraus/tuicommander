@@ -8,6 +8,7 @@
 
 import { createStore, produce } from "solid-js/store";
 import { PluginLogger } from "../plugins/pluginLogger";
+import { invoke } from "../invoke";
 import type { PluginManifest } from "../plugins/pluginLoader";
 
 // ---------------------------------------------------------------------------
@@ -137,6 +138,33 @@ function createPluginStore() {
     loggers.clear();
   }
 
+  // -------------------------------------------------------------------------
+  // IPC wrappers — UI components call these instead of invoke() directly
+  // -------------------------------------------------------------------------
+
+  /** Toggle a plugin enabled/disabled. Delegates to pluginLoader.setPluginEnabled. */
+  async function setEnabled(id: string, enabled: boolean): Promise<void> {
+    // Lazy import to avoid circular dependency (pluginLoader imports pluginStore)
+    const { setPluginEnabled } = await import("../plugins/pluginLoader");
+    await setPluginEnabled(id, enabled);
+  }
+
+  /** Uninstall a plugin: remove files via Rust, then remove from store. */
+  async function uninstall(id: string): Promise<void> {
+    await invoke("uninstall_plugin", { id });
+    removePlugin(id);
+  }
+
+  /** Install a plugin from a remote URL. Returns the installed manifest. */
+  async function installFromUrl(url: string): Promise<PluginManifest> {
+    return invoke<PluginManifest>("install_plugin_from_url", { url });
+  }
+
+  /** Install a plugin from a local ZIP file. Returns the installed manifest. */
+  async function installFromZip(path: string): Promise<PluginManifest> {
+    return invoke<PluginManifest>("install_plugin_from_zip", { path });
+  }
+
   return {
     state,
     registerPlugin,
@@ -146,6 +174,10 @@ function createPluginStore() {
     getPlugin,
     getAll,
     clear,
+    setEnabled,
+    uninstall,
+    installFromUrl,
+    installFromZip,
   };
 }
 
