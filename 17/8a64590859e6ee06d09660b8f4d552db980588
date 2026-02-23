@@ -1,0 +1,58 @@
+src/components/ClaudeUsageDashboard/ClaudeUsageDashboard.module.css
+  6079c9a654c9bc85 300,302,304,306-324
+src/components/TerminalArea.tsx
+  6079c9a654c9bc85 164,187,215
+src/index.tsx
+  6079c9a654c9bc85 65-87
+src/components/TabBar/TabBar.tsx
+  6079c9a654c9bc85 379
+src/components/CodeEditorPanel/CodeEditorTab.tsx
+  6079c9a654c9bc85 142-155,254
+src/components/ClaudeUsageDashboard/ClaudeUsageDashboard.tsx
+  6079c9a654c9bc85 586-589
+src-tauri/src/lib.rs
+  6079c9a654c9bc85 579,599-604,609-611
+src/components/SettingsPanel/tabs/NotificationsTab.tsx
+  6079c9a654c9bc85 7-144,154-155,157,162-167,171-182,186-200,205-211,217,221-233,235-237,239-255,257-270,274,276-286,293,295-305,307,311,313-315,317-331,334,338-350,352-353,355
+src/components/TabBar/TabBar.module.css
+  6079c9a654c9bc85 235-261
+src-tauri/src/claude_usage.rs
+  6079c9a654c9bc85 537-538,540-546
+src/features/claudeUsage.ts
+  6079c9a654c9bc85 103,108-110
+src/components/SettingsPanel/Settings.module.css
+  6079c9a654c9bc85 349-350,353,362,368,370,392,397-400,909-915,929-930
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "178a64590859e6ee06d09660b8f4d552db980588",
+  "prompts": {
+    "4863316f9a1603b0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4082c81-240b-4629-81b9-7941a19ca31d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 43,
+      "total_deletions": 29,
+      "accepted_lines": 19,
+      "overriden_lines": 0
+    },
+    "6079c9a654c9bc85": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "793920e5-13d0-47b3-a2a0-044889b5f852",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 653,
+      "total_deletions": 200,
+      "accepted_lines": 445,
+      "overriden_lines": 0
+    }
+  }
+}
