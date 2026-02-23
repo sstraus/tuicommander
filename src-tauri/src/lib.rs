@@ -576,7 +576,7 @@ pub fn run() {
 
     let builder = tauri::Builder::default();
     let builder = plugins::register_plugin_protocol(builder);
-    builder
+    let builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -596,14 +596,19 @@ pub fn run() {
         .manage(state)
         .manage(dictation::DictationState::new())
         .manage(sleep_prevention::SleepBlocker::new())
-        .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // Focus existing window when another instance is launched (Story 065)
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
-        }))
+        .plugin(tauri_plugin_deep_link::init());
+
+    // Single-instance lock only in release builds — allows tauri dev to run
+    // alongside the installed TUIC-preview.app (they share the same identifier).
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         .setup(|app| {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;

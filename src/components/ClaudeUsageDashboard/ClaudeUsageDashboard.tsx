@@ -583,8 +583,11 @@ export const ClaudeUsageDashboard: Component = () => {
       </Show>
 
       {/* API error */}
-      <Show when={apiError()}>
-        <div class={s.errorState}>API: {apiError()}</div>
+      <Show when={apiError() && !loading()}>
+        <div class={s.errorState}>
+          <span>Rate limits unavailable</span>
+          <button class={s.retryButton} onClick={() => fetchApi()}>Retry</button>
+        </div>
       </Show>
 
       {/* Rate limits */}

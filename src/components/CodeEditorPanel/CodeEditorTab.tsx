@@ -139,6 +139,20 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   // Reactive language extension
   createExtension((): Extension => langSupport() ?? []);
 
+  // Force CodeMirror to recalculate layout when the editor container resizes.
+  // The container starts as display:none (.terminal-pane without .active),
+  // so CodeMirror computes zero dimensions during initial mount. When the
+  // container becomes visible (0→real size), ResizeObserver fires and we
+  // tell CodeMirror to re-measure.
+  let editorDiv: HTMLDivElement | undefined;
+  createEffect(() => {
+    const view = editorView();
+    if (!view || !editorDiv) return;
+    const ro = new ResizeObserver(() => view.requestMeasure());
+    ro.observe(editorDiv);
+    onCleanup(() => ro.disconnect());
+  });
+
   // Load language support
   createEffect(
     on(
@@ -237,7 +251,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
           initial component mount. Wrapping in <Show> defers the ref, causing onMount
           inside createCodeMirror to never fire in production builds — the editorView
           signal stays undefined and content/extensions are never applied. */}
-      <div class={s.editorContent} ref={ref} style={{ display: loading() || error() ? "none" : undefined }} />
+      <div class={s.editorContent} ref={(el) => { editorDiv = el; ref(el); }} style={{ display: loading() || error() ? "none" : undefined }} />
 
       <ContextMenu
         items={[{

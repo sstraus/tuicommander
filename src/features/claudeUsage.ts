@@ -100,11 +100,14 @@ async function poll(): Promise<void> {
     const errStr = String(err);
     const isTokenMissing = errStr.includes("No Claude OAuth token");
     const isAuthError = errStr.includes("401") || errStr.includes("403");
+    const isParseError = errStr.includes("Failed to parse");
     const text = isTokenMissing
       ? "Claude: no token"
       : isAuthError
         ? "Claude: token expired"
-        : "Claude: offline";
+        : isParseError
+          ? "Claude: API changed"
+          : "Claude: offline";
     statusBarTicker.addMessage({
       id: TICKER_ID,
       pluginId: FEATURE_ID,

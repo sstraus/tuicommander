@@ -62,6 +62,29 @@ render(
 // This prevents a flash of empty state (e.g. "Add Repository" button) before
 // persisted data has loaded.
 
+// Suppress the native webview context menu (macOS "Reload" button) in production.
+// In dev mode, keep it available for debugging convenience.
+if (!import.meta.env.DEV) {
+  document.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+  });
+}
+
+// Intercept external link clicks and open them in the system browser.
+// Without this, Tauri shows a scary "WARNING: This link could potentially be
+// dangerous" navigation confirmation dialog.
+document.addEventListener("click", (e) => {
+  const anchor = (e.target as HTMLElement).closest("a[href]") as HTMLAnchorElement | null;
+  if (!anchor) return;
+  const href = anchor.href;
+  if (!href) return;
+  // Only intercept http/https links (not internal anchors, javascript:, etc.)
+  if (href.startsWith("http://") || href.startsWith("https://")) {
+    e.preventDefault();
+    import("./utils/openUrl").then(({ handleOpenUrl }) => handleOpenUrl(href));
+  }
+});
+
 if (import.meta.env.DEV) {
   import("./dev/simulator");
 }

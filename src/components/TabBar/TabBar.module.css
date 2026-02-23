@@ -232,6 +232,33 @@
   align-items: center;
 }
 
+/* Panel tabs (non-file md tabs: Claude Usage, plugins, etc.) */
+.tab.panelTab {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.1) 0%, rgba(167, 139, 250, 0.05) 100%);
+  border-bottom: 2px solid rgba(167, 139, 250, 0.3);
+}
+
+.tab.panelTab:hover {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.15) 0%, rgba(167, 139, 250, 0.08) 100%);
+  border-bottom-color: rgba(167, 139, 250, 0.5);
+}
+
+.tab.panelTab.active {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.2) 0%, rgba(167, 139, 250, 0.1) 100%);
+  border-bottom-color: #a78bfa;
+}
+
+.tab.panelTab.active::before {
+  display: none;
+}
+
+.tab.panelTab .tabIcon {
+  color: #a78bfa;
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
+}
+
 /* Drag & drop */
 .tab.dragging {
   opacity: 0.4;

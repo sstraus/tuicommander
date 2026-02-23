@@ -161,6 +161,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
               <div
                 class="terminal-pane diff-pane"
                 classList={{ active: diffTabsStore.state.activeId === id }}
+                onContextMenu={(e) => e.stopPropagation()}
               >
                 {diffTab && (
                   <DiffTab
@@ -183,6 +184,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
               <div
                 class="terminal-pane md-pane"
                 classList={{ active: mdTabsStore.state.activeId === id }}
+                onContextMenu={(e) => e.stopPropagation()}
               >
                 {mdTab && mdTab.type === "claude-usage" ? (
                   <ClaudeUsageDashboard />
@@ -210,6 +212,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
               <div
                 class="terminal-pane edit-pane"
                 classList={{ active: editorTabsStore.state.activeId === id }}
+                onContextMenu={(e) => e.stopPropagation()}
               >
                 {editTab && (
                   <CodeEditorTab

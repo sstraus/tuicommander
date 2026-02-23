@@ -534,10 +534,16 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
         return Err(format!("API returned {status}: {body}"));
     }
 
-    let usage: UsageApiResponse = resp
-        .json()
+    let body = resp
+        .text()
         .await
-        .map_err(|e| format!("Failed to parse API response: {e}"))?;
+        .map_err(|e| format!("Failed to read API response: {e}"))?;
+
+    let usage: UsageApiResponse = serde_json::from_str(&body).map_err(|e| {
+        // Log the raw body on parse failure to aid debugging
+        eprintln!("[claude_usage] Parse error: {e}\nBody: {body}");
+        format!("Failed to parse API response: {e}")
+    })?;
 
     Ok(usage)
 }

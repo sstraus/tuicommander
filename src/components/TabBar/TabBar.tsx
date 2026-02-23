@@ -376,7 +376,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
           return (
             <Show when={mdTab()}>
               <div
-                class={cx(s.tab, s.mdTab, isActive() && s.active)}
+                class={cx(s.tab, mdTab()?.type === "file" ? s.mdTab : s.panelTab, isActive() && s.active)}
                 onClick={() => {
                   mdTabsStore.setActive(id);
                   props.onTabSelect(id);

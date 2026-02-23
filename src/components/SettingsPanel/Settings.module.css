@@ -346,9 +346,11 @@
   appearance: none;
   width: 36px;
   height: 20px;
+  min-height: 20px;
+  max-height: 20px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-full);
+  border-radius: 9999px;
   position: relative;
   cursor: pointer;
   transition: background 0.2s, border-color 0.2s;
@@ -357,13 +359,15 @@
 
 .toggle input[type="checkbox"]::after {
   content: "";
+  display: block;
   position: absolute;
   top: 2px;
   left: 2px;
   width: 14px;
   height: 14px;
+  aspect-ratio: 1;
   background: var(--fg-muted);
-  border-radius: var(--radius-full);
+  border-radius: 9999px;
   transition: transform 0.2s, background 0.2s;
 }
 
@@ -385,9 +389,13 @@
 .soundRow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
+}
+
+.soundRow svg {
+  margin-left: auto;
 }
 
 .soundRow:last-child {
@@ -850,4 +858,77 @@
 
 .downloadBtn:hover {
   opacity: 0.85;
+}
+
+/* UI Legend */
+.legendGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legendRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--font-sm);
+  min-height: 22px;
+}
+
+.legendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.legendDotPulsing {
+  composes: legendDot;
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+.legendSymbol {
+  width: 18px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.legendLabel {
+  color: var(--fg-primary);
+  font-weight: 500;
+  min-width: 100px;
+}
+
+.legendDesc {
+  color: var(--fg-muted);
+}
+
+.legendColorBar {
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.legendBadge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.legendBadgePulsing {
+  composes: legendBadge;
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
