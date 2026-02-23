@@ -56,6 +56,7 @@ export function useDictation(deps: DictationDeps) {
         try {
           await deps.pty.write(active.sessionId, text.trim());
           deps.setStatusInfo("Ready");
+          requestAnimationFrame(() => active.ref?.focus());
         } catch (err) {
           console.error("[Dictation] Failed to write to terminal:", err);
           deps.setStatusInfo("Dictation: failed to write to terminal");

@@ -29,10 +29,14 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
 
       <NotesPanel
         visible={uiStore.state.notesPanelVisible}
+        repoPath={props.repoPath}
         onClose={() => uiStore.toggleNotesPanel()}
         onSendToTerminal={(text) => {
           const active = terminalsStore.getActive();
-          if (active?.ref) active.ref.write(`${text}\r`);
+          if (active?.ref) {
+            active.ref.write(`${text}\r`);
+            requestAnimationFrame(() => active.ref?.focus());
+          }
         }}
       />
 

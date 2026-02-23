@@ -1,23 +1,19 @@
 /**
  * Claude Usage Dashboard — native lifecycle manager.
  *
- * Manages the Activity Center section, ticker message, and API polling.
- * Called from App.tsx or a top-level effect when the feature is enabled/disabled.
+ * Manages the status bar ticker message and API polling.
+ * Called from plugins/index.ts when the feature is enabled/disabled.
  */
 
-import { activityStore } from "../stores/activityStore";
 import { statusBarTicker } from "../stores/statusBarTicker";
 import { mdTabsStore } from "../stores/mdTabs";
 import { invoke } from "../invoke";
-import type { Disposable } from "../plugins/types";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const FEATURE_ID = "claude-usage";
-const SECTION_ID = "claude-usage";
-const ACTIVITY_ITEM_ID = "claude-usage:summary";
 const TICKER_ID = "claude-usage:rate";
 
 /** Poll API every 5 minutes */
@@ -48,60 +44,35 @@ interface UsageApiResponse {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Format a reset time from ISO string to short relative format */
-function formatResetShort(iso: string): string {
-  const diffMs = new Date(iso).getTime() - Date.now();
-  if (diffMs <= 0) return "now";
-  const min = Math.floor(diffMs / 60_000);
-  if (min < 60) return `${min}m`;
-  const hrs = Math.floor(min / 60);
-  if (hrs < 48) return `${hrs}h`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d`;
-}
-
-/** Build status bar ticker text from API data */
+/** Build status bar ticker text from API data.
+ * The API returns utilization as a direct percentage (e.g. 3.0 = 3%, 68.0 = 68%). */
 export function buildTickerText(api: UsageApiResponse): string {
   const parts: string[] = [];
   if (api.five_hour) {
-    parts.push(`5h: ${Math.round(api.five_hour.utilization * 100)}%`);
+    parts.push(`5h: ${Math.round(api.five_hour.utilization)}%`);
   }
   if (api.seven_day) {
-    parts.push(`7d: ${Math.round(api.seven_day.utilization * 100)}%`);
+    parts.push(`7d: ${Math.round(api.seven_day.utilization)}%`);
   }
   return parts.length > 0 ? `Claude: ${parts.join(" · ")}` : "Claude Usage";
 }
 
-/** Determine ticker priority from usage levels */
+/** Determine ticker priority from usage levels.
+ * Utilization values are direct percentages (0-100). */
 export function getTickerPriority(api: UsageApiResponse): number {
   const utils = [api.five_hour, api.seven_day, api.seven_day_opus, api.seven_day_sonnet]
     .filter((b): b is RateBucket => b !== null)
     .map((b) => b.utilization);
   const maxUtil = Math.max(0, ...utils);
-  if (maxUtil >= 0.9) return 90;
-  if (maxUtil >= 0.7) return 50;
+  if (maxUtil >= 90) return 90;
+  if (maxUtil >= 70) return 50;
   return 10;
-}
-
-/** Build subtitle for the activity center item */
-function buildSubtitle(api: UsageApiResponse): string {
-  const parts: string[] = [];
-  if (api.five_hour) {
-    const pct = Math.round(api.five_hour.utilization * 100);
-    parts.push(`5h: ${pct}% (resets ${formatResetShort(api.five_hour.resets_at)})`);
-  }
-  if (api.seven_day) {
-    const pct = Math.round(api.seven_day.utilization * 100);
-    parts.push(`7d: ${pct}% (resets ${formatResetShort(api.seven_day.resets_at)})`);
-  }
-  return parts.join(" · ") || "No data";
 }
 
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-let sectionDisposable: Disposable | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let initialized = false;
 
@@ -124,16 +95,20 @@ async function poll(): Promise<void> {
       onClick: openDashboard,
     });
 
-    // Update activity center item
-    activityStore.updateItem(ACTIVITY_ITEM_ID, {
-      subtitle: buildSubtitle(api),
-    });
   } catch (err) {
     console.error("[claudeUsage] API poll failed:", err);
+    const errStr = String(err);
+    const isTokenMissing = errStr.includes("No Claude OAuth token");
+    const isAuthError = errStr.includes("401") || errStr.includes("403");
+    const text = isTokenMissing
+      ? "Claude: no token"
+      : isAuthError
+        ? "Claude: token expired"
+        : "Claude: offline";
     statusBarTicker.addMessage({
       id: TICKER_ID,
       pluginId: FEATURE_ID,
-      text: "Claude: offline",
+      text,
       icon: CHART_SVG,
       priority: 5,
       ttlMs: API_POLL_MS + 30_000,
@@ -142,30 +117,10 @@ async function poll(): Promise<void> {
   }
 }
 
-/** Initialize the Claude Usage feature (activity center, ticker, polling). */
+/** Initialize the Claude Usage feature (status bar ticker + polling). */
 export function initClaudeUsage(): void {
   if (initialized) return;
   initialized = true;
-
-  // Register activity center section
-  sectionDisposable = activityStore.registerSection({
-    id: SECTION_ID,
-    label: "CLAUDE USAGE",
-    priority: 5,
-    canDismissAll: false,
-  });
-
-  // Add summary item
-  activityStore.addItem({
-    id: ACTIVITY_ITEM_ID,
-    pluginId: FEATURE_ID,
-    sectionId: SECTION_ID,
-    title: "Claude Usage Dashboard",
-    subtitle: "Loading...",
-    icon: CHART_SVG,
-    dismissible: false,
-    onClick: openDashboard,
-  });
 
   // Initial poll + interval
   poll();
@@ -183,9 +138,6 @@ export function destroyClaudeUsage(): void {
   }
 
   statusBarTicker.removeMessage(TICKER_ID, FEATURE_ID);
-  activityStore.removeItem(ACTIVITY_ITEM_ID);
-  sectionDisposable?.dispose();
-  sectionDisposable = null;
 }
 
 /** Check if the feature is currently active. */

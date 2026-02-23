@@ -129,43 +129,62 @@
   white-space: nowrap;
 }
 
-/* PR Notification Bell */
-.notifWrapper {
+.aheadBehind {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  margin-left: 2px;
+}
+
+/* Notification group: last-item + bell as a single unit */
+.notifGroup {
+  display: inline-flex;
+  align-items: center;
   position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   -webkit-app-region: no-drag;
 }
 
 .bell {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
   padding: 2px 6px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
   color: var(--fg-secondary);
   font-size: var(--font-xs);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .bell:hover {
   background: var(--bg-highlight);
-  border-color: var(--accent);
   color: var(--fg-primary);
 }
 
 .notifCount {
-  font-size: 9px;
-  font-weight: 700;
+  position: absolute;
+  top: -2px;
+  right: 0;
   min-width: 14px;
   height: 14px;
-  line-height: 14px;
-  text-align: center;
+  padding: 0 3px;
+  border-radius: var(--radius-lg);
   background: var(--accent);
   color: var(--text-on-accent);
-  border-radius: var(--radius-lg);
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .popover {
@@ -401,28 +420,26 @@
   color: var(--fg-primary);
 }
 
-/* Last-item shortcut button */
+/* Last-item shortcut button (inside notifGroup) */
 .lastItemBtn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: var(--bg-secondary);
+  background: transparent;
   color: var(--fg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: none;
+  border-radius: 0;
   cursor: pointer;
   font-size: var(--font-xs);
   font-family: var(--font-mono);
   white-space: nowrap;
   max-width: 180px;
-  margin-right: 4px;
   -webkit-app-region: no-drag;
 }
 
 .lastItemBtn:hover {
   background: var(--bg-highlight);
-  border-color: var(--accent);
 }
 
 .lastItemIcon {

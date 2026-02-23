@@ -760,6 +760,7 @@ pub fn run() {
             plugin_credentials::plugin_read_credential,
             registry::fetch_plugin_registry,
             claude_usage::get_claude_usage_api,
+            claude_usage::get_claude_usage_timeline,
             claude_usage::get_claude_session_stats,
             claude_usage::get_claude_project_list
         ])
