@@ -62,5 +62,10 @@
     "vite-plugin-checker": "^0.12.0",
     "vite-plugin-purgecss": "^0.2.13",
     "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "vite-plugin-purgecss": {
+      "purgecss": "^8.0.0"
+    }
   }
 }
