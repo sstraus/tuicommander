@@ -1,0 +1,41 @@
+src/components/StatusBar/StatusBar.module.css
+  211037785cde82f4 46-48
+docs/frontend/components.md
+  79531c35309daaf1 115-137
+src/components/StatusBar/StatusBar.tsx
+  79531c35309daaf1 208-212,216-217,221-223,231,234-239,249-256
+  211037785cde82f4 105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "e2acc151826d15a130c3da080070d46a68d9a08c",
+  "prompts": {
+    "211037785cde82f4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9546dfdf-07c4-4de4-b83f-803377864570",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 30,
+      "overriden_lines": 0
+    },
+    "79531c35309daaf1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0849ebe3-fb06-4563-add2-3e22fb4230bf",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 54,
+      "overriden_lines": 0
+    }
+  }
+}
