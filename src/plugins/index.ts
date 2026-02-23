@@ -2,13 +2,14 @@ import { pluginRegistry } from "./pluginRegistry";
 import { pluginStore } from "../stores/pluginStore";
 import { loadUserPlugins, isPluginDisabled, syncDisabledList, registerBuiltInPlugin } from "./pluginLoader";
 import { planPlugin } from "./planPlugin";
+import { claudeUsagePlugin } from "./claudeUsagePlugin";
 import type { TuiPlugin } from "./types";
 
 /**
  * Built-in plugins shipped with TUICommander.
  * wiz-stories was extracted to an external plugin (examples/plugins/wiz-stories).
  */
-const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin];
+const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin, claudeUsagePlugin];
 
 /**
  * Register all built-in plugins, then discover and load user plugins.
