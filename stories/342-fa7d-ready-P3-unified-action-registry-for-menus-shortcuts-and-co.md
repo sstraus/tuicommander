@@ -1,10 +1,10 @@
 ---
 id: 342-fa7d
 title: Unified action registry for menus, shortcuts, and context menu
-status: pending
+status: ready
 priority: P3
 created: "2026-02-21T19:11:16.302Z"
-updated: "2026-02-21T19:11:22.478Z"
+updated: "2026-02-23T07:52:03.973Z"
 dependencies: ["340-3473"]
 ---
 

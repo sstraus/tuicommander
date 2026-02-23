@@ -1,10 +1,10 @@
 ---
-id: "354-a414"
+id: 354-a414
 title: "AppState god struct: split into focused sub-states (sessions, pty, config, github)"
-status: pending
+status: ready
 priority: P2
-created: 2026-02-22T16:16:43.682Z
-updated: 2026-02-22T16:16:43.682Z
+created: "2026-02-22T16:16:43.682Z"
+updated: "2026-02-23T07:49:38.237Z"
 dependencies: []
 ---
 

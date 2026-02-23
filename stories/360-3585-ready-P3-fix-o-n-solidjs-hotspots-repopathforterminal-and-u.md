@@ -1,10 +1,10 @@
 ---
-id: "360-3585"
+id: 360-3585
 title: "Fix O(n) SolidJS hotspots: repoPathForTerminal and updateSavedTerminals"
-status: pending
+status: ready
 priority: P3
-created: 2026-02-22T16:16:43.686Z
-updated: 2026-02-22T16:16:43.686Z
+created: "2026-02-22T16:16:43.686Z"
+updated: "2026-02-23T07:52:04.048Z"
 dependencies: []
 ---
 

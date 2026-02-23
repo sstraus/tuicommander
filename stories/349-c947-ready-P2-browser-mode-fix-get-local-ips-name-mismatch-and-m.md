@@ -1,10 +1,10 @@
 ---
-id: "349-c947"
+id: 349-c947
 title: "Browser mode: fix get_local_ips name mismatch and missing route"
-status: pending
+status: ready
 priority: P2
-created: 2026-02-21T20:34:55.186Z
-updated: 2026-02-21T20:34:55.186Z
+created: "2026-02-21T20:34:55.186Z"
+updated: "2026-02-23T07:52:04.501Z"
 dependencies: []
 ---
 
@@ -27,4 +27,6 @@ ServicesTab.tsx calls invoke("get_local_ips") (plural) but transport.ts only map
 - src-tauri/src/mcp_http/mod.rs
 
 ## Work Log
+
+### 2026-02-23T07:52:04.416Z - Triaged: implement now
 

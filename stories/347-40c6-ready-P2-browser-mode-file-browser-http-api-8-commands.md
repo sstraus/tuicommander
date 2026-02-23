@@ -1,10 +1,10 @@
 ---
-id: "347-40c6"
+id: 347-40c6
 title: "Browser mode: file browser HTTP API (8 commands)"
-status: pending
+status: ready
 priority: P2
-created: 2026-02-21T20:34:55.184Z
-updated: 2026-02-21T20:34:55.184Z
+created: "2026-02-21T20:34:55.184Z"
+updated: "2026-02-23T07:52:04.194Z"
 dependencies: []
 ---
 
@@ -28,4 +28,6 @@ File browser commands (list_directory, fs_read_file, write_file, create_director
 - src-tauri/src/mcp_http/mod.rs
 
 ## Work Log
+
+### 2026-02-23T07:52:04.122Z - Triaged: implement now
 

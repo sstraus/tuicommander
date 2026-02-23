@@ -1,10 +1,10 @@
 ---
-id: "356-9238"
+id: 356-9238
 title: "PluginsTab: route IPC calls through pluginStore instead of calling Tauri directly"
-status: pending
+status: ready
 priority: P2
-created: 2026-02-22T16:16:43.684Z
-updated: 2026-02-22T16:16:43.684Z
+created: "2026-02-22T16:16:43.684Z"
+updated: "2026-02-23T07:52:05.106Z"
 dependencies: []
 ---
 
@@ -26,4 +26,6 @@ PluginsTab.tsx calls Tauri commands (enable_plugin, disable_plugin, etc.) direct
 - src/stores/pluginStore.ts
 
 ## Work Log
+
+### 2026-02-23T07:52:05.032Z - Triaged: implement now
 

@@ -1,10 +1,10 @@
 ---
 id: 340-3473
 title: Decompose god components (Sidebar, Terminal, TabBar, App.tsx)
-status: pending
+status: ready
 priority: P2
 created: "2026-02-21T19:11:16.300Z"
-updated: "2026-02-21T19:11:22.305Z"
+updated: "2026-02-23T07:46:43.218Z"
 dependencies: ["339-d200"]
 ---
 

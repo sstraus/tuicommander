@@ -1,10 +1,10 @@
 ---
-id: "358-4eec"
-title: "Move UI path manipulation to Rust (cross-platform safety)"
-status: pending
+id: 358-4eec
+title: Move UI path manipulation to Rust (cross-platform safety)
+status: ready
 priority: P2
-created: 2026-02-22T16:16:43.685Z
-updated: 2026-02-22T16:16:43.685Z
+created: "2026-02-22T16:16:43.685Z"
+updated: "2026-02-23T07:52:05.411Z"
 dependencies: []
 ---
 
@@ -27,4 +27,6 @@ Several UI components (RepoSection, DiffTab, FileTree) manipulate file paths usi
 - src-tauri/src/git.rs
 
 ## Work Log
+
+### 2026-02-23T07:52:05.341Z - Triaged: implement now
 

@@ -1,10 +1,10 @@
 ---
-id: "348-08ad"
+id: 348-08ad
 title: "Browser mode: notes load/save HTTP API"
-status: pending
+status: ready
 priority: P2
-created: 2026-02-21T20:34:55.185Z
-updated: 2026-02-21T20:34:55.185Z
+created: "2026-02-21T20:34:55.185Z"
+updated: "2026-02-23T07:52:04.346Z"
 dependencies: []
 ---
 
@@ -28,4 +28,6 @@ load_notes and save_notes have no HTTP mappings. load_notes is called at app hyd
 - src-tauri/src/mcp_http/mod.rs
 
 ## Work Log
+
+### 2026-02-23T07:52:04.269Z - Triaged: implement now
 

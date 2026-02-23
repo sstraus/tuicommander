@@ -1,10 +1,10 @@
 ---
-id: "357-4512"
-title: "Move isMainBranch() determination to Rust backend"
-status: pending
+id: 357-4512
+title: Move isMainBranch() determination to Rust backend
+status: ready
 priority: P2
-created: 2026-02-22T16:16:43.685Z
-updated: 2026-02-22T16:16:43.685Z
+created: "2026-02-22T16:16:43.685Z"
+updated: "2026-02-23T07:52:05.270Z"
 dependencies: []
 ---
 
@@ -28,4 +28,6 @@ isMainBranch() in TypeScript duplicates the branch-classification logic that alr
 - src-tauri/src/lib.rs
 
 ## Work Log
+
+### 2026-02-23T07:52:05.196Z - Triaged: implement now
 

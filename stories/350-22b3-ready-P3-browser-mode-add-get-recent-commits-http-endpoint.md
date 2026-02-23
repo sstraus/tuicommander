@@ -1,10 +1,10 @@
 ---
-id: "350-22b3"
+id: 350-22b3
 title: "Browser mode: add get_recent_commits HTTP endpoint"
-status: pending
+status: ready
 priority: P3
-created: 2026-02-21T20:34:55.188Z
-updated: 2026-02-21T20:34:55.188Z
+created: "2026-02-21T20:34:55.188Z"
+updated: "2026-02-23T07:52:04.635Z"
 dependencies: []
 ---
 
@@ -27,4 +27,6 @@ get_recent_commits is called in useRepository.ts with try/catch that returns [].
 - src-tauri/src/mcp_http/mod.rs
 
 ## Work Log
+
+### 2026-02-23T07:52:04.571Z - Triaged: implement now
 
