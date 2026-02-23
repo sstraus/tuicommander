@@ -702,4 +702,82 @@ describe("PrDetailPopover", () => {
     expect(stateBadge!.textContent).toBe("CLOSED");
     expect(stateBadge!.classList.contains("closed")).toBe(true);
   });
+
+  it("suppresses merge state badge for MERGED PR", () => {
+    mockGetBranchPrData.mockReturnValue({
+      branch: "feature/x",
+      number: 42,
+      title: "Merged PR",
+      state: "MERGED",
+      url: "",
+      additions: 10,
+      deletions: 5,
+      author: "alice",
+      commits: 1,
+      checks: { passed: 0, failed: 0, pending: 0, total: 0 },
+      check_details: [],
+      mergeable: "MERGEABLE",
+      merge_state_status: "CLEAN",
+      merge_state_label: { label: "Ready to merge", css_class: "clean" },
+      review_state_label: { label: "Approved", css_class: "approved" },
+    });
+
+    const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+    const mergeStateBadge = container.querySelector(".mergeStateBadge");
+    const reviewStateBadge = container.querySelector(".reviewStateBadge");
+    expect(mergeStateBadge).toBeNull();
+    expect(reviewStateBadge).toBeNull();
+  });
+
+  it("suppresses merge and review state badges for CLOSED PR", () => {
+    mockGetBranchPrData.mockReturnValue({
+      branch: "feature/x",
+      number: 42,
+      title: "Closed PR",
+      state: "CLOSED",
+      url: "",
+      additions: 10,
+      deletions: 5,
+      author: "alice",
+      commits: 1,
+      checks: { passed: 0, failed: 0, pending: 0, total: 0 },
+      check_details: [],
+      mergeable: "CONFLICTING",
+      merge_state_status: "DIRTY",
+      merge_state_label: { label: "Conflicts", css_class: "conflicting" },
+      review_state_label: { label: "Review required", css_class: "review-required" },
+    });
+
+    const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+    const mergeStateBadge = container.querySelector(".mergeStateBadge");
+    const reviewStateBadge = container.querySelector(".reviewStateBadge");
+    expect(mergeStateBadge).toBeNull();
+    expect(reviewStateBadge).toBeNull();
+  });
+
+  it("still shows merge and review badges for OPEN PR", () => {
+    mockGetBranchPrData.mockReturnValue({
+      branch: "feature/x",
+      number: 42,
+      title: "Open PR",
+      state: "OPEN",
+      url: "",
+      additions: 10,
+      deletions: 5,
+      author: "alice",
+      commits: 1,
+      checks: { passed: 0, failed: 0, pending: 0, total: 0 },
+      check_details: [],
+      mergeable: "MERGEABLE",
+      merge_state_status: "CLEAN",
+      merge_state_label: { label: "Ready to merge", css_class: "clean" },
+      review_state_label: { label: "Approved", css_class: "approved" },
+    });
+
+    const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+    const mergeStateBadge = container.querySelector(".mergeStateBadge");
+    const reviewStateBadge = container.querySelector(".reviewStateBadge");
+    expect(mergeStateBadge).not.toBeNull();
+    expect(reviewStateBadge).not.toBeNull();
+  });
 });

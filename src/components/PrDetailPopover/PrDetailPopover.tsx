@@ -77,15 +77,25 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     document.removeEventListener("keydown", handleKeyDown);
   });
 
-  /** Merge readiness label and CSS class — pre-computed by Rust backend */
+  /** Whether the PR is in a terminal state (closed or merged) */
+  const isTerminalState = () => {
+    const state = prData()?.state?.toUpperCase();
+    return state === "CLOSED" || state === "MERGED";
+  };
+
+  /** Merge readiness label and CSS class — pre-computed by Rust backend.
+   *  Suppressed for closed/merged PRs (labels are meaningless). */
   const mergeState = () => {
+    if (isTerminalState()) return null;
     const label = prData()?.merge_state_label;
     if (!label) return null;
     return { label: label.label, cssClass: label.css_class };
   };
 
-  /** Review decision label — pre-computed by Rust backend */
+  /** Review decision label — pre-computed by Rust backend.
+   *  Suppressed for closed/merged PRs (labels are meaningless). */
   const reviewState = () => {
+    if (isTerminalState()) return null;
     const label = prData()?.review_state_label;
     if (!label) return null;
     return { label: label.label, cssClass: label.css_class };

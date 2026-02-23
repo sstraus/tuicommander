@@ -30,6 +30,7 @@ export interface AppInitDeps {
     startPrNotificationTimer: () => void;
     loadFontFromConfig: () => void;
     refreshDictationConfig: () => Promise<void>;
+    startUserActivityListening: () => void;
   };
   detectBinary: (binary: string) => Promise<{ path: string | null; version: string | null }>;
   applyPlatformClass: () => string;
@@ -181,6 +182,7 @@ export async function initApp(deps: AppInitDeps) {
   );
 
   // Listen for .git/ directory changes (index, refs, etc.) to refresh panels
+  let branchStatsTimer: ReturnType<typeof setTimeout> | null = null;
   listen<{ repo_path: string }>("repo-changed", (event) => {
     const { repo_path } = event.payload;
     // Invalidate caches so panels fetch fresh data
@@ -191,6 +193,12 @@ export async function initApp(deps: AppInitDeps) {
     repositoriesStore.bumpRevision(repo_path);
     // Trigger immediate PR refresh (debounced 2s to coalesce rapid git events)
     githubStore.pollRepo(repo_path);
+    // Discover external worktree changes (debounced 500ms to coalesce rapid events)
+    if (branchStatsTimer) clearTimeout(branchStatsTimer);
+    branchStatsTimer = setTimeout(() => {
+      branchStatsTimer = null;
+      deps.refreshAllBranchStats();
+    }, 500);
   }).catch((err) =>
     console.error("[RepoWatcher] Failed to register repo-changed listener:", err),
   );
@@ -319,6 +327,9 @@ export async function initApp(deps: AppInitDeps) {
 
   // Load dictation config from disk
   deps.stores.refreshDictationConfig();
+
+  // Start tracking user activity (click/keydown) for PR display timeouts
+  deps.stores.startUserActivityListening();
 
   // Restore active repo/branch from persisted state
   const repoPaths = repositoriesStore.getPaths();

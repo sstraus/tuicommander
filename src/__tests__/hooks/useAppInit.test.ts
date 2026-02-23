@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import "../mocks/tauri";
+import { listen } from "@tauri-apps/api/event";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { initApp, type AppInitDeps } from "../../hooks/useAppInit";
@@ -34,6 +35,7 @@ function createMockDeps(overrides: Partial<AppInitDeps> = {}): AppInitDeps {
       startPrNotificationTimer: vi.fn(),
       loadFontFromConfig: vi.fn(),
       refreshDictationConfig: vi.fn().mockResolvedValue(undefined),
+      startUserActivityListening: vi.fn(),
     },
     detectBinary: vi.fn().mockResolvedValue({ path: null, version: null }),
     applyPlatformClass: vi.fn().mockReturnValue("macos"),
@@ -149,6 +151,7 @@ describe("initApp", () => {
         startPrNotificationTimer: vi.fn(),
         loadFontFromConfig: vi.fn(),
         refreshDictationConfig: vi.fn().mockResolvedValue(undefined),
+        startUserActivityListening: vi.fn(),
       },
     });
 
@@ -332,6 +335,7 @@ describe("initApp", () => {
         startPrNotificationTimer: vi.fn(),
         loadFontFromConfig: vi.fn(),
         refreshDictationConfig: vi.fn().mockResolvedValue(undefined),
+        startUserActivityListening: vi.fn(),
       },
     });
 
@@ -353,5 +357,65 @@ describe("initApp", () => {
     for (const id of ids) {
       expect(terminalsStore.get(id)?.name).not.toBe("stale");
     }
+  });
+
+  it("repo-changed event triggers debounced refreshAllBranchStats", async () => {
+    vi.useFakeTimers();
+
+    // Capture the "repo-changed" listener callback
+    const listenMock = vi.mocked(listen);
+    let repoChangedCallback: ((event: { payload: { repo_path: string } }) => void) | null = null;
+    listenMock.mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+      if (event === "repo-changed") {
+        repoChangedCallback = handler as typeof repoChangedCallback;
+      }
+      return Promise.resolve(vi.fn());
+    }) as typeof listen);
+
+    const deps = createMockDeps();
+    await initApp(deps);
+
+    // refreshAllBranchStats is called once during init
+    expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(1);
+
+    // Simulate repo-changed event
+    expect(repoChangedCallback).not.toBeNull();
+    repoChangedCallback!({ payload: { repo_path: "/repo" } });
+
+    // Should not fire immediately (debounced)
+    expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(1);
+
+    // After debounce period (500ms), should fire
+    await vi.advanceTimersByTimeAsync(500);
+    expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it("repo-changed debounce coalesces rapid events", async () => {
+    vi.useFakeTimers();
+
+    const listenMock = vi.mocked(listen);
+    let repoChangedCallback: ((event: { payload: { repo_path: string } }) => void) | null = null;
+    listenMock.mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+      if (event === "repo-changed") {
+        repoChangedCallback = handler as typeof repoChangedCallback;
+      }
+      return Promise.resolve(vi.fn());
+    }) as typeof listen);
+
+    const deps = createMockDeps();
+    await initApp(deps);
+
+    // Fire 5 rapid events
+    for (let i = 0; i < 5; i++) {
+      repoChangedCallback!({ payload: { repo_path: "/repo" } });
+    }
+
+    // After debounce (500ms), should only have called refreshAllBranchStats once more (not 5 times)
+    await vi.advanceTimersByTimeAsync(500);
+    expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(2); // 1 init + 1 debounced
+
+    vi.useRealTimers();
   });
 });

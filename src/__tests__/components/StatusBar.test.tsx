@@ -70,6 +70,16 @@ vi.mock("../../stores/dictation", () => ({
   },
 }));
 
+const { mockLastActivityAt } = vi.hoisted(() => ({
+  mockLastActivityAt: vi.fn<() => number>(() => 0),
+}));
+
+vi.mock("../../stores/userActivity", () => ({
+  userActivityStore: {
+    lastActivityAt: mockLastActivityAt,
+  },
+}));
+
 import { StatusBar } from "../../components/StatusBar/StatusBar";
 
 /** Build a mock BranchPrStatus for testing */
@@ -134,6 +144,7 @@ describe("StatusBar", () => {
     mockDictationState.recording = false;
     mockDictationState.processing = false;
     mockDictationState.loading = false;
+    mockLastActivityAt.mockReturnValue(0);
   });
 
   it("renders status info text", () => {
@@ -445,5 +456,89 @@ describe("StatusBar", () => {
 
     const popover = container.querySelector(".popover");
     expect(popover).not.toBeNull();
+  });
+
+  it("does not show PrBadge for CLOSED PR", () => {
+    mockGitHubStatus.mockReturnValue({
+      current_branch: "main",
+      ahead: 0,
+      behind: 0,
+    });
+    mockGetBranchPrData.mockReturnValue(makePrData({ state: "CLOSED" }));
+    const { container } = render(() => (
+      <StatusBar {...defaultProps} currentRepoPath="/repo" />
+    ));
+    const githubStatus = container.querySelector(".githubStatus");
+    expect(githubStatus).not.toBeNull();
+    const badges = githubStatus!.querySelectorAll(".status-badge");
+    const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
+    expect(prBadge).toBeUndefined();
+  });
+
+  it("shows PrBadge for MERGED PR with recent user activity", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10000);
+    mockLastActivityAt.mockReturnValue(9000); // active 1s ago
+    mockGitHubStatus.mockReturnValue({
+      current_branch: "main",
+      ahead: 0,
+      behind: 0,
+    });
+    mockGetBranchPrData.mockReturnValue(makePrData({ state: "MERGED" }));
+    const { container } = render(() => (
+      <StatusBar {...defaultProps} currentRepoPath="/repo" />
+    ));
+    const githubStatus = container.querySelector(".githubStatus");
+    const badges = githubStatus!.querySelectorAll(".status-badge");
+    const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
+    expect(prBadge).toBeDefined();
+    vi.useRealTimers();
+  });
+
+  it("hides PrBadge for MERGED PR after 5 min of accumulated activity", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(400_000); // 400s in
+    // Simulate: last activity was long ago, and accumulated activity exceeds 5 min
+    // This tests the mergedActivityMs accumulation logic
+    mockLastActivityAt.mockReturnValue(0); // no recent activity
+    mockGitHubStatus.mockReturnValue({
+      current_branch: "main",
+      ahead: 0,
+      behind: 0,
+    });
+    mockGetBranchPrData.mockReturnValue(makePrData({ state: "MERGED" }));
+    const { container } = render(() => (
+      <StatusBar {...defaultProps} currentRepoPath="/repo" />
+    ));
+
+    // Simulate 301 seconds of activity ticking (each tick adds 1s when user is active)
+    for (let i = 0; i < 301; i++) {
+      vi.setSystemTime(400_000 + (i + 1) * 1000);
+      mockLastActivityAt.mockReturnValue(400_000 + (i + 1) * 1000 - 500); // active within 2s
+      vi.advanceTimersByTime(1000);
+    }
+
+    // After 5+ min of accumulated activity, PR badge should be hidden
+    const githubStatus = container.querySelector(".githubStatus");
+    const badges = githubStatus!.querySelectorAll(".status-badge");
+    const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
+    expect(prBadge).toBeUndefined();
+    vi.useRealTimers();
+  });
+
+  it("OPEN PR still renders normally", () => {
+    mockGitHubStatus.mockReturnValue({
+      current_branch: "main",
+      ahead: 0,
+      behind: 0,
+    });
+    mockGetBranchPrData.mockReturnValue(makePrData({ state: "OPEN" }));
+    const { container } = render(() => (
+      <StatusBar {...defaultProps} currentRepoPath="/repo" />
+    ));
+    const githubStatus = container.querySelector(".githubStatus");
+    const badges = githubStatus!.querySelectorAll(".status-badge");
+    const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
+    expect(prBadge).toBeDefined();
   });
 });

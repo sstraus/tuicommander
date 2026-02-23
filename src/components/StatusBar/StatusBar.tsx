@@ -10,6 +10,7 @@ import { githubStore } from "../../stores/github";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { formatWaitTime } from "../../rate-limit";
 import { dictationStore } from "../../stores/dictation";
+import { userActivityStore } from "../../stores/userActivity";
 import { updaterStore } from "../../stores/updater";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { t } from "../../i18n";
@@ -84,12 +85,56 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   const getRepoPath = () => props.currentRepoPath;
   const github = useGitHub(getRepoPath);
 
-  // Get merge state from the centralized github store for the active branch
+  // Get PR data with lifecycle rules:
+  // - CLOSED: never show
+  // - MERGED: show until 5 min of accumulated user activity, then hide
+  // - OPEN: show as-is
+  const [mergedActivityMs, setMergedActivityMs] = createSignal(0);
+  const [prTick, setPrTick] = createSignal(0);
+  let lastMergedPrKey = "";
+
+  onMount(() => {
+    const prTimer = setInterval(() => {
+      setPrTick((t) => t + 1);
+    }, 1000);
+    onCleanup(() => clearInterval(prTimer));
+  });
+
   const activePrData = createMemo(() => {
+    prTick(); // subscribe to 1s tick for merged PR countdown
     const repoPath = props.currentRepoPath;
     const branch = github.status()?.current_branch;
     if (!repoPath || !branch) return null;
-    return githubStore.getBranchPrData(repoPath, branch);
+
+    const pr = githubStore.getBranchPrData(repoPath, branch);
+    if (!pr) return null;
+
+    const state = pr.state?.toUpperCase();
+
+    // CLOSED: never show
+    if (state === "CLOSED") return null;
+
+    // MERGED: activity-based grace period
+    if (state === "MERGED") {
+      // Reset accumulator when PR/branch changes
+      const prKey = `${repoPath}:${branch}:${pr.number}`;
+      if (prKey !== lastMergedPrKey) {
+        lastMergedPrKey = prKey;
+        setMergedActivityMs(0);
+      }
+
+      // Accumulate: if user was active within the last 2s, add 1s
+      const lastActivity = userActivityStore.lastActivityAt();
+      if (lastActivity > 0 && Date.now() - lastActivity < 2000) {
+        setMergedActivityMs((prev) => prev + 1000);
+      }
+
+      // After 5 min accumulated activity, hide
+      if (mergedActivityMs() >= 300_000) return null;
+    }
+
+    // OPEN or MERGED within grace: show as-is
+    return pr;
   });
 
   const handleCiBadgeClick = () => {
