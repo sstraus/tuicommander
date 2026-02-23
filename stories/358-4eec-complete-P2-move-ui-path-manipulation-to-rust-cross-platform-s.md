@@ -1,10 +1,10 @@
 ---
 id: 358-4eec
 title: Move UI path manipulation to Rust (cross-platform safety)
-status: ready
+status: complete
 priority: P2
 created: "2026-02-22T16:16:43.685Z"
-updated: "2026-02-23T07:52:05.411Z"
+updated: "2026-02-23T08:11:27.784Z"
 dependencies: []
 ---
 
@@ -29,4 +29,6 @@ Several UI components (RepoSection, DiffTab, FileTree) manipulate file paths usi
 ## Work Log
 
 ### 2026-02-23T07:52:05.341Z - Triaged: implement now
+
+### 2026-02-23T08:11:27.860Z - Created pathUtils.ts, replaced raw split('/') in SettingsPanel, MarkdownPanel, FileBrowserPanel
 

@@ -1,10 +1,10 @@
 ---
 id: 356-9238
 title: "PluginsTab: route IPC calls through pluginStore instead of calling Tauri directly"
-status: ready
+status: complete
 priority: P2
 created: "2026-02-22T16:16:43.684Z"
-updated: "2026-02-23T07:52:05.106Z"
+updated: "2026-02-23T08:04:47.050Z"
 dependencies: []
 ---
 
@@ -28,4 +28,6 @@ PluginsTab.tsx calls Tauri commands (enable_plugin, disable_plugin, etc.) direct
 ## Work Log
 
 ### 2026-02-23T07:52:05.032Z - Triaged: implement now
+
+### 2026-02-23T08:04:47.189Z - Moved invoke() calls to pluginStore methods, updated PluginsTab and deep-link-handler
 
