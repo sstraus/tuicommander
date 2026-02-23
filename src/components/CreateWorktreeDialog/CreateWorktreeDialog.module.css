@@ -1,0 +1,51 @@
+.modeToggle {
+  display: flex;
+  gap: 0;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.modeBtn {
+  flex: 1;
+  padding: 6px 12px;
+  border: none;
+  background: var(--bg-tertiary);
+  color: var(--fg-secondary);
+  font-size: var(--font-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.modeBtn:hover:not(:disabled) {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.modeBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.modeBtn.active {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.branchSelect {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-primary);
+  font-size: var(--font-base);
+  font-family: var(--font-mono);
+}
+
+.branchSelect:focus {
+  outline: none;
+  border-color: var(--accent);
+}

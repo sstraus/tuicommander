@@ -47,13 +47,13 @@ export function useRepository() {
   }
 
   /** Create a new worktree with a branch */
-  async function createWorktree(baseRepo: string, branchName: string): Promise<{
+  async function createWorktree(baseRepo: string, branchName: string, createBranch?: boolean): Promise<{
     name: string;
     path: string;
     branch: string;
     base_repo: string;
   }> {
-    return await invoke("create_worktree", { baseRepo, branchName });
+    return await invoke("create_worktree", { baseRepo, branchName, createBranch });
   }
 
   /** Get worktree paths: branch name → worktree directory */
@@ -124,6 +124,16 @@ export function useRepository() {
     subject: string;
   }
 
+  /** List local branch names for a repository */
+  async function listLocalBranches(repoPath: string): Promise<string[]> {
+    try {
+      return await invoke<string[]>("list_local_branches", { repoPath });
+    } catch (err) {
+      console.error("Failed to list local branches:", err);
+      return [];
+    }
+  }
+
   /** Get recent commits for a repository */
   async function getRecentCommits(path: string, count?: number): Promise<RecentCommit[]> {
     try {
@@ -148,6 +158,7 @@ export function useRepository() {
     listMarkdownFiles,
     readFile,
     generateWorktreeName,
+    listLocalBranches,
     getRecentCommits,
   };
 }

@@ -73,6 +73,7 @@ pub(super) struct HashPasswordRequest {
 pub(super) struct CreateWorktreeRequest {
     pub base_repo: String,
     pub branch_name: String,
+    pub create_branch: Option<bool>,
 }
 
 #[derive(Deserialize)]

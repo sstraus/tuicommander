@@ -215,7 +215,7 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
       return {
         method: "POST",
         path: "/worktrees",
-        body: { base_repo: args.baseRepo, branch_name: args.branchName },
+        body: { base_repo: args.baseRepo, branch_name: args.branchName, create_branch: args.createBranch },
       };
     case "remove_worktree":
       return {
@@ -228,6 +228,9 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
         path: "/worktrees/generate-name",
         body: { existing_names: args.existingNames },
       };
+
+    case "list_local_branches":
+      return { method: "GET", path: `/repo/branches?path=${p("repoPath")}` };
 
     // --- File operations ---
     case "list_markdown_files":

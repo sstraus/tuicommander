@@ -52,7 +52,7 @@ pub(super) async fn create_worktree_http(
         task_name: body.branch_name.clone(),
         base_repo: body.base_repo,
         branch: Some(body.branch_name),
-        create_branch: true,
+        create_branch: body.create_branch.unwrap_or(true),
     };
     match crate::worktree::create_worktree_internal(&state.worktrees_dir, &config) {
         Ok(wt) => (
@@ -83,4 +83,12 @@ pub(super) async fn generate_worktree_name_http(
     Json(body): Json<GenerateWorktreeNameRequest>,
 ) -> impl IntoResponse {
     Json(crate::worktree::generate_worktree_name_cmd(body.existing_names))
+}
+
+pub(super) async fn list_local_branches_http(Query(q): Query<PathQuery>) -> Response {
+    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    match crate::worktree::list_local_branches(q.path) {
+        Ok(branches) => (StatusCode::OK, Json(serde_json::json!(branches))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+    }
 }

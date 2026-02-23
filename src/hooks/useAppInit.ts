@@ -1,6 +1,7 @@
 import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
+import { githubStore } from "../stores/github";
 import { invoke, listen } from "../invoke";
 import { isTauri } from "../transport";
 import type { SavedTerminal } from "../types";
@@ -188,6 +189,8 @@ export async function initApp(deps: AppInitDeps) {
     );
     // Bump revision counter — panels tracking this signal will re-fetch
     repositoriesStore.bumpRevision(repo_path);
+    // Trigger immediate PR refresh (debounced 2s to coalesce rapid git events)
+    githubStore.pollRepo(repo_path);
   }).catch((err) =>
     console.error("[RepoWatcher] Failed to register repo-changed listener:", err),
   );

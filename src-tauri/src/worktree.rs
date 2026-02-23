@@ -184,12 +184,13 @@ pub(crate) fn create_worktree(
     state: State<'_, Arc<AppState>>,
     base_repo: String,
     branch_name: String,
+    create_branch: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let config = WorktreeConfig {
         task_name: branch_name.clone(),
         base_repo,
         branch: Some(branch_name),
-        create_branch: true,
+        create_branch: create_branch.unwrap_or(true),
     };
 
     let worktree = create_worktree_internal(&state.worktrees_dir, &config)?;
@@ -321,6 +322,30 @@ pub(crate) fn get_worktree_paths(repo_path: String) -> Result<HashMap<String, St
 #[tauri::command]
 pub(crate) fn generate_worktree_name_cmd(existing_names: Vec<String>) -> String {
     generate_worktree_name(&existing_names)
+}
+
+/// List local branch names for a repository (excludes HEAD and remote-only refs)
+#[tauri::command]
+pub(crate) fn list_local_branches(repo_path: String) -> Result<Vec<String>, String> {
+    let output = Command::new(crate::agent::resolve_cli("git"))
+        .current_dir(&repo_path)
+        .args(["branch", "--format=%(refname:short)"])
+        .output()
+        .map_err(|e| format!("Failed to list branches: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git branch failed: {stderr}"));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let branches: Vec<String> = stdout
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    Ok(branches)
 }
 
 #[cfg(test)]

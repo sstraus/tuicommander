@@ -22,6 +22,7 @@ import { TaskQueuePanel } from "./components/TaskQueuePanel";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "./components/ContextMenu";
 import { GitOperationsPanel } from "./components/GitOperationsPanel";
 import { RenameBranchDialog } from "./components/RenameBranchDialog";
+import { CreateWorktreeDialog } from "./components/CreateWorktreeDialog";
 import { PromptDialog } from "./components/PromptDialog";
 import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
@@ -870,6 +871,16 @@ const App: Component = () => {
           gitOps.setBranchToRename(null);
         }}
         onRename={gitOps.handleRenameBranch}
+      />
+
+      {/* Create worktree dialog */}
+      <CreateWorktreeDialog
+        visible={gitOps.worktreeDialogState() !== null}
+        suggestedName={gitOps.worktreeDialogState()?.suggestedName ?? ""}
+        existingBranches={gitOps.worktreeDialogState()?.existingBranches ?? []}
+        worktreeBranches={gitOps.worktreeDialogState()?.worktreeBranches ?? []}
+        onClose={() => gitOps.setWorktreeDialogState(null)}
+        onCreate={gitOps.confirmCreateWorktree}
       />
 
       {/* Run command dialog */}

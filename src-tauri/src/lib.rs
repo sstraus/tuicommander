@@ -580,6 +580,7 @@ pub fn run() {
             github::get_ci_checks,
             github::get_repo_pr_statuses,
             worktree::generate_worktree_name_cmd,
+            worktree::list_local_branches,
             clear_caches,
             get_local_ip,
             get_local_ips,

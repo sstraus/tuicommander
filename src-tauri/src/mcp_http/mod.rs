@@ -157,6 +157,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/repo/file-diff", get(git_routes::get_file_diff_http))
         .route("/repo/markdown-files", get(git_routes::list_markdown_files_http))
         // Branch operations
+        .route("/repo/branches", get(worktree_routes::list_local_branches_http))
         .route("/repo/branch/rename", post(git_routes::rename_branch_http))
         .route("/repo/initials", get(git_routes::get_initials_http))
         .route("/repo/is-main-branch", get(git_routes::check_is_main_branch_http))

@@ -6,6 +6,7 @@ import { isTauri } from "../transport";
 import { findOrphanTerminals } from "../utils/terminalOrphans";
 import { filterValidTerminals } from "../utils/terminalFilter";
 import { AGENTS } from "../agents";
+import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
 
 /** Dependencies injected into useGitOperations */
 export interface GitOperationsDeps {
@@ -14,9 +15,10 @@ export interface GitOperationsDeps {
     getDiffStats: (path: string) => Promise<{ additions: number; deletions: number }>;
     getWorktreePaths: (repoPath: string) => Promise<Record<string, string>>;
     removeWorktree: (repoPath: string, branchName: string) => Promise<void>;
-    createWorktree: (baseRepo: string, branchName: string) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;
+    createWorktree: (baseRepo: string, branchName: string, createBranch?: boolean) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;
     renameBranch: (repoPath: string, oldName: string, newName: string) => Promise<void>;
     generateWorktreeName: (existingNames: string[]) => Promise<string>;
+    listLocalBranches: (repoPath: string) => Promise<string[]>;
   };
   pty: {
     canSpawn: () => Promise<boolean>;
@@ -40,6 +42,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
   const [repoStatus, setRepoStatus] = createSignal<"clean" | "dirty" | "conflict" | "merge" | "unknown">("unknown");
   const [branchToRename, setBranchToRename] = createSignal<{ repoPath: string; branchName: string } | null>(null);
   const [creatingWorktreeRepos, setCreatingWorktreeRepos] = createSignal<Set<string>>(new Set());
+  const [worktreeDialogState, setWorktreeDialogState] = createSignal<{
+    repoPath: string;
+    suggestedName: string;
+    existingBranches: string[];
+    worktreeBranches: string[];
+  } | null>(null);
 
   const refreshAllBranchStats = async () => {
     await Promise.all(repositoriesStore.getPaths().map(async (repoPath) => {
@@ -318,16 +326,36 @@ export function useGitOperations(deps: GitOperationsDeps) {
     // Prevent concurrent creations for the same repo
     if (creatingWorktreeRepos().has(repoPath)) return;
 
+    const repoState = repositoriesStore.get(repoPath);
+    const worktreeBranches = repoState ? Object.keys(repoState.branches) : [];
+
+    // Fetch data for the dialog in parallel
+    const [suggestedName, localBranches] = await Promise.all([
+      deps.repo.generateWorktreeName(worktreeBranches),
+      deps.repo.listLocalBranches(repoPath),
+    ]);
+
+    setWorktreeDialogState({
+      repoPath,
+      suggestedName,
+      existingBranches: localBranches,
+      worktreeBranches,
+    });
+  };
+
+  const confirmCreateWorktree = async (options: WorktreeCreateOptions) => {
+    const dialogState = worktreeDialogState();
+    if (!dialogState) return;
+
+    const { repoPath } = dialogState;
+    setWorktreeDialogState(null);
+
+    if (creatingWorktreeRepos().has(repoPath)) return;
     setCreatingWorktreeRepos((prev) => new Set([...prev, repoPath]));
 
-    const repoState = repositoriesStore.get(repoPath);
-    const existingBranches = repoState ? Object.keys(repoState.branches) : [];
-
-    const branchName = await deps.repo.generateWorktreeName(existingBranches);
-
     try {
-      deps.setStatusInfo(`Creating worktree ${branchName}...`);
-      const result = await deps.repo.createWorktree(repoPath, branchName);
+      deps.setStatusInfo(`Creating worktree ${options.branchName}...`);
+      const result = await deps.repo.createWorktree(repoPath, options.branchName, options.createBranch);
 
       repositoriesStore.setBranch(repoPath, result.branch, { worktreePath: result.path });
       repositoriesStore.setActiveBranch(repoPath, result.branch);
@@ -339,7 +367,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
         repositoriesStore.updateBranchStats(repoPath, result.branch, stats.additions, stats.deletions);
       } catch { /* ignore */ }
 
-      deps.setStatusInfo(`Created worktree ${branchName}`);
+      deps.setStatusInfo(`Created worktree ${options.branchName}`);
     } catch (err) {
       console.error("Failed to create worktree:", err);
       deps.setStatusInfo(`Failed to create worktree: ${err}`);
@@ -441,6 +469,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
     activeRunCommand,
     handleAddRepo,
     handleAddWorktree,
+    confirmCreateWorktree,
+    worktreeDialogState,
+    setWorktreeDialogState,
     creatingWorktreeRepos,
     handleNewTab,
     handleRunCommand,

@@ -28,6 +28,8 @@ function createGitHubStore() {
   let currentInterval = BASE_INTERVAL;
   let consecutiveErrors = 0;
   let pollingActive = false;
+  /** Pending per-repo immediate polls (debounced to 2s to coalesce rapid git events) */
+  const pendingRepoPollTimers = new Map<string, number>();
 
   /** Detect significant PR state transitions and emit notifications */
   function detectTransitions(repoPath: string, oldPr: BranchPrStatus, newPr: BranchPrStatus): void {
@@ -188,6 +190,25 @@ function createGitHubStore() {
     }
   }
 
+  /** Immediately poll a single repo for PR status (debounced: coalesces rapid git events) */
+  function pollRepo(path: string): void {
+    // Cancel any pending timer for this repo
+    const existing = pendingRepoPollTimers.get(path);
+    if (existing) window.clearTimeout(existing);
+
+    const timerId = window.setTimeout(async () => {
+      pendingRepoPollTimers.delete(path);
+      try {
+        const statuses = await invoke<BranchPrStatus[]>("get_repo_pr_statuses", { path });
+        updateRepoData(path, statuses);
+      } catch (err) {
+        console.debug(`[GitHub] Immediate poll failed for ${path}:`, err);
+      }
+    }, 2000);
+
+    pendingRepoPollTimers.set(path, timerId);
+  }
+
   /** Handle visibility changes to pause/resume polling */
   function onVisibilityChange(): void {
     if (!pollingActive) return;
@@ -235,6 +256,7 @@ function createGitHubStore() {
     getPrStatus,
     getCheckDetails,
     getBranchPrData,
+    pollRepo,
     startPolling,
     stopPolling,
   };
