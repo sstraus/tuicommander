@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { activityStore } from "../../stores/activityStore";
 import { pluginStore } from "../../stores/pluginStore";
+import { mdTabsStore } from "../../stores/mdTabs";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
 import { PluginCapabilityError } from "../../plugins/types";
 import type { TuiPlugin, PluginHost } from "../../plugins/types";
@@ -35,6 +36,7 @@ beforeEach(() => {
   activityStore.clearAll();
   markdownProviderRegistry.clear();
   pluginStore.clear();
+  mdTabsStore.clearAll();
 });
 
 // ---------------------------------------------------------------------------
@@ -532,6 +534,137 @@ describe("PluginHost — Tier 3 capability gating", () => {
       ["ui:sound"],
     );
     await expect(host!.playNotificationSound()).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 3c: Panel UI capability gating
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — Tier 3c openPanel capability gating", () => {
+  it("external plugin without ui:panel throws on openPanel", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no capabilities
+    );
+    expect(() => host!.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>" })).toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with ui:panel can call openPanel", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["ui:panel"],
+    );
+    const handle = host!.openPanel({ id: "test", title: "Test Panel", html: "<h1>hello</h1>" });
+    expect(handle).toBeDefined();
+    expect(handle.tabId).toBeTruthy();
+    expect(typeof handle.update).toBe("function");
+    expect(typeof handle.close).toBe("function");
+  });
+
+  it("built-in plugin can open panel without declaring capability", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    const handle = host!.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>" });
+    expect(handle.tabId).toBeTruthy();
+  });
+
+  it("openPanel returns handle that can close the tab", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    const handle = host!.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>" });
+    const tabBefore = mdTabsStore.get(handle.tabId);
+    expect(tabBefore).toBeDefined();
+    handle.close();
+    const tabAfter = mdTabsStore.get(handle.tabId);
+    expect(tabAfter).toBeUndefined();
+  });
+
+  it("opening same panel twice returns existing tab", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    const handle1 = host!.openPanel({ id: "test", title: "Test", html: "<h1>v1</h1>" });
+    const handle2 = host!.openPanel({ id: "test", title: "Test", html: "<h1>v2</h1>" });
+    expect(handle1.tabId).toBe(handle2.tabId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 3d: Credential read capability gating
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — Tier 3c readCredential capability gating", () => {
+  it("external plugin without credentials:read throws on readCredential", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no capabilities
+    );
+    await expect(host!.readCredential("Claude Code-credentials")).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("built-in plugin can call readCredential without capability", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    // Mocked invoke returns undefined → null, no consent dialog for built-in
+    await expect(host!.readCredential("Claude Code-credentials")).resolves.not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 3d: HTTP fetch capability gating
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — Tier 3c httpFetch capability gating", () => {
+  it("external plugin without net:http throws on httpFetch", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no capabilities
+    );
+    await expect(host!.httpFetch("https://example.com")).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with net:http can call httpFetch", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["net:http"],
+      ["https://example.com/*"],
+    );
+    // invoke is mocked → resolves, should not throw capability error
+    await expect(host!.httpFetch("https://example.com/api")).resolves.not.toThrow();
+  });
+
+  it("built-in plugin can call httpFetch without declaring capability", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    await expect(host!.httpFetch("https://example.com")).resolves.not.toThrow();
+  });
+
+  it("passes allowedUrls to the Rust command", async () => {
+    let host: PluginHost | null = null;
+    const allowedUrls = ["https://api.anthropic.com/*"];
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["net:http"],
+      allowedUrls,
+    );
+    await host!.httpFetch("https://api.anthropic.com/usage", {
+      method: "GET",
+      headers: { Authorization: "Bearer token" },
+    });
+    // Verify invoke was called with correct args
+    const { invoke } = await import("../../invoke");
+    expect(invoke).toHaveBeenCalledWith("plugin_http_fetch", expect.objectContaining({
+      url: "https://api.anthropic.com/usage",
+      method: "GET",
+      headers: { Authorization: "Bearer token" },
+      allowedUrls: ["https://api.anthropic.com/*"],
+      pluginId: "ext",
+    }));
   });
 });
 

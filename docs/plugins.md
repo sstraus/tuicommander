@@ -109,6 +109,7 @@ File: `~/.config/tuicommander/plugins/{id}/manifest.json`
 | `description` | string | no | Short description |
 | `author` | string | no | Author name |
 | `capabilities` | string[] | no | Tier 3/4 capabilities needed (defaults to `[]`) |
+| `allowedUrls` | string[] | no | URL patterns allowed for `net:http` (e.g. `["https://api.example.com/*"]`) |
 
 ### Validation Rules
 
@@ -364,6 +365,116 @@ interface FsChangeEvent {
 }
 ```
 
+### Tier 3c: Status Bar Ticker (capability-gated)
+
+#### host.postTickerMessage(options) -> void
+
+Post a rotating message to the status bar ticker. If a message with the same id from this plugin already exists, it is replaced. **Requires `"ui:ticker"` capability.**
+
+```typescript
+host.postTickerMessage({
+  id: "my-status",
+  text: "Processing: 42%",
+  icon: '<svg viewBox="0 0 16 16" fill="currentColor">...</svg>',
+  priority: 10, // Higher = shown first. >= 80 gets warning styling
+  ttlMs: 60000, // Auto-expire after 60s. 0 = persistent
+});
+```
+
+#### host.removeTickerMessage(id) -> void
+
+Remove a ticker message by id. **Requires `"ui:ticker"` capability.**
+
+```typescript
+host.removeTickerMessage("my-status");
+```
+
+### Tier 3d: Panel UI (capability-gated)
+
+#### host.openPanel(options) -> PanelHandle
+
+Open an HTML panel in a sandboxed iframe tab. Returns a handle for updating content or closing the panel. If a panel with the same id is already open, it will be activated and updated. **Requires `"ui:panel"` capability.**
+
+```typescript
+const panel = host.openPanel({
+  id: "my-dashboard",
+  title: "Dashboard",
+  html: "<html><body><h1>Hello</h1></body></html>",
+});
+
+// Update content later
+panel.update("<html><body><h1>Updated</h1></body></html>");
+
+// Close the panel
+panel.close();
+```
+
+**Security:** The iframe uses `sandbox="allow-scripts"` without `allow-same-origin`, blocking access to Tauri IPC and the parent page DOM.
+
+### Tier 3e: Credential Access (capability-gated)
+
+#### host.readCredential(serviceName) -> Promise<string | null>
+
+Read credentials from the system credential store by service name. Returns the raw credential JSON string, or `null` if not found. **Requires `"credentials:read"` capability.**
+
+First call from an external plugin shows a user consent dialog. Built-in plugins skip the dialog.
+
+```typescript
+const credJson = await host.readCredential("Claude Code-credentials");
+if (credJson) {
+  const creds = JSON.parse(credJson);
+  const token = creds.claudeAiOauth.accessToken;
+}
+```
+
+**Platforms:**
+- macOS: Reads from Keychain (`security find-generic-password -s <service> -w`)
+- Linux/Windows: Reads from `~/.claude/.credentials.json`
+
+### Tier 3f: HTTP Requests (capability-gated)
+
+#### host.httpFetch(url, options?) -> Promise<HttpResponse>
+
+Make an HTTP request. Non-2xx status codes are returned normally (not thrown as errors). **Requires `"net:http"` capability.**
+
+External plugins can only fetch URLs matching their manifest's `allowedUrls` patterns.
+
+```typescript
+const resp = await host.httpFetch("https://api.example.com/data", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ key: "value" }),
+});
+if (resp.status === 200) {
+  const data = JSON.parse(resp.body);
+}
+```
+
+**HttpResponse:**
+```typescript
+interface HttpResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+}
+```
+
+**Security:**
+- `file://`, `data://`, `ftp://` schemes are blocked
+- `localhost` URLs only allowed if declared in `allowedUrls`
+- 30-second timeout, 10 MB response limit
+
+### Tier 3g: File Tail (capability-gated)
+
+#### host.readFileTail(absolutePath, maxBytes) -> Promise<string>
+
+Read the last N bytes of a file, skipping any partial first line. Useful for reading recent entries from large JSONL files. **Requires `"fs:read"` capability.**
+
+```typescript
+const tail = await host.readFileTail("/Users/me/.claude/hud-tracking.jsonl", 512 * 1024);
+const lines = tail.split("\n").filter(Boolean);
+```
+
 ### Tier 4: Scoped Tauri Invoke (whitelisted commands only)
 
 #### host.invoke<T>(cmd, args?) -> Promise<T>
@@ -412,9 +523,13 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `pty:write` | `host.writePty()` | Can send arbitrary input to terminals |
 | `ui:markdown` | `host.openMarkdownPanel()` | Can open panels in the UI |
 | `ui:sound` | `host.playNotificationSound()` | Can play sounds |
+| `ui:panel` | `host.openPanel()` | Can render arbitrary HTML in sandboxed iframe |
+| `ui:ticker` | `host.postTickerMessage()`, `host.removeTickerMessage()` | Can post messages to the status bar |
+| `credentials:read` | `host.readCredential()` | Can read system credentials (consent dialog shown) |
+| `net:http` | `host.httpFetch()` | Can make HTTP requests (scoped to `allowedUrls`) |
 | `invoke:read_file` | `host.invoke("read_file", ...)` | Can read files on disk |
 | `invoke:list_markdown_files` | `host.invoke("list_markdown_files", ...)` | Can list directory contents |
-| `fs:read` | `host.readFile()` | Can read files within `$HOME` (10 MB limit) |
+| `fs:read` | `host.readFile()`, `host.readFileTail()` | Can read files within `$HOME` (10 MB limit) |
 | `fs:list` | `host.listDirectory()` | Can list directory contents within `$HOME` |
 | `fs:watch` | `host.watchPath()` | Can watch filesystem paths within `$HOME` for changes |
 

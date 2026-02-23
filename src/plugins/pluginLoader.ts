@@ -42,6 +42,7 @@ export interface PluginManifest {
   description?: string;
   author?: string;
   capabilities: string[];
+  allowed_urls?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +220,7 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
   }
 
   const plugin = (mod as { default: TuiPlugin }).default;
-  pluginRegistry.register(plugin, manifest.capabilities);
+  pluginRegistry.register(plugin, manifest.capabilities, manifest.allowed_urls);
   loadedPluginIds.add(manifest.id);
   logger.info(`Loaded v${manifest.version}`);
   console.log(`[pluginLoader] loaded plugin "${manifest.id}" v${manifest.version}`);

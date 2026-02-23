@@ -1,4 +1,5 @@
 import { activityStore } from "../stores/activityStore";
+import { statusBarTicker } from "../stores/statusBarTicker";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { prNotificationsStore } from "../stores/prNotifications";
@@ -18,8 +19,12 @@ import {
 import type {
   Disposable,
   FsChangeEvent,
+  HttpFetchOptions,
+  HttpResponse,
   MarkdownProvider,
+  OpenPanelOptions,
   OutputWatcher,
+  PanelHandle,
   PluginCapability,
   PluginHost,
   TuiPlugin,
@@ -85,6 +90,7 @@ function createPluginRegistry() {
     pluginId: string,
     disposables: Disposable[],
     capabilities: ReadonlySet<string> | null = null,
+    allowedUrls: readonly string[] = [],
   ): PluginHost {
     function track(d: Disposable): Disposable {
       disposables.push(d);
@@ -238,6 +244,11 @@ function createPluginRegistry() {
         return invoke<string>("plugin_read_file", { path: absolutePath, pluginId });
       },
 
+      async readFileTail(absolutePath: string, maxBytes: number): Promise<string> {
+        requireCapability(pluginId, capabilities, "fs:read");
+        return invoke<string>("plugin_read_file_tail", { path: absolutePath, maxBytes, pluginId });
+      },
+
       async listDirectory(path: string, pattern?: string): Promise<string[]> {
         requireCapability(pluginId, capabilities, "fs:list");
         return invoke<string[]>("plugin_list_directory", { path, pattern: pattern ?? null, pluginId });
@@ -275,6 +286,94 @@ function createPluginRegistry() {
         return track(disposable);
       },
 
+      // -- Tier 3c: Status bar ticker --
+
+      postTickerMessage(options) {
+        requireCapability(pluginId, capabilities, "ui:ticker");
+        statusBarTicker.addMessage({
+          id: options.id,
+          pluginId,
+          text: options.text,
+          icon: options.icon,
+          priority: options.priority ?? 0,
+          ttlMs: options.ttlMs ?? 60_000,
+        });
+      },
+
+      removeTickerMessage(id: string) {
+        requireCapability(pluginId, capabilities, "ui:ticker");
+        statusBarTicker.removeMessage(id, pluginId);
+      },
+
+      // -- Tier 3d: Panel UI --
+
+      openPanel(options: OpenPanelOptions): PanelHandle {
+        requireCapability(pluginId, capabilities, "ui:panel");
+        const tabId = mdTabsStore.addPluginPanel(pluginId, options.title, options.html);
+        if (!uiStore.state.markdownPanelVisible) {
+          uiStore.toggleMarkdownPanel();
+        }
+        return {
+          tabId,
+          update(html: string) {
+            mdTabsStore.updatePluginPanel(tabId, html);
+          },
+          close() {
+            mdTabsStore.remove(tabId);
+          },
+        };
+      },
+
+      // -- Tier 3d: Credential access --
+
+      async readCredential(serviceName: string): Promise<string | null> {
+        requireCapability(pluginId, capabilities, "credentials:read");
+
+        // First-use consent check for external plugins
+        if (capabilities !== null) {
+          const consentKey = `credential-consent-${serviceName}`;
+          const existing = await invoke<string | null>("read_plugin_data", {
+            pluginId,
+            path: consentKey,
+          });
+          if (!existing) {
+            // Show consent dialog
+            const { confirm } = await import("@tauri-apps/plugin-dialog");
+            const allowed = await confirm(
+              `Plugin "${pluginId}" wants to read your credentials for "${serviceName}". Allow?`,
+              { title: "Credential Access", kind: "warning" },
+            );
+            if (!allowed) {
+              throw new Error(`User denied credential access for "${serviceName}"`);
+            }
+            await invoke("write_plugin_data", {
+              pluginId,
+              path: consentKey,
+              content: "allowed",
+            });
+          }
+        }
+
+        return invoke<string | null>("plugin_read_credential", {
+          serviceName,
+          pluginId,
+        });
+      },
+
+      // -- Tier 3d: HTTP requests --
+
+      async httpFetch(url: string, options?: HttpFetchOptions): Promise<HttpResponse> {
+        requireCapability(pluginId, capabilities, "net:http");
+        return invoke<HttpResponse>("plugin_http_fetch", {
+          url,
+          method: options?.method ?? null,
+          headers: options?.headers ?? null,
+          body: options?.body ?? null,
+          allowedUrls: [...allowedUrls],
+          pluginId,
+        });
+      },
+
       // -- Tier 4: Scoped Tauri invoke --
 
       async invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -301,7 +400,7 @@ function createPluginRegistry() {
    * @param capabilities - Optional set of declared capabilities for external plugins.
    *   Pass null or omit for built-in plugins (unrestricted access).
    */
-  function register(plugin: TuiPlugin, capabilities?: string[]): void {
+  function register(plugin: TuiPlugin, capabilities?: string[], allowedUrls?: string[]): void {
     // Replace existing registration for same id
     if (plugins.has(plugin.id)) {
       unregister(plugin.id);
@@ -309,7 +408,7 @@ function createPluginRegistry() {
 
     const disposables: Disposable[] = [];
     const capSet = capabilities ? new Set(capabilities) : null;
-    const host = buildHost(plugin.id, disposables, capSet);
+    const host = buildHost(plugin.id, disposables, capSet, allowedUrls ?? []);
 
     const pluginLogger = pluginStore.getLogger(plugin.id);
 
@@ -352,6 +451,7 @@ function createPluginRegistry() {
       pluginStore.getLogger(id).error(`onunload failed: ${msg}`, err);
     }
     entry.disposable.dispose();
+    statusBarTicker.removeAllForPlugin(id);
     pluginStore.updatePlugin(id, { loaded: false });
   }
 

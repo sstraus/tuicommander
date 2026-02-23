@@ -8,6 +8,7 @@ import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { useGitHub } from "../../hooks/useGitHub";
 import { githubStore } from "../../stores/github";
 import { rateLimitStore } from "../../stores/ratelimit";
+import { statusBarTicker } from "../../stores/statusBarTicker";
 import { formatWaitTime } from "../../rate-limit";
 import { dictationStore } from "../../stores/dictation";
 import { userActivityStore } from "../../stores/userActivity";
@@ -184,6 +185,19 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
               title={`Claude Code ${ul().limitType} limit: ${ul().percentage}% used`}
             >
               {ul().percentage}% {ul().limitType}
+            </span>
+          )}
+        </Show>
+        <Show when={statusBarTicker.getCurrentMessage()}>
+          {(msg) => (
+            <span
+              class={cx(s.tickerMessage, msg().priority >= 80 && s.tickerWarning)}
+              title={msg().text}
+            >
+              <Show when={msg().icon}>
+                {(icon) => <span class={s.tickerIcon} innerHTML={icon()} />}
+              </Show>
+              {msg().text}
             </span>
           )}
         </Show>

@@ -93,6 +93,35 @@
   animation: pulse-opacity 2s ease-in-out infinite;
 }
 
+.tickerMessage {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+}
+
+.tickerWarning {
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.1);
+}
+
+.tickerIcon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 3px;
+  vertical-align: middle;
+}
+
+.tickerIcon svg {
+  width: 12px;
+  height: 12px;
+}
+
 .rateLimit {
   font-family: var(--font-mono);
   font-size: var(--font-sm);

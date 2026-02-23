@@ -180,7 +180,11 @@ export type PluginCapability =
   | "invoke:list_markdown_files"
   | "fs:read"
   | "fs:list"
-  | "fs:watch";
+  | "fs:watch"
+  | "net:http"
+  | "credentials:read"
+  | "ui:panel"
+  | "ui:ticker";
 
 /** Error thrown when a plugin calls a method without the required capability */
 export class PluginCapabilityError extends Error {
@@ -192,6 +196,58 @@ export class PluginCapabilityError extends Error {
 
 // ---------------------------------------------------------------------------
 // Plugin host (the API surface exposed to plugins)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// HTTP types
+// ---------------------------------------------------------------------------
+
+/** Response from an HTTP fetch request via the plugin host. */
+export interface HttpResponse {
+  /** HTTP status code (e.g. 200, 401, 404) */
+  status: number;
+  /** Response headers */
+  headers: Record<string, string>;
+  /** Response body as text */
+  body: string;
+}
+
+/** Options for an HTTP fetch request. */
+export interface HttpFetchOptions {
+  /** HTTP method (default: "GET") */
+  method?: string;
+  /** Request headers */
+  headers?: Record<string, string>;
+  /** Request body */
+  body?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Panel types
+// ---------------------------------------------------------------------------
+
+/** Options for opening a plugin panel */
+export interface OpenPanelOptions {
+  /** Unique panel identifier (scoped to the plugin) */
+  id: string;
+  /** Tab title shown in the tab bar */
+  title: string;
+  /** HTML content rendered inside the sandboxed iframe */
+  html: string;
+}
+
+/** Handle returned by openPanel() for updating or closing the panel */
+export interface PanelHandle {
+  /** The tab ID in the mdTabs store */
+  tabId: string;
+  /** Update the iframe HTML content */
+  update(html: string): void;
+  /** Close the panel tab */
+  close(): void;
+}
+
+// ---------------------------------------------------------------------------
+// Invoke whitelist
 // ---------------------------------------------------------------------------
 
 /** Commands allowed via host.invoke() (Tier 4) */
@@ -285,6 +341,13 @@ export interface PluginHost {
   /** Read a file as UTF-8 text. Path must be absolute and within $HOME. Requires "fs:read". */
   readFile(absolutePath: string): Promise<string>;
 
+  /**
+   * Read the last N bytes of a file, skipping partial first line.
+   * Useful for large JSONL files. Requires "fs:read".
+   * If file is smaller than maxBytes, reads the entire file.
+   */
+  readFileTail(absolutePath: string, maxBytes: number): Promise<string>;
+
   /** List filenames in a directory, optionally filtered by glob. Requires "fs:list". */
   listDirectory(path: string, pattern?: string): Promise<string[]>;
 
@@ -300,6 +363,51 @@ export interface PluginHost {
     callback: (events: FsChangeEvent[]) => void,
     options?: { recursive?: boolean; debounceMs?: number },
   ): Promise<Disposable>;
+
+  // -- Tier 3c: Status bar ticker (capability-gated) --
+
+  /**
+   * Post a rotating message to the status bar ticker. Requires "ui:ticker".
+   * If a message with the same id already exists from this plugin, it is replaced.
+   */
+  postTickerMessage(options: {
+    id: string;
+    text: string;
+    icon?: string;
+    priority?: number;
+    ttlMs?: number;
+  }): void;
+
+  /** Remove a ticker message by id. Requires "ui:ticker". */
+  removeTickerMessage(id: string): void;
+
+  // -- Tier 3d: Panel UI (capability-gated) --
+
+  /**
+   * Open an HTML panel in a sandboxed iframe tab. Requires "ui:panel" capability.
+   * Returns a PanelHandle for updating content or closing the panel.
+   * If a panel with the same id is already open, it will be activated and updated.
+   */
+  openPanel(options: OpenPanelOptions): PanelHandle;
+
+  // -- Tier 3d: Credential access (capability-gated) --
+
+  /**
+   * Read credentials from the system credential store by service name.
+   * Requires "credentials:read" capability.
+   * First call from a plugin shows a user consent dialog.
+   * Returns the raw credential JSON string, or null if not found.
+   */
+  readCredential(serviceName: string): Promise<string | null>;
+
+  // -- Tier 3d: HTTP requests (capability-gated) --
+
+  /**
+   * Make an HTTP request. Requires "net:http" capability.
+   * External plugins can only fetch URLs matching their manifest's allowedUrls patterns.
+   * Non-2xx status codes are returned normally (not thrown as errors).
+   */
+  httpFetch(url: string, options?: HttpFetchOptions): Promise<HttpResponse>;
 
   // -- Tier 4: Scoped Tauri invoke (whitelisted commands only) --
 

@@ -5898,6 +5898,7 @@ dependencies = [
  "tokio",
  "tower",
  "tower-http",
+ "url",
  "uuid",
  "whisper-rs",
  "windows-sys 0.59.0",

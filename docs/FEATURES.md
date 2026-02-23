@@ -687,8 +687,12 @@ All data persisted to platform config directory via Rust:
 - Built-in plugins (TypeScript, compiled with app) and external plugins (JS, loaded at runtime)
 - Hot-reload: file changes in plugin directories trigger automatic re-import
 - Per-plugin error logging with ring buffer (500 entries)
-- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`
-- Filesystem API: sandboxed read, list, and watch operations restricted to `$HOME`
+- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`
+- Filesystem API: sandboxed read, list, tail-read, and watch operations restricted to `$HOME`
+- HTTP API: outbound requests scoped to manifest-declared URL patterns (SSRF prevention)
+- Credential API: cross-platform credential reading (macOS Keychain, Linux/Windows JSON file) with user consent
+- Panel API: rich HTML panels in sandboxed iframes (`sandbox="allow-scripts"`)
+- Status bar ticker: plugins can post rotating status messages with priority and TTL
 
 ### 17.2 Plugin Management (Settings > Plugins)
 - **Installed tab:** List all plugins with enable/disable toggle, logs viewer, uninstall button
@@ -710,6 +714,7 @@ All data persisted to platform config directory via Rust:
 
 ### 17.5 Built-in Plugins
 - **Plan Tracker** — Detects Claude Code plan files from structured events
+- **Claude Usage Dashboard** — Live rate limits from Anthropic API + local analytics (daily activity, per-model tokens, activity heatmap) in a rich HTML panel
 
 ### 17.6 Example External Plugins
 See `examples/plugins/` for reference implementations:

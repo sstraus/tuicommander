@@ -39,6 +39,9 @@ pub struct PluginManifest {
     pub author: Option<String>,
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// URL patterns allowed for net:http requests (e.g. "https://api.example.com/*")
+    #[serde(default, rename = "allowedUrls")]
+    pub allowed_urls: Vec<String>,
 }
 
 /// Known capability strings. Anything outside this set is rejected.
@@ -51,6 +54,10 @@ const KNOWN_CAPABILITIES: &[&str] = &[
     "fs:read",
     "fs:list",
     "fs:watch",
+    "net:http",
+    "credentials:read",
+    "ui:panel",
+    "ui:ticker",
 ];
 
 /// Validate a parsed manifest for required fields and sanity.
@@ -691,6 +698,7 @@ mod tests {
             description: None,
             author: None,
             capabilities: vec![],
+            allowed_urls: vec![],
         }
     }
 

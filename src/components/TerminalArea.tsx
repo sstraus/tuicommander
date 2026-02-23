@@ -2,6 +2,7 @@ import { Component, createEffect, For, JSX, Show } from "solid-js";
 import { Terminal } from "./Terminal";
 import { DiffTab } from "./DiffTab";
 import { MarkdownTab } from "./MarkdownTab";
+import { PluginPanel } from "./PluginPanel";
 import { CodeEditorTab } from "./CodeEditorPanel";
 import noTuiOpenImg from "../assets/no-tui-open.png";
 import { terminalsStore } from "../stores/terminals";
@@ -192,12 +193,17 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                 class="terminal-pane md-pane"
                 classList={{ active: mdTabsStore.state.activeId === id }}
               >
-                {mdTab && (
+                {mdTab && mdTab.type === "plugin-panel" ? (
+                  <PluginPanel
+                    tab={mdTab}
+                    onClose={() => props.onCloseTab(id)}
+                  />
+                ) : mdTab ? (
                   <MarkdownTab
                     tab={mdTab}
                     onClose={() => props.onCloseTab(id)}
                   />
-                )}
+                ) : null}
               </div>
             );
           }}
