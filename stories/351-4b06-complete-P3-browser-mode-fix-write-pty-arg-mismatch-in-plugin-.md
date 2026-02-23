@@ -1,10 +1,10 @@
 ---
 id: 351-4b06
 title: "Browser mode: fix write_pty arg mismatch in plugin registry"
-status: ready
+status: complete
 priority: P3
 created: "2026-02-21T20:34:55.189Z"
-updated: "2026-02-23T07:52:04.777Z"
+updated: "2026-02-23T08:02:00.295Z"
 dependencies: []
 ---
 
@@ -28,4 +28,6 @@ pluginRegistry.ts calls invoke("write_pty", { id, data }) but the transport.ts m
 ## Work Log
 
 ### 2026-02-23T07:52:04.705Z - Triaged: implement now
+
+### 2026-02-23T08:02:00.368Z - Fixed write_pty sessionId vs id arg mismatch
 

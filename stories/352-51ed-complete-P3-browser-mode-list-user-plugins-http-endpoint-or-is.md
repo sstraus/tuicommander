@@ -1,10 +1,10 @@
 ---
 id: 352-51ed
 title: "Browser mode: list_user_plugins HTTP endpoint or isTauri guard"
-status: ready
+status: complete
 priority: P3
 created: "2026-02-21T20:34:55.191Z"
-updated: "2026-02-23T07:52:04.950Z"
+updated: "2026-02-23T08:02:00.433Z"
 dependencies: []
 ---
 
@@ -29,4 +29,6 @@ list_user_plugins is called in pluginLoader.ts with no HTTP mapping and no isTau
 ## Work Log
 
 ### 2026-02-23T07:52:04.874Z - Triaged: implement now
+
+### 2026-02-23T08:02:00.517Z - list_user_plugins HTTP endpoint + transport mapping
 

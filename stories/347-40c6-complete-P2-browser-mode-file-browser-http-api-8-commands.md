@@ -1,10 +1,10 @@
 ---
 id: 347-40c6
 title: "Browser mode: file browser HTTP API (8 commands)"
-status: ready
+status: complete
 priority: P2
 created: "2026-02-21T20:34:55.184Z"
-updated: "2026-02-23T07:52:04.194Z"
+updated: "2026-02-23T08:01:59.693Z"
 dependencies: []
 ---
 
@@ -30,4 +30,6 @@ File browser commands (list_directory, fs_read_file, write_file, create_director
 ## Work Log
 
 ### 2026-02-23T07:52:04.122Z - Triaged: implement now
+
+### 2026-02-23T08:01:59.782Z - HTTP routes + transport mappings for 8 file browser commands
 

@@ -1,10 +1,10 @@
 ---
 id: 350-22b3
 title: "Browser mode: add get_recent_commits HTTP endpoint"
-status: ready
+status: complete
 priority: P3
 created: "2026-02-21T20:34:55.188Z"
-updated: "2026-02-23T07:52:04.635Z"
+updated: "2026-02-23T08:02:00.149Z"
 dependencies: []
 ---
 
@@ -29,4 +29,6 @@ get_recent_commits is called in useRepository.ts with try/catch that returns [].
 ## Work Log
 
 ### 2026-02-23T07:52:04.571Z - Triaged: implement now
+
+### 2026-02-23T08:02:00.229Z - get_recent_commits HTTP endpoint + transport mapping
 
