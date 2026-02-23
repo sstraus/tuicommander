@@ -744,6 +744,7 @@ pub fn run() {
             fs::copy_path,
             fs::add_to_gitignore,
             plugins::list_user_plugins,
+            plugins::get_plugin_readme_path,
             plugins::read_plugin_data,
             plugins::write_plugin_data,
             plugins::delete_plugin_data,

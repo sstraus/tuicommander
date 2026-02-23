@@ -221,15 +221,13 @@ fn parse_jsonl_line(line: &str, stats: &mut CachedFileStats) -> Option<String> {
                     }
 
                     // Track session ID for counting unique sessions
-                    if let Some(sid) = obj.get("sessionId").and_then(|s| s.as_str()) {
-                        if !stats.session_ids.contains(&sid.to_string()) {
-                            stats.session_ids.push(sid.to_string());
-                            // Bump session count for the day
-                            let date = &ts[..10.min(ts.len())];
-                            if date.len() == 10 {
-                                let day = stats.daily_activity.entry(date.to_string()).or_default();
-                                day.session_count += 1;
-                            }
+                    if let Some(sid) = obj.get("sessionId").and_then(|s| s.as_str()).filter(|sid| !stats.session_ids.contains(&sid.to_string())) {
+                        stats.session_ids.push(sid.to_string());
+                        // Bump session count for the day
+                        let date = &ts[..10.min(ts.len())];
+                        if date.len() == 10 {
+                            let day = stats.daily_activity.entry(date.to_string()).or_default();
+                            day.session_count += 1;
                         }
                     }
 

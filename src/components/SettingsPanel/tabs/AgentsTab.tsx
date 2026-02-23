@@ -5,6 +5,8 @@ import { useAgentDetection, type AgentAvailability } from "../../../hooks/useAge
 import { invoke } from "../../../invoke";
 import { settingsStore } from "../../../stores/settings";
 import { isTauri } from "../../../transport";
+import { isPluginDisabled, setPluginEnabled } from "../../../plugins/pluginLoader";
+import { setClaudeUsageEnabled } from "../../../plugins";
 import { AgentIcon } from "../../ui/AgentIcon";
 import s from "../Settings.module.css";
 import a from "./AgentsTab.module.css";
@@ -114,6 +116,40 @@ const RunConfigRow: Component<{
         >
           Delete
         </button>
+      </div>
+    </div>
+  );
+};
+
+/** Toggle for the native Claude Usage Dashboard feature */
+const ClaudeUsageToggle: Component = () => {
+  const [enabled, setEnabled] = createSignal(!isPluginDisabled("claude-usage"));
+
+  const handleToggle = async () => {
+    const newState = !enabled();
+    setEnabled(newState);
+    try {
+      await setPluginEnabled("claude-usage", newState);
+      setClaudeUsageEnabled(newState);
+    } catch (err) {
+      console.error("Failed to toggle Claude Usage Dashboard:", err);
+      setEnabled(!newState); // revert on failure
+    }
+  };
+
+  return (
+    <div class={a.expandedSection}>
+      <div class={a.expandedLabel}>Features</div>
+      <div class={a.actionsRow}>
+        <label class={a.toggleRow}>
+          <input
+            type="checkbox"
+            checked={enabled()}
+            onChange={handleToggle}
+          />
+          <span>Usage Dashboard</span>
+        </label>
+        <span class={s.hint}>Rate limits, session analytics, and activity heatmap in status bar and Activity Center</span>
       </div>
     </div>
   );
@@ -267,6 +303,11 @@ const AgentRow: Component<{
               </Show>
             </div>
           </div>
+
+          {/* Claude-specific: Usage Dashboard toggle */}
+          <Show when={props.agentType === "claude"}>
+            <ClaudeUsageToggle />
+          </Show>
         </div>
       </Show>
     </div>

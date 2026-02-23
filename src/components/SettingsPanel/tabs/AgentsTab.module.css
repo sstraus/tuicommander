@@ -312,3 +312,14 @@
   background: var(--fg-muted);
   opacity: 0.4;
 }
+
+/* Feature toggle row */
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-sm);
+  color: var(--fg-primary);
+  cursor: pointer;
+}
