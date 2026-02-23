@@ -1,4 +1,5 @@
 import { activityStore } from "../stores/activityStore";
+import { statusBarTicker } from "../stores/statusBarTicker";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { prNotificationsStore } from "../stores/prNotifications";
@@ -285,7 +286,26 @@ function createPluginRegistry() {
         return track(disposable);
       },
 
-      // -- Tier 3c: Panel UI --
+      // -- Tier 3c: Status bar ticker --
+
+      postTickerMessage(options) {
+        requireCapability(pluginId, capabilities, "ui:ticker");
+        statusBarTicker.addMessage({
+          id: options.id,
+          pluginId,
+          text: options.text,
+          icon: options.icon,
+          priority: options.priority ?? 0,
+          ttlMs: options.ttlMs ?? 60_000,
+        });
+      },
+
+      removeTickerMessage(id: string) {
+        requireCapability(pluginId, capabilities, "ui:ticker");
+        statusBarTicker.removeMessage(id, pluginId);
+      },
+
+      // -- Tier 3d: Panel UI --
 
       openPanel(options: OpenPanelOptions): PanelHandle {
         requireCapability(pluginId, capabilities, "ui:panel");
@@ -431,6 +451,7 @@ function createPluginRegistry() {
       pluginStore.getLogger(id).error(`onunload failed: ${msg}`, err);
     }
     entry.disposable.dispose();
+    statusBarTicker.removeAllForPlugin(id);
     pluginStore.updatePlugin(id, { loaded: false });
   }
 

@@ -183,7 +183,8 @@ export type PluginCapability =
   | "fs:watch"
   | "net:http"
   | "credentials:read"
-  | "ui:panel";
+  | "ui:panel"
+  | "ui:ticker";
 
 /** Error thrown when a plugin calls a method without the required capability */
 export class PluginCapabilityError extends Error {
@@ -363,7 +364,24 @@ export interface PluginHost {
     options?: { recursive?: boolean; debounceMs?: number },
   ): Promise<Disposable>;
 
-  // -- Tier 3c: Panel UI (capability-gated) --
+  // -- Tier 3c: Status bar ticker (capability-gated) --
+
+  /**
+   * Post a rotating message to the status bar ticker. Requires "ui:ticker".
+   * If a message with the same id already exists from this plugin, it is replaced.
+   */
+  postTickerMessage(options: {
+    id: string;
+    text: string;
+    icon?: string;
+    priority?: number;
+    ttlMs?: number;
+  }): void;
+
+  /** Remove a ticker message by id. Requires "ui:ticker". */
+  removeTickerMessage(id: string): void;
+
+  // -- Tier 3d: Panel UI (capability-gated) --
 
   /**
    * Open an HTML panel in a sandboxed iframe tab. Requires "ui:panel" capability.
