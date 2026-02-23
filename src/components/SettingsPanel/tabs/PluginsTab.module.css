@@ -228,6 +228,29 @@
   flex-shrink: 0;
 }
 
+.docsBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.docsBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .logsBtn {
   background: none;
   border: 1px solid var(--border);

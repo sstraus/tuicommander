@@ -232,6 +232,14 @@ function createPluginRegistry() {
         }
       },
 
+      openMarkdownFile(absolutePath: string): void {
+        requireCapability(pluginId, capabilities, "ui:markdown");
+        mdTabsStore.add("", absolutePath);
+        if (!uiStore.state.markdownPanelVisible) {
+          uiStore.toggleMarkdownPanel();
+        }
+      },
+
       async playNotificationSound(): Promise<void> {
         requireCapability(pluginId, capabilities, "ui:sound");
         await notificationsStore.testSound("question");
@@ -297,6 +305,7 @@ function createPluginRegistry() {
           icon: options.icon,
           priority: options.priority ?? 0,
           ttlMs: options.ttlMs ?? 60_000,
+          onClick: options.onClick,
         });
       },
 
@@ -324,7 +333,7 @@ function createPluginRegistry() {
         };
       },
 
-      // -- Tier 3d: Credential access --
+      // -- Tier 3e: Credential access --
 
       async readCredential(serviceName: string): Promise<string | null> {
         requireCapability(pluginId, capabilities, "credentials:read");
@@ -360,7 +369,7 @@ function createPluginRegistry() {
         });
       },
 
-      // -- Tier 3d: HTTP requests --
+      // -- Tier 3f: HTTP requests --
 
       async httpFetch(url: string, options?: HttpFetchOptions): Promise<HttpResponse> {
         requireCapability(pluginId, capabilities, "net:http");

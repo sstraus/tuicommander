@@ -101,10 +101,10 @@ pub async fn plugin_list_directory(
     let mut names = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if let Some(ref pat) = glob_pattern {
-            if !pat.matches(&name) {
-                continue;
-            }
+        if let Some(ref pat) = glob_pattern
+            && !pat.matches(&name)
+        {
+            continue;
         }
         names.push(name);
     }

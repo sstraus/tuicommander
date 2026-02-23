@@ -269,6 +269,25 @@ pub fn list_user_plugins() -> Vec<PluginManifest> {
 }
 
 // ---------------------------------------------------------------------------
+// Plugin README
+// ---------------------------------------------------------------------------
+
+/// Return the absolute path to a plugin's README.md if it exists.
+/// Returns `None` if the file doesn't exist (not an error).
+#[tauri::command]
+pub fn get_plugin_readme_path(id: String) -> Option<String> {
+    if id.is_empty() || is_path_escape(&id) {
+        return None;
+    }
+    let readme = plugins_dir().join(&id).join("README.md");
+    if readme.is_file() {
+        readme.to_str().map(String::from)
+    } else {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Sandboxed plugin data storage
 // ---------------------------------------------------------------------------
 

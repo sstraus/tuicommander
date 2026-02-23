@@ -60,6 +60,7 @@ export default {
         // MUST be synchronous and fast (<1ms) -- PTY hot path
         // match[0] = full match, match[1]+ = capture groups
         // Input is ANSI-stripped but may contain Unicode
+        // pattern.lastIndex is reset before each test (safe to use global flag)
         host.addItem({
           id: `${PLUGIN_ID}:${match[1]}`,
           pluginId: PLUGIN_ID,
@@ -103,9 +104,18 @@ Content URIs: `scheme:path?key=value` (e.g. `plan:file?path=%2Frepo%2Fplans%2Ffo
 
 All Tier 1-2 methods are always available. Tier 3-4 require capabilities in manifest.json; calling without capability throws `PluginCapabilityError`.
 
+### Tier 0: Logging (always available)
+
+```typescript
+host.log(level: "debug" | "info" | "warn" | "error", message: string, data?: unknown): void
+```
+
+Writes to the plugin's ring buffer (500 entries max), visible in Settings > Plugins > Logs.
+Errors from onload/onunload/watchers/handlers are auto-captured. Use host.log() for extra diagnostics.
+
 ### Tier 1: Activity Center (always available)
 
-All register* methods return a Disposable (auto-cleaned on unload).
+All register* methods return a Disposable (auto-cleaned on unload — no need to manually dispose).
 
 ```typescript
 // Section heading in Activity Center dropdown
@@ -143,6 +153,7 @@ host.removeItem(id: string)
 host.getActiveRepo()       // { path, displayName, activeBranch, worktreePath } | null
 host.getRepos()            // [{ path, displayName }]
 host.getActiveTerminalSessionId()  // string | null
+host.getRepoPathForSession(sessionId: string)  // string | null (repo owning this terminal session)
 host.getPrNotifications()  // [{ id, repoPath, branch, prNumber, title, type }]
 host.getSettings(repoPath: string) // { path, displayName, baseBranch, color } | null
 ```
@@ -153,15 +164,20 @@ host.getSettings(repoPath: string) // { path, displayName, baseBranch, color } |
 |--------|------------|
 | `await host.writePty(sessionId: string, data: string): Promise<void>` | `pty:write` |
 | `host.openMarkdownPanel(title: string, contentUri: string): void` | `ui:markdown` |
+| `host.openMarkdownFile(absolutePath: string): void` | `ui:markdown` |
 | `await host.playNotificationSound(): Promise<void>` | `ui:sound` |
 | `host.openPanel({ id, title, html }): PanelHandle` | `ui:panel` |
-| `host.postTickerMessage({ id, text, icon?, priority?, ttlMs? }): void` | `ui:ticker` |
+| `host.postTickerMessage({ id, text, icon?, priority?, ttlMs?, onClick? }): void` | `ui:ticker` |
 | `host.removeTickerMessage(id: string): void` | `ui:ticker` |
 | `await host.readCredential(serviceName: string): Promise<string \| null>` | `credentials:read` |
 | `await host.httpFetch(url: string, options?): Promise<HttpResponse>` | `net:http` |
 
 PanelHandle: `{ tabId, update(html), close() }` — HTML rendered in sandboxed iframe.
 HttpResponse: `{ status: number, headers: Record<string, string>, body: string }` — non-2xx is NOT an error.
+
+**postTickerMessage notes:** Same-id messages from the same plugin are replaced. `priority` >= 80 gets warning styling. `onClick` is an optional callback when user clicks the ticker message. `ttlMs` defaults to 60000 (0 = persistent).
+
+**httpFetch notes:** Localhost blocked unless declared in `allowedUrls`. Max 5 redirects. 30s timeout, 10 MB limit. Built-in plugins have no URL restrictions.
 
 ### Tier 3b: Filesystem Operations (capability-gated)
 

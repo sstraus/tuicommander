@@ -3,6 +3,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { pluginStore } from "../../../stores/pluginStore";
 import { registryStore, type RegistryEntry } from "../../../stores/registryStore";
+import { mdTabsStore } from "../../../stores/mdTabs";
+import { uiStore } from "../../../stores/ui";
+import { invoke } from "../../../invoke";
 import { isTauri } from "../../../transport";
 import type { PluginState } from "../../../stores/pluginStore";
 import type { LogEntry } from "../../../plugins/pluginLogger";
@@ -45,6 +48,21 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
   const [showLogs, setShowLogs] = createSignal(false);
   const [toggling, setToggling] = createSignal(false);
   const [uninstalling, setUninstalling] = createSignal(false);
+  const [hasReadme, setHasReadme] = createSignal<boolean | null>(null);
+
+  // Check if README.md exists for external plugins (lazy, on first render)
+  if (!props.plugin.builtIn && isTauri()) {
+    invoke<string | null>("get_plugin_readme_path", { id: props.plugin.id })
+      .then((path) => setHasReadme(path !== null))
+      .catch(() => setHasReadme(false));
+  }
+
+  const handleOpenReadme = async () => {
+    const path = await invoke<string | null>("get_plugin_readme_path", { id: props.plugin.id });
+    if (!path) return;
+    mdTabsStore.add("", path);
+    uiStore.setMarkdownPanelVisible(true);
+  };
 
   const handleToggle = async () => {
     if (toggling()) return;
@@ -107,6 +125,15 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
         </div>
 
         <div class={ps.pluginActions}>
+          <Show when={hasReadme()}>
+            <button
+              class={ps.docsBtn}
+              onClick={handleOpenReadme}
+              title="View plugin documentation"
+            >
+              ?
+            </button>
+          </Show>
           <label class={s.toggle}>
             <input
               type="checkbox"

@@ -56,8 +56,13 @@ const planMarkdownProvider: MarkdownProvider = {
 // Plugin implementation
 // ---------------------------------------------------------------------------
 
+/** Max plan items shown in the Activity Center bell dropdown */
+const MAX_PLAN_ITEMS = 3;
+
 class PlanPlugin implements TuiPlugin {
   readonly id = PLUGIN_ID;
+  /** Ordered list of active plan item IDs (oldest first) */
+  private planItemIds: string[] = [];
 
   onload(host: PluginHost): void {
     host.registerSection({
@@ -71,6 +76,19 @@ class PlanPlugin implements TuiPlugin {
       if (typeof payload !== "object" || payload === null || typeof (payload as Record<string, unknown>).path !== "string") return;
       const { path } = payload as { path: string };
       const id = itemId(path);
+
+      // If already tracked, move it to the end (most recent)
+      const existingIdx = this.planItemIds.indexOf(id);
+      if (existingIdx >= 0) {
+        this.planItemIds.splice(existingIdx, 1);
+      }
+      this.planItemIds.push(id);
+
+      // Evict oldest items beyond the limit
+      while (this.planItemIds.length > MAX_PLAN_ITEMS) {
+        const evictId = this.planItemIds.shift()!;
+        host.removeItem(evictId);
+      }
 
       // Add or update (addItem deduplicates by id)
       host.addItem({

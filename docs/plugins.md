@@ -137,16 +137,20 @@ The `onload` function receives a `PluginHost` object — this is your entire API
 
 #### host.log(level, message, data?) -> void
 
-Write to the plugin's log ring buffer (visible in Settings > Plugins > Logs).
+Write to the plugin's dedicated log ring buffer (max 500 entries). Viewable in Settings > Plugins > click "Logs" on any plugin row.
 
 ```typescript
 host.log("info", "Plugin initialized");
 host.log("error", "Failed to process", { code: 404 });
 ```
 
-Levels: `"debug"`, `"info"`, `"warn"`, `"error"`.
+Levels: `"debug"`, `"info"`, `"warn"`, `"error"`. The optional `data` parameter accepts any JSON-serializable value and is displayed alongside the message.
+
+Errors thrown inside `onload`, `onunload`, output watchers, and structured event handlers are automatically captured to the plugin's log. Use `host.log()` for additional diagnostic output. Error count badges appear on plugins with recent errors in the Settings panel.
 
 ### Tier 1: Activity Center + Watchers + Providers (always available)
+
+All `register*()` methods return a `Disposable` with a `dispose()` method. You do **not** need to call `dispose()` manually — all registrations are automatically disposed when `onunload()` is called (including during hot reload). Only call `dispose()` if you need to dynamically remove a registration while the plugin is still running.
 
 #### host.registerSection(section) -> Disposable
 
@@ -259,14 +263,15 @@ const sessionId = host.getActiveTerminalSessionId();
 
 #### host.getRepoPathForSession(sessionId) -> string | null
 
-Resolves which repository owns a given terminal session. Useful in output watcher callbacks where `sessionId` is provided but you need the repo context.
+Resolves which repository owns a given terminal session by searching all repos and branches for a terminal matching the session ID. Returns `null` if the session is not associated with any repository (e.g. a standalone terminal or an unknown session ID). Useful in output watcher callbacks where `sessionId` is provided but you need the repo context.
 
 ```typescript
 host.registerOutputWatcher({
   pattern: /Deployed: (\S+)/,
   onMatch(match, sessionId) {
     const repoPath = host.getRepoPathForSession(sessionId);
-    // repoPath = "/Users/me/project" or null
+    if (!repoPath) return; // session not tied to a repo
+    // repoPath = "/Users/me/project"
   },
 });
 ```
@@ -303,6 +308,15 @@ Opens a virtual markdown tab and shows the panel. **Requires `"ui:markdown"` cap
 
 ```typescript
 host.openMarkdownPanel("CI Report", "my-scheme:report?id=123");
+```
+
+#### host.openMarkdownFile(absolutePath) -> void
+
+Opens a local markdown file in the markdown panel. **Requires `"ui:markdown"` capability.** The path must be absolute. This is useful for plugins that ship a `README.md` or other documentation files.
+
+```typescript
+// Open the plugin's own README
+host.openMarkdownFile("/Users/me/.config/tuicommander/plugins/my-plugin/README.md");
 ```
 
 #### host.playNotificationSound() -> Promise<void>
@@ -378,8 +392,17 @@ host.postTickerMessage({
   icon: '<svg viewBox="0 0 16 16" fill="currentColor">...</svg>',
   priority: 10, // Higher = shown first. >= 80 gets warning styling
   ttlMs: 60000, // Auto-expire after 60s. 0 = persistent
+  onClick: () => { /* optional click handler */ },
 });
 ```
+
+**Options:**
+- `id` — Unique message identifier. If a message with the same id from this plugin already exists, it is replaced.
+- `text` — Message text displayed in the ticker rotation.
+- `icon` — Optional inline SVG icon.
+- `priority` — Higher = shown first. Values >= 80 get warning styling. Default: `0`.
+- `ttlMs` — Auto-expire after N milliseconds. `0` = persistent (must be removed manually). Default: `60000`.
+- `onClick` — Optional callback invoked when the user clicks the ticker message (e.g. to open a dashboard panel).
 
 #### host.removeTickerMessage(id) -> void
 
@@ -459,10 +482,18 @@ interface HttpResponse {
 }
 ```
 
-**Security:**
+**Security and limits:**
 - `file://`, `data://`, `ftp://` schemes are blocked
-- `localhost` URLs only allowed if declared in `allowedUrls`
-- 30-second timeout, 10 MB response limit
+- 30-second timeout, 10 MB response limit, max 5 redirects
+- Localhost (`localhost`, `127.0.0.1`, `::1`, `[::1]`, `0.0.0.0`) is blocked unless explicitly declared in `allowedUrls`
+- Built-in plugins (no `capabilities` array) can fetch any `http://` or `https://` URL without restrictions
+
+**`allowedUrls` pattern matching:**
+- Patterns use prefix matching with an optional trailing `*` wildcard
+- `"https://api.example.com/*"` — matches any path under that origin
+- `"https://api.example.com/v2/data"` — matches that exact URL only
+- `"http://localhost:8080/*"` — allows localhost on that port (required to unblock localhost)
+- The URL must start with the pattern prefix (before `*`) to match
 
 ### Tier 3g: File Tail (capability-gated)
 
@@ -521,7 +552,7 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | Capability | Unlocks | Risk |
 |------------|---------|------|
 | `pty:write` | `host.writePty()` | Can send arbitrary input to terminals |
-| `ui:markdown` | `host.openMarkdownPanel()` | Can open panels in the UI |
+| `ui:markdown` | `host.openMarkdownPanel()`, `host.openMarkdownFile()` | Can open panels and files in the UI |
 | `ui:sound` | `host.playNotificationSound()` | Can play sounds |
 | `ui:panel` | `host.openPanel()` | Can render arbitrary HTML in sandboxed iframe |
 | `ui:ticker` | `host.postTickerMessage()`, `host.removeTickerMessage()` | Can post messages to the status bar |

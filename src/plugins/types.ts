@@ -333,6 +333,9 @@ export interface PluginHost {
   /** Open a virtual markdown tab and show the panel. Requires "ui:markdown" capability. */
   openMarkdownPanel(title: string, contentUri: string): void;
 
+  /** Open a local markdown file in the markdown panel. Requires "ui:markdown" capability. Path must be absolute. */
+  openMarkdownFile(absolutePath: string): void;
+
   /** Play the notification sound. Requires "ui:sound" capability. */
   playNotificationSound(): Promise<void>;
 
@@ -376,6 +379,7 @@ export interface PluginHost {
     icon?: string;
     priority?: number;
     ttlMs?: number;
+    onClick?: () => void;
   }): void;
 
   /** Remove a ticker message by id. Requires "ui:ticker". */
