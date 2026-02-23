@@ -1,0 +1,76 @@
+src/components/SettingsPanel/tabs/index.ts
+  637be5d3b867a187 7
+docs/FEATURES.md
+  637be5d3b867a187 306-315,481-483,496
+src-tauri/src/agent_mcp.rs
+  637be5d3b867a187 1-447
+src/agents.ts
+  637be5d3b867a187 326-358
+SPEC.md
+  637be5d3b867a187 351-357
+src/__tests__/stores/agentConfigs.test.ts
+  637be5d3b867a187 1-196
+src/App.tsx
+  637be5d3b867a187 62-64,168-170,198-199,322-360,364-370,399-405
+src-tauri/src/config.rs
+  637be5d3b867a187 499-525,539,646-656,1013-1057
+src/stores/agentConfigs.ts
+  637be5d3b867a187 1-126
+src-tauri/src/lib.rs
+  ce000feef349b126 554
+  637be5d3b867a187 2,717-722
+src/components/SettingsPanel/tabs/AgentsTab.module.css
+  637be5d3b867a187 1-314
+src/components/SettingsPanel/SettingsPanel.tsx
+  637be5d3b867a187 18,46,175-177
+src/__tests__/components/SettingsPanel.test.tsx
+  637be5d3b867a187 128
+src/components/SettingsPanel/tabs/AgentsTab.tsx
+  637be5d3b867a187 1-302
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "dc228d607756397ea7721d41d5af8ba8585f92bd",
+  "prompts": {
+    "5fb598d253598060": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "64f69d21-de64-41e0-befc-02b68bd8ef9d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 66,
+      "total_deletions": 52,
+      "accepted_lines": 867,
+      "overriden_lines": 0
+    },
+    "637be5d3b867a187": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "52cd6d41-8254-41c2-9724-86c34919367e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 1763,
+      "total_deletions": 164,
+      "accepted_lines": 1600,
+      "overriden_lines": 0
+    },
+    "ce000feef349b126": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce8acd39-dbb9-4c8b-9979-6ad9be48b2fb",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 332,
+      "total_deletions": 4,
+      "accepted_lines": 330,
+      "overriden_lines": 0
+    }
+  }
+}
