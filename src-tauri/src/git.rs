@@ -533,6 +533,124 @@ pub(crate) fn get_git_branches(path: String) -> Result<Vec<serde_json::Value>, S
     Ok(branches)
 }
 
+/// Result of a background git command execution
+#[derive(Clone, Serialize)]
+pub(crate) struct GitCommandResult {
+    pub success: bool,
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+}
+
+/// Ensure the SSH askpass helper script exists in the config directory.
+/// Returns the path to the script. The script shows a native GUI dialog
+/// so SSH can prompt for passphrases without a TTY.
+fn ensure_askpass_script() -> Option<PathBuf> {
+    let dir = crate::config::config_dir();
+    let script_path = dir.join("ssh-askpass");
+
+    if script_path.exists() {
+        return Some(script_path);
+    }
+
+    #[cfg(target_os = "macos")]
+    let content = r#"#!/bin/bash
+# TUI Commander SSH askpass helper — shows a native macOS dialog
+exec osascript -e "display dialog \"$1\" default answer \"\" with hidden answer with title \"SSH Authentication\"" -e 'text returned of result'
+"#;
+
+    #[cfg(target_os = "linux")]
+    let content = r#"#!/bin/bash
+# TUI Commander SSH askpass helper — tries zenity, then kdialog
+if command -v zenity >/dev/null 2>&1; then
+    exec zenity --password --title="SSH Authentication" --text="$1"
+elif command -v kdialog >/dev/null 2>&1; then
+    exec kdialog --password "$1" --title "SSH Authentication"
+else
+    exit 1
+fi
+"#;
+
+    #[cfg(target_os = "windows")]
+    let content = r#"@echo off
+REM TUI Commander SSH askpass — not supported on Windows without a helper
+exit /b 1
+"#;
+
+    if let Err(e) = fs::write(&script_path, content) {
+        eprintln!("[git] Failed to write askpass script: {e}");
+        return None;
+    }
+
+    // Make executable on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755));
+    }
+
+    Some(script_path)
+}
+
+/// Run an arbitrary git command in the background (no PTY, no terminal).
+/// Used by the sidebar Git Quick Actions (pull, push, fetch, stash).
+/// Async so network operations (pull/push/fetch) don't block the IPC thread.
+/// Sets SSH_ASKPASS so passphrase prompts show a native GUI dialog.
+#[tauri::command]
+pub(crate) async fn run_git_command(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+    args: Vec<String>,
+) -> Result<GitCommandResult, String> {
+    let state_arc = state.inner().clone();
+    let path_clone = path.clone();
+    let askpass = ensure_askpass_script();
+
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path_clone);
+
+        let mut cmd = Command::new(crate::agent::resolve_cli("git"));
+        cmd.current_dir(&repo_path).args(&args);
+
+        // Enable GUI-based SSH authentication so passphrase-protected keys work
+        // without a TTY. SSH_ASKPASS_REQUIRE=prefer tells SSH to use the askpass
+        // program even when stdin looks like it could be a terminal.
+        if let Some(ref askpass_path) = askpass {
+            cmd.env("SSH_ASKPASS", askpass_path);
+            cmd.env("SSH_ASKPASS_REQUIRE", "prefer");
+            cmd.env("DISPLAY", ":0"); // Required on Linux for SSH_ASKPASS
+        }
+        // Prevent git itself from trying to prompt on a non-existent terminal
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
+
+        let output = cmd.output();
+
+        match output {
+            Ok(o) => {
+                let success = o.status.success();
+                let result = GitCommandResult {
+                    success,
+                    stdout: String::from_utf8_lossy(&o.stdout).to_string(),
+                    stderr: String::from_utf8_lossy(&o.stderr).to_string(),
+                    exit_code: o.status.code().unwrap_or(-1),
+                };
+                if success {
+                    state_arc.invalidate_repo_caches(&path_clone);
+                }
+                result
+            }
+            Err(e) => GitCommandResult {
+                success: false,
+                stdout: String::new(),
+                stderr: format!("Failed to execute git: {e}"),
+                exit_code: -1,
+            },
+        }
+    })
+    .await
+    .map_err(|e| format!("Git command task failed: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

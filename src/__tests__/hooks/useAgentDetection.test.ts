@@ -35,7 +35,7 @@ describe("useAgentDetection", () => {
         });
 
         const map = detections();
-        expect(map.size).toBe(10);
+        expect(map.size).toBe(11);
         expect(map.get("claude")?.available).toBe(true);
         expect(map.get("gemini")?.available).toBe(false);
         expect(map.get("opencode")?.available).toBe(true);

@@ -76,7 +76,18 @@ vi.mock("../../stores/github", () => ({
   },
 }));
 
+const { mockLastActivityAt } = vi.hoisted(() => ({
+  mockLastActivityAt: vi.fn<() => number>(() => 0),
+}));
+
+vi.mock("../../stores/userActivity", () => ({
+  userActivityStore: {
+    lastActivityAt: mockLastActivityAt,
+  },
+}));
+
 import { Sidebar } from "../../components/Sidebar/Sidebar";
+import { _resetMergedActivityAccum } from "../../components/Sidebar/RepoSection";
 import { repositoriesStore } from "../../stores/repositories";
 import { uiStore } from "../../stores/ui";
 
@@ -93,7 +104,7 @@ function defaultProps(overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) {
     onRemoveRepo: vi.fn(),
     onOpenSettings: vi.fn(),
     onOpenHelp: vi.fn(),
-    onGitCommand: vi.fn(),
+    onBackgroundGit: vi.fn(),
     ...overrides,
   };
 }
@@ -138,6 +149,8 @@ describe("Sidebar", () => {
     setRepos({});
     mockGetActive.mockReturnValue(null);
     mockTerminalsGet.mockReturnValue(null);
+    mockLastActivityAt.mockReturnValue(0);
+    _resetMergedActivityAccum();
   });
 
   describe("empty state", () => {
@@ -597,52 +610,67 @@ describe("Sidebar", () => {
       expect(quickActions).toBeNull();
     });
 
-    it("Pull button calls onGitCommand with pull command", () => {
+    it("Pull button calls onBackgroundGit with pull args", () => {
       mockGetActive.mockReturnValue({ path: "/repo1" });
       setRepos({ "/repo1": makeRepo() });
-      const onGitCommand = vi.fn();
-      const { container } = render(() => <Sidebar {...defaultProps({ onGitCommand })} />);
+      const onBackgroundGit = vi.fn();
+      const { container } = render(() => <Sidebar {...defaultProps({ onBackgroundGit })} />);
 
       const buttons = container.querySelectorAll(".gitQuickBtn");
       const pullBtn = Array.from(buttons).find((b) => b.textContent?.includes("Pull"))!;
       fireEvent.click(pullBtn);
-      expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git pull');
+      expect(onBackgroundGit).toHaveBeenCalledWith("/repo1", "pull", ["pull"]);
     });
 
-    it("Push button calls onGitCommand with push command", () => {
+    it("Push button calls onBackgroundGit with push args", () => {
       mockGetActive.mockReturnValue({ path: "/repo1" });
       setRepos({ "/repo1": makeRepo() });
-      const onGitCommand = vi.fn();
-      const { container } = render(() => <Sidebar {...defaultProps({ onGitCommand })} />);
+      const onBackgroundGit = vi.fn();
+      const { container } = render(() => <Sidebar {...defaultProps({ onBackgroundGit })} />);
 
       const buttons = container.querySelectorAll(".gitQuickBtn");
       const pushBtn = Array.from(buttons).find((b) => b.textContent?.includes("Push"))!;
       fireEvent.click(pushBtn);
-      expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git push');
+      expect(onBackgroundGit).toHaveBeenCalledWith("/repo1", "push", ["push"]);
     });
 
-    it("Fetch button calls onGitCommand with fetch command", () => {
+    it("Fetch button calls onBackgroundGit with fetch args", () => {
       mockGetActive.mockReturnValue({ path: "/repo1" });
       setRepos({ "/repo1": makeRepo() });
-      const onGitCommand = vi.fn();
-      const { container } = render(() => <Sidebar {...defaultProps({ onGitCommand })} />);
+      const onBackgroundGit = vi.fn();
+      const { container } = render(() => <Sidebar {...defaultProps({ onBackgroundGit })} />);
 
       const buttons = container.querySelectorAll(".gitQuickBtn");
       const fetchBtn = Array.from(buttons).find((b) => b.textContent?.includes("Fetch"))!;
       fireEvent.click(fetchBtn);
-      expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git fetch --all');
+      expect(onBackgroundGit).toHaveBeenCalledWith("/repo1", "fetch", ["fetch", "--all"]);
     });
 
-    it("Stash button calls onGitCommand with stash command", () => {
+    it("Stash button calls onBackgroundGit with stash args", () => {
       mockGetActive.mockReturnValue({ path: "/repo1" });
       setRepos({ "/repo1": makeRepo() });
-      const onGitCommand = vi.fn();
-      const { container } = render(() => <Sidebar {...defaultProps({ onGitCommand })} />);
+      const onBackgroundGit = vi.fn();
+      const { container } = render(() => <Sidebar {...defaultProps({ onBackgroundGit })} />);
 
       const buttons = container.querySelectorAll(".gitQuickBtn");
       const stashBtn = Array.from(buttons).find((b) => b.textContent?.includes("Stash"))!;
       fireEvent.click(stashBtn);
-      expect(onGitCommand).toHaveBeenCalledWith('cd "/repo1" && git stash');
+      expect(onBackgroundGit).toHaveBeenCalledWith("/repo1", "stash", ["stash"]);
+    });
+
+    it("disables button when operation is in runningGitOps", () => {
+      mockGetActive.mockReturnValue({ path: "/repo1" });
+      setRepos({ "/repo1": makeRepo() });
+      const runningOps = new Set(["pull"]);
+      const { container } = render(() => <Sidebar {...defaultProps({ runningGitOps: runningOps })} />);
+
+      const buttons = container.querySelectorAll(".gitQuickBtn");
+      const pullBtn = Array.from(buttons).find((b) => b.textContent?.includes("Pull"))!;
+      expect(pullBtn.hasAttribute("disabled")).toBe(true);
+
+      // Other buttons should not be disabled
+      const pushBtn = Array.from(buttons).find((b) => b.textContent?.includes("Push"))!;
+      expect(pushBtn.hasAttribute("disabled")).toBe(false);
     });
   });
 
@@ -763,7 +791,7 @@ describe("Sidebar", () => {
       expect(prBadge!.textContent).toBe("Merged");
     });
 
-    it("shows Closed label and class when PR state is CLOSED", () => {
+    it("hides PR badge immediately for CLOSED PR", () => {
       setRepos({
         "/repo1": makeRepo({
           branches: {
@@ -774,9 +802,7 @@ describe("Sidebar", () => {
       mockGetPrStatus.mockReturnValue({ state: "CLOSED", number: 43, title: "Test", url: "https://example.com" });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       const prBadge = container.querySelector(".prBadge");
-      expect(prBadge).not.toBeNull();
-      expect(prBadge!.classList.contains("prClosed")).toBe(true);
-      expect(prBadge!.textContent).toBe("Closed");
+      expect(prBadge).toBeNull();
     });
 
     it("shows Draft label and class when PR is a draft", () => {

@@ -8,7 +8,6 @@ import { githubStore } from "../../stores/github";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { ParkedReposPopover } from "./ParkedReposPopover";
 import { PromptDialog } from "../PromptDialog";
-import { escapeShellArg } from "../../utils";
 import { t } from "../../i18n";
 import { RepoSection } from "./RepoSection";
 import { GroupSection } from "./GroupSection";
@@ -28,7 +27,8 @@ export interface SidebarProps {
   onRemoveRepo: (repoPath: string) => void;
   onOpenSettings: () => void;
   onOpenHelp?: () => void;
-  onGitCommand?: (command: string) => void;
+  onBackgroundGit?: (repoPath: string, op: string, args: string[]) => void;
+  runningGitOps?: Set<string>;
 }
 
 const DRAG_CLASSES: Record<string, string> = {
@@ -244,9 +244,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           <div class={s.gitQuickBtns}>
             <button
               class={s.gitQuickBtn}
+              classList={{ [s.loading]: props.runningGitOps?.has("pull") }}
+              disabled={props.runningGitOps?.has("pull")}
               onClick={() => {
                 const repo = repositoriesStore.getActive();
-                if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git pull`);
+                if (repo) props.onBackgroundGit?.(repo.path, "pull", ["pull"]);
               }}
               title={t("sidebar.gitPull", "Pull latest changes")}
             >
@@ -258,9 +260,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
             </button>
             <button
               class={s.gitQuickBtn}
+              classList={{ [s.loading]: props.runningGitOps?.has("push") }}
+              disabled={props.runningGitOps?.has("push")}
               onClick={() => {
                 const repo = repositoriesStore.getActive();
-                if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git push`);
+                if (repo) props.onBackgroundGit?.(repo.path, "push", ["push"]);
               }}
               title={t("sidebar.gitPush", "Push commits")}
             >
@@ -272,9 +276,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
             </button>
             <button
               class={s.gitQuickBtn}
+              classList={{ [s.loading]: props.runningGitOps?.has("fetch") }}
+              disabled={props.runningGitOps?.has("fetch")}
               onClick={() => {
                 const repo = repositoriesStore.getActive();
-                if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git fetch --all`);
+                if (repo) props.onBackgroundGit?.(repo.path, "fetch", ["fetch", "--all"]);
               }}
               title={t("sidebar.gitFetch", "Fetch from all remotes")}
             >
@@ -286,9 +292,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
             </button>
             <button
               class={s.gitQuickBtn}
+              classList={{ [s.loading]: props.runningGitOps?.has("stash") }}
+              disabled={props.runningGitOps?.has("stash")}
               onClick={() => {
                 const repo = repositoriesStore.getActive();
-                if (repo) props.onGitCommand?.(`cd ${escapeShellArg(repo.path)} && git stash`);
+                if (repo) props.onBackgroundGit?.(repo.path, "stash", ["stash"]);
               }}
               title={t("sidebar.gitStash", "Stash changes")}
             >

@@ -224,6 +224,7 @@
 .addBtn {
   color: var(--accent);
   font-weight: 600;
+  margin-right: 5px;
 }
 
 .addBtn:hover {
@@ -395,7 +396,7 @@
 }
 
 .branchIconQuestion {
-  color: #ffd700;
+  color: var(--warning);
   animation: pulse-opacity 1s ease-in-out infinite;
   font-weight: bold;
 }

@@ -1,5 +1,5 @@
 /** Supported agent types */
-export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "jules" | "cursor" | "warp" | "ona";
+export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "jules" | "cursor" | "warp" | "ona" | "git";
 
 /** Agent configuration */
 export interface AgentConfig {
@@ -321,6 +321,21 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
       prompt: [],
     },
   },
+  git: {
+    type: "git",
+    name: "Git",
+    binary: "git",
+    description: "Background git operations (pull, push, fetch, stash)",
+    resumeCommand: null,
+    spawnArgs: () => [],
+    outputFormat: "text",
+    detectPatterns: {
+      rateLimit: [],
+      completion: [],
+      error: [/error:/i, /failed:/i, /fatal:/i],
+      prompt: [],
+    },
+  },
 };
 
 /** Run configuration for an agent (matches Rust AgentRunConfig) */
@@ -354,6 +369,7 @@ export const MCP_SUPPORT: Record<AgentType, boolean> = {
   cursor: true,
   warp: false,
   ona: false,
+  git: false,
 };
 
 /** Agent display info for UI */
@@ -368,5 +384,6 @@ export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string }> =
   cursor: { icon: "C", color: "#000000" },
   warp: { icon: "W", color: "#01a4ff" },
   ona: { icon: "O", color: "#ffe400" },
+  git: { icon: "G", color: "#f05032" },
 };
 

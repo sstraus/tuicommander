@@ -47,6 +47,8 @@ import { notesStore } from "./stores/notes";
 import { keybindingsStore } from "./stores/keybindings";
 import { prNotificationsStore } from "./stores/prNotifications";
 import { updaterStore } from "./stores/updater";
+import { tasksStore } from "./stores/tasks";
+import { userActivityStore } from "./stores/userActivity";
 import { initPlugins } from "./plugins";
 import { usePty } from "./hooks/usePty";
 import { useRepository } from "./hooks/useRepository";
@@ -110,6 +112,9 @@ const App: Component = () => {
 
   // Run command dialog state
   const [runCommandDialogVisible, setRunCommandDialogVisible] = createSignal(false);
+
+  // Background git operations tracking (for button loading states)
+  const [runningGitOps, setRunningGitOps] = createSignal<Set<string>>(new Set());
 
   // Terminal rename prompt state
   const [termRenamePromptVisible, setTermRenamePromptVisible] = createSignal(false);
@@ -213,6 +218,7 @@ const App: Component = () => {
             dictationStore.refreshStatus();
           }
         }),
+        startUserActivityListening: userActivityStore.startListening,
       },
       detectBinary: (binary) => invoke("detect_agent_binary", { binary }),
       applyPlatformClass,
@@ -430,6 +436,75 @@ const App: Component = () => {
   };
 
 
+
+  /** Patterns in stderr that indicate the command needs interactive terminal input */
+  const NEEDS_TERMINAL_PATTERNS = [
+    /terminal prompts disabled/i,  // GIT_TERMINAL_PROMPT=0 rejection
+    /could not read Username/i,    // HTTP credential prompt blocked
+    /could not read Password/i,
+    /Permission denied.*publickey/i, // SSH auth failed (askpass cancelled/missing)
+    /Host key verification failed/i,
+    /Please make sure you have the correct access rights/i,
+  ];
+
+  /** Fall back to running a git command in the active terminal */
+  const fallbackToTerminal = (repoPath: string, args: string[]) => {
+    const active = terminalsStore.getActive();
+    if (active?.ref) {
+      const cmd = `cd ${JSON.stringify(repoPath)} && git ${args.join(" ")}`;
+      active.ref.write(`${cmd}\r`);
+      setStatusInfo(`git ${args[0]} requires auth — running in terminal`);
+    }
+  };
+
+  /** Run a git command in the background via Rust, with task tracking and notifications.
+   *  Falls back to terminal if the command needs interactive authentication. */
+  const handleBackgroundGit = async (repoPath: string, op: string, args: string[]) => {
+    // Prevent duplicate runs of the same op
+    if (runningGitOps().has(op)) return;
+    setRunningGitOps((prev) => new Set([...prev, op]));
+
+    const taskId = tasksStore.create({
+      name: `git ${op}`,
+      description: `Running git ${args.join(" ")} in ${repoPath}`,
+      agentType: "git",
+    });
+    tasksStore.start(taskId, `git-${op}-${Date.now()}`);
+    setStatusInfo(`Running git ${op}...`);
+
+    try {
+      const result = await invoke("run_git_command", { path: repoPath, args });
+      const { success, stdout, stderr } = result as { success: boolean; stdout: string; stderr: string; exit_code: number };
+
+      if (success) {
+        tasksStore.complete(taskId, 0);
+        repositoriesStore.bumpRevision(repoPath);
+        // Show meaningful output: prefer stderr (git progress goes there), fall back to stdout
+        const output = (stderr.trim() || stdout.trim()).split("\n").pop()?.trim();
+        setStatusInfo(output ? `git ${op}: ${output}` : `git ${op} completed`);
+        notificationsStore.playCompletion();
+      } else if (NEEDS_TERMINAL_PATTERNS.some((p) => p.test(stderr))) {
+        // Auth or interactive prompt needed — cancel background task, run in terminal
+        tasksStore.cancel(taskId);
+        fallbackToTerminal(repoPath, args);
+      } else {
+        const errMsg = stderr.trim() || `git ${op} failed`;
+        tasksStore.fail(taskId, errMsg);
+        setStatusInfo(`git ${op} failed: ${errMsg}`);
+        notificationsStore.playError();
+      }
+    } catch (err) {
+      tasksStore.fail(taskId, String(err));
+      setStatusInfo(`git ${op} error: ${err}`);
+      notificationsStore.playError();
+    } finally {
+      setRunningGitOps((prev) => {
+        const next = new Set(prev);
+        next.delete(op);
+        return next;
+      });
+    }
+  };
 
   /** Detach a terminal tab to a floating OS window */
   const handleDetachTab = async (tabId: string) => {
@@ -785,10 +860,8 @@ const App: Component = () => {
           onRemoveRepo={gitOps.handleRemoveRepo}
           onOpenSettings={() => openSettings()}
           onOpenHelp={() => setHelpPanelVisible(true)}
-          onGitCommand={(cmd) => {
-            const active = terminalsStore.getActive();
-            if (active?.ref) active.ref.write(`${cmd}\r`);
-          }}
+          onBackgroundGit={handleBackgroundGit}
+          runningGitOps={runningGitOps()}
         />
 
         {/* Main content */}

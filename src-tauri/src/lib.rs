@@ -674,6 +674,7 @@ pub fn run() {
             git::get_git_branches,
             git::check_is_main_branch,
             git::get_initials,
+            git::run_git_command,
             github::get_ci_checks,
             github::get_repo_pr_statuses,
             worktree::generate_worktree_name_cmd,
