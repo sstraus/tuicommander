@@ -130,6 +130,7 @@
 
 #terminal-panes {
   flex: 1;
+  min-width: 200px;
   position: relative;
 }
 
@@ -447,12 +448,15 @@
 /* Rendered Markdown Content */
 #markdown-content {
   max-width: 900px;
+  min-width: 0;
   margin: 0 auto;
   padding: 16px;
   font-family: var(--font-ui);
   color: var(--fg-primary);
   line-height: 1.6;
   font-size: var(--font-lg);
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 #markdown-content h1,
