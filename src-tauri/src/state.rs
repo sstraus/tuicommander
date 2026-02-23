@@ -327,7 +327,7 @@ impl OutputRingBuffer {
     }
 }
 
-pub(crate) const OUTPUT_RING_BUFFER_CAPACITY: usize = 64 * 1024; // 64 KB
+pub(crate) const OUTPUT_RING_BUFFER_CAPACITY: usize = 2 * 1024 * 1024; // 2 MB
 
 /// Represents a git worktree
 #[derive(Clone, Debug, Serialize, Deserialize)]

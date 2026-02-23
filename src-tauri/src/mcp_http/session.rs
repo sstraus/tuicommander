@@ -473,7 +473,7 @@ async fn handle_ws_session(socket: WebSocket, session_id: String, state: Arc<App
 
     // Send existing ring buffer content as initial catch-up
     if let Some(ring) = state.output_buffers.get(&session_id) {
-        let (data, _) = ring.lock().read_last(64 * 1024);
+        let (data, _) = ring.lock().read_last(OUTPUT_RING_BUFFER_CAPACITY);
         if !data.is_empty() {
             let text = String::from_utf8_lossy(&data).into_owned();
             let _ = futures_util::SinkExt::send(&mut ws_sender, Message::Text(text.into())).await;
