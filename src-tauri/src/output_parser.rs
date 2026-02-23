@@ -368,9 +368,10 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
     }
     lazy_static::lazy_static! {
         // Match plan file paths: optional leading path, then plans/<name>.md(x)
-        // Captures the full path including any prefix directory
+        // Captures the full path including any prefix directory.
+        // Excludes <> to avoid matching template placeholders like plans/<file>.md
         static ref PLAN_RE: regex::Regex =
-            regex::Regex::new(r#"(?:^|[\s'":])(/?(?:[^\s'"]+/)?plans/[^\s'"]+\.mdx?)"#).unwrap();
+            regex::Regex::new(r#"(?:^|[\s'":])(/?(?:[^\s'"<>]+/)?plans/[^\s'"<>]+\.mdx?)"#).unwrap();
     }
     for line in clean.lines() {
         if let Some(caps) = PLAN_RE.captures(line) {
@@ -763,6 +764,15 @@ mod tests {
         // "plans/foo.ts" should NOT match (not a markdown file)
         let events = parser.parse("Reading plans/foo.ts");
         assert!(get_plan_path(&events).is_none());
+    }
+
+    #[test]
+    fn test_plan_file_template_placeholder_rejected() {
+        let parser = OutputParser::new();
+        // Template placeholders like <file> or <filename> should NOT match
+        assert!(get_plan_path(&parser.parse("plans/<file>.md")).is_none());
+        assert!(get_plan_path(&parser.parse("plans/<filename>.md")).is_none());
+        assert!(get_plan_path(&parser.parse("Save to .claude/plans/<name>.md")).is_none());
     }
 
     // --- False positive prevention tests ---

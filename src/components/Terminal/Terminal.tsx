@@ -273,6 +273,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             terminalsStore.update(props.id, { name: originalName });
           }
           terminalsStore.update(props.id, { sessionId: null });
+          terminalsStore.clearAwaitingInput(props.id);
         }
         lastOscTitleUpdate = 0;
         sessionId = null;
@@ -358,6 +359,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
       // Listen for kitty keyboard protocol flag changes from Rust
       unlistenKitty = await listen<number>(`kitty-keyboard-${targetSessionId}`, (event) => {
+        console.debug(`[Kitty] session=${targetSessionId} flags=${event.payload} (was ${kittyFlags})`);
         kittyFlags = event.payload;
       });
     }
@@ -468,9 +470,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
       if (event.type === "keydown" && (kittyFlags & 1)) {
         const seq = kittySequenceForKey(event.key, event.shiftKey, event.altKey, event.ctrlKey, event.metaKey);
         if (seq !== null) {
+          console.debug(`[Kitty] key=${event.key} shift=${event.shiftKey} → seq=${JSON.stringify(seq)}`);
           terminal!.input(seq, true);
           return false;
         }
+      }
+      // Debug: log Shift+Enter even when kitty is not active
+      if (event.type === "keydown" && event.key === "Enter" && event.shiftKey) {
+        console.debug(`[Kitty] Shift+Enter pressed but kittyFlags=${kittyFlags} (flag1=${kittyFlags & 1})`);
       }
 
       if (!isMacOS()) return true; // Windows/Linux: xterm handles Alt natively
@@ -657,6 +664,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     terminal.onData(async (data) => {
       if (sessionId) {
+        // User typing means they answered any pending prompt
+        if (terminalsStore.get(props.id)?.awaitingInput) {
+          terminalsStore.clearAwaitingInput(props.id);
+        }
         try {
           await pty.write(sessionId, data);
         } catch (err) {

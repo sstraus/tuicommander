@@ -95,8 +95,7 @@
 }
 
 .tabClose:hover {
-  background: var(--error);
-  color: var(--text-on-error);
+  color: var(--fg-default);
 }
 
 .newBtn {
