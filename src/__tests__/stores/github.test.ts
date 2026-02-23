@@ -630,17 +630,17 @@ describe("githubStore", () => {
         store.startPolling();
 
         await vi.advanceTimersByTimeAsync(0);
-        const after0 = mockInvoke.mock.calls.length; // 1 (initial poll)
+        const after0 = mockInvoke.mock.calls.length; // 2 (initial poll: PR + remote)
 
         await vi.advanceTimersByTimeAsync(30_000);
-        const after30 = mockInvoke.mock.calls.length; // 2 (one more at 30s)
+        const after30 = mockInvoke.mock.calls.length; // 4 (one more poll at 30s)
 
         await vi.advanceTimersByTimeAsync(30_000);
-        const after60 = mockInvoke.mock.calls.length; // 3 (one more at 60s)
+        const after60 = mockInvoke.mock.calls.length; // 6 (one more poll at 60s)
 
-        expect(after0).toBe(1);
-        expect(after30).toBe(2);
-        expect(after60).toBe(3);
+        expect(after0).toBe(2);
+        expect(after30).toBe(4);
+        expect(after60).toBe(6);
 
         consoleSpy.mockRestore();
         store.stopPolling();

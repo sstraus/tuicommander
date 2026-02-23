@@ -2,15 +2,24 @@ import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
 import { repositoriesStore } from "./repositories";
 import { prNotificationsStore, type PrNotificationType } from "./prNotifications";
-import type { BranchPrStatus, CheckSummary, CheckDetail } from "../types";
+import type { BranchPrStatus, CheckSummary, CheckDetail, GitHubStatus } from "../types";
 
 const BASE_INTERVAL = 30000; // 30 seconds
 const HIDDEN_INTERVAL = 120000; // 2 minutes when tab not visible
 const MAX_INTERVAL = 300000; // 5 minutes (backoff cap)
 
+/** Per-repo remote tracking data (ahead/behind from local git) */
+interface RepoRemoteStatus {
+  has_remote: boolean;
+  current_branch: string;
+  ahead: number;
+  behind: number;
+}
+
 /** Per-repo PR/CI data */
 interface RepoGitHubData {
   branches: Record<string, BranchPrStatus>;
+  remoteStatus: RepoRemoteStatus | null;
   lastPolled: number;
 }
 
@@ -87,7 +96,7 @@ function createGitHubStore() {
 
     // Initialize repo entry if it doesn't exist yet
     if (!state.repos[repoPath]) {
-      setState("repos", repoPath, { branches, lastPolled: Date.now() });
+      setState("repos", repoPath, { branches, remoteStatus: null, lastPolled: Date.now() });
       return;
     }
 
@@ -152,7 +161,12 @@ function createGitHubStore() {
     return repo.branches[branch] ?? null;
   }
 
-  /** Poll all repos for PR status */
+  /** Get remote tracking status (ahead/behind) for a repo */
+  function getRemoteStatus(repoPath: string): GitHubStatus | null {
+    return state.repos[repoPath]?.remoteStatus ?? null;
+  }
+
+  /** Poll all repos for PR status and remote tracking data */
   async function pollAll(): Promise<void> {
     const paths = repositoriesStore.getPaths();
     if (paths.length === 0) return;
@@ -163,8 +177,15 @@ function createGitHubStore() {
       await Promise.all(
         paths.map(async (path) => {
           try {
-            const statuses = await invoke<BranchPrStatus[]>("get_repo_pr_statuses", { path });
+            // Fetch PR statuses (GitHub API) and remote tracking (local git) in parallel
+            const [statuses, remoteStatus] = await Promise.all([
+              invoke<BranchPrStatus[]>("get_repo_pr_statuses", { path }),
+              invoke<GitHubStatus>("get_github_status", { path }).catch(() => null),
+            ]);
             updateRepoData(path, statuses);
+            if (remoteStatus) {
+              setState("repos", path, "remoteStatus", remoteStatus);
+            }
           } catch (err) {
             const errStr = String(err);
             if (errStr.startsWith("rate-limit:")) {
@@ -199,8 +220,14 @@ function createGitHubStore() {
     const timerId = window.setTimeout(async () => {
       pendingRepoPollTimers.delete(path);
       try {
-        const statuses = await invoke<BranchPrStatus[]>("get_repo_pr_statuses", { path });
+        const [statuses, remoteStatus] = await Promise.all([
+          invoke<BranchPrStatus[]>("get_repo_pr_statuses", { path }),
+          invoke<GitHubStatus>("get_github_status", { path }).catch(() => null),
+        ]);
         updateRepoData(path, statuses);
+        if (remoteStatus) {
+          setState("repos", path, "remoteStatus", remoteStatus);
+        }
       } catch (err) {
         console.debug(`[GitHub] Immediate poll failed for ${path}:`, err);
       }
@@ -256,6 +283,7 @@ function createGitHubStore() {
     getPrStatus,
     getCheckDetails,
     getBranchPrData,
+    getRemoteStatus,
     pollRepo,
     startPolling,
     stopPolling,
