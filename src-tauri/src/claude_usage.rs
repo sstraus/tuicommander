@@ -1,0 +1,864 @@
+//! Claude Usage Dashboard — native Rust data layer.
+//!
+//! Provides three Tauri commands:
+//! - `get_claude_usage_api`: Reads OAuth credentials and calls the Anthropic usage API
+//! - `get_claude_session_stats`: Scans `~/.claude/projects/*/` JSONL transcripts
+//! - `get_claude_project_list`: Lists available project slugs
+//!
+//! Session stats use a file-size-based incremental cache: only new bytes in
+//! append-only JSONL files are parsed. The cache is persisted to disk as JSON
+//! in the app config directory so restarts don't require a full rescan.
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::io::{BufRead, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tauri::State;
+
+// ---------------------------------------------------------------------------
+// API types (from Anthropic OAuth usage endpoint)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RateBucket {
+    pub utilization: f64,
+    pub resets_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtraUsage {
+    pub enabled: bool,
+    pub spend_limit_cents: Option<u64>,
+    pub current_spend_cents: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageApiResponse {
+    pub five_hour: Option<RateBucket>,
+    pub seven_day: Option<RateBucket>,
+    pub seven_day_opus: Option<RateBucket>,
+    pub seven_day_sonnet: Option<RateBucket>,
+    pub seven_day_cowork: Option<RateBucket>,
+    pub extra_usage: Option<ExtraUsage>,
+}
+
+// ---------------------------------------------------------------------------
+// Session stats types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ModelTokens {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub message_count: u32,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DayStats {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub message_count: u32,
+    pub session_count: u32,
+}
+
+/// Per-file cached stats — stored in the persistent cache.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CachedFileStats {
+    pub file_size: u64,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_cache_creation_tokens: u64,
+    pub total_cache_read_tokens: u64,
+    pub assistant_message_count: u32,
+    pub user_message_count: u32,
+    pub model_usage: HashMap<String, ModelTokens>,
+    pub daily_activity: HashMap<String, DayStats>,
+    /// Unique session IDs seen in this file
+    pub session_ids: Vec<String>,
+    pub first_timestamp: Option<String>,
+    pub last_timestamp: Option<String>,
+}
+
+/// Aggregated stats returned to the frontend.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SessionStats {
+    pub total_sessions: u32,
+    pub total_assistant_messages: u32,
+    pub total_user_messages: u32,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_cache_creation_tokens: u64,
+    pub total_cache_read_tokens: u64,
+    pub model_usage: HashMap<String, ModelTokens>,
+    pub daily_activity: HashMap<String, DayStats>,
+    pub per_project: HashMap<String, ProjectStats>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProjectStats {
+    pub session_count: u32,
+    pub assistant_message_count: u32,
+    pub user_message_count: u32,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+/// Project entry for the dropdown.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectEntry {
+    pub slug: String,
+    pub session_count: usize,
+}
+
+// ---------------------------------------------------------------------------
+// Cache
+// ---------------------------------------------------------------------------
+
+/// In-memory cache: project_slug → (file_name → CachedFileStats)
+pub type SessionStatsCache = HashMap<String, HashMap<String, CachedFileStats>>;
+
+const CACHE_FILENAME: &str = "claude-usage-cache.json";
+
+/// Load the cache from disk, or return an empty map on any error.
+pub(crate) fn load_cache_from_disk() -> SessionStatsCache {
+    let path = crate::config::config_dir().join(CACHE_FILENAME);
+    match std::fs::read_to_string(&path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => HashMap::new(),
+    }
+}
+
+/// Persist the cache to disk. Best-effort — errors are logged but not fatal.
+fn save_cache_to_disk(cache: &SessionStatsCache) {
+    let path = crate::config::config_dir().join(CACHE_FILENAME);
+    match serde_json::to_string(cache) {
+        Ok(json) => {
+            if let Err(e) = std::fs::write(&path, json) {
+                eprintln!("[claude_usage] Failed to write cache: {e}");
+            }
+        }
+        Err(e) => eprintln!("[claude_usage] Failed to serialize cache: {e}"),
+    }
+}
+
+/// Base directory for Claude session transcripts.
+fn claude_projects_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".claude").join("projects"))
+}
+
+// ---------------------------------------------------------------------------
+// JSONL parsing
+// ---------------------------------------------------------------------------
+
+/// Parse a single JSONL line and accumulate stats. Returns the timestamp if found.
+fn parse_jsonl_line(line: &str, stats: &mut CachedFileStats) -> Option<String> {
+    // Fast pre-filter: skip lines that can't contain useful data
+    if line.len() < 10 {
+        return None;
+    }
+
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let obj = v.as_object()?;
+    let line_type = obj.get("type")?.as_str()?;
+
+    match line_type {
+        "assistant" => {
+            let message = obj.get("message")?.as_object()?;
+            let model = message
+                .get("model")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let usage = message.get("usage")?.as_object()?;
+
+            let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+            let output = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+            let cache_creation = usage
+                .get("cache_creation_input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let cache_read = usage
+                .get("cache_read_input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+
+            stats.total_input_tokens += input;
+            stats.total_output_tokens += output;
+            stats.total_cache_creation_tokens += cache_creation;
+            stats.total_cache_read_tokens += cache_read;
+            stats.assistant_message_count += 1;
+
+            let model_entry = stats.model_usage.entry(model).or_default();
+            model_entry.input_tokens += input;
+            model_entry.output_tokens += output;
+            model_entry.cache_creation_tokens += cache_creation;
+            model_entry.cache_read_tokens += cache_read;
+            model_entry.message_count += 1;
+
+            None // assistant lines don't have timestamps at root level
+        }
+        "user" => {
+            stats.user_message_count += 1;
+            None
+        }
+        "system" => {
+            let subtype = obj.get("subtype").and_then(|s| s.as_str());
+            if subtype == Some("turn_duration") {
+                let timestamp = obj
+                    .get("timestamp")
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.to_string());
+
+                if let Some(ref ts) = timestamp {
+                    // Extract date part "2026-02-04" from ISO timestamp
+                    let date = &ts[..10.min(ts.len())];
+                    if date.len() == 10 {
+                        let day = stats.daily_activity.entry(date.to_string()).or_default();
+                        day.message_count += 1;
+                    }
+
+                    // Track session ID for counting unique sessions
+                    if let Some(sid) = obj.get("sessionId").and_then(|s| s.as_str()) {
+                        if !stats.session_ids.contains(&sid.to_string()) {
+                            stats.session_ids.push(sid.to_string());
+                            // Bump session count for the day
+                            let date = &ts[..10.min(ts.len())];
+                            if date.len() == 10 {
+                                let day = stats.daily_activity.entry(date.to_string()).or_default();
+                                day.session_count += 1;
+                            }
+                        }
+                    }
+
+                    // Update first/last timestamps
+                    if stats.first_timestamp.is_none()
+                        || stats.first_timestamp.as_deref() > Some(ts.as_str())
+                    {
+                        stats.first_timestamp = Some(ts.clone());
+                    }
+                    if stats.last_timestamp.is_none()
+                        || stats.last_timestamp.as_deref() < Some(ts.as_str())
+                    {
+                        stats.last_timestamp = Some(ts.clone());
+                    }
+                }
+
+                return timestamp;
+            }
+            None
+        }
+        _ => None, // skip "progress", "file-history-snapshot", etc.
+    }
+}
+
+/// Parse a JSONL file from a given byte offset, appending stats to `existing`.
+/// Returns the final file position after parsing.
+fn parse_jsonl_file_from_offset(
+    path: &Path,
+    offset: u64,
+    stats: &mut CachedFileStats,
+) -> std::io::Result<u64> {
+    let file = std::fs::File::open(path)?;
+    let metadata = file.metadata()?;
+    let file_size = metadata.len();
+
+    if offset >= file_size {
+        return Ok(file_size);
+    }
+
+    let mut reader = std::io::BufReader::new(file);
+
+    // If resuming mid-file, check whether we're at a line boundary.
+    // If the byte before the offset is not a newline, we landed in the
+    // middle of a line — skip it. If it IS a newline (or offset is 0),
+    // we're at a clean boundary and can parse immediately.
+    if offset > 0 {
+        reader.seek(SeekFrom::Start(offset - 1))?;
+        let mut one_byte = [0u8; 1];
+        use std::io::Read;
+        reader.read_exact(&mut one_byte)?;
+        if one_byte[0] != b'\n' {
+            // Mid-line — skip to end of this partial line
+            let mut discard = String::new();
+            reader.read_line(&mut discard)?;
+        }
+        // else: already at offset, right after the newline
+    } else {
+        reader.seek(SeekFrom::Start(0))?;
+    }
+
+    let mut line_buf = String::new();
+    loop {
+        line_buf.clear();
+        let bytes_read = reader.read_line(&mut line_buf)?;
+        if bytes_read == 0 {
+            break;
+        }
+        let trimmed = line_buf.trim();
+        if !trimmed.is_empty() {
+            parse_jsonl_line(trimmed, stats);
+        }
+    }
+
+    stats.file_size = file_size;
+    Ok(file_size)
+}
+
+// ---------------------------------------------------------------------------
+// Credential reading (with macOS keychain → JSON fallback)
+// ---------------------------------------------------------------------------
+
+/// Read the Claude OAuth access token. On macOS, tries Keychain first then
+/// falls back to `~/.claude/.credentials.json`. On other platforms, reads
+/// the JSON file directly.
+fn read_claude_access_token() -> Result<Option<String>, String> {
+    let raw_json = {
+        #[cfg(target_os = "macos")]
+        {
+            let keychain_result =
+                crate::plugin_credentials::read_from_keychain("Claude Code-credentials");
+            match keychain_result {
+                Ok(Some(json)) => Some(json),
+                _ => {
+                    // Fallback: try ~/.claude/.credentials.json
+                    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+                    let path = home.join(".claude").join(".credentials.json");
+                    std::fs::read_to_string(&path).ok()
+                }
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+            let path = home.join(".claude").join(".credentials.json");
+            std::fs::read_to_string(&path).ok()
+        }
+    };
+
+    let Some(json_str) = raw_json else {
+        return Ok(None);
+    };
+
+    // Parse JSON and extract the OAuth access token
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse credentials: {e}"))?;
+
+    let token = parsed
+        .get("claudeAiOauth")
+        .and_then(|o| o.get("accessToken"))
+        .and_then(|t| t.as_str())
+        .map(|s| s.to_string());
+
+    Ok(token)
+}
+
+// ---------------------------------------------------------------------------
+// Tauri commands
+// ---------------------------------------------------------------------------
+
+/// Fetch rate-limit usage from the Anthropic OAuth API.
+#[tauri::command]
+pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
+    let token = read_claude_access_token()?
+        .ok_or_else(|| "No Claude OAuth token found".to_string())?;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("https://api.anthropic.com/api/oauth/usage")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("anthropic-beta", "oauth-2025-04-20")
+        .send()
+        .await
+        .map_err(|e| format!("API request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API returned {status}: {body}"));
+    }
+
+    let usage: UsageApiResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse API response: {e}"))?;
+
+    Ok(usage)
+}
+
+/// Scan session transcripts and return aggregated stats.
+///
+/// `scope` values:
+/// - `"all"` — all projects
+/// - `"current"` — current project (determined from config / active repo)
+/// - Any other string — treated as a specific project slug
+#[tauri::command]
+pub async fn get_claude_session_stats(
+    state: State<'_, Arc<crate::AppState>>,
+    scope: String,
+) -> Result<SessionStats, String> {
+    let cache_mutex = state
+        .claude_usage_cache
+        .lock();
+    // Clone the cache so we can release the lock during I/O
+    let mut cache = cache_mutex.clone();
+    drop(cache_mutex);
+
+    let projects_dir = claude_projects_dir()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if !projects_dir.exists() {
+        return Ok(SessionStats::default());
+    }
+
+    // List project directories
+    let project_dirs: Vec<(String, PathBuf)> = std::fs::read_dir(&projects_dir)
+        .map_err(|e| format!("Failed to read projects dir: {e}"))?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.is_dir() {
+                let slug = entry.file_name().to_string_lossy().to_string();
+                Some((slug, path))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Filter by scope
+    let filtered: Vec<&(String, PathBuf)> = match scope.as_str() {
+        "all" => project_dirs.iter().collect(),
+        other => project_dirs
+            .iter()
+            .filter(|(slug, _)| slug == other)
+            .collect(),
+    };
+
+    let mut cache_dirty = false;
+
+    // Prune deleted projects from cache
+    let existing_slugs: std::collections::HashSet<&str> =
+        project_dirs.iter().map(|(s, _)| s.as_str()).collect();
+    let stale_slugs: Vec<String> = cache
+        .keys()
+        .filter(|k| !existing_slugs.contains(k.as_str()))
+        .cloned()
+        .collect();
+    for slug in stale_slugs {
+        cache.remove(&slug);
+        cache_dirty = true;
+    }
+
+    // Scan each project
+    for (slug, dir) in &filtered {
+        let project_cache = cache.entry(slug.clone()).or_default();
+
+        // List JSONL files in this project dir
+        let jsonl_files: Vec<(String, PathBuf)> = match std::fs::read_dir(dir) {
+            Ok(entries) => entries
+                .filter_map(|e| {
+                    let e = e.ok()?;
+                    let p = e.path();
+                    if p.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                        let name = e.file_name().to_string_lossy().to_string();
+                        Some((name, p))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            Err(_) => continue,
+        };
+
+        // Prune deleted files from cache
+        let existing_files: std::collections::HashSet<&str> =
+            jsonl_files.iter().map(|(name, _)| name.as_str()).collect();
+        let stale_files: Vec<String> = project_cache
+            .keys()
+            .filter(|k| !existing_files.contains(k.as_str()))
+            .cloned()
+            .collect();
+        for f in stale_files {
+            project_cache.remove(&f);
+            cache_dirty = true;
+        }
+
+        // Incremental parse each file
+        for (name, path) in &jsonl_files {
+            let current_size = match std::fs::metadata(path) {
+                Ok(m) => m.len(),
+                Err(_) => continue,
+            };
+
+            let cached = project_cache.get(name);
+
+            match cached {
+                Some(c) if c.file_size == current_size => {
+                    // Unchanged — skip
+                    continue;
+                }
+                Some(c) if current_size > c.file_size => {
+                    // File grew — parse only new bytes
+                    let offset = c.file_size;
+                    let mut stats = c.clone();
+                    match parse_jsonl_file_from_offset(path, offset, &mut stats) {
+                        Ok(_) => {
+                            project_cache.insert(name.clone(), stats);
+                            cache_dirty = true;
+                        }
+                        Err(e) => {
+                            eprintln!("[claude_usage] Error parsing {}: {e}", path.display());
+                        }
+                    }
+                }
+                Some(_) => {
+                    // File shrank (truncated/rewritten) — full reparse
+                    let mut stats = CachedFileStats::default();
+                    match parse_jsonl_file_from_offset(path, 0, &mut stats) {
+                        Ok(_) => {
+                            project_cache.insert(name.clone(), stats);
+                            cache_dirty = true;
+                        }
+                        Err(e) => {
+                            eprintln!("[claude_usage] Error reparsing {}: {e}", path.display());
+                        }
+                    }
+                }
+                None => {
+                    // New file — full parse
+                    let mut stats = CachedFileStats::default();
+                    match parse_jsonl_file_from_offset(path, 0, &mut stats) {
+                        Ok(_) => {
+                            project_cache.insert(name.clone(), stats);
+                            cache_dirty = true;
+                        }
+                        Err(e) => {
+                            eprintln!("[claude_usage] Error parsing new {}: {e}", path.display());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Persist cache if anything changed
+    if cache_dirty {
+        save_cache_to_disk(&cache);
+        // Update in-memory cache
+        *state.claude_usage_cache.lock() = cache.clone();
+    }
+
+    // Aggregate stats from cache
+    let mut result = SessionStats::default();
+
+    for (slug, dir_path) in &filtered {
+        if let Some(project_files) = cache.get(slug.as_str()) {
+            let mut proj = ProjectStats::default();
+            let mut project_sessions: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+
+            for file_stats in project_files.values() {
+                result.total_input_tokens += file_stats.total_input_tokens;
+                result.total_output_tokens += file_stats.total_output_tokens;
+                result.total_cache_creation_tokens += file_stats.total_cache_creation_tokens;
+                result.total_cache_read_tokens += file_stats.total_cache_read_tokens;
+                result.total_assistant_messages += file_stats.assistant_message_count;
+                result.total_user_messages += file_stats.user_message_count;
+
+                proj.input_tokens += file_stats.total_input_tokens;
+                proj.output_tokens += file_stats.total_output_tokens;
+                proj.assistant_message_count += file_stats.assistant_message_count;
+                proj.user_message_count += file_stats.user_message_count;
+
+                // Merge model usage
+                for (model, tokens) in &file_stats.model_usage {
+                    let entry = result.model_usage.entry(model.clone()).or_default();
+                    entry.input_tokens += tokens.input_tokens;
+                    entry.output_tokens += tokens.output_tokens;
+                    entry.cache_creation_tokens += tokens.cache_creation_tokens;
+                    entry.cache_read_tokens += tokens.cache_read_tokens;
+                    entry.message_count += tokens.message_count;
+                }
+
+                // Merge daily activity
+                for (date, day) in &file_stats.daily_activity {
+                    let entry = result.daily_activity.entry(date.clone()).or_default();
+                    entry.input_tokens += day.input_tokens;
+                    entry.output_tokens += day.output_tokens;
+                    entry.message_count += day.message_count;
+                    // Don't double-count sessions — we'll compute from unique session IDs
+                }
+
+                // Collect unique sessions
+                for sid in &file_stats.session_ids {
+                    project_sessions.insert(sid.clone());
+                }
+            }
+
+            proj.session_count = project_sessions.len() as u32;
+            result.per_project.insert(slug.clone(), proj);
+
+            // Don't accumulate sessions here — we'll deduplicate at the end
+            let _ = dir_path; // suppress unused warning
+        }
+    }
+
+    // Total sessions = sum of per-project unique sessions
+    result.total_sessions = result
+        .per_project
+        .values()
+        .map(|p| p.session_count)
+        .sum();
+
+    Ok(result)
+}
+
+/// List available Claude project slugs for the scope dropdown.
+#[tauri::command]
+pub async fn get_claude_project_list() -> Result<Vec<ProjectEntry>, String> {
+    let projects_dir = claude_projects_dir()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if !projects_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut entries: Vec<ProjectEntry> = std::fs::read_dir(&projects_dir)
+        .map_err(|e| format!("Failed to read projects dir: {e}"))?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.is_dir() {
+                let slug = entry.file_name().to_string_lossy().to_string();
+                // Count JSONL files as sessions
+                let session_count = std::fs::read_dir(&path)
+                    .ok()
+                    .map(|entries| {
+                        entries
+                            .filter_map(|e| e.ok())
+                            .filter(|e| {
+                                e.path()
+                                    .extension()
+                                    .and_then(|s| s.to_str())
+                                    == Some("jsonl")
+                            })
+                            .count()
+                    })
+                    .unwrap_or(0);
+                if session_count > 0 {
+                    Some(ProjectEntry {
+                        slug,
+                        session_count,
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Sort by session count descending
+    entries.sort_by(|a, b| b.session_count.cmp(&a.session_count));
+
+    Ok(entries)
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_assistant_line() {
+        let line = r#"{"type":"assistant","message":{"model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":200,"cache_read_input_tokens":300}}}"#;
+        let mut stats = CachedFileStats::default();
+        parse_jsonl_line(line, &mut stats);
+
+        assert_eq!(stats.total_input_tokens, 100);
+        assert_eq!(stats.total_output_tokens, 50);
+        assert_eq!(stats.total_cache_creation_tokens, 200);
+        assert_eq!(stats.total_cache_read_tokens, 300);
+        assert_eq!(stats.assistant_message_count, 1);
+        assert_eq!(stats.model_usage.len(), 1);
+        let model = stats.model_usage.get("claude-opus-4-6").unwrap();
+        assert_eq!(model.input_tokens, 100);
+        assert_eq!(model.message_count, 1);
+    }
+
+    #[test]
+    fn parse_user_line() {
+        let line = r#"{"type":"user","message":"hello"}"#;
+        let mut stats = CachedFileStats::default();
+        parse_jsonl_line(line, &mut stats);
+        assert_eq!(stats.user_message_count, 1);
+        assert_eq!(stats.assistant_message_count, 0);
+    }
+
+    #[test]
+    fn parse_turn_duration_line() {
+        let line = r#"{"type":"system","subtype":"turn_duration","timestamp":"2026-02-04T23:22:42.546Z","sessionId":"abc-123","durationMs":5000}"#;
+        let mut stats = CachedFileStats::default();
+        let ts = parse_jsonl_line(line, &mut stats);
+        assert_eq!(ts, Some("2026-02-04T23:22:42.546Z".to_string()));
+        assert_eq!(stats.session_ids, vec!["abc-123"]);
+        assert!(stats.daily_activity.contains_key("2026-02-04"));
+        let day = stats.daily_activity.get("2026-02-04").unwrap();
+        assert_eq!(day.session_count, 1);
+    }
+
+    #[test]
+    fn parse_progress_line_is_skipped() {
+        let line = r#"{"type":"progress","content":"tool_use"}"#;
+        let mut stats = CachedFileStats::default();
+        parse_jsonl_line(line, &mut stats);
+        assert_eq!(stats.assistant_message_count, 0);
+        assert_eq!(stats.user_message_count, 0);
+    }
+
+    #[test]
+    fn parse_invalid_json_is_skipped() {
+        let line = "not valid json {{{";
+        let mut stats = CachedFileStats::default();
+        parse_jsonl_line(line, &mut stats);
+        assert_eq!(stats.assistant_message_count, 0);
+    }
+
+    #[test]
+    fn parse_multiple_assistant_lines_accumulate() {
+        let mut stats = CachedFileStats::default();
+
+        let line1 = r#"{"type":"assistant","message":{"model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}"#;
+        let line2 = r#"{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":200,"output_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}"#;
+        let line3 = r#"{"type":"assistant","message":{"model":"claude-opus-4-6","usage":{"input_tokens":50,"output_tokens":25,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}"#;
+
+        parse_jsonl_line(line1, &mut stats);
+        parse_jsonl_line(line2, &mut stats);
+        parse_jsonl_line(line3, &mut stats);
+
+        assert_eq!(stats.total_input_tokens, 350);
+        assert_eq!(stats.total_output_tokens, 175);
+        assert_eq!(stats.assistant_message_count, 3);
+        assert_eq!(stats.model_usage.len(), 2);
+
+        let opus = stats.model_usage.get("claude-opus-4-6").unwrap();
+        assert_eq!(opus.input_tokens, 150);
+        assert_eq!(opus.message_count, 2);
+
+        let sonnet = stats.model_usage.get("claude-sonnet-4-6").unwrap();
+        assert_eq!(sonnet.input_tokens, 200);
+        assert_eq!(sonnet.message_count, 1);
+    }
+
+    #[test]
+    fn duplicate_session_id_not_double_counted() {
+        let mut stats = CachedFileStats::default();
+
+        let line1 = r#"{"type":"system","subtype":"turn_duration","timestamp":"2026-02-04T10:00:00Z","sessionId":"sess-1","durationMs":1000}"#;
+        let line2 = r#"{"type":"system","subtype":"turn_duration","timestamp":"2026-02-04T10:05:00Z","sessionId":"sess-1","durationMs":2000}"#;
+
+        parse_jsonl_line(line1, &mut stats);
+        parse_jsonl_line(line2, &mut stats);
+
+        assert_eq!(stats.session_ids.len(), 1);
+        let day = stats.daily_activity.get("2026-02-04").unwrap();
+        assert_eq!(day.session_count, 1);
+        assert_eq!(day.message_count, 2);
+    }
+
+    #[test]
+    fn first_last_timestamp_tracking() {
+        let mut stats = CachedFileStats::default();
+
+        let line1 = r#"{"type":"system","subtype":"turn_duration","timestamp":"2026-02-04T23:22:42.546Z","sessionId":"s1","durationMs":1000}"#;
+        let line2 = r#"{"type":"system","subtype":"turn_duration","timestamp":"2026-02-01T10:00:00.000Z","sessionId":"s2","durationMs":1000}"#;
+        let line3 = r#"{"type":"system","subtype":"turn_duration","timestamp":"2026-02-10T08:00:00.000Z","sessionId":"s3","durationMs":1000}"#;
+
+        parse_jsonl_line(line1, &mut stats);
+        parse_jsonl_line(line2, &mut stats);
+        parse_jsonl_line(line3, &mut stats);
+
+        assert_eq!(
+            stats.first_timestamp,
+            Some("2026-02-01T10:00:00.000Z".to_string())
+        );
+        assert_eq!(
+            stats.last_timestamp,
+            Some("2026-02-10T08:00:00.000Z".to_string())
+        );
+    }
+
+    #[test]
+    fn cache_serialization_roundtrip() {
+        let mut cache: SessionStatsCache = HashMap::new();
+        let mut file_stats = CachedFileStats::default();
+        file_stats.file_size = 12345;
+        file_stats.total_input_tokens = 1000;
+        file_stats.session_ids.push("s1".to_string());
+
+        let mut project = HashMap::new();
+        project.insert("session1.jsonl".to_string(), file_stats);
+        cache.insert("my-project".to_string(), project);
+
+        let json = serde_json::to_string(&cache).unwrap();
+        let restored: SessionStatsCache = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.len(), 1);
+        let proj = restored.get("my-project").unwrap();
+        let f = proj.get("session1.jsonl").unwrap();
+        assert_eq!(f.file_size, 12345);
+        assert_eq!(f.total_input_tokens, 1000);
+    }
+
+    #[test]
+    fn parse_jsonl_file_from_offset_works() {
+        // Create a temp file with JSONL content
+        let dir = std::env::temp_dir().join("claude_usage_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("test.jsonl");
+
+        let content = r#"{"type":"user","message":"hello"}
+{"type":"assistant","message":{"model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+{"type":"progress","content":"working"}
+{"type":"system","subtype":"turn_duration","timestamp":"2026-02-04T10:00:00Z","sessionId":"s1","durationMs":5000}
+"#;
+        std::fs::write(&path, content).unwrap();
+
+        let mut stats = CachedFileStats::default();
+        let final_size = parse_jsonl_file_from_offset(&path, 0, &mut stats).unwrap();
+
+        assert_eq!(final_size, content.len() as u64);
+        assert_eq!(stats.user_message_count, 1);
+        assert_eq!(stats.assistant_message_count, 1);
+        assert_eq!(stats.total_input_tokens, 100);
+        assert_eq!(stats.session_ids, vec!["s1"]);
+
+        // Now append more data and parse incrementally
+        let append = r#"{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":200,"output_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+"#;
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(append.as_bytes())
+            .unwrap();
+
+        use std::io::Write;
+        let new_size =
+            parse_jsonl_file_from_offset(&path, final_size, &mut stats).unwrap();
+
+        assert_eq!(stats.assistant_message_count, 2);
+        assert_eq!(stats.total_input_tokens, 300);
+        assert!(new_size > final_size);
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

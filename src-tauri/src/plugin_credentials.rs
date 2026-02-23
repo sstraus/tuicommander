@@ -6,6 +6,7 @@
 //!
 //! Returns the raw credential JSON string, or null if not found.
 
+#[cfg(not(target_os = "macos"))]
 use std::path::PathBuf;
 
 /// Read a credential by service name.
@@ -37,7 +38,7 @@ pub async fn plugin_read_credential(
 /// macOS: read from Keychain via `security find-generic-password -s <service> -w`.
 /// This shells out to avoid adding a native Keychain crate dependency.
 #[cfg(target_os = "macos")]
-fn read_from_keychain(service_name: &str) -> Result<Option<String>, String> {
+pub(crate) fn read_from_keychain(service_name: &str) -> Result<Option<String>, String> {
     let output = std::process::Command::new("security")
         .args(["find-generic-password", "-s", service_name, "-w"])
         .output()
@@ -62,7 +63,7 @@ fn read_from_keychain(service_name: &str) -> Result<Option<String>, String> {
 
 /// Linux/Windows: read from `~/.claude/.credentials.json`.
 #[cfg(not(target_os = "macos"))]
-fn read_from_json_file(service_name: &str) -> Result<Option<String>, String> {
+pub(crate) fn read_from_json_file(service_name: &str) -> Result<Option<String>, String> {
     let path = credentials_json_path()?;
     match std::fs::read_to_string(&path) {
         Ok(content) => {

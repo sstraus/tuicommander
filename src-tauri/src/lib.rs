@@ -1,5 +1,6 @@
 pub(crate) mod agent;
 pub(crate) mod agent_mcp;
+pub(crate) mod claude_usage;
 pub(crate) mod cli;
 pub(crate) mod config;
 mod dictation;
@@ -554,6 +555,7 @@ pub fn run() {
         app_handle: parking_lot::RwLock::new(None),
         plugin_watchers: DashMap::new(),
         kitty_states: DashMap::new(),
+        claude_usage_cache: parking_lot::Mutex::new(claude_usage::load_cache_from_disk()),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled
@@ -755,7 +757,10 @@ pub fn run() {
             plugin_fs::plugin_unwatch,
             plugin_http::plugin_http_fetch,
             plugin_credentials::plugin_read_credential,
-            registry::fetch_plugin_registry
+            registry::fetch_plugin_registry,
+            claude_usage::get_claude_usage_api,
+            claude_usage::get_claude_session_stats,
+            claude_usage::get_claude_project_list
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

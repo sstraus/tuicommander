@@ -358,6 +358,7 @@ mod tests {
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: DashMap::new(),
             kitty_states: DashMap::new(),
+            claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
