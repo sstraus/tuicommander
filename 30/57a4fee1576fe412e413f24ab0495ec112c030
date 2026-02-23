@@ -1,0 +1,51 @@
+docs/user-guide/getting-started.md
+  79531c35309daaf1 62
+src-tauri/src/mcp_http/plugin_docs.rs
+  79531c35309daaf1 216,225
+docs/architecture/data-flow.md
+  79531c35309daaf1 96,103-105,174,177-183,185-187,189-197,199-216,219,222-224,227-254
+docs/FEATURES.md
+  79531c35309daaf1 6,135,174-176,246,248-255,261,307-330,332,383-384,511,528,565-572,577,583,753-754
+SPEC.md
+  79531c35309daaf1 3,332-336
+docs/frontend/stores.md
+  79531c35309daaf1 181-182,184-185,195,231-314,321,343-363
+docs/api/http-api.md
+  79531c35309daaf1 40-61,88-95,164,169-184,193-241,245,253,261,268,272,275,277,280,283,286-288,291-293,295-301,304-371,399-406,409,412,417-456,459-466,487-494,504,507,510-511,519-563
+docs/frontend/STYLE_GUIDE.md
+  79531c35309daaf1 127,185-187,260,294,296,301-304,308,310-320,322,463-471
+docs/user-guide/settings.md
+  79531c35309daaf1 16,33-34,37-40,42
+docs/frontend/components.md
+  79531c35309daaf1 17,24-27,31,33-37,45-47,49-50,108,110-114,135,137-144,152-155,165-169,171-194,214-215,221-222
+docs/backend/config.md
+  79531c35309daaf1 50,86-87,96-111,133-143,145-172,186-194,198-211
+docs/architecture/state-management.md
+  79531c35309daaf1 95-96,98,100,109-115,129-130,136-138,140-150,156-157,176,180-181,184-187
+docs/api/tauri-commands.md
+  79531c35309daaf1 16-21,33,37,54,56,62,64,66,68,71-73,75,77-82,89-92,96-104,112,116-121,123,129-130,132-133,136,138-139,142-156,158-168,191-204,206,210,213,215-222
+docs/plugins.md
+  79531c35309daaf1 521,531
+docs/user-guide/ai-agents.md
+  79531c35309daaf1 54,56-57,60,64-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "3057a4fee1576fe412e413f24ab0495ec112c030",
+  "prompts": {
+    "79531c35309daaf1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0849ebe3-fb06-4563-add2-3e22fb4230bf",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 1494,
+      "total_deletions": 147,
+      "accepted_lines": 1175,
+      "overriden_lines": 0
+    }
+  }
+}
