@@ -329,6 +329,126 @@ impl OutputRingBuffer {
 
 pub(crate) const OUTPUT_RING_BUFFER_CAPACITY: usize = 2 * 1024 * 1024; // 2 MB
 
+/// Kitty keyboard protocol: actions detected in PTY output.
+/// Applications send these sequences to request enhanced key encoding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum KittyAction {
+    /// `CSI > flags u` — push flags onto the stack
+    Push(u32),
+    /// `CSI < u` — pop one entry from the stack
+    Pop,
+    /// `CSI ? u` — query current flags (terminal responds with `CSI ? flags u`)
+    Query,
+}
+
+/// Per-session kitty keyboard protocol state.
+/// Tracks a stack of flag values as specified by the protocol.
+pub(crate) struct KittyKeyboardState {
+    stack: Vec<u32>,
+}
+
+impl KittyKeyboardState {
+    pub(crate) fn new() -> Self {
+        Self { stack: Vec::new() }
+    }
+
+    /// Push flags onto the stack.
+    pub(crate) fn push(&mut self, flags: u32) {
+        self.stack.push(flags);
+    }
+
+    /// Pop one entry from the stack. No-op if already empty (underflow safety).
+    pub(crate) fn pop(&mut self) {
+        self.stack.pop();
+    }
+
+    /// Current effective flags (top of stack, or 0 if empty).
+    pub(crate) fn current_flags(&self) -> u32 {
+        self.stack.last().copied().unwrap_or(0)
+    }
+}
+
+/// Scan PTY output for kitty keyboard protocol sequences and strip them.
+///
+/// Detects:
+/// - `ESC [ > N u` — push flags (N is one or more digits)
+/// - `ESC [ < u`   — pop
+/// - `ESC [ ? u`   — query
+///
+/// Returns the cleaned string (with kitty sequences removed) and a list of actions.
+/// Fast path: if the input contains none of the trigger prefixes, returns it unchanged.
+pub(crate) fn strip_kitty_sequences(input: &str) -> (String, Vec<KittyAction>) {
+    // Fast path: skip scanning if no possible kitty sequence prefix exists
+    if !input.contains("\x1b[>") && !input.contains("\x1b[<") && !input.contains("\x1b[?") {
+        return (input.to_string(), Vec::new());
+    }
+
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+    let mut output = String::with_capacity(len);
+    let mut actions = Vec::new();
+    let mut i = 0;
+
+    while i < len {
+        if bytes[i] == 0x1b && i + 2 < len && bytes[i + 1] == b'[' {
+            match bytes[i + 2] {
+                b'>' => {
+                    // Potential push: ESC [ > digits u
+                    let start = i;
+                    let mut j = i + 3;
+                    // Parse digits
+                    while j < len && bytes[j].is_ascii_digit() {
+                        j += 1;
+                    }
+                    if j > i + 3 && j < len && bytes[j] == b'u' {
+                        // Valid push sequence
+                        let digits = &input[i + 3..j];
+                        if let Ok(flags) = digits.parse::<u32>() {
+                            actions.push(KittyAction::Push(flags));
+                        }
+                        i = j + 1; // skip past 'u'
+                        continue;
+                    }
+                    // Not a kitty push — emit the ESC and continue
+                    output.push(bytes[start] as char);
+                    i = start + 1;
+                }
+                b'<' => {
+                    // Potential pop: ESC [ < u
+                    if i + 3 < len && bytes[i + 3] == b'u' {
+                        actions.push(KittyAction::Pop);
+                        i += 4; // skip ESC [ < u
+                        continue;
+                    }
+                    // Not a kitty pop (likely SGR mouse: ESC [ < digit...) — emit ESC
+                    output.push(bytes[i] as char);
+                    i += 1;
+                }
+                b'?' => {
+                    // Potential query: ESC [ ? u
+                    if i + 3 < len && bytes[i + 3] == b'u' {
+                        actions.push(KittyAction::Query);
+                        i += 4; // skip ESC [ ? u
+                        continue;
+                    }
+                    // Not a kitty query (e.g. DEC private mode) — emit ESC
+                    output.push(bytes[i] as char);
+                    i += 1;
+                }
+                _ => {
+                    output.push(bytes[i] as char);
+                    i += 1;
+                }
+            }
+        } else {
+            output.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+
+    (output, actions)
+}
+
 /// Represents a git worktree
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorktreeInfo {
@@ -380,8 +500,8 @@ pub struct AppState {
     pub(crate) metrics: SessionMetrics,
     /// Ring buffers for MCP output access (one per session)
     pub output_buffers: DashMap<String, Mutex<OutputRingBuffer>>,
-    /// MCP SSE session channels: session_id -> sender for routing JSON-RPC responses
-    pub mcp_sse_sessions: DashMap<String, tokio::sync::mpsc::UnboundedSender<String>>,
+    /// Active MCP Streamable HTTP sessions (session_id -> unit)
+    pub mcp_sessions: DashMap<String, ()>,
     /// WebSocket clients per PTY session for streaming output
     pub ws_clients: DashMap<String, Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
     /// Cached AppConfig to avoid re-reading from disk on every request
@@ -414,6 +534,9 @@ pub struct AppState {
     pub(crate) app_handle: parking_lot::RwLock<Option<AppHandle>>,
     /// Plugin filesystem watchers: watch_id → (plugin_id, watcher)
     pub plugin_watchers: DashMap<String, (String, notify::RecommendedWatcher)>,
+    /// Per-session kitty keyboard protocol state (session_id → state).
+    /// Separate DashMap (not inside PtySession) to avoid writer contention.
+    pub(crate) kitty_states: DashMap<String, Mutex<KittyKeyboardState>>,
 }
 
 impl AppState {
@@ -764,7 +887,7 @@ mod tests {
             worktrees_dir: std::env::temp_dir().join("test-worktrees"),
             metrics: SessionMetrics::new(),
             output_buffers: dashmap::DashMap::new(),
-            mcp_sse_sessions: dashmap::DashMap::new(),
+            mcp_sessions: dashmap::DashMap::new(),
             ws_clients: dashmap::DashMap::new(),
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
             repo_info_cache: dashmap::DashMap::new(),
@@ -778,6 +901,7 @@ mod tests {
             session_token: parking_lot::RwLock::new(String::from("test-token")),
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
+            kitty_states: dashmap::DashMap::new(),
         }
     }
 
@@ -932,5 +1056,149 @@ mod tests {
 
         assert!(state.repo_info_cache.get("/repo/a").is_none());
         assert!(state.repo_info_cache.get("/repo/b").is_some());
+    }
+
+    // --- KittyKeyboardState tests ---
+
+    #[test]
+    fn test_kitty_state_default_flags_zero() {
+        let state = KittyKeyboardState::new();
+        assert_eq!(state.current_flags(), 0);
+    }
+
+    #[test]
+    fn test_kitty_state_push_sets_flags() {
+        let mut state = KittyKeyboardState::new();
+        state.push(1);
+        assert_eq!(state.current_flags(), 1);
+    }
+
+    #[test]
+    fn test_kitty_state_push_pop_stack() {
+        let mut state = KittyKeyboardState::new();
+        state.push(1);
+        state.push(3);
+        assert_eq!(state.current_flags(), 3);
+        state.pop();
+        assert_eq!(state.current_flags(), 1);
+        state.pop();
+        assert_eq!(state.current_flags(), 0);
+    }
+
+    #[test]
+    fn test_kitty_state_pop_underflow_safe() {
+        let mut state = KittyKeyboardState::new();
+        state.pop(); // Should not panic
+        assert_eq!(state.current_flags(), 0);
+        state.pop(); // Still safe
+        assert_eq!(state.current_flags(), 0);
+    }
+
+    // --- strip_kitty_sequences tests ---
+
+    #[test]
+    fn test_strip_kitty_plain_text_passthrough() {
+        let (out, actions) = strip_kitty_sequences("hello world");
+        assert_eq!(out, "hello world");
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_strip_kitty_push_single_digit() {
+        let (out, actions) = strip_kitty_sequences("\x1b[>1u");
+        assert_eq!(out, "");
+        assert_eq!(actions, vec![KittyAction::Push(1)]);
+    }
+
+    #[test]
+    fn test_strip_kitty_push_multi_digit() {
+        let (out, actions) = strip_kitty_sequences("\x1b[>15u");
+        assert_eq!(out, "");
+        assert_eq!(actions, vec![KittyAction::Push(15)]);
+    }
+
+    #[test]
+    fn test_strip_kitty_pop() {
+        let (out, actions) = strip_kitty_sequences("\x1b[<u");
+        assert_eq!(out, "");
+        assert_eq!(actions, vec![KittyAction::Pop]);
+    }
+
+    #[test]
+    fn test_strip_kitty_query() {
+        let (out, actions) = strip_kitty_sequences("\x1b[?u");
+        assert_eq!(out, "");
+        assert_eq!(actions, vec![KittyAction::Query]);
+    }
+
+    #[test]
+    fn test_strip_kitty_embedded_in_text() {
+        let (out, actions) = strip_kitty_sequences("before\x1b[>1uafter");
+        assert_eq!(out, "beforeafter");
+        assert_eq!(actions, vec![KittyAction::Push(1)]);
+    }
+
+    #[test]
+    fn test_strip_kitty_multiple_actions() {
+        let (out, actions) = strip_kitty_sequences("\x1b[>1u\x1b[?u\x1b[<u");
+        assert_eq!(out, "");
+        assert_eq!(actions, vec![
+            KittyAction::Push(1),
+            KittyAction::Query,
+            KittyAction::Pop,
+        ]);
+    }
+
+    #[test]
+    fn test_strip_kitty_sgr_mouse_passthrough() {
+        // SGR mouse: ESC [ < 0 ; 35 ; 16 M — starts with ESC[< but next byte is digit, not 'u'
+        let input = "\x1b[<0;35;16M";
+        let (out, actions) = strip_kitty_sequences(input);
+        assert_eq!(out, input);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_strip_kitty_dec_private_mode_passthrough() {
+        // DEC private mode: ESC [ ? 1049 h — starts with ESC[? but next byte is digit, not 'u'
+        let input = "\x1b[?1049h";
+        let (out, actions) = strip_kitty_sequences(input);
+        assert_eq!(out, input);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_strip_kitty_normal_csi_passthrough() {
+        // Normal CSI (SGR color): should pass through unchanged
+        let input = "\x1b[31mRed\x1b[0m";
+        let (out, actions) = strip_kitty_sequences(input);
+        assert_eq!(out, input);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_strip_kitty_fast_path_no_trigger() {
+        // No ESC[> or ESC[< or ESC[? — should take fast path
+        let input = "\x1b[31m\x1b[0mhello";
+        let (out, actions) = strip_kitty_sequences(input);
+        assert_eq!(out, input);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_strip_kitty_push_zero_flags() {
+        let (out, actions) = strip_kitty_sequences("\x1b[>0u");
+        assert_eq!(out, "");
+        assert_eq!(actions, vec![KittyAction::Push(0)]);
+    }
+
+    #[test]
+    fn test_strip_kitty_incomplete_push_no_digits() {
+        // ESC [ > u (no digits) — not a valid push, should pass through
+        let input = "\x1b[>u";
+        let (out, actions) = strip_kitty_sequences(input);
+        // The ESC is emitted, then [>u follows as normal text
+        assert_eq!(out, input);
+        assert!(actions.is_empty());
     }
 }

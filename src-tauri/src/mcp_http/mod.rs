@@ -87,7 +87,7 @@ async fn plugin_data_http(
 
 /// Build the router (exposed for testing).
 /// When `remote_auth` is true, applies Basic Auth middleware (requires ConnectInfo).
-/// When `mcp_enabled` is false, excludes MCP SSE transport routes (/sse, /messages).
+/// When `mcp_enabled` is false, excludes MCP Streamable HTTP route (/mcp).
 pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) -> Router {
     // When remote access is enabled, allow any origin (Basic Auth secures the endpoint).
     // Otherwise, restrict to localhost and Tauri webview origins.
@@ -193,11 +193,12 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Plugin data (for external HTTP clients)
         .route("/api/plugins/{plugin_id}/data/{*path}", get(plugin_data_http));
 
-    // MCP SSE transport — only when MCP is enabled
+    // MCP Streamable HTTP transport — only when MCP is enabled
     if mcp_enabled {
         routes = routes
-            .route("/sse", get(mcp_transport::mcp_sse_connect))
-            .route("/messages", post(mcp_transport::mcp_messages));
+            .route("/mcp", post(mcp_transport::mcp_post)
+                          .get(mcp_transport::mcp_get)
+                          .delete(mcp_transport::mcp_delete));
     }
 
     // Static files — SPA frontend
@@ -230,7 +231,8 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
             format!("0.0.0.0:{port}")
         }
     } else {
-        "127.0.0.1:0".to_string()
+        let port = config.mcp_port;
+        format!("127.0.0.1:{port}")
     };
 
     let app = build_router(state.clone(), remote_enabled, mcp_enabled);
@@ -341,7 +343,7 @@ mod tests {
             worktrees_dir: std::env::temp_dir().join("test-worktrees"),
             metrics: crate::SessionMetrics::new(),
             output_buffers: DashMap::new(),
-            mcp_sse_sessions: DashMap::new(),
+            mcp_sessions: DashMap::new(),
             ws_clients: DashMap::new(),
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
             repo_info_cache: DashMap::new(),
@@ -355,6 +357,7 @@ mod tests {
             session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: DashMap::new(),
+            kitty_states: DashMap::new(),
         })
     }
 
@@ -622,85 +625,81 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mcp_messages_invalid_session() {
+    async fn test_mcp_initialize() {
         let state = test_state();
         let app = build_router(state, false, true);
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
-            "params": {}
-        });
-        let resp = app
-            .oneshot(mcp_post("/messages?sessionId=nonexistent", &body))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn test_mcp_messages_with_valid_session() {
-        let state = test_state();
-
-        // Manually create an SSE session channel
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        let session_id = "test-session-123";
-        state.mcp_sse_sessions.insert(session_id.to_string(), tx);
-
-        // Send initialize request
-        let body = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
             "params": {
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": "2025-03-26",
                 "capabilities": {},
                 "clientInfo": { "name": "test", "version": "1.0" }
             }
         });
-        let app = build_router(state.clone(), false, true);
         let resp = app
-            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
+            .oneshot(mcp_post("/mcp", &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-
-        // Check that the SSE channel received the response
-        let msg = rx.try_recv().unwrap();
-        let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+        // Verify Mcp-Session-Id header is present
+        let session_id = resp.headers().get("mcp-session-id");
+        assert!(session_id.is_some(), "Initialize should return Mcp-Session-Id header");
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["jsonrpc"], "2.0");
         assert_eq!(json["id"], 1);
-        assert!(json["result"]["protocolVersion"].as_str().is_some());
+        assert_eq!(json["result"]["protocolVersion"], "2025-03-26");
         assert!(json["result"]["serverInfo"]["name"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_mcp_get_returns_405() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        let resp = app
+            .oneshot(Request::get("/mcp").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_delete_session() {
+        let state = test_state();
+        state.mcp_sessions.insert("test-sid".to_string(), ());
+        let app = build_router(state.clone(), false, true);
+        let mut req = Request::delete("/mcp")
+            .header("mcp-session-id", "test-sid")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 0))));
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(state.mcp_sessions.get("test-sid").is_none(), "Session should be removed after DELETE");
     }
 
     #[tokio::test]
     async fn test_mcp_tools_list() {
         let state = test_state();
-
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        let session_id = "test-tools-session";
-        state.mcp_sse_sessions.insert(session_id.to_string(), tx);
-
+        let app = build_router(state, false, true);
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 2,
             "method": "tools/list",
             "params": {}
         });
-        let app = build_router(state.clone(), false, true);
         let resp = app
-            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
+            .oneshot(mcp_post("/mcp", &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-
-        let msg = rx.try_recv().unwrap();
-        let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
         assert_eq!(tools.len(), 5);
 
-        // Verify meta-commands are present
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session"));
         assert!(names.contains(&"git"));
@@ -728,12 +727,8 @@ mod tests {
     // --- MCP tool call tests ---
     // Test tool calls through the SSE transport (tools/call via /messages endpoint)
 
-    /// Helper: send a tools/call MCP request and return the parsed result content
+    /// Helper: send a tools/call MCP request via POST /mcp and return the parsed result content
     async fn call_mcp_tool(state: &Arc<AppState>, tool_name: &str, args: serde_json::Value) -> serde_json::Value {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        let session_id = format!("tool-test-{}", uuid::Uuid::new_v4());
-        state.mcp_sse_sessions.insert(session_id.clone(), tx);
-
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 99,
@@ -745,13 +740,13 @@ mod tests {
         });
         let app = build_router(state.clone(), false, true);
         let resp = app
-            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
+            .oneshot(mcp_post("/mcp", &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let msg = rx.try_recv().unwrap();
-        let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+        let resp_body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
         assert_eq!(json["jsonrpc"], "2.0");
         assert_eq!(json["id"], 99);
 
@@ -933,7 +928,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_agent_spawn_not_implemented_via_sse() {
+    async fn test_agent_spawn_not_implemented_via_mcp() {
         let state = test_state();
         let result = call_mcp_tool(&state, "agent", serde_json::json!({
             "action": "spawn",
@@ -1069,11 +1064,6 @@ mod tests {
     #[tokio::test]
     async fn test_tool_call_is_error_flag() {
         let state = test_state();
-
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        let session_id = "test-is-error-flag";
-        state.mcp_sse_sessions.insert(session_id.to_string(), tx);
-
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 50,
@@ -1083,26 +1073,20 @@ mod tests {
                 "arguments": {}
             }
         });
-        let app = build_router(state.clone(), false, true);
+        let app = build_router(state, false, true);
         let resp = app
-            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
+            .oneshot(mcp_post("/mcp", &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-
-        let msg = rx.try_recv().unwrap();
-        let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+        let resp_body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
         assert_eq!(json["result"]["isError"], true, "Error responses should set isError=true");
     }
 
     #[tokio::test]
     async fn test_tool_call_success_flag() {
         let state = test_state();
-
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        let session_id = "test-success-flag";
-        state.mcp_sse_sessions.insert(session_id.to_string(), tx);
-
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 51,
@@ -1112,42 +1096,34 @@ mod tests {
                 "arguments": {"action": "list"}
             }
         });
-        let app = build_router(state.clone(), false, true);
+        let app = build_router(state, false, true);
         let resp = app
-            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
+            .oneshot(mcp_post("/mcp", &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-
-        let msg = rx.try_recv().unwrap();
-        let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+        let resp_body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
         assert_eq!(json["result"]["isError"], false, "Success responses should set isError=false");
     }
 
     #[tokio::test]
     async fn test_mcp_unknown_method() {
-        // Verify that unknown JSON-RPC methods return a proper error
         let state = test_state();
-
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        let session_id = "test-unknown-method";
-        state.mcp_sse_sessions.insert(session_id.to_string(), tx);
-
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 60,
             "method": "resources/list",
             "params": {}
         });
-        let app = build_router(state.clone(), false, true);
+        let app = build_router(state, false, true);
         let resp = app
-            .oneshot(mcp_post(&format!("/messages?sessionId={}", session_id), &body))
+            .oneshot(mcp_post("/mcp", &body))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-
-        let msg = rx.try_recv().unwrap();
-        let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+        let resp_body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
         assert_eq!(json["error"]["code"], -32601, "Unknown method should return -32601");
         assert!(json["error"]["message"].as_str().unwrap().contains("Method not found"));
     }

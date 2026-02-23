@@ -16,6 +16,7 @@ import { notificationsStore } from "../../stores/notifications";
 import { invoke } from "../../invoke";
 import { isMacOS } from "../../platform";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
+import { kittySequenceForKey } from "./kittyKeyboard";
 import s from "./Terminal.module.css";
 
 
@@ -112,6 +113,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let sessionInitialized = false;
   let unsubscribePty: Unsubscribe | undefined;
   let unlistenParsed: (() => void) | undefined;
+  let unlistenKitty: (() => void) | undefined;
+
+  // Kitty keyboard protocol: current flags for this session (0 = disabled)
+  let kittyFlags = 0;
 
   // Buffer for PTY output arriving before terminal.open()
   let outputBuffer: string[] = [];
@@ -350,6 +355,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // Also dispatch to plugin structured event handlers
         pluginRegistry.dispatchStructuredEvent(parsed.type, parsed, targetSessionId);
       });
+
+      // Listen for kitty keyboard protocol flag changes from Rust
+      unlistenKitty = await listen<number>(`kitty-keyboard-${targetSessionId}`, (event) => {
+        kittyFlags = event.payload;
+      });
     }
   };
 
@@ -452,6 +462,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
         event.preventDefault();
         setSearchVisible(false);
         return false;
+      }
+
+      // Kitty keyboard protocol: encode special keys when flag 1 (disambiguate) is active
+      if (event.type === "keydown" && (kittyFlags & 1)) {
+        const seq = kittySequenceForKey(event.key, event.shiftKey, event.altKey, event.ctrlKey, event.metaKey);
+        if (seq !== null) {
+          terminal!.input(seq, true);
+          return false;
+        }
       }
 
       if (!isMacOS()) return true; // Windows/Linux: xterm handles Alt natively
@@ -772,6 +791,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
     resizeObserver?.disconnect();
     unsubscribePty?.();
     unlistenParsed?.();
+    unlistenKitty?.();
+    kittyFlags = 0;
 
     // Resume reader if paused (don't leave PTY blocked after unmount)
     if (isPaused && sessionId) {

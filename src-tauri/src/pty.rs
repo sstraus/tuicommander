@@ -9,8 +9,9 @@ use uuid::Uuid;
 
 use crate::output_parser::{extract_last_question_line, OutputParser, ParsedEvent};
 use crate::state::{
-    AppState, EscapeAwareBuffer, OrchestratorStats, OutputRingBuffer, PtyConfig, PtyOutput,
-    PtySession, Utf8ReadBuffer, MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY,
+    AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
+    OutputRingBuffer, PtyConfig, PtyOutput, PtySession, Utf8ReadBuffer,
+    MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY, strip_kitty_sequences,
 };
 use crate::worktree::{create_worktree_internal, remove_worktree_internal, WorktreeConfig, WorktreeResult};
 
@@ -170,7 +171,38 @@ pub(crate) fn spawn_reader_thread(
                 Ok(n) => {
                     state.metrics.bytes_emitted.fetch_add(n, Ordering::Relaxed);
                     let utf8_data = utf8_buf.push(&buf[..n]);
-                    let data = esc_buf.push(&utf8_data);
+                    let esc_data = esc_buf.push(&utf8_data);
+                    // Strip kitty keyboard protocol sequences from output
+                    let (data, kitty_actions) = strip_kitty_sequences(&esc_data);
+                    // Process kitty actions: push/pop state, respond to queries
+                    if !kitty_actions.is_empty() {
+                        let entry = state.kitty_states
+                            .entry(session_id.clone())
+                            .or_insert_with(|| Mutex::new(KittyKeyboardState::new()));
+                        let mut ks = entry.lock();
+                        for action in &kitty_actions {
+                            match action {
+                                KittyAction::Push(flags) => ks.push(*flags),
+                                KittyAction::Pop => ks.pop(),
+                                KittyAction::Query => {
+                                    // Respond to query by writing CSI ? flags u to PTY
+                                    let flags = ks.current_flags();
+                                    let response = format!("\x1b[?{}u", flags);
+                                    if let Some(sess) = state.sessions.get(&session_id) {
+                                        let mut sess = sess.lock();
+                                        let _ = sess.writer.write_all(response.as_bytes());
+                                        let _ = sess.writer.flush();
+                                    }
+                                }
+                            }
+                        }
+                        let flags = ks.current_flags();
+                        drop(ks);
+                        let _ = app.emit(
+                            &format!("kitty-keyboard-{session_id}"),
+                            flags,
+                        );
+                    }
                     if !data.is_empty() {
                         // Write to ring buffer for MCP consumers
                         if let Some(ring) = state.output_buffers.get(&session_id) {
@@ -246,6 +278,7 @@ pub(crate) fn spawn_reader_thread(
         state.sessions.remove(&session_id);
         state.output_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
+        state.kitty_states.remove(&session_id);
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
     });
 }
@@ -271,7 +304,30 @@ pub(crate) fn spawn_headless_reader_thread(
                 Ok(n) => {
                     state.metrics.bytes_emitted.fetch_add(n, Ordering::Relaxed);
                     let utf8_data = utf8_buf.push(&buf[..n]);
-                    let data = esc_buf.push(&utf8_data);
+                    let esc_data = esc_buf.push(&utf8_data);
+                    // Strip kitty keyboard protocol sequences
+                    let (data, kitty_actions) = strip_kitty_sequences(&esc_data);
+                    if !kitty_actions.is_empty() {
+                        let entry = state.kitty_states
+                            .entry(session_id.clone())
+                            .or_insert_with(|| Mutex::new(KittyKeyboardState::new()));
+                        let mut ks = entry.lock();
+                        for action in &kitty_actions {
+                            match action {
+                                KittyAction::Push(flags) => ks.push(*flags),
+                                KittyAction::Pop => ks.pop(),
+                                KittyAction::Query => {
+                                    let flags = ks.current_flags();
+                                    let response = format!("\x1b[?{}u", flags);
+                                    if let Some(sess) = state.sessions.get(&session_id) {
+                                        let mut sess = sess.lock();
+                                        let _ = sess.writer.write_all(response.as_bytes());
+                                        let _ = sess.writer.flush();
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if !data.is_empty() {
                         if let Some(ring) = state.output_buffers.get(&session_id) {
                             ring.lock().write(data.as_bytes());
@@ -307,6 +363,7 @@ pub(crate) fn spawn_headless_reader_thread(
         state.sessions.remove(&session_id);
         state.output_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
+        state.kitty_states.remove(&session_id);
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
     });
 }
@@ -619,6 +676,7 @@ pub(crate) fn close_pty(
 ) -> Result<(), String> {
     if let Some((_, session_mutex)) = state.sessions.remove(&session_id) {
         state.output_buffers.remove(&session_id);
+        state.kitty_states.remove(&session_id);
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
         let mut session = session_mutex.into_inner();
 
