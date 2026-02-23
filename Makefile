@@ -160,7 +160,7 @@ github-release:
 # tests won't confuse it with the production TUICommander.
 preview:
 	@echo "Building TUIC-preview $(VERSION)..."
-	npm run tauri build -- --config '{"productName":"TUIC-preview","identifier":"com.tuic.preview","app":{"windows":[{"title":"TUIC-preview","width":1200,"height":800,"minWidth":800,"minHeight":600,"decorations":true,"transparent":false,"resizable":true,"fullscreen":false,"hiddenTitle":true,"titleBarStyle":"Overlay","trafficLightPosition":{"x":13,"y":20},"backgroundColor":"#000000","dragDropEnabled":false}]}}'
+	npm run tauri build -- --bundles app --config '{"productName":"TUIC-preview","identifier":"com.tuic.preview","bundle":{"createUpdaterArtifacts":false},"app":{"windows":[{"title":"TUIC-preview","width":1200,"height":800,"minWidth":800,"minHeight":600,"decorations":true,"transparent":false,"resizable":true,"fullscreen":false,"hiddenTitle":true,"titleBarStyle":"Overlay","trafficLightPosition":{"x":13,"y":20},"backgroundColor":"#000000","dragDropEnabled":false}]}}'
 	@echo "Launching TUIC-preview..."
 	open "$(TAURI_TARGET)/TUIC-preview.app"
 
