@@ -21,8 +21,18 @@ export interface VirtualTab extends BaseTab {
   contentUri: string;
 }
 
+/** Plugin panel tab (renders HTML in a sandboxed iframe via PluginPanel component) */
+export interface PluginPanelTab extends BaseTab {
+  type: "plugin-panel";
+  title: string;
+  /** The plugin that owns this panel */
+  pluginId: string;
+  /** HTML content rendered inside the sandboxed iframe */
+  html: string;
+}
+
 /** Discriminated union of all markdown tab types */
-export type MdTabData = FileTab | VirtualTab;
+export type MdTabData = FileTab | VirtualTab | PluginPanelTab;
 
 // ---------------------------------------------------------------------------
 // Store
@@ -68,6 +78,31 @@ function createMdTabsStore() {
 
       const id = base._nextId("md");
       return base._addTab({ type: "virtual", id, title, contentUri } as VirtualTab);
+    },
+
+    /**
+     * Add a plugin panel tab (or return existing if same pluginId+title already open).
+     * Returns the tab ID.
+     */
+    addPluginPanel(pluginId: string, title: string, html: string): string {
+      const existing = Object.values(base.state.tabs).find(
+        (tab) => tab.type === "plugin-panel" && (tab as PluginPanelTab).pluginId === pluginId && tab.title === title,
+      ) as PluginPanelTab | undefined;
+      if (existing) {
+        base.setActive(existing.id);
+        return existing.id;
+      }
+
+      const id = base._nextId("md");
+      return base._addTab({ type: "plugin-panel", id, title, pluginId, html } as PluginPanelTab);
+    },
+
+    /** Update the HTML content of an existing plugin panel tab */
+    updatePluginPanel(tabId: string, html: string): void {
+      const tab = base.get(tabId);
+      if (tab && tab.type === "plugin-panel") {
+        base._setState("tabs", tabId, "html" as keyof MdTabData, html as MdTabData[keyof MdTabData]);
+      }
     },
 
     /** Clear all file-based markdown tabs for a repository (virtual tabs are unaffected) */

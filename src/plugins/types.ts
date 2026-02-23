@@ -182,7 +182,8 @@ export type PluginCapability =
   | "fs:list"
   | "fs:watch"
   | "net:http"
-  | "credentials:read";
+  | "credentials:read"
+  | "ui:panel";
 
 /** Error thrown when a plugin calls a method without the required capability */
 export class PluginCapabilityError extends Error {
@@ -218,6 +219,30 @@ export interface HttpFetchOptions {
   headers?: Record<string, string>;
   /** Request body */
   body?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Panel types
+// ---------------------------------------------------------------------------
+
+/** Options for opening a plugin panel */
+export interface OpenPanelOptions {
+  /** Unique panel identifier (scoped to the plugin) */
+  id: string;
+  /** Tab title shown in the tab bar */
+  title: string;
+  /** HTML content rendered inside the sandboxed iframe */
+  html: string;
+}
+
+/** Handle returned by openPanel() for updating or closing the panel */
+export interface PanelHandle {
+  /** The tab ID in the mdTabs store */
+  tabId: string;
+  /** Update the iframe HTML content */
+  update(html: string): void;
+  /** Close the panel tab */
+  close(): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +356,16 @@ export interface PluginHost {
     options?: { recursive?: boolean; debounceMs?: number },
   ): Promise<Disposable>;
 
-  // -- Tier 3c: Credential access (capability-gated) --
+  // -- Tier 3c: Panel UI (capability-gated) --
+
+  /**
+   * Open an HTML panel in a sandboxed iframe tab. Requires "ui:panel" capability.
+   * Returns a PanelHandle for updating content or closing the panel.
+   * If a panel with the same id is already open, it will be activated and updated.
+   */
+  openPanel(options: OpenPanelOptions): PanelHandle;
+
+  // -- Tier 3d: Credential access (capability-gated) --
 
   /**
    * Read credentials from the system credential store by service name.

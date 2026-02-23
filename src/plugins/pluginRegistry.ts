@@ -21,7 +21,9 @@ import type {
   HttpFetchOptions,
   HttpResponse,
   MarkdownProvider,
+  OpenPanelOptions,
   OutputWatcher,
+  PanelHandle,
   PluginCapability,
   PluginHost,
   TuiPlugin,
@@ -278,7 +280,26 @@ function createPluginRegistry() {
         return track(disposable);
       },
 
-      // -- Tier 3c: Credential access --
+      // -- Tier 3c: Panel UI --
+
+      openPanel(options: OpenPanelOptions): PanelHandle {
+        requireCapability(pluginId, capabilities, "ui:panel");
+        const tabId = mdTabsStore.addPluginPanel(pluginId, options.title, options.html);
+        if (!uiStore.state.markdownPanelVisible) {
+          uiStore.toggleMarkdownPanel();
+        }
+        return {
+          tabId,
+          update(html: string) {
+            mdTabsStore.updatePluginPanel(tabId, html);
+          },
+          close() {
+            mdTabsStore.remove(tabId);
+          },
+        };
+      },
+
+      // -- Tier 3d: Credential access --
 
       async readCredential(serviceName: string): Promise<string | null> {
         requireCapability(pluginId, capabilities, "credentials:read");

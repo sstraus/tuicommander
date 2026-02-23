@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { activityStore } from "../../stores/activityStore";
 import { pluginStore } from "../../stores/pluginStore";
+import { mdTabsStore } from "../../stores/mdTabs";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
 import { PluginCapabilityError } from "../../plugins/types";
 import type { TuiPlugin, PluginHost } from "../../plugins/types";
@@ -35,6 +36,7 @@ beforeEach(() => {
   activityStore.clearAll();
   markdownProviderRegistry.clear();
   pluginStore.clear();
+  mdTabsStore.clearAll();
 });
 
 // ---------------------------------------------------------------------------
@@ -536,7 +538,61 @@ describe("PluginHost — Tier 3 capability gating", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tier 3c: Credential read capability gating
+// Tier 3c: Panel UI capability gating
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — Tier 3c openPanel capability gating", () => {
+  it("external plugin without ui:panel throws on openPanel", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no capabilities
+    );
+    expect(() => host!.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>" })).toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with ui:panel can call openPanel", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["ui:panel"],
+    );
+    const handle = host!.openPanel({ id: "test", title: "Test Panel", html: "<h1>hello</h1>" });
+    expect(handle).toBeDefined();
+    expect(handle.tabId).toBeTruthy();
+    expect(typeof handle.update).toBe("function");
+    expect(typeof handle.close).toBe("function");
+  });
+
+  it("built-in plugin can open panel without declaring capability", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    const handle = host!.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>" });
+    expect(handle.tabId).toBeTruthy();
+  });
+
+  it("openPanel returns handle that can close the tab", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    const handle = host!.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>" });
+    const tabBefore = mdTabsStore.get(handle.tabId);
+    expect(tabBefore).toBeDefined();
+    handle.close();
+    const tabAfter = mdTabsStore.get(handle.tabId);
+    expect(tabAfter).toBeUndefined();
+  });
+
+  it("opening same panel twice returns existing tab", () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    const handle1 = host!.openPanel({ id: "test", title: "Test", html: "<h1>v1</h1>" });
+    const handle2 = host!.openPanel({ id: "test", title: "Test", html: "<h1>v2</h1>" });
+    expect(handle1.tabId).toBe(handle2.tabId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 3d: Credential read capability gating
 // ---------------------------------------------------------------------------
 
 describe("PluginHost — Tier 3c readCredential capability gating", () => {

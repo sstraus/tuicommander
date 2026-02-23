@@ -56,6 +56,7 @@ const KNOWN_CAPABILITIES: &[&str] = &[
     "fs:watch",
     "net:http",
     "credentials:read",
+    "ui:panel",
 ];
 
 /// Validate a parsed manifest for required fields and sanity.
