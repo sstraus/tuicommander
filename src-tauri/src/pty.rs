@@ -40,6 +40,14 @@ pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
     {
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // Signal kitty keyboard protocol support so apps (e.g. Claude Code / Ink)
+        // detect it via heuristic precheck and proceed to query confirmation.
+        cmd.env("KITTY_WINDOW_ID", "1");
+        // Announce as kitty so Claude Code's terminal detection allow-list
+        // enables kitty keyboard protocol. CC checks TERM_PROGRAM before
+        // KITTY_WINDOW_ID, so a custom name would shadow the fallback.
+        // On macOS this also prevents /etc/zshrc sourcing zshrc_Apple_Terminal.
+        cmd.env("TERM_PROGRAM", "kitty");
         if let Ok(lang) = std::env::var("LANG") {
             cmd.env("LANG", lang);
         } else {
@@ -47,10 +55,6 @@ pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
             cmd.env("LANG", "en_US.UTF-8");
         }
     }
-    // Prevent macOS from sourcing /etc/zshrc_Apple_Terminal which prints
-    // a spurious "Restored session:" message on every new shell
-    #[cfg(target_os = "macos")]
-    cmd.env("TERM_PROGRAM", "tuicommander");
     cmd
 }
 
@@ -176,6 +180,7 @@ pub(crate) fn spawn_reader_thread(
                     let (data, kitty_actions) = strip_kitty_sequences(&esc_data);
                     // Process kitty actions: push/pop state, respond to queries
                     if !kitty_actions.is_empty() {
+                        eprintln!("[Kitty] session={session_id} actions={kitty_actions:?}");
                         let entry = state.kitty_states
                             .entry(session_id.clone())
                             .or_insert_with(|| Mutex::new(KittyKeyboardState::new()));
