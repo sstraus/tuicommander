@@ -278,7 +278,43 @@ function createPluginRegistry() {
         return track(disposable);
       },
 
-      // -- Tier 3c: HTTP requests --
+      // -- Tier 3c: Credential access --
+
+      async readCredential(serviceName: string): Promise<string | null> {
+        requireCapability(pluginId, capabilities, "credentials:read");
+
+        // First-use consent check for external plugins
+        if (capabilities !== null) {
+          const consentKey = `credential-consent-${serviceName}`;
+          const existing = await invoke<string | null>("read_plugin_data", {
+            pluginId,
+            path: consentKey,
+          });
+          if (!existing) {
+            // Show consent dialog
+            const { confirm } = await import("@tauri-apps/plugin-dialog");
+            const allowed = await confirm(
+              `Plugin "${pluginId}" wants to read your credentials for "${serviceName}". Allow?`,
+              { title: "Credential Access", kind: "warning" },
+            );
+            if (!allowed) {
+              throw new Error(`User denied credential access for "${serviceName}"`);
+            }
+            await invoke("write_plugin_data", {
+              pluginId,
+              path: consentKey,
+              content: "allowed",
+            });
+          }
+        }
+
+        return invoke<string | null>("plugin_read_credential", {
+          serviceName,
+          pluginId,
+        });
+      },
+
+      // -- Tier 3d: HTTP requests --
 
       async httpFetch(url: string, options?: HttpFetchOptions): Promise<HttpResponse> {
         requireCapability(pluginId, capabilities, "net:http");

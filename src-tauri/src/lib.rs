@@ -12,6 +12,7 @@ pub(crate) mod repo_watcher;
 pub(crate) mod mcp_http;
 mod menu;
 mod output_parser;
+pub(crate) mod plugin_credentials;
 pub(crate) mod plugin_fs;
 pub(crate) mod plugin_http;
 pub(crate) mod plugins;
@@ -751,6 +752,7 @@ pub fn run() {
             plugin_fs::plugin_watch_path,
             plugin_fs::plugin_unwatch,
             plugin_http::plugin_http_fetch,
+            plugin_credentials::plugin_read_credential,
             registry::fetch_plugin_registry
         ])
         .build(tauri::generate_context!())

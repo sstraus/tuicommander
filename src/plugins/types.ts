@@ -181,7 +181,8 @@ export type PluginCapability =
   | "fs:read"
   | "fs:list"
   | "fs:watch"
-  | "net:http";
+  | "net:http"
+  | "credentials:read";
 
 /** Error thrown when a plugin calls a method without the required capability */
 export class PluginCapabilityError extends Error {
@@ -330,7 +331,17 @@ export interface PluginHost {
     options?: { recursive?: boolean; debounceMs?: number },
   ): Promise<Disposable>;
 
-  // -- Tier 3c: HTTP requests (capability-gated) --
+  // -- Tier 3c: Credential access (capability-gated) --
+
+  /**
+   * Read credentials from the system credential store by service name.
+   * Requires "credentials:read" capability.
+   * First call from a plugin shows a user consent dialog.
+   * Returns the raw credential JSON string, or null if not found.
+   */
+  readCredential(serviceName: string): Promise<string | null>;
+
+  // -- Tier 3d: HTTP requests (capability-gated) --
 
   /**
    * Make an HTTP request. Requires "net:http" capability.

@@ -536,7 +536,29 @@ describe("PluginHost — Tier 3 capability gating", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tier 3c: HTTP fetch capability gating
+// Tier 3c: Credential read capability gating
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — Tier 3c readCredential capability gating", () => {
+  it("external plugin without credentials:read throws on readCredential", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no capabilities
+    );
+    await expect(host!.readCredential("Claude Code-credentials")).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("built-in plugin can call readCredential without capability", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    // Mocked invoke returns undefined → null, no consent dialog for built-in
+    await expect(host!.readCredential("Claude Code-credentials")).resolves.not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 3d: HTTP fetch capability gating
 // ---------------------------------------------------------------------------
 
 describe("PluginHost — Tier 3c httpFetch capability gating", () => {
