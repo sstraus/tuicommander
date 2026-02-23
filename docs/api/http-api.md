@@ -252,6 +252,8 @@ GET /api/plugins/:plugin_id/data/*path
 
 Reads a plugin's stored data file. Returns `application/json` if content starts with `{` or `[`, otherwise `text/plain`. Returns 404 if the file doesn't exist. Goes through the same auth middleware as all other routes.
 
+**Note:** Write and delete operations are only available via Tauri commands (`write_plugin_data`, `delete_plugin_data`), not as HTTP endpoints. Data is sandboxed to `~/.config/tuicommander/plugins/{plugin_id}/data/`.
+
 ## Worktree Endpoints
 
 ### Create Worktree

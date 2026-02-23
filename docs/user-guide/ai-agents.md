@@ -35,19 +35,6 @@ When an agent hits a rate limit, TUICommander detects it from terminal output:
 - **Per-session tracking** — Each session's rate limit is tracked independently with automatic cleanup when expired
 - **Provider-specific patterns** — Custom regex for Claude ("overloaded", "rate limit"), Gemini ("429", "quota exceeded"), OpenAI ("too many requests"), and generic patterns
 
-## Fallback Agent Chain
-
-Configure a primary agent and ordered fallback list:
-
-1. Open **Settings** → **Agents**
-2. Set your **Primary Agent** (e.g., Claude Code)
-3. Configure the **Fallback Chain** (e.g., Gemini CLI → Aider)
-
-When the primary agent hits a rate limit:
-- TUICommander automatically switches to the next agent in the chain
-- **Auto-recovery** checks every 5 minutes if the primary becomes available again
-- Use **Reset to Primary** to force-switch back immediately
-
 ## Question Detection
 
 When an agent asks an interactive question (Y/N, multiple choice, numbered options), TUICommander:

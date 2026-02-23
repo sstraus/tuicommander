@@ -24,7 +24,8 @@
 - Switch: `Cmd+1` through `Cmd+9`, `Cmd+Shift+[` / `Cmd+Shift+]`
 - Rename: double-click tab name (inline editing)
 - Reorder: drag-and-drop with visual drop indicators
-- Tab indicators: solid dot (activity), question icon (agent asking), error icon, progress bar (OSC 9;4)
+- Tab status dot (left of name): grey=running, green=idle, blue-pulse=background activity, orange-pulse=awaiting input, red-pulse=error
+- Progress bar (OSC 9;4)
 - Context menu (right-click): Close Tab, Close Other Tabs, Close Tabs to the Right, Detach to Window
 - Detach to Window: right-click a tab to open it in a floating OS window
   - PTY session stays alive in Rust — floating window reconnects to the same session
@@ -101,7 +102,7 @@
 - CI ring: proportional arc segments (green=passed, red=failed, yellow=pending)
 - PR badge: colored by state (green=open, purple=merged, red=closed, gray=draft) — click for detail popover
 - Diff stats: `+N / -N` additions/deletions
-- Question indicator: `?` icon when agent asks a question
+- Question indicator: `?` icon (orange, pulsing) when agent asks a question
 - Quick switcher badge: numbered index shown when `Cmd+Ctrl` held
 
 ### 2.4 Git Quick Actions
@@ -287,23 +288,17 @@
 - Status bar warning with countdown timer
 - Per-session tracking with cleanup of expired limits
 
-### 6.4 Fallback Agent Chain
-- Primary agent with ordered fallback list
-- Auto-switch when primary hits rate limit
-- Auto-recovery: periodic check if primary becomes available (5-minute interval)
-- Manual "Reset to Primary" button
-
-### 6.5 Question Detection
+### 6.4 Question Detection
 - Recognizes interactive prompts (yes/no, multiple choice, numbered options)
-- Tab indicator changes to `?` icon
+- Tab dot turns orange (pulsing) when awaiting input; sidebar branch icon shows `?` in orange
 - Prompt overlay: keyboard navigation (↑/↓, Enter, number keys 1-9, Escape)
 - Silence-based detection for unrecognized agents
 
-### 6.6 Usage Limit Detection
+### 6.5 Usage Limit Detection
 - Claude Code weekly and session usage percentage
 - Color-coded badge in status bar
 
-### 6.7 Agent Configuration (Settings > Agents)
+### 6.6 Agent Configuration (Settings > Agents)
 - **Agent list:** All supported agents with availability status and version detection
 - **Run configurations:** Named command templates per agent (binary, args, env vars)
 - **Default config:** One run config per agent marked as default for quick launching
@@ -488,7 +483,6 @@
 ### 12.1 Rust Config Backend
 All data persisted to platform config directory via Rust:
 - `app_config.json` — general settings
-- `agent_config.json` — agent/fallback settings
 - `notification_config.json` — sound settings
 - `ui_prefs.json` — sidebar visibility/width
 - `repo_settings.json` — per-repo worktree/script settings

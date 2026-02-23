@@ -239,9 +239,6 @@ Notification sound preferences and playback.
 ### dictationStore (`dictation.ts`)
 Whisper dictation config, model management, recording state.
 
-### agentFallbackStore (`agentFallback.ts`)
-Agent failover chains and auto-recovery.
-
 ### errorHandlingStore (`errorHandling.ts`)
 Error retry configuration and active retry tracking.
 

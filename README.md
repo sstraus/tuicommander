@@ -50,7 +50,7 @@ The more agents you run, the harder it gets to keep track.
 
 | Pain point | TUICommander | tmux / terminal tabs | VS Code |
 |---|---|---|---|
-| Agent hits rate limit silently | Auto-detects, shows countdown, switches to fallback agent | You don't know until you look | No detection |
+| Agent hits rate limit silently | Auto-detects, shows countdown timer | You don't know until you look | No detection |
 | Agent asks a question and stalls | Tab indicator changes, notification sound, overlay with options | Silent stall | Silent stall |
 | Need isolated workspace per agent | Git worktree auto-created per branch — each agent works on its own copy | Manual `git worktree add` | Manual |
 | Checking what agents changed | Inline diff panel, PR status, CI rings — right next to the terminal | Switch to another tool | Built-in, but agents run externally |
@@ -68,7 +68,6 @@ Claude Code, Codex CLI, Aider, Gemini CLI, Amp, Jules, Cursor Agent, OpenCode, W
 ### What "monitoring" actually means
 
 - **Rate limit detection** — Provider-specific patterns (Claude "overloaded", Gemini "429", OpenAI "too many requests"). Status bar shows countdown timers per session.
-- **Fallback chains** — Configure primary + fallback agents. When Claude hits a rate limit, auto-switch to Gemini. Auto-recovery checks every 5 minutes.
 - **Question detection** — Recognizes Y/N prompts, numbered options, inquirer-style menus. Tab shows `?` icon, notification sound fires, overlay appears with keyboard navigation (`↑/↓`, `Enter`, `1-9`).
 - **Usage tracking** — Claude Code weekly/session limit percentage: blue < 70%, yellow 70–89%, red pulsing >= 90%.
 - **Activity dashboard** (`Cmd+Shift+A`) — Real-time view of all sessions: agent type, status (working / waiting / rate-limited / idle), last activity timestamp.
@@ -219,7 +218,7 @@ Rust + [Tauri v2](https://tauri.app) backend, [SolidJS](https://solidjs.com) UI,
 |---|---|
 | [Getting Started](docs/user-guide/getting-started.md) | First-run guide |
 | [Features](docs/FEATURES.md) | Complete feature reference with all keyboard shortcuts |
-| [AI Agents](docs/user-guide/ai-agents.md) | Agent detection, fallback chains, rate limits |
+| [AI Agents](docs/user-guide/ai-agents.md) | Agent detection, rate limits, question detection |
 | [Plugin API](docs/plugins.md) | Build plugins for TUICommander |
 | [HTTP API](docs/api/http-api.md) | REST/WebSocket/SSE endpoints |
 | [Architecture](docs/ARCHITECTURE.md) | System design and component overview |

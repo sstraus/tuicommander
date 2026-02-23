@@ -69,7 +69,7 @@ The sidebar shows all your repositories and their branches.
 
 - [Terminal Features](terminals.md) — Tabs, splits, zoom, detachable tabs, find-in-terminal
 - [Sidebar](sidebar.md) — Repos, branches, groups, park repos, quick branch switcher
-- [AI Agents](ai-agents.md) — Agent detection, rate limits, fallback chains, question detection
+- [AI Agents](ai-agents.md) — Agent detection, rate limits, question detection
 - [Keyboard Shortcuts](keyboard-shortcuts.md) — All shortcuts and how to customize them
 - [Command Palette & Activity Dashboard](command-palette.md) — Fuzzy-search actions and monitor sessions
 - [File Browser & Code Editor](file-browser.md) — Browse files, edit code, git status

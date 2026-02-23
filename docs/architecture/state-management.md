@@ -100,7 +100,6 @@ export const myStore = {
 | `promptLibraryStore` | `promptLibrary.ts` | Prompt templates | `prompt-library.json` |
 | `notificationsStore` | `notifications.ts` | Notification preferences | `notification-config.json` |
 | `dictationStore` | `dictation.ts` | Dictation config and state | `dictation-config.json` |
-| `agentFallbackStore` | `agentFallback.ts` | Agent fallback chains | `agent-config.json` |
 | `errorHandlingStore` | `errorHandling.ts` | Error retry config | `ui-prefs.json` |
 | `rateLimitStore` | `ratelimit.ts` | Active rate limits | Not persisted |
 | `tasksStore` | `tasks.ts` | Agent task queue | Not persisted |
@@ -151,7 +150,6 @@ Legacy path `~/.tuicommander/` is auto-migrated on first launch.
 | File | Contents | Rust Type |
 |------|----------|-----------|
 | `config.json` | Shell, font, theme, MCP, remote access | `AppConfig` |
-| `agent-config.json` | Primary agent, fallback chain, auto-recovery | `AgentConfig` |
 | `notification-config.json` | Sound preferences, volume | `NotificationConfig` |
 | `ui-prefs.json` | Sidebar, error handling settings | `UIPrefsConfig` |
 | `repo-settings.json` | Per-repo scripts, worktree options | `RepoSettingsMap` |

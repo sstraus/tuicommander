@@ -47,19 +47,6 @@ pub fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), 
 
 **Commands:** `load_app_config()`, `save_app_config(config)`
 
-### Agent Config (`agent-config.json`)
-
-**Type:** `AgentConfig`
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `primary_agent` | `String` | `"claude"` | Primary AI agent |
-| `auto_recovery` | `bool` | `true` | Auto-recover to primary |
-| `fallback_chain` | `Vec<String>` | `[]` | Ordered fallback agents |
-| `recovery_interval_ms` | `u64` | `300000` | Recovery check interval (5min) |
-
-**Commands:** `load_agent_config()`, `save_agent_config(config)`
-
 ### Notification Config (`notification-config.json`)
 
 **Type:** `NotificationConfig`

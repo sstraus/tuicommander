@@ -100,7 +100,6 @@ promptLibraryStore ──used by──> PromptDrawer, PromptOverlay
 dictationStore ──manages──> dictation state, model downloads
 notificationsStore ──plays──> sound alerts on terminal events
 errorHandlingStore ──retries──> failed operations with backoff
-agentFallbackStore ──manages──> agent failover chains
 ```
 
 ### Persistence Flow
@@ -129,7 +128,6 @@ useAppInit.initApp()
     ├──> uiStore.hydrate()            → load_ui_prefs
     ├──> repositoriesStore.hydrate()  → load_repositories
     ├──> repoSettingsStore.hydrate()  → load_repo_settings
-    ├──> agentFallbackStore.hydrate() → load_agent_config
     ├──> notificationsStore.hydrate() → load_notification_config
     ├──> promptLibraryStore.hydrate() → load_prompt_library
     └──> errorHandlingStore.hydrate() → load_ui_prefs (error section)

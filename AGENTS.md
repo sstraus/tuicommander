@@ -112,10 +112,4 @@ When modifying the plugin system interface (PluginHost API, capabilities, or Tau
 
 ## Ideas Tracker
 
-**`ideas/`** folder contains feature concepts under evaluation, one file per idea. **`ideas/index.md`** is the summary index — keep it in sync when adding, updating, or removing ideas.
-
-- **Adding a new idea:** Create `ideas/<slug>.md`, then add a row to the appropriate table in `ideas/index.md`
-- **Updating status:** Change the status in the idea file AND update the corresponding row in `ideas/index.md` (move between tables if status category changes: Active / Shipped / Rejected)
-- When validating an idea, update its status (`concept` -> `validated` -> `designed` -> `moved`)
-- When rejecting an idea, mark it `rejected` with reasoning — don't delete the file, move the row to the Rejected table
-- When implementing an idea, move it to SPEC.md and mark it `moved` in the idea file + index
+See CLAUDE.md for ideas folder rules (gitignored).

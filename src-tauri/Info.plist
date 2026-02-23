@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TUI Commander uses the microphone for speech-to-text dictation into the terminal.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>TUI Commander runs a local HTTP server for MCP integration and remote terminal access.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>

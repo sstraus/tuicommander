@@ -182,6 +182,13 @@ Used for: active branch icon, CI pending badge, rate limit indicator.
 Variants exist with red (error) and orange (confirm) colors.
 Used for: terminal tab glow when agent awaits input.
 
+**Tab status dot color scheme** (single `●` indicator left of tab name):
+- Grey (opacity 0.3): shell process running (default)
+- Green (`--success`): shell idle, prompt ready
+- Blue (`--accent`, pulse ×3): background tab produced output
+- Orange (`--warning`, pulse infinite): awaiting user input (question or confirmation)
+- Red (`--error`, pulse infinite): awaiting error acknowledgement
+
 Always use `ease` timing. Respect `prefers-reduced-motion`. Never `transition: all`.
 
 ## Component Reference
@@ -235,7 +242,7 @@ Branch item anatomy (left to right):
 [icon 18px] [name flex:1] [stats badge?] [PR badge?] [actions on hover]
 ```
 
-- **Icon** (18px wide, centered): `★` yellow for main, `Y` muted for feature, `Y` accent+pulse when agent active, `Y` green when shell idle, `?` gold+pulse when awaiting input
+- **Icon** (18px wide, centered): `★` yellow for main, `Y` muted for feature, `Y` accent+pulse when agent active, `Y` green when shell idle, `?` warning (orange)+pulse when awaiting input
 - **Name**: `--font-md`, weight 500, `--fg-primary`, ellipsis on overflow
 - **Stats badge** (optional): `--font-xs`, monospace, `--bg-tertiary` bg, `--border` border, `--radius-lg`, shows `+N -N` in green/red
 - **PR badge** (optional): `--font-xs`, monospace, semibold, `--radius-pill`, colored by state (see Status Badges below)
@@ -456,14 +463,14 @@ All badges: `font-size: --font-xs`, `font-family: --font-mono`, `font-weight: 60
 |--------|---------|-------|
 | `★` | Main/primary branch | Sidebar branch icon |
 | `Y` | Feature branch | Sidebar branch icon |
-| `?` | Awaiting input | Branch icon (gold, pulsing) |
+| `?` | Awaiting input | Branch icon (warning/orange, pulsing) |
 | `+` | Add/create | Buttons |
 | `×` | Close/remove | Tab close, panel close, dialog close |
 | `⋯` | Context menu | Repo header |
 | `✎` | Edit/rename | Branch double-click |
 | `▶` | Send/execute | Notes panel send button |
 | `>` | Chevron (expand/collapse) | Repo sections |
-| `●` | Status dot | Inline indicators |
+| `●` | Tab status dot | Tab bar (grey=running, green=idle, blue-pulse=activity, orange-pulse=awaiting, red-pulse=error) |
 | `⎇` | Git branch symbol | Status bar |
 | `💡` | Ideas panel | Status bar, panel header |
 

@@ -32,12 +32,11 @@ Open settings with `Cmd+,`. Settings are organized into tabs.
 
 | Setting | Description |
 |---------|-------------|
-| **Primary Agent** | Default AI agent (Claude Code, Gemini CLI, OpenCode, Aider, Codex) |
-| **Fallback Chain** | Ordered list of agents to try when the primary hits a rate limit |
-| **Auto-Recovery** | Check every 5 minutes if primary becomes available again |
-| **Reset to Primary** | Force-switch back to the primary agent immediately |
+| **Agent Detection** | Auto-detects running agents from terminal output patterns |
+| **Run Configurations** | Custom launch configs (binary path, args, model, prompt) per agent |
+| **MCP Integration** | Install/remove TUICommander as MCP server for supported agents |
 
-See [AI Agents](ai-agents.md) for details on agent detection and fallback behavior.
+See [AI Agents](ai-agents.md) for details on agent detection and rate limit behavior.
 
 ## Services Tab
 
