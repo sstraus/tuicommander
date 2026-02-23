@@ -37,6 +37,28 @@ Content-Type: application/json
 
 Returns `{ "session_id": "..." }`.
 
+### Create Session with Worktree
+
+```
+POST /sessions/worktree
+Content-Type: application/json
+
+{ "pty_config": { ... }, "worktree_config": { ... } }
+```
+
+Creates a git worktree and a PTY session in one call.
+
+### Spawn Agent Session
+
+```
+POST /sessions/agent
+Content-Type: application/json
+
+{ "pty_config": { ... }, "agent_config": { ... } }
+```
+
+Spawns an AI agent (Claude, etc.) in a PTY session.
+
 ### Write to Session
 
 ```
@@ -62,6 +84,14 @@ GET /sessions/:id/output?limit=4096
 ```
 
 Returns recent output from the ring buffer (up to 64KB).
+
+### Foreground Process
+
+```
+GET /sessions/:id/foreground
+```
+
+Returns the foreground process info for a session.
 
 ### Pause/Resume
 
@@ -131,10 +161,26 @@ Returns `{ "additions": N, "deletions": N }`.
 ### Changed Files
 
 ```
-GET /repo/changed-files?path=/path/to/repo
+GET /repo/files?path=/path/to/repo
 ```
 
 Returns array of `ChangedFile` (path, status, additions, deletions).
+
+### Single File Diff
+
+```
+GET /repo/file-diff?path=/path/to/repo&file=src/main.rs
+```
+
+Returns diff for a single file.
+
+### Read File
+
+```
+GET /repo/file?path=/path/to/repo&file=src/main.rs
+```
+
+Returns file contents as text.
 
 ### Branches
 
@@ -144,10 +190,59 @@ GET /repo/branches?path=/path/to/repo
 
 Returns sorted branch list.
 
+### Local Branches
+
+```
+GET /repo/local-branches?path=/path/to/repo
+```
+
+Returns local branch list.
+
+### Rename Branch
+
+```
+POST /repo/branch/rename
+Content-Type: application/json
+
+{ "path": "/path/to/repo", "old_name": "old", "new_name": "new" }
+```
+
+### Check Main Branch
+
+```
+GET /repo/is-main-branch?branch=main
+```
+
+Returns `true` if the branch is main/master/develop.
+
+### Initials
+
+```
+GET /repo/initials?name=my-repo
+```
+
+Returns 2-char repo initials.
+
+### Markdown Files
+
+```
+GET /repo/markdown-files?path=/path/to/repo
+```
+
+Returns list of `.md` files in a directory.
+
+### Recent Commits
+
+```
+GET /repo/recent-commits?path=/path/to/repo
+```
+
+Returns recent git commits.
+
 ### GitHub Status
 
 ```
-GET /repo/github-status?path=/path/to/repo
+GET /repo/github?path=/path/to/repo
 ```
 
 Returns PR status, CI status, ahead/behind for current branch.
@@ -155,7 +250,7 @@ Returns PR status, CI status, ahead/behind for current branch.
 ### PR Statuses (Batch)
 
 ```
-GET /repo/pr-statuses?path=/path/to/repo
+GET /repo/prs?path=/path/to/repo
 ```
 
 Returns `BranchPrStatus[]` for all branches with open PRs.
@@ -163,40 +258,117 @@ Returns `BranchPrStatus[]` for all branches with open PRs.
 ### CI Checks
 
 ```
-GET /repo/ci-checks?path=/path/to/repo
+GET /repo/ci?path=/path/to/repo
 ```
 
 Returns detailed CI check list.
 
 ## Configuration Endpoints
 
-### Get Config
+### App Config
 
 ```
 GET /config
-```
-
-Returns `AppConfig`.
-
-### Save Config
-
-```
 PUT /config
-Content-Type: application/json
-
-{ AppConfig fields }
 ```
+
+Load/save `AppConfig`.
 
 ### Hash Password
 
 ```
-POST /auth/hash-password
+POST /config/hash-password
 Content-Type: application/json
 
 { "password": "..." }
 ```
 
 Returns bcrypt hash string.
+
+### Notification Config
+
+```
+GET /config/notifications
+PUT /config/notifications
+```
+
+Load/save `NotificationConfig`.
+
+### UI Preferences
+
+```
+GET /config/ui-prefs
+PUT /config/ui-prefs
+```
+
+Load/save `UIPrefsConfig`.
+
+### Repository Settings
+
+```
+GET /config/repo-settings
+PUT /config/repo-settings
+```
+
+Load/save per-repository settings.
+
+### Check Custom Settings
+
+```
+GET /config/repo-settings/has-custom?path=/path/to/repo
+```
+
+Returns `true` if the repo has non-default settings.
+
+### Repositories
+
+```
+GET /config/repositories
+PUT /config/repositories
+```
+
+Load/save the repositories list.
+
+### Prompt Library
+
+```
+GET /config/prompt-library
+PUT /config/prompt-library
+```
+
+Load/save prompt entries.
+
+### Notes
+
+```
+GET /config/notes
+PUT /config/notes
+```
+
+Load/save notes (opaque JSON, shape defined by frontend).
+
+### MCP Status
+
+```
+GET /mcp/status
+```
+
+Returns MCP server status (enabled, port, connected clients).
+
+## Filesystem Endpoints
+
+```
+GET  /fs/list?path=/path/to/dir
+GET  /fs/read?path=/path/to/file
+POST /fs/write         { "path": "...", "content": "..." }
+POST /fs/mkdir         { "path": "..." }
+POST /fs/delete        { "path": "..." }
+POST /fs/rename        { "src": "...", "dest": "..." }
+POST /fs/copy          { "src": "...", "dest": "..." }
+POST /fs/gitignore     { "path": "...", "pattern": "..." }
+```
+
+Sandboxed filesystem operations for the file manager panel.
 
 ## Monitoring Endpoints
 
@@ -224,17 +396,73 @@ GET /metrics
 
 Returns `{ "total_spawned": N, "failed_spawns": N, "bytes_emitted": N, "pauses_triggered": N }`.
 
-## Agent Endpoints
-
-### Detect Agents
+### Local IPs
 
 ```
-GET /agents/detect
+GET /system/local-ips
+```
+
+Returns list of local network interfaces and addresses.
+
+## Agent Endpoints
+
+### Detect All Agents
+
+```
+GET /agents
 ```
 
 Returns detected agent binaries and installed IDEs.
 
+### Detect Specific Agent
+
+```
+GET /agents/detect?binary=claude
+```
+
+Returns detection result for a specific agent binary.
+
+### Detect Installed IDEs
+
+```
+GET /agents/ides
+```
+
+Returns list of installed IDEs.
+
+## Prompt Endpoints
+
+### Process Prompt
+
+```
+POST /prompt/process
+Content-Type: application/json
+
+{ "content": "...", "variables": { ... } }
+```
+
+Substitutes `{{var}}` placeholders in prompt text.
+
+### Extract Variables
+
+```
+POST /prompt/extract-variables
+Content-Type: application/json
+
+{ "content": "..." }
+```
+
+Returns list of `{{var}}` placeholder names found in content.
+
 ## Plugin Endpoints
+
+### List Plugins
+
+```
+GET /plugins/list
+```
+
+Returns array of valid plugin manifests.
 
 ### Plugin Development Guide
 
@@ -256,6 +484,14 @@ Reads a plugin's stored data file. Returns `application/json` if content starts 
 
 ## Worktree Endpoints
 
+### List Worktrees
+
+```
+GET /worktrees
+```
+
+Returns list of managed worktrees.
+
 ### Create Worktree
 
 ```
@@ -265,14 +501,13 @@ Content-Type: application/json
 { "base_repo": "/path", "branch_name": "feature-x" }
 ```
 
-### Remove Worktree
+### Worktrees Base Directory
 
 ```
-DELETE /worktrees
-Content-Type: application/json
-
-{ "repo_path": "/path", "branch_name": "feature-x" }
+GET /worktrees/dir
 ```
+
+Returns the base directory where worktrees are created.
 
 ### Get Worktree Paths
 
@@ -281,3 +516,48 @@ GET /worktrees/paths?path=/path/to/repo
 ```
 
 Returns `{ "branch-name": "/worktree/path", ... }`.
+
+### Generate Worktree Name
+
+```
+POST /worktrees/generate-name
+Content-Type: application/json
+
+{ "existing_names": ["name1", "name2"] }
+```
+
+Returns a unique worktree name.
+
+### Remove Worktree
+
+```
+DELETE /worktrees/:branch
+Content-Type: application/json
+
+{ "repo_path": "/path" }
+```
+
+## Tauri-Only Commands (No HTTP Route)
+
+The following commands are accessible only via the Tauri `invoke()` bridge in the desktop app. They have no HTTP endpoint.
+
+| Command | Module | Description |
+|---------|--------|-------------|
+| `get_claude_usage_api` | `claude_usage.rs` | Fetch rate-limit usage from Anthropic OAuth API |
+| `get_claude_usage_timeline` | `claude_usage.rs` | Get hourly token usage timeline from session transcripts |
+| `get_claude_session_stats` | `claude_usage.rs` | Scan session transcripts for aggregated token/session stats |
+| `get_claude_project_list` | `claude_usage.rs` | List Claude project slugs with session counts |
+| `plugin_read_file` | `plugin_fs.rs` | Read file as UTF-8 (within $HOME, 10 MB limit) |
+| `plugin_read_file_tail` | `plugin_fs.rs` | Read last N bytes of file, skip partial first line |
+| `plugin_list_directory` | `plugin_fs.rs` | List filenames in directory (optional glob filter) |
+| `plugin_watch_path` | `plugin_fs.rs` | Start watching path for changes |
+| `plugin_unwatch` | `plugin_fs.rs` | Stop watching a path |
+| `plugin_http_fetch` | `plugin_http.rs` | Make HTTP request (validated against allowed_urls) |
+| `plugin_read_credential` | `plugin_credentials.rs` | Read credential from system store |
+| `fetch_plugin_registry` | `registry.rs` | Fetch remote plugin registry index |
+| `install_plugin_from_zip` | `plugins.rs` | Install plugin from local ZIP file |
+| `install_plugin_from_url` | `plugins.rs` | Install plugin from HTTPS URL |
+| `uninstall_plugin` | `plugins.rs` | Remove a plugin and all its files |
+| `get_agent_mcp_status` | `agent_mcp.rs` | Check MCP config status for an agent |
+| `install_agent_mcp` | `agent_mcp.rs` | Install TUICommander MCP entry in agent config |
+| `remove_agent_mcp` | `agent_mcp.rs` | Remove TUICommander MCP entry from agent config |

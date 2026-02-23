@@ -5,28 +5,36 @@ All components are SolidJS functional components in `src/components/`.
 ## Component Tree
 
 ```
-App.tsx (829 lines - central orchestrator)
+App.tsx (central orchestrator)
 ├── Toolbar/                  # Window drag region, repo/branch display
 ├── Sidebar/                  # Repository tree with branches
 │   ├── CiRing               # CI status ring per branch
 │   ├── StatusBadge           # Git status badge (clean/dirty/conflict)
-│   ├── BranchPopover         # Branch details popup
 │   └── PrDetailPopover/      # PR details popup (CI, reviews, labels)
 ├── main
 │   ├── TabBar/               # Terminal tabs with drag-to-reorder
 │   ├── Terminal/             # xterm.js wrapper (never unmounted)
+│   ├── TerminalArea/         # Terminal + split pane layout
 │   ├── DiffPanel/            # Git diff viewer
 │   │   └── DiffViewer        # Syntax-highlighted diff renderer
 │   ├── DiffTab/              # Individual file diff tab
 │   ├── MarkdownPanel/        # Markdown file browser
 │   │   └── MarkdownRenderer  # Markdown to HTML (DOMPurify)
 │   ├── MarkdownTab/          # Individual markdown file tab
-│   └── StatusBar/            # Status messages, zoom, toggles
+│   ├── NotesPanel/           # Ideas/notes panel with edit, send, delete
+│   ├── FileBrowserPanel/     # File tree browser
+│   ├── ClaudeUsageDashboard/ # Claude API usage dashboard (SolidJS)
+│   └── StatusBar/            # Status messages, agent badge, toggles
 │       └── ZoomIndicator     # Font size display
 ├── SettingsPanel/            # Tabbed settings overlay
 │   ├── tabs/GeneralTab       # Font, shell, IDE, theme
-│   ├── tabs/AgentsTab        # Agent detection, run configs, MCP
+│   ├── tabs/AgentsTab        # Agent detection, run configs, Claude Usage toggle
 │   ├── tabs/ServicesTab      # MCP, remote access, dictation
+│   ├── tabs/PluginsTab       # Plugin management, logs
+│   ├── tabs/KeyboardShortcutsTab # Rebindable keyboard shortcuts
+│   ├── tabs/AppearanceTab    # Visual customization
+│   ├── tabs/NotificationsTab # Sound and notification prefs
+│   ├── tabs/AboutTab         # Version info, update check
 │   ├── tabs/RepoScriptsTab   # Per-repo scripts
 │   └── tabs/RepoWorktreeTab  # Per-repo worktree options
 ├── HelpPanel/                # Keyboard shortcuts documentation
@@ -34,7 +42,12 @@ App.tsx (829 lines - central orchestrator)
 ├── TaskQueuePanel/           # Agent task queue
 ├── PromptOverlay/            # Agent prompt interception
 ├── PromptDrawer/             # Prompt library management
+├── CommandPalette/           # Cmd+P command palette
+├── ActivityDashboard/        # Activity center (bell dropdown)
+├── ConfirmDialog/            # Reusable in-app confirmation dialog
 ├── RenameBranchDialog/       # Branch rename dialog
+├── CreateWorktreeDialog/     # Worktree creation dialog
+├── PromptDialog/             # Text input prompt dialog
 ├── RunCommandDialog/         # Configure terminal commands
 ├── ContextMenu/              # Right-click menu for terminals
 ├── IdeLauncher/              # Open repository in IDE
@@ -92,8 +105,13 @@ Tabbed settings overlay.
 
 **Tabs:**
 - **General** — Font family, font size, shell, IDE, theme, confirmations
-- **Agents** — Agent detection, run configurations, MCP integration
+- **Agents** — Agent detection, run configurations, Claude Usage toggle
 - **Services** — MCP server, remote access, dictation settings
+- **Plugins** — Plugin management, enable/disable, log viewer
+- **Keyboard Shortcuts** — Rebindable shortcuts (auto-populated from `actionRegistry.ts`)
+- **Appearance** — Visual customization
+- **Notifications** — Sound and notification preferences
+- **About** — Version info, update check
 - **Repo Scripts** — Setup script, run command per repository
 - **Repo Worktree** — Base branch, copy ignored/untracked files
 
@@ -114,7 +132,16 @@ Rich PR detail popup shown on hover/click in sidebar.
 
 ### StatusBar (`StatusBar/`)
 
-Status messages, agent info, and panel toggles.
+Status messages, agent badge, CWD display, ticker, and panel toggles.
+
+**Layout (left to right):**
+1. **ZoomIndicator** — font size display
+2. **Status info** — notification text with pendulum ticker for overflow
+3. **CWD** — current working directory (click to copy, shortened with `~/`)
+4. **Agent badge** — unified agent + usage display (see below)
+5. **Ticker** — rotating plugin messages (hidden when absorbed by agent badge)
+6. **GitHub badges** — PR badge + CI badge with popover (center area)
+7. **Toggle buttons** — Notes (with badge count), File Browser, Markdown, Diff, Dictation mic
 
 **Agent Badge — display priority:**
 
@@ -122,10 +149,10 @@ The agent badge appears when the active terminal has a recognized agent type. It
 
 | Priority | Condition | Display | Example |
 |----------|-----------|---------|---------|
-| 1 (highest) | PTY rate limit detected | Icon + warning + countdown | `🔶 ⚠ 3m 20s` |
-| 2 | Usage API available (Claude only) | Icon + usage percentages | `🔶 5h: 6% · 7d: 69%` |
-| 3 | PTY usage limit parsed | Icon + percentage + limit type | `🔶 82% daily` |
-| 4 (lowest) | No usage data | Icon + agent name | `🔶 claude` |
+| 1 (highest) | PTY rate limit detected | Icon + warning + countdown | `⚠ 3m 20s` |
+| 2 | Usage API available (Claude only) | Icon + usage percentages | `5h: 6% · 7d: 69%` |
+| 3 | PTY usage limit parsed | Icon + percentage + limit type | `82% daily` |
+| 4 (lowest) | No usage data | Icon + agent name | `claude` |
 
 **Data sources:**
 - **Rate limit (priority 1):** Detected by Rust output parser via regex on PTY output (e.g. "429", "rate limit", "too many requests"). Stored in `rateLimitStore`. Applies to all agents.
@@ -134,6 +161,36 @@ The agent badge appears when the active terminal has a recognized agent type. It
 - **Agent name (priority 4):** Fallback — just shows the agent type name.
 
 **Ticker integration:** When the active agent is `claude` and the Claude Usage ticker is active, the ticker message is absorbed into the agent badge (priority 2) and hidden from the separate ticker area. Other ticker messages (from plugins, etc.) display normally.
+
+**Pendulum ticker:** When the status info text overflows its container, a CSS pendulum animation scrolls the text back and forth at ~50px/s. Clicking the text dismisses the notification until the message changes.
+
+**Notes badge:** The Ideas toggle button shows a count badge (accent-colored) with the number of notes visible for the current repo filter. Uses `notesStore.filteredCount()`.
+
+**PR lifecycle in StatusBar:** CLOSED PRs are never shown. MERGED PRs are shown with a 5-minute activity-based grace period (accumulated user activity tracked by `userActivityStore`). OPEN PRs are shown as-is.
+
+### NotesPanel (`NotesPanel/`)
+
+Ideas/notes panel with per-repo filtering and terminal integration.
+
+**Features:**
+- Add, edit, delete notes
+- Send note text to active terminal (marks note as "used")
+- Notes filtered by active repo (global notes always visible)
+- Reassign notes to different projects via dropdown
+- Count badge in panel header and in the StatusBar toggle button
+- Used notes shown with a checkmark and dimmed styling
+
+### ConfirmDialog (`ConfirmDialog/`)
+
+Reusable in-app confirmation dialog that replaces native Tauri `ask()` dialogs (which render as light-mode macOS system sheets). Uses shared `dialog.module.css` for consistent dark-theme styling.
+
+**Props:** `visible`, `title`, `message`, `confirmLabel`, `cancelLabel`, `kind` (warning/info/error), `onClose`, `onConfirm`.
+
+**Keyboard:** Enter confirms, Escape cancels.
+
+### ClaudeUsageDashboard (`ClaudeUsageDashboard/`)
+
+Native SolidJS component (not a plugin) showing Claude API usage data. Displayed as a tab in the markdown/editor area. Features rate bucket gauges, per-model token breakdown, daily usage chart, and project stats. Opened by clicking the Claude Usage ticker in the status bar.
 
 ## UI Primitives (`components/ui/`)
 
@@ -154,8 +211,12 @@ The agent badge appears when the active terminal has a recognized agent type. It
 | Sidebar | `Cmd+B` | `uiStore.toggleSidebar()` |
 | Diff Panel | `Cmd+Shift+D` | `uiStore.toggleDiffPanel()` |
 | Markdown Panel | `Cmd+M` | `uiStore.toggleMarkdownPanel()` |
+| Notes/Ideas Panel | `Cmd+N` | `uiStore.toggleNotesPanel()` |
+| File Browser | `Cmd+E` | `uiStore.toggleFileBrowserPanel()` |
 | Settings | `Cmd+,` | Local state in App.tsx |
 | Help | `Cmd+?` | Local state in App.tsx |
 | Prompt Library | `Cmd+K` | `promptLibraryStore.toggleDrawer()` |
 | Git Operations | `Cmd+G` | Local state in App.tsx |
 | Task Queue | — | Local state in App.tsx |
+| Command Palette | `Cmd+P` | `commandPaletteStore.toggle()` |
+| Activity Dashboard | — | `activityDashboardStore.toggle()` |

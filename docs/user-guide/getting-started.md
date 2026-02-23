@@ -59,7 +59,7 @@ The sidebar shows all your repositories and their branches.
 - Click: Switch to this branch (shows its terminals)
 - Double-click the branch name: Rename branch
 - CI ring: Shows CI check status (green/red/yellow segments)
-- PR badge: Shows PR number with color-coded state — click for detail popover
+- PR badge: Shows PR number with color-coded state — click for detail popover. CLOSED and MERGED PRs are automatically hidden (MERGED PRs fade after 5 minutes of user activity).
 - Stats: Shows +additions/-deletions
 
 **Git quick actions** (bottom of sidebar when a repo is active):

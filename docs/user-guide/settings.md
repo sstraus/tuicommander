@@ -13,7 +13,7 @@ Open settings with `Cmd+,`. Settings are organized into tabs.
 | **Confirm before closing tab** | Ask before closing terminal tab |
 | **Prevent sleep when busy** | Keep machine awake while agents are working |
 | **Auto-check for updates** | Check for new versions on startup |
-| **Auto-show PR popover** | Automatically display PR details when switching branches |
+| **Auto-show PR popover** | Automatically display PR details when switching branches. Only shows for OPEN pull requests — CLOSED PRs are hidden, and MERGED PRs fade after 5 minutes of user activity. |
 | **Repository defaults** | Base branch, file handling, setup/run scripts applied to new repos |
 
 ## Appearance Tab
@@ -30,13 +30,16 @@ Open settings with `Cmd+,`. Settings are organized into tabs.
 
 ## Agents Tab
 
+Each supported agent has an expandable row showing detection status, version, and MCP badge.
+
 | Setting | Description |
 |---------|-------------|
-| **Agent Detection** | Auto-detects running agents from terminal output patterns |
-| **Run Configurations** | Custom launch configs (binary path, args, model, prompt) per agent |
-| **MCP Integration** | Install/remove TUICommander as MCP server for supported agents |
+| **Agent Detection** | Auto-detects running agents from terminal output patterns. Shows "Available" or "Not found" for each agent. |
+| **Run Configurations** | Custom launch configs (binary path, args, model, prompt) per agent. Add, set default, or delete configurations. |
+| **MCP Integration** | Install/remove TUICommander as MCP server for supported agents. Shows install status with a dot indicator. |
+| **Claude Usage Dashboard** | (Claude Code only) Toggle under Features when the Claude row is expanded. Enables rate limit monitoring, session analytics, token usage charts, activity heatmap, and per-project breakdowns. Usage data appears in the status bar agent badge and in a dedicated dashboard tab. |
 
-See [AI Agents](ai-agents.md) for details on agent detection and rate limit behavior.
+See [AI Agents](ai-agents.md) for details on agent detection, rate limits, and the usage dashboard.
 
 ## Services Tab
 

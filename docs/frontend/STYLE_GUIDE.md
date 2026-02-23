@@ -124,7 +124,7 @@ Font weight: 400 normal, 500 medium (branch names), 600 semibold (repo names, ba
 |----------|-------|
 | `--sidebar-width` | 300px (resizable: min 200px, max 500px) |
 | `--toolbar-height` | 38px macOS / 32px Win+Linux |
-| `--tab-bar-height` | 33px |
+| `--tab-bar-height` | 32px |
 | `--status-height` | 28px |
 
 ### Spacing Scale
@@ -181,6 +181,9 @@ Used for: active branch icon, CI pending badge, rate limit indicator.
 **`pulse-question`**: Box-shadow 0 → `0 0 12px 4px rgba(122,162,247,0.4)` → 0.
 Variants exist with red (error) and orange (confirm) colors.
 Used for: terminal tab glow when agent awaits input.
+
+**`pendulum`**: Translates text from 0 to `-overflow-px` and back. Duration computed dynamically from overflow width (~50px/s, minimum 4s cycle). Uses CSS custom properties `--overflow-px` and `--ticker-duration`.
+Used for: status bar notification text that overflows its container.
 
 **Tab status dot color scheme** (single `●` indicator left of tab name):
 - Grey (opacity 0.3): shell process running (default)
@@ -254,7 +257,7 @@ Located inside `#toolbar`, center section. Background matches toolbar (`--bg-pri
 
 ```css
 .tab {
-  height: var(--tab-bar-height);  /* 33px */
+  height: var(--tab-bar-height);  /* 32px */
   padding: 0 12px;
   font-size: var(--font-md);
   font-family: var(--font-mono);
@@ -288,24 +291,35 @@ Tab anatomy: `[agent badge?] [name, truncated] [close × on hover]`
 ### Status Bar
 
 ```css
-#status-bar {
+.bar {
   height: var(--status-height);   /* 28px */
+  min-height: var(--status-height);
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
-  padding: 0 8px;
-  font-size: var(--font-xs);
+  padding: 0 12px;
+  font-size: var(--font-sm);
+  gap: 8px;
+  overflow: hidden;
 }
 ```
 
-Three sections: left (zoom, session count), center (git status), right (toggle buttons).
+Three sections: left (zoom, status info, CWD, agent badge, ticker), center (PR + CI badges), right (toggle buttons).
 
-**Status badges** (in center section): inline-flex, monospace, `--font-xs`, `--radius-md`, padding `2px 6px`.
-- Branch: `--bg-tertiary` bg, shows `⎇ main ↑2`
-- Branch with ahead: tinted blue background `rgba(122,162,247,0.12)`
-- PR: `--accent` bg, `--text-on-accent` text
-- CI: semi-transparent colored bg (green/red/yellow, 0.2 alpha)
+**Agent badge** (`.agentBadge`): `--font-mono`, `--font-sm`, weight 500, `1px 6px` padding, `--radius-sm`, `--bg-tertiary` bg. Usage-dependent color classes:
+- `.agentUsage` — `--fg-secondary` text (normal usage)
+- `.agentUsageWarning` — `#dcdcaa` text (usage >=70%)
+- `.agentUsageCritical` — `#f48771` text + `pulse-opacity` animation (usage >=90%)
+- `.agentRateLimited` — `#f44747` text + `pulse-opacity` animation
+
+**Ticker message** (`.tickerMessage`): `--font-mono`, `--font-sm`, `--fg-muted`, max-width 300px, `--radius-sm`. Warning priority (>=80): `#ffd700` text, gold bg at 0.1 alpha. `.tickerClickable` adds cursor pointer and hover effect.
+
+**Pendulum overflow** (`.infoTickerActive`): When the status info text is wider than its container, a CSS `pendulum` keyframe animation scrolls the text left then back. Duration is computed dynamically from overflow width (~50px/s). Click dismisses.
+
+**Notes toggle badge** (`.toggleBadge`): Small accent-colored pill positioned over the toggle button, showing the filtered note count.
+
+**PR badges** (center section): `PrBadge` + `CiBadge` components in `.githubStatus`, separated by a left border. CLOSED PRs are hidden; MERGED PRs have a 5-minute activity-based grace period.
 
 **Toggle buttons** (right section): `--bg-tertiary` bg, `--border` border, `--font-xs`, `2px 8px` padding.
 Active: `--accent` bg, white text. Each has a hotkey hint overlay positioned below.
@@ -446,14 +460,15 @@ All badges: `font-size: --font-xs`, `font-family: --font-mono`, `font-weight: 60
 
 ### Agent/Usage (tab + status bar)
 
-| State | Style |
-|-------|-------|
-| Agent running | Tab has colored agent prefix badge |
-| Usage normal | Accent tinted background |
-| Usage ≥70% | Yellow/warning background |
-| Usage ≥90% | Red/error background + pulse |
-| Rate limited | `#ffd700` text, gold bg at 0.1 alpha, pulse 2s |
-| Update available | `#4ec9b0` text, teal bg at 0.15 alpha |
+| State | CSS Class | Style |
+|-------|-----------|-------|
+| Agent running | Tab colored agent prefix | Tab has colored agent prefix badge |
+| Usage normal | `.agentUsage` | `--fg-secondary` text |
+| Usage ≥70% | `.agentUsageWarning` | `#dcdcaa` text (warning yellow) |
+| Usage ≥90% | `.agentUsageCritical` | `#f48771` text + pulse-opacity 2s |
+| Rate limited | `.agentRateLimited` | `#f44747` text + pulse-opacity 2s |
+| Ticker warning (≥80 priority) | `.tickerWarning` | `#ffd700` text, gold bg at 0.1 alpha |
+| Update available | `.updateBadge` | `#4ec9b0` text, teal bg at 0.15 alpha |
 
 ## Icons
 

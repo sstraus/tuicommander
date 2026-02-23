@@ -93,13 +93,16 @@ export const myStore = {
 
 ```
 repositoriesStore ──references──> terminalsStore (terminal IDs per branch)
-githubStore ──provides data to──> Sidebar (CI rings, PR badges)
+githubStore ──provides data to──> Sidebar (CI rings, PR badges), StatusBar (PR/CI badges)
 settingsStore ──configures──> Terminal (font, theme, shell)
 uiStore ──controls──> panel visibility, sidebar state
 promptLibraryStore ──used by──> PromptDrawer, PromptOverlay
 dictationStore ──manages──> dictation state, model downloads
 notificationsStore ──plays──> sound alerts on terminal events
 errorHandlingStore ──retries──> failed operations with backoff
+statusBarTicker ──feeds──> StatusBar (rotating priority-based messages)
+notesStore ──provides──> NotesPanel (ideas/notes), StatusBar (badge count)
+userActivityStore ──tracks──> StatusBar (merged PR grace period)
 ```
 
 ### Persistence Flow
@@ -124,13 +127,17 @@ Store.action()
 ```
 useAppInit.initApp()
     │
-    ├──> settingsStore.hydrate()      → load_app_config
-    ├──> uiStore.hydrate()            → load_ui_prefs
-    ├──> repositoriesStore.hydrate()  → load_repositories
-    ├──> repoSettingsStore.hydrate()  → load_repo_settings
-    ├──> notificationsStore.hydrate() → load_notification_config
-    ├──> promptLibraryStore.hydrate() → load_prompt_library
-    └──> errorHandlingStore.hydrate() → load_ui_prefs (error section)
+    ├──> repositoriesStore.hydrate()    → load_repositories
+    ├──> uiStore.hydrate()              → load_ui_prefs
+    ├──> settingsStore.hydrate()        → load_app_config
+    ├──> notificationsStore.hydrate()   → load_notification_config
+    ├──> repoSettingsStore.hydrate()    → load_repo_settings
+    ├──> repoDefaultsStore.hydrate()    → load_repo_defaults
+    ├──> promptLibraryStore.hydrate()   → load_prompt_library
+    ├──> notesStore.hydrate()           → load_notes
+    ├──> keybindingsStore.hydrate()     → load_keybindings
+    ├──> agentConfigsStore.hydrate()    → load_agent_configs
+    └──> agentDetection.detectAll()     → detect installed AI agents
 ```
 
 ## Event System
@@ -164,19 +171,87 @@ listen("menu-event", (event) => {
 ```
 githubStore.startPolling()
     │
-    every 60s (30s base × visibility multiplier)
+    every 30s (120s when tab hidden, 300s on rate limit, exponential backoff on errors)
     │
     ▼
-invoke("get_repo_pr_statuses", {path})
+invoke("get_repo_pr_statuses", {path})  +  invoke("get_github_status", {path})
+    │                                          │
+    ▼                                          ▼
+Rust: GraphQL batch query to GitHub API   Rust: local git ahead/behind
+    │                                          │
+    ▼                                          ▼
+githubStore.updateRepoData(path, statuses)    setState(remoteStatus)
     │
-    ▼
-Rust: GraphQL batch query to GitHub API
-    │
-    ▼
-githubStore.updateRepoData(path, statuses)
+    ├──> detectTransitions() — emit PR notifications on state changes
+    │    (merged, closed, blocked, ci_failed, changes_requested, ready)
     │
     ▼
 Reactive updates to Sidebar CI rings, PR badges
+```
+
+#### PR State Filtering in StatusBar
+
+The StatusBar applies lifecycle rules before displaying PR data:
+
+```
+githubStore.getBranchPrData(repoPath, branch)
+    │
+    ├── state = CLOSED → never show (filtered out)
+    ├── state = MERGED → show for 5 min of accumulated user activity, then hide
+    │                     (userActivityStore tracks click/keydown events)
+    └── state = OPEN   → show as-is (PR badge + CI badge)
+```
+
+#### Per-Repo Immediate Polls
+
+On `repo-changed` events (git index/refs/HEAD changes), `githubStore.pollRepo(path)` triggers an immediate re-poll for that repo, debounced to 2 seconds to coalesce rapid git events.
+
+### Claude Usage Polling
+
+Claude Usage is a native feature (not a plugin) managed by `src/features/claudeUsage.ts`. It polls the Anthropic OAuth usage API and posts results to the status bar ticker.
+
+```
+initClaudeUsage()  (called from plugins/index.ts if not disabled)
+    │
+    every 5 min (API_POLL_MS)
+    │
+    ▼
+invoke("get_claude_usage_api")
+    │
+    ▼
+Rust: read ~/.claude/.credentials OAuth token
+    → HTTP GET to Anthropic usage endpoint
+    → parse UsageApiResponse (five_hour, seven_day, per-model buckets)
+    │
+    ▼
+statusBarTicker.addMessage({
+    id: "claude-usage:rate",
+    pluginId: "claude-usage",
+    text: "Claude: 5h: 42% · 7d: 18%",
+    priority: 10–90 (based on utilization),
+    onClick: openDashboard
+})
+    │
+    ▼
+StatusBar renders ticker message
+    ├── Standalone ticker (when active agent is not claude)
+    └── Absorbed into agent badge (when active agent is claude)
+```
+
+### Status Bar Ticker
+
+The `statusBarTicker` store provides a priority-based rotating message system used by the Claude Usage feature and available to plugins via the `ui:ticker` capability.
+
+```
+statusBarTicker
+    │
+    ├── Messages sorted by priority (descending)
+    ├── Equal-priority messages rotate every 5s
+    ├── Expired messages scavenged every 1s (TTL-based)
+    │
+    └── StatusBar rendering:
+        ├── Agent badge absorbs claude-usage messages when active agent is claude
+        └── Standalone ticker for all other messages
 ```
 
 ## Keyboard Shortcut Flow

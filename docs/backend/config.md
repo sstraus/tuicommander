@@ -47,7 +47,7 @@ pub fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), 
 
 **Commands:** `load_app_config()`, `save_app_config(config)`
 
-### Notification Config (`notification-config.json`)
+### Notification Config (`notifications.json`)
 
 **Type:** `NotificationConfig`
 
@@ -83,8 +83,8 @@ Per-repository fields:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `path` | `String` | — | Repository path |
-| `display_name` | `String` | — | Display name |
+| `path` | `String` | -- | Repository path |
+| `display_name` | `String` | -- | Display name |
 | `base_branch` | `String` | `"main"` | Base branch for worktrees |
 | `copy_ignored_files` | `bool` | `false` | Copy .gitignored files to worktree |
 | `copy_untracked_files` | `bool` | `false` | Copy untracked files to worktree |
@@ -92,6 +92,22 @@ Per-repository fields:
 | `run_script` | `String` | `""` | Default run command |
 
 **Commands:** `load_repo_settings()`, `save_repo_settings(config)`, `check_has_custom_settings(path)`
+
+### Repository Defaults (`repo-defaults.json`)
+
+**Type:** `RepoDefaultsConfig`
+
+Default values applied to new repositories when no per-repo override exists.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `base_branch` | `String` | `"automatic"` | Default base branch |
+| `copy_ignored_files` | `bool` | `false` | Copy .gitignored files to worktree |
+| `copy_untracked_files` | `bool` | `false` | Copy untracked files to worktree |
+| `setup_script` | `String` | `""` | Default setup script |
+| `run_script` | `String` | `""` | Default run command |
+
+**Commands:** `load_repo_defaults()`, `save_repo_defaults(config)`
 
 ### Repositories (`repositories.json`)
 
@@ -114,6 +130,46 @@ struct PromptEntry {
 
 **Commands:** `load_prompt_library()`, `save_prompt_library(config)`
 
+### Notes (`notes.json`)
+
+**Type:** `serde_json::Value` (flexible JSON, shape defined by frontend)
+
+**Commands:** `load_notes()`, `save_notes(config)`
+
+### Keybindings (`keybindings.json`)
+
+**Type:** `serde_json::Value` (flexible JSON, shape defined by frontend)
+
+Custom keyboard shortcut overrides.
+
+**Commands:** `load_keybindings()`, `save_keybindings(config)`
+
+### Agents Config (`agents.json`)
+
+**Type:** `AgentsConfig`
+
+Per-agent run configurations (custom commands, arguments, environment variables).
+
+```rust
+struct AgentRunConfig {
+    name: String,
+    command: String,
+    args: Vec<String>,
+    env: HashMap<String, String>,
+    is_default: bool,
+}
+
+struct AgentSettings {
+    run_configs: Vec<AgentRunConfig>,
+}
+
+struct AgentsConfig {
+    agents: HashMap<String, AgentSettings>,
+}
+```
+
+**Commands:** `load_agents_config()`, `save_agents_config(config)`
+
 ### Dictation Config (`dictation-config.json`)
 
 **Type:** `DictationConfig`
@@ -127,11 +183,29 @@ struct PromptEntry {
 
 **Commands:** `get_dictation_config()`, `set_dictation_config(config)`
 
+## Cache Files
+
+### Claude Usage Cache (`claude-usage-cache.json`)
+
+**Module:** `src-tauri/src/claude_usage.rs`
+
+Persistent cache for incremental JSONL parsing of Claude session transcripts. Stored in the config directory. The cache maps `project_slug -> (filename -> CachedFileStats)` and tracks per-file byte offsets so only newly appended data is parsed on subsequent scans.
+
+This is an internal cache file, not user-editable. It is automatically pruned when projects or session files are deleted.
+
 ## Additional Commands
 
-| Command | Description |
-|---------|-------------|
-| `hash_password(password)` | Bcrypt hash for remote access authentication |
-| `list_markdown_files(path)` | List .md files in a directory |
-| `read_file(path, file)` | Read a file's contents |
-| `get_mcp_status()` | Get MCP server status (enabled, port, connected clients) |
+| Command | Module | Description |
+|---------|--------|-------------|
+| `hash_password(password)` | `lib.rs` | Bcrypt hash for remote access authentication |
+| `list_markdown_files(path)` | `lib.rs` | List .md files in a directory |
+| `read_file(path, file)` | `lib.rs` | Read a file's contents |
+| `get_mcp_status()` | `lib.rs` | Get MCP server status (enabled, port, connected clients) |
+| `clear_caches()` | `lib.rs` | Clear in-memory caches |
+| `get_local_ip()` | `lib.rs` | Get primary local IP address |
+| `get_local_ips()` | `lib.rs` | List all local network interfaces |
+| `get_claude_usage_api()` | `claude_usage.rs` | Fetch rate-limit usage from Anthropic OAuth API |
+| `get_claude_usage_timeline(scope, days?)` | `claude_usage.rs` | Get hourly token usage timeline from session transcripts |
+| `get_claude_session_stats(scope)` | `claude_usage.rs` | Scan JSONL transcripts for aggregated token/session stats |
+| `get_claude_project_list()` | `claude_usage.rs` | List Claude project slugs with session counts |
+| `fetch_plugin_registry()` | `registry.rs` | Fetch remote plugin registry index |

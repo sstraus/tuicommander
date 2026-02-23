@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.3.0 | **Last verified:** 2026-02-21
+**Version:** 0.5.2 | **Last verified:** 2026-02-23
 
 ---
 
@@ -132,6 +132,7 @@
 - File Browser, Markdown, and Diff panels are **mutually exclusive** — opening one closes the others
 - Ideas panel is independent (can be open alongside any of the above)
 - All panels have drag-resize handles on their left edge (200-800px)
+- Min-width constraints prevent panels from collapsing (Markdown: 300px, File Browser: 200px)
 - Toggle buttons in status bar with hotkey hints visible during quick switcher
 
 ### 3.2 Diff Panel (`Cmd+Shift+D`)
@@ -170,6 +171,9 @@
 - Quick notes / idea capture with send-to-terminal
 - `Enter` submits idea, `Shift+Enter` inserts newline
 - Per-idea actions: Edit (copies back to input), Send to Terminal (sends + return), Delete
+- Mark as used: notes sent to terminal are timestamped (`usedAt`) for tracking
+- Badge count: status bar toggle shows count of notes visible for the active repo
+- Per-repo filtering: notes can be tagged to a repository; untagged notes visible everywhere
 - Data persisted to Rust config backend
 
 ### 3.7 Help Panel (`Cmd+?`)
@@ -239,17 +243,22 @@
 
 ### 5.1 Left Section
 - Zoom indicator: current font size (shown when != default)
-- Status info text
+- Status info text (with pendulum ticker for overflow)
 - CWD path: shortened with `~/`, click to copy to clipboard (shows "Copied!" feedback)
-- Agent badge: icon + name of detected agent in active terminal
-- Usage limit badge: Claude Code weekly/session limit percentage
-  - Blue < 70%, yellow 70-89%, red pulsing >= 90%
-- Rate limit warning: count and countdown timer for rate-limited sessions
+- Unified agent badge with priority cascade:
+  1. Rate limit warning (highest): count + countdown timer when sessions are rate-limited
+  2. Claude Usage API ticker: live utilization from Anthropic API (click opens dashboard)
+  3. PTY usage limit: weekly/session percentage from terminal output detection
+  4. Agent name (lowest): icon + name of detected agent
+  - Color coding: blue < 70%, yellow 70-89%, red pulsing >= 90%
+  - Claude usage ticker absorbed into badge when active agent is Claude (avoids duplicate display)
+- Plugin ticker: rotating status messages from plugins (with priority and TTL)
 - Update badge: "Update vX.Y.Z" (click to download & install), progress percentage during download
 
 ### 5.2 GitHub Section (center)
 - Branch badge: name + ahead/behind counts — click for branch popover
 - PR badge: number + state color — click for PR detail popover
+  - PR lifecycle filtering: CLOSED PRs hidden immediately; MERGED PRs hidden after 5 minutes of accumulated user activity
 - CI badge: ring indicator — click for PR detail popover
 
 ### 5.3 Right Section — Panel Toggles
@@ -295,10 +304,32 @@
 - Silence-based detection for unrecognized agents
 
 ### 6.5 Usage Limit Detection
-- Claude Code weekly and session usage percentage
-- Color-coded badge in status bar
+- Claude Code weekly and session usage percentage (from PTY output patterns)
+- Color-coded badge in status bar (blue < 70%, yellow 70-89%, red pulsing >= 90%)
+- Integrated into unified agent badge (see section 5.1)
 
-### 6.6 Agent Configuration (Settings > Agents)
+### 6.6 Claude Usage Dashboard
+- Native SolidJS component (not a plugin panel — renders as a first-class tab)
+- Opens via status bar agent badge click or `Cmd+Shift+A` action
+- **Rate Limits section:** Live utilization bars from Anthropic OAuth usage API
+  - 5-Hour, 7-Day, 7-Day Opus, 7-Day Sonnet, 7-Day Cowork buckets
+  - Color-coded bars: green < 70%, yellow 70-89%, red >= 90%
+  - Reset countdown per bucket
+- **Usage Over Time chart:** SVG line chart of token usage over 7 days
+  - Input tokens (blue) and output tokens (red) stacked area
+  - Interactive hover crosshair with tooltip
+- **Insights:** Session count, message totals, input/output tokens, cache stats
+- **Activity heatmap:** 52-week GitHub-style contribution grid
+  - Tooltip shows date, message count, and top 3 projects
+- **Model Usage table:** Per-model breakdown (messages, input, output, cache)
+- **Projects breakdown:** Per-project token usage with click to filter
+- **Scope selector:** Filter all analytics by project slug
+- **Auto-refresh:** API data polled every 5 minutes
+- **Rust data layer:** Incremental JSONL parsing of `~/.claude/projects/*/` transcripts
+  - File-size-based cache (only new bytes parsed on each scan)
+  - Cache persisted to disk as JSON for fast restarts
+
+### 6.7 Agent Configuration (Settings > Agents)
 - **Agent list:** All supported agents with availability status and version detection
 - **Run configurations:** Named command templates per agent (binary, args, env vars)
 - **Default config:** One run config per agent marked as default for quick launching
@@ -349,6 +380,8 @@
 - PR badge colors: green (open), purple (merged), red (closed), gray (draft)
 - Merge state: Ready to merge, Checks failing, Has conflicts, Behind base, Blocked, Draft
 - Review state: Approved, Changes requested, Review required
+- PR lifecycle rules: CLOSED PRs hidden from sidebar and status bar; MERGED PRs shown for 5 minutes of accumulated user activity then hidden
+- Auto-show PR popover filters out CLOSED and MERGED PRs (configurable in Settings > General)
 
 ### 8.2 CI Checks
 - Ring indicator with proportional segments
@@ -475,6 +508,7 @@
 
 ### 11.7 Agents
 - See **6.7 Agent Configuration** for full details
+- Claude Usage Dashboard enable/disable toggle (under Claude agent section)
 
 ---
 
@@ -491,6 +525,7 @@ All data persisted to platform config directory via Rust:
 - `prompt_library.json` — saved prompts
 - `notes.json` — ideas panel data
 - `dictation_config.json` — dictation settings
+- `claude-usage-cache.json` — incremental session transcript parse cache
 
 ### 12.2 Hydration Safety
 - `save()` blocks before `hydrate()` completes to prevent data loss
@@ -527,18 +562,25 @@ All data persisted to platform config directory via Rust:
 ### 14.3 Splash Screen
 - Branded loading screen on app start
 
-### 14.4 Error Handling
+### 14.4 Confirmation Dialogs
+- In-app `ConfirmDialog` component replaces native Tauri `ask()` dialogs
+- Dark-themed to match the app (native macOS sheets render in light mode)
+- `useConfirmDialog` hook provides a `confirm()` → `Promise<boolean>` API
+- Pre-built helpers: `confirmRemoveWorktree()`, `confirmCloseTerminal()`, `confirmRemoveRepo()`
+- Keyboard support: `Enter` to confirm, `Escape` to cancel
+
+### 14.5 Error Handling
 - ErrorBoundary crash screen with recovery UI
 - WebGL canvas fallback (graceful degradation)
 - Error classification with backoff calculation
 
-### 14.5 MCP & HTTP Server
+### 14.6 MCP & HTTP Server
 - REST API on localhost for external tool integration
 - Exposes terminal sessions, git operations, agent spawning
 - WebSocket streaming, Streamable HTTP transport
 - Used by Claude Code, Cursor, and other tools via MCP protocol
 
-### 14.6 macOS Dock Badge
+### 14.7 macOS Dock Badge
 - Badge count for attention-requiring notifications (questions, errors)
 
 ---
@@ -708,7 +750,8 @@ All data persisted to platform config directory via Rust:
 
 ### 17.5 Built-in Plugins
 - **Plan Tracker** — Detects Claude Code plan files from structured events
-- **Claude Usage Dashboard** — Live rate limits from Anthropic API + local analytics (daily activity, per-model tokens, activity heatmap) in a rich HTML panel
+
+> **Note:** Claude Usage Dashboard was promoted from a plugin to a native SolidJS feature (see section 6.6). It is managed via Settings > Agents > Claude > Usage Dashboard toggle.
 
 ### 17.6 Example External Plugins
 See `examples/plugins/` for reference implementations:

@@ -1,6 +1,6 @@
 # TUICommander Specification
 
-**Version:** 0.5.1
+**Version:** 0.5.2
 **Last Updated:** 2026-02-23
 
 ## Overview
@@ -329,6 +329,11 @@ All stores persist to localStorage:
 - [x] Plugin system (see FEATURES.md section 17)
 - [x] Remote access / HTTP server
 - [x] Copy Path in Markdown panel
+- [x] Claude Usage Dashboard (native SolidJS component with API polling, session analytics, usage timeline)
+- [x] ConfirmDialog component (in-app dark-themed replacement for native OS dialogs)
+- [x] Status bar unified agent badge with priority cascade (rate limit > usage API > PTY usage > name)
+- [x] PR lifecycle filtering (CLOSED hidden, MERGED hidden after 5min user activity)
+- [x] Notes/Ideas: mark as used, badge count in status bar
 
 ### Completed (Voice Dictation)
 - [x] Local Whisper inference via whisper-rs (Metal GPU acceleration)

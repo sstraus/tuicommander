@@ -213,7 +213,7 @@ FsChangeEvent: `{ type: "create" | "modify" | "delete", path: string }`
 | `read_file` | `{ path: string, file: string }` | `string` | `invoke:read_file` |
 | `list_markdown_files` | `{ path: string }` | `Array<{ path, git_status }>` | `invoke:list_markdown_files` |
 | `read_plugin_data` | `{ plugin_id: string, path: string }` | `string` | none |
-| `write_plugin_data` | `{ plugin_id: string, path: string, data: string }` | `void` | none |
+| `write_plugin_data` | `{ plugin_id: string, path: string, content: string }` | `void` | none |
 | `delete_plugin_data` | `{ plugin_id: string, path: string }` | `void` | none |
 
 Plugin data sandboxed per-plugin (no capability required):
@@ -222,7 +222,7 @@ Plugin data sandboxed per-plugin (no capability required):
 await host.invoke("write_plugin_data", {
   plugin_id: PLUGIN_ID,
   path: "cache.json",
-  data: JSON.stringify({ lastCheck: Date.now() }),
+  content: JSON.stringify({ lastCheck: Date.now() }),
 });
 // Read data
 const raw = await host.invoke("read_plugin_data", {

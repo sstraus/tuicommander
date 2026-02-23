@@ -51,14 +51,30 @@ For unrecognized agents, silence-based detection kicks in — if the terminal st
 
 ## Usage Limit Tracking
 
-For Claude Code, TUICommander detects weekly and session usage limit messages:
+For Claude Code, TUICommander detects weekly and session usage limit messages from terminal output:
 
-- **Status bar badge** with percentage:
-  - Blue: < 70%
+- **Unified agent badge** — When Claude is the active agent, the status bar shows a single badge combining the agent icon with usage data. The badge displays rate limit countdowns (when rate-limited), Claude Usage API data (5h/7d utilization percentages), or terminal-detected usage limits, in that priority order.
+  - Blue: < 70% utilization
   - Yellow: 70–89%
   - Red (pulsing): >= 90%
+- Clicking the badge opens the Claude Usage Dashboard.
 
 This helps you pace your usage across the week.
+
+## Claude Usage Dashboard
+
+A native feature (not a plugin) that provides detailed analytics for your Claude Code usage. Enable it in **Settings** > **Agents** > expand **Claude Code** > **Features** > **Usage Dashboard**.
+
+When enabled, TUICommander polls the Claude API every 5 minutes and shows:
+
+- **Rate limits** — 5-hour and 7-day utilization bars with reset countdowns. Color-coded: green (OK), yellow (70%+), red (90%+).
+- **Usage Over Time** — 7-day token usage chart (input vs. output tokens) with hover tooltips.
+- **Insights** — Session count, message counts, input/output/cache token totals.
+- **Activity heatmap** — 52-week GitHub-style heatmap of daily message counts with per-project drill-down on hover.
+- **Model usage** — Breakdown by model (messages, input, output, cache created, cache read).
+- **Per-project breakdown** — All projects ranked by token usage. Click a project to filter the dashboard to that project.
+
+The dashboard opens as a tab in the Activity Center. You can also reach it by clicking the Claude usage badge in the status bar.
 
 ## Sleep Prevention
 

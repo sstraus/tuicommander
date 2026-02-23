@@ -178,9 +178,11 @@ GitHub PR and CI data with background polling.
 
 | Method | Description |
 |--------|-------------|
-| `updateRepoData(repoPath, prStatuses)` | Update PR data for all branches |
-| `startPolling()` | Start 60s polling interval |
+| `updateRepoData(repoPath, prStatuses)` | Update PR data for all branches (detects state transitions for notifications) |
+| `startPolling()` | Start background polling (30s base, 2m when hidden, 5m backoff on rate limit) |
 | `stopPolling()` | Stop polling |
+| `pollRepo(path)` | Immediately poll a single repo (debounced 2s to coalesce rapid git events) |
+| `setRemoteStatus(repoPath, remote)` | Set remote tracking status directly (used by simulator) |
 
 ### Queries
 
@@ -190,6 +192,7 @@ GitHub PR and CI data with background polling.
 | `getPrStatus(repoPath, branch)` | Get PR status |
 | `getCheckDetails(repoPath, branch)` | Get CI check details |
 | `getBranchPrData(repoPath, branch)` | Get full BranchPrStatus |
+| `getRemoteStatus(repoPath)` | Get remote tracking status (ahead/behind) |
 
 ---
 
@@ -225,13 +228,97 @@ Prompt template management with variable substitution.
 
 ---
 
+## statusBarTicker
+
+**File:** `src/stores/statusBarTicker.ts`
+
+Rotating message ticker for the status bar. Plugins and native features post messages; the highest-priority message is displayed, with rotation among equal-priority messages.
+
+### TickerMessage Type
+
+```typescript
+interface TickerMessage {
+  id: string;           // Unique message ID (scoped to plugin)
+  pluginId: string;     // Plugin that posted the message
+  text: string;         // Display text (~40 chars max)
+  icon?: string;        // Optional inline SVG icon
+  priority: number;     // Higher = more visible. >=80 gets warning styling
+  ttlMs: number;        // Time-to-live in ms (0 = persistent until removed)
+  createdAt: number;    // Timestamp when added
+  onClick?: () => void; // Optional click handler
+}
+```
+
+### Actions
+
+| Method | Description |
+|--------|-------------|
+| `addMessage(msg)` | Add or replace a message (by id + pluginId). Resets TTL on replace. |
+| `removeMessage(id, pluginId)` | Remove a specific message |
+| `removeAllForPlugin(pluginId)` | Remove all messages from a plugin |
+| `clear()` | Clear all messages and stop timers |
+
+### Queries
+
+| Method | Description |
+|--------|-------------|
+| `getCurrentMessage()` | Get the highest-priority non-expired message (rotates among equal-priority) |
+| `getAll()` | Get all active (non-expired) messages |
+
+### Internals
+
+- **Rotation:** Messages at the same priority level rotate every 5 seconds.
+- **Scavenging:** Expired messages (past TTL) are cleaned up every 1 second.
+- **StatusBar integration:** The `claude-usage` ticker message (pluginId `"claude-usage"`) is absorbed into the agent badge when the active terminal runs Claude, and suppressed from the separate ticker area.
+
+---
+
+## notesStore
+
+**File:** `src/stores/notes.ts`
+
+Persistent notes/ideas with per-repo tagging and usage tracking.
+
+### Note Type
+
+```typescript
+interface Note {
+  id: string;
+  text: string;
+  createdAt: number;
+  repoPath: string | null;
+  repoDisplayName: string | null;
+  usedAt: number | null;      // Timestamp when sent to terminal
+}
+```
+
+### Actions
+
+| Method | Description |
+|--------|-------------|
+| `hydrate()` | Load notes from Rust backend |
+| `addNote(text, repoPath?, repoDisplayName?)` | Add a new note, optionally tagged with a repo |
+| `removeNote(id)` | Remove a note by ID |
+| `reassignNote(id, repoPath, repoDisplayName)` | Reassign a note to a different project |
+| `markUsed(id)` | Mark a note as used (sets `usedAt` timestamp) |
+
+### Queries
+
+| Method | Description |
+|--------|-------------|
+| `getFilteredNotes(activeRepo)` | Get notes for repo (global + repo-specific). `null` = all notes. |
+| `filteredCount(activeRepo)` | Count of notes visible for the given repo filter |
+| `count()` | Total note count |
+
+---
+
 ## Other Stores
 
 ### repoSettingsStore (`repoSettings.ts`)
 Per-repository settings (base branch, scripts, worktree options).
 
 ### uiStore (`ui.ts`)
-Panel visibility, sidebar width, dropdown state, loading state.
+Panel visibility (sidebar, diff, markdown, notes, file browser), sidebar width, dropdown state, loading state.
 
 ### notificationsStore (`notifications.ts`)
 Notification sound preferences and playback.
@@ -253,3 +340,24 @@ Active prompt overlay state and agent stats buffer.
 
 ### diffTabsStore (`diffTabs.ts`) / mdTabsStore (`mdTabs.ts`)
 Open diff and markdown tab management (identical API patterns).
+
+### updaterStore (`updater.ts`)
+App update check, download, and install. Supports stable (Tauri built-in), beta, and nightly channels.
+
+### keybindingsStore (`keybindings.ts`)
+Rebindable keyboard shortcuts (persisted, auto-populated from action registry).
+
+### commandPaletteStore (`commandPalette.ts`)
+Command palette visibility and search state.
+
+### activityDashboardStore (`activityDashboard.ts`)
+Activity center (bell dropdown) visibility.
+
+### prNotificationsStore (`prNotifications.ts`)
+PR state transition notifications (merged, closed, blocked, CI failed, etc.).
+
+### userActivityStore (`userActivity.ts`)
+Tracks last user activity timestamp. Used for merged PR grace period calculations.
+
+### editorTabsStore (`editorTabs.ts`)
+Open code editor tabs (CodeEditorTab).

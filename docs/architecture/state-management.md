@@ -92,11 +92,12 @@ export const myStore = {
 | Store | File | Purpose | Persisted |
 |-------|------|---------|-----------|
 | `terminalsStore` | `terminals.ts` | Terminal instances, active tab, split layout | Partial (IDs in repos) |
-| `repositoriesStore` | `repositories.ts` | Saved repos, branches, terminal associations | `repositories.json` |
-| `settingsStore` | `settings.ts` | App settings (font, shell, IDE, theme) | `config.json` |
+| `repositoriesStore` | `repositories.ts` | Saved repos, branches, terminal associations, repo groups | `repositories.json` |
+| `settingsStore` | `settings.ts` | App settings (font, shell, IDE, theme, update channel) | `config.json` |
 | `repoSettingsStore` | `repoSettings.ts` | Per-repository settings (scripts, worktree) | `repo-settings.json` |
+| `repoDefaultsStore` | `repoDefaults.ts` | Default settings for new repositories | `repo-defaults.json` |
 | `uiStore` | `ui.ts` | Panel visibility, sidebar width | `ui-prefs.json` |
-| `githubStore` | `github.ts` | PR/CI data per branch | Not persisted |
+| `githubStore` | `github.ts` | PR/CI data per branch, remote tracking (ahead/behind), PR state transitions | Not persisted |
 | `promptLibraryStore` | `promptLibrary.ts` | Prompt templates | `prompt-library.json` |
 | `notificationsStore` | `notifications.ts` | Notification preferences | `notification-config.json` |
 | `dictationStore` | `dictation.ts` | Dictation config and state | `dictation-config.json` |
@@ -105,7 +106,13 @@ export const myStore = {
 | `tasksStore` | `tasks.ts` | Agent task queue | Not persisted |
 | `promptStore` | `prompt.ts` | Active prompt overlay state | Not persisted |
 | `diffTabsStore` | `diffTabs.ts` | Open diff tabs | Not persisted |
-| `mdTabsStore` | `mdTabs.ts` | Open markdown tabs | Not persisted |
+| `mdTabsStore` | `mdTabs.ts` | Open markdown tabs and plugin panels | Not persisted |
+| `notesStore` | `notes.ts` | Ideas/notes with repo tagging and used-at tracking | `notes.json` |
+| `statusBarTicker` | `statusBarTicker.ts` | Priority-based rotating status bar messages | Not persisted |
+| `userActivityStore` | `userActivity.ts` | Tracks last user click/keydown for activity-based timeouts | Not persisted |
+| `updaterStore` | `updater.ts` | App update state (check, download, install) | Not persisted |
+| `keybindingsStore` | `keybindings.ts` | Custom keyboard shortcut bindings | `keybindings.json` |
+| `agentConfigsStore` | `agentConfigs.ts` | Per-agent run configs and toggles | `agents.json` |
 
 ### Key Store Relationships
 
@@ -119,18 +126,35 @@ repositoriesStore
 terminalsStore
     │
     ├── TerminalData.sessionId           ──maps to──> AppState.sessions key
+    ├── TerminalData.agentType           ──read by──> StatusBar (agent badge)
+    ├── TerminalData.usageLimit          ──read by──> StatusBar (usage display)
     └── TabLayout.panes                  ──indexes into──> TerminalData[]
 
 githubStore
     │
     ├── Per-branch PR status             ──from──> github.rs (get_repo_pr_statuses)
-    └── CheckSummary                     ──drives──> CiRing component
+    ├── Per-repo remote status           ──from──> github.rs (get_github_status)
+    ├── CheckSummary                     ──drives──> CiRing component
+    └── PR state transitions             ──emits to──> prNotificationsStore
+
+statusBarTicker
+    │
+    ├── TickerMessage[]                  ──rendered by──> StatusBar
+    ├── Claude Usage messages            ──from──> features/claudeUsage.ts (native)
+    └── Plugin messages                  ──from──> pluginRegistry (ui:ticker capability)
+
+notesStore
+    │
+    ├── Note.repoPath                    ──filters by──> active repo
+    ├── Note.usedAt                      ──marks when──> sent to terminal
+    └── filteredCount()                  ──drives──> StatusBar badge
 
 settingsStore
     │
     ├── font/theme                       ──configures──> Terminal component
     ├── shell                            ──passed to──> create_pty
-    └── ide                              ──used by──> open_in_app
+    ├── ide                              ──used by──> open_in_app
+    └── updateChannel                    ──used by──> updaterStore
 ```
 
 ## Configuration Files
@@ -149,10 +173,15 @@ Legacy path `~/.tuicommander/` is auto-migrated on first launch.
 
 | File | Contents | Rust Type |
 |------|----------|-----------|
-| `config.json` | Shell, font, theme, MCP, remote access | `AppConfig` |
+| `config.json` | Shell, font, theme, MCP, remote access, update channel | `AppConfig` |
 | `notification-config.json` | Sound preferences, volume | `NotificationConfig` |
 | `ui-prefs.json` | Sidebar, error handling settings | `UIPrefsConfig` |
 | `repo-settings.json` | Per-repo scripts, worktree options | `RepoSettingsMap` |
-| `repositories.json` | Saved repos and branches | `serde_json::Value` |
+| `repo-defaults.json` | Default settings for new repos (base branch, scripts) | `RepoDefaultsConfig` |
+| `repositories.json` | Saved repos, branches, groups | `serde_json::Value` |
 | `prompt-library.json` | Prompt templates | `PromptLibraryConfig` |
 | `dictation-config.json` | Dictation on/off, hotkey, language, model | `DictationConfig` |
+| `notes.json` | Ideas/notes with repo tags and used-at timestamps | `serde_json::Value` |
+| `keybindings.json` | Custom keyboard shortcut overrides | `serde_json::Value` |
+| `agents.json` | Per-agent run configs and toggles | `AgentsConfig` |
+| `claude-usage-cache.json` | Incremental JSONL parse offsets for session stats | `SessionStatsCache` |

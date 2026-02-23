@@ -518,7 +518,7 @@ Invokes a whitelisted Tauri command. Non-whitelisted commands throw immediately.
 | `read_file` | `{ path: string, file: string }` | `string` | `invoke:read_file` |
 | `list_markdown_files` | `{ path: string }` | `Array<{ path, git_status }>` | `invoke:list_markdown_files` |
 | `read_plugin_data` | `{ plugin_id: string, path: string }` | `string` | none (always allowed) |
-| `write_plugin_data` | `{ plugin_id: string, path: string, data: string }` | `void` | none (always allowed) |
+| `write_plugin_data` | `{ plugin_id: string, path: string, content: string }` | `void` | none (always allowed) |
 | `delete_plugin_data` | `{ plugin_id: string, path: string }` | `void` | none (always allowed) |
 
 **Plugin data storage** is sandboxed to `~/.config/tuicommander/plugins/{id}/data/`. No capability required — every plugin can store its own data.
@@ -528,7 +528,7 @@ Invokes a whitelisted Tauri command. Non-whitelisted commands throw immediately.
 await host.invoke("write_plugin_data", {
   plugin_id: "my-plugin",
   path: "cache.json",
-  data: JSON.stringify({ lastCheck: Date.now() }),
+  content: JSON.stringify({ lastCheck: Date.now() }),
 });
 
 // Read it back
