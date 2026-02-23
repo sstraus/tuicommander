@@ -43,14 +43,8 @@ const planMarkdownProvider: MarkdownProvider = {
     const rawPath = uri.searchParams.get("path");
     if (!rawPath || rawPath.includes("..")) return null;
 
-    // Split absolute path into repo_path (dirname) + file (basename)
-    // so it satisfies read_file_impl's within-repo security constraint.
-    const lastSlash = rawPath.lastIndexOf("/");
-    const dirPath = lastSlash > 0 ? rawPath.slice(0, lastSlash) : rawPath;
-    const fileName = lastSlash >= 0 ? rawPath.slice(lastSlash + 1) : rawPath;
-
     try {
-      return await invoke<string>("read_file", { path: dirPath, file: fileName });
+      return await invoke<string>("plugin_read_file", { path: rawPath, pluginId: PLUGIN_ID });
     } catch (err) {
       console.warn("[planPlugin] Failed to read plan file:", rawPath, err);
       return null;

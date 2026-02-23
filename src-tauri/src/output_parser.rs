@@ -374,7 +374,14 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
     }
     for line in clean.lines() {
         if let Some(caps) = PLAN_RE.captures(line) {
-            let path = caps[1].to_string();
+            let mut path = caps[1].to_string();
+            // Expand leading ~/ to the user's home directory so the
+            // frontend always receives an absolute path it can open.
+            if path.starts_with("~/") {
+                if let Some(home) = dirs::home_dir() {
+                    path = format!("{}{}", home.display(), &path[1..]);
+                }
+            }
             return Some(ParsedEvent::PlanFile { path });
         }
     }
@@ -730,6 +737,17 @@ mod tests {
         let parser = OutputParser::new();
         let events = parser.parse("Plan: .claude-private/plans/serene-waterfall.md");
         assert_eq!(get_plan_path(&events), Some(".claude-private/plans/serene-waterfall.md".to_string()));
+    }
+
+    #[test]
+    fn test_plan_file_tilde_expanded() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Plan saved to ~/.claude/plans/graceful-rolling-quasar.md");
+        let path = get_plan_path(&events).expect("should detect tilde plan path");
+        // Tilde must be expanded to an absolute path
+        assert!(!path.starts_with("~"), "tilde should be expanded: {path}");
+        assert!(path.ends_with("/.claude/plans/graceful-rolling-quasar.md"));
+        assert!(path.starts_with("/"), "path should be absolute: {path}");
     }
 
     #[test]

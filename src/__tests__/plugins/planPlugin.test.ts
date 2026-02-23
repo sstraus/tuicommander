@@ -46,7 +46,7 @@ describe("planPlugin lifecycle", () => {
     // Provider is registered for the "plan" scheme
     const result = await markdownProviderRegistry.resolve("plan:file?path=/foo/bar.md");
     expect(result).not.toBeNull();
-    expect(mockedInvoke).toHaveBeenCalledWith("read_file", { path: "/foo", file: "bar.md" });
+    expect(mockedInvoke).toHaveBeenCalledWith("plugin_read_file", { path: "/foo/bar.md", pluginId: "plan" });
   });
 
   it("unregistering removes the plan markdown provider", async () => {
@@ -147,11 +147,11 @@ describe("plan MarkdownProvider", () => {
     pluginRegistry.register(planPlugin);
   });
 
-  it("reads file content via read_file invoke", async () => {
+  it("reads file content via plugin_read_file invoke", async () => {
     mockedInvoke.mockResolvedValue("# Hello Plan");
     const result = await markdownProviderRegistry.resolve("plan:file?path=%2Frepo%2Fplan.md");
     expect(result).toBe("# Hello Plan");
-    expect(mockedInvoke).toHaveBeenCalledWith("read_file", { path: "/repo", file: "plan.md" });
+    expect(mockedInvoke).toHaveBeenCalledWith("plugin_read_file", { path: "/repo/plan.md", pluginId: "plan" });
   });
 
   it("returns null when path query param is missing", async () => {
