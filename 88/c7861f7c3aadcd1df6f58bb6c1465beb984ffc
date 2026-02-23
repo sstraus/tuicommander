@@ -1,0 +1,25 @@
+src/__tests__/hooks/useGitHub.test.ts
+  211037785cde82f4 37-38
+src/__tests__/components/Sidebar.test.tsx
+  211037785cde82f4 380-381,383,386-401
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "88c7861f7c3aadcd1df6f58bb6c1465beb984ffc",
+  "prompts": {
+    "211037785cde82f4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9546dfdf-07c4-4de4-b83f-803377864570",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 21,
+      "overriden_lines": 0
+    }
+  }
+}
