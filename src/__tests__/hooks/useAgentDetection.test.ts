@@ -9,84 +9,30 @@ describe("useAgentDetection", () => {
     mockInvoke.mockReset();
   });
 
-  describe("detectAgent()", () => {
-    it("returns available=true with path and version on success", async () => {
-      await createRoot(async (dispose) => {
-        mockInvoke.mockResolvedValueOnce({
-          path: "/usr/local/bin/claude",
-          version: "1.2.3",
-        });
-
-        const { detectAgent } = useAgentDetection();
-        const result = await detectAgent("claude", "claude");
-
-        expect(result).toEqual({
-          type: "claude",
-          available: true,
-          path: "/usr/local/bin/claude",
-          version: "1.2.3",
-        });
-        expect(mockInvoke).toHaveBeenCalledWith("detect_agent_binary", { binary: "claude" });
-
-        dispose();
-      });
-    });
-
-    it("returns available=false when path is null", async () => {
-      await createRoot(async (dispose) => {
-        mockInvoke.mockResolvedValueOnce({ path: null, version: null });
-
-        const { detectAgent } = useAgentDetection();
-        const result = await detectAgent("gemini", "gemini");
-
-        expect(result).toEqual({
-          type: "gemini",
-          available: false,
-          path: null,
-          version: null,
-        });
-
-        dispose();
-      });
-    });
-
-    it("returns available=false on error", async () => {
-      await createRoot(async (dispose) => {
-        mockInvoke.mockRejectedValueOnce(new Error("binary not found"));
-
-        const { detectAgent } = useAgentDetection();
-        const result = await detectAgent("aider", "aider");
-
-        expect(result).toEqual({
-          type: "aider",
-          available: false,
-          path: null,
-          version: null,
-        });
-
-        dispose();
-      });
-    });
-  });
+  /** Helper: build a batch detection response */
+  function batchResponse(available: Record<string, string | null> = {}) {
+    const allBinaries = ["claude", "gemini", "opencode", "aider", "codex", "amp", "jules", "cursor-agent", "oz", "gitpod"];
+    const result: Record<string, { path: string | null; version: string | null }> = {};
+    for (const bin of allBinaries) {
+      result[bin] = { path: available[bin] ?? null, version: null };
+    }
+    return result;
+  }
 
   describe("detectAll()", () => {
-    it("detects all 10 agents and populates detections signal", async () => {
+    it("detects all 10 agents via single batch call", async () => {
       await createRoot(async (dispose) => {
-        // Mock all 10 invoke calls (claude, gemini, opencode, aider, codex, amp, jules, cursor, warp, ona)
-        mockInvoke
-          .mockResolvedValueOnce({ path: "/bin/claude", version: "1.0" })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: "/bin/opencode", version: "2.0" })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: "/bin/codex", version: "0.5" })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null });
+        mockInvoke.mockResolvedValueOnce(
+          batchResponse({ claude: "/bin/claude", opencode: "/bin/opencode", codex: "/bin/codex" }),
+        );
 
         const { detectAll, detections } = useAgentDetection();
         await detectAll();
+
+        expect(mockInvoke).toHaveBeenCalledTimes(1);
+        expect(mockInvoke).toHaveBeenCalledWith("detect_all_agent_binaries", {
+          binaries: expect.arrayContaining(["claude", "gemini", "opencode"]),
+        });
 
         const map = detections();
         expect(map.size).toBe(10);
@@ -101,20 +47,48 @@ describe("useAgentDetection", () => {
     });
   });
 
+  describe("detectVersion()", () => {
+    it("fetches version for an available agent", async () => {
+      await createRoot(async (dispose) => {
+        // First call: batch detection
+        mockInvoke.mockResolvedValueOnce(batchResponse({ claude: "/bin/claude" }));
+        // Second call: single detect_agent_binary for version
+        mockInvoke.mockResolvedValueOnce({ path: "/bin/claude", version: "1.2.3" });
+
+        const { detectAll, detectVersion, getDetection } = useAgentDetection();
+        await detectAll();
+
+        expect(getDetection("claude")?.version).toBeNull();
+
+        await detectVersion("claude");
+
+        expect(getDetection("claude")?.version).toBe("1.2.3");
+        expect(mockInvoke).toHaveBeenCalledWith("detect_agent_binary", { binary: "claude" });
+
+        dispose();
+      });
+    });
+
+    it("skips version fetch for unavailable agents", async () => {
+      await createRoot(async (dispose) => {
+        mockInvoke.mockResolvedValueOnce(batchResponse());
+
+        const { detectAll, detectVersion } = useAgentDetection();
+        await detectAll();
+        await detectVersion("claude");
+
+        // Only the batch call, no individual detect
+        expect(mockInvoke).toHaveBeenCalledTimes(1);
+
+        dispose();
+      });
+    });
+  });
+
   describe("getDetection()", () => {
     it("returns detection for a known type after detectAll", async () => {
       await createRoot(async (dispose) => {
-        mockInvoke
-          .mockResolvedValueOnce({ path: "/bin/claude", version: "1.0" })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null });
+        mockInvoke.mockResolvedValueOnce(batchResponse({ claude: "/bin/claude" }));
 
         const { detectAll, getDetection } = useAgentDetection();
         await detectAll();
@@ -140,17 +114,7 @@ describe("useAgentDetection", () => {
   describe("isAvailable()", () => {
     it("returns true when agent is detected as available", async () => {
       await createRoot(async (dispose) => {
-        mockInvoke
-          .mockResolvedValueOnce({ path: "/bin/claude", version: "1.0" })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null });
+        mockInvoke.mockResolvedValueOnce(batchResponse({ claude: "/bin/claude" }));
 
         const { detectAll, isAvailable } = useAgentDetection();
         await detectAll();
@@ -163,17 +127,7 @@ describe("useAgentDetection", () => {
 
     it("returns false when agent is not available", async () => {
       await createRoot(async (dispose) => {
-        mockInvoke
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null });
+        mockInvoke.mockResolvedValueOnce(batchResponse());
 
         const { detectAll, isAvailable } = useAgentDetection();
         await detectAll();
@@ -196,17 +150,9 @@ describe("useAgentDetection", () => {
   describe("getAvailable()", () => {
     it("returns only available agents", async () => {
       await createRoot(async (dispose) => {
-        mockInvoke
-          .mockResolvedValueOnce({ path: "/bin/claude", version: "1.0" })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: "/bin/opencode", version: "2.0" })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null });
+        mockInvoke.mockResolvedValueOnce(
+          batchResponse({ claude: "/bin/claude", opencode: "/bin/opencode" }),
+        );
 
         const { detectAll, getAvailable } = useAgentDetection();
         await detectAll();
@@ -222,17 +168,7 @@ describe("useAgentDetection", () => {
 
     it("returns empty array when no agents available", async () => {
       await createRoot(async (dispose) => {
-        mockInvoke
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null });
+        mockInvoke.mockResolvedValueOnce(batchResponse());
 
         const { detectAll, getAvailable } = useAgentDetection();
         await detectAll();
@@ -255,17 +191,7 @@ describe("useAgentDetection", () => {
 
     it("is false after detectAll completes", async () => {
       await createRoot(async (dispose) => {
-        mockInvoke
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null })
-          .mockResolvedValueOnce({ path: null, version: null });
+        mockInvoke.mockResolvedValueOnce(batchResponse());
 
         const { detectAll, loading } = useAgentDetection();
         await detectAll();

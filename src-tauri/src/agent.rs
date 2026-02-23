@@ -367,6 +367,110 @@ pub(crate) fn detect_agent_binary(binary: String) -> AgentBinaryDetection {
     }
 }
 
+/// Batch-detect multiple agent binaries in parallel.
+/// Returns a map of binary name -> detection result.
+/// Skips version detection for speed; use detect_agent_binary for full info.
+#[tauri::command]
+pub(crate) fn detect_all_agent_binaries(
+    binaries: Vec<String>,
+) -> std::collections::HashMap<String, AgentBinaryDetection> {
+    let handles: Vec<_> = binaries
+        .into_iter()
+        .map(|binary| {
+            std::thread::spawn(move || {
+                let detection = detect_binary_path_only(&binary);
+                (binary, detection)
+            })
+        })
+        .collect();
+
+    let mut results = std::collections::HashMap::new();
+    for handle in handles {
+        if let Ok((binary, detection)) = handle.join() {
+            results.insert(binary, detection);
+        }
+    }
+    results
+}
+
+/// Fast binary detection: path lookup only, no version check.
+fn detect_binary_path_only(binary: &str) -> AgentBinaryDetection {
+    let home = dirs::home_dir()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    #[cfg(not(windows))]
+    let candidates = vec![
+        format!("{}/.local/bin/{}", home, binary),
+        format!("/usr/local/bin/{}", binary),
+        format!("/opt/homebrew/bin/{}", binary),
+        format!("{}/.npm-global/bin/{}", home, binary),
+        format!("{}/.cargo/bin/{}", home, binary),
+        format!("{}/go/bin/{}", home, binary),
+        format!("{}/.pyenv/shims/{}", home, binary),
+    ];
+
+    #[cfg(windows)]
+    let candidates = {
+        let program_files =
+            std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
+        let mut v = vec![
+            format!("{}\\.cargo\\bin\\{}.exe", home, binary),
+            format!("{}\\go\\bin\\{}.exe", home, binary),
+            format!(
+                "{}\\AppData\\Local\\Programs\\{}\\{}.exe",
+                home, binary, binary
+            ),
+            format!("{}\\scoop\\shims\\{}.exe", home, binary),
+            format!("{}\\{}.exe", program_files, binary),
+            format!("{}\\{}\\{}.exe", program_files, binary, binary),
+        ];
+        let winget_dir = format!("{}\\AppData\\Local\\Microsoft\\WinGet\\Packages", home);
+        if let Ok(entries) = std::fs::read_dir(&winget_dir) {
+            for entry in entries.flatten() {
+                let exe = entry.path().join(format!("{}.exe", binary));
+                if exe.exists() {
+                    v.push(exe.to_string_lossy().to_string());
+                }
+            }
+        }
+        v
+    };
+
+    let checker = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
+    if let Ok(output) = Command::new(checker).arg(binary).output()
+        && output.status.success()
+    {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let path = path.lines().next().unwrap_or("").to_string();
+        if !path.is_empty() && std::path::Path::new(&path).exists() {
+            return AgentBinaryDetection {
+                path: Some(path),
+                version: None,
+            };
+        }
+    }
+
+    for candidate in &candidates {
+        if !candidate.is_empty() && std::path::Path::new(candidate).exists() {
+            return AgentBinaryDetection {
+                path: Some(candidate.clone()),
+                version: None,
+            };
+        }
+    }
+
+    AgentBinaryDetection {
+        path: None,
+        version: None,
+    }
+}
+
 /// Get version of a binary (try --version or -v)
 fn get_binary_version(path: &str) -> Option<String> {
     // Try --version first

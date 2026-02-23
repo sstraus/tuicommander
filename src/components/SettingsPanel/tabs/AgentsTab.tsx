@@ -122,6 +122,7 @@ const RunConfigRow: Component<{
 const AgentRow: Component<{
   agentType: AgentType;
   detection: AgentAvailability | undefined;
+  onExpand?: (type: AgentType) => void;
 }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
   const [addingConfig, setAddingConfig] = createSignal(false);
@@ -146,7 +147,10 @@ const AgentRow: Component<{
   const handleExpand = () => {
     const newVal = !expanded();
     setExpanded(newVal);
-    if (newVal) loadMcpStatus();
+    if (newVal) {
+      loadMcpStatus();
+      props.onExpand?.(props.agentType);
+    }
   };
 
   const handleMcpToggle = async () => {
@@ -293,6 +297,7 @@ export const AgentsTab: Component = () => {
             <AgentRow
               agentType={type}
               detection={detection.getDetection(type)}
+              onExpand={detection.detectVersion}
             />
           )}
         </For>

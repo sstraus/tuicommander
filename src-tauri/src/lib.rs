@@ -663,6 +663,7 @@ pub fn run() {
             agent::open_in_app,
             agent::detect_claude_binary,
             agent::detect_agent_binary,
+            agent::detect_all_agent_binaries,
             agent::detect_lazygit_binary,
             agent::spawn_agent,
             worktree::remove_worktree,

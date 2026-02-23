@@ -16,60 +16,71 @@ export interface AgentAvailability {
   version: string | null;
 }
 
+/** Binary name for each agent type */
+const AGENT_BINARIES: Record<AgentType, string> = {
+  claude: "claude",
+  gemini: "gemini",
+  opencode: "opencode",
+  aider: "aider",
+  codex: "codex",
+  amp: "amp",
+  jules: "jules",
+  cursor: "cursor-agent",
+  warp: "oz",
+  ona: "gitpod",
+};
+
 /** Agent detection hook */
 export function useAgentDetection() {
   const [detections, setDetections] = createSignal<Map<AgentType, AgentAvailability>>(new Map());
   const [loading, setLoading] = createSignal(false);
 
-  /** Detect a single agent binary */
-  async function detectAgent(type: AgentType, binary: string): Promise<AgentAvailability> {
-    try {
-      const result = await invoke<AgentDetection>("detect_agent_binary", { binary });
-      return {
-        type,
-        available: result.path !== null,
-        path: result.path,
-        version: result.version,
-      };
-    } catch (err) {
-      console.error(`Failed to detect ${type}:`, err);
-      return {
-        type,
-        available: false,
-        path: null,
-        version: null,
-      };
-    }
-  }
-
-  /** Detect all agents */
+  /** Detect all agents in a single batch call (fast, no version detection) */
   async function detectAll(): Promise<void> {
     setLoading(true);
 
-    const agents: Array<{ type: AgentType; binary: string }> = [
-      { type: "claude", binary: "claude" },
-      { type: "gemini", binary: "gemini" },
-      { type: "opencode", binary: "opencode" },
-      { type: "aider", binary: "aider" },
-      { type: "codex", binary: "codex" },
-      { type: "amp", binary: "amp" },
-      { type: "jules", binary: "jules" },
-      { type: "cursor", binary: "cursor-agent" },
-      { type: "warp", binary: "oz" },
-      { type: "ona", binary: "gitpod" },
-    ];
+    try {
+      const binaries = Object.values(AGENT_BINARIES);
+      const results = await invoke<Record<string, AgentDetection>>(
+        "detect_all_agent_binaries",
+        { binaries },
+      );
 
-    const results = await Promise.all(
-      agents.map(({ type, binary }) => detectAgent(type, binary))
-    );
-
-    const newMap = new Map<AgentType, AgentAvailability>();
-    for (const result of results) {
-      newMap.set(result.type, result);
+      const newMap = new Map<AgentType, AgentAvailability>();
+      for (const [agentType, binary] of Object.entries(AGENT_BINARIES)) {
+        const det = results[binary];
+        newMap.set(agentType as AgentType, {
+          type: agentType as AgentType,
+          available: det?.path !== null && det?.path !== undefined,
+          path: det?.path ?? null,
+          version: det?.version ?? null,
+        });
+      }
+      setDetections(newMap);
+    } catch (err) {
+      console.error("Failed to detect agents:", err);
+    } finally {
+      setLoading(false);
     }
-    setDetections(newMap);
+  }
 
-    setLoading(false);
+  /** Detect version for a single agent (lazy, called on expand) */
+  async function detectVersion(type: AgentType): Promise<void> {
+    const current = detections().get(type);
+    if (!current?.available || current.version) return;
+
+    try {
+      const result = await invoke<AgentDetection>("detect_agent_binary", {
+        binary: AGENT_BINARIES[type],
+      });
+      if (result.version) {
+        const newMap = new Map(detections());
+        newMap.set(type, { ...current, version: result.version });
+        setDetections(newMap);
+      }
+    } catch {
+      // Version detection is best-effort
+    }
   }
 
   /** Get detection result for an agent */
@@ -92,7 +103,7 @@ export function useAgentDetection() {
     detections,
     loading,
     detectAll,
-    detectAgent,
+    detectVersion,
     getDetection,
     isAvailable,
     getAvailable,
