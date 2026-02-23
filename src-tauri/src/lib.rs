@@ -94,7 +94,8 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
         || old.remote_access_enabled != config.remote_access_enabled
         || old.remote_access_port != config.remote_access_port
         || old.remote_access_username != config.remote_access_username
-        || old.remote_access_password_hash != config.remote_access_password_hash;
+        || old.remote_access_password_hash != config.remote_access_password_hash
+        || old.ipv6_enabled != config.ipv6_enabled;
 
     // Capture flags before moving config into state
     let mcp_server_enabled = config.mcp_server_enabled;
@@ -148,44 +149,70 @@ struct LocalIpEntry {
     label: String,
 }
 
-/// Return all non-loopback IPv4 addresses on this machine, with human-readable labels.
+/// Return all non-loopback IP addresses on this machine, with human-readable labels.
 ///
 /// Uses getifaddrs on Unix (macOS/Linux) to enumerate every interface.
 /// On Windows, falls back to the UDP-route trick (returns one address only).
+/// When `ipv6_enabled` is true in config, also includes non-loopback, non-link-local IPv6 addresses.
 ///
 /// Labels are classified as:
 ///   "Tailscale" — 100.64.0.0/10 (CGNAT range Tailscale uses)
 ///   "Wi-Fi / LAN" — 192.168.x.x or 10.x.x.x with a broadcast address
 ///   "VPN" — 10.x.x.x point-to-point (no broadcast, /32)
 ///   "Network" — anything else non-loopback
+/// Implementation shared between Tauri command and HTTP handler.
+pub(crate) fn get_local_ips_impl(state: &AppState) -> Vec<LocalIpEntry> {
+    let ipv6_enabled = state.config.read().ipv6_enabled;
+    get_local_ips_with_config(ipv6_enabled)
+}
+
 #[tauri::command]
-fn get_local_ips() -> Vec<LocalIpEntry> {
+fn get_local_ips(state: State<'_, Arc<AppState>>) -> Vec<LocalIpEntry> {
+    get_local_ips_impl(&state)
+}
+
+fn get_local_ips_with_config(ipv6_enabled: bool) -> Vec<LocalIpEntry> {
     #[cfg(unix)]
     {
-        enumerate_unix_ips()
+        enumerate_unix_ips(ipv6_enabled)
     }
     #[cfg(windows)]
     {
-        // Fallback: one address via UDP route trick
+        let mut result = Vec::new();
         use std::net::UdpSocket;
+        // IPv4 route trick
         if let Ok(sock) = UdpSocket::bind("0.0.0.0:0") {
             if sock.connect("8.8.8.8:80").is_ok() {
                 if let Ok(addr) = sock.local_addr() {
                     let ip = addr.ip().to_string();
                     if !ip.starts_with("127.") {
-                        return vec![LocalIpEntry { ip, label: "Network".to_string() }];
+                        result.push(LocalIpEntry { ip, label: "Network".to_string() });
                     }
                 }
             }
         }
-        vec![]
+        // IPv6 route trick
+        if ipv6_enabled {
+            if let Ok(sock) = UdpSocket::bind("[::]:0") {
+                if sock.connect("[2001:4860:4860::8888]:80").is_ok() {
+                    if let Ok(addr) = sock.local_addr() {
+                        let ip_str = addr.ip().to_string();
+                        if !ip_str.starts_with("::1") {
+                            let label = classify_ipv6_addr(&addr.ip());
+                            result.push(LocalIpEntry { ip: ip_str, label });
+                        }
+                    }
+                }
+            }
+        }
+        result
     }
 }
 
 #[cfg(unix)]
-fn enumerate_unix_ips() -> Vec<LocalIpEntry> {
+fn enumerate_unix_ips(ipv6_enabled: bool) -> Vec<LocalIpEntry> {
     use std::ffi::CStr;
-    use std::net::Ipv4Addr;
+    use std::net::{Ipv4Addr, Ipv6Addr};
 
     let mut result = Vec::new();
     unsafe {
@@ -196,21 +223,35 @@ fn enumerate_unix_ips() -> Vec<LocalIpEntry> {
         let mut cur = ifap;
         while !cur.is_null() {
             let ifa = &*cur;
-            if !ifa.ifa_addr.is_null()
-                && (*ifa.ifa_addr).sa_family == libc::AF_INET as libc::sa_family_t
-            {
-                let sa = &*(ifa.ifa_addr as *const libc::sockaddr_in);
-                let raw = u32::from_be(sa.sin_addr.s_addr);
-                let ip = Ipv4Addr::from(raw);
-                if !ip.is_loopback() && !ip.is_link_local() {
-                    let iface = if ifa.ifa_name.is_null() {
+            if !ifa.ifa_addr.is_null() {
+                let family = (*ifa.ifa_addr).sa_family as i32;
+                let iface_name = || -> String {
+                    if ifa.ifa_name.is_null() {
                         String::new()
                     } else {
                         CStr::from_ptr(ifa.ifa_name).to_string_lossy().into_owned()
-                    };
-                    let has_broadcast = (ifa.ifa_flags & libc::IFF_BROADCAST as u32) != 0;
-                    let label = classify_ip(ip, &iface, has_broadcast);
-                    result.push(LocalIpEntry { ip: ip.to_string(), label });
+                    }
+                };
+
+                if family == libc::AF_INET {
+                    let sa = &*(ifa.ifa_addr as *const libc::sockaddr_in);
+                    let raw = u32::from_be(sa.sin_addr.s_addr);
+                    let ip = Ipv4Addr::from(raw);
+                    if !ip.is_loopback() && !ip.is_link_local() {
+                        let iface = iface_name();
+                        let has_broadcast = (ifa.ifa_flags & libc::IFF_BROADCAST as u32) != 0;
+                        let label = classify_ip(ip, &iface, has_broadcast);
+                        result.push(LocalIpEntry { ip: ip.to_string(), label });
+                    }
+                } else if ipv6_enabled && family == libc::AF_INET6 {
+                    let sa6 = &*(ifa.ifa_addr as *const libc::sockaddr_in6);
+                    let ip = Ipv6Addr::from(sa6.sin6_addr.s6_addr);
+                    // Skip loopback (::1) and link-local (fe80::/10, requires scope ID)
+                    if !ip.is_loopback() && (ip.segments()[0] & 0xffc0) != 0xfe80 {
+                        let iface = iface_name();
+                        let label = classify_ipv6(ip, &iface);
+                        result.push(LocalIpEntry { ip: ip.to_string(), label });
+                    }
                 }
             }
             cur = (*cur).ifa_next;
@@ -246,18 +287,45 @@ fn classify_ip(ip: std::net::Ipv4Addr, iface: &str, has_broadcast: bool) -> Stri
     format!("Network ({})", iface)
 }
 
-/// Legacy single-IP command kept for backwards compatibility.
-/// Returns the LAN/Tailscale IP preferred for remote access, or the default-route IP.
-#[tauri::command]
-fn get_local_ip() -> Option<String> {
-    let ips = get_local_ips();
-    // Prefer Tailscale, then LAN, then any
+/// Classify a non-loopback, non-link-local IPv6 address into a human-readable label.
+fn classify_ipv6(ip: std::net::Ipv6Addr, iface: &str) -> String {
+    let seg = ip.segments();
+    // Tailscale IPv6: fd7a:115c:a1e0::/48
+    if seg[0] == 0xfd7a && seg[1] == 0x115c && seg[2] == 0xa1e0 {
+        return format!("Tailscale ({})", iface);
+    }
+    // ULA fc00::/7 — private LAN
+    if (seg[0] & 0xfe00) == 0xfc00 {
+        return format!("LAN ({})", iface);
+    }
+    // Global unicast
+    format!("Network ({})", iface)
+}
+
+/// Classify an IPv6 address without interface name (used by Windows UDP trick).
+#[cfg(windows)]
+fn classify_ipv6_addr(ip: &std::net::IpAddr) -> String {
+    match ip {
+        std::net::IpAddr::V6(v6) => classify_ipv6(*v6, ""),
+        _ => "Network".to_string(),
+    }
+}
+
+/// Pick preferred IP from a list (Tailscale > Wi-Fi/LAN > any)
+fn pick_preferred_ip(ips: Vec<LocalIpEntry>) -> Option<String> {
     for label_prefix in &["Tailscale", "Wi-Fi", "LAN"] {
         if let Some(e) = ips.iter().find(|e| e.label.contains(label_prefix)) {
             return Some(e.ip.clone());
         }
     }
     ips.into_iter().next().map(|e| e.ip)
+}
+
+/// Legacy single-IP command kept for backwards compatibility.
+/// Returns the LAN/Tailscale IP preferred for remote access, or the default-route IP.
+#[tauri::command]
+fn get_local_ip(state: State<'_, Arc<AppState>>) -> Option<String> {
+    pick_preferred_ip(get_local_ips(state))
 }
 
 
@@ -381,8 +449,10 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
     // Only runs when remote is enabled and we have an IP and port.
     // Uses spawn_blocking to avoid blocking the async executor during the TCP connect.
     let reachable = if remote_enabled {
-        if let (Some(p), Some(ip)) = (port, get_local_ip()) {
-            let addr = format!("{ip}:{p}");
+        let preferred_ip = pick_preferred_ip(get_local_ips_with_config(state.config.read().ipv6_enabled));
+        if let (Some(p), Some(ip)) = (port, preferred_ip) {
+            // Bracket-wrap IPv6 literals for valid SocketAddr parsing
+            let addr = if ip.contains(':') { format!("[{ip}]:{p}") } else { format!("{ip}:{p}") };
             tokio::task::spawn_blocking(move || {
                 addr.parse::<std::net::SocketAddr>().ok().map(|sa| {
                     std::net::TcpStream::connect_timeout(

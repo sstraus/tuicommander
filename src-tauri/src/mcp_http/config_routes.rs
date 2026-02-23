@@ -147,6 +147,25 @@ pub(super) async fn put_prompt_library(
     }
 }
 
+// --- Notes ---
+
+pub(super) async fn get_notes() -> impl IntoResponse {
+    Json(crate::config::load_notes())
+}
+
+pub(super) async fn put_notes(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(config): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !addr.ip().is_loopback() {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Config modification is only allowed from localhost"})));
+    }
+    match crate::config::save_notes(config) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+    }
+}
+
 pub(super) async fn get_mcp_status_http(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let config = state.config.read().clone();
     let port_file = crate::config::config_dir().join("mcp-port");

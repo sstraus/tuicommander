@@ -1,6 +1,7 @@
 mod agent_routes;
 mod auth;
 mod config_routes;
+mod fs_routes;
 mod git_routes;
 mod github_routes;
 mod mcp_transport;
@@ -157,7 +158,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/repo/file-diff", get(git_routes::get_file_diff_http))
         .route("/repo/markdown-files", get(git_routes::list_markdown_files_http))
         // Branch operations
-        .route("/repo/branches", get(worktree_routes::list_local_branches_http))
+        .route("/repo/local-branches", get(worktree_routes::list_local_branches_http))
         .route("/repo/branch/rename", post(git_routes::rename_branch_http))
         .route("/repo/initials", get(git_routes::get_initials_http))
         .route("/repo/is-main-branch", get(git_routes::check_is_main_branch_http))
@@ -168,6 +169,23 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/agents", get(agent_routes::detect_agents))
         .route("/agents/detect", get(agent_routes::detect_agent_binary_http))
         .route("/agents/ides", get(agent_routes::detect_installed_ides_http))
+        // File browser
+        .route("/fs/list", get(fs_routes::list_directory_http))
+        .route("/fs/read", get(fs_routes::fs_read_file_http))
+        .route("/fs/write", post(fs_routes::write_file_http))
+        .route("/fs/mkdir", post(fs_routes::create_directory_http))
+        .route("/fs/delete", post(fs_routes::delete_path_http))
+        .route("/fs/rename", post(fs_routes::rename_path_http))
+        .route("/fs/copy", post(fs_routes::copy_path_http))
+        .route("/fs/gitignore", post(fs_routes::add_to_gitignore_http))
+        // Notes
+        .route("/config/notes", get(config_routes::get_notes).put(config_routes::put_notes))
+        // Recent commits
+        .route("/repo/recent-commits", get(git_routes::get_recent_commits_http))
+        // System
+        .route("/system/local-ips", get(git_routes::get_local_ips_http))
+        // Plugins
+        .route("/plugins/list", get(git_routes::list_user_plugins_http))
         // MCP status
         .route("/mcp/status", get(config_routes::get_mcp_status_http))
         // Plugin docs (for MCP bridge)
@@ -205,7 +223,12 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
 
     let bind_addr = if remote_enabled {
         let port = if config.remote_access_port == 0 { 0 } else { config.remote_access_port };
-        format!("0.0.0.0:{port}")
+        if config.ipv6_enabled {
+            // Dual-stack: [::] accepts both IPv4 and IPv6 on macOS/Linux
+            format!("[::]:{port}")
+        } else {
+            format!("0.0.0.0:{port}")
+        }
     } else {
         "127.0.0.1:0".to_string()
     };

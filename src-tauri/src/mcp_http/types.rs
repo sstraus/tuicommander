@@ -138,3 +138,72 @@ pub(super) struct McpSessionQuery {
     #[serde(rename = "sessionId")]
     pub session_id: String,
 }
+
+// --- File browser types ---
+
+#[derive(Deserialize)]
+pub(super) struct FsDirQuery {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    pub subdir: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct FsFileQuery {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    pub file: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct FsWriteFileRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    pub file: String,
+    pub content: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct FsDirCreateRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    pub dir: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct FsPathRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    pub path: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct FsRenameRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct FsCopyRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct FsGitignoreRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    pub pattern: String,
+}
+
+// --- Recent commits query ---
+
+#[derive(Deserialize)]
+pub(super) struct RecentCommitsQuery {
+    pub path: String,
+    pub count: Option<u32>,
+}

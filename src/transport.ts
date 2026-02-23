@@ -72,7 +72,7 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
     case "write_pty":
       return {
         method: "POST",
-        path: `/sessions/${args.sessionId}/write`,
+        path: `/sessions/${args.sessionId ?? args.id}/write`,
         body: { data: args.data },
       };
     case "resize_pty":
@@ -230,7 +230,7 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
       };
 
     case "list_local_branches":
-      return { method: "GET", path: `/repo/branches?path=${p("repoPath")}` };
+      return { method: "GET", path: `/repo/local-branches?path=${p("repoPath")}` };
 
     // --- File operations ---
     case "list_markdown_files":
@@ -267,6 +267,64 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
     // --- Network ---
     case "get_local_ip":
       return { method: "GET", path: "/system/local-ip" };
+    case "get_local_ips":
+      return { method: "GET", path: "/system/local-ips" };
+
+    // --- File browser ---
+    case "list_directory":
+      return { method: "GET", path: `/fs/list?repoPath=${p("repoPath")}&subdir=${p("subdir")}` };
+    case "fs_read_file":
+      return { method: "GET", path: `/fs/read?repoPath=${p("repoPath")}&file=${p("file")}` };
+    case "write_file":
+      return {
+        method: "POST",
+        path: "/fs/write",
+        body: { repoPath: args.repoPath, file: args.file, content: args.content },
+      };
+    case "create_directory":
+      return {
+        method: "POST",
+        path: "/fs/mkdir",
+        body: { repoPath: args.repoPath, dir: args.dir },
+      };
+    case "delete_path":
+      return {
+        method: "POST",
+        path: "/fs/delete",
+        body: { repoPath: args.repoPath, path: args.path },
+      };
+    case "rename_path":
+      return {
+        method: "POST",
+        path: "/fs/rename",
+        body: { repoPath: args.repoPath, from: args.from, to: args.to },
+      };
+    case "copy_path":
+      return {
+        method: "POST",
+        path: "/fs/copy",
+        body: { repoPath: args.repoPath, from: args.from, to: args.to },
+      };
+    case "add_to_gitignore":
+      return {
+        method: "POST",
+        path: "/fs/gitignore",
+        body: { repoPath: args.repoPath, pattern: args.pattern },
+      };
+
+    // --- Notes ---
+    case "load_notes":
+      return { method: "GET", path: "/config/notes" };
+    case "save_notes":
+      return { method: "PUT", path: "/config/notes", body: args.config };
+
+    // --- Recent commits ---
+    case "get_recent_commits":
+      return { method: "GET", path: `/repo/recent-commits?path=${p("path")}&count=${args.count ?? 5}` };
+
+    // --- Plugins ---
+    case "list_user_plugins":
+      return { method: "GET", path: "/plugins/list" };
 
     default:
       throw new Error(`No HTTP mapping for command: ${command}`);
