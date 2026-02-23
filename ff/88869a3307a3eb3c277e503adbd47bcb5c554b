@@ -1,0 +1,29 @@
+src/components/SettingsPanel/tabs/ServicesTab.tsx
+  c608fd8572e3414f 32-33,55-57,77-79,107-108,144-145,165-176,410-457
+src/components/SettingsPanel/Settings.module.css
+  c608fd8572e3414f 719-746,748-764,767-770
+src-tauri/src/mcp_http/auth.rs
+  c608fd8572e3414f 6,108-139,163-167,234-277
+src-tauri/src/config.rs
+  c608fd8572e3414f 234-239,292-293,660-661,683-684,711-712
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "ff88869a3307a3eb3c277e503adbd47bcb5c554b",
+  "prompts": {
+    "c608fd8572e3414f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "248c22c9-a117-4f8a-a23e-0dd3592216df",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 283,
+      "total_deletions": 41,
+      "accepted_lines": 296,
+      "overriden_lines": 2
+    }
+  }
+}
