@@ -31,8 +31,14 @@ export interface PluginPanelTab extends BaseTab {
   html: string;
 }
 
+/** Native Claude Usage Dashboard tab */
+export interface ClaudeUsageTab extends BaseTab {
+  type: "claude-usage";
+  title: string;
+}
+
 /** Discriminated union of all markdown tab types */
-export type MdTabData = FileTab | VirtualTab | PluginPanelTab;
+export type MdTabData = FileTab | VirtualTab | PluginPanelTab | ClaudeUsageTab;
 
 // ---------------------------------------------------------------------------
 // Store
@@ -103,6 +109,20 @@ function createMdTabsStore() {
       if (tab && tab.type === "plugin-panel") {
         base._setState("tabs", tabId, "html" as keyof MdTabData, html as MdTabData[keyof MdTabData]);
       }
+    },
+
+    /** Add the Claude Usage Dashboard tab (singleton — reuses existing if open) */
+    addClaudeUsage(): string {
+      const existing = Object.values(base.state.tabs).find(
+        (tab) => tab.type === "claude-usage",
+      ) as ClaudeUsageTab | undefined;
+      if (existing) {
+        base.setActive(existing.id);
+        return existing.id;
+      }
+
+      const id = base._nextId("md");
+      return base._addTab({ type: "claude-usage", id, title: "Claude Usage" } as ClaudeUsageTab);
     },
 
     /** Clear all file-based markdown tabs for a repository (virtual tabs are unaffected) */

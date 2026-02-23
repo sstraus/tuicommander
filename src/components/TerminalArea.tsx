@@ -3,6 +3,7 @@ import { Terminal } from "./Terminal";
 import { DiffTab } from "./DiffTab";
 import { MarkdownTab } from "./MarkdownTab";
 import { PluginPanel } from "./PluginPanel";
+import { ClaudeUsageDashboard } from "./ClaudeUsageDashboard";
 import { CodeEditorTab } from "./CodeEditorPanel";
 import noTuiOpenImg from "../assets/no-tui-open.png";
 import { terminalsStore } from "../stores/terminals";
@@ -29,19 +30,9 @@ export interface TerminalAreaProps {
 }
 
 export const TerminalArea: Component<TerminalAreaProps> = (props) => {
-  /** Resolve which repo a terminal belongs to */
-  const repoPathForTerminal = (termId: string) => {
-    for (const [path, repo] of Object.entries(repositoriesStore.state.repositories)) {
-      for (const branch of Object.values(repo.branches)) {
-        if (branch.terminals.includes(termId)) return path;
-      }
-    }
-    return null;
-  };
-
   /** Get terminal meta hotkeys setting for a terminal's repo */
   const terminalMetaHotkeys = (termId: string) => {
-    const path = repoPathForTerminal(termId);
+    const path = repositoriesStore.getRepoPathForTerminal(termId);
     if (!path) return undefined;
     return repoSettingsStore.getEffective(path)?.terminalMetaHotkeys;
   };
@@ -193,7 +184,9 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                 class="terminal-pane md-pane"
                 classList={{ active: mdTabsStore.state.activeId === id }}
               >
-                {mdTab && mdTab.type === "plugin-panel" ? (
+                {mdTab && mdTab.type === "claude-usage" ? (
+                  <ClaudeUsageDashboard />
+                ) : mdTab && mdTab.type === "plugin-panel" ? (
                   <PluginPanel
                     tab={mdTab}
                     onClose={() => props.onCloseTab(id)}

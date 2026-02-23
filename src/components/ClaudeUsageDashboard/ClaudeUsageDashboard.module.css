@@ -1,0 +1,266 @@
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: 16px 20px;
+  gap: 16px;
+  background: var(--bg-primary);
+  color: var(--fg-primary);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.scopeSelect {
+  padding: 4px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.scopeSelect:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Rate limit section */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionTitle {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rateGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.rateCard {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rateLabel {
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+  display: flex;
+  justify-content: space-between;
+}
+
+.rateValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.rateBar {
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.rateFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.rateOk {
+  background: var(--success);
+}
+
+.rateWarn {
+  background: var(--warning);
+}
+
+.rateCritical {
+  background: var(--error);
+}
+
+.rateReset {
+  font-size: 10px;
+  color: var(--fg-muted);
+}
+
+/* Insights cards */
+.insightsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.insightCard {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.insightLabel {
+  font-size: 10px;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.insightValue {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.insightSub {
+  font-size: 10px;
+  color: var(--fg-secondary);
+}
+
+/* Activity heatmap (GitHub-style) */
+.heatmapContainer {
+  overflow-x: auto;
+}
+
+.heatmapGrid {
+  display: flex;
+  gap: 2px;
+}
+
+.heatmapWeek {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.heatmapCell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--bg-tertiary);
+}
+
+.heatmapLevel1 {
+  background: #0e4429;
+}
+
+.heatmapLevel2 {
+  background: #006d32;
+}
+
+.heatmapLevel3 {
+  background: #26a641;
+}
+
+.heatmapLevel4 {
+  background: #39d353;
+}
+
+/* Model breakdown */
+.modelTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-sm);
+}
+
+.modelTable th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+
+.modelTable td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-secondary);
+}
+
+.modelTable td:first-child {
+  color: var(--fg-primary);
+}
+
+.modelTable tr:last-child td {
+  border-bottom: none;
+}
+
+/* Per-project breakdown */
+.projectList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.projectRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+}
+
+.projectSlug {
+  color: var(--fg-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectTokens {
+  color: var(--fg-secondary);
+  margin-left: 12px;
+  white-space: nowrap;
+}
+
+/* Loading / error states */
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}
+
+.errorState {
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--error);
+  border-radius: var(--radius-sm);
+  color: var(--error);
+  font-size: var(--font-sm);
+}
