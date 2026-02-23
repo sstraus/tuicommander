@@ -26,6 +26,8 @@ interface RustAppConfig {
   prevent_sleep_when_busy: boolean;
   auto_update_enabled: boolean;
   language: string;
+  update_channel: string;
+  session_token_duration_secs: number;
 }
 
 // Default values
@@ -201,6 +203,9 @@ function validateFont(value: string | null): FontType {
 /** Split tab mode */
 export type SplitTabMode = "separate" | "unified";
 
+/** Update channel */
+export type UpdateChannel = "stable" | "beta" | "nightly";
+
 /** Settings store state */
 interface SettingsStoreState {
   ide: IdeType;
@@ -216,6 +221,7 @@ interface SettingsStoreState {
   preventSleepWhenBusy: boolean;
   autoUpdateEnabled: boolean;
   language: string;
+  updateChannel: UpdateChannel;
 }
 
 /** Create the settings store */
@@ -234,6 +240,7 @@ function createSettingsStore() {
     preventSleepWhenBusy: false,
     autoUpdateEnabled: true,
     language: "en",
+    updateChannel: "stable" as UpdateChannel,
   });
 
   const actions = {
@@ -268,6 +275,8 @@ function createSettingsStore() {
         setState("autoUpdateEnabled", config.auto_update_enabled ?? true);
         setState("language", config.language || "en");
         setLocale(config.language || "en");
+        const channel = config.update_channel;
+        setState("updateChannel", (channel === "beta" || channel === "nightly") ? channel : "stable");
       } catch (err) {
         console.error("Failed to hydrate settings:", err);
       }
@@ -437,6 +446,20 @@ function createSettingsStore() {
       } catch (err) {
         console.error("Failed to persist autoUpdateEnabled:", err);
         setState("autoUpdateEnabled", prevValue);
+      }
+    },
+
+    /** Set update channel preference */
+    async setUpdateChannel(channel: UpdateChannel): Promise<void> {
+      const prevChannel = state.updateChannel;
+      setState("updateChannel", channel);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.update_channel = channel;
+        await invoke("save_config", { config });
+      } catch (err) {
+        console.error("Failed to persist updateChannel:", err);
+        setState("updateChannel", prevChannel);
       }
     },
 

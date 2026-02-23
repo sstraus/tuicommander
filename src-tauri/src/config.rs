@@ -225,10 +225,24 @@ pub(crate) struct AppConfig {
     /// Plugin IDs that the user has disabled (not loaded on startup)
     #[serde(default)]
     pub(crate) disabled_plugin_ids: Vec<String>,
+    /// Update channel: "stable", "beta", or "nightly"
+    #[serde(default = "default_update_channel")]
+    pub(crate) update_channel: String,
+    /// Session token cookie duration in seconds (0 = session cookie, 31536000 = "never")
+    #[serde(default = "default_session_token_duration_secs")]
+    pub(crate) session_token_duration_secs: u64,
 }
 
 fn default_language() -> String {
     "en".to_string()
+}
+
+fn default_update_channel() -> String {
+    "stable".to_string()
+}
+
+fn default_session_token_duration_secs() -> u64 {
+    86400
 }
 
 fn default_font_size() -> u16 {
@@ -267,6 +281,8 @@ impl Default for AppConfig {
             auto_update_enabled: true,
             language: default_language(),
             disabled_plugin_ids: Vec::new(),
+            update_channel: default_update_channel(),
+            session_token_duration_secs: default_session_token_duration_secs(),
         }
     }
 }
@@ -631,6 +647,8 @@ mod tests {
             auto_update_enabled: false,
             language: "it".to_string(),
             disabled_plugin_ids: vec!["test-disabled".to_string()],
+            update_channel: "beta".to_string(),
+            session_token_duration_secs: 3600,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -650,6 +668,8 @@ mod tests {
         assert!(!loaded.auto_update_enabled);
         assert_eq!(loaded.language, "it");
         assert_eq!(loaded.disabled_plugin_ids, vec!["test-disabled".to_string()]);
+        assert_eq!(loaded.update_channel, "beta");
+        assert_eq!(loaded.session_token_duration_secs, 3600);
     }
 
     #[test]
@@ -674,6 +694,8 @@ mod tests {
         assert!(!loaded.prevent_sleep_when_busy);
         assert!(loaded.auto_update_enabled);
         assert_eq!(loaded.language, "en");
+        assert_eq!(loaded.update_channel, "stable");
+        assert_eq!(loaded.session_token_duration_secs, 86400);
     }
 
     #[test]

@@ -364,7 +364,7 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
             cfg.remote_access_enabled,
             cfg.mcp_server_enabled,
             state.sessions.len(),
-            state.session_token.clone(),
+            state.session_token.read().clone(),
         )
     };
 
@@ -416,6 +416,15 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
     }))
 }
 
+/// Regenerate the session token, invalidating all existing remote sessions.
+/// Returns the new token so the frontend can refresh the QR code.
+#[tauri::command]
+fn regenerate_session_token(state: State<'_, Arc<AppState>>) -> String {
+    let new_token = uuid::Uuid::new_v4().to_string();
+    *state.session_token.write() = new_token.clone();
+    new_token
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Default worktrees directory: <config_dir>/worktrees
@@ -444,7 +453,7 @@ pub fn run() {
         github_token: parking_lot::RwLock::new(github_token),
         github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
         server_shutdown: parking_lot::Mutex::new(None),
-        session_token: uuid::Uuid::new_v4().to_string(),
+        session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
         app_handle: parking_lot::RwLock::new(None),
         plugin_watchers: DashMap::new(),
     });
@@ -575,6 +584,7 @@ pub fn run() {
             get_local_ip,
             get_local_ips,
             get_mcp_status,
+            regenerate_session_token,
             dictation::commands::get_dictation_status,
             dictation::commands::get_model_info,
             dictation::commands::download_whisper_model,

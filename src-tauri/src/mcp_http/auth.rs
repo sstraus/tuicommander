@@ -92,12 +92,17 @@ fn has_valid_url_token(req: &Request<axum::body::Body>, session_token: &str) -> 
 }
 
 /// Build a Set-Cookie header value for the session token.
-fn session_cookie_value(token: &str) -> String {
+/// `max_age_secs` controls cookie lifetime (0 = session cookie that expires on browser close).
+fn session_cookie_value(token: &str, max_age_secs: u64) -> String {
     // HttpOnly: JS cannot read the cookie (XSS protection)
     // SameSite=Strict: only sent on same-origin requests (stronger CSRF protection)
     // Path=/: valid for all routes
-    // Max-Age=86400: 24 hours (auto-re-auth after a day)
-    format!("{SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400")
+    let base = format!("{SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/");
+    if max_age_secs > 0 {
+        format!("{base}; Max-Age={max_age_secs}")
+    } else {
+        base // session cookie — expires when browser closes
+    }
 }
 
 /// Basic Auth middleware that validates credentials against config.
@@ -123,7 +128,8 @@ pub async fn basic_auth_middleware(
         return next.run(req).await;
     }
 
-    let session_token = state.session_token.clone();
+    let session_token = state.session_token.read().clone();
+    let token_duration_secs = state.config.read().session_token_duration_secs;
 
     // Fast path: valid session cookie skips bcrypt entirely
     if has_valid_session_cookie(&req, &session_token) {
@@ -135,7 +141,7 @@ pub async fn basic_auth_middleware(
     // We set a session cookie so the SPA's subsequent fetch() calls are also authenticated.
     if has_valid_url_token(&req, &session_token) {
         let mut response = next.run(req).await;
-        if let Ok(val) = session_cookie_value(&session_token).parse() {
+        if let Ok(val) = session_cookie_value(&session_token, token_duration_secs).parse() {
             response.headers_mut().insert(header::SET_COOKIE, val);
         }
         return response;
@@ -167,7 +173,7 @@ pub async fn basic_auth_middleware(
         AuthResult::Ok => {
             // Set session cookie so subsequent JS fetch() calls are authenticated
             let mut response = next.run(req).await;
-            if let Ok(val) = session_cookie_value(&session_token).parse() {
+            if let Ok(val) = session_cookie_value(&session_token, token_duration_secs).parse() {
                 response.headers_mut().insert(header::SET_COOKIE, val);
             }
             response
@@ -181,5 +187,67 @@ pub async fn basic_auth_middleware(
         AuthResult::Invalid => {
             (StatusCode::UNAUTHORIZED, "Invalid credentials").into_response()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_cookie_with_max_age() {
+        let cookie = session_cookie_value("abc-123", 86400);
+        assert!(cookie.contains("tui-session=abc-123"));
+        assert!(cookie.contains("Max-Age=86400"));
+        assert!(cookie.contains("HttpOnly"));
+        assert!(cookie.contains("SameSite=Strict"));
+    }
+
+    #[test]
+    fn session_cookie_zero_duration_omits_max_age() {
+        let cookie = session_cookie_value("abc-123", 0);
+        assert!(cookie.contains("tui-session=abc-123"));
+        assert!(!cookie.contains("Max-Age"));
+        assert!(cookie.contains("HttpOnly"));
+    }
+
+    #[test]
+    fn session_cookie_never_duration() {
+        let cookie = session_cookie_value("tok", 31536000);
+        assert!(cookie.contains("Max-Age=31536000"));
+    }
+
+    #[test]
+    fn valid_session_cookie_matches() {
+        let req = Request::get("/")
+            .header(header::COOKIE, "tui-session=my-token; other=val")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert!(has_valid_session_cookie(&req, "my-token"));
+    }
+
+    #[test]
+    fn invalid_session_cookie_rejected() {
+        let req = Request::get("/")
+            .header(header::COOKIE, "tui-session=wrong-token")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert!(!has_valid_session_cookie(&req, "correct-token"));
+    }
+
+    #[test]
+    fn valid_url_token_matches() {
+        let req = Request::get("/?token=abc&other=1")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert!(has_valid_url_token(&req, "abc"));
+    }
+
+    #[test]
+    fn invalid_url_token_rejected() {
+        let req = Request::get("/?token=wrong")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert!(!has_valid_url_token(&req, "correct"));
     }
 }

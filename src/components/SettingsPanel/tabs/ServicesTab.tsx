@@ -28,6 +28,7 @@ interface AppConfig {
   remote_access_port: number;
   remote_access_username: string;
   remote_access_password_hash: string;
+  session_token_duration_secs: number;
 }
 
 interface LocalIpEntry { ip: string; label: string; }
@@ -48,6 +49,8 @@ export const ServicesTab: Component = () => {
   const [raSaving, setRaSaving] = createSignal(false);
   const [raSaved, setRaSaved] = createSignal(false);
   const [qrDataUrl, setQrDataUrl] = createSignal<string | null>(null);
+  const [tokenDuration, setTokenDuration] = createSignal(86400);
+  const [regenerating, setRegenerating] = createSignal(false);
 
   // Auto-select best IP when list loads (prefer Tailscale, then LAN/Wi-Fi)
   createEffect(() => {
@@ -93,6 +96,7 @@ export const ServicesTab: Component = () => {
       setRaPort(config.remote_access_port);
       setRaUsername(config.remote_access_username);
       setRaHasPassword(config.remote_access_password_hash.length > 0);
+      setTokenDuration(config.session_token_duration_secs ?? 86400);
     } catch {
       // Ignore
     }
@@ -127,6 +131,7 @@ export const ServicesTab: Component = () => {
       config.remote_access_enabled = raEnabled();
       config.remote_access_port = raPort();
       config.remote_access_username = raUsername();
+      config.session_token_duration_secs = tokenDuration();
 
       // Hash password if a new one was entered
       if (raPassword()) {
@@ -145,6 +150,26 @@ export const ServicesTab: Component = () => {
       setRaSaving(false);
     }
   };
+
+  const regenerateToken = async () => {
+    setRegenerating(true);
+    try {
+      await rpc("regenerate_session_token");
+      await refreshStatus();
+    } catch (e) {
+      console.error("Failed to regenerate token:", e);
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  /** Token duration options */
+  const TOKEN_DURATIONS = [
+    { value: 3600, label: t("services.tokenDuration.1h", "1 hour") },
+    { value: 86400, label: t("services.tokenDuration.24h", "24 hours") },
+    { value: 604800, label: t("services.tokenDuration.7d", "7 days") },
+    { value: 31536000, label: t("services.tokenDuration.never", "Never") },
+  ];
 
   return (
     <div class={s.section}>
@@ -336,6 +361,37 @@ export const ServicesTab: Component = () => {
               </a>
             </div>
           </Show>
+
+          <div class={s.group}>
+            <label>{t("services.label.tokenDuration", "Session Token Duration")}</label>
+            <select
+              class={s.input}
+              value={tokenDuration()}
+              onChange={(e) => setTokenDuration(parseInt(e.currentTarget.value))}
+            >
+              <For each={TOKEN_DURATIONS}>
+                {(opt) => <option value={opt.value}>{opt.label}</option>}
+              </For>
+            </select>
+            <p class={s.hint}>
+              {t("services.hint.tokenDuration", "How long remote sessions stay authenticated. Token always resets on app restart.")}
+            </p>
+          </div>
+
+          <div class={s.group}>
+            <button
+              class={s.testBtn}
+              disabled={regenerating()}
+              onClick={regenerateToken}
+            >
+              {regenerating()
+                ? t("services.btn.regenerating", "Regenerating...")
+                : t("services.btn.regenerateToken", "Regenerate Token")}
+            </button>
+            <p class={s.hint}>
+              {t("services.hint.regenerateToken", "Generates a new token, disconnecting all active remote sessions")}
+            </p>
+          </div>
         </div>
       </Show>
 

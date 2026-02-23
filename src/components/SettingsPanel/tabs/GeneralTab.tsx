@@ -2,7 +2,7 @@ import { Component, For, Show } from "solid-js";
 import { settingsStore, IDE_NAMES } from "../../../stores/settings";
 import { repoDefaultsStore } from "../../../stores/repoDefaults";
 import { updaterStore } from "../../../stores/updater";
-import type { IdeType } from "../../../stores/settings";
+import type { IdeType, UpdateChannel } from "../../../stores/settings";
 import { t } from "../../../i18n";
 import s from "../Settings.module.css";
 
@@ -98,6 +98,26 @@ export const GeneralTab: Component = () => {
           <span>{t("general.toggle.autoUpdateEnabled", "Automatically check for updates")}</span>
         </div>
         <p class={s.hint}>{t("general.hint.autoUpdateEnabled", "Download and install updates in the background")}</p>
+      </div>
+
+      <div class={s.group}>
+        <label>{t("general.label.updateChannel", "Update Channel")}</label>
+        <select
+          value={settingsStore.state.updateChannel}
+          onChange={(e) => settingsStore.setUpdateChannel(e.currentTarget.value as UpdateChannel)}
+        >
+          <option value="stable">{t("general.channel.stable", "Stable")}</option>
+          <option value="beta">{t("general.channel.beta", "Beta")}</option>
+          <option value="nightly">{t("general.channel.nightly", "Nightly")}</option>
+        </select>
+        <Show when={settingsStore.state.updateChannel !== "stable"}>
+          <p class={s.hint} style={{ color: "var(--warning, #e5c07b)" }}>
+            {t("general.hint.updateChannelWarning", "Beta and nightly builds may be unstable")}
+          </p>
+        </Show>
+        <Show when={settingsStore.state.updateChannel === "stable"}>
+          <p class={s.hint}>{t("general.hint.updateChannel", "Choose which release channel to receive updates from")}</p>
+        </Show>
       </div>
 
       <div class={s.group}>

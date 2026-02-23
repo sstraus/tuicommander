@@ -13,6 +13,12 @@ vi.mock("@tauri-apps/plugin-process", () => ({
   relaunch: mockRelaunch,
 }));
 
+// Mock settings store — default to "stable" channel
+const mockSettingsState = { updateChannel: "stable" as string };
+vi.mock("../../stores/settings", () => ({
+  settingsStore: { state: mockSettingsState },
+}));
+
 describe("updaterStore", () => {
   let store: typeof import("../../stores/updater").updaterStore;
 
@@ -21,9 +27,13 @@ describe("updaterStore", () => {
     vi.useFakeTimers();
     mockCheck.mockReset();
     mockRelaunch.mockReset().mockResolvedValue(undefined);
+    mockSettingsState.updateChannel = "stable";
 
     vi.doMock("@tauri-apps/plugin-updater", () => ({ check: mockCheck }));
     vi.doMock("@tauri-apps/plugin-process", () => ({ relaunch: mockRelaunch }));
+    vi.doMock("../../stores/settings", () => ({
+      settingsStore: { state: mockSettingsState },
+    }));
 
     store = (await import("../../stores/updater")).updaterStore;
   });
@@ -35,12 +45,13 @@ describe("updaterStore", () => {
         expect(store.state.checking).toBe(false);
         expect(store.state.downloading).toBe(false);
         expect(store.state.error).toBeNull();
+        expect(store.state.downloadUrl).toBeNull();
         dispose();
       });
     });
   });
 
-  describe("checkForUpdate()", () => {
+  describe("checkForUpdate() — stable channel", () => {
     it("sets checking=true during check", async () => {
       let resolveCheck!: (v: null) => void;
       mockCheck.mockReturnValue(new Promise((r) => { resolveCheck = () => r(null); }));
@@ -64,6 +75,7 @@ describe("updaterStore", () => {
         expect(store.state.available).toBe(true);
         expect(store.state.version).toBe("1.2.3");
         expect(store.state.body).toBe("fixes");
+        expect(store.state.downloadUrl).toBeNull();
         dispose();
       });
     });
@@ -125,6 +137,44 @@ describe("updaterStore", () => {
     });
   });
 
+  describe("checkForUpdate() — beta/nightly channel", () => {
+    it("fetches manifest from beta endpoint and sets downloadUrl", async () => {
+      mockSettingsState.updateChannel = "beta";
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ version: "2.0.0-beta.1", notes: "Beta release" }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await createRoot(async (dispose) => {
+        await store.checkForUpdate();
+        expect(store.state.available).toBe(true);
+        expect(store.state.version).toBe("2.0.0-beta.1");
+        expect(store.state.body).toBe("Beta release");
+        expect(store.state.downloadUrl).toBe("https://github.com/sstraus/tuicommander/releases/tag/beta");
+        expect(mockCheck).not.toHaveBeenCalled();
+        dispose();
+      });
+
+      vi.unstubAllGlobals();
+    });
+
+    it("handles HTTP error for non-stable channel", async () => {
+      mockSettingsState.updateChannel = "nightly";
+      const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 404 });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await createRoot(async (dispose) => {
+        await store.checkForUpdate();
+        expect(store.state.error).toContain("No published releases found yet");
+        expect(store.state.available).toBe(false);
+        dispose();
+      });
+
+      vi.unstubAllGlobals();
+    });
+  });
+
   describe("downloadAndInstall()", () => {
     it("is a no-op when no pending update", async () => {
       await createRoot(async (dispose) => {
@@ -164,6 +214,31 @@ describe("updaterStore", () => {
       });
     });
 
+    it("opens browser for non-stable channel updates", async () => {
+      mockSettingsState.updateChannel = "beta";
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ version: "2.0.0-beta.1", notes: "Beta" }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+      const mockOpen = vi.fn();
+      vi.stubGlobal("open", mockOpen);
+      // window.open
+      Object.defineProperty(window, "open", { value: mockOpen, writable: true });
+
+      await createRoot(async (dispose) => {
+        await store.checkForUpdate();
+        await store.downloadAndInstall();
+        expect(mockOpen).toHaveBeenCalledWith(
+          "https://github.com/sstraus/tuicommander/releases/tag/beta",
+          "_blank",
+        );
+        dispose();
+      });
+
+      vi.unstubAllGlobals();
+    });
+
     it("sets error when install fails", async () => {
       const fakeUpdate = {
         version: "1.0.0",
@@ -195,6 +270,7 @@ describe("updaterStore", () => {
         expect(store.state.version).toBeNull();
         expect(store.state.body).toBeNull();
         expect(store.state.error).toBeNull();
+        expect(store.state.downloadUrl).toBeNull();
         dispose();
       });
     });

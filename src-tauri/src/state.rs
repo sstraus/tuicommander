@@ -407,7 +407,8 @@ pub struct AppState {
     pub(crate) server_shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     /// Random session token for browser cookie auth — regenerated on each server start.
     /// Browsers auto-send cookies in fetch(), unlike stored Basic Auth credentials.
-    pub(crate) session_token: String,
+    /// Behind RwLock so it can be regenerated at runtime (invalidating all sessions).
+    pub(crate) session_token: parking_lot::RwLock<String>,
     /// Tauri AppHandle — stored after setup() so HTTP handlers can emit events.
     /// None before Tauri initializes (or in headless/test scenarios).
     pub(crate) app_handle: parking_lot::RwLock<Option<AppHandle>>,
@@ -774,7 +775,7 @@ mod tests {
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             server_shutdown: parking_lot::Mutex::new(None),
-            session_token: String::from("test-token"),
+            session_token: parking_lot::RwLock::new(String::from("test-token")),
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
         }
