@@ -342,6 +342,37 @@ export const ServicesTab: Component = () => {
                 </Show>
               </div>
             </Show>
+
+            <div class={s.group}>
+              <label>{t("services.label.tokenDuration", "Session Token Duration")}</label>
+              <select
+                class={s.input}
+                value={tokenDuration()}
+                onChange={(e) => setTokenDuration(parseInt(e.currentTarget.value))}
+              >
+                <For each={TOKEN_DURATIONS}>
+                  {(opt) => <option value={opt.value}>{opt.label}</option>}
+                </For>
+              </select>
+              <p class={s.hint}>
+                {t("services.hint.tokenDuration", "How long remote sessions stay authenticated. Token always resets on app restart.")}
+              </p>
+            </div>
+
+            <div class={s.group}>
+              <button
+                class={s.testBtn}
+                disabled={regenerating()}
+                onClick={regenerateToken}
+              >
+                {regenerating()
+                  ? t("services.btn.regenerating", "Regenerating...")
+                  : t("services.btn.regenerateToken", "Regenerate Token")}
+              </button>
+              <p class={s.hint}>
+                {t("services.hint.regenerateToken", "Generates a new token, disconnecting all active remote sessions")}
+              </p>
+            </div>
           </div>
 
           <Show when={status()?.running && qrContent()}>
@@ -361,37 +392,6 @@ export const ServicesTab: Component = () => {
               </a>
             </div>
           </Show>
-
-          <div class={s.group}>
-            <label>{t("services.label.tokenDuration", "Session Token Duration")}</label>
-            <select
-              class={s.input}
-              value={tokenDuration()}
-              onChange={(e) => setTokenDuration(parseInt(e.currentTarget.value))}
-            >
-              <For each={TOKEN_DURATIONS}>
-                {(opt) => <option value={opt.value}>{opt.label}</option>}
-              </For>
-            </select>
-            <p class={s.hint}>
-              {t("services.hint.tokenDuration", "How long remote sessions stay authenticated. Token always resets on app restart.")}
-            </p>
-          </div>
-
-          <div class={s.group}>
-            <button
-              class={s.testBtn}
-              disabled={regenerating()}
-              onClick={regenerateToken}
-            >
-              {regenerating()
-                ? t("services.btn.regenerating", "Regenerating...")
-                : t("services.btn.regenerateToken", "Regenerate Token")}
-            </button>
-            <p class={s.hint}>
-              {t("services.hint.regenerateToken", "Generates a new token, disconnecting all active remote sessions")}
-            </p>
-          </div>
         </div>
       </Show>
 

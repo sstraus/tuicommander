@@ -5,17 +5,17 @@
 TUICommander is a desktop terminal orchestrator for running multiple AI coding agents in parallel (Claude Code, Gemini CLI, Aider, OpenCode, Codex). Built with Tauri + SolidJS + xterm.js + Rust.
 
 **Key capabilities:**
-- Up to 50 concurrent terminal sessions
+- Up to 50 concurrent terminal sessions with split panes and detachable tabs
+- 10 AI agents supported (Claude Code, Codex, Aider, Gemini, Amp, and more)
 - Git worktree isolation per branch
 - GitHub PR monitoring with CI status and notifications
-- AI agent detection and fallback chains
-- Voice dictation with local Whisper
-- Prompt library with variable substitution
-- Split terminal panes with drag-resize
+- Obsidian-style plugin system with community registry
+- Voice dictation with local Whisper (no cloud)
+- Command palette, configurable keybindings, prompt library
 - Built-in file browser and code editor
-- Repository groups with color labels
-- Clickable file paths in terminal output
-- Remote access via HTTP/WebSocket
+- MCP HTTP server for external AI tool integration
+- Remote access from a browser on another device
+- Auto-update, 13 bundled fonts, cross-platform (macOS, Windows, Linux)
 
 ## First Launch
 
@@ -67,11 +67,17 @@ The sidebar shows all your repositories and their branches.
 
 ## Next Steps
 
-- [Keyboard Shortcuts](keyboard-shortcuts.md) — All shortcuts
-- [Terminal Features](terminals.md) — Tabs, splits, zoom, copy/paste
+- [Terminal Features](terminals.md) — Tabs, splits, zoom, detachable tabs, find-in-terminal
+- [Sidebar](sidebar.md) — Repos, branches, groups, park repos, quick branch switcher
+- [AI Agents](ai-agents.md) — Agent detection, rate limits, fallback chains, question detection
+- [Keyboard Shortcuts](keyboard-shortcuts.md) — All shortcuts and how to customize them
+- [Command Palette & Activity Dashboard](command-palette.md) — Fuzzy-search actions and monitor sessions
 - [File Browser & Code Editor](file-browser.md) — Browse files, edit code, git status
-- [Settings](settings.md) — All configuration options
-- [Voice Dictation](dictation.md) — Push-to-talk setup
 - [GitHub Integration](github-integration.md) — PR monitoring, CI rings, notifications
 - [Git Worktrees](worktrees.md) — Worktree workflow, configuration
+- [Lazygit](lazygit.md) — Three modes for lazygit integration
 - [Prompt Library](prompt-library.md) — Template management, variables
+- [Plugins](plugins.md) — Install, browse, and manage plugins
+- [Voice Dictation](dictation.md) — Push-to-talk setup
+- [Remote Access](remote-access.md) — Access from a browser on another device
+- [Settings](settings.md) — All configuration options

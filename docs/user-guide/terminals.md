@@ -98,6 +98,33 @@ Drag the divider between the two panes to adjust the split ratio. Both terminals
 
 Split layouts are stored per branch. When you switch branches and come back, your split configuration is restored.
 
+## Detachable Tabs
+
+Float any terminal into its own OS window:
+
+1. **Right-click** a tab → **Detach to Window**
+2. The terminal opens in an independent floating window
+3. The PTY session stays alive — the floating window reconnects to the same session
+
+When you close the floating window, the tab automatically returns to the main window.
+
+**Requirements:** The tab must have an active PTY session. Tabs without a session (e.g., just created but not connected) cannot be detached.
+
+## Find in Terminal
+
+Search within terminal output with `Cmd+F`:
+
+1. Press `Cmd+F` — a search overlay appears at the top of the active terminal pane
+2. Type your search query — matches highlight as you type (yellow for all matches, orange for active match)
+3. Navigate matches:
+   - `Enter` or `Cmd+G` — Next match
+   - `Shift+Enter` or `Cmd+Shift+G` — Previous match
+4. Toggle search options: **Case sensitive**, **Whole word**, **Regex**
+5. Match counter shows "N of M" results
+6. Press `Escape` to close the search and refocus the terminal
+
+Uses `@xterm/addon-search` for native integration with the terminal buffer.
+
 ## Copy & Paste
 
 - **Copy:** Select text in the terminal, then `Cmd+C`

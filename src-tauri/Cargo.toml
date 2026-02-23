@@ -1,6 +1,6 @@
 [package]
 name = "tuicommander"
-version = "0.5.0"
+version = "0.5.1"
 description = "TUICommander - Native platform for AI coding agents"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"

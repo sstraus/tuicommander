@@ -38,8 +38,46 @@
     <!-- Splash screen — shown instantly, replaced when SolidJS mounts -->
     <div id="splash">
       <div class="spinner"></div>
-      <span>Initializing…</span>
+      <span id="splash-msg"></span>
     </div>
+    <script>
+      (function () {
+        var msgs = [
+          "Aligning satellites for optimal awesomeness\u2026",
+          "Searching for the lost commit in the ancient repo\u2026",
+          "Warming up the quantum hamsters\u2026",
+          "Calibrating the flux capacitor\u2026",
+          "Negotiating with the cloud\u2026",
+          "Refactoring reality\u2026",
+          "Polishing pixels\u2026",
+          "Rehydrating dehydrated data\u2026",
+          "Asking the AI nicely\u2026",
+          "Herding microservices\u2026",
+          "Synchronizing parallel universes\u2026",
+          "Charging the lasers\u2026",
+          "Compiling sarcasm\u2026",
+          "Untangling spaghetti code\u2026",
+          "Mapping unknown territories\u2026",
+          "Debugging the matrix\u2026",
+          "Downloading more RAM\u2026",
+          "Spinning up tiny containers\u2026",
+          "Consulting the rubber duck\u2026",
+          "Optimizing the timeline\u2026"
+        ];
+        var el = document.getElementById("splash-msg");
+        var last = -1;
+        function pick() {
+          var i;
+          do { i = Math.floor(Math.random() * msgs.length); } while (i === last);
+          last = i;
+          el.style.opacity = "0";
+          setTimeout(function () { el.textContent = msgs[i]; el.style.opacity = "1"; }, 250);
+        }
+        el.style.transition = "opacity 0.25s ease";
+        pick();
+        setInterval(pick, 3000);
+      })();
+    </script>
 
     <!-- SolidJS renders into this container, replacing splash -->
     <div id="app"></div>

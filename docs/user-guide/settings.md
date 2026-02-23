@@ -4,72 +4,40 @@ Open settings with `Cmd+,`. Settings are organized into tabs.
 
 ## General Tab
 
-### Terminal Font
+| Setting | Description |
+|---------|-------------|
+| **Language** | UI language |
+| **Default IDE** | IDE for "Open in..." actions. Detected IDEs grouped by category: Editors (VS Code, Cursor, Zed, Sublime, Vim, Neovim, Emacs), IDEs (IntelliJ, WebStorm, PyCharm, GoLand, etc.), Terminals (iTerm2, Warp, Kitty, etc.), Git (GitKraken, GitHub Desktop, Tower, etc.) |
+| **Shell** | Custom shell path (e.g., `/bin/zsh`, `/usr/local/bin/fish`). Leave empty for system default. |
+| **Confirm before quitting** | Show dialog when closing app with active terminals |
+| **Confirm before closing tab** | Ask before closing terminal tab |
+| **Prevent sleep when busy** | Keep machine awake while agents are working |
+| **Auto-check for updates** | Check for new versions on startup |
+| **Auto-show PR popover** | Automatically display PR details when switching branches |
+| **Repository defaults** | Base branch, file handling, setup/run scripts applied to new repos |
 
-Choose the monospace font for terminal display. Bundled fonts (no installation needed):
+## Appearance Tab
 
-- JetBrains Mono (default)
-- Fira Code
-- Hack
-- Cascadia Code
-- Source Code Pro
-- IBM Plex Mono
-- Inconsolata
-- Ubuntu Mono
-- Anonymous Pro
-- Roboto Mono
-- Space Mono
-
-### Default Font Size
-
-8px to 32px. Applies to new terminals. Existing terminals keep their individual zoom level.
-
-### Shell
-
-Custom shell path (e.g., `/bin/zsh`, `/usr/local/bin/fish`). Leave empty for system default:
-- macOS: `/bin/zsh`
-- Linux: `$SHELL` or `/bin/bash`
-- Windows: `powershell.exe`
-
-### Default IDE
-
-IDE used for "Open in..." actions:
-
-**Editors:** VS Code, Cursor, Zed, Sublime Text, Vim, Neovim, Emacs
-**IDEs:** IntelliJ IDEA, WebStorm, PyCharm, GoLand, Rider, CLion, RustRover, Android Studio
-**Terminals:** iTerm2, Warp, Kitty, Alacritty, Hyper, WezTerm
-**Git:** GitKraken, GitHub Desktop, Tower, Sourcetree, Fork
-**Utilities:** Finder, Terminal
-
-### Terminal Theme
-
-Color theme for terminals. Multiple themes available.
-
-### Confirmations
-
-- **Confirm before quitting** — Show dialog when closing app with active terminals
-- **Confirm before closing tab** — Ask before closing terminal tab
+| Setting | Description |
+|---------|-------------|
+| **Terminal theme** | Color theme with preview swatches |
+| **Terminal font** | 13 bundled monospace fonts (JetBrains Mono default): Fira Code, Hack, Cascadia Code, Source Code Pro, IBM Plex Mono, Inconsolata, Ubuntu Mono, Anonymous Pro, Roboto Mono, Space Mono, Monaspace Neon, Geist Mono |
+| **Default font size** | 8–32px slider. Applies to new terminals; existing terminals keep their zoom level. |
+| **Split tab mode** | Separate or unified tab appearance |
+| **Max tab name length** | 10–60 slider |
+| **Repository groups** | Create, rename, delete, and color-code groups |
+| **Reset panel sizes** | Restore sidebar and panel widths to defaults |
 
 ## Agents Tab
 
-### Primary Agent
+| Setting | Description |
+|---------|-------------|
+| **Primary Agent** | Default AI agent (Claude Code, Gemini CLI, OpenCode, Aider, Codex) |
+| **Fallback Chain** | Ordered list of agents to try when the primary hits a rate limit |
+| **Auto-Recovery** | Check every 5 minutes if primary becomes available again |
+| **Reset to Primary** | Force-switch back to the primary agent immediately |
 
-The default AI coding agent for new sessions:
-- Claude Code
-- Gemini CLI
-- OpenCode
-- Aider
-- Codex
-
-### Auto-Recovery
-
-When enabled, TUICommander periodically checks if the primary agent becomes available again after switching to a fallback.
-
-Recovery interval: 5 minutes.
-
-### Reset to Primary
-
-Force reset the active agent back to the primary agent immediately.
+See [AI Agents](ai-agents.md) for details on agent detection and fallback behavior.
 
 ## Services Tab
 
@@ -82,62 +50,29 @@ Enable an HTTP API server on localhost for external tool integration:
 
 ### Remote Access
 
-Enable HTTP/WebSocket access from other devices on your network:
-
-- **Port** — Default 9876, range 1024-65535
-- **Username** — Basic Auth username
-- **Password** — Basic Auth password (stored as bcrypt hash)
-- **URL** — Shown after configuration: `http://<ip>:<port>`
+Enable HTTP/WebSocket access from other devices on your network. See [Remote Access](remote-access.md) for full setup guide.
 
 ### Voice Dictation
 
 See [Voice Dictation](dictation.md) for full details.
 
-- Enable/disable dictation
-- Hotkey configuration (default: F5)
-- Language selection
-- Model selection and download
-- Audio device selection
-- Text corrections dictionary
+## Keyboard Shortcuts Tab
 
-## Repository Groups
+Browse and rebind all app actions:
 
-Organize repositories into named, colored groups in the sidebar.
+- Every registered action is listed with its current keybinding
+- Click any action row and press a new key combination to rebind it
+- Custom bindings are stored in `keybindings.json` in the platform config directory
+- Auto-populated from the action registry — new actions appear automatically
 
-### Creating Groups
+See [Keyboard Shortcuts](keyboard-shortcuts.md) for the full reference and customization guide.
 
-- **Right-click** a repo's `⋯` button → **Move to Group** → **New Group...**
-- Enter a name in the dialog to create the group and move the repo into it
+## Plugins Tab
 
-### Managing Groups
+Install, manage, and browse plugins. See [Plugins](plugins.md) for the full guide.
 
-- **Drag a repo** onto a group header to move it into that group
-- **Right-click a group header** to rename it, change its color, or delete it
-- **Click a group header** to collapse/expand it
-- **Drag groups** to reorder them
-
-### Removing Repos from Groups
-
-Right-click a repo's `⋯` button → **Move to Group** → **Ungrouped** to remove it from its current group.
-
-### Color Labels
-
-Groups can have a color label. The color appears as a sidebar accent. Repo-specific colors (set in repo settings) take priority over group colors.
-
-## Diff Panel
-
-Toggle with `Cmd+Shift+D` or the diff icon in the status bar.
-
-### Scope Selector
-
-A dropdown at the top of the diff panel lets you choose what to diff:
-
-- **Working tree** (default) — Shows unstaged and staged changes
-- **Last 5 commits** — Select a specific commit by hash and subject line to see its changes
-
-### File List
-
-Click any file in the diff list to open a dedicated diff tab in the main tab area, showing the inline diff for that file.
+- **Installed** — List all plugins with enable/disable toggle, logs viewer, uninstall
+- **Browse** — Discover and install from the community registry
 
 ## Repository Settings
 

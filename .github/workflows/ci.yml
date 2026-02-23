@@ -68,6 +68,10 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
+      - name: Create dist stub for include_dir
+        shell: bash
+        run: mkdir -p dist && echo '<html></html>' > dist/index.html
+
       - name: Clippy
         working-directory: src-tauri
         env:
