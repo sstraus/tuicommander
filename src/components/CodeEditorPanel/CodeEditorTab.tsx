@@ -233,9 +233,11 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
         </div>
       </Show>
 
-      <Show when={!loading() && !error()}>
-        <div class={s.editorContent} ref={ref} />
-      </Show>
+      {/* Always mount the editor div so solid-codemirror's ref callback fires during
+          initial component mount. Wrapping in <Show> defers the ref, causing onMount
+          inside createCodeMirror to never fire in production builds — the editorView
+          signal stays undefined and content/extensions are never applied. */}
+      <div class={s.editorContent} ref={ref} style={{ display: loading() || error() ? "none" : undefined }} />
 
       <ContextMenu
         items={[{

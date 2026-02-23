@@ -276,6 +276,15 @@ function createGitHubStore() {
     intervalId = window.setInterval(pollAll, currentInterval);
   }
 
+  /** Directly set remote status for a repo (used by simulator) */
+  function setRemoteStatus(repoPath: string, remote: RepoRemoteStatus): void {
+    if (!state.repos[repoPath]) {
+      setState("repos", repoPath, { branches: {}, remoteStatus: remote, lastPolled: Date.now() });
+    } else {
+      setState("repos", repoPath, "remoteStatus", remote);
+    }
+  }
+
   return {
     state,
     updateRepoData,
@@ -284,6 +293,7 @@ function createGitHubStore() {
     getCheckDetails,
     getBranchPrData,
     getRemoteStatus,
+    setRemoteStatus,
     pollRepo,
     startPolling,
     stopPolling,

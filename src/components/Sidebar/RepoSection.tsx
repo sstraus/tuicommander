@@ -164,6 +164,10 @@ export const BranchItem: Component<{
 
   const handleDoubleClick = (e: MouseEvent) => {
     e.stopPropagation();
+    if (props.branch.isMain) {
+      props.onAddTerminal();
+      return;
+    }
     props.onRename();
   };
 
@@ -178,7 +182,7 @@ export const BranchItem: Component<{
     const items: ContextMenuItem[] = [
       { label: "Copy Path", action: handleCopyPath, disabled: !props.branch.worktreePath },
       { label: "Add Terminal", action: props.onAddTerminal },
-      { label: "Rename Branch", action: props.onRename },
+      { label: "Rename Branch", action: props.onRename, disabled: props.branch.isMain },
     ];
     if (!props.branch.isMain && props.branch.worktreePath && props.canRemove) {
       items.push({ label: "Delete Worktree", action: props.onRemove, separator: true });

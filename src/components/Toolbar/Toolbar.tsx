@@ -1,6 +1,8 @@
 import { Component, Show, For, createSignal, createEffect, onCleanup } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
+import { updaterStore } from "../../stores/updater";
+import { useGitHub } from "../../hooks/useGitHub";
 import { uiStore } from "../../stores/ui";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
@@ -30,15 +32,22 @@ const NOTIFICATION_LABELS: Record<PrNotificationType, { label: string; icon: str
 
 type LastItemSource =
   | { kind: "activity"; item: ActivityItem }
-  | { kind: "pr"; notif: PrNotification };
+  | { kind: "pr"; notif: PrNotification }
+  | { kind: "update"; version: string };
 
-/** Find the most recently created item across both stores. */
+/** Find the most recently created item across all notification sources. */
 function getLastItemAcrossStores(): LastItemSource | null {
   const activityItem = activityStore.getLastItem();
   const prNotifs = prNotificationsStore.getActive();
   const prLast = prNotifs.length > 0
     ? prNotifs.reduce((latest, n) => n.createdAt >= latest.createdAt ? n : latest)
     : null;
+
+  // Update available is always "newest" — it's the most important notification
+  const upd = updaterStore.state;
+  if (upd.available && upd.version) {
+    return { kind: "update", version: upd.version };
+  }
 
   if (!activityItem && !prLast) return null;
   if (!prLast) return { kind: "activity", item: activityItem! };
@@ -76,7 +85,8 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const activeNotifs = () => prNotificationsStore.getActive();
   const activeActivityItems = () => activityStore.getActive();
   const activitySections = () => activityStore.getSections();
-  const totalBadgeCount = () => activeNotifs().length + activeActivityItems().length;
+  const hasUpdate = () => updaterStore.state.available && !!updaterStore.state.version;
+  const totalBadgeCount = () => activeNotifs().length + activeActivityItems().length + (hasUpdate() ? 1 : 0);
   const hasAnyItems = () => totalBadgeCount() > 0;
   const lastItem = () => getLastItemAcrossStores();
 
@@ -104,6 +114,18 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     return repoSettingsStore.get(activeRepoPath)?.color
       || repositoriesStore.getGroupForRepo(activeRepoPath)?.color
       || undefined;
+  };
+
+  const getRepoPath = () => props.repoPath;
+  const github = useGitHub(getRepoPath);
+
+  const aheadBehind = () => {
+    const gs = github.status();
+    if (!gs) return null;
+    if (gs.ahead > 0 && gs.behind > 0) return ` ↑${gs.ahead} ↓${gs.behind}`;
+    if (gs.ahead > 0) return ` ↑${gs.ahead}`;
+    if (gs.behind > 0) return ` ↓${gs.behind}`;
+    return null;
   };
 
   const launchPath = () => activeBranch()?.worktreePath || props.repoPath;
@@ -134,7 +156,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const handleLastItemClick = () => {
     const src = lastItem();
     if (!src) return;
-    if (src.kind === "activity") {
+    if (src.kind === "update") {
+      updaterStore.downloadAndInstall();
+    } else if (src.kind === "activity") {
       openActivityItem(src.item);
     } else {
       // PR notification: open detail popover
@@ -187,46 +211,64 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               <span class={s.branchSeparator}>/</span>
             </Show>
             <span class={s.branchName}>{activeBranchName()}</span>
+            <Show when={aheadBehind()}>
+              {(ab) => <span class={s.aheadBehind}>{ab()}</span>}
+            </Show>
           </button>
         </Show>
       </div>
 
       <div class={s.right}>
-        {/* Last-item shortcut: shows the most recently added item from any source */}
-        <Show when={lastItem()}>
-          {(src) => {
-            const activitySrc = () => src().kind === "activity" ? src() as { kind: "activity"; item: ActivityItem } : null;
-            const prSrc = () => src().kind === "pr" ? src() as { kind: "pr"; notif: PrNotification } : null;
-            return (
-              <button
-                class={s.lastItemBtn}
-                onClick={handleLastItemClick}
-                title={(() => { const v = src(); return v.kind === "activity" ? v.item.title : v.notif.branch; })()}
-              >
-                <Show when={activitySrc()} keyed>
-                  {(as) => (
-                    <>
-                      <span class={s.lastItemIcon} innerHTML={as.item.icon} />
-                      <span class={s.lastItemTitle}>{as.item.title}</span>
-                    </>
-                  )}
-                </Show>
-                <Show when={prSrc()} keyed>
-                  {(ps) => (
-                    <>
-                      <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354Z"/></svg>
-                      <span class={s.lastItemTitle}>{ps.notif.branch}</span>
-                    </>
-                  )}
-                </Show>
-              </button>
-            );
-          }}
-        </Show>
-
-        {/* Bell: aggregates PR notifications + activity store items */}
+        {/* Notification group: last-item shortcut + bell */}
         <Show when={hasAnyItems()}>
-          <div class={s.notifWrapper} ref={notifRef}>
+          <div class={s.notifGroup} ref={notifRef}>
+            {/* Last-item shortcut */}
+            <Show when={lastItem()}>
+              {(src) => {
+                const activitySrc = () => src().kind === "activity" ? src() as { kind: "activity"; item: ActivityItem } : null;
+                const prSrc = () => src().kind === "pr" ? src() as { kind: "pr"; notif: PrNotification } : null;
+                const updateSrc = () => src().kind === "update" ? src() as { kind: "update"; version: string } : null;
+                return (
+                  <button
+                    class={s.lastItemBtn}
+                    onClick={handleLastItemClick}
+                    title={(() => {
+                      const v = src();
+                      if (v.kind === "update") return `Update to v${v.version}`;
+                      if (v.kind === "activity") return v.item.title;
+                      return v.notif.branch;
+                    })()}
+                  >
+                    <Show when={updateSrc()} keyed>
+                      {(us) => (
+                        <>
+                          <svg class={s.lastItemIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.399l-.008-.078.012-.058h1.916zm.01-2.54a.96.96 0 1 0 0-1.92.96.96 0 0 0 0 1.92z"/></svg>
+                          <span class={s.lastItemTitle}>Update v{us.version}</span>
+                        </>
+                      )}
+                    </Show>
+                    <Show when={activitySrc()} keyed>
+                      {(as) => (
+                        <>
+                          <span class={s.lastItemIcon} innerHTML={as.item.icon} />
+                          <span class={s.lastItemTitle}>{as.item.title}</span>
+                        </>
+                      )}
+                    </Show>
+                    <Show when={prSrc()} keyed>
+                      {(ps) => (
+                        <>
+                          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354Z"/></svg>
+                          <span class={s.lastItemTitle}>{ps.notif.branch}</span>
+                        </>
+                      )}
+                    </Show>
+                  </button>
+                );
+              }}
+            </Show>
+
+            {/* Bell */}
             <button
               class={s.bell}
               onClick={() => setShowNotifPopover(!showNotifPopover())}
@@ -239,7 +281,37 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
             </button>
             <Show when={showNotifPopover()}>
               <div class={s.popover}>
-                {/* PR Updates section (native, always first) */}
+                {/* App update section */}
+                <Show when={hasUpdate()}>
+                  <div class={s.notifHeader}>
+                    <span class={s.notifTitle}>{t("toolbar.appUpdate", "APP UPDATE")}</span>
+                    <button class={s.dismissAll} onClick={() => updaterStore.dismiss()}>
+                      {t("toolbar.dismiss", "Dismiss")}
+                    </button>
+                  </div>
+                  <div
+                    class={s.notifItem}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowNotifPopover(false);
+                      updaterStore.downloadAndInstall();
+                    }}
+                  >
+                    <span class={s.notifIcon}>
+                      <svg viewBox="0 0 16 16" width="14" height="14" fill="#4ec9b0"><path d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16zm1-11H7v4H5l3 3 3-3H9V5z"/></svg>
+                    </span>
+                    <div class={s.notifDetails}>
+                      <span class={s.notifPr}>
+                        {updaterStore.state.downloading
+                          ? `${t("statusBar.updating", "Updating")} ${updaterStore.state.progress}%`
+                          : `v${updaterStore.state.version} ${t("toolbar.available", "available")}`}
+                      </span>
+                      <span class={s.notifBranch}>{t("toolbar.clickToUpdate", "Click to update")}</span>
+                    </div>
+                  </div>
+                </Show>
+
+                {/* PR Updates section */}
                 <Show when={activeNotifs().length > 0}>
                   <div class={s.notifHeader}>
                     <span class={s.notifTitle}>{t("toolbar.prUpdates", "PR UPDATES")}</span>

@@ -17,6 +17,8 @@ import { pluginRegistry } from "../plugins/pluginRegistry";
 import { repoDefaultsStore, type RepoDefaults } from "../stores/repoDefaults";
 import { repoSettingsStore, type RepoSettings } from "../stores/repoSettings";
 import { activityStore } from "../stores/activityStore";
+import { updaterStore } from "../stores/updater";
+import { statusBarTicker } from "../stores/statusBarTicker";
 import { PRESETS, buildPrStatus, type PrOverride } from "./presets";
 
 const SIM_REPO_PATH = "/sim/repo";
@@ -285,11 +287,74 @@ const simulator = {
     console.log("[tuic] Effective settings for", repoPath, ":", effective);
   },
 
+  /** Set status bar notification text (tests pendulum ticker) */
+  statusInfo(text: string): void {
+    const setter = (window as any).__tuic_setStatusInfo;
+    if (!setter) {
+      console.error("[tuic] statusInfo setter not available — App not mounted yet?");
+      return;
+    }
+    setter(text);
+    console.log(`[tuic] statusInfo set to: "${text}"`);
+  },
+
+  /** Simulate an app update available (shows in lastItem + bell) */
+  update(version?: string): void {
+    const ver = version ?? "0.99.0";
+    updaterStore.simulateAvailable(ver);
+    console.log(`[tuic] App update simulated: v${ver} — check toolbar bell & lastItem`);
+  },
+
+  /** Dismiss simulated update */
+  updateClear(): void {
+    updaterStore.dismiss();
+    console.log("[tuic] Update dismissed");
+  },
+
+  /** Simulate a status bar ticker message (like Claude usage plugin) */
+  ticker(options?: { text?: string; icon?: boolean; warning?: boolean; clickable?: boolean; ttlMs?: number }): void {
+    const text = options?.text ?? "Claude: 5h: 42% · 7d: 71%";
+    const chartIcon = options?.icon !== false
+      ? `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M1 15V1h2v12h12v2H1zm3-4V6h2v5H4zm3 0V3h2v8H7zm3 0V7h2v4h-2zm3 0V1h2v10h-2z"/></svg>`
+      : undefined;
+    statusBarTicker.addMessage({
+      id: "sim-ticker",
+      pluginId: "simulator",
+      text,
+      icon: chartIcon,
+      priority: options?.warning ? 80 : 0,
+      ttlMs: options?.ttlMs ?? 60_000,
+      onClick: options?.clickable ? () => console.log("[tuic] Ticker clicked!") : undefined,
+    });
+    console.log(`[tuic] Ticker message set: "${text}"`);
+  },
+
+  /** Clear simulated ticker message */
+  tickerClear(): void {
+    statusBarTicker.removeMessage("sim-ticker", "simulator");
+    console.log("[tuic] Ticker message cleared");
+  },
+
+  /** Simulate ahead/behind counts on the active branch (shown in toolbar) */
+  aheadBehind(options?: { ahead?: number; behind?: number }): void {
+    suppressPolling();
+    const { repoPath, branch } = ensureRepo();
+    githubStore.setRemoteStatus(repoPath, {
+      has_remote: true,
+      current_branch: branch,
+      ahead: options?.ahead ?? 12,
+      behind: options?.behind ?? 3,
+    });
+    console.log(`[tuic] Ahead/behind set: ↑${options?.ahead ?? 12} ↓${options?.behind ?? 3}`);
+  },
+
   /** Clear all mocks and resume polling */
   reset(): void {
     rateLimitStore.clearAll();
     prNotificationsStore.clearAll();
     activityStore.clearAll();
+    updaterStore.dismiss();
+    statusBarTicker.removeMessage("sim-ticker", "simulator");
 
     // Clean up sim repo if it was created
     if (repositoriesStore.get(SIM_REPO_PATH)) {
@@ -382,6 +447,29 @@ const simulator = {
   __tuic.activity({ contentUri: 'plan:file?path=plans/foo.md' })  Opens virtual markdown tab on click
   __tuic.activity({ dismissible: false, iconColor: '#3fb950' })
   __tuic.activityClear()                                    Clear all activity items and sections
+
+── App Update (toolbar bell) ─────────────────────────────────
+  __tuic.update()                              Simulate update v0.99.0 (lastItem + bell)
+  __tuic.update('1.2.3')                       Simulate update with custom version
+  __tuic.updateClear()                         Dismiss simulated update
+
+── Status Bar Ticker ────────────────────────────────────────
+  __tuic.ticker()                              Default ticker: "Claude: 5h: 42% · 7d: 71%"
+  __tuic.ticker({ text: 'Build: 3m 12s' })    Custom text
+  __tuic.ticker({ warning: true })             Warning priority (appears more often)
+  __tuic.ticker({ clickable: true })           Clickable (logs on click)
+  __tuic.ticker({ ttlMs: 10000 })              Custom TTL (10s)
+  __tuic.tickerClear()                         Remove ticker message
+
+── Ahead/Behind (toolbar branch) ────────────────────────────
+  __tuic.aheadBehind()                         Default: ↑12 ↓3
+  __tuic.aheadBehind({ ahead: 38 })            Only ahead
+  __tuic.aheadBehind({ behind: 5 })            Only behind
+  __tuic.aheadBehind({ ahead: 2, behind: 7 }) Both
+
+── Status Bar Notifications ──────────────────────────────────
+  __tuic.statusInfo('Ready')                           Short text (no ticker)
+  __tuic.statusInfo('Removed brave-morpheus-000 (git cleanup may be needed)')  Long text (triggers pendulum ticker)
 
 ── Repo Defaults & Settings ──────────────────────────────────
   __tuic.defaults({ baseBranch: 'develop' })             Set global default base branch

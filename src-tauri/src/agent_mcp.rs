@@ -142,18 +142,18 @@ fn detect_bridge_binary() -> String {
         return resolved;
     }
     // Fallback: same directory as the current executable
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let candidate = dir.join("tui-mcp-bridge");
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let candidate = dir.join("tui-mcp-bridge");
+        if candidate.exists() {
+            return candidate.to_string_lossy().to_string();
+        }
+        #[cfg(windows)]
+        {
+            let candidate = dir.join("tui-mcp-bridge.exe");
             if candidate.exists() {
                 return candidate.to_string_lossy().to_string();
-            }
-            #[cfg(windows)]
-            {
-                let candidate = dir.join("tui-mcp-bridge.exe");
-                if candidate.exists() {
-                    return candidate.to_string_lossy().to_string();
-                }
             }
         }
     }

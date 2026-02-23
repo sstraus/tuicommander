@@ -24,6 +24,7 @@ import { GitOperationsPanel } from "./components/GitOperationsPanel";
 import { RenameBranchDialog } from "./components/RenameBranchDialog";
 import { CreateWorktreeDialog } from "./components/CreateWorktreeDialog";
 import { PromptDialog } from "./components/PromptDialog";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
 import { CommandPalette } from "./components/CommandPalette";
@@ -85,7 +86,15 @@ const getDefaultFontSize = () => settingsStore.state.defaultFontSize;
 const getMaxTabNameLength = () => settingsStore.state.maxTabNameLength;
 
 const App: Component = () => {
-  const [statusInfo, setStatusInfo] = createSignal("Ready");
+  const [statusInfo, _setStatusInfoRaw] = createSignal("Ready");
+  let statusInfoTimer: ReturnType<typeof setTimeout> | null = null;
+  const setStatusInfo = (text: string) => {
+    if (statusInfoTimer) clearTimeout(statusInfoTimer);
+    _setStatusInfoRaw(text);
+    if (text !== "Ready" && text !== "") {
+      statusInfoTimer = setTimeout(() => _setStatusInfoRaw("Ready"), 30_000);
+    }
+  };
   if (import.meta.env.DEV) {
     (window as any).__tuic_setStatusInfo = setStatusInfo;
   }
@@ -1047,6 +1056,18 @@ const App: Component = () => {
             terminalsStore.update(activeId, { name: newName, nameIsCustom: true });
           }
         }}
+      />
+
+      {/* In-app confirm dialog (replaces native OS dialogs) */}
+      <ConfirmDialog
+        visible={dialogs.dialogState() !== null}
+        title={dialogs.dialogState()?.title ?? ""}
+        message={dialogs.dialogState()?.message ?? ""}
+        confirmLabel={dialogs.dialogState()?.confirmLabel}
+        cancelLabel={dialogs.dialogState()?.cancelLabel}
+        kind={dialogs.dialogState()?.kind}
+        onClose={dialogs.handleClose}
+        onConfirm={dialogs.handleConfirm}
       />
 
       {/* Lazygit floating window (Story 051) */}

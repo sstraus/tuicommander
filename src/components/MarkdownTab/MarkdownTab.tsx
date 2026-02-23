@@ -4,6 +4,7 @@ import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { useRepository } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { editorTabsStore } from "../../stores/editorTabs";
+import { invoke } from "../../invoke";
 import { mdTabsStore, type MdTabData } from "../../stores/mdTabs";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
 import { t } from "../../i18n";
@@ -45,7 +46,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
       // Re-run on git changes (file may have been modified externally)
       void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 
-      if (!repoPath || !filePath) {
+      if (!filePath) {
         setContent("");
         return;
       }
@@ -55,7 +56,10 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 
       (async () => {
         try {
-          const fileContent = await repo.readFile(repoPath, filePath);
+          // Absolute path without repo (e.g. plugin README) — read directly
+          const fileContent = repoPath
+            ? await repo.readFile(repoPath, filePath)
+            : await invoke<string>("plugin_read_file", { path: filePath, pluginId: "_system" });
           setContent(fileContent);
         } catch (err) {
           setError(String(err));
@@ -64,7 +68,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
           setLoading(false);
         }
       })();
-    } else {
+    } else if (tab.type === "virtual") {
       // Virtual tab: resolve content through markdownProviderRegistry
       const { contentUri } = tab;
 
@@ -87,6 +91,10 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
           setLoading(false);
         }
       })();
+    } else {
+      // Plugin panel tab — HTML content rendered by PluginPanel, not here
+      setContent("");
+      setLoading(false);
     }
   });
 
@@ -118,6 +126,11 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const baseDir = () => {
     const tab = props.tab;
     if (tab.type !== "file") return undefined;
+    // Absolute path without repo (e.g. plugin README) — directory is the parent
+    if (!tab.repoPath && tab.filePath.startsWith("/")) {
+      const lastSlash = tab.filePath.lastIndexOf("/");
+      return lastSlash > 0 ? tab.filePath.slice(0, lastSlash) : "/";
+    }
     const dir = tab.filePath.includes("/")
       ? tab.filePath.slice(0, tab.filePath.lastIndexOf("/"))
       : "";
@@ -128,7 +141,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const fullPath = () => {
     const tab = props.tab;
     if (tab.type !== "file") return null;
-    return `${tab.repoPath}/${tab.filePath}`;
+    return tab.repoPath ? `${tab.repoPath}/${tab.filePath}` : tab.filePath;
   };
 
   const handleCopyPath = () => {

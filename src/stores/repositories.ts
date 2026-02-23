@@ -442,6 +442,17 @@ function createRepositoriesStore() {
       save();
     },
 
+    /** Reverse-lookup: find which repo a terminal belongs to (O(repos*branches) scan, but
+     *  only called per-terminal on render — not in a hot reactive loop). */
+    getRepoPathForTerminal(termId: string): string | null {
+      for (const [path, repo] of Object.entries(state.repositories)) {
+        for (const branch of Object.values(repo.branches)) {
+          if (branch.terminals.includes(termId)) return path;
+        }
+      }
+      return null;
+    },
+
     /** Get terminals for current active branch */
     getActiveTerminals(): string[] {
       const repo = actions.getActive();
@@ -466,35 +477,6 @@ function createRepositoriesStore() {
       );
       // Flush immediately (not debounced) — app is about to exit
       saveNow();
-    },
-
-    /** Update savedTerminals from live terminal state (called on terminal add/remove) */
-    updateSavedTerminals(getTerminal: (id: string) => { name: string; cwd: string | null; fontSize: number; agentType: string | null } | undefined): void {
-      setState(
-        produce((s) => {
-          for (const repo of Object.values(s.repositories)) {
-            for (const branch of Object.values(repo.branches)) {
-              if (branch.terminals.length === 0) {
-                branch.savedTerminals = [];
-                continue;
-              }
-              const saved: SavedTerminal[] = [];
-              for (const termId of branch.terminals) {
-                const t = getTerminal(termId);
-                if (!t) continue;
-                saved.push({
-                  name: t.name,
-                  cwd: t.cwd,
-                  fontSize: t.fontSize,
-                  agentType: t.agentType as SavedTerminal["agentType"],
-                });
-              }
-              branch.savedTerminals = saved;
-            }
-          }
-        })
-      );
-      save();
     },
 
     /** Clear savedTerminals from all branches (consume-once after restore) */

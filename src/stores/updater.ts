@@ -141,6 +141,20 @@ function createUpdaterStore() {
       pendingUpdate = null;
       setState({ available: false, version: null, body: null, error: null, downloadUrl: null });
     },
+
+    /** Simulate an available update (dev/testing only) */
+    simulateAvailable(version: string): void {
+      pendingUpdate = null;
+      setState({
+        available: true,
+        version,
+        body: `Simulated update to v${version}`,
+        downloading: false,
+        progress: 0,
+        error: null,
+        downloadUrl: null,
+      });
+    },
   };
 
   return { state, ...actions };

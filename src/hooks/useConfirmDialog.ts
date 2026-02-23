@@ -1,5 +1,4 @@
-import { ask, message } from "@tauri-apps/plugin-dialog";
-import { isTauri } from "../transport";
+import { createSignal } from "solid-js";
 
 export interface ConfirmOptions {
   title: string;
@@ -9,37 +8,56 @@ export interface ConfirmOptions {
   kind?: "info" | "warning" | "error";
 }
 
-/** Hook for confirmation dialogs — uses native Tauri dialogs or HTML fallbacks */
+/** Internal state for the currently visible confirm dialog */
+export interface ConfirmDialogState {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  kind: "info" | "warning" | "error";
+}
+
+/**
+ * Hook for confirmation dialogs — renders an in-app ConfirmDialog
+ * instead of native OS dialogs for consistent dark-theme styling.
+ *
+ * confirm() returns a Promise<boolean> that resolves when the user
+ * clicks confirm or cancel (or presses Enter/Escape).
+ */
 export function useConfirmDialog() {
-  /** Show a confirmation dialog */
-  async function confirm(options: ConfirmOptions): Promise<boolean> {
-    if (!isTauri()) {
-      return window.confirm(`${options.title}\n\n${options.message}`);
-    }
-    return await ask(options.message, {
-      title: options.title,
-      okLabel: options.okLabel || "OK",
-      cancelLabel: options.cancelLabel || "Cancel",
-      kind: options.kind || "warning",
+  const [dialogState, setDialogState] = createSignal<ConfirmDialogState | null>(null);
+  let pendingResolve: ((value: boolean) => void) | null = null;
+
+  /** Show a confirmation dialog — resolves true on confirm, false on cancel */
+  function confirm(options: ConfirmOptions): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      pendingResolve = resolve;
+      setDialogState({
+        title: options.title,
+        message: options.message,
+        confirmLabel: options.okLabel || "OK",
+        cancelLabel: options.cancelLabel || "Cancel",
+        kind: options.kind || "warning",
+      });
     });
   }
 
-  /** Show an info message */
-  async function info(title: string, msg: string): Promise<void> {
-    if (!isTauri()) {
-      window.alert(`${title}\n\n${msg}`);
-      return;
+  /** Called when user confirms */
+  function handleConfirm() {
+    setDialogState(null);
+    if (pendingResolve) {
+      pendingResolve(true);
+      pendingResolve = null;
     }
-    await message(msg, { title, kind: "info" });
   }
 
-  /** Show an error message */
-  async function error(title: string, msg: string): Promise<void> {
-    if (!isTauri()) {
-      window.alert(`${title}\n\n${msg}`);
-      return;
+  /** Called when user cancels (button, Escape, or overlay click) */
+  function handleClose() {
+    setDialogState(null);
+    if (pendingResolve) {
+      pendingResolve(false);
+      pendingResolve = null;
     }
-    await message(msg, { title, kind: "error" });
   }
 
   /** Confirm removing a worktree/branch */
@@ -77,10 +95,14 @@ export function useConfirmDialog() {
 
   return {
     confirm,
-    info,
-    error,
     confirmRemoveWorktree,
     confirmCloseTerminal,
     confirmRemoveRepo,
+    /** Reactive state for rendering the dialog — null when hidden */
+    dialogState,
+    /** Handler for confirm button / Enter key */
+    handleConfirm,
+    /** Handler for cancel button / Escape key / overlay click */
+    handleClose,
   };
 }

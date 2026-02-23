@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect, onCleanup } from "solid-js";
+import { Component, createSignal, createEffect, onCleanup, Show } from "solid-js";
 import { t } from "../../i18n";
 import d from "../shared/dialog.module.css";
 
@@ -118,44 +118,44 @@ export const RenameBranchDialog: Component<RenameBranchDialogProps> = (props) =>
     }
   };
 
-  if (!props.visible) return null;
-
   return (
-    <div class={d.overlay} onClick={props.onClose}>
-      <div class={d.popover} onClick={(e) => e.stopPropagation()}>
-        <div class={d.header}>
-          <span class={d.headerIcon}>Y</span>
-          <h4>{t("renameBranch.title", "Rename Branch")}</h4>
-        </div>
-        <div class={d.body}>
-          <input
-            ref={inputRef}
-            type="text"
-            value={newName()}
-            onInput={handleInputChange}
-            placeholder={t("renameBranch.placeholder", "New branch name")}
-            disabled={isRenaming()}
-          />
-          {error() && <p class={d.error}>{error()}</p>}
-        </div>
-        <div class={d.actions}>
-          <button
-            class={d.cancelBtn}
-            onClick={props.onClose}
-            disabled={isRenaming()}
-          >
-            {t("renameBranch.cancel", "Cancel")}
-          </button>
-          <button
-            class={d.primaryBtn}
-            onClick={handleRename}
-            disabled={isRenaming() || !newName().trim()}
-          >
-            {isRenaming() ? t("renameBranch.renaming", "Renaming...") : t("renameBranch.rename", "Rename")}
-          </button>
+    <Show when={props.visible}>
+      <div class={d.overlay} onClick={props.onClose}>
+        <div class={d.popover} onClick={(e) => e.stopPropagation()}>
+          <div class={d.header}>
+            <span class={d.headerIcon}>Y</span>
+            <h4>{t("renameBranch.title", "Rename Branch")}</h4>
+          </div>
+          <div class={d.body}>
+            <input
+              ref={inputRef}
+              type="text"
+              value={newName()}
+              onInput={handleInputChange}
+              placeholder={t("renameBranch.placeholder", "New branch name")}
+              disabled={isRenaming()}
+            />
+            {error() && <p class={d.error}>{error()}</p>}
+          </div>
+          <div class={d.actions}>
+            <button
+              class={d.cancelBtn}
+              onClick={props.onClose}
+              disabled={isRenaming()}
+            >
+              {t("renameBranch.cancel", "Cancel")}
+            </button>
+            <button
+              class={d.primaryBtn}
+              onClick={handleRename}
+              disabled={isRenaming() || !newName().trim()}
+            >
+              {isRenaming() ? t("renameBranch.renaming", "Renaming...") : t("renameBranch.rename", "Rename")}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </Show>
   );
 };
 

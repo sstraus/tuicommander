@@ -56,9 +56,53 @@
   line-height: 1.5;
 }
 
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .date {
   font-size: var(--font-sm);
   color: var(--fg-muted);
+}
+
+.projectLabel {
+  font-size: var(--font-xs);
+  padding: 1px 6px;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  line-height: 1.4;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectTagged {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+.projectGlobal {
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+}
+
+.projectLabel:hover {
+  filter: brightness(1.2);
+}
+
+.reassignSelect {
+  font-size: var(--font-xs);
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 1px 4px;
+  max-width: 140px;
+  outline: none;
 }
 
 .actions {

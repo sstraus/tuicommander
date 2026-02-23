@@ -6,6 +6,8 @@ export interface Note {
   id: string;
   text: string;
   createdAt: number;
+  repoPath: string | null;
+  repoDisplayName: string | null;
 }
 
 /** Notes store state */
@@ -37,15 +39,20 @@ function createNotesStore() {
       try {
         const loaded = await invoke<{ notes?: Note[] }>("load_notes");
         if (loaded?.notes && Array.isArray(loaded.notes)) {
-          setState("notes", loaded.notes);
+          const migrated = loaded.notes.map((n) => ({
+            ...n,
+            repoPath: n.repoPath ?? null,
+            repoDisplayName: n.repoDisplayName ?? null,
+          }));
+          setState("notes", migrated);
         }
       } catch (err) {
         console.debug("Failed to hydrate notes:", err);
       }
     },
 
-    /** Add a new note */
-    addNote(text: string): void {
+    /** Add a new note, optionally tagged with a repo */
+    addNote(text: string, repoPath?: string | null, repoDisplayName?: string | null): void {
       const trimmed = text.trim();
       if (!trimmed) return;
 
@@ -53,6 +60,8 @@ function createNotesStore() {
         id: generateId(),
         text: trimmed,
         createdAt: Date.now(),
+        repoPath: repoPath ?? null,
+        repoDisplayName: repoDisplayName ?? null,
       };
 
       setState(
@@ -69,7 +78,33 @@ function createNotesStore() {
       saveNotes(state.notes);
     },
 
-    /** Get note count */
+    /** Reassign a note to a different project */
+    reassignNote(id: string, repoPath: string | null, repoDisplayName: string | null): void {
+      setState(
+        produce((s) => {
+          const note = s.notes.find((n) => n.id === id);
+          if (note) {
+            note.repoPath = repoPath;
+            note.repoDisplayName = repoDisplayName;
+          }
+        }),
+      );
+      saveNotes(state.notes);
+    },
+
+    /** Get notes filtered by active repo. null = all notes. */
+    getFilteredNotes(activeRepo: string | null): Note[] {
+      if (!activeRepo) return state.notes;
+      return state.notes.filter((n) => n.repoPath === null || n.repoPath === activeRepo);
+    },
+
+    /** Count of notes visible for the given repo filter */
+    filteredCount(activeRepo: string | null): number {
+      if (!activeRepo) return state.notes.length;
+      return state.notes.filter((n) => n.repoPath === null || n.repoPath === activeRepo).length;
+    },
+
+    /** Get total note count */
     count(): number {
       return state.notes.length;
     },

@@ -22,7 +22,10 @@ export default defineConfig(async () => ({
     checker({ typescript: true }),
     visualizer({ filename: "dist/bundle-stats.html", gzipSize: true }),
     purgecss({
-      content: ["index.html", "src/**/*.tsx", "src/**/*.ts"],
+      // Do NOT pass `content` — the plugin auto-scans the bundled JS output.
+      // A user-supplied `content` overrides the auto-scan (via ...options spread),
+      // which causes PurgeCSS to scan raw source files where CSS-module hashed
+      // class names (e.g. _3see_q_popover) don't exist, silently purging them.
       safelist: [
         // xterm.js classes (generated at runtime by the library)
         /^xterm/,
@@ -33,8 +36,6 @@ export default defineConfig(async () => ({
         /^split-/,
         /^awaiting-/,
         /^platform-/,
-        // CSS module hashed classes (lightningcss generates hash_className names)
-        /^_?[a-zA-Z0-9]{5,8}_/,
       ],
     }),
   ],

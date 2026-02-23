@@ -133,23 +133,23 @@
   font-size: 8px;
 }
 
-.tab.awaitingInput::after {
-  content: "●";
-  margin-left: 6px;
+/* Awaiting input — override tabIcon to show state via left dot */
+.tab.awaitingInput .tabIcon {
+  opacity: 1;
   font-size: 8px;
-  color: var(--accent);
+  color: var(--warning);
   animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
-.tab.awaitingQuestion::after {
-  color: var(--accent);
+.tab.awaitingQuestion .tabIcon {
+  color: var(--warning);
 }
 
-.tab.awaitingError::after {
+.tab.awaitingError .tabIcon {
   color: var(--error);
 }
 
-.tab.awaitingConfirmation::after {
+.tab.awaitingConfirmation .tabIcon {
   color: var(--warning);
 }
 

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Default registry URL — points to the raw `registry.json` in the public GitHub repo.
 const DEFAULT_REGISTRY_URL: &str =
-    "https://raw.githubusercontent.com/sstraus/tui-commander-plugins/main/registry.json";
+    "https://raw.githubusercontent.com/sstraus/tuicommander-plugins/main/registry.json";
 
 /// A single entry in the remote plugin registry.
 #[derive(Debug, Clone, Serialize, Deserialize)]

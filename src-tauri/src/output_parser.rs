@@ -378,10 +378,10 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
             let mut path = caps[1].to_string();
             // Expand leading ~/ to the user's home directory so the
             // frontend always receives an absolute path it can open.
-            if path.starts_with("~/") {
-                if let Some(home) = dirs::home_dir() {
-                    path = format!("{}{}", home.display(), &path[1..]);
-                }
+            if path.starts_with("~/")
+                && let Some(home) = dirs::home_dir()
+            {
+                path = format!("{}{}", home.display(), &path[1..]);
             }
             return Some(ParsedEvent::PlanFile { path });
         }
