@@ -1,10 +1,10 @@
 ---
 id: 346-8b1b
 title: Update MCP documentation for meta-command consolidation
-status: pending
+status: complete
 priority: P2
 created: "2026-02-21T19:56:53.604Z"
-updated: "2026-02-21T19:57:01.364Z"
+updated: "2026-02-23T07:40:52.059Z"
 dependencies: ["345"]
 ---
 
@@ -27,4 +27,6 @@ docs/pty.md lists 21 individual MCP tools. docs/backend/mcp-http.md and docs/api
 - docs/api/http-api.md
 
 ## Work Log
+
+### 2026-02-23T07:40:51.992Z - Verified: docs/pty.md correctly documents 5 meta-commands with action parameter
 

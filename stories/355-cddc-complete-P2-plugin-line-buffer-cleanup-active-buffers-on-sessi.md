@@ -1,10 +1,10 @@
 ---
-id: "355-cddc"
+id: 355-cddc
 title: "Plugin line buffer: cleanup active buffers on session close to prevent memory leak"
-status: pending
+status: complete
 priority: P2
-created: 2026-02-22T16:16:43.683Z
-updated: 2026-02-22T16:16:43.683Z
+created: "2026-02-22T16:16:43.683Z"
+updated: "2026-02-23T07:38:47.898Z"
 dependencies: []
 ---
 
@@ -25,4 +25,6 @@ pluginRegistry.ts accumulates line buffers for active plugins in a Map keyed by 
 - src/plugins/pluginRegistry.ts
 
 ## Work Log
+
+### 2026-02-23T07:38:47.827Z - Verified complete in prior session - code in HEAD
 
