@@ -55,8 +55,8 @@ export interface GroupedLayout {
   ungrouped: RepositoryState[];
 }
 
-/** Check if branch is a main branch */
-export function isMainBranch(branchName: string): boolean {
+/** Fallback check when Rust-provided is_main is not available (e.g. local rename). */
+function isMainBranch(branchName: string): boolean {
   const mainBranches = ["main", "master", "develop", "development", "dev"];
   return mainBranches.includes(branchName.toLowerCase());
 }
