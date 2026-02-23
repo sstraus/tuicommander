@@ -31,18 +31,11 @@ describe("useGitHub (reactive wrapper)", () => {
   describe("reads from githubStore", () => {
     it("returns remote status from githubStore for the given repo path", () => {
       createRoot((dispose) => {
-        // Manually set data in the store (simulating a poll result)
-        const remoteStatus = { has_remote: true, current_branch: "main", ahead: 3, behind: 1 };
         githubStore.updateRepoData("/repos/my-repo", []);
-        // Directly set remote status via store's state setter (using pollAll's pattern)
-        // Since the store doesn't expose a direct setter for remoteStatus,
-        // we verify via the public API after a poll
         const { status } = useGitHub(() => "/repos/my-repo");
 
-        // Before any poll, status reflects what's in the store
-        const currentStatus = status();
-        // Initially null since no remote status has been set
-        expect(currentStatus).toBeNull();
+        // Before any poll, remote status is null (no setter exposed, only populated by pollAll)
+        expect(status()).toBeNull();
 
         dispose();
       });

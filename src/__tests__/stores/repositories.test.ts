@@ -211,6 +211,53 @@ describe("repositoriesStore", () => {
     });
   });
 
+  describe("getRepoPathForTerminal()", () => {
+    it("returns repo path for a known terminal", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo-a", displayName: "A" });
+        store.setBranch("/repo-a", "main");
+        store.addTerminalToBranch("/repo-a", "main", "term-1");
+        expect(store.getRepoPathForTerminal("term-1")).toBe("/repo-a");
+        dispose();
+      });
+    });
+
+    it("returns null for an unknown terminal", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo-a", displayName: "A" });
+        store.setBranch("/repo-a", "main");
+        expect(store.getRepoPathForTerminal("nonexistent")).toBeNull();
+        dispose();
+      });
+    });
+
+    it("finds terminal across multiple repos and branches", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo-a", displayName: "A" });
+        store.add({ path: "/repo-b", displayName: "B" });
+        store.setBranch("/repo-a", "main");
+        store.setBranch("/repo-b", "feature");
+        store.addTerminalToBranch("/repo-a", "main", "term-1");
+        store.addTerminalToBranch("/repo-b", "feature", "term-2");
+        expect(store.getRepoPathForTerminal("term-1")).toBe("/repo-a");
+        expect(store.getRepoPathForTerminal("term-2")).toBe("/repo-b");
+        dispose();
+      });
+    });
+
+    it("returns null after terminal is removed from branch", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo", displayName: "test" });
+        store.setBranch("/repo", "main");
+        store.addTerminalToBranch("/repo", "main", "term-1");
+        expect(store.getRepoPathForTerminal("term-1")).toBe("/repo");
+        store.removeTerminalFromBranch("/repo", "main", "term-1");
+        expect(store.getRepoPathForTerminal("term-1")).toBeNull();
+        dispose();
+      });
+    });
+  });
+
   describe("removeBranch()", () => {
     it("removes a branch", () => {
       createRoot((dispose) => {

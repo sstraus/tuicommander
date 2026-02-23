@@ -377,12 +377,28 @@ describe("Sidebar", () => {
       expect(removeBtns.length).toBe(0);
     });
 
-    it("double-click branch name calls onRenameBranch", () => {
+    it("double-click main branch name calls onAddTerminal instead of rename", () => {
+      const onAddTerminal = vi.fn();
       const onRenameBranch = vi.fn();
-      const { container } = render(() => <Sidebar {...defaultProps({ onRenameBranch })} />);
+      const { container } = render(() => <Sidebar {...defaultProps({ onAddTerminal, onRenameBranch })} />);
       const branchName = container.querySelector(".branchName")!;
       fireEvent.dblClick(branchName);
-      expect(onRenameBranch).toHaveBeenCalledWith("/repo1", "main");
+      expect(onRenameBranch).not.toHaveBeenCalled();
+      expect(onAddTerminal).toHaveBeenCalledWith("/repo1", "main");
+    });
+
+    it("double-click feature branch name calls onRenameBranch", () => {
+      const onRenameBranch = vi.fn();
+      setRepos({ "/repo1": makeRepo({ branches: {
+        main: { name: "main", isMain: true, worktreePath: null, terminals: [], additions: 0, deletions: 0 },
+        "feature/x": { name: "feature/x", isMain: false, worktreePath: "/wt/x", terminals: [], additions: 0, deletions: 0 },
+      }}) });
+      const { container } = render(() => <Sidebar {...defaultProps({ onRenameBranch })} />);
+      const branchNames = container.querySelectorAll(".branchName");
+      // feature/x is the second branch
+      const featureBranch = branchNames[1]!;
+      fireEvent.dblClick(featureBranch);
+      expect(onRenameBranch).toHaveBeenCalledWith("/repo1", "feature/x");
     });
 
     it("add worktree button click calls onAddWorktree", () => {

@@ -1,167 +1,138 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import "../mocks/tauri";
-import { ask, message } from "@tauri-apps/plugin-dialog";
+import { describe, it, expect, beforeEach } from "vitest";
 import { useConfirmDialog } from "../../hooks/useConfirmDialog";
-
-const mockAsk = ask as unknown as ReturnType<typeof vi.fn>;
-const mockMessage = message as unknown as ReturnType<typeof vi.fn>;
 
 describe("useConfirmDialog", () => {
   let dialog: ReturnType<typeof useConfirmDialog>;
 
   beforeEach(() => {
-    mockAsk.mockReset();
-    mockMessage.mockReset();
     dialog = useConfirmDialog();
   });
 
   describe("confirm()", () => {
-    it("calls ask() with correct options and returns true", async () => {
-      mockAsk.mockResolvedValueOnce(true);
+    it("sets dialogState when called and resolves true on confirm", async () => {
+      expect(dialog.dialogState()).toBe(null);
 
-      const result = await dialog.confirm({
+      const promise = dialog.confirm({
         title: "Delete?",
         message: "Are you sure?",
         okLabel: "Yes",
         cancelLabel: "No",
         kind: "warning",
       });
+
+      expect(dialog.dialogState()).toEqual({
+        title: "Delete?",
+        message: "Are you sure?",
+        confirmLabel: "Yes",
+        cancelLabel: "No",
+        kind: "warning",
+      });
+
+      dialog.handleConfirm();
+      const result = await promise;
 
       expect(result).toBe(true);
-      expect(mockAsk).toHaveBeenCalledWith("Are you sure?", {
-        title: "Delete?",
-        okLabel: "Yes",
-        cancelLabel: "No",
-        kind: "warning",
-      });
+      expect(dialog.dialogState()).toBe(null);
     });
 
-    it("returns false when user cancels", async () => {
-      mockAsk.mockResolvedValueOnce(false);
-
-      const result = await dialog.confirm({
+    it("resolves false on close", async () => {
+      const promise = dialog.confirm({
         title: "Delete?",
         message: "Are you sure?",
       });
 
+      dialog.handleClose();
+      const result = await promise;
+
       expect(result).toBe(false);
+      expect(dialog.dialogState()).toBe(null);
     });
 
     it("uses default okLabel, cancelLabel, and kind when not specified", async () => {
-      mockAsk.mockResolvedValueOnce(true);
-
-      await dialog.confirm({
+      const promise = dialog.confirm({
         title: "Confirm",
         message: "Proceed?",
       });
 
-      expect(mockAsk).toHaveBeenCalledWith("Proceed?", {
+      expect(dialog.dialogState()).toEqual({
         title: "Confirm",
-        okLabel: "OK",
+        message: "Proceed?",
+        confirmLabel: "OK",
         cancelLabel: "Cancel",
         kind: "warning",
       });
-    });
-  });
 
-  describe("info()", () => {
-    it("calls message() with kind:info", async () => {
-      mockMessage.mockResolvedValueOnce(undefined);
-
-      await dialog.info("Info Title", "Some information");
-
-      expect(mockMessage).toHaveBeenCalledWith("Some information", {
-        title: "Info Title",
-        kind: "info",
-      });
-    });
-  });
-
-  describe("error()", () => {
-    it("calls message() with kind:error", async () => {
-      mockMessage.mockResolvedValueOnce(undefined);
-
-      await dialog.error("Error Title", "Something went wrong");
-
-      expect(mockMessage).toHaveBeenCalledWith("Something went wrong", {
-        title: "Error Title",
-        kind: "error",
-      });
+      dialog.handleClose();
+      await promise;
     });
   });
 
   describe("confirmRemoveWorktree()", () => {
-    it("calls ask with correct message for the branch name", async () => {
-      mockAsk.mockResolvedValueOnce(true);
+    it("shows dialog with correct message and resolves true on confirm", async () => {
+      const promise = dialog.confirmRemoveWorktree("feature-x");
 
-      const result = await dialog.confirmRemoveWorktree("feature-x");
+      expect(dialog.dialogState()).toEqual({
+        title: "Remove worktree?",
+        message: "Remove feature-x?\nThis deletes the worktree directory and its local branch.",
+        confirmLabel: "Remove",
+        cancelLabel: "Cancel",
+        kind: "warning",
+      });
 
-      expect(result).toBe(true);
-      expect(mockAsk).toHaveBeenCalledWith(
-        "Remove feature-x?\nThis deletes the worktree directory and its local branch.",
-        {
-          title: "Remove worktree?",
-          okLabel: "Remove",
-          cancelLabel: "Cancel",
-          kind: "warning",
-        }
-      );
+      dialog.handleConfirm();
+      expect(await promise).toBe(true);
     });
 
-    it("returns false when user declines", async () => {
-      mockAsk.mockResolvedValueOnce(false);
-      const result = await dialog.confirmRemoveWorktree("feature-y");
-      expect(result).toBe(false);
+    it("returns false when user cancels", async () => {
+      const promise = dialog.confirmRemoveWorktree("feature-y");
+      dialog.handleClose();
+      expect(await promise).toBe(false);
     });
   });
 
   describe("confirmCloseTerminal()", () => {
-    it("calls ask with correct message for terminal name", async () => {
-      mockAsk.mockResolvedValueOnce(true);
+    it("shows dialog with correct message for terminal name", async () => {
+      const promise = dialog.confirmCloseTerminal("Terminal 1");
 
-      const result = await dialog.confirmCloseTerminal("Terminal 1");
+      expect(dialog.dialogState()).toEqual({
+        title: "Close terminal?",
+        message: "Close Terminal 1?\nAny running processes will be terminated.",
+        confirmLabel: "Close",
+        cancelLabel: "Cancel",
+        kind: "warning",
+      });
 
-      expect(result).toBe(true);
-      expect(mockAsk).toHaveBeenCalledWith(
-        "Close Terminal 1?\nAny running processes will be terminated.",
-        {
-          title: "Close terminal?",
-          okLabel: "Close",
-          cancelLabel: "Cancel",
-          kind: "warning",
-        }
-      );
+      dialog.handleConfirm();
+      expect(await promise).toBe(true);
     });
 
-    it("returns false when user declines", async () => {
-      mockAsk.mockResolvedValueOnce(false);
-      const result = await dialog.confirmCloseTerminal("Terminal 2");
-      expect(result).toBe(false);
+    it("returns false when user cancels", async () => {
+      const promise = dialog.confirmCloseTerminal("Terminal 2");
+      dialog.handleClose();
+      expect(await promise).toBe(false);
     });
   });
 
   describe("confirmRemoveRepo()", () => {
-    it("calls ask with correct message for repo name", async () => {
-      mockAsk.mockResolvedValueOnce(true);
+    it("shows dialog with correct message for repo name", async () => {
+      const promise = dialog.confirmRemoveRepo("my-repo");
 
-      const result = await dialog.confirmRemoveRepo("my-repo");
+      expect(dialog.dialogState()).toEqual({
+        title: "Remove repository?",
+        message: "Remove my-repo from the list?\nThis does not delete any files.",
+        confirmLabel: "Remove",
+        cancelLabel: "Cancel",
+        kind: "warning",
+      });
 
-      expect(result).toBe(true);
-      expect(mockAsk).toHaveBeenCalledWith(
-        "Remove my-repo from the list?\nThis does not delete any files.",
-        {
-          title: "Remove repository?",
-          okLabel: "Remove",
-          cancelLabel: "Cancel",
-          kind: "warning",
-        }
-      );
+      dialog.handleConfirm();
+      expect(await promise).toBe(true);
     });
 
-    it("returns false when user declines", async () => {
-      mockAsk.mockResolvedValueOnce(false);
-      const result = await dialog.confirmRemoveRepo("other-repo");
-      expect(result).toBe(false);
+    it("returns false when user cancels", async () => {
+      const promise = dialog.confirmRemoveRepo("other-repo");
+      dialog.handleClose();
+      expect(await promise).toBe(false);
     });
   });
 });

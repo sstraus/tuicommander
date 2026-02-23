@@ -200,21 +200,7 @@ describe("StatusBar", () => {
     expect(githubStatus).toBeNull();
   });
 
-  it("shows githubStatus with BranchBadge when github status exists", () => {
-    mockGitHubStatus.mockReturnValue({
-      current_branch: "feature/test",
-      ahead: 2,
-      behind: 1,
-    });
-    const { container } = render(() => <StatusBar {...defaultProps} />);
-    const githubStatus = container.querySelector(".githubStatus");
-    expect(githubStatus).not.toBeNull();
-    const badge = githubStatus!.querySelector(".status-badge");
-    expect(badge).not.toBeNull();
-    expect(badge!.textContent).toContain("feature/test");
-    expect(badge!.textContent).toContain("\u21912");
-    expect(badge!.textContent).toContain("\u21931");
-  });
+
 
   it("shows PrBadge when githubStore has PR data for active branch", () => {
     mockGitHubStatus.mockReturnValue({
@@ -293,23 +279,6 @@ describe("StatusBar", () => {
     expect(ciBadge).toBeUndefined();
   });
 
-  it("shows BranchPopover when BranchBadge is clicked", () => {
-    mockGitHubStatus.mockReturnValue({
-      current_branch: "feature/test",
-      ahead: 0,
-      behind: 0,
-    });
-    const { container } = render(() => (
-      <StatusBar {...defaultProps} currentRepoPath="/repo" />
-    ));
-
-    const branchBadge = container.querySelector(".githubStatus .status-badge");
-    expect(branchBadge).not.toBeNull();
-    fireEvent.click(branchBadge!);
-
-    const popover = container.querySelector(".popover");
-    expect(popover).not.toBeNull();
-  });
 
   it("shows CiBadge with failure state", () => {
     mockGitHubStatus.mockReturnValue({
@@ -328,18 +297,6 @@ describe("StatusBar", () => {
     expect(ciBadge).toBeDefined();
   });
 
-  it("shows BranchBadge with ahead-only count", () => {
-    mockGitHubStatus.mockReturnValue({
-      current_branch: "develop",
-      ahead: 3,
-      behind: 0,
-    });
-    const { container } = render(() => <StatusBar {...defaultProps} />);
-    const badge = container.querySelector(".githubStatus .status-badge");
-    expect(badge).not.toBeNull();
-    expect(badge!.textContent).toContain("develop");
-    expect(badge!.textContent).toContain("\u21913");
-  });
 
   it("shows hotkey hints on toggle buttons", () => {
     const { container } = render(() => <StatusBar {...defaultProps} />);
@@ -364,34 +321,6 @@ describe("StatusBar", () => {
     expect(popover).not.toBeNull();
   });
 
-  it("calls onBranchRenamed prop after branch rename in BranchPopover", async () => {
-    mockGitHubStatus.mockReturnValue({
-      current_branch: "feature/old",
-      ahead: 0,
-      behind: 0,
-    });
-    const onBranchRenamed = vi.fn();
-    const { container } = render(() => (
-      <StatusBar {...defaultProps} currentRepoPath="/repo" onBranchRenamed={onBranchRenamed} />
-    ));
-
-    const branchBadge = container.querySelector(".githubStatus .status-badge")!;
-    fireEvent.click(branchBadge);
-
-    const popover = container.querySelector(".popover");
-    expect(popover).not.toBeNull();
-
-    const input = popover!.querySelector("input")!;
-    fireEvent.input(input, { target: { value: "feature/new" } });
-
-    const renameBtn = popover!.querySelector(".primaryBtn")!;
-    fireEvent.click(renameBtn);
-
-    await waitFor(() => {
-      expect(onBranchRenamed).toHaveBeenCalledWith("feature/old", "feature/new");
-    });
-    expect(mockGitHubRefresh).toHaveBeenCalled();
-  });
 
   it("shows mic button when dictation is enabled", () => {
     mockDictationState.enabled = true;
@@ -442,21 +371,6 @@ describe("StatusBar", () => {
     expect(onDictationStop).toHaveBeenCalled();
   });
 
-  it("BranchPopover uses null when currentRepoPath is undefined", () => {
-    mockGitHubStatus.mockReturnValue({
-      current_branch: "feature/test",
-      ahead: 0,
-      behind: 0,
-    });
-    const { container } = render(() => (
-      <StatusBar {...defaultProps} />
-    ));
-    const branchBadge = container.querySelector(".githubStatus .status-badge")!;
-    fireEvent.click(branchBadge);
-
-    const popover = container.querySelector(".popover");
-    expect(popover).not.toBeNull();
-  });
 
   it("does not show PrBadge for CLOSED PR", () => {
     mockGitHubStatus.mockReturnValue({
@@ -468,11 +382,9 @@ describe("StatusBar", () => {
     const { container } = render(() => (
       <StatusBar {...defaultProps} currentRepoPath="/repo" />
     ));
+    // CLOSED PR hides the entire github section (no activePrData)
     const githubStatus = container.querySelector(".githubStatus");
-    expect(githubStatus).not.toBeNull();
-    const badges = githubStatus!.querySelectorAll(".status-badge");
-    const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
-    expect(prBadge).toBeUndefined();
+    expect(githubStatus).toBeNull();
   });
 
   it("shows PrBadge for MERGED PR with recent user activity", () => {
@@ -518,11 +430,9 @@ describe("StatusBar", () => {
       vi.advanceTimersByTime(1000);
     }
 
-    // After 5+ min of accumulated activity, PR badge should be hidden
+    // After 5+ min of accumulated activity, the entire github section is hidden
     const githubStatus = container.querySelector(".githubStatus");
-    const badges = githubStatus!.querySelectorAll(".status-badge");
-    const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
-    expect(prBadge).toBeUndefined();
+    expect(githubStatus).toBeNull();
     vi.useRealTimers();
   });
 

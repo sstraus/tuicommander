@@ -370,7 +370,7 @@ describe("initApp", () => {
         repoChangedCallback = handler as typeof repoChangedCallback;
       }
       return Promise.resolve(vi.fn());
-    }) as typeof listen);
+    }) as unknown as typeof listen);
 
     const deps = createMockDeps();
     await initApp(deps);
@@ -402,7 +402,7 @@ describe("initApp", () => {
         repoChangedCallback = handler as typeof repoChangedCallback;
       }
       return Promise.resolve(vi.fn());
-    }) as typeof listen);
+    }) as unknown as typeof listen);
 
     const deps = createMockDeps();
     await initApp(deps);
