@@ -4,6 +4,7 @@ import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { repositoriesStore } from "../../stores/repositories";
 import { uiStore } from "../../stores/ui";
 import { shortenHomePath } from "../../platform";
+import { pathBasename } from "../../utils/pathUtils";
 import { SettingsShell } from "./SettingsShell";
 import type { SettingsShellTab } from "./SettingsShell";
 import { DictationSettings } from "./DictationSettings";
@@ -61,7 +62,7 @@ function buildNavItems(): SettingsShellTab[] {
     items.push({ key: "__sep__", label: "─" });
     items.push({ key: "__label__:Repositories", label: t("settings.repositories", "REPOSITORIES") });
     for (const repo of repos) {
-      const label = repo.displayName || repo.path.split("/").pop() || repo.path;
+      const label = repo.displayName || pathBasename(repo.path) || repo.path;
       const color =
         repoSettingsStore.get(repo.path)?.color ||
         repositoriesStore.getGroupForRepo(repo.path)?.color ||

@@ -3,6 +3,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { getModifierSymbol } from "../../platform";
 import { globToRegex } from "../../utils";
+import { replaceBasename } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { PromptDialog } from "../PromptDialog";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
@@ -203,9 +204,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     const entry = renameTarget();
     if (!entry || !props.repoPath) return;
     // Build new path: same parent directory, new name
-    const parts = entry.path.split("/");
-    parts[parts.length - 1] = newName;
-    const newPath = parts.join("/");
+    const newPath = replaceBasename(entry.path, newName);
     try {
       await fb.renamePath(props.repoPath, entry.path, newPath);
       refresh();

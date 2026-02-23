@@ -5,6 +5,7 @@ import { mdTabsStore } from "../../stores/mdTabs";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { getModifierSymbol } from "../../platform";
 import { globToRegex } from "../../utils";
+import { pathBasename, pathDirname } from "../../utils/pathUtils";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -89,15 +90,10 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
     const groups: Record<string, MdFileEntry[]> = {};
 
     for (const entry of allFiles) {
-      const parts = entry.path.split("/");
-      if (parts.length === 1) {
-        if (!groups["/"]) groups["/"] = [];
-        groups["/"].push(entry);
-      } else {
-        const dir = parts.slice(0, -1).join("/");
-        if (!groups[dir]) groups[dir] = [];
-        groups[dir].push(entry);
-      }
+      const dir = pathDirname(entry.path);
+      const key = dir || "/";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(entry);
     }
 
     return groups;
@@ -187,7 +183,7 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
                   </Show>
                   <For each={dirEntries.sort((a, b) => a.path.localeCompare(b.path))}>
                     {(entry) => {
-                      const fileName = entry.path.split("/").pop() || entry.path;
+                      const fileName = pathBasename(entry.path) || entry.path;
                       return (
                         <div
                           class={s.fileItem}
