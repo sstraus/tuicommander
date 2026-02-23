@@ -718,6 +718,8 @@ pub fn run() {
             config::save_prompt_library,
             config::load_notes,
             config::save_notes,
+            config::load_activity,
+            config::save_activity,
             config::load_keybindings,
             config::save_keybindings,
             config::load_agents_config,

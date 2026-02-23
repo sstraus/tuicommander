@@ -1,9 +1,25 @@
 import { createStore, produce } from "solid-js/store";
+import { invoke } from "../invoke";
 import type { ActivityItem, ActivitySection, Disposable } from "../plugins/types";
+
+/** Serializable subset of ActivityItem (no onClick function) */
+type PersistedActivityItem = Omit<ActivityItem, "onClick">;
 
 interface ActivityStoreState {
   items: ActivityItem[];
   sections: ActivitySection[];
+}
+
+/** Strip non-serializable fields before saving */
+function toPersistedItems(items: ActivityItem[]): PersistedActivityItem[] {
+  return items.map(({ onClick: _, ...rest }) => rest);
+}
+
+/** Persist activity items to Rust backend (fire-and-forget) */
+function saveActivity(items: ActivityItem[]): void {
+  invoke("save_activity", { items: toPersistedItems(items) }).catch((err) =>
+    console.error("Failed to save activity:", err),
+  );
 }
 
 function createActivityStore() {
@@ -11,6 +27,35 @@ function createActivityStore() {
     items: [],
     sections: [],
   });
+
+  // -------------------------------------------------------------------------
+  // Persistence
+  // -------------------------------------------------------------------------
+
+  async function hydrate(): Promise<void> {
+    try {
+      const loaded = await invoke<{ items?: PersistedActivityItem[] }>("load_activity");
+      if (loaded?.items && Array.isArray(loaded.items)) {
+        const migrated = loaded.items.map((item) => ({
+          ...item,
+          dismissed: item.dismissed ?? false,
+        }));
+        setState(
+          produce((s) => {
+            // Merge: existing (live) items take precedence over saved ones
+            const liveIds = new Set(s.items.map((i) => i.id));
+            for (const saved of migrated) {
+              if (!liveIds.has(saved.id)) {
+                s.items.push(saved);
+              }
+            }
+          }),
+        );
+      }
+    } catch (err) {
+      console.debug("Failed to hydrate activity:", err);
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Section registration
@@ -49,19 +94,18 @@ function createActivityStore() {
       produce((s) => {
         const idx = s.items.findIndex((i) => i.id === full.id);
         if (idx >= 0) {
-          // Replace existing (same id), preserve original createdAt so
-          // ordering is stable — but caller may legitimately want a refresh.
-          // We use the new timestamp to reflect the update.
           s.items[idx] = full;
         } else {
           s.items.push(full);
         }
       }),
     );
+    saveActivity(state.items);
   }
 
   function removeItem(id: string): void {
     setState("items", (prev) => prev.filter((i) => i.id !== id));
+    saveActivity(state.items);
   }
 
   function updateItem(
@@ -74,6 +118,7 @@ function createActivityStore() {
         if (item) Object.assign(item, updates);
       }),
     );
+    saveActivity(state.items);
   }
 
   // -------------------------------------------------------------------------
@@ -87,6 +132,7 @@ function createActivityStore() {
         if (item) item.dismissed = true;
       }),
     );
+    saveActivity(state.items);
   }
 
   function dismissSection(sectionId: string): void {
@@ -99,6 +145,7 @@ function createActivityStore() {
         }
       }),
     );
+    saveActivity(state.items);
   }
 
   // -------------------------------------------------------------------------
@@ -131,6 +178,7 @@ function createActivityStore() {
 
   return {
     state,
+    hydrate,
     registerSection,
     getSections,
     addItem,

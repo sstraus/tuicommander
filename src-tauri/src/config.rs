@@ -537,6 +537,7 @@ const REPOSITORIES_FILE: &str = "repositories.json";
 const NOTES_FILE: &str = "notes.json";
 const KEYBINDINGS_FILE: &str = "keybindings.json";
 const AGENTS_CONFIG_FILE: &str = "agents.json";
+const ACTIVITY_FILE: &str = "activity.json";
 
 // App config
 #[tauri::command]
@@ -630,6 +631,17 @@ pub(crate) fn load_notes() -> serde_json::Value {
 #[tauri::command]
 pub(crate) fn save_notes(config: serde_json::Value) -> Result<(), String> {
     save_json_config(NOTES_FILE, &config)
+}
+
+// Activity center (opaque JSON — schema owned by frontend)
+#[tauri::command]
+pub(crate) fn load_activity() -> serde_json::Value {
+    load_json_config(ACTIVITY_FILE)
+}
+
+#[tauri::command]
+pub(crate) fn save_activity(items: serde_json::Value) -> Result<(), String> {
+    save_json_config(ACTIVITY_FILE, &items)
 }
 
 // Keybindings (opaque JSON — schema owned by frontend)

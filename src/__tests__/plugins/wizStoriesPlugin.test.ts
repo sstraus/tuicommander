@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Mock invoke so the MarkdownProvider doesn't need a real Tauri context
 vi.mock("../../invoke", () => ({
-  invoke: vi.fn(),
+  invoke: vi.fn().mockResolvedValue(undefined),
   listen: vi.fn().mockResolvedValue(() => {}),
 }));
 
@@ -27,7 +27,7 @@ beforeEach(() => {
   pluginRegistry.clear();
   activityStore.clearAll();
   markdownProviderRegistry.clear();
-  mockedInvoke.mockReset();
+  mockedInvoke.mockReset().mockResolvedValue(undefined);
 });
 
 // ---------------------------------------------------------------------------

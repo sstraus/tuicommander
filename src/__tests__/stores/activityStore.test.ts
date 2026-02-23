@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { activityStore } from "../../stores/activityStore";
 import type { ActivitySection, ActivityItem } from "../../plugins/types";
 
@@ -21,8 +21,15 @@ const makeItem = (overrides: Partial<Omit<ActivityItem, "createdAt">> = {}): Omi
 });
 
 describe("activityStore", () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
+    consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     activityStore.clearAll();
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
   });
 
   // -------------------------------------------------------------------------
@@ -215,6 +222,126 @@ describe("activityStore", () => {
       activityStore.clearAll();
       expect(activityStore.getActive()).toHaveLength(0);
       expect(activityStore.getSections()).toHaveLength(0);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Persistence tests (require mocked invoke)
+// ---------------------------------------------------------------------------
+const mockInvoke = vi.fn().mockResolvedValue(undefined);
+
+describe("activityStore persistence", () => {
+  let store: typeof import("../../stores/activityStore").activityStore;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    mockInvoke.mockReset().mockResolvedValue(undefined);
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
+    store = (await import("../../stores/activityStore")).activityStore;
+  });
+
+  describe("hydrate()", () => {
+    it("loads items from backend", async () => {
+      const savedItems = [
+        { id: "a1", pluginId: "p1", sectionId: "plan", title: "Saved", icon: "<svg/>", dismissible: true, dismissed: false, createdAt: 1000 },
+      ];
+      mockInvoke.mockResolvedValueOnce({ items: savedItems });
+
+      await store.hydrate();
+      expect(mockInvoke).toHaveBeenCalledWith("load_activity");
+      expect(store.getActive()).toHaveLength(1);
+      expect(store.getActive()[0].title).toBe("Saved");
+      expect(store.getActive()[0].createdAt).toBe(1000);
+    });
+
+    it("keeps empty state when backend returns null", async () => {
+      mockInvoke.mockResolvedValueOnce(null);
+      await store.hydrate();
+      expect(store.getActive()).toEqual([]);
+    });
+
+    it("keeps empty state on invoke failure", async () => {
+      const consoleSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      mockInvoke.mockRejectedValueOnce(new Error("backend error"));
+      await store.hydrate();
+      expect(store.getActive()).toEqual([]);
+      expect(consoleSpy).toHaveBeenCalledWith("Failed to hydrate activity:", expect.any(Error));
+      consoleSpy.mockRestore();
+    });
+
+    it("fills missing dismissed field with false", async () => {
+      const legacy = [
+        { id: "a1", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true, createdAt: 1000 },
+      ];
+      mockInvoke.mockResolvedValueOnce({ items: legacy });
+      await store.hydrate();
+      expect(store.state.items[0].dismissed).toBe(false);
+    });
+
+    it("merges hydrated items with items added before hydrate", async () => {
+      store.addItem({ id: "live", pluginId: "p1", sectionId: "s", title: "Live", icon: "<svg/>", dismissible: true });
+      const saved = [
+        { id: "saved", pluginId: "p1", sectionId: "s", title: "Saved", icon: "<svg/>", dismissible: true, createdAt: 1000 },
+      ];
+      mockInvoke.mockResolvedValueOnce({ items: saved });
+      await store.hydrate();
+      // Live item takes precedence (already in store), saved item is added
+      expect(store.getActive().map((i) => i.id).sort()).toEqual(["live", "saved"]);
+    });
+
+    it("live items override saved items with same id", async () => {
+      store.addItem({ id: "dup", pluginId: "p1", sectionId: "s", title: "Fresh", icon: "<svg/>", dismissible: true });
+      const saved = [
+        { id: "dup", pluginId: "p1", sectionId: "s", title: "Stale", icon: "<svg/>", dismissible: true, createdAt: 1000 },
+      ];
+      mockInvoke.mockResolvedValueOnce({ items: saved });
+      await store.hydrate();
+      expect(store.getActive()).toHaveLength(1);
+      expect(store.getActive()[0].title).toBe("Fresh");
+    });
+  });
+
+  describe("save on mutations", () => {
+    it("persists after addItem", () => {
+      store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true });
+      expect(mockInvoke).toHaveBeenCalledWith("save_activity", { items: expect.any(Array) });
+    });
+
+    it("persists after removeItem", () => {
+      store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true });
+      mockInvoke.mockClear();
+      store.removeItem("x");
+      expect(mockInvoke).toHaveBeenCalledWith("save_activity", { items: expect.any(Array) });
+    });
+
+    it("persists after dismissItem", () => {
+      store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true });
+      mockInvoke.mockClear();
+      store.dismissItem("x");
+      expect(mockInvoke).toHaveBeenCalledWith("save_activity", { items: expect.any(Array) });
+    });
+
+    it("persists after dismissSection", () => {
+      store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true });
+      mockInvoke.mockClear();
+      store.dismissSection("s");
+      expect(mockInvoke).toHaveBeenCalledWith("save_activity", { items: expect.any(Array) });
+    });
+
+    it("persists after updateItem", () => {
+      store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true });
+      mockInvoke.mockClear();
+      store.updateItem("x", { title: "Updated" });
+      expect(mockInvoke).toHaveBeenCalledWith("save_activity", { items: expect.any(Array) });
+    });
+
+    it("strips onClick from persisted items", () => {
+      store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true, onClick: () => {} });
+      const saveCall = mockInvoke.mock.calls.find((c) => c[0] === "save_activity");
+      expect(saveCall).toBeDefined();
+      const saved = saveCall![1].items[0];
+      expect(saved.onClick).toBeUndefined();
     });
   });
 });

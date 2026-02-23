@@ -45,6 +45,7 @@ import { notificationsStore } from "./stores/notifications";
 import { repoSettingsStore } from "./stores/repoSettings";
 import { repoDefaultsStore } from "./stores/repoDefaults";
 import { notesStore } from "./stores/notes";
+import { activityStore } from "./stores/activityStore";
 import { keybindingsStore } from "./stores/keybindings";
 import { prNotificationsStore } from "./stores/prNotifications";
 import { updaterStore } from "./stores/updater";
@@ -211,6 +212,7 @@ const App: Component = () => {
             repoDefaultsStore.hydrate(),
             promptLibraryStore.hydrate(),
             notesStore.hydrate(),
+            activityStore.hydrate(),
             keybindingsStore.hydrate(),
             agentConfigsStore.hydrate(),
             agentDetection.detectAll(),
