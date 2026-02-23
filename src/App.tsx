@@ -873,6 +873,7 @@ const App: Component = () => {
           onRemoveRepo={gitOps.handleRemoveRepo}
           onOpenSettings={() => openSettings()}
           onOpenHelp={() => setHelpPanelVisible(true)}
+          onRefreshBranchStats={gitOps.refreshAllBranchStats}
           onBackgroundGit={handleBackgroundGit}
           runningGitOps={runningGitOps()}
         />

@@ -25,6 +25,7 @@ export interface RepositoryState {
   expanded: boolean; // Whether branches are expanded/collapsed
   collapsed: boolean; // Whether entire repo is collapsed to icon only
   parked: boolean;    // Whether repo is hidden from sidebar (recallable via popover)
+  showAllBranches: boolean; // Whether to show all local branches (not just worktrees + active)
   branches: Record<string, BranchState>;
   activeBranch: string | null;
 }
@@ -170,6 +171,9 @@ function createRepositoriesStore() {
             if (repo.parked === undefined) {
               repo.parked = false;
             }
+            if (repo.showAllBranches === undefined) {
+              repo.showAllBranches = false;
+            }
             for (const branch of Object.values(repo.branches)) {
               branch.terminals = [];
               // Reset hadTerminals on startup: the flag only suppresses auto-spawn
@@ -207,7 +211,7 @@ function createRepositoriesStore() {
     },
 
     /** Add a repository */
-    add(repo: { path: string; displayName: string; initials?: string }): void {
+    add(repo: { path: string; displayName: string; initials?: string; showAllBranches?: boolean }): void {
       setState("repositories", repo.path, {
         path: repo.path,
         displayName: repo.displayName,
@@ -215,6 +219,7 @@ function createRepositoriesStore() {
         expanded: true,
         collapsed: false,
         parked: false,
+        showAllBranches: repo.showAllBranches ?? false,
         branches: {},
         activeBranch: null,
       });
@@ -264,6 +269,12 @@ function createRepositoriesStore() {
     /** Toggle repository collapsed state */
     toggleCollapsed(path: string): void {
       setState("repositories", path, "collapsed", (c) => !c);
+      save();
+    },
+
+    /** Toggle show-all-branches state */
+    toggleShowAllBranches(path: string): void {
+      setState("repositories", path, "showAllBranches", (v) => !v);
       save();
     },
 

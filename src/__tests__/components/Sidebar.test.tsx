@@ -419,11 +419,12 @@ describe("Sidebar", () => {
       expect(menu).not.toBeNull();
 
       const menuItems = menu!.querySelectorAll(".item");
-      expect(menuItems.length).toBe(4);
+      expect(menuItems.length).toBe(5);
       expect(menuItems[0].textContent).toContain("Repo Settings");
       expect(menuItems[1].textContent).toContain("Move to Group");
-      expect(menuItems[2].textContent).toContain("Park Repository");
-      expect(menuItems[3].textContent).toContain("Remove Repository");
+      expect(menuItems[2].textContent).toContain("Show All Branches");
+      expect(menuItems[3].textContent).toContain("Park Repository");
+      expect(menuItems[4].textContent).toContain("Remove Repository");
     });
 
     it("repo menu Settings click calls onRepoSettings", () => {
@@ -448,9 +449,9 @@ describe("Sidebar", () => {
       const menuBtn = container.querySelector(".repoActionBtn")!;
       fireEvent.click(menuBtn);
 
-      // Click remove — index 3 (after "Repo Settings", "Move to Group", and "Park Repository")
+      // Click remove — index 4 (after "Repo Settings", "Move to Group", "Show All Branches", and "Park Repository")
       const menuItems = container.querySelectorAll(".item");
-      fireEvent.click(menuItems[3]);
+      fireEvent.click(menuItems[4]);
       expect(onRemoveRepo).toHaveBeenCalledWith("/repo1");
     });
 
@@ -506,11 +507,12 @@ describe("Sidebar", () => {
       expect(menu).not.toBeNull();
 
       const menuItems = menu!.querySelectorAll(".item");
-      expect(menuItems.length).toBe(4);
+      expect(menuItems.length).toBe(5);
       expect(menuItems[0].textContent).toContain("Repo Settings");
       expect(menuItems[1].textContent).toContain("Move to Group");
-      expect(menuItems[2].textContent).toContain("Park Repository");
-      expect(menuItems[3].textContent).toContain("Remove Repository");
+      expect(menuItems[2].textContent).toContain("Show All Branches");
+      expect(menuItems[3].textContent).toContain("Park Repository");
+      expect(menuItems[4].textContent).toContain("Remove Repository");
     });
 
     it("repo header click calls toggleExpanded", () => {

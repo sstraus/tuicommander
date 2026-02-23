@@ -157,6 +157,18 @@ export const GeneralTab: Component = () => {
         <p class={s.hint}>{t("general.hint.autoShowPrPopover", "Automatically open the PR panel when a branch has an associated pull request")}</p>
       </div>
 
+      <div class={s.group}>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={settingsStore.state.showAllBranches}
+            onChange={(e) => settingsStore.setShowAllBranches(e.currentTarget.checked)}
+          />
+          <span>{t("general.toggle.showAllBranches", "Show all branches by default")}</span>
+        </div>
+        <p class={s.hint}>{t("general.hint.showAllBranches", "When adding a repository, show all local branches in the sidebar (can be toggled per repository)")}</p>
+      </div>
+
       <h3>{t("general.heading.repoDefaults", "Repository Defaults")}</h3>
       <p class={s.hint} style={{ "margin-bottom": "12px" }}>
         {t("general.hint.repoDefaults", "These defaults apply to all repositories unless overridden per-repo")}

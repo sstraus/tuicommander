@@ -397,6 +397,55 @@ describe("useGitOperations", () => {
       // Should not throw
       expect(repositoriesStore.get("/repo")?.branches["main"]).toBeDefined();
     });
+
+    describe("showAllBranches", () => {
+      it("adds local-only branches when showAllBranches is on", async () => {
+        repositoriesStore.add({ path: "/repo", displayName: "Repo", showAllBranches: true });
+        repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+        mockRepo.getWorktreePaths.mockResolvedValue({ main: "/repo" });
+        mockRepo.listLocalBranches.mockResolvedValue(["main", "feature-a", "feature-b"]);
+
+        await gitOps.refreshAllBranchStats();
+
+        expect(repositoriesStore.get("/repo")?.branches["feature-a"]).toBeDefined();
+        expect(repositoriesStore.get("/repo")?.branches["feature-a"]?.worktreePath).toBeNull();
+        expect(repositoriesStore.get("/repo")?.branches["feature-b"]).toBeDefined();
+        expect(mockRepo.listLocalBranches).toHaveBeenCalledWith("/repo");
+      });
+
+      it("does not call listLocalBranches when showAllBranches is off", async () => {
+        repositoriesStore.add({ path: "/repo", displayName: "Repo", showAllBranches: false });
+        repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+        mockRepo.getWorktreePaths.mockResolvedValue({ main: "/repo" });
+
+        await gitOps.refreshAllBranchStats();
+
+        expect(mockRepo.listLocalBranches).not.toHaveBeenCalled();
+      });
+
+      it("preserves local branches when showAllBranches is on (does not prune them)", async () => {
+        repositoriesStore.add({ path: "/repo", displayName: "Repo", showAllBranches: true });
+        repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+        repositoriesStore.setBranch("/repo", "local-only", { worktreePath: null });
+        mockRepo.getWorktreePaths.mockResolvedValue({ main: "/repo" });
+        mockRepo.listLocalBranches.mockResolvedValue(["main", "local-only"]);
+
+        await gitOps.refreshAllBranchStats();
+
+        expect(repositoriesStore.get("/repo")?.branches["local-only"]).toBeDefined();
+      });
+
+      it("removes local-only branches when showAllBranches is off", async () => {
+        repositoriesStore.add({ path: "/repo", displayName: "Repo", showAllBranches: false });
+        repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+        repositoriesStore.setBranch("/repo", "orphan-local", { worktreePath: null });
+        mockRepo.getWorktreePaths.mockResolvedValue({ main: "/repo" });
+
+        await gitOps.refreshAllBranchStats();
+
+        expect(repositoriesStore.get("/repo")?.branches["orphan-local"]).toBeUndefined();
+      });
+    });
   });
 
   describe("handleRemoveBranch (backend failure)", () => {

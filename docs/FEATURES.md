@@ -83,7 +83,7 @@
 - Add repository via `+` button or folder dialog
 - Click repo header to expand/collapse branch list
 - Click again to toggle icon-only mode (shows initials)
-- `⋯` button: Repo Settings, Remove, Move to Group
+- `⋯` button: Repo Settings, Show All Branches / Show Active Only, Move to Group, Park Repository, Remove
 
 ### 2.2 Repository Groups
 - Named, colored groups for organizing repositories
@@ -94,6 +94,12 @@
 - Collapse/expand: click group header
 - Reorder groups: drag-and-drop
 - Color inheritance: repo color > group color > none
+
+### 2.2.1 Show All Branches
+- `⋯` → Show All Branches: lists every local git branch in the sidebar (not just worktrees)
+- Toggle label changes to "Show Active Only" when active — click to revert to worktree-only view
+- Per-repo state: each repository remembers its own setting independently
+- Global default (Settings → General → Git Integration): configures the initial state for newly added repositories
 
 ### 2.3 Branch Items
 - Click: switch to branch (shows its terminals, creates worktree if needed)
@@ -359,6 +365,7 @@
 ### 7.3 HEAD File Watcher
 - Watches `.git/HEAD` for branch changes via file system events
 - Triggers UI refresh without polling
+- When a terminal runs `git checkout -b new-branch` in the main working directory (not a worktree), the sidebar renames the existing branch entry in-place (preserving all terminal state) instead of creating a duplicate
 
 ### 7.4 Lazygit Integration
 - In terminal: `Cmd+G`

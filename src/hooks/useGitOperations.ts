@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
+import { settingsStore } from "../stores/settings";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "../transport";
 import { findOrphanTerminals } from "../utils/terminalOrphans";
@@ -55,7 +56,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
     await Promise.all(repositoriesStore.getPaths().map(async (repoPath) => {
       if (!repositoriesStore.get(repoPath)) return;
 
-      const worktreePaths = await deps.repo.getWorktreePaths(repoPath);
+      const showAllBranches = repositoriesStore.get(repoPath)?.showAllBranches ?? false;
+      const [worktreePaths, localBranches] = await Promise.all([
+        deps.repo.getWorktreePaths(repoPath),
+        showAllBranches ? deps.repo.listLocalBranches(repoPath) : Promise.resolve([] as string[]),
+      ]);
 
       const currentRepo = repositoriesStore.get(repoPath);
       if (currentRepo) {
@@ -67,7 +72,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
           return;
         }
         for (const branchName of Object.keys(currentRepo.branches)) {
-          if (!(branchName in worktreePaths)) {
+          const inWorktrees = branchName in worktreePaths;
+          const inLocal = localBranches.includes(branchName);
+          if (!inWorktrees && !inLocal) {
             repositoriesStore.removeBranch(repoPath, branchName);
           }
         }
@@ -79,6 +86,15 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
       const updatedRepo = repositoriesStore.get(repoPath);
       if (!updatedRepo) return;
+
+      // Add local-only branches not covered by worktrees
+      if (showAllBranches) {
+        for (const branchName of localBranches) {
+          if (!(branchName in worktreePaths) && !updatedRepo.branches[branchName]) {
+            repositoriesStore.setBranch(repoPath, branchName, { worktreePath: null });
+          }
+        }
+      }
 
       await Promise.all(Object.values(updatedRepo.branches).map(async (branch) => {
         if (!branch.worktreePath) return;
@@ -307,7 +323,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
         await deps.closeTerminal(id, true);
       }
 
-      repositoriesStore.add({ path: info.path, displayName: info.name, initials: info.initials });
+      repositoriesStore.add({ path: info.path, displayName: info.name, initials: info.initials, showAllBranches: settingsStore.state.showAllBranches });
 
       if (info.branch) {
         repositoriesStore.setBranch(info.path, info.branch, { worktreePath: info.path });

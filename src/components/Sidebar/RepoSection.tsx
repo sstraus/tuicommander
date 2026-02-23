@@ -291,6 +291,7 @@ export const RepoSection: Component<{
   onRemove: () => void;
   onToggle: () => void;
   onToggleCollapsed: () => void;
+  onToggleShowAllBranches: () => void;
   onDragStart: (e: DragEvent) => void;
   onDragOver: (e: DragEvent) => void;
   onDrop: (e: DragEvent) => void;
@@ -342,6 +343,10 @@ export const RepoSection: Component<{
     });
     items.push({ label: "Move to Group", action: () => {}, children });
 
+    items.push({
+      label: props.repo.showAllBranches ? "Show Active Only" : "Show All Branches",
+      action: () => props.onToggleShowAllBranches(),
+    });
     items.push({ label: "Park Repository", action: () => repositoriesStore.setPark(props.repo.path, true) });
     items.push({ label: "Remove Repository", action: () => props.onRemove() });
     return items;

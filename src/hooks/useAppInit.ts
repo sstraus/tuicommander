@@ -166,12 +166,20 @@ export async function initApp(deps: AppInitDeps) {
 
     console.log(`[HeadWatcher] ${repo_path}: branch changed to ${branch}`);
 
-    // Ensure the branch exists in the store
-    if (!repo.branches[branch]) {
-      repositoriesStore.setBranch(repo_path, branch, { name: branch });
-    }
+    const oldBranch = repo.activeBranch;
+    const oldBranchState = oldBranch ? repo.branches[oldBranch] : null;
 
-    repositoriesStore.setActiveBranch(repo_path, branch);
+    // If the old branch was the main checkout (not a worktree), rename it
+    // so terminals, savedTerminals, and other state carry over seamlessly.
+    if (oldBranch && oldBranchState && oldBranchState.worktreePath === null && !repo.branches[branch]) {
+      repositoriesStore.renameBranch(repo_path, oldBranch, branch);
+    } else {
+      // Worktree or branch already exists — just ensure it's in the store
+      if (!repo.branches[branch]) {
+        repositoriesStore.setBranch(repo_path, branch, { name: branch });
+      }
+      repositoriesStore.setActiveBranch(repo_path, branch);
+    }
 
     // Invalidate caches so next poll fetches fresh data
     invoke("clear_caches").catch((err) =>

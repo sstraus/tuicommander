@@ -481,6 +481,28 @@ describe("repositoriesStore", () => {
     });
   });
 
+  describe("toggleShowAllBranches()", () => {
+    it("toggles showAllBranches state", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/path/to/repo", displayName: "test" });
+        expect(store.get("/path/to/repo")!.showAllBranches).toBe(false);
+        store.toggleShowAllBranches("/path/to/repo");
+        expect(store.get("/path/to/repo")!.showAllBranches).toBe(true);
+        store.toggleShowAllBranches("/path/to/repo");
+        expect(store.get("/path/to/repo")!.showAllBranches).toBe(false);
+        dispose();
+      });
+    });
+
+    it("uses showAllBranches from add() param", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo", displayName: "test", showAllBranches: true });
+        expect(store.get("/repo")!.showAllBranches).toBe(true);
+        dispose();
+      });
+    });
+  });
+
   describe("isEmpty()", () => {
     it("returns true when empty", () => {
       createRoot((dispose) => {

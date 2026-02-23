@@ -240,6 +240,9 @@ pub(crate) struct AppConfig {
     /// Skip authentication for private/LAN IP addresses (RFC1918 + IPv6 ULA)
     #[serde(default)]
     pub(crate) lan_auth_bypass: bool,
+    /// Show all local branches in the sidebar by default (not just worktrees + active branch)
+    #[serde(default)]
+    pub(crate) show_all_branches: bool,
 }
 
 fn default_language() -> String {
@@ -299,6 +302,7 @@ impl Default for AppConfig {
             session_token_duration_secs: default_session_token_duration_secs(),
             ipv6_enabled: false,
             lan_auth_bypass: false,
+            show_all_branches: false,
         }
     }
 }
@@ -720,6 +724,7 @@ mod tests {
             session_token_duration_secs: 3600,
             ipv6_enabled: true,
             lan_auth_bypass: true,
+            show_all_branches: true,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -744,6 +749,7 @@ mod tests {
         assert_eq!(loaded.session_token_duration_secs, 3600);
         assert!(loaded.ipv6_enabled);
         assert!(loaded.lan_auth_bypass);
+        assert!(loaded.show_all_branches);
     }
 
     #[test]

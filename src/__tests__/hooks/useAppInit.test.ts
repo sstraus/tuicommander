@@ -418,4 +418,102 @@ describe("initApp", () => {
 
     vi.useRealTimers();
   });
+
+  describe("head-changed event", () => {
+    function captureHeadChanged() {
+      const listenMock = vi.mocked(listen);
+      let headChangedCallback: ((event: { payload: { repo_path: string; branch: string } }) => void) | null = null;
+      listenMock.mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+        if (event === "head-changed") {
+          headChangedCallback = handler as typeof headChangedCallback;
+        }
+        return Promise.resolve(vi.fn());
+      }) as unknown as typeof listen);
+      return { listenMock, getCallback: () => headChangedCallback };
+    }
+
+    it("renames branch entry when old branch is main checkout (worktreePath null)", async () => {
+      const { getCallback } = captureHeadChanged();
+      const deps = createMockDeps();
+      repositoriesStore.add({ path: "/repo", displayName: "repo" });
+      repositoriesStore.setBranch("/repo", "develop", { worktreePath: null });
+      repositoriesStore.setActiveBranch("/repo", "develop");
+      repositoriesStore.addTerminalToBranch("/repo", "develop", "term-1");
+
+      await initApp(deps);
+
+      getCallback()!({ payload: { repo_path: "/repo", branch: "ACME-00106/feature" } });
+
+      // Old branch gone, new branch has it
+      expect(repositoriesStore.get("/repo")?.branches["develop"]).toBeUndefined();
+      expect(repositoriesStore.get("/repo")?.branches["ACME-00106/feature"]).toBeDefined();
+      // Terminals carry over
+      expect(repositoriesStore.get("/repo")?.branches["ACME-00106/feature"]?.terminals).toContain("term-1");
+      // Active branch updated
+      expect(repositoriesStore.get("/repo")?.activeBranch).toBe("ACME-00106/feature");
+    });
+
+    it("creates new branch entry when old branch is a worktree (worktreePath set)", async () => {
+      const { getCallback } = captureHeadChanged();
+      const deps = createMockDeps();
+      repositoriesStore.add({ path: "/repo", displayName: "repo" });
+      repositoriesStore.setBranch("/repo", "wt-branch", { worktreePath: "/repo/.worktrees/wt-branch" });
+      repositoriesStore.setActiveBranch("/repo", "wt-branch");
+
+      await initApp(deps);
+
+      getCallback()!({ payload: { repo_path: "/repo", branch: "new-branch" } });
+
+      // Old worktree branch preserved
+      expect(repositoriesStore.get("/repo")?.branches["wt-branch"]).toBeDefined();
+      // New branch created
+      expect(repositoriesStore.get("/repo")?.branches["new-branch"]).toBeDefined();
+      expect(repositoriesStore.get("/repo")?.activeBranch).toBe("new-branch");
+    });
+
+    it("sets activeBranch when target branch already exists in store", async () => {
+      const { getCallback } = captureHeadChanged();
+      const deps = createMockDeps();
+      repositoriesStore.add({ path: "/repo", displayName: "repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: null });
+      repositoriesStore.setBranch("/repo", "feature", { worktreePath: null });
+      repositoriesStore.setActiveBranch("/repo", "feature");
+
+      await initApp(deps);
+
+      getCallback()!({ payload: { repo_path: "/repo", branch: "main" } });
+
+      // Both branches still exist (feature kept, main was pre-existing)
+      expect(repositoriesStore.get("/repo")?.branches["main"]).toBeDefined();
+      expect(repositoriesStore.get("/repo")?.activeBranch).toBe("main");
+    });
+
+    it("does nothing when branch has not changed", async () => {
+      const { getCallback } = captureHeadChanged();
+      const deps = createMockDeps();
+      repositoriesStore.add({ path: "/repo", displayName: "repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: null });
+      repositoriesStore.setActiveBranch("/repo", "main");
+
+      await initApp(deps);
+
+      getCallback()!({ payload: { repo_path: "/repo", branch: "main" } });
+
+      // Store unchanged
+      expect(Object.keys(repositoriesStore.get("/repo")?.branches ?? {})).toEqual(["main"]);
+      expect(repositoriesStore.get("/repo")?.activeBranch).toBe("main");
+    });
+
+    it("does nothing when repo is not found", async () => {
+      const { getCallback } = captureHeadChanged();
+      const deps = createMockDeps();
+
+      await initApp(deps);
+
+      // Should not throw
+      expect(() =>
+        getCallback()!({ payload: { repo_path: "/unknown-repo", branch: "main" } })
+      ).not.toThrow();
+    });
+  });
 });
