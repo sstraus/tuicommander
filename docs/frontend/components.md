@@ -25,7 +25,7 @@ App.tsx (829 lines - central orchestrator)
 │       └── ZoomIndicator     # Font size display
 ├── SettingsPanel/            # Tabbed settings overlay
 │   ├── tabs/GeneralTab       # Font, shell, IDE, theme
-│   ├── tabs/AgentsTab        # Agent fallback chains
+│   ├── tabs/AgentsTab        # Agent detection, run configs, MCP
 │   ├── tabs/ServicesTab      # MCP, remote access, dictation
 │   ├── tabs/RepoScriptsTab   # Per-repo scripts
 │   └── tabs/RepoWorktreeTab  # Per-repo worktree options
@@ -92,7 +92,7 @@ Tabbed settings overlay.
 
 **Tabs:**
 - **General** — Font family, font size, shell, IDE, theme, confirmations
-- **Agents** — Primary agent, fallback chain, auto-recovery
+- **Agents** — Agent detection, run configurations, MCP integration
 - **Services** — MCP server, remote access, dictation settings
 - **Repo Scripts** — Setup script, run command per repository
 - **Repo Worktree** — Base branch, copy ignored/untracked files
@@ -111,6 +111,29 @@ Rich PR detail popup shown on hover/click in sidebar.
 - Labels with computed colors
 - Line change counts (+additions/-deletions)
 - Timestamps (created, updated)
+
+### StatusBar (`StatusBar/`)
+
+Status messages, agent info, and panel toggles.
+
+**Agent Badge — display priority:**
+
+The agent badge appears when the active terminal has a recognized agent type. It shows a single integrated element with the agent icon and the most relevant info, following this priority cascade:
+
+| Priority | Condition | Display | Example |
+|----------|-----------|---------|---------|
+| 1 (highest) | PTY rate limit detected | Icon + warning + countdown | `🔶 ⚠ 3m 20s` |
+| 2 | Usage API available (Claude only) | Icon + usage percentages | `🔶 5h: 6% · 7d: 69%` |
+| 3 | PTY usage limit parsed | Icon + percentage + limit type | `🔶 82% daily` |
+| 4 (lowest) | No usage data | Icon + agent name | `🔶 claude` |
+
+**Data sources:**
+- **Rate limit (priority 1):** Detected by Rust output parser via regex on PTY output (e.g. "429", "rate limit", "too many requests"). Stored in `rateLimitStore`. Applies to all agents.
+- **Usage API (priority 2):** Polled every 5 min from Claude's API by `claudeUsage.ts`. Posted to `statusBarTicker` with pluginId `"claude-usage"`. Claude Code only. When active, the separate ticker message is suppressed to avoid duplication.
+- **PTY usage limit (priority 3):** Parsed from terminal output by the output parser (e.g. Claude's `[C1 S30 K26]` status line). Stored on the terminal entry as `usageLimit`. Applies to all agents that emit usage info.
+- **Agent name (priority 4):** Fallback — just shows the agent type name.
+
+**Ticker integration:** When the active agent is `claude` and the Claude Usage ticker is active, the ticker message is absorbed into the agent badge (priority 2) and hidden from the separate ticker area. Other ticker messages (from plugins, etc.) display normally.
 
 ## UI Primitives (`components/ui/`)
 

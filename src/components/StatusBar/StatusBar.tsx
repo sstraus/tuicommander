@@ -1,9 +1,8 @@
-import { Component, Show, createSignal, createMemo, onCleanup, onMount } from "solid-js";
-import { ZoomIndicator, BranchBadge, PrBadge, CiBadge } from "../ui";
+import { Component, Show, createSignal, createMemo, createEffect, onCleanup, onMount } from "solid-js";
+import { ZoomIndicator, PrBadge, CiBadge } from "../ui";
 import { terminalsStore } from "../../stores/terminals";
 import { AGENT_DISPLAY } from "../../agents";
 import { AgentIcon } from "../ui/AgentIcon";
-import { BranchPopover } from "../BranchPopover";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { useGitHub } from "../../hooks/useGitHub";
 import { githubStore } from "../../stores/github";
@@ -11,8 +10,8 @@ import { rateLimitStore } from "../../stores/ratelimit";
 import { statusBarTicker } from "../../stores/statusBarTicker";
 import { formatWaitTime } from "../../rate-limit";
 import { dictationStore } from "../../stores/dictation";
+import { notesStore } from "../../stores/notes";
 import { userActivityStore } from "../../stores/userActivity";
-import { updaterStore } from "../../stores/updater";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -35,7 +34,6 @@ export interface StatusBarProps {
 }
 
 export const StatusBar: Component<StatusBarProps> = (props) => {
-  const [showBranchPopover, setShowBranchPopover] = createSignal(false);
   const [showPrDetailPopover, setShowPrDetailPopover] = createSignal(false);
   const [cwdCopied, setCwdCopied] = createSignal(false);
 
@@ -81,6 +79,33 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
     if (!cwd) return null;
     return shortenHomePath(cwd);
   };
+
+  // Pendulum ticker: detect overflow on notification text
+  let infoContainerRef: HTMLSpanElement | undefined;
+  let infoTextRef: HTMLSpanElement | undefined;
+  const [tickerActive, setTickerActive] = createSignal(false);
+  const [infoDismissed, setInfoDismissed] = createSignal(false);
+  const [dismissedText, setDismissedText] = createSignal("");
+
+  createEffect(() => {
+    // Subscribe to statusInfo changes to re-measure overflow
+    void props.statusInfo;
+    // Defer measurement to after DOM update
+    const rafId = requestAnimationFrame(() => {
+      if (!infoContainerRef || !infoTextRef) return;
+      const overflowPx = infoTextRef.scrollWidth - infoContainerRef.clientWidth;
+      if (overflowPx > 0) {
+        // ~50px/s reading speed, minimum 4s cycle
+        const duration = Math.max(4, (overflowPx / 50) * 2 + 4);
+        infoContainerRef.style.setProperty("--overflow-px", String(overflowPx));
+        infoContainerRef.style.setProperty("--ticker-duration", `${duration}s`);
+        setTickerActive(true);
+      } else {
+        setTickerActive(false);
+      }
+    });
+    onCleanup(() => cancelAnimationFrame(rafId));
+  });
 
   // GitHub hook needs a getter function
   const getRepoPath = () => props.currentRepoPath;
@@ -150,7 +175,22 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           fontSize={props.fontSize}
           defaultFontSize={props.defaultFontSize}
         />
-        <span class={s.info}>{props.statusInfo}</span>
+        <Show when={!infoDismissed() || props.statusInfo !== dismissedText()}>
+          <span
+            class={s.info}
+            ref={infoContainerRef}
+            onClick={() => { setInfoDismissed(true); setDismissedText(props.statusInfo); }}
+            style={{ cursor: tickerActive() ? "pointer" : undefined }}
+            title={tickerActive() ? props.statusInfo : undefined}
+          >
+            <span
+              class={cx(s.infoTicker, tickerActive() && s.infoTickerActive)}
+              ref={infoTextRef}
+            >
+              {props.statusInfo}
+            </span>
+          </span>
+        </Show>
         <Show when={shortenedCwd()}>
           <span
             class={s.cwd}
@@ -163,36 +203,62 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         <Show when={terminalsStore.getActive()?.agentType}>
           {(agentType) => {
             const display = () => AGENT_DISPLAY[agentType()];
+            const ul = () => terminalsStore.getActive()?.usageLimit ?? null;
+            const rl = rateLimitWarning;
+            // When agent is claude, absorb the claude-usage ticker into the badge
+            const claudeTicker = () =>
+              agentType() === "claude"
+                ? statusBarTicker.getAll().find((m) => m.pluginId === "claude-usage")
+                : null;
             return (
               <span
                 class={s.agentBadge}
-                style={{ color: display().color }}
-                title={`${t("statusBar.agent", "Agent:")} ${agentType()}`}
+                style={claudeTicker()?.onClick ? { cursor: "pointer" } : undefined}
+                onClick={() => claudeTicker()?.onClick?.()}
+                title={
+                  rl()
+                    ? `${agentType()} — ${rl()!.count} session(s) rate limited (${rl()!.remaining})`
+                    : claudeTicker()
+                      ? claudeTicker()!.text
+                      : ul()
+                        ? `${agentType()} — ${ul()!.percentage}% of ${ul()!.limitType} limit used`
+                        : `${t("statusBar.agent", "Agent:")} ${agentType()}`
+                }
               >
-                <AgentIcon agent={agentType()} size={12} /> {agentType()}
+                <span style={{ color: display().color }}><AgentIcon agent={agentType()} size={12} /></span>
+                {rl()
+                  ? <span class={s.agentRateLimited}> ⚠ {rl()!.remaining}</span>
+                  : claudeTicker()
+                    ? <span class={cx(
+                        s.agentUsage,
+                        claudeTicker()!.priority >= 90 && s.agentUsageCritical,
+                        claudeTicker()!.priority >= 50 && claudeTicker()!.priority < 90 && s.agentUsageWarning,
+                      )}> {claudeTicker()!.text.replace(/^Claude:\s*/, "")}</span>
+                    : ul()
+                      ? <span class={cx(
+                          s.agentUsage,
+                          ul()!.percentage >= 90 && s.agentUsageCritical,
+                          ul()!.percentage >= 70 && ul()!.percentage < 90 && s.agentUsageWarning,
+                        )}> {ul()!.percentage}% {ul()!.limitType}</span>
+                      : <span style={{ color: display().color }}> {agentType()}</span>
+                }
               </span>
             );
           }}
         </Show>
-        <Show when={terminalsStore.getActive()?.usageLimit}>
-          {(ul) => (
-            <span
-              class={cx(
-                s.usageLimit,
-                ul().percentage >= 90 && s.usageCritical,
-                ul().percentage >= 70 && ul().percentage < 90 && s.usageWarning,
-              )}
-              title={`Claude Code ${ul().limitType} limit: ${ul().percentage}% used`}
-            >
-              {ul().percentage}% {ul().limitType}
-            </span>
-          )}
-        </Show>
-        <Show when={statusBarTicker.getCurrentMessage()}>
+        <Show when={(() => {
+          const msg = statusBarTicker.getCurrentMessage();
+          if (!msg) return null;
+          // Hide claude-usage ticker when it's already shown in the agent badge
+          const activeAgent = terminalsStore.getActive()?.agentType;
+          if (activeAgent === "claude" && msg.pluginId === "claude-usage") return null;
+          return msg;
+        })()}>
           {(msg) => (
             <span
-              class={cx(s.tickerMessage, msg().priority >= 80 && s.tickerWarning)}
+              class={cx(s.tickerMessage, msg().priority >= 80 && s.tickerWarning, msg().onClick && s.tickerClickable)}
               title={msg().text}
+              onClick={() => msg().onClick?.()}
             >
               <Show when={msg().icon}>
                 {(icon) => <span class={s.tickerIcon} innerHTML={icon()} />}
@@ -201,52 +267,21 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
             </span>
           )}
         </Show>
-        <Show when={rateLimitWarning()}>
-          {(rl) => (
-            <span class={s.rateLimit} title={`${rl().count} session(s) rate limited`}>
-              ⚠ {t("statusBar.rateLimited", "Rate limited")} ({rl().remaining})
-            </span>
-          )}
-        </Show>
-        <Show when={updaterStore.state.available && !updaterStore.state.downloading}>
-          <span
-            class={s.updateBadge}
-            title={`${t("statusBar.updateTo", "Update to")} v${updaterStore.state.version}`}
-            onClick={() => updaterStore.downloadAndInstall()}
-          >
-            {t("statusBar.update", "Update")} v{updaterStore.state.version}
-          </span>
-        </Show>
-        <Show when={updaterStore.state.downloading}>
-          <span class={cx(s.updateBadge, s.downloading)} title={t("statusBar.downloading", "Downloading update...")}>
-            {t("statusBar.updating", "Updating")} {updaterStore.state.progress}%
-          </span>
-        </Show>
       </div>
 
-      {/* GitHub status section */}
-      <Show when={github.status()}>
-        {(gs) => (
+      {/* GitHub PR + CI badges */}
+      <Show when={activePrData()}>
+        {(pr) => (
           <div class={s.githubStatus}>
-            <BranchBadge
-              branch={gs().current_branch}
-              ahead={gs().ahead}
-              behind={gs().behind}
-              onClick={() => setShowBranchPopover(true)}
+            <PrBadge
+              number={pr().number}
+              title={pr().title}
+              state={pr().state}
+              mergeable={pr().mergeable}
+              mergeStateStatus={pr().merge_state_status}
+              onClick={() => setShowPrDetailPopover(true)}
             />
-            <Show when={activePrData()}>
-              {(pr) => (
-                <PrBadge
-                  number={pr().number}
-                  title={pr().title}
-                  state={pr().state}
-                  mergeable={pr().mergeable}
-                  mergeStateStatus={pr().merge_state_status}
-                  onClick={() => setShowPrDetailPopover(true)}
-                />
-              )}
-            </Show>
-            <Show when={activePrData()?.checks}>
+            <Show when={pr().checks}>
               {(checks) => (
                 <Show when={checks().total > 0}>
                   <span onClick={handleCiBadgeClick} style={{ cursor: "pointer" }}>
@@ -268,6 +303,9 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         {/* Toggle buttons */}
         <button class="toggle-btn" onClick={() => props.onToggleNotes?.()} title={`${t("statusBar.toggleNotes", "Toggle Ideas Panel")} (${getModifierSymbol()}N)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 21c0 .5.4 1 1 1h4c.6 0 1-.5 1-1v-1H9v1zm3-19C8.1 2 5 5.1 5 9c0 2.4 1.2 4.5 3 5.7V17c0 .5.4 1 1 1h6c.6 0 1-.5 1-1v-2.3c1.8-1.3 3-3.4 3-5.7 0-3.9-3.1-7-7-7z"/></svg>
+          <Show when={notesStore.count() > 0}>
+            <span class={s.toggleBadge}>{notesStore.count()}</span>
+          </Show>
           <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}N</span>
         </button>
         <button class="toggle-btn" onClick={() => props.onToggleFileBrowser?.()} title={`${t("statusBar.fileBrowser", "File Browser")} (${getModifierSymbol()}E)`} style={{ position: "relative" }}>
@@ -312,21 +350,6 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           </button>
         </Show>
       </div>
-
-      {/* Branch rename popover */}
-      <Show when={showBranchPopover() ? github.status() : null}>
-        {(gs) => (
-          <BranchPopover
-            branch={gs().current_branch}
-            repoPath={props.currentRepoPath || null}
-            onClose={() => setShowBranchPopover(false)}
-            onBranchRenamed={(oldName, newName) => {
-              github.refresh();
-              props.onBranchRenamed?.(oldName, newName);
-            }}
-          />
-        )}
-      </Show>
 
       {/* Rich PR detail popover */}
       <Show when={showPrDetailPopover()}>

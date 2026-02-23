@@ -19,6 +19,8 @@ export interface TickerMessage {
   ttlMs: number;
   /** Timestamp when the message was added */
   createdAt: number;
+  /** Optional click handler (e.g. open dashboard panel) */
+  onClick?: () => void;
 }
 
 // ---------------------------------------------------------------------------

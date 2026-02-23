@@ -18,6 +18,7 @@
   gap: 8px;
   min-width: 0;
   overflow: hidden;
+  flex: 1;
 }
 
 .controls {
@@ -25,7 +26,7 @@
   align-items: center;
   gap: 6px;
   margin-left: auto;
-  flex-shrink: 0;
+  flex: 0 0 auto;
 }
 
 .githubStatus {
@@ -35,13 +36,39 @@
   margin-left: 12px;
   padding-left: 12px;
   border-left: 1px solid var(--border);
-  flex: 1;
+  flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
 }
 
 .info {
   color: var(--fg-muted);
+  flex: 0 1 auto;
+  max-width: clamp(120px, 30%, 400px);
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Pendulum ticker for overflowing notifications */
+.infoTicker {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.infoTickerActive {
+  animation: pendulum var(--ticker-duration, 6s) ease-in-out infinite;
+}
+
+@keyframes pendulum {
+  0%, 8% {
+    transform: translateX(0);
+  }
+  45%, 55% {
+    transform: translateX(calc(var(--overflow-px, 0) * -1px));
+  }
+  92%, 100% {
+    transform: translateX(0);
+  }
 }
 
 .cwd {
@@ -54,6 +81,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 150px;
+  flex-shrink: 10;
 }
 
 .cwd:hover {
@@ -69,28 +98,43 @@
   border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.usageLimit {
-  font-family: var(--font-mono);
-  font-size: var(--font-sm);
-  font-weight: 500;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  color: #59a8dd;
-  background: rgba(89, 168, 221, 0.15);
-  white-space: nowrap;
+.agentUsage {
+  color: var(--fg-secondary);
 }
 
-.usageWarning {
+.agentUsageWarning {
   color: #dcdcaa;
-  background: rgba(220, 220, 170, 0.2);
 }
 
-.usageCritical {
+.agentUsageCritical {
   color: #f48771;
-  background: rgba(244, 135, 113, 0.2);
   animation: pulse-opacity 2s ease-in-out infinite;
+}
+
+.agentRateLimited {
+  color: #f44747;
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+
+.toggleBadge {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: var(--radius-lg);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .tickerMessage {
@@ -102,7 +146,18 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 250px;
+  flex: 0 1 auto;
+  max-width: 300px;
+  min-width: 80px;
+}
+
+.tickerClickable {
+  cursor: pointer;
+}
+
+.tickerClickable:hover {
+  color: var(--fg-secondary);
+  background: var(--bg-tertiary);
 }
 
 .tickerWarning {
@@ -122,17 +177,6 @@
   height: 12px;
 }
 
-.rateLimit {
-  font-family: var(--font-mono);
-  font-size: var(--font-sm);
-  font-weight: 500;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  color: #ffd700;
-  background: rgba(255, 215, 0, 0.1);
-  white-space: nowrap;
-  animation: pulse-opacity 2s ease-in-out infinite;
-}
 
 .updateBadge {
   font-family: var(--font-mono);
@@ -143,6 +187,7 @@
   color: #4ec9b0;
   background: rgba(78, 201, 176, 0.15);
   white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
 }
 
