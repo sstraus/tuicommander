@@ -5,6 +5,7 @@ import { useAgentDetection, type AgentAvailability } from "../../../hooks/useAge
 import { invoke } from "../../../invoke";
 import { settingsStore } from "../../../stores/settings";
 import { isTauri } from "../../../transport";
+import { AgentIcon } from "../../ui/AgentIcon";
 import s from "../Settings.module.css";
 import a from "./AgentsTab.module.css";
 
@@ -188,7 +189,7 @@ const AgentRow: Component<{
         <div class={a.agentInfo}>
           <div class={a.agentNameRow}>
             <div class={a.agentIcon} style={{ background: display().color }}>
-              {display().icon}
+              <AgentIcon agent={props.agentType} size={16} />
             </div>
             <span class={a.agentName}>{agent().name}</span>
             <Show when={props.detection?.version}>

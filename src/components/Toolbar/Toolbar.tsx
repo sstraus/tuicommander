@@ -97,6 +97,15 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     return repo?.displayName || null;
   };
 
+  /** Color inheritance: repo color > group color > default */
+  const activeRepoColor = () => {
+    const activeRepoPath = repositoriesStore.state.activeRepoPath;
+    if (!activeRepoPath) return undefined;
+    return repoSettingsStore.get(activeRepoPath)?.color
+      || repositoriesStore.getGroupForRepo(activeRepoPath)?.color
+      || undefined;
+  };
+
   const launchPath = () => activeBranch()?.worktreePath || props.repoPath;
 
   const focusedFilePath = (): string | undefined => {
@@ -174,7 +183,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
           >
             <svg class={s.branchIcon} viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/></svg>
             <Show when={activeRepoName()}>
-              <span class={s.repoName}>{activeRepoName()}</span>
+              <span class={s.repoName} style={activeRepoColor() ? { color: activeRepoColor() } : undefined}>{activeRepoName()}</span>
               <span class={s.branchSeparator}>/</span>
             </Show>
             <span class={s.branchName}>{activeBranchName()}</span>
