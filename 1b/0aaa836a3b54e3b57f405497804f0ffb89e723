@@ -1,0 +1,73 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "1b0aaa836a3b54e3b57f405497804f0ffb89e723",
+  "prompts": {
+    "0ab84ff25f16f0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45d73e90-6d26-4793-aa16-63971bd2504a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 24,
+      "total_deletions": 1,
+      "accepted_lines": 24,
+      "overriden_lines": 0
+    },
+    "2379a93fcfd36d3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "901f7f94-a422-4db0-93f2-9955efe5860c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 51,
+      "overriden_lines": 0
+    },
+    "4afb91585f48d832": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b0165046-3741-4208-b50b-09ae7c241e17",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 220,
+      "overriden_lines": 0
+    },
+    "87f045589290b05c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bfe3673a-6762-4c6e-becc-7ab0f4ef0bcd",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 23,
+      "total_deletions": 21,
+      "accepted_lines": 23,
+      "overriden_lines": 0
+    },
+    "cf3511a9344cf85d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "021dbf18-253b-46e7-9b2c-e510c9dda86e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 44,
+      "overriden_lines": 0
+    }
+  }
+}
