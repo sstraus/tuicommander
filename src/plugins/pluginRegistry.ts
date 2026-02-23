@@ -18,6 +18,8 @@ import {
 import type {
   Disposable,
   FsChangeEvent,
+  HttpFetchOptions,
+  HttpResponse,
   MarkdownProvider,
   OutputWatcher,
   PluginCapability,
@@ -85,6 +87,7 @@ function createPluginRegistry() {
     pluginId: string,
     disposables: Disposable[],
     capabilities: ReadonlySet<string> | null = null,
+    allowedUrls: readonly string[] = [],
   ): PluginHost {
     function track(d: Disposable): Disposable {
       disposables.push(d);
@@ -275,6 +278,20 @@ function createPluginRegistry() {
         return track(disposable);
       },
 
+      // -- Tier 3c: HTTP requests --
+
+      async httpFetch(url: string, options?: HttpFetchOptions): Promise<HttpResponse> {
+        requireCapability(pluginId, capabilities, "net:http");
+        return invoke<HttpResponse>("plugin_http_fetch", {
+          url,
+          method: options?.method ?? null,
+          headers: options?.headers ?? null,
+          body: options?.body ?? null,
+          allowedUrls: [...allowedUrls],
+          pluginId,
+        });
+      },
+
       // -- Tier 4: Scoped Tauri invoke --
 
       async invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -301,7 +318,7 @@ function createPluginRegistry() {
    * @param capabilities - Optional set of declared capabilities for external plugins.
    *   Pass null or omit for built-in plugins (unrestricted access).
    */
-  function register(plugin: TuiPlugin, capabilities?: string[]): void {
+  function register(plugin: TuiPlugin, capabilities?: string[], allowedUrls?: string[]): void {
     // Replace existing registration for same id
     if (plugins.has(plugin.id)) {
       unregister(plugin.id);
@@ -309,7 +326,7 @@ function createPluginRegistry() {
 
     const disposables: Disposable[] = [];
     const capSet = capabilities ? new Set(capabilities) : null;
-    const host = buildHost(plugin.id, disposables, capSet);
+    const host = buildHost(plugin.id, disposables, capSet, allowedUrls ?? []);
 
     const pluginLogger = pluginStore.getLogger(plugin.id);
 

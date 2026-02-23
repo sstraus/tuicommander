@@ -536,6 +536,61 @@ describe("PluginHost — Tier 3 capability gating", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Tier 3c: HTTP fetch capability gating
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — Tier 3c httpFetch capability gating", () => {
+  it("external plugin without net:http throws on httpFetch", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no capabilities
+    );
+    await expect(host!.httpFetch("https://example.com")).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with net:http can call httpFetch", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["net:http"],
+      ["https://example.com/*"],
+    );
+    // invoke is mocked → resolves, should not throw capability error
+    await expect(host!.httpFetch("https://example.com/api")).resolves.not.toThrow();
+  });
+
+  it("built-in plugin can call httpFetch without declaring capability", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    await expect(host!.httpFetch("https://example.com")).resolves.not.toThrow();
+  });
+
+  it("passes allowedUrls to the Rust command", async () => {
+    let host: PluginHost | null = null;
+    const allowedUrls = ["https://api.anthropic.com/*"];
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["net:http"],
+      allowedUrls,
+    );
+    await host!.httpFetch("https://api.anthropic.com/usage", {
+      method: "GET",
+      headers: { Authorization: "Bearer token" },
+    });
+    // Verify invoke was called with correct args
+    const { invoke } = await import("../../invoke");
+    expect(invoke).toHaveBeenCalledWith("plugin_http_fetch", expect.objectContaining({
+      url: "https://api.anthropic.com/usage",
+      method: "GET",
+      headers: { Authorization: "Bearer token" },
+      allowedUrls: ["https://api.anthropic.com/*"],
+      pluginId: "ext",
+    }));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Tier 4: Scoped invoke
 // ---------------------------------------------------------------------------
 

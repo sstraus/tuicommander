@@ -180,7 +180,8 @@ export type PluginCapability =
   | "invoke:list_markdown_files"
   | "fs:read"
   | "fs:list"
-  | "fs:watch";
+  | "fs:watch"
+  | "net:http";
 
 /** Error thrown when a plugin calls a method without the required capability */
 export class PluginCapabilityError extends Error {
@@ -192,6 +193,34 @@ export class PluginCapabilityError extends Error {
 
 // ---------------------------------------------------------------------------
 // Plugin host (the API surface exposed to plugins)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// HTTP types
+// ---------------------------------------------------------------------------
+
+/** Response from an HTTP fetch request via the plugin host. */
+export interface HttpResponse {
+  /** HTTP status code (e.g. 200, 401, 404) */
+  status: number;
+  /** Response headers */
+  headers: Record<string, string>;
+  /** Response body as text */
+  body: string;
+}
+
+/** Options for an HTTP fetch request. */
+export interface HttpFetchOptions {
+  /** HTTP method (default: "GET") */
+  method?: string;
+  /** Request headers */
+  headers?: Record<string, string>;
+  /** Request body */
+  body?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Invoke whitelist
 // ---------------------------------------------------------------------------
 
 /** Commands allowed via host.invoke() (Tier 4) */
@@ -300,6 +329,15 @@ export interface PluginHost {
     callback: (events: FsChangeEvent[]) => void,
     options?: { recursive?: boolean; debounceMs?: number },
   ): Promise<Disposable>;
+
+  // -- Tier 3c: HTTP requests (capability-gated) --
+
+  /**
+   * Make an HTTP request. Requires "net:http" capability.
+   * External plugins can only fetch URLs matching their manifest's allowedUrls patterns.
+   * Non-2xx status codes are returned normally (not thrown as errors).
+   */
+  httpFetch(url: string, options?: HttpFetchOptions): Promise<HttpResponse>;
 
   // -- Tier 4: Scoped Tauri invoke (whitelisted commands only) --
 
