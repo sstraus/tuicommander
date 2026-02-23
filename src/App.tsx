@@ -423,18 +423,17 @@ const App: Component = () => {
     },
   ]);
 
-  /** Open a file path from terminal output — .md/.mdx in MD viewer, others in IDE */
-  const handleOpenFilePath = (absolutePath: string, line?: number, col?: number) => {
+  /** Open a file path from terminal output — .md/.mdx in MD viewer, others in internal editor */
+  const handleOpenFilePath = (absolutePath: string, _line?: number, _col?: number) => {
+    const repoPath = repositoriesStore.state.activeRepoPath;
+    if (!repoPath) return;
+
     if (absolutePath.endsWith(".md") || absolutePath.endsWith(".mdx")) {
-      const repoPath = repositoriesStore.state.activeRepoPath;
-      if (repoPath) {
-        mdTabsStore.add(repoPath, absolutePath);
-        uiStore.setMarkdownPanelVisible(true);
-      }
+      mdTabsStore.add(repoPath, absolutePath);
+      uiStore.setMarkdownPanelVisible(true);
     } else {
-      invoke("open_in_app", { path: absolutePath, app: settingsStore.state.ide, line, col }).catch((err) =>
-        console.error("Failed to open in app:", err),
-      );
+      const tabId = editorTabsStore.add(repoPath, absolutePath);
+      terminalLifecycle.handleTerminalSelect(tabId);
     }
   };
 

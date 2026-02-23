@@ -6,6 +6,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { TerminalSearch } from "./TerminalSearch";
 import { isTauri, subscribePty, type Unsubscribe } from "../../transport";
+import { handleOpenUrl } from "../../utils/openUrl";
 import { browserCreatedSessions } from "../../hooks/useAppInit";
 import { usePty } from "../../hooks/usePty";
 import { settingsStore, FONT_FAMILIES } from "../../stores/settings";
@@ -537,7 +538,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
-    terminal.loadAddon(new WebLinksAddon());
+    terminal.loadAddon(new WebLinksAddon((_event, uri) => handleOpenUrl(uri)));
 
     searchAddon = new SearchAddon();
     terminal.loadAddon(searchAddon);
