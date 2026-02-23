@@ -1,10 +1,10 @@
 ---
 id: 340-3473
 title: Decompose god components (Sidebar, Terminal, TabBar, App.tsx)
-status: ready
+status: wontfix
 priority: P2
 created: "2026-02-21T19:11:16.300Z"
-updated: "2026-02-23T07:46:43.218Z"
+updated: "2026-02-23T08:24:22.079Z"
 dependencies: ["339-d200"]
 ---
 
@@ -38,4 +38,6 @@ Sidebar (968 lines), Terminal (753), FileBrowser (466), TabBar (446), App.tsx (9
 - unified tab system
 
 ## Work Log
+
+### 2026-02-23T08:24:22.013Z - Deferred: aggregated into ideas/codebase-decomposition.md — pure refactoring, no user-facing value now
 

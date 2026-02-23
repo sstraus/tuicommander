@@ -1,10 +1,10 @@
 ---
 id: 342-fa7d
 title: Unified action registry for menus, shortcuts, and context menu
-status: ready
+status: wontfix
 priority: P3
 created: "2026-02-21T19:11:16.302Z"
-updated: "2026-02-23T07:52:03.973Z"
+updated: "2026-02-23T08:24:22.210Z"
 dependencies: ["340-3473"]
 ---
 
@@ -36,4 +36,6 @@ Context menu is hardcoded arrays, native menu is in Rust, keyboard shortcuts are
 - god component decomposition
 
 ## Work Log
+
+### 2026-02-23T08:24:22.144Z - Deferred: aggregated into ideas/codebase-decomposition.md — depends on 340, pure refactoring
 

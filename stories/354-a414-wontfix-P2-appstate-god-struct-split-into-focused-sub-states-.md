@@ -1,10 +1,10 @@
 ---
 id: 354-a414
 title: "AppState god struct: split into focused sub-states (sessions, pty, config, github)"
-status: ready
+status: wontfix
 priority: P2
 created: "2026-02-22T16:16:43.682Z"
-updated: "2026-02-23T07:49:38.237Z"
+updated: "2026-02-23T08:24:22.334Z"
 dependencies: []
 ---
 
@@ -29,4 +29,6 @@ AppState in state.rs holds all application state in one struct (sessions, pty da
 - src-tauri/src/mcp_http/mod.rs
 
 ## Work Log
+
+### 2026-02-23T08:24:22.272Z - Deferred: aggregated into ideas/codebase-decomposition.md — pure refactoring, no user-facing value now
 
