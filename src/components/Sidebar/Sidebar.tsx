@@ -59,7 +59,8 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       return;
     }
     const prStatus = githubStore.getPrStatus(active.path, active.activeBranch);
-    if (prStatus) {
+    const prState = prStatus?.state?.toUpperCase();
+    if (prStatus && prState !== "CLOSED" && prState !== "MERGED") {
       setPrDetailTarget({ repoPath: active.path, branch: active.activeBranch });
     } else {
       setPrDetailTarget(null);
