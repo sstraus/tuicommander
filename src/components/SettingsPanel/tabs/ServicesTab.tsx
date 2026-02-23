@@ -24,6 +24,7 @@ interface AppConfig {
   theme: string;
   worktree_dir: string | null;
   mcp_server_enabled: boolean;
+  mcp_port: number;
   remote_access_enabled: boolean;
   remote_access_port: number;
   remote_access_username: string;
@@ -40,6 +41,10 @@ export const ServicesTab: Component = () => {
   const [localIps] = createResource(() => rpc<LocalIpEntry[]>("get_local_ips"));
   const [selectedIp, setSelectedIp] = createSignal<string>("");
   const [saving, setSaving] = createSignal(false);
+  const [mcpPort, setMcpPort] = createSignal(3845);
+  const [mcpUrlCopied, setMcpUrlCopied] = createSignal(false);
+  const [registering, setRegistering] = createSignal(false);
+  const [registerResult, setRegisterResult] = createSignal<string | null>(null);
 
   // Remote access form state
   const [raEnabled, setRaEnabled] = createSignal(false);
@@ -48,8 +53,6 @@ export const ServicesTab: Component = () => {
   const [raPassword, setRaPassword] = createSignal("");
   const [raHasPassword, setRaHasPassword] = createSignal(false);
   const [raShowPassword, setRaShowPassword] = createSignal(false);
-  const [raSaving, setRaSaving] = createSignal(false);
-  const [raSaved, setRaSaved] = createSignal(false);
   const [qrDataUrl, setQrDataUrl] = createSignal<string | null>(null);
   const [tokenDuration, setTokenDuration] = createSignal(86400);
   const [ipv6Enabled, setIpv6Enabled] = createSignal(false);
@@ -99,6 +102,7 @@ export const ServicesTab: Component = () => {
   const loadRemoteConfig = async () => {
     try {
       const config = await rpc<AppConfig>("load_config");
+      setMcpPort(config.mcp_port ?? 3845);
       setRaEnabled(config.remote_access_enabled);
       setRaPort(config.remote_access_port);
       setRaUsername(config.remote_access_username);
@@ -132,33 +136,27 @@ export const ServicesTab: Component = () => {
     }
   };
 
-  const saveRemoteAccess = async () => {
-    setRaSaving(true);
-    setRaSaved(false);
+  /** Save a single config field (load-modify-save pattern matching other tabs) */
+  const saveConfigField = async (updater: (config: AppConfig) => void) => {
     try {
       const config = await rpc<AppConfig>("load_config");
-      config.remote_access_enabled = raEnabled();
-      config.remote_access_port = raPort();
-      config.remote_access_username = raUsername();
-      config.session_token_duration_secs = tokenDuration();
-      config.ipv6_enabled = ipv6Enabled();
-      config.lan_auth_bypass = lanAuthBypass();
-
-      // Hash password if a new one was entered
-      if (raPassword()) {
-        const hash = await rpc<string>("hash_password", { password: raPassword() });
-        config.remote_access_password_hash = hash;
-        setRaPassword("");
-        setRaHasPassword(true);
-      }
-
+      updater(config);
       await rpc("save_config", { config });
-      setRaSaved(true);
-      setTimeout(() => setRaSaved(false), 2000);
     } catch (e) {
-      console.error("Failed to save remote access config:", e);
-    } finally {
-      setRaSaving(false);
+      console.error("Failed to save config:", e);
+    }
+  };
+
+  /** Hash and save a new password */
+  const savePassword = async (password: string) => {
+    if (!password) return;
+    try {
+      const hash = await rpc<string>("hash_password", { password });
+      await saveConfigField((c) => { c.remote_access_password_hash = hash; });
+      setRaPassword("");
+      setRaHasPassword(true);
+    } catch (e) {
+      console.error("Failed to hash password:", e);
     }
   };
 
@@ -214,6 +212,23 @@ export const ServicesTab: Component = () => {
         </p>
       </div>
 
+      <div class={s.group}>
+        <label>{t("services.label.mcpPort", "MCP Port")}</label>
+        <input
+          type="number"
+          class={s.input}
+          value={mcpPort()}
+          min={1024}
+          max={65535}
+          style={{ width: "100px" }}
+          onInput={(e) => setMcpPort(parseInt(e.currentTarget.value) || 3845)}
+          onChange={() => saveConfigField((c) => { c.mcp_port = mcpPort(); })}
+        />
+        <p class={s.hint}>
+          {t("services.hint.mcpPort", "Fixed port for the MCP server. Change requires server restart.")}
+        </p>
+      </div>
+
       <Show when={status()}>
         {(st) => (
           <>
@@ -258,6 +273,63 @@ export const ServicesTab: Component = () => {
                   {t("services.hint.mcpBridge", "Connects AI coding assistants via the Model Context Protocol")}
                 </p>
               </div>
+
+              <div class={s.group}>
+                <label>{t("services.label.mcpEndpoint", "MCP Endpoint")}</label>
+                <div class={s.urlCopyRow}>
+                  <code class={s.urlFull}>{`http://127.0.0.1:${st().port}/mcp`}</code>
+                  <button
+                    class={s.copyBtn}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(`http://127.0.0.1:${st().port}/mcp`);
+                        setMcpUrlCopied(true);
+                        setTimeout(() => setMcpUrlCopied(false), 2000);
+                      } catch { /* ignore */ }
+                    }}
+                    title={t("services.btn.copyUrl", "Copy URL to clipboard")}
+                  >
+                    {mcpUrlCopied()
+                      ? <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
+                      : <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+                    }
+                  </button>
+                </div>
+                <p class={s.hint}>
+                  {t("services.hint.mcpEndpoint", "Use this URL to register TUI Commander with any MCP-compatible AI client")}
+                </p>
+              </div>
+
+              <div class={s.group}>
+                <button
+                  class={s.testBtn}
+                  disabled={registering()}
+                  onClick={async () => {
+                    setRegistering(true);
+                    setRegisterResult(null);
+                    try {
+                      const url = await rpc<string>("register_mcp_with_claude");
+                      setRegisterResult(`Registered at ${url}`);
+                    } catch (e: unknown) {
+                      setRegisterResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
+                    } finally {
+                      setRegistering(false);
+                    }
+                  }}
+                >
+                  {registering()
+                    ? t("services.btn.registering", "Registering...")
+                    : t("services.btn.registerWithClaude", "Register with Claude Code")}
+                </button>
+                <Show when={registerResult()}>
+                  <p class={s.hint} style={{ color: registerResult()!.startsWith("Error") ? "var(--error, #e06c75)" : "var(--green, #98c379)" }}>
+                    {registerResult()}
+                  </p>
+                </Show>
+                <p class={s.hint}>
+                  {t("services.hint.registerWithClaude", "Adds TUI Commander as an MCP server in your Claude Code user settings")}
+                </p>
+              </div>
             </Show>
           </>
         )}
@@ -270,7 +342,11 @@ export const ServicesTab: Component = () => {
           <input
             type="checkbox"
             checked={raEnabled()}
-            onChange={(e) => setRaEnabled(e.currentTarget.checked)}
+            onChange={(e) => {
+              const val = e.currentTarget.checked;
+              setRaEnabled(val);
+              saveConfigField((c) => { c.remote_access_enabled = val; });
+            }}
           />
           <span>{t("services.toggle.enableRemoteAccess", "Enable remote access")}</span>
         </div>
@@ -291,6 +367,7 @@ export const ServicesTab: Component = () => {
                 min={1024}
                 max={65535}
                 onInput={(e) => setRaPort(parseInt(e.currentTarget.value) || 9876)}
+                onChange={() => saveConfigField((c) => { c.remote_access_port = raPort(); })}
               />
               <p class={s.hint}>
                 {t("services.hint.port", "TCP port for the remote access web server")}
@@ -307,6 +384,7 @@ export const ServicesTab: Component = () => {
                   value={raUsername()}
                   placeholder={t("services.placeholder.username", "admin")}
                   onInput={(e) => setRaUsername(e.currentTarget.value)}
+                  onChange={() => saveConfigField((c) => { c.remote_access_username = raUsername(); })}
                 />
               </div>
               <div class={s.group} style={{ flex: "1", "min-width": 0 }}>
@@ -318,6 +396,7 @@ export const ServicesTab: Component = () => {
                     value={raPassword()}
                     placeholder={raHasPassword() ? t("services.placeholder.passwordSet", "Password set — enter to change") : t("services.placeholder.passwordEnter", "Enter password")}
                     onInput={(e) => setRaPassword(e.currentTarget.value)}
+                    onChange={() => savePassword(raPassword())}
                   />
                   <button
                     class={s.toggleBtn}
@@ -371,7 +450,11 @@ export const ServicesTab: Component = () => {
               <select
                 class={s.input}
                 value={tokenDuration()}
-                onChange={(e) => setTokenDuration(parseInt(e.currentTarget.value))}
+                onChange={(e) => {
+                  const val = parseInt(e.currentTarget.value);
+                  setTokenDuration(val);
+                  saveConfigField((c) => { c.session_token_duration_secs = val; });
+                }}
               >
                 <For each={TOKEN_DURATIONS}>
                   {(opt) => <option value={opt.value}>{opt.label}</option>}
@@ -432,7 +515,11 @@ export const ServicesTab: Component = () => {
             <input
               type="checkbox"
               checked={ipv6Enabled()}
-              onChange={(e) => setIpv6Enabled(e.currentTarget.checked)}
+              onChange={(e) => {
+                const val = e.currentTarget.checked;
+                setIpv6Enabled(val);
+                saveConfigField((c) => { c.ipv6_enabled = val; });
+              }}
             />
             <span>{t("services.toggle.enableIpv6", "Enable IPv6 (dual-stack)")}</span>
           </div>
@@ -446,7 +533,11 @@ export const ServicesTab: Component = () => {
             <input
               type="checkbox"
               checked={lanAuthBypass()}
-              onChange={(e) => setLanAuthBypass(e.currentTarget.checked)}
+              onChange={(e) => {
+                const val = e.currentTarget.checked;
+                setLanAuthBypass(val);
+                saveConfigField((c) => { c.lan_auth_bypass = val; });
+              }}
             />
             <span>{t("services.toggle.lanAuthBypass", "Allow LAN access without authentication")}</span>
           </div>
@@ -458,15 +549,9 @@ export const ServicesTab: Component = () => {
         </div>
       </Show>
 
-      <div class={s.actions} style={{ "margin-top": "12px" }}>
-        <button
-          class={s.saveBtn}
-          disabled={raSaving()}
-          onClick={saveRemoteAccess}
-        >
-          {raSaving() ? t("services.btn.saving", "Saving...") : raSaved() ? t("services.btn.saved", "Saved!") : t("services.btn.saveRemoteAccess", "Save Remote Access Settings")}
-        </button>
-      </div>
+      <p class={s.hint} style={{ "margin-top": "12px", color: "var(--text-dimmed)" }}>
+        {t("services.hint.autoSave", "Settings are saved automatically when changed")}
+      </p>
 
       <p class={s.hint} style={{ "margin-top": "16px" }}>
         {t("services.hint.serverStartsAutomatically", "The server starts automatically when the app launches if enabled")}

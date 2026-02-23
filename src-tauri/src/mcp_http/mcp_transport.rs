@@ -1,15 +1,12 @@
 use crate::pty::{build_shell_command, resolve_shell, spawn_headless_reader_thread};
 use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
 use crate::state::OUTPUT_RING_BUFFER_CAPACITY;
-use axum::extract::{ConnectInfo, Query, State};
-use axum::http::StatusCode;
-use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::extract::{ConnectInfo, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::Json;
-use futures_util::stream::Stream;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, PtySize};
-use std::convert::Infallible;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -431,7 +428,7 @@ fn handle_agent(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::
                 binary_path: args["binary_path"].as_str().map(|s| s.to_string()),
                 args: args.get("args").and_then(|a| serde_json::from_value(a.clone()).ok()),
             };
-            serde_json::json!({"error": "agent action='spawn' via SSE not yet implemented — use the bridge binary or REST API POST /sessions/agent"})
+            serde_json::json!({"error": "agent action='spawn' not yet implemented via MCP transport — use the bridge binary or REST API POST /sessions/agent"})
         }
         "stats" => {
             let stats = state.orchestrator_stats();
@@ -487,65 +484,33 @@ fn handle_config(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
     }
 }
 
-/// GET /sse — Establish MCP SSE transport connection
-pub(super) async fn mcp_sse_connect(
-    State(state): State<Arc<AppState>>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let session_id = Uuid::new_v4().to_string();
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+// ---------------------------------------------------------------------------
+// Streamable HTTP transport (MCP spec 2025-03-26)
+// Single /mcp endpoint — POST for JSON-RPC, GET returns 405, DELETE ends session
+// ---------------------------------------------------------------------------
 
-    state.mcp_sse_sessions.insert(session_id.clone(), tx);
+const MCP_SESSION_HEADER: &str = "mcp-session-id";
 
-    let messages_url = format!("/messages?sessionId={}", session_id);
-    let sid_for_cleanup = session_id.clone();
-    let state_for_cleanup = state.clone();
-
-    let stream = async_stream::stream! {
-        // First event: tell the client where to POST messages
-        yield Ok(Event::default().event("endpoint").data(messages_url));
-
-        // Stream JSON-RPC responses from the channel
-        while let Some(msg) = rx.recv().await {
-            yield Ok(Event::default().event("message").data(msg));
-        }
-
-        // Cleanup on disconnect
-        state_for_cleanup.mcp_sse_sessions.remove(&sid_for_cleanup);
-    };
-
-    Sse::new(stream).keep_alive(KeepAlive::default())
-}
-
-/// POST /messages?sessionId=xxx — Handle MCP JSON-RPC requests
-pub(super) async fn mcp_messages(
+/// POST /mcp — Handle all MCP JSON-RPC requests via Streamable HTTP
+pub(super) async fn mcp_post(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Query(query): Query<McpSessionQuery>,
+    headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    let session_id = &query.session_id;
-
-    // Look up the SSE session's sender channel
-    let tx = match state.mcp_sse_sessions.get(session_id) {
-        Some(entry) => entry.value().clone(),
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"error": "MCP session not found"})),
-            );
-        }
-    };
-
     let method = body["method"].as_str().unwrap_or("");
     let id = body.get("id").cloned().unwrap_or(serde_json::Value::Null);
 
     match method {
         "initialize" => {
+            let session_id = Uuid::new_v4().to_string();
+            state.mcp_sessions.insert(session_id.clone(), ());
+
             let response = serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": "2025-03-26",
                     "capabilities": { "tools": {} },
                     "serverInfo": {
                         "name": "tuicommander",
@@ -553,13 +518,16 @@ pub(super) async fn mcp_messages(
                     }
                 }
             });
-            let _ = tx.send(serde_json::to_string(&response).unwrap_or_default());
-            (StatusCode::OK, Json(serde_json::json!({"ok": true})))
+
+            (
+                StatusCode::OK,
+                [(MCP_SESSION_HEADER, session_id)],
+                Json(response),
+            ).into_response()
         }
 
         "notifications/initialized" => {
-            // Client acknowledgment, no response needed
-            (StatusCode::ACCEPTED, Json(serde_json::json!({})))
+            StatusCode::ACCEPTED.into_response()
         }
 
         "tools/list" => {
@@ -569,8 +537,11 @@ pub(super) async fn mcp_messages(
                 "id": id,
                 "result": { "tools": tools }
             });
-            let _ = tx.send(serde_json::to_string(&response).unwrap_or_default());
-            (StatusCode::OK, Json(serde_json::json!({"ok": true})))
+            let mut resp = Json(response).into_response();
+            if let Some(sid) = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok()) {
+                resp.headers_mut().insert(MCP_SESSION_HEADER, sid.parse().unwrap());
+            }
+            resp
         }
 
         "tools/call" => {
@@ -590,8 +561,11 @@ pub(super) async fn mcp_messages(
                     "isError": is_error
                 }
             });
-            let _ = tx.send(serde_json::to_string(&response).unwrap_or_default());
-            (StatusCode::OK, Json(serde_json::json!({"ok": true})))
+            let mut resp = Json(response).into_response();
+            if let Some(sid) = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok()) {
+                resp.headers_mut().insert(MCP_SESSION_HEADER, sid.parse().unwrap());
+            }
+            resp
         }
 
         other => {
@@ -600,10 +574,25 @@ pub(super) async fn mcp_messages(
                 "id": id,
                 "error": { "code": -32601, "message": format!("Method not found: {}", other) }
             });
-            let _ = tx.send(serde_json::to_string(&response).unwrap_or_default());
-            (StatusCode::OK, Json(serde_json::json!({"ok": true})))
+            Json(response).into_response()
         }
     }
+}
+
+/// GET /mcp — Not supported (we don't use server-initiated streaming)
+pub(super) async fn mcp_get() -> impl IntoResponse {
+    StatusCode::METHOD_NOT_ALLOWED
+}
+
+/// DELETE /mcp — End an MCP session
+pub(super) async fn mcp_delete(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Some(sid) = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok()) {
+        state.mcp_sessions.remove(sid);
+    }
+    StatusCode::OK
 }
 
 // Re-export for tests — these need to be public enough for sibling test module

@@ -27,7 +27,7 @@
 - [GitHub Integration](backend/github.md) - PR status, CI checks, GraphQL batching
 - [Configuration](backend/config.md) - Config files, platform directories, migration
 - [Dictation](backend/dictation.md) - Whisper transcription, audio capture, push-to-talk
-- [MCP & HTTP Server](backend/mcp-http.md) - REST API, WebSocket streaming, SSE transport
+- [MCP & HTTP Server](backend/mcp-http.md) - REST API, WebSocket streaming, Streamable HTTP transport
 - [Error Classification](backend/error-classification.md) - Error types, backoff calculation
 - [Output Parser](backend/output-parser.md) - Rate limits, PR URLs, progress detection
 

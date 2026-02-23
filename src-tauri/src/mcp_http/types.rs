@@ -133,12 +133,6 @@ pub(super) struct CreateSessionWithWorktreeRequest {
     pub branch_name: String,
 }
 
-#[derive(Deserialize)]
-pub(super) struct McpSessionQuery {
-    #[serde(rename = "sessionId")]
-    pub session_id: String,
-}
-
 // --- File browser types ---
 
 #[derive(Deserialize)]

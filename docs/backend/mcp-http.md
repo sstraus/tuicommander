@@ -98,15 +98,14 @@ Client ──WebSocket──> /sessions/{session_id}/stream
                       Server pushes PTY output as text frames
 ```
 
-### SSE (`/mcp/sse`)
+### Streamable HTTP (`POST /mcp`)
 
-Server-Sent Events for MCP JSON-RPC transport:
+MCP Streamable HTTP transport (spec 2025-03-26):
 
 ```
-Client ──GET──> /mcp/sse
-                Server pushes JSON-RPC messages as SSE events
-Client ──POST──> /mcp/message?session_id=
-                Send JSON-RPC messages to server
+Client ──POST──> /mcp   (JSON-RPC request, response in body)
+Client ──GET───> /mcp   (405 Method Not Allowed)
+Client ──DELETE─> /mcp  (end session, pass Mcp-Session-Id header)
 ```
 
 ## Authentication

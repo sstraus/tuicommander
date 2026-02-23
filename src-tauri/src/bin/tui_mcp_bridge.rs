@@ -554,7 +554,7 @@ fn main() {
                     jsonrpc: "2.0".into(),
                     id,
                     result: Some(serde_json::json!({
-                        "protocolVersion": "2024-11-05",
+                        "protocolVersion": "2025-03-26",
                         "capabilities": {
                             "tools": {}
                         },

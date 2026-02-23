@@ -86,19 +86,20 @@ WS /sessions/:id/stream
 
 Receives real-time PTY output as text frames. One WebSocket per session.
 
-### SSE (MCP Transport)
+### MCP Streamable HTTP
 
 ```
-GET /mcp/sse
-```
-
-Server-Sent Events stream for MCP JSON-RPC messages.
-
-```
-POST /mcp/message?session_id=...
+POST /mcp
 Content-Type: application/json
 
 { JSON-RPC message }
+```
+
+Single endpoint for all MCP JSON-RPC requests (initialize, tools/list, tools/call). Returns JSON-RPC responses directly in the HTTP response body. Session ID returned via `Mcp-Session-Id` header on initialize.
+
+```
+GET /mcp          → 405 Method Not Allowed
+DELETE /mcp       → Ends MCP session (pass Mcp-Session-Id header)
 ```
 
 ## Git Endpoints
