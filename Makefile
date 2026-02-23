@@ -22,7 +22,7 @@ export MACOSX_DEPLOYMENT_TARGET ?= 10.15
 DIST_DIR=dist-release
 
 .PHONY: all clean dev test build build-dmg check sign verify-sign notarize release dist \
-       build-github-release publish-github-release github-release
+       build-github-release publish-github-release github-release preview
 
 all: build sign
 
@@ -154,6 +154,15 @@ github-release:
 	echo "--- Publishing release $$TAG..."; \
 	gh release edit "$$TAG" --draft=false; \
 	echo "==> Released: $$(gh release view $$TAG --json url --jq .url)"
+
+# Build a preview release with a different app name to avoid conflicts with the real app.
+# The resulting .app is named "TUIC-preview" with a separate bundle ID, so macOS and
+# tests won't confuse it with the production TUICommander.
+preview:
+	@echo "Building TUIC-preview $(VERSION)..."
+	npm run tauri build -- --config '{"productName":"TUIC-preview","identifier":"com.tuic.preview","app":{"windows":[{"title":"TUIC-preview","width":1200,"height":800,"minWidth":800,"minHeight":600,"decorations":true,"transparent":false,"resizable":true,"fullscreen":false,"hiddenTitle":true,"titleBarStyle":"Overlay","trafficLightPosition":{"x":13,"y":20},"backgroundColor":"#000000","dragDropEnabled":false}]}}'
+	@echo "Launching TUIC-preview..."
+	open "$(TAURI_TARGET)/TUIC-preview.app"
 
 # Clean build artifacts
 clean:

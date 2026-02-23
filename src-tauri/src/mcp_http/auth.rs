@@ -3,7 +3,7 @@ use axum::extract::{ConnectInfo, State};
 use axum::http::{header, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
 /// Cookie name used to persist the session after successful Basic Auth.
@@ -105,6 +105,38 @@ fn session_cookie_value(token: &str, max_age_secs: u64) -> String {
     }
 }
 
+/// Check whether an IP address belongs to a private/LAN network.
+/// Covers RFC1918 (10/8, 172.16/12, 192.168/16), CGNAT/Tailscale (100.64/10),
+/// IPv6 ULA (fc00::/7), and IPv6 link-local (fe80::/10).
+pub(super) fn is_private_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_private_ipv4(v4),
+        IpAddr::V6(v6) => is_private_ipv6(v6),
+    }
+}
+
+fn is_private_ipv4(ip: &Ipv4Addr) -> bool {
+    let o = ip.octets();
+    // 10.0.0.0/8
+    if o[0] == 10 { return true; }
+    // 172.16.0.0/12
+    if o[0] == 172 && (16..=31).contains(&o[1]) { return true; }
+    // 192.168.0.0/16
+    if o[0] == 192 && o[1] == 168 { return true; }
+    // 100.64.0.0/10 (CGNAT / Tailscale)
+    if o[0] == 100 && (64..=127).contains(&o[1]) { return true; }
+    false
+}
+
+fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
+    let seg = ip.segments();
+    // fc00::/7 — Unique Local Address (ULA)
+    if (seg[0] & 0xfe00) == 0xfc00 { return true; }
+    // fe80::/10 — Link-local
+    if (seg[0] & 0xffc0) == 0xfe80 { return true; }
+    false
+}
+
 /// Basic Auth middleware that validates credentials against config.
 ///
 /// Flow:
@@ -125,6 +157,11 @@ pub async fn basic_auth_middleware(
 ) -> Response {
     // Localhost bypass: local Tauri app connections don't need auth
     if addr.ip().is_loopback() {
+        return next.run(req).await;
+    }
+
+    // LAN bypass: skip auth for private/RFC1918 addresses when configured
+    if state.config.read().lan_auth_bypass && is_private_ip(&addr.ip()) {
         return next.run(req).await;
     }
 
@@ -193,6 +230,50 @@ pub async fn basic_auth_middleware(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- is_private_ip tests ---
+
+    #[test]
+    fn private_ipv4_rfc1918() {
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(10, 255, 255, 255))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(172, 31, 255, 255))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(192, 168, 68, 111))));
+    }
+
+    #[test]
+    fn private_ipv4_cgnat_tailscale() {
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(100, 127, 255, 255))));
+    }
+
+    #[test]
+    fn public_ipv4_not_private() {
+        assert!(!is_private_ip(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+        assert!(!is_private_ip(&IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))));
+        assert!(!is_private_ip(&IpAddr::V4(Ipv4Addr::new(172, 32, 0, 1))));
+        assert!(!is_private_ip(&IpAddr::V4(Ipv4Addr::new(100, 128, 0, 1))));
+    }
+
+    #[test]
+    fn private_ipv6_ula() {
+        // fd00::1 — ULA
+        assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1))));
+        // fc00::1 — ULA
+        assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1))));
+    }
+
+    #[test]
+    fn private_ipv6_link_local() {
+        assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1))));
+    }
+
+    #[test]
+    fn public_ipv6_not_private() {
+        assert!(!is_private_ip(&IpAddr::V6(Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888))));
+    }
 
     #[test]
     fn session_cookie_with_max_age() {

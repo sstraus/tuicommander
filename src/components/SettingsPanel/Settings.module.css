@@ -716,17 +716,58 @@
   text-align: center;
 }
 
-.qrUrl {
-  font-size: var(--font-xs);
-  color: var(--accent);
-  text-align: center;
-  word-break: break-all;
-  text-decoration: none;
-  max-width: 160px;
+.urlRow {
+  margin-top: 12px;
 }
 
-.qrUrl:hover {
-  text-decoration: underline;
+.urlRow label {
+  display: block;
+  font-size: var(--font-base);
+  color: var(--fg-secondary);
+  margin-bottom: 6px;
+}
+
+.urlCopyRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.urlFull {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-base);
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  word-break: break-all;
+  user-select: all;
+}
+
+.copyBtn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.copyBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+  border-color: var(--accent);
 }
 
 .mcpStatusRow {

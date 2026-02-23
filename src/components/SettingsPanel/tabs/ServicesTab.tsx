@@ -29,6 +29,8 @@ interface AppConfig {
   remote_access_username: string;
   remote_access_password_hash: string;
   session_token_duration_secs: number;
+  ipv6_enabled: boolean;
+  lan_auth_bypass: boolean;
 }
 
 interface LocalIpEntry { ip: string; label: string; }
@@ -50,6 +52,9 @@ export const ServicesTab: Component = () => {
   const [raSaved, setRaSaved] = createSignal(false);
   const [qrDataUrl, setQrDataUrl] = createSignal<string | null>(null);
   const [tokenDuration, setTokenDuration] = createSignal(86400);
+  const [ipv6Enabled, setIpv6Enabled] = createSignal(false);
+  const [lanAuthBypass, setLanAuthBypass] = createSignal(false);
+  const [urlCopied, setUrlCopied] = createSignal(false);
   const [regenerating, setRegenerating] = createSignal(false);
 
   // Auto-select best IP when list loads (prefer Tailscale, then LAN/Wi-Fi)
@@ -69,7 +74,9 @@ export const ServicesTab: Component = () => {
     const ip = activeIp();
     const token = status()?.session_token;
     if (!ip || !token) return null;
-    return `http://${ip}:${raPort()}/?token=${token}`;
+    // Bracket-wrap IPv6 literals for valid URL syntax
+    const host = ip.includes(":") ? `[${ip}]` : ip;
+    return `http://${host}:${raPort()}/?token=${token}`;
   });
 
   createEffect(() => {
@@ -97,6 +104,8 @@ export const ServicesTab: Component = () => {
       setRaUsername(config.remote_access_username);
       setRaHasPassword(config.remote_access_password_hash.length > 0);
       setTokenDuration(config.session_token_duration_secs ?? 86400);
+      setIpv6Enabled(config.ipv6_enabled ?? false);
+      setLanAuthBypass(config.lan_auth_bypass ?? false);
     } catch {
       // Ignore
     }
@@ -132,6 +141,8 @@ export const ServicesTab: Component = () => {
       config.remote_access_port = raPort();
       config.remote_access_username = raUsername();
       config.session_token_duration_secs = tokenDuration();
+      config.ipv6_enabled = ipv6Enabled();
+      config.lan_auth_bypass = lanAuthBypass();
 
       // Hash password if a new one was entered
       if (raPassword()) {
@@ -148,6 +159,18 @@ export const ServicesTab: Component = () => {
       console.error("Failed to save remote access config:", e);
     } finally {
       setRaSaving(false);
+    }
+  };
+
+  const copyUrl = async () => {
+    const url = qrContent();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setUrlCopied(true);
+      setTimeout(() => setUrlCopied(false), 2000);
+    } catch {
+      // Fallback: select text for manual copy
     }
   };
 
@@ -381,17 +404,57 @@ export const ServicesTab: Component = () => {
                 {(url) => <img src={url()} width={120} height={120} alt={t("services.alt.qrCode", "QR code")} title={t("services.title.qrCode", "Scan to connect")} />}
               </Show>
               <span class={s.qrLabel}>{t("services.label.scanToConnect", "Scan to connect")}</span>
-              <a
-                class={s.qrUrl}
-                href={qrContent()!}
-                target="_blank"
-                rel="noopener"
-                title={t("services.title.openInBrowser", "Open in browser")}
-              >
-                {qrContent()}
-              </a>
             </div>
           </Show>
+        </div>
+
+        <Show when={status()?.running && qrContent()}>
+          <div class={s.urlRow}>
+            <label>{t("services.label.connectionUrl", "Connection URL")}</label>
+            <div class={s.urlCopyRow}>
+              <code class={s.urlFull}>{qrContent()}</code>
+              <button
+                class={s.copyBtn}
+                onClick={copyUrl}
+                title={t("services.btn.copyUrl", "Copy URL to clipboard")}
+              >
+                {urlCopied()
+                  ? <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
+                  : <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+                }
+              </button>
+            </div>
+          </div>
+        </Show>
+
+        <div class={s.group} style={{ "margin-top": "16px" }}>
+          <div class={s.toggle}>
+            <input
+              type="checkbox"
+              checked={ipv6Enabled()}
+              onChange={(e) => setIpv6Enabled(e.currentTarget.checked)}
+            />
+            <span>{t("services.toggle.enableIpv6", "Enable IPv6 (dual-stack)")}</span>
+          </div>
+          <p class={s.hint}>
+            {t("services.hint.ipv6Description", "Binds the server to both IPv4 and IPv6 addresses. Requires save + server restart.")}
+          </p>
+        </div>
+
+        <div class={s.group}>
+          <div class={s.toggle}>
+            <input
+              type="checkbox"
+              checked={lanAuthBypass()}
+              onChange={(e) => setLanAuthBypass(e.currentTarget.checked)}
+            />
+            <span>{t("services.toggle.lanAuthBypass", "Allow LAN access without authentication")}</span>
+          </div>
+          <p class={s.hint} style={{ color: lanAuthBypass() ? "var(--warning, #e5c07b)" : undefined }}>
+            {lanAuthBypass()
+              ? t("services.hint.lanAuthBypassWarning", "Devices on your local network can access without a password. Only use on trusted networks.")
+              : t("services.hint.lanAuthBypassDescription", "Skips authentication for private/LAN IP addresses (RFC1918, Tailscale, IPv6 ULA)")}
+          </p>
         </div>
       </Show>
 

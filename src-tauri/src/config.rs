@@ -231,6 +231,12 @@ pub(crate) struct AppConfig {
     /// Session token cookie duration in seconds (0 = session cookie, 31536000 = "never")
     #[serde(default = "default_session_token_duration_secs")]
     pub(crate) session_token_duration_secs: u64,
+    /// Enable IPv6 dual-stack binding when remote access is active
+    #[serde(default)]
+    pub(crate) ipv6_enabled: bool,
+    /// Skip authentication for private/LAN IP addresses (RFC1918 + IPv6 ULA)
+    #[serde(default)]
+    pub(crate) lan_auth_bypass: bool,
 }
 
 fn default_language() -> String {
@@ -283,6 +289,8 @@ impl Default for AppConfig {
             disabled_plugin_ids: Vec::new(),
             update_channel: default_update_channel(),
             session_token_duration_secs: default_session_token_duration_secs(),
+            ipv6_enabled: false,
+            lan_auth_bypass: false,
         }
     }
 }
@@ -649,6 +657,8 @@ mod tests {
             disabled_plugin_ids: vec!["test-disabled".to_string()],
             update_channel: "beta".to_string(),
             session_token_duration_secs: 3600,
+            ipv6_enabled: true,
+            lan_auth_bypass: true,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -670,6 +680,8 @@ mod tests {
         assert_eq!(loaded.disabled_plugin_ids, vec!["test-disabled".to_string()]);
         assert_eq!(loaded.update_channel, "beta");
         assert_eq!(loaded.session_token_duration_secs, 3600);
+        assert!(loaded.ipv6_enabled);
+        assert!(loaded.lan_auth_bypass);
     }
 
     #[test]
@@ -696,6 +708,8 @@ mod tests {
         assert_eq!(loaded.language, "en");
         assert_eq!(loaded.update_channel, "stable");
         assert_eq!(loaded.session_token_duration_secs, 86400);
+        assert!(!loaded.ipv6_enabled);
+        assert!(!loaded.lan_auth_bypass);
     }
 
     #[test]
