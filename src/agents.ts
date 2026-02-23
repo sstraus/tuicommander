@@ -323,6 +323,39 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
   },
 };
 
+/** Run configuration for an agent (matches Rust AgentRunConfig) */
+export interface AgentRunConfig {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  is_default: boolean;
+}
+
+/** Per-agent settings (matches Rust AgentSettings) */
+export interface AgentSettingsConfig {
+  run_configs: AgentRunConfig[];
+}
+
+/** Full agents config (matches Rust AgentsConfig) */
+export interface AgentsConfig {
+  agents: Record<string, AgentSettingsConfig>;
+}
+
+/** Which agents support MCP configuration */
+export const MCP_SUPPORT: Record<AgentType, boolean> = {
+  claude: true,
+  gemini: true,
+  opencode: false,
+  aider: false,
+  codex: false,
+  amp: true,
+  jules: false,
+  cursor: true,
+  warp: false,
+  ona: false,
+};
+
 /** Agent display info for UI */
 export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string }> = {
   claude: { icon: "C", color: "#d97706" },

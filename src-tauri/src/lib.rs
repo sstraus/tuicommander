@@ -1,4 +1,5 @@
 pub(crate) mod agent;
+pub(crate) mod agent_mcp;
 pub(crate) mod cli;
 pub(crate) mod config;
 mod dictation;
@@ -495,6 +496,30 @@ fn regenerate_session_token(state: State<'_, Arc<AppState>>) -> String {
     new_token
 }
 
+/// Register TUI Commander as an MCP server with Claude Code CLI.
+/// Runs `claude mcp add --transport http --scope user tui-commander <url>`.
+#[tauri::command]
+async fn register_mcp_with_claude(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    let port = state.config.read().mcp_port;
+    let url = format!("http://127.0.0.1:{}/mcp", port);
+
+    let detection = crate::agent::detect_agent_binary("claude".to_string());
+    let claude_bin = detection.path
+        .ok_or_else(|| "Claude Code CLI not found on this system".to_string())?;
+
+    let output = tokio::process::Command::new(&claude_bin)
+        .args(["mcp", "add", "--transport", "http", "--scope", "user", "tui-commander", &url])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run claude: {}", e))?;
+
+    if output.status.success() {
+        Ok(url)
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Default worktrees directory: <config_dir>/worktrees
@@ -512,7 +537,7 @@ pub fn run() {
         worktrees_dir,
         metrics: SessionMetrics::new(),
         output_buffers: DashMap::new(),
-        mcp_sse_sessions: DashMap::new(),
+        mcp_sessions: DashMap::new(),
         ws_clients: DashMap::new(),
         config: parking_lot::RwLock::new(config.clone()),
         repo_info_cache: DashMap::new(),
@@ -526,6 +551,7 @@ pub fn run() {
         session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
         app_handle: parking_lot::RwLock::new(None),
         plugin_watchers: DashMap::new(),
+        kitty_states: DashMap::new(),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled
@@ -656,6 +682,7 @@ pub fn run() {
             get_local_ips,
             get_mcp_status,
             regenerate_session_token,
+            register_mcp_with_claude,
             dictation::commands::get_dictation_status,
             dictation::commands::get_model_info,
             dictation::commands::download_whisper_model,
@@ -687,6 +714,12 @@ pub fn run() {
             config::save_notes,
             config::load_keybindings,
             config::save_keybindings,
+            config::load_agents_config,
+            config::save_agents_config,
+            agent_mcp::get_agent_mcp_status,
+            agent_mcp::install_agent_mcp,
+            agent_mcp::remove_agent_mcp,
+            agent_mcp::get_agent_config_path,
             prompt::extract_prompt_variables,
             prompt::process_prompt_content,
             head_watcher::start_head_watcher,

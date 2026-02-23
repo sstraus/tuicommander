@@ -4,6 +4,7 @@ export { NotificationsTab } from "./NotificationsTab";
 export { ServicesTab } from "./ServicesTab";
 export { KeyboardShortcutsTab } from "./KeyboardShortcutsTab";
 export { PluginsTab } from "./PluginsTab";
+export { AgentsTab } from "./AgentsTab";
 export { AboutTab } from "./AboutTab";
 export { RepoWorktreeTab } from "./RepoWorktreeTab";
 export { RepoScriptsTab } from "./RepoScriptsTab";

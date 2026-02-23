@@ -1,0 +1,314 @@
+/* AgentsTab — agent list, run configs, and MCP management */
+
+.agentList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.agentRow {
+  background: var(--bg-primary);
+}
+
+.agentHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 12px;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.agentHeader:hover {
+  background: var(--bg-highlight);
+}
+
+.agentInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.agentNameRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agentIcon {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+}
+
+.agentName {
+  font-weight: 600;
+  font-size: var(--font-base);
+  color: var(--fg-primary);
+}
+
+.agentBinary {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.badge[data-type="available"] {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--success);
+}
+
+.badge[data-type="notfound"] {
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+}
+
+.badge[data-type="mcp"] {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent);
+}
+
+.agentVersion {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+}
+
+.expandIcon {
+  color: var(--fg-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  margin-top: 3px;
+}
+
+.expandIcon.expanded {
+  transform: rotate(90deg);
+}
+
+/* Expanded section */
+
+.agentExpanded {
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  background: var(--bg-secondary);
+}
+
+.expandedSection {
+  margin-bottom: 12px;
+}
+
+.expandedSection:last-child {
+  margin-bottom: 0;
+}
+
+.expandedLabel {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-secondary);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Run config rows */
+
+.configList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.configRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.configName {
+  font-weight: 500;
+  font-size: var(--font-base);
+  color: var(--fg-primary);
+}
+
+.configCommand {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.defaultBadge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.configActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.smallBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.smallBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.smallBtn.danger:hover {
+  background: rgba(248, 81, 73, 0.1);
+  color: var(--error);
+  border-color: var(--error);
+}
+
+/* Add config form */
+
+.addConfigForm {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.formRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.formRow:last-child {
+  margin-bottom: 0;
+}
+
+.formInput {
+  flex: 1;
+  padding: 4px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+}
+
+.formInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.formInput.mono {
+  font-family: var(--font-mono);
+}
+
+/* Action buttons row */
+
+.actionsRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.actionBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.actionBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+  border-color: var(--accent);
+}
+
+.actionBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.actionBtn.installed {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.actionBtn.installed:hover {
+  background: rgba(248, 81, 73, 0.1);
+  color: var(--error);
+  border-color: var(--error);
+}
+
+/* MCP status indicator */
+
+.mcpStatus {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+}
+
+.mcpDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.mcpDot.on {
+  background: var(--success);
+}
+
+.mcpDot.off {
+  background: var(--fg-muted);
+  opacity: 0.4;
+}

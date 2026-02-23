@@ -59,6 +59,9 @@ import { useDictation } from "./hooks/useDictation";
 import { useQuickSwitcher } from "./hooks/useQuickSwitcher";
 import { useSplitPanes } from "./hooks/useSplitPanes";
 import { useAgentPolling } from "./hooks/useAgentPolling";
+import { useAgentDetection } from "./hooks/useAgentDetection";
+import { agentConfigsStore } from "./stores/agentConfigs";
+import { AGENTS } from "./agents";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { initApp } from "./hooks/useAppInit";
 import { applyAppTheme } from "./themes";
@@ -162,6 +165,9 @@ const App: Component = () => {
   // Poll active terminal for foreground agent detection
   useAgentPolling();
 
+  // Agent detection for context menu
+  const agentDetection = useAgentDetection();
+
   // Stop GitHub polling on component teardown — registered at body level so
   // SolidJS can track it synchronously (onCleanup inside async onMount is unreliable).
   onCleanup(() => githubStore.stopPolling());
@@ -189,6 +195,8 @@ const App: Component = () => {
             promptLibraryStore.hydrate(),
             notesStore.hydrate(),
             keybindingsStore.hydrate(),
+            agentConfigsStore.hydrate(),
+            agentDetection.detectAll(),
           ]);
           const failures = results.filter((r) => r.status === "rejected");
           if (failures.length > 0) {
@@ -311,8 +319,55 @@ const App: Component = () => {
     if (isTauri()) getCurrentWindow().destroy();
   };
 
+  // Build agent submenu items for the context menu
+  const buildAgentMenuItems = (): ContextMenuItem[] => {
+    const available = agentDetection.getAvailable();
+    if (available.length === 0) return [];
+
+    return available.map((agent) => {
+      const agentConfig = AGENTS[agent.type];
+      const runConfigs = agentConfigsStore.getRunConfigs(agent.type);
+
+      // Build sub-items: one per run config, or a single "(Default)" if none
+      const children: ContextMenuItem[] = runConfigs.length > 0
+        ? runConfigs.map((rc) => ({
+            label: rc.name + (rc.is_default ? " (Default)" : ""),
+            action: () => {
+              const active = terminalsStore.getActive();
+              if (!active?.ref) return;
+              const cmd = [rc.command, ...rc.args].join(" ");
+              active.ref.write(`${cmd}\r`);
+              terminalsStore.update(active.id, { name: agentConfig.name, nameIsCustom: true });
+            },
+          }))
+        : [{
+            label: "(Default)",
+            action: () => {
+              const active = terminalsStore.getActive();
+              if (!active?.ref) return;
+              active.ref.write(`${agentConfig.binary}\r`);
+              terminalsStore.update(active.id, { name: agentConfig.name, nameIsCustom: true });
+            },
+          }];
+
+      return {
+        label: agentConfig.name,
+        action: () => {},
+        children,
+      };
+    });
+  };
+
   // Context menu items
   const isSplit = () => terminalsStore.state.layout.direction !== "none" && terminalsStore.state.layout.panes.length === 2;
+
+  /** Check if the active terminal has a running agent (disables agent submenu) */
+  const activeTerminalBusy = (): boolean => {
+    const activeId = terminalsStore.state.activeId;
+    if (!activeId) return true;
+    const term = terminalsStore.get(activeId);
+    return !!term?.agentType;
+  };
 
   const getContextMenuItems = createMemo((): ContextMenuItem[] => [
     { label: "Copy", shortcut: `${getModifierSymbol()}C`, action: terminalLifecycle.copyFromTerminal },
@@ -341,6 +396,13 @@ const App: Component = () => {
       separator: true,
     },
     ...(lazygit.lazygitAvailable() ? [{ label: "Open Lazygit", shortcut: `${getModifierSymbol()}G`, action: lazygit.spawnLazygit, separator: true }] : []),
+    ...(agentDetection.getAvailable().length > 0 ? [{
+      label: "Agents",
+      action: () => {},
+      disabled: activeTerminalBusy(),
+      children: buildAgentMenuItems(),
+      separator: true,
+    }] : []),
     {
       label: "Close Terminal",
       shortcut: `${getModifierSymbol()}W`,

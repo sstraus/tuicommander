@@ -303,6 +303,16 @@
 - Claude Code weekly and session usage percentage
 - Color-coded badge in status bar
 
+### 6.7 Agent Configuration (Settings > Agents)
+- **Agent list:** All supported agents with availability status and version detection
+- **Run configurations:** Named command templates per agent (binary, args, env vars)
+- **Default config:** One run config per agent marked as default for quick launching
+- **MCP bridge install:** One-click install/remove of `tui-mcp-bridge` into agent's native MCP config file
+- **Supported MCP agents:** Claude, Cursor, Windsurf, VS Code, Zed, Amp, Gemini
+- **Edit agent config:** Opens agent's own configuration file in the user's preferred IDE
+- **Context menu integration:** Right-click terminal > Agents submenu with per-agent run configurations
+- **Busy detection:** Agents submenu disabled when a process is already running in the active terminal
+
 ---
 
 ## 7. Git Integration
@@ -468,6 +478,9 @@
 - Custom bindings stored in `keybindings.json` in the platform config directory
 - Auto-populated from `actionRegistry.ts` (`ACTION_META` map) — new actions appear automatically
 
+### 11.7 Agents
+- See **6.7 Agent Configuration** for full details
+
 ---
 
 ## 12. Persistence
@@ -480,6 +493,7 @@ All data persisted to platform config directory via Rust:
 - `ui_prefs.json` — sidebar visibility/width
 - `repo_settings.json` — per-repo worktree/script settings
 - `repositories.json` — repository list, groups, branches
+- `agents.json` — per-agent run configurations
 - `prompt_library.json` — saved prompts
 - `notes.json` — ideas panel data
 - `dictation_config.json` — dictation settings
@@ -527,7 +541,7 @@ All data persisted to platform config directory via Rust:
 ### 14.5 MCP & HTTP Server
 - REST API on localhost for external tool integration
 - Exposes terminal sessions, git operations, agent spawning
-- WebSocket streaming, SSE transport
+- WebSocket streaming, Streamable HTTP transport
 - Used by Claude Code, Cursor, and other tools via MCP protocol
 
 ### 14.6 macOS Dock Badge

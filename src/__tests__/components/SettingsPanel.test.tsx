@@ -125,7 +125,7 @@ describe("SettingsPanel", () => {
     expect(labels).toContain("General");
     expect(labels).toContain("Appearance");
     expect(labels).toContain("Notifications");
-    expect(labels).not.toContain("Agents");
+    expect(labels).toContain("Agents");
     expect(labels).not.toContain("Groups");
   });
 

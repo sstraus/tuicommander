@@ -180,6 +180,9 @@ pub(crate) struct AppConfig {
     /// Enable MCP HTTP API on localhost for external tool integration
     #[serde(default)]
     pub(crate) mcp_server_enabled: bool,
+    /// Fixed port for MCP server (0 = OS-assigned)
+    #[serde(default = "default_mcp_port")]
+    pub(crate) mcp_port: u16,
     /// Preferred IDE (e.g. "vscode", "cursor")
     #[serde(default)]
     pub(crate) ide: String,
@@ -251,6 +254,10 @@ fn default_session_token_duration_secs() -> u64 {
     86400
 }
 
+fn default_mcp_port() -> u16 {
+    3845
+}
+
 fn default_font_size() -> u16 {
     13
 }
@@ -272,6 +279,7 @@ impl Default for AppConfig {
             theme: "vscode-dark".to_string(),
             worktree_dir: None,
             mcp_server_enabled: false,
+            mcp_port: default_mcp_port(),
             ide: String::new(),
             default_font_size: 13,
             remote_access_enabled: false,
@@ -488,6 +496,34 @@ pub(crate) struct PromptLibraryConfig {
 }
 
 // ---------------------------------------------------------------------------
+// AgentsConfig — per-agent run configurations
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct AgentRunConfig {
+    pub(crate) name: String,
+    pub(crate) command: String,
+    #[serde(default)]
+    pub(crate) args: Vec<String>,
+    #[serde(default)]
+    pub(crate) env: HashMap<String, String>,
+    #[serde(default)]
+    pub(crate) is_default: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, Default)]
+pub(crate) struct AgentSettings {
+    #[serde(default)]
+    pub(crate) run_configs: Vec<AgentRunConfig>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Default)]
+pub(crate) struct AgentsConfig {
+    #[serde(default)]
+    pub(crate) agents: HashMap<String, AgentSettings>,
+}
+
+// ---------------------------------------------------------------------------
 // Tauri commands — one load/save pair per config type
 // ---------------------------------------------------------------------------
 
@@ -500,6 +536,7 @@ const PROMPT_LIBRARY_FILE: &str = "prompt-library.json";
 const REPOSITORIES_FILE: &str = "repositories.json";
 const NOTES_FILE: &str = "notes.json";
 const KEYBINDINGS_FILE: &str = "keybindings.json";
+const AGENTS_CONFIG_FILE: &str = "agents.json";
 
 // App config
 #[tauri::command]
@@ -606,6 +643,17 @@ pub(crate) fn save_keybindings(config: serde_json::Value) -> Result<(), String> 
     save_json_config(KEYBINDINGS_FILE, &config)
 }
 
+// Agents config
+#[tauri::command]
+pub(crate) fn load_agents_config() -> AgentsConfig {
+    load_json_config(AGENTS_CONFIG_FILE)
+}
+
+#[tauri::command]
+pub(crate) fn save_agents_config(config: AgentsConfig) -> Result<(), String> {
+    save_json_config(AGENTS_CONFIG_FILE, &config)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -640,6 +688,7 @@ mod tests {
             theme: "dark".to_string(),
             worktree_dir: Some("/tmp/wt".to_string()),
             mcp_server_enabled: true,
+            mcp_port: 4000,
             ide: "cursor".to_string(),
             default_font_size: 18,
             remote_access_enabled: true,
@@ -666,6 +715,7 @@ mod tests {
         assert_eq!(loaded.ide, "cursor");
         assert_eq!(loaded.default_font_size, 18);
         assert!(loaded.mcp_server_enabled);
+        assert_eq!(loaded.mcp_port, 4000);
         assert!(loaded.remote_access_enabled);
         assert_eq!(loaded.remote_access_port, 8080);
         assert_eq!(loaded.remote_access_username, "admin");
@@ -695,6 +745,7 @@ mod tests {
         assert_eq!(loaded.ide, "");
         assert_eq!(loaded.default_font_size, 13);
         assert!(!loaded.mcp_server_enabled);
+        assert_eq!(loaded.mcp_port, 3845);
         assert!(!loaded.remote_access_enabled);
         assert_eq!(loaded.remote_access_port, 9876);
         assert_eq!(loaded.remote_access_username, "");
@@ -958,5 +1009,50 @@ mod tests {
         let cfg2 = AppConfig::default();
         let json2 = serde_json::to_string(&cfg2).unwrap();
         assert!(json2.contains(r#""split_tab_mode":"separate""#));
+    }
+
+    #[test]
+    fn agents_config_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let mut agents = AgentsConfig::default();
+        let mut env = HashMap::new();
+        env.insert("ANTHROPIC_API_KEY".to_string(), "sk-test".to_string());
+        agents.agents.insert(
+            "claude".to_string(),
+            AgentSettings {
+                run_configs: vec![
+                    AgentRunConfig {
+                        name: "Default".to_string(),
+                        command: "claude".to_string(),
+                        args: vec![],
+                        env: HashMap::new(),
+                        is_default: true,
+                    },
+                    AgentRunConfig {
+                        name: "Sonnet Print".to_string(),
+                        command: "claude".to_string(),
+                        args: vec!["--model".to_string(), "sonnet".to_string(), "--print".to_string()],
+                        env,
+                        is_default: false,
+                    },
+                ],
+            },
+        );
+        let loaded: AgentsConfig = round_trip_in_dir(dir.path(), "agents.json", &agents);
+        assert_eq!(loaded.agents.len(), 1);
+        let claude = loaded.agents.get("claude").unwrap();
+        assert_eq!(claude.run_configs.len(), 2);
+        assert_eq!(claude.run_configs[0].name, "Default");
+        assert!(claude.run_configs[0].is_default);
+        assert_eq!(claude.run_configs[1].name, "Sonnet Print");
+        assert_eq!(claude.run_configs[1].args, vec!["--model", "sonnet", "--print"]);
+        assert_eq!(claude.run_configs[1].env.get("ANTHROPIC_API_KEY").unwrap(), "sk-test");
+        assert!(!claude.run_configs[1].is_default);
+    }
+
+    #[test]
+    fn agents_config_missing_file_returns_default() {
+        let cfg: AgentsConfig = load_json_config("nonexistent-agents-12345.json");
+        assert!(cfg.agents.is_empty());
     }
 }

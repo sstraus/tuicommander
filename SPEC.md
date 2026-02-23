@@ -348,6 +348,13 @@ All stores persist to localStorage:
 - [ ] Audio notification when agent awaits input
 - [ ] IDE launcher with app icons
 
+### Agent Configuration (Done)
+- [x] Settings > Agents tab with per-agent run configurations
+- [x] MCP bridge install/remove for supported agents (Claude, Cursor, Windsurf, VS Code, Zed, Amp, Gemini)
+- [x] Terminal context menu > Agents submenu with run configs
+- [x] Agent binary detection and version display
+- [x] agents.json persistence for run configurations
+
 ### Pending (P3)
 - [ ] Markdown rendering in terminal
 - [ ] Agent stats display
