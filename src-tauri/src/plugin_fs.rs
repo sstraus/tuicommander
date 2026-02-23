@@ -113,6 +113,55 @@ pub async fn plugin_list_directory(
     Ok(names)
 }
 
+/// Read the last `max_bytes` of a file as UTF-8 text.
+/// Seeks to `file_size - max_bytes`, then skips to the next newline to avoid
+/// partial lines. If the file is smaller than `max_bytes`, reads the entire file.
+/// Validates path is within $HOME, same as plugin_read_file.
+#[tauri::command]
+pub async fn plugin_read_file_tail(
+    path: String,
+    max_bytes: u64,
+    _plugin_id: String,
+) -> Result<String, String> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let canonical = validate_within_home(&path)?;
+
+    let metadata = std::fs::metadata(&canonical)
+        .map_err(|e| format!("Failed to stat file: {e}"))?;
+
+    if !metadata.is_file() {
+        return Err("Path is not a file".into());
+    }
+
+    let file_size = metadata.len();
+
+    // If the file fits within max_bytes, read the whole thing
+    if file_size <= max_bytes {
+        return std::fs::read_to_string(&canonical)
+            .map_err(|e| format!("Failed to read file: {e}"));
+    }
+
+    let mut file = std::fs::File::open(&canonical)
+        .map_err(|e| format!("Failed to open file: {e}"))?;
+
+    let seek_pos = file_size - max_bytes;
+    file.seek(SeekFrom::Start(seek_pos))
+        .map_err(|e| format!("Failed to seek: {e}"))?;
+
+    let mut buf = Vec::with_capacity(max_bytes as usize);
+    file.read_to_end(&mut buf)
+        .map_err(|e| format!("Failed to read file tail: {e}"))?;
+
+    let text = String::from_utf8_lossy(&buf);
+
+    // Skip partial first line (find first newline and skip past it)
+    match text.find('\n') {
+        Some(idx) => Ok(text[idx + 1..].to_string()),
+        None => Ok(text.to_string()),
+    }
+}
+
 /// Start watching a path for filesystem changes.
 /// Returns a watch_id (UUID) that can be used with plugin_unwatch.
 /// Emits `plugin-fs-change-{plugin_id}` Tauri events on changes.
@@ -339,6 +388,65 @@ mod tests {
         };
         classify_event(&event, &mut map);
         assert!(map.is_empty());
+    }
+
+    #[test]
+    fn tail_reads_entire_small_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("small.txt");
+        std::fs::write(&file_path, "line1\nline2\nline3\n").unwrap();
+
+        let home = dirs::home_dir().unwrap();
+        // Create a file within home for the test
+        let test_file = home.join(".tuic-test-tail-small.txt");
+        std::fs::write(&test_file, "line1\nline2\nline3\n").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(plugin_read_file_tail(
+            test_file.to_string_lossy().to_string(),
+            1024,
+            "test".to_string(),
+        ));
+        let _ = std::fs::remove_file(&test_file);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "line1\nline2\nline3\n");
+    }
+
+    #[test]
+    fn tail_reads_last_bytes_skipping_partial_line() {
+        let home = dirs::home_dir().unwrap();
+        let test_file = home.join(".tuic-test-tail-large.txt");
+        // Create content: "line1\nline2\nline3\nline4\nline5\n"
+        let content = "line1\nline2\nline3\nline4\nline5\n";
+        std::fs::write(&test_file, content).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        // Request last 12 bytes: "line4\nline5\n" is 12 chars
+        // Seek to len-12 = 18, which is at "4\nline5\n"
+        // First newline at position 1, skip to position 2: "line5\n"
+        let result = rt.block_on(plugin_read_file_tail(
+            test_file.to_string_lossy().to_string(),
+            12,
+            "test".to_string(),
+        ));
+        let _ = std::fs::remove_file(&test_file);
+        assert!(result.is_ok());
+        let text = result.unwrap();
+        // Should have skipped partial "4\n" and returned "line5\n"
+        assert_eq!(text, "line5\n");
+    }
+
+    #[test]
+    fn tail_rejects_non_file() {
+        let home = dirs::home_dir().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(plugin_read_file_tail(
+            home.to_string_lossy().to_string(),
+            1024,
+            "test".to_string(),
+        ));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not a file"));
     }
 
     #[test]

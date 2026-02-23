@@ -749,6 +749,7 @@ pub fn run() {
             plugins::uninstall_plugin,
             plugin_fs::plugin_read_file,
             plugin_fs::plugin_list_directory,
+            plugin_fs::plugin_read_file_tail,
             plugin_fs::plugin_watch_path,
             plugin_fs::plugin_unwatch,
             plugin_http::plugin_http_fetch,

@@ -340,6 +340,13 @@ export interface PluginHost {
   /** Read a file as UTF-8 text. Path must be absolute and within $HOME. Requires "fs:read". */
   readFile(absolutePath: string): Promise<string>;
 
+  /**
+   * Read the last N bytes of a file, skipping partial first line.
+   * Useful for large JSONL files. Requires "fs:read".
+   * If file is smaller than maxBytes, reads the entire file.
+   */
+  readFileTail(absolutePath: string, maxBytes: number): Promise<string>;
+
   /** List filenames in a directory, optionally filtered by glob. Requires "fs:list". */
   listDirectory(path: string, pattern?: string): Promise<string[]>;
 

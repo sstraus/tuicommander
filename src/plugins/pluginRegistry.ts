@@ -243,6 +243,11 @@ function createPluginRegistry() {
         return invoke<string>("plugin_read_file", { path: absolutePath, pluginId });
       },
 
+      async readFileTail(absolutePath: string, maxBytes: number): Promise<string> {
+        requireCapability(pluginId, capabilities, "fs:read");
+        return invoke<string>("plugin_read_file_tail", { path: absolutePath, maxBytes, pluginId });
+      },
+
       async listDirectory(path: string, pattern?: string): Promise<string[]> {
         requireCapability(pluginId, capabilities, "fs:list");
         return invoke<string[]>("plugin_list_directory", { path, pattern: pattern ?? null, pluginId });
