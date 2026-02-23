@@ -1,0 +1,38 @@
+src/components/MarkdownTab/MarkdownTab.module.css
+  79531c35309daaf1 7,13
+src/styles.css
+  79531c35309daaf1 133,451,458-459
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "a46811e2544b36265bb0cf0c7d4e637ec938e6c7",
+  "prompts": {
+    "211037785cde82f4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9546dfdf-07c4-4de4-b83f-803377864570",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 26,
+      "overriden_lines": 0
+    },
+    "79531c35309daaf1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0849ebe3-fb06-4563-add2-3e22fb4230bf",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}
