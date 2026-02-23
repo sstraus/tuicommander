@@ -86,6 +86,9 @@ const getMaxTabNameLength = () => settingsStore.state.maxTabNameLength;
 
 const App: Component = () => {
   const [statusInfo, setStatusInfo] = createSignal("Ready");
+  if (import.meta.env.DEV) {
+    (window as any).__tuic_setStatusInfo = setStatusInfo;
+  }
   const [settingsPanelVisible, setSettingsPanelVisible] = createSignal(false);
   const [settingsInitialTab, setSettingsInitialTab] = createSignal<string | undefined>(undefined);
   const [settingsContext, setSettingsContext] = createSignal<SettingsContext>({ kind: "global" });
@@ -1015,6 +1018,7 @@ const App: Component = () => {
         existingBranches={gitOps.worktreeDialogState()?.existingBranches ?? []}
         worktreeBranches={gitOps.worktreeDialogState()?.worktreeBranches ?? []}
         worktreesDir={gitOps.worktreeDialogState()?.worktreesDir ?? ""}
+        onGenerateName={gitOps.generateWorktreeName}
         onClose={() => gitOps.setWorktreeDialogState(null)}
         onCreate={gitOps.confirmCreateWorktree}
       />

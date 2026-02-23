@@ -1,3 +1,33 @@
+.inputRow {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.inputRow input {
+  flex: 1;
+  min-width: 0;
+}
+
+.generateBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  flex-shrink: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.generateBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
 .branchList {
   max-height: 150px;
   overflow-y: auto;

@@ -448,6 +448,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
     setTimeout(() => clearInterval(waitForSession), 10000);
   };
 
+  const generateWorktreeName = async (): Promise<string> => {
+    const state = worktreeDialogState();
+    const worktreeBranches = state?.worktreeBranches ?? [];
+    return deps.repo.generateWorktreeName(worktreeBranches);
+  };
+
   const handleRepoSettings = (
     repoPath: string,
     openSettingsPanel: (context: { kind: "repo"; repoPath: string }) => void,
@@ -483,6 +489,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     handleNewTab,
     handleRunCommand,
     executeRunCommand,
+    generateWorktreeName,
     handleRepoSettings,
   };
 }

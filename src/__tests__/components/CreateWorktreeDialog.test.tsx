@@ -10,6 +10,7 @@ const defaultProps = {
   worktreesDir: "/repos/myproject/.worktrees",
   onClose: () => {},
   onCreate: () => {},
+  onGenerateName: vi.fn().mockResolvedValue("cool-ripley-007"),
 };
 
 describe("CreateWorktreeDialog", () => {
@@ -239,5 +240,53 @@ describe("CreateWorktreeDialog", () => {
     const path = container.querySelector("[class*='pathPreview']");
     expect(status).toBeNull();
     expect(path).toBeNull();
+  });
+
+  describe("random name button", () => {
+    it("renders a generate-name button", () => {
+      const { container } = render(() => (
+        <CreateWorktreeDialog {...defaultProps} />
+      ));
+      const btn = container.querySelector("[class*='generateBtn']");
+      expect(btn).not.toBeNull();
+    });
+
+    it("calls onGenerateName and populates input on click", async () => {
+      const onGenerateName = vi.fn().mockResolvedValue("cool-ripley-007");
+      const { container } = render(() => (
+        <CreateWorktreeDialog {...defaultProps} onGenerateName={onGenerateName} />
+      ));
+      const btn = container.querySelector("[class*='generateBtn']")!;
+      fireEvent.click(btn);
+
+      expect(onGenerateName).toHaveBeenCalledOnce();
+
+      await vi.waitFor(() => {
+        const input = container.querySelector("input[type='text']") as HTMLInputElement;
+        expect(input.value).toBe("cool-ripley-007");
+      });
+    });
+
+    it("clears error when generating a name", async () => {
+      const onGenerateName = vi.fn().mockResolvedValue("fresh-name-001");
+      const { container } = render(() => (
+        <CreateWorktreeDialog {...defaultProps} onGenerateName={onGenerateName} />
+      ));
+
+      // Trigger an error first
+      const input = container.querySelector("input[type='text']") as HTMLInputElement;
+      fireEvent.input(input, { target: { value: "bad name" } });
+      const createBtn = container.querySelector(".primaryBtn")!;
+      fireEvent.click(createBtn);
+      expect(container.querySelector(".error")).not.toBeNull();
+
+      // Click generate
+      const btn = container.querySelector("[class*='generateBtn']")!;
+      fireEvent.click(btn);
+
+      await vi.waitFor(() => {
+        expect(container.querySelector(".error")).toBeNull();
+      });
+    });
   });
 });

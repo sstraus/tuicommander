@@ -18,6 +18,8 @@ export interface CreateWorktreeDialogProps {
   worktreeBranches: string[];
   /** Base directory where worktrees are created */
   worktreesDir: string;
+  /** Generate a random branch name */
+  onGenerateName?: () => Promise<string>;
   onClose: () => void;
   onCreate: (options: WorktreeCreateOptions) => void;
 }
@@ -122,6 +124,13 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
     if (error()) setError(null);
   };
 
+  const handleGenerateName = async () => {
+    if (!props.onGenerateName) return;
+    const name = await props.onGenerateName();
+    setBranchName(name);
+    if (error()) setError(null);
+  };
+
   const handleBranchClick = (branch: string) => {
     // Don't allow selecting branches that already have worktrees
     if (props.worktreeBranches.includes(branch)) return;
@@ -138,13 +147,27 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
             <h4>{t("createWorktree.title", "New Worktree")}</h4>
           </div>
           <div class={d.body}>
-            <input
-              ref={inputRef}
-              type="text"
-              value={branchName()}
-              onInput={handleInputChange}
-              placeholder={t("createWorktree.comboPlaceholder", "Type branch name or select existing...")}
-            />
+            <div class={s.inputRow}>
+              <input
+                ref={inputRef}
+                type="text"
+                value={branchName()}
+                onInput={handleInputChange}
+                placeholder={t("createWorktree.comboPlaceholder", "Type branch name or select existing...")}
+              />
+              <Show when={props.onGenerateName}>
+                <button
+                  class={s.generateBtn}
+                  onClick={handleGenerateName}
+                  title={t("createWorktree.generateName", "Generate random name")}
+                  type="button"
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M13 3.5a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1 0-1h.2A4.5 4.5 0 0 0 8 2.05a4.5 4.5 0 0 0-4.5 4.5.5.5 0 0 1-1 0A5.5 5.5 0 0 1 8 1.05a5.5 5.5 0 0 1 5.5 3.37V4a.5.5 0 0 1 .5-.5zM3 12.5a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1h-.2A4.5 4.5 0 0 0 8 13.95a4.5 4.5 0 0 0 4.5-4.5.5.5 0 0 1 1 0A5.5 5.5 0 0 1 8 14.95a5.5 5.5 0 0 1-5.5-3.37V12a.5.5 0 0 1-.5.5z"/>
+                  </svg>
+                </button>
+              </Show>
+            </div>
 
             <div class={s.branchList}>
               <For each={filteredBranches()}>
