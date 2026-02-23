@@ -1,0 +1,36 @@
+src/components/Toolbar/Toolbar.tsx
+  6079c9a654c9bc85 314,363
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "cb5781fc75915d232f7e657fc782fafd77d8017b",
+  "prompts": {
+    "4863316f9a1603b0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4082c81-240b-4629-81b9-7941a19ca31d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 0,
+      "accepted_lines": 18,
+      "overriden_lines": 0
+    },
+    "6079c9a654c9bc85": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "793920e5-13d0-47b3-a2a0-044889b5f852",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 45,
+      "total_deletions": 45,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
