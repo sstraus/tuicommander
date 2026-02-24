@@ -151,8 +151,8 @@ describe("validateBranchName", () => {
 });
 
 describe("cleanOscTitle", () => {
-  it("strips user@host: prefix and extracts basename from path", () => {
-    expect(cleanOscTitle("user@myhost:~/projects")).toBe("projects");
+  it("returns empty for user@host:path (CWD shown in status bar)", () => {
+    expect(cleanOscTitle("user@myhost:~/projects")).toBe("");
   });
 
   it("strips single env var assignment", () => {
@@ -175,13 +175,10 @@ describe("cleanOscTitle", () => {
     expect(cleanOscTitle("user@host npm start")).toBe("npm start");
   });
 
-  it("extracts basename from path titles", () => {
-    expect(cleanOscTitle("~/projects/foo")).toBe("foo");
-    expect(cleanOscTitle("/Users/me/projects/bar")).toBe("bar");
-    expect(cleanOscTitle("~/Gits/CC_Playground/abrowser")).toBe("abrowser");
-  });
-
-  it("returns empty for home directory (preserves original tab name)", () => {
+  it("returns empty for path titles (CWD shown in status bar, not useful as tab name)", () => {
+    expect(cleanOscTitle("~/projects/foo")).toBe("");
+    expect(cleanOscTitle("/Users/me/projects/bar")).toBe("");
+    expect(cleanOscTitle("~/Gits/CC_Playground/abrowser")).toBe("");
     expect(cleanOscTitle("~")).toBe("");
     expect(cleanOscTitle("~/")).toBe("");
   });

@@ -656,11 +656,24 @@ export const Terminal: Component<TerminalProps> = (props) => {
     replayBuffer();
 
     resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        if (containerRef && containerRef.offsetWidth > 0 && containerRef.offsetHeight > 0) {
+      // Debounce: panels opening/closing can cause multiple rapid layout changes
+      // (container oscillates between full-width and panel-reduced width).
+      // Wait for layout to settle before fitting + resizing PTY.
+      clearTimeout(resizeObserverTimer);
+      resizeObserverTimer = setTimeout(() => {
+        requestAnimationFrame(() => {
+          if (!containerRef || containerRef.offsetWidth <= 0 || containerRef.offsetHeight <= 0) return;
           doFit();
-        }
-      });
+          // Cancel any pending stale onResize debounce — we're about to send
+          // the authoritative dimensions ourselves.
+          clearTimeout(resizeTimer);
+          if (sessionId && terminal && terminal.rows > 0 && terminal.cols > 0) {
+            pty.resize(sessionId, terminal.rows, terminal.cols).catch((err) => {
+              console.error("[Terminal] ResizeObserver resize failed:", err);
+            });
+          }
+        });
+      }, 100);
     });
 
     terminal.onData(async (data) => {
