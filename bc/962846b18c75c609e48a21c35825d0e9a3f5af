@@ -1,0 +1,31 @@
+CHANGELOG.md
+  f53e6f15d2574b14 14-36
+src-tauri/Cargo.toml
+  f53e6f15d2574b14 3
+SPEC.md
+  f53e6f15d2574b14 3-4
+reviews/review-2026-02-24-kitty-ghostty-terminal.md
+  f53e6f15d2574b14 1-195
+src-tauri/tauri.conf.json
+  f53e6f15d2574b14 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "bc962846b18c75c609e48a21c35825d0e9a3f5af",
+  "prompts": {
+    "f53e6f15d2574b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6fd11954-bcf6-4cca-9b4c-080de1fc0a6f",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 27,
+      "total_deletions": 4,
+      "accepted_lines": 222,
+      "overriden_lines": 0
+    }
+  }
+}
