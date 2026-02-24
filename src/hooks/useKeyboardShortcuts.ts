@@ -1,5 +1,5 @@
 import { terminalsStore } from "../stores/terminals";
-import { isQuickSwitcherActive } from "../platform";
+import { isQuickSwitcherActive, isMacOS } from "../platform";
 import { lastMenuActionTime } from "../menuDedup";
 import { keybindingsStore } from "../stores/keybindings";
 import { normalizeCombo } from "../keybindingDefaults";
@@ -59,11 +59,14 @@ export interface ShortcutHandlers {
 
 /**
  * Convert a KeyboardEvent into a normalized combo string that matches our keybinding format.
- * "Cmd" = metaKey || ctrlKey (the platform primary modifier).
+ * "Cmd" maps to the platform primary modifier: metaKey on macOS, ctrlKey on Windows/Linux.
+ * On macOS bare Ctrl+key must NOT match "Cmd+key" shortcuts — those are terminal
+ * control codes (Ctrl+A = SOH, Ctrl+E = ENQ, etc.) that must reach the PTY.
  */
 export function eventToCombo(e: KeyboardEvent): string {
   const parts: string[] = [];
-  if (e.metaKey || e.ctrlKey) parts.push("cmd");
+  const primaryMod = isMacOS() ? e.metaKey : e.ctrlKey;
+  if (primaryMod) parts.push("cmd");
   if (e.altKey) parts.push("alt");
   if (e.shiftKey) parts.push("shift");
 

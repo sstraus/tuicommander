@@ -499,6 +499,22 @@ export const Terminal: Component<TerminalProps> = (props) => {
         return true;
       }
 
+      // macOS WebKit Emacs keybindings: Ctrl+A/D/E/K etc. are intercepted by the
+      // native text system on the hidden textarea before xterm sees them. We
+      // explicitly send the correct control codes and block WebKit's handling.
+      if (isMacOS() && event.type === "keydown" && event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+        // event.key is "a"–"z" when Ctrl is held (most browsers), or the
+        // control char itself ("\x01" etc.) in some WebKit builds.  Use
+        // event.code (always "KeyA"–"KeyZ") for reliable mapping.
+        const m = event.code.match(/^Key([A-Z])$/);
+        if (m) {
+          const ctrl = String.fromCharCode(m[1].charCodeAt(0) - 0x40); // A→\x01 … Z→\x1a
+          event.preventDefault();
+          terminal!.input(ctrl, true);
+          return false;
+        }
+      }
+
       // Kitty keyboard protocol: encode special keys when flag 1 (disambiguate) is active
       if (event.type === "keydown" && (kittyFlags & 1)) {
         const seq = kittySequenceForKey(event.key, event.shiftKey, event.altKey, event.ctrlKey, event.metaKey);
