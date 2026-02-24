@@ -126,6 +126,7 @@ nightly:
 
 # Full versioned release: bump version, commit, tag, push, wait for CI, publish.
 # Usage: make github-release BUMP=patch  (patch|minor|major, default: patch)
+# NOTE: sed -i '' is macOS syntax — run this from macOS only.
 BUMP ?= patch
 github-release:
 	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
@@ -145,17 +146,24 @@ github-release:
 	echo "--- Bumping version to $$NEW..."; \
 	sed -i '' "s/^version = \"$$CUR\"/version = \"$$NEW\"/" src-tauri/Cargo.toml; \
 	sed -i '' "s/\"version\": \"$$CUR\"/\"version\": \"$$NEW\"/" src-tauri/tauri.conf.json; \
-	cd src-tauri && cargo check --quiet 2>/dev/null; cd ..; \
+	cd src-tauri && cargo check --quiet; cd ..; \
 	echo "--- Committing and tagging..."; \
 	git add src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/Cargo.lock; \
 	git commit -m "chore: bump version to $$TAG"; \
 	git tag "$$TAG"; \
+	COMMIT=$$(git rev-parse HEAD); \
 	echo "--- Pushing..."; \
 	git push origin main --tags; \
-	echo "--- Waiting for Release workflow..."; \
+	echo "--- Waiting for Release workflow on $$COMMIT..."; \
 	sleep 10; \
-	RUN_ID=$$(gh run list -w Release --limit 1 --json databaseId --jq '.[0].databaseId'); \
-	if [ -z "$$RUN_ID" ]; then echo "ERROR: no Release workflow run found" && exit 1; fi; \
+	RUN_ID=""; \
+	for i in 1 2 3 4 5; do \
+		RUN_ID=$$(gh run list -w Release --limit 5 --json databaseId,headSha --jq ".[] | select(.headSha == \"$$COMMIT\") | .databaseId" | head -1); \
+		if [ -n "$$RUN_ID" ]; then break; fi; \
+		echo "  run not found yet, retrying ($$i/5)..."; \
+		sleep 5; \
+	done; \
+	if [ -z "$$RUN_ID" ]; then echo "ERROR: no Release workflow run found for $$COMMIT" && exit 1; fi; \
 	echo "--- Watching run $$RUN_ID (Ctrl+C to detach)..."; \
 	gh run watch "$$RUN_ID" --exit-status; \
 	echo "--- Publishing draft release..."; \
