@@ -50,6 +50,10 @@
   background: var(--bg-highlight);
 }
 
+.fileIgnored {
+  opacity: 0.4;
+}
+
 .fileIcon {
   font-size: var(--font-lg);
   flex-shrink: 0;

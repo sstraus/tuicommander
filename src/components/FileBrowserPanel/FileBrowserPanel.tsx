@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, For, Show, onCleanup } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { getModifierSymbol } from "../../platform";
@@ -96,12 +96,12 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   });
 
   /** Entries filtered by search query (supports glob wildcards) */
-  const filteredEntries = () => {
+  const filteredEntries = createMemo(() => {
     const q = searchQuery().trim();
     if (!q) return entries();
     const re = globToRegex(q);
     return entries().filter((e) => re.test(e.name) || re.test(e.path));
-  };
+  });
 
   const refresh = () => setRefreshTrigger((n) => n + 1);
 

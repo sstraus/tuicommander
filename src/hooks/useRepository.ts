@@ -90,6 +90,7 @@ export function useRepository() {
   interface MarkdownFileEntry {
     path: string;
     git_status: string; // "modified" | "staged" | "untracked" | ""
+    is_ignored: boolean;
   }
 
   /** List all markdown files in repository with git status */

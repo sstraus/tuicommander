@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, For, Show } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { useRepository } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { mdTabsStore } from "../../stores/mdTabs";
@@ -17,6 +17,7 @@ import s from "./MarkdownPanel.module.css";
 interface MdFileEntry {
   path: string;
   git_status: string;
+  is_ignored: boolean;
 }
 
 export interface MarkdownPanelProps {
@@ -45,12 +46,12 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
   const [contextEntry, setContextEntry] = createSignal<MdFileEntry | null>(null);
 
   /** Files filtered by search query (supports glob wildcards) */
-  const filteredFiles = () => {
+  const filteredFiles = createMemo(() => {
     const q = searchQuery().trim();
     if (!q) return files();
     const re = globToRegex(q);
     return files().filter((f) => re.test(f.path));
-  };
+  });
 
   // Load markdown files when visible, repo changes, or repo content changes
   createEffect(() => {
@@ -84,8 +85,8 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
     mdTabsStore.add(props.repoPath, filePath);
   };
 
-  // Group files by directory for tree view
-  const groupedFiles = () => {
+  /** Group files by directory for tree view, sorted by dir name */
+  const sortedGroups = createMemo(() => {
     const allFiles = filteredFiles();
     const groups: Record<string, MdFileEntry[]> = {};
 
@@ -96,8 +97,8 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
       groups[key].push(entry);
     }
 
-    return groups;
-  };
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  });
 
   const handleContextMenu = (ev: MouseEvent, entry: MdFileEntry) => {
     ev.preventDefault();
@@ -175,18 +176,18 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 
         <Show when={!loading() && !error() && filteredFiles().length > 0}>
           <div class={s.fileList}>
-            <For each={Object.entries(groupedFiles()).sort(([a], [b]) => a.localeCompare(b))}>
+            <For each={sortedGroups()}>
               {([dir, dirEntries]) => (
                 <>
                   <Show when={dir !== "/"}>
                     <div class={s.dirHeader}>{dir}/</div>
                   </Show>
-                  <For each={dirEntries.sort((a, b) => a.path.localeCompare(b.path))}>
+                  <For each={dirEntries}>
                     {(entry) => {
                       const fileName = pathBasename(entry.path) || entry.path;
                       return (
                         <div
-                          class={s.fileItem}
+                          class={cx(s.fileItem, entry.is_ignored && s.fileIgnored)}
                           onClick={() => handleFileClick(entry.path)}
                           onContextMenu={(ev) => handleContextMenu(ev, entry)}
                           title={entry.path}

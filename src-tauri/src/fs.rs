@@ -130,7 +130,7 @@ pub(crate) fn parse_git_status(repo_path: &str, subdir: &str) -> std::collection
 }
 
 /// Get a set of ignored paths within a directory using `git check-ignore`.
-fn get_ignored_paths(repo_path: &str, paths: &[String]) -> std::collections::HashSet<String> {
+pub(crate) fn get_ignored_paths(repo_path: &str, paths: &[String]) -> std::collections::HashSet<String> {
     let mut ignored = std::collections::HashSet::new();
     if paths.is_empty() {
         return ignored;
