@@ -1,0 +1,23 @@
+reviews/review-2026-02-23-terminal-resize-debounce.md
+  e2955a9baa18f067 1-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "52ef600ba5d9890d497b62483c1be2053e683d92",
+  "prompts": {
+    "e2955a9baa18f067": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a2f5780d-2994-4854-8381-082a520b4a0a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 133,
+      "overriden_lines": 0
+    }
+  }
+}
