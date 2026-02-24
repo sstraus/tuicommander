@@ -136,6 +136,10 @@ pub(super) async fn close_session(
 ) -> impl IntoResponse {
     if let Some((_, session_mutex)) = state.sessions.remove(&session_id) {
         state.output_buffers.remove(&session_id);
+        state.ws_clients.remove(&session_id);
+        state.kitty_states.remove(&session_id);
+        state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+
         let mut session = session_mutex.into_inner();
         let _ = session.writer.write_all(&[0x03]);
         let _ = session.writer.flush();

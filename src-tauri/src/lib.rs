@@ -120,9 +120,7 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
             let remote_enabled = remote_access_enabled;
             let state_arc = state.inner().clone();
             std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
+                let rt = tokio::runtime::Runtime::new()
                     .expect("tokio runtime for HTTP server restart");
                 rt.block_on(async move {
                     mcp_http::start_server(state_arc, mcp_enabled, remote_enabled).await;
@@ -564,9 +562,7 @@ pub fn run() {
         let remote_enabled = config.remote_access_enabled;
         let mcp_state = state.clone();
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
+            let rt = tokio::runtime::Runtime::new()
                 .expect("Failed to create tokio runtime for HTTP server");
             rt.block_on(async move {
                 mcp_http::start_server(mcp_state, mcp_enabled, remote_enabled).await;

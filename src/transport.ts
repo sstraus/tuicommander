@@ -46,7 +46,13 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
     );
   }
 
-  const p = (key: string) => encodeURIComponent(args[key] as string);
+  const p = (key: string): string => {
+    const val = args[key];
+    if (val === undefined || val === null) {
+      throw new Error(`mapCommandToHttp(${command}): missing required argument "${key}"`);
+    }
+    return encodeURIComponent(String(val));
+  };
 
   switch (command) {
     // --- Session lifecycle ---
@@ -356,15 +362,24 @@ export async function rpc<T>(command: string, args: Record<string, unknown> = {}
   const mapping = mapCommandToHttp(command, args);
   const url = buildHttpUrl(mapping.path);
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
   const init: RequestInit = {
     method: mapping.method,
     headers: { "Content-Type": "application/json" },
+    signal: controller.signal,
   };
   if (mapping.body !== undefined) {
     init.body = JSON.stringify(mapping.body);
   }
 
-  const resp = await fetch(url, init);
+  let resp: Response;
+  try {
+    resp = await fetch(url, init);
+  } finally {
+    clearTimeout(timeoutId);
+  }
   if (!resp.ok) {
     const text = await resp.text().catch(() => resp.statusText);
     throw new Error(`RPC ${command} failed: ${resp.status} ${text}`);
@@ -431,22 +446,24 @@ export async function subscribePty(
   const wsUrl = `${protocol}//${window.location.host}/sessions/${sessionId}/stream`;
   const ws = new WebSocket(wsUrl);
 
-  ws.onmessage = (event) => {
-    onData(event.data);
-  };
+  // Wait for connection to open. Wire all handlers inside the promise so
+  // a pre-handshake close (e.g. session not found) correctly rejects.
+  await new Promise<void>((resolve, reject) => {
+    ws.onopen = () => resolve();
+    ws.onerror = (e) => reject(new Error(`WebSocket connection failed: ${e}`));
+    ws.onclose = (event: CloseEvent) => {
+      reject(new Error(`WebSocket closed before opening (code ${event.code}): ${event.reason || "no reason"}`));
+    };
+    ws.onmessage = (event) => onData(event.data);
+  });
 
+  // Re-wire onclose for the live session after successful open
   ws.onclose = (event: CloseEvent) => {
     if (!event.wasClean) {
       console.warn(`WebSocket closed abnormally (code ${event.code}): ${event.reason || "unknown"}`);
     }
     onExit();
   };
-
-  // Wait for connection to open
-  await new Promise<void>((resolve, reject) => {
-    ws.onopen = () => resolve();
-    ws.onerror = (e) => reject(new Error(`WebSocket connection failed: ${e}`));
-  });
 
   return () => {
     ws.close();

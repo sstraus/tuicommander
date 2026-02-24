@@ -283,6 +283,10 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             };
             if let Some((_, session_mutex)) = state.sessions.remove(session_id) {
                 state.output_buffers.remove(session_id);
+                state.ws_clients.remove(session_id);
+                state.kitty_states.remove(session_id);
+                state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+
                 let mut session = session_mutex.into_inner();
                 let _ = session.writer.write_all(&[0x03]);
                 let _ = session.writer.flush();
@@ -539,17 +543,25 @@ pub(super) async fn mcp_post(
             });
             let mut resp = Json(response).into_response();
             if let Some(sid) = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok()) {
-                resp.headers_mut().insert(MCP_SESSION_HEADER, sid.parse().unwrap());
+                if let Ok(val) = sid.parse() {
+                    resp.headers_mut().insert(MCP_SESSION_HEADER, val);
+                }
             }
             resp
         }
 
         "tools/call" => {
             let params = body.get("params").cloned().unwrap_or(serde_json::Value::Null);
-            let tool_name = params["name"].as_str().unwrap_or("");
+            let tool_name = params["name"].as_str().unwrap_or("").to_string();
             let args = params.get("arguments").cloned().unwrap_or(serde_json::json!({}));
 
-            let result = handle_mcp_tool_call(&state, addr, tool_name, &args);
+            let state_clone = state.clone();
+            let result = match tokio::task::spawn_blocking(move || {
+                handle_mcp_tool_call(&state_clone, addr, &tool_name, &args)
+            }).await {
+                Ok(r) => r,
+                Err(e) => serde_json::json!({"error": format!("Task failed: {e}")}),
+            };
             let text = serde_json::to_string_pretty(&result).unwrap_or_default();
 
             let is_error = result.get("error").is_some();
@@ -563,7 +575,9 @@ pub(super) async fn mcp_post(
             });
             let mut resp = Json(response).into_response();
             if let Some(sid) = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok()) {
-                resp.headers_mut().insert(MCP_SESSION_HEADER, sid.parse().unwrap());
+                if let Ok(val) = sid.parse() {
+                    resp.headers_mut().insert(MCP_SESSION_HEADER, val);
+                }
             }
             resp
         }

@@ -180,7 +180,6 @@ pub(crate) fn spawn_reader_thread(
                     let (data, kitty_actions) = strip_kitty_sequences(&esc_data);
                     // Process kitty actions: push/pop state, respond to queries
                     if !kitty_actions.is_empty() {
-                        eprintln!("[Kitty] session={session_id} actions={kitty_actions:?}");
                         let entry = state.kitty_states
                             .entry(session_id.clone())
                             .or_insert_with(|| Mutex::new(KittyKeyboardState::new()));
@@ -251,16 +250,13 @@ pub(crate) fn spawn_reader_thread(
 
         // Flush both buffers at EOF
         let utf8_tail = utf8_buf.flush();
-        let mut remaining = if utf8_tail.is_empty() {
+        let remaining = if utf8_tail.is_empty() {
             esc_buf.flush()
         } else {
             let mut flushed = esc_buf.push(&utf8_tail);
             flushed.push_str(&esc_buf.flush());
             flushed
         };
-        if remaining.is_empty() {
-            remaining = String::new();
-        }
         if !remaining.is_empty() {
             if let Some(ring) = state.output_buffers.get(&session_id) {
                 ring.lock().write(remaining.as_bytes());
@@ -280,11 +276,14 @@ pub(crate) fn spawn_reader_thread(
             &format!("pty-exit-{session_id}"),
             serde_json::json!({ "session_id": session_id }),
         );
-        state.sessions.remove(&session_id);
+        // Only decrement active_sessions if we're the ones removing the session.
+        // HTTP/MCP close paths may have already removed it and decremented.
+        if state.sessions.remove(&session_id).is_some() {
+            state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+        }
         state.output_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
-        state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
     });
 }
 
@@ -365,11 +364,12 @@ pub(crate) fn spawn_headless_reader_thread(
                 clients.retain(|tx| tx.send(remaining.clone()).is_ok());
             }
         }
-        state.sessions.remove(&session_id);
+        if state.sessions.remove(&session_id).is_some() {
+            state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+        }
         state.output_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
-        state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
     });
 }
 
@@ -681,6 +681,7 @@ pub(crate) fn close_pty(
 ) -> Result<(), String> {
     if let Some((_, session_mutex)) = state.sessions.remove(&session_id) {
         state.output_buffers.remove(&session_id);
+        state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
         let mut session = session_mutex.into_inner();
