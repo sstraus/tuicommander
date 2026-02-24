@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createEffect } from "solid-js";
+import { Component, For, Show, createSignal, createEffect, onCleanup, onMount } from "solid-js";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
@@ -248,8 +248,61 @@ export const TabBar: Component<TabBarProps> = (props) => {
     setEditingId(null);
   };
 
+  // Scroll state for arrows and fade gradients
+  let tabsRef: HTMLDivElement | undefined;
+  const [canScrollLeft, setCanScrollLeft] = createSignal(false);
+  const [canScrollRight, setCanScrollRight] = createSignal(false);
+
+  const updateScrollState = () => {
+    const el = tabsRef;
+    if (!el) return;
+    const threshold = 2; // Avoid floating-point edge cases
+    setCanScrollLeft(el.scrollLeft > threshold);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - threshold);
+  };
+
+  const scrollBy = (delta: number) => {
+    tabsRef?.scrollBy({ left: delta, behavior: "smooth" });
+  };
+
+  onMount(() => {
+    updateScrollState();
+    const ro = new ResizeObserver(updateScrollState);
+    if (tabsRef) ro.observe(tabsRef);
+    onCleanup(() => ro.disconnect());
+  });
+
+  // Scroll active tab into view when selection changes
+  createEffect(() => {
+    const activeId = terminalsStore.state.activeId;
+    const diffActive = diffTabsStore.state.activeId;
+    const mdActive = mdTabsStore.state.activeId;
+    const editActive = editorTabsStore.state.activeId;
+    // Track any active id to trigger the effect
+    void (activeId || diffActive || mdActive || editActive);
+    requestAnimationFrame(() => {
+      if (!tabsRef) return;
+      const activeEl = tabsRef.querySelector(`.${s.active}`) as HTMLElement | null;
+      activeEl?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    });
+  });
+
+  const chevronLeft = <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M11.354 1.646a.5.5 0 010 .708L5.707 8l5.647 5.646a.5.5 0 01-.708.708l-6-6a.5.5 0 010-.708l6-6a.5.5 0 01.708 0z"/></svg>;
+  const chevronRight = <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 01.708 0l6 6a.5.5 0 010 .708l-6 6a.5.5 0 01-.708-.708L10.293 8 4.646 2.354a.5.5 0 010-.708z"/></svg>;
+
   return (
-    <div class={s.tabs}>
+    <div class={s.tabBarWrapper}>
+      {/* Left scroll arrow */}
+      <button
+        class={cx(s.scrollArrow, s.scrollArrowLeft, canScrollLeft() && s.visible)}
+        onClick={() => scrollBy(-200)}
+        title="Scroll tabs left"
+      >{chevronLeft}</button>
+
+      {/* Left fade gradient */}
+      <div class={cx(s.fadeGradient, s.fadeLeft, canScrollLeft() && s.visible)} />
+
+      <div class={s.tabs} ref={tabsRef} onScroll={updateScrollState}>
       {/* Terminal tabs */}
       <For each={activeTerminals()}>
         {(id, index) => {
@@ -500,6 +553,17 @@ export const TabBar: Component<TabBarProps> = (props) => {
         +
         <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{mod}T</span>
       </button>
+      </div>{/* end .tabs */}
+
+      {/* Right fade gradient */}
+      <div class={cx(s.fadeGradient, s.fadeRight, canScrollRight() && s.visible)} />
+
+      {/* Right scroll arrow */}
+      <button
+        class={cx(s.scrollArrow, s.scrollArrowRight, canScrollRight() && s.visible)}
+        onClick={() => scrollBy(200)}
+        title="Scroll tabs right"
+      >{chevronRight}</button>
 
       <ContextMenu
         items={getTabContextMenuItems()}

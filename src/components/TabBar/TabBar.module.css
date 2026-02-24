@@ -1,10 +1,93 @@
-/* TabBar */
+/* TabBar wrapper — contains scroll arrows, gradients, and the scrollable tab list */
+.tabBarWrapper {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Scrollable tab list */
 .tabs {
   display: flex;
   flex: 1;
   gap: 0;
   overflow-x: auto;
   align-items: stretch;
+  /* Hide scrollbar but keep scroll functional */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.tabs::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/WebKit */
+}
+
+/* Scroll arrow buttons */
+.scrollArrow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  z-index: 5;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.scrollArrow.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scrollArrow:hover {
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+}
+
+.scrollArrowLeft {
+  left: 0;
+  border-right: 1px solid var(--border);
+}
+
+.scrollArrowRight {
+  right: 0;
+  border-left: 1px solid var(--border);
+}
+
+/* Fade gradients to indicate more tabs */
+.fadeGradient {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.fadeGradient.visible {
+  opacity: 1;
+}
+
+.fadeLeft {
+  left: 24px;
+  background: linear-gradient(to right, var(--bg-secondary), transparent);
+}
+
+.fadeRight {
+  right: 24px;
+  background: linear-gradient(to left, var(--bg-secondary), transparent);
 }
 
 .tab {
