@@ -1,5 +1,5 @@
 /** Supported agent types */
-export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "jules" | "cursor" | "warp" | "ona" | "git";
+export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "jules" | "cursor" | "warp" | "ona" | "droid" | "git";
 
 /** Agent configuration */
 export interface AgentConfig {
@@ -321,6 +321,32 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
       prompt: [],
     },
   },
+  droid: {
+    type: "droid",
+    name: "Droid",
+    binary: "droid",
+    description: "Factory's agent-native software development CLI",
+    resumeCommand: null,
+    spawnArgs: (prompt) => {
+      return [prompt];
+    },
+    outputFormat: "text",
+    detectPatterns: {
+      rateLimit: [
+        /rate.?limit/i,
+        /429/,
+        /too many requests/i,
+      ],
+      completion: [],
+      error: [
+        /error:/i,
+        /failed:/i,
+      ],
+      prompt: [
+        /\[y\/n\]/i,
+      ],
+    },
+  },
   git: {
     type: "git",
     name: "Git",
@@ -369,6 +395,7 @@ export const MCP_SUPPORT: Record<AgentType, boolean> = {
   cursor: true,
   warp: false,
   ona: false,
+  droid: false,
   git: false,
 };
 
@@ -384,6 +411,7 @@ export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string }> =
   cursor: { icon: "C", color: "#000000" },
   warp: { icon: "W", color: "#01a4ff" },
   ona: { icon: "O", color: "#ffe400" },
+  droid: { icon: "D", color: "#f97316" },
   git: { icon: "G", color: "#f05032" },
 };
 

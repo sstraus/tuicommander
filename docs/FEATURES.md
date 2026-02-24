@@ -291,6 +291,7 @@
 | Cursor Agent | `cursor-agent` | — |
 | Warp Oz | `oz` | — |
 | ONA (Gitpod) | `gitpod` | — |
+| Droid (Factory) | `droid` | — |
 
 ### 6.2 Agent Detection
 - Auto-detection from terminal output patterns

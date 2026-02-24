@@ -28,6 +28,7 @@ const AGENT_BINARIES: Record<AgentType, string> = {
   cursor: "cursor-agent",
   warp: "oz",
   ona: "gitpod",
+  droid: "droid",
   git: "git",
 };
 
