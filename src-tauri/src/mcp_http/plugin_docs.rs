@@ -167,15 +167,15 @@ host.getSettings(repoPath: string) // { path, displayName, baseBranch, color } |
 | `host.openMarkdownFile(absolutePath: string): void` | `ui:markdown` |
 | `await host.playNotificationSound(): Promise<void>` | `ui:sound` |
 | `host.openPanel({ id, title, html }): PanelHandle` | `ui:panel` |
-| `host.postTickerMessage({ id, text, icon?, priority?, ttlMs?, onClick? }): void` | `ui:ticker` |
-| `host.removeTickerMessage(id: string): void` | `ui:ticker` |
+| `host.setTicker({ id, text, label?, icon?, priority?, ttlMs?, onClick? }): void` | `ui:ticker` |
+| `host.clearTicker(id: string): void` | `ui:ticker` |
 | `await host.readCredential(serviceName: string): Promise<string \| null>` | `credentials:read` |
 | `await host.httpFetch(url: string, options?): Promise<HttpResponse>` | `net:http` |
 
 PanelHandle: `{ tabId, update(html), close() }` — HTML rendered in sandboxed iframe.
 HttpResponse: `{ status: number, headers: Record<string, string>, body: string }` — non-2xx is NOT an error.
 
-**postTickerMessage notes:** Same-id messages from the same plugin are replaced. `priority` >= 80 gets warning styling. `onClick` is an optional callback when user clicks the ticker message. `ttlMs` defaults to 60000 (0 = persistent).
+**setTicker notes:** Shared ticker area rotates messages from all plugins. Priority tiers: <10 = popover only, 10-99 = auto-rotate (5s), >=100 = urgent pin. `label` is shown as source prefix (e.g. "Usage · 5h: 42%"). Counter badge (1/3 ▸) shown when multiple tickers active. Click badge to cycle, right-click for popover. Legacy aliases: `postTickerMessage`/`removeTickerMessage`.
 
 **httpFetch notes:** Localhost blocked unless declared in `allowedUrls`. Max 5 redirects. 30s timeout, 10 MB limit. Built-in plugins have no URL restrictions.
 

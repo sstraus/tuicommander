@@ -381,36 +381,56 @@ interface FsChangeEvent {
 
 ### Tier 3c: Status Bar Ticker (capability-gated)
 
-#### host.postTickerMessage(options) -> void
+The status bar has a shared ticker area that rotates messages from multiple plugins. Messages are grouped by priority tier:
 
-Post a rotating message to the status bar ticker. If a message with the same id from this plugin already exists, it is replaced. **Requires `"ui:ticker"` capability.**
+| Tier | Priority | Behavior |
+|------|----------|----------|
+| Low | < 10 | Shown only in the popover, not in rotation |
+| Normal | 10–99 | Auto-rotates every 5s in the ticker area |
+| Urgent | >= 100 | Pinned — pauses rotation until cleared |
+
+Users can click the counter badge (e.g. `1/3 ▸`) to cycle manually, or right-click the ticker to see all active messages in a popover.
+
+#### host.setTicker(options) -> void
+
+Set a ticker message in the shared status bar ticker. Preferred API — supports source labels. If a message with the same id from this plugin already exists, it is replaced. **Requires `"ui:ticker"` capability.**
 
 ```typescript
-host.postTickerMessage({
+host.setTicker({
   id: "my-status",
   text: "Processing: 42%",
+  label: "MyPlugin",         // Shown as "MyPlugin · Processing: 42%"
   icon: '<svg viewBox="0 0 16 16" fill="currentColor">...</svg>',
-  priority: 10, // Higher = shown first. >= 80 gets warning styling
-  ttlMs: 60000, // Auto-expire after 60s. 0 = persistent
+  priority: 10,
+  ttlMs: 60000,
   onClick: () => { /* optional click handler */ },
 });
 ```
 
 **Options:**
-- `id` — Unique message identifier. If a message with the same id from this plugin already exists, it is replaced.
+- `id` — Unique message identifier (scoped to your plugin). Reusing an id replaces the previous message.
 - `text` — Message text displayed in the ticker rotation.
+- `label` — Optional human-readable source label shown before the text (e.g. `"Usage"`).
 - `icon` — Optional inline SVG icon.
-- `priority` — Higher = shown first. Values >= 80 get warning styling. Default: `0`.
+- `priority` — Priority tier (see table above). Default: `0`.
 - `ttlMs` — Auto-expire after N milliseconds. `0` = persistent (must be removed manually). Default: `60000`.
-- `onClick` — Optional callback invoked when the user clicks the ticker message (e.g. to open a dashboard panel).
+- `onClick` — Optional callback invoked when the user clicks the message text.
 
-#### host.removeTickerMessage(id) -> void
+#### host.clearTicker(id) -> void
 
 Remove a ticker message by id. **Requires `"ui:ticker"` capability.**
 
 ```typescript
-host.removeTickerMessage("my-status");
+host.clearTicker("my-status");
 ```
+
+#### host.postTickerMessage(options) -> void *(legacy)*
+
+Alias for `setTicker` without `label` support. Prefer `setTicker` for new plugins.
+
+#### host.removeTickerMessage(id) -> void *(legacy)*
+
+Alias for `clearTicker`.
 
 ### Tier 3d: Panel UI (capability-gated)
 
@@ -555,7 +575,7 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `ui:markdown` | `host.openMarkdownPanel()`, `host.openMarkdownFile()` | Can open panels and files in the UI |
 | `ui:sound` | `host.playNotificationSound()` | Can play sounds |
 | `ui:panel` | `host.openPanel()` | Can render arbitrary HTML in sandboxed iframe |
-| `ui:ticker` | `host.postTickerMessage()`, `host.removeTickerMessage()` | Can post messages to the status bar |
+| `ui:ticker` | `host.setTicker()`, `host.clearTicker()` | Can post messages to the shared status bar ticker |
 | `credentials:read` | `host.readCredential()` | Can read system credentials (consent dialog shown) |
 | `net:http` | `host.httpFetch()` | Can make HTTP requests (scoped to `allowedUrls`) |
 | `invoke:read_file` | `host.invoke("read_file", ...)` | Can read files on disk |

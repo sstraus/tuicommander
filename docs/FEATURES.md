@@ -258,7 +258,7 @@
   4. Agent name (lowest): icon + name of detected agent
   - Color coding: blue < 70%, yellow 70-89%, red pulsing >= 90%
   - Claude usage ticker absorbed into badge when active agent is Claude (avoids duplicate display)
-- Plugin ticker: rotating status messages from plugins (with priority and TTL)
+- Shared ticker area: multi-source rotating messages from plugins with source labels, counter badge (1/3 ▸), click-to-cycle, right-click popover, and priority tiers (low/normal/urgent)
 - Update badge: "Update vX.Y.Z" (click to download & install), progress percentage during download
 
 ### 5.2 GitHub Section (center)
@@ -735,7 +735,7 @@ All data persisted to platform config directory via Rust:
 - HTTP API: outbound requests scoped to manifest-declared URL patterns (SSRF prevention)
 - Credential API: cross-platform credential reading (macOS Keychain, Linux/Windows JSON file) with user consent
 - Panel API: rich HTML panels in sandboxed iframes (`sandbox="allow-scripts"`)
-- Status bar ticker: plugins can post rotating status messages with priority and TTL
+- Shared ticker system: `setTicker`/`clearTicker` API with source labels, priority tiers (low <10, normal 10-99, urgent >=100), counter badge, click-to-cycle, right-click popover
 
 ### 17.2 Plugin Management (Settings > Plugins)
 - **Installed tab:** List all plugins with enable/disable toggle, logs viewer, uninstall button
