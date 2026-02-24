@@ -588,8 +588,11 @@ pub fn run() {
                         return true;
                     }
                     #[cfg(dev)]
-                    if url.host_str() == Some("localhost") {
-                        return true;
+                    {
+                        let host = url.host_str().unwrap_or("");
+                        if host == "localhost" || host == "127.0.0.1" {
+                            return true;
+                        }
                     }
                     // External URL — open in system browser, block webview navigation
                     if scheme == "http" || scheme == "https" {
