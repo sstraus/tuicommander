@@ -30,7 +30,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' plugin:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: tauri:"
+      "csp": "default-src 'self'; script-src 'self' plugin:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: tauri:",
+      "dangerousDisableAssetCspModification": ["style-src"]
     }
   },
   "bundle": {

@@ -7,6 +7,7 @@ import type { Extension } from "@codemirror/state";
 const editorTheme = EditorView.theme(
   {
     "&": {
+      width: "100%",
       height: "100%",
       fontSize: "13px",
     },

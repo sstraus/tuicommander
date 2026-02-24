@@ -143,12 +143,18 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   // The container starts as display:none (.terminal-pane without .active),
   // so CodeMirror computes zero dimensions during initial mount. When the
   // container becomes visible (0→real size), ResizeObserver fires and we
-  // tell CodeMirror to re-measure.
+  // tell CodeMirror to re-measure. We also re-measure when loading completes
+  // (display:none → visible transition on the editor div itself).
   let editorDiv: HTMLDivElement | undefined;
   createEffect(() => {
     const view = editorView();
     if (!view || !editorDiv) return;
-    const ro = new ResizeObserver(() => view.requestMeasure());
+    const ro = new ResizeObserver(() => {
+      // Use rAF to ensure the browser has completed the layout pass before
+      // CodeMirror measures. Plain requestMeasure() can run too early after
+      // a display:none → block transition.
+      requestAnimationFrame(() => view.requestMeasure());
+    });
     ro.observe(editorDiv);
     onCleanup(() => ro.disconnect());
   });
