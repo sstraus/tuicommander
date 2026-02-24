@@ -138,7 +138,9 @@ pub(crate) fn get_ignored_paths(repo_path: &str, paths: &[String]) -> std::colle
 
     let git = crate::cli::resolve_cli("git");
     let mut cmd = Command::new(git);
-    cmd.current_dir(repo_path).arg("check-ignore");
+    cmd.current_dir(repo_path)
+        .arg("check-ignore")
+        .arg("--no-index");
     for p in paths {
         cmd.arg(p);
     }
