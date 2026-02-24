@@ -71,11 +71,10 @@ export function cleanOscTitle(title: string): string {
   // Strip leading env var assignments (KEY=value pairs, including empty values)
   cleaned = cleaned.replace(/^(\s*\w+=\S*\s+)+/, "");
   cleaned = cleaned.trim();
-  // Paths: extract last segment (status bar shows the full path)
+  // Paths: shell is just reporting CWD (idle prompt) — not useful as a tab title
+  // since the status bar already shows the full path. Return empty to keep original name.
   if (cleaned.startsWith("/") || cleaned.startsWith("~")) {
-    const basename = cleaned.replace(/\/+$/, "").split("/").pop() || "";
-    // Bare "~" (home dir) is not useful as a tab title — return empty to keep original name
-    return basename === "~" ? "" : basename;
+    return "";
   }
   // Strip flags and their values, keep command + subcommands (bare words before first flag)
   if (cleaned) {
@@ -129,6 +128,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   // Resize debounce (150ms trailing edge)
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+  // ResizeObserver debounce — coalesces rapid layout changes before fitting
+  let resizeObserverTimer: ReturnType<typeof setTimeout> | undefined;
+  // rAF handle for the visibility effect — cancellable on cleanup
+  let rafHandle = 0;
 
   // Shell idle detection: after 500ms of no PTY output, shell is idle
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -360,7 +363,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
       // Listen for kitty keyboard protocol flag changes from Rust
       unlistenKitty = await listen<number>(`kitty-keyboard-${targetSessionId}`, (event) => {
-        console.debug(`[Kitty] session=${targetSessionId} flags=${event.payload} (was ${kittyFlags})`);
         kittyFlags = event.payload;
       });
     }
@@ -393,6 +395,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
           sessionId = null;
           unsubscribePty?.();
           unlistenParsed?.();
+          unlistenKitty?.();
+          unlistenKitty = undefined;
         }
       }
       if (!reconnected) {
@@ -471,14 +475,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
       if (event.type === "keydown" && (kittyFlags & 1)) {
         const seq = kittySequenceForKey(event.key, event.shiftKey, event.altKey, event.ctrlKey, event.metaKey);
         if (seq !== null) {
-          console.debug(`[Kitty] key=${event.key} shift=${event.shiftKey} → seq=${JSON.stringify(seq)}`);
           terminal!.input(seq, true);
           return false;
         }
-      }
-      // Debug: log Shift+Enter even when kitty is not active
-      if (event.type === "keydown" && event.key === "Enter" && event.shiftKey) {
-        console.debug(`[Kitty] Shift+Enter pressed but kittyFlags=${kittyFlags} (flag1=${kittyFlags & 1})`);
       }
 
       if (!isMacOS()) return true; // Windows/Linux: xterm handles Alt natively
@@ -740,13 +739,32 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // When this terminal becomes visible: open xterm, fit, and init PTY session
   createEffect(() => {
     if (isVisible()) {
-      openTerminal();
-      safeFit(() => initSession());
+      // Defer terminal.open() to the next animation frame so the browser has
+      // completed the display:none → block reflow. Without this, xterm and its
+      // WebGL renderer can capture stale container dimensions when a side panel
+      // is already open (flex layout hasn't settled yet at the synchronous call site).
+      rafHandle = requestAnimationFrame(() => {
+        rafHandle = 0;
+        openTerminal();
+        safeFit(() => initSession());
 
-      // Start observing resize while active (disconnect when inactive to avoid fit on display:none)
-      if (resizeObserver && containerRef) {
-        resizeObserver.observe(containerRef);
-      }
+        // For reconnected terminals (existing sessionId), explicitly sync PTY dimensions.
+        // When a terminal was in the background while a panel opened/close, terminal.onResize
+        // may not fire (debounced 150ms + xterm may already report the fitted dimensions).
+        // Force a resize to ensure PTY is in sync with the newly-fitted container.
+        if (sessionId && terminal && terminal.rows > 0 && terminal.cols > 0) {
+          pty.resize(sessionId, terminal.rows, terminal.cols).catch(() => {
+            // Silently ignore resize errors (PTY may have exited)
+          });
+        }
+
+        // Start observing resize while active (disconnect when inactive to avoid fit on display:none).
+        // The ResizeObserver (100ms debounce) is the authoritative resize path — it handles
+        // panel open/close, window resize, and tab-switch layout changes.
+        if (resizeObserver && containerRef) {
+          resizeObserver.observe(containerRef);
+        }
+      });
 
       // Tauri window resize listener - DOM resize event may not fire in webview
       let unlistenResize: (() => void) | undefined;
@@ -765,6 +783,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       }
 
       onCleanup(() => {
+        if (rafHandle) cancelAnimationFrame(rafHandle);
         resizeObserver?.disconnect();
         unlistenResize?.();
       });
@@ -812,6 +831,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // Cleanup on unmount - detach UI but keep PTY session alive
   onCleanup(() => {
     clearTimeout(resizeTimer);
+    clearTimeout(resizeObserverTimer);
     clearTimeout(idleTimer);
     resizeObserver?.disconnect();
     unsubscribePty?.();

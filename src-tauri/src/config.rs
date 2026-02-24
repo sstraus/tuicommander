@@ -376,6 +376,14 @@ pub(crate) struct UIPrefsConfig {
     pub(crate) sidebar_visible: bool,
     #[serde(default = "default_sidebar_width")]
     pub(crate) sidebar_width: u32,
+    #[serde(default)]
+    pub(crate) diff_panel_visible: bool,
+    #[serde(default)]
+    pub(crate) markdown_panel_visible: bool,
+    #[serde(default)]
+    pub(crate) notes_panel_visible: bool,
+    #[serde(default)]
+    pub(crate) file_browser_panel_visible: bool,
     #[serde(default = "default_panel_width")]
     pub(crate) diff_panel_width: u32,
     #[serde(default = "default_panel_width")]
@@ -391,6 +399,10 @@ impl Default for UIPrefsConfig {
         Self {
             sidebar_visible: true,
             sidebar_width: default_sidebar_width(),
+            diff_panel_visible: false,
+            markdown_panel_visible: false,
+            notes_panel_visible: false,
+            file_browser_panel_visible: false,
             diff_panel_width: default_panel_width(),
             markdown_panel_width: default_panel_width(),
             notes_panel_width: default_notes_panel_width(),

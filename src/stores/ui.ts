@@ -73,6 +73,10 @@ function createUIStore() {
       config: {
         sidebar_visible: state.sidebarVisible,
         sidebar_width: state.sidebarWidth,
+        diff_panel_visible: state.diffPanelVisible,
+        markdown_panel_visible: state.markdownPanelVisible,
+        notes_panel_visible: state.notesPanelVisible,
+        file_browser_panel_visible: state.fileBrowserPanelVisible,
         diff_panel_width: state.diffPanelWidth,
         markdown_panel_width: state.markdownPanelWidth,
         notes_panel_width: state.notesPanelWidth,
@@ -102,6 +106,10 @@ function createUIStore() {
         const loaded = await invoke<{
           sidebar_visible?: boolean;
           sidebar_width?: number;
+          diff_panel_visible?: boolean;
+          markdown_panel_visible?: boolean;
+          notes_panel_visible?: boolean;
+          file_browser_panel_visible?: boolean;
           diff_panel_width?: number;
           markdown_panel_width?: number;
           notes_panel_width?: number;
@@ -113,6 +121,18 @@ function createUIStore() {
           }
           if (loaded.sidebar_width !== undefined) {
             setState("sidebarWidth", clampWidth(loaded.sidebar_width));
+          }
+          if (loaded.diff_panel_visible !== undefined) {
+            setState("diffPanelVisible", loaded.diff_panel_visible);
+          }
+          if (loaded.markdown_panel_visible !== undefined) {
+            setState("markdownPanelVisible", loaded.markdown_panel_visible);
+          }
+          if (loaded.notes_panel_visible !== undefined) {
+            setState("notesPanelVisible", loaded.notes_panel_visible);
+          }
+          if (loaded.file_browser_panel_visible !== undefined) {
+            setState("fileBrowserPanelVisible", loaded.file_browser_panel_visible);
           }
           if (loaded.diff_panel_width !== undefined) {
             setState("diffPanelWidth", loaded.diff_panel_width);
@@ -140,6 +160,7 @@ function createUIStore() {
         setState("markdownPanelVisible", false);
         setState("fileBrowserPanelVisible", false);
       }
+      saveUIPrefs();
     },
 
     toggleMarkdownPanel(): void {
@@ -149,6 +170,7 @@ function createUIStore() {
         setState("diffPanelVisible", false);
         setState("fileBrowserPanelVisible", false);
       }
+      saveUIPrefs();
     },
 
     setDiffPanelVisible(visible: boolean): void {
@@ -157,6 +179,7 @@ function createUIStore() {
         setState("markdownPanelVisible", false);
         setState("fileBrowserPanelVisible", false);
       }
+      saveUIPrefs();
     },
 
     setMarkdownPanelVisible(visible: boolean): void {
@@ -165,14 +188,17 @@ function createUIStore() {
         setState("diffPanelVisible", false);
         setState("fileBrowserPanelVisible", false);
       }
+      saveUIPrefs();
     },
 
     toggleNotesPanel(): void {
       setState("notesPanelVisible", (v) => !v);
+      saveUIPrefs();
     },
 
     setNotesPanelVisible(visible: boolean): void {
       setState("notesPanelVisible", visible);
+      saveUIPrefs();
     },
 
     toggleFileBrowserPanel(): void {
@@ -182,6 +208,7 @@ function createUIStore() {
         setState("diffPanelVisible", false);
         setState("markdownPanelVisible", false);
       }
+      saveUIPrefs();
     },
 
     setFileBrowserPanelVisible(visible: boolean): void {
@@ -190,6 +217,7 @@ function createUIStore() {
         setState("diffPanelVisible", false);
         setState("markdownPanelVisible", false);
       }
+      saveUIPrefs();
     },
 
     // Diff repo selection
