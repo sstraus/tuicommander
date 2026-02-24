@@ -11,6 +11,7 @@ export interface BranchState {
   worktreePath: string | null; // Path to worktree directory (null for main branch)
   terminals: string[]; // terminal IDs belonging to this branch
   hadTerminals: boolean; // true once a terminal has been created — suppresses auto-spawn after close-all
+  lastActiveTerminal: string | null; // last active terminal ID when leaving this branch
   additions: number;
   deletions: number;
   runCommand?: string; // Saved run command for this branch
@@ -293,6 +294,7 @@ function createRepositoriesStore() {
           worktreePath: null,
           terminals: [],
           hadTerminals: false,
+          lastActiveTerminal: null,
           additions: 0,
           deletions: 0,
           ...data,

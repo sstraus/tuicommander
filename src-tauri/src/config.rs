@@ -243,6 +243,9 @@ pub(crate) struct AppConfig {
     /// Show all local branches in the sidebar by default (not just worktrees + active branch)
     #[serde(default)]
     pub(crate) show_all_branches: bool,
+    /// Agent types disabled by the user (won't appear in sidebar "Add Agent" menu)
+    #[serde(default)]
+    pub(crate) disabled_agents: Vec<String>,
 }
 
 fn default_language() -> String {
@@ -303,6 +306,7 @@ impl Default for AppConfig {
             ipv6_enabled: false,
             lan_auth_bypass: false,
             show_all_branches: false,
+            disabled_agents: Vec::new(),
         }
     }
 }
@@ -725,6 +729,7 @@ mod tests {
             ipv6_enabled: true,
             lan_auth_bypass: true,
             show_all_branches: true,
+            disabled_agents: vec!["codex".to_string()],
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));

@@ -29,6 +29,7 @@ interface RustAppConfig {
   update_channel: string;
   session_token_duration_secs: number;
   show_all_branches: boolean;
+  disabled_agents: string[];
 }
 
 // Default values
@@ -224,6 +225,7 @@ interface SettingsStoreState {
   language: string;
   updateChannel: UpdateChannel;
   showAllBranches: boolean;
+  disabledAgents: string[];
 }
 
 /** Create the settings store */
@@ -244,6 +246,7 @@ function createSettingsStore() {
     language: "en",
     updateChannel: "stable" as UpdateChannel,
     showAllBranches: false,
+    disabledAgents: [],
   });
 
   const actions = {
@@ -281,6 +284,7 @@ function createSettingsStore() {
         const channel = config.update_channel;
         setState("updateChannel", (channel === "beta" || channel === "nightly") ? channel : "stable");
         setState("showAllBranches", config.show_all_branches ?? false);
+        setState("disabledAgents", config.disabled_agents ?? []);
       } catch (err) {
         console.error("Failed to hydrate settings:", err);
       }
@@ -510,6 +514,27 @@ function createSettingsStore() {
         console.error("Failed to persist showAllBranches:", err);
         setState("showAllBranches", prevValue);
       }
+    },
+
+    /** Toggle an agent's enabled/disabled state */
+    async toggleAgent(agentType: string): Promise<void> {
+      const prev = [...state.disabledAgents];
+      const isDisabled = prev.includes(agentType);
+      const next = isDisabled ? prev.filter((a) => a !== agentType) : [...prev, agentType];
+      setState("disabledAgents", next);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.disabled_agents = next;
+        await invoke("save_config", { config });
+      } catch (err) {
+        console.error("Failed to persist disabledAgents:", err);
+        setState("disabledAgents", prev);
+      }
+    },
+
+    /** Check if an agent type is enabled */
+    isAgentEnabled(agentType: string): boolean {
+      return !state.disabledAgents.includes(agentType);
     },
 
     /** Get CSS font family string */

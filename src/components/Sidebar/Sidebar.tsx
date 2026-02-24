@@ -5,6 +5,7 @@ import { settingsStore } from "../../stores/settings";
 import { uiStore } from "../../stores/ui";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { githubStore } from "../../stores/github";
+import type { ContextMenuItem } from "../ContextMenu";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { ParkedReposPopover } from "./ParkedReposPopover";
 import { PromptDialog } from "../PromptDialog";
@@ -21,6 +22,7 @@ export interface SidebarProps {
   onAddTerminal: (repoPath: string, branchName: string) => void;
   onRemoveBranch: (repoPath: string, branchName: string) => void;
   onRenameBranch: (repoPath: string, branchName: string) => void;
+  buildAgentMenuItems?: (repoPath: string, branchName: string) => ContextMenuItem[];
   onAddWorktree: (repoPath: string) => void;
   onAddRepo: () => void;
   onRepoSettings: (repoPath: string) => void;
@@ -91,9 +93,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       document.documentElement.style.setProperty("--sidebar-width", `${clamped}px`);
     };
 
-    const onUp = () => {
+    const cleanup = () => {
       document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("mouseup", cleanup);
+      window.removeEventListener("blur", cleanup);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       if (sidebar) sidebar.style.transition = "";
@@ -102,7 +105,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     };
 
     document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    document.addEventListener("mouseup", cleanup);
+    // Safety valve: if mouse released outside window, blur fires
+    window.addEventListener("blur", cleanup);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   };
@@ -164,6 +169,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         onRemoveBranch={(branch) => props.onRemoveBranch(repo.path, branch)}
         onRenameBranch={(branch) => props.onRenameBranch(repo.path, branch)}
         onShowPrDetail={(branch) => setPrDetailTarget({ repoPath: repo.path, branch })}
+        buildAgentMenuItems={props.buildAgentMenuItems ? (branch) => props.buildAgentMenuItems!(repo.path, branch) : undefined}
         onAddWorktree={() => props.onAddWorktree(repo.path)}
         onSettings={() => props.onRepoSettings(repo.path)}
         onRemove={() => props.onRemoveRepo(repo.path)}

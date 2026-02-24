@@ -378,6 +378,66 @@ const App: Component = () => {
     });
   };
 
+  // Build agent menu items for the sidebar branch context menu.
+  // Creates a new terminal on the branch and writes the agent launch command.
+  // Returns items ready to splice into the context menu:
+  // - 0 enabled agents: []
+  // - 1 enabled agent: [{ label: "Add <AgentName>", action }]
+  // - N enabled agents: [{ label: "Add Agent", children: [...] }]
+  const buildSidebarAgentMenuItems = (repoPath: string, branchName: string): ContextMenuItem[] => {
+    const enabled = agentDetection.getAvailable()
+      .filter((a) => a.type !== "git" && settingsStore.isAgentEnabled(a.type));
+    if (enabled.length === 0) return [];
+
+    const buildAgentEntry = (agent: typeof enabled[0]) => {
+      const agentConfig = AGENTS[agent.type];
+      const runConfigs = agentConfigsStore.getRunConfigs(agent.type);
+
+      const launchAgent = async (cmd: string) => {
+        const termId = await gitOps.handleAddTerminalToBranch(repoPath, branchName);
+        if (termId) {
+          terminalsStore.update(termId, {
+            name: agentConfig.name,
+            nameIsCustom: true,
+            pendingResumeCommand: cmd,
+          });
+        }
+      };
+
+      const children: ContextMenuItem[] = runConfigs.length > 0
+        ? runConfigs.map((rc) => ({
+            label: rc.name + (rc.is_default ? " (Default)" : ""),
+            action: () => launchAgent([rc.command, ...rc.args].join(" ")),
+          }))
+        : [{
+            label: "(Default)",
+            action: () => launchAgent(agentConfig.binary),
+          }];
+
+      return { agentConfig, children };
+    };
+
+    if (enabled.length === 1) {
+      const { agentConfig, children } = buildAgentEntry(enabled[0]);
+      // Single agent: flat item "Add <Name>" (with sub-configs if multiple)
+      if (children.length === 1) {
+        return [{ label: `Add ${agentConfig.name}`, action: children[0].action }];
+      }
+      return [{ label: `Add ${agentConfig.name}`, action: () => {}, children }];
+    }
+
+    // Multiple agents: "Add Agent" submenu
+    const agentItems = enabled.map((agent) => {
+      const { agentConfig, children } = buildAgentEntry(agent);
+      if (children.length === 1) {
+        return { label: agentConfig.name, action: children[0].action };
+      }
+      return { label: agentConfig.name, action: () => {}, children };
+    });
+
+    return [{ label: "Add Agent", action: () => {}, children: agentItems }];
+  };
+
   // Context menu items
   const isSplit = () => terminalsStore.state.layout.direction !== "none" && terminalsStore.state.layout.panes.length === 2;
 
@@ -873,6 +933,7 @@ const App: Component = () => {
           onRemoveRepo={gitOps.handleRemoveRepo}
           onOpenSettings={() => openSettings()}
           onOpenHelp={() => setHelpPanelVisible(true)}
+          buildAgentMenuItems={buildSidebarAgentMenuItems}
           onRefreshBranchStats={gitOps.refreshAllBranchStats}
           onBackgroundGit={handleBackgroundGit}
           runningGitOps={runningGitOps()}

@@ -201,6 +201,54 @@ describe("useGitOperations", () => {
 
       expect(terminalsStore.state.activeId).toBe(id);
     });
+
+    it("preserves active tab when re-clicking the same branch", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: "/repo", awaitingInput: null });
+      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: "/repo", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "main", id1);
+      repositoriesStore.addTerminalToBranch("/repo", "main", id2);
+
+      // Select the branch first so it becomes the active branch
+      await gitOps.handleBranchSelect("/repo", "main");
+      // Now set the second tab as active
+      terminalsStore.setActive(id2);
+
+      // Click the same branch again — should NOT jump to first tab
+      await gitOps.handleBranchSelect("/repo", "main");
+
+      expect(terminalsStore.state.activeId).toBe(id2);
+    });
+
+    it("remembers last active tab when switching between branches", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt/feature" });
+
+      // Branch main: 2 terminals
+      const m1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "M1", cwd: "/repo", awaitingInput: null });
+      const m2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "M2", cwd: "/repo", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "main", m1);
+      repositoriesStore.addTerminalToBranch("/repo", "main", m2);
+
+      // Branch feature: 1 terminal
+      const f1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "F1", cwd: "/repo/wt/feature", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "feature", f1);
+
+      // Activate main, select tab m2
+      await gitOps.handleBranchSelect("/repo", "main");
+      terminalsStore.setActive(m2);
+
+      // Switch to feature — should save m2 as last active for main
+      await gitOps.handleBranchSelect("/repo", "feature");
+      expect(terminalsStore.state.activeId).toBe(f1);
+
+      // Switch back to main — should restore m2, not m1
+      await gitOps.handleBranchSelect("/repo", "main");
+      expect(terminalsStore.state.activeId).toBe(m2);
+    });
   });
 
   describe("handleAddTerminalToBranch", () => {

@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, batch } from "solid-js";
 import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
@@ -63,38 +63,46 @@ export function useGitOperations(deps: GitOperationsDeps) {
       ]);
 
       const currentRepo = repositoriesStore.get(repoPath);
-      if (currentRepo) {
-        const branchCount = Object.keys(currentRepo.branches).length;
-        // Guard: an empty worktree response when branches exist likely indicates a
-        // backend error. Clearing branches in that case would destroy UI state.
-        if (Object.keys(worktreePaths).length === 0 && branchCount > 0) {
-          console.warn(`[refreshAllBranchStats] getWorktreePaths returned empty for ${repoPath} with ${branchCount} branch(es) — skipping clear`);
-          return;
-        }
-        for (const branchName of Object.keys(currentRepo.branches)) {
-          const inWorktrees = branchName in worktreePaths;
-          const inLocal = localBranches.includes(branchName);
-          if (!inWorktrees && !inLocal) {
-            repositoriesStore.removeBranch(repoPath, branchName);
-          }
+      if (!currentRepo) return;
+
+      const branchCount = Object.keys(currentRepo.branches).length;
+      // Guard: an empty worktree response when branches exist likely indicates a
+      // backend error. Clearing branches in that case would destroy UI state.
+      if (Object.keys(worktreePaths).length === 0 && branchCount > 0) {
+        console.warn(`[refreshAllBranchStats] getWorktreePaths returned empty for ${repoPath} with ${branchCount} branch(es) — skipping clear`);
+        return;
+      }
+
+      // Compute the target set of branches to keep, then apply all
+      // mutations in a single batch to prevent intermediate renders
+      // (which caused the sidebar to flash/jump during refresh).
+      const localSet = new Set(localBranches);
+      const toRemove: string[] = [];
+      for (const branchName of Object.keys(currentRepo.branches)) {
+        if (!(branchName in worktreePaths) && !localSet.has(branchName)) {
+          toRemove.push(branchName);
         }
       }
 
-      for (const [branchName, wtPath] of Object.entries(worktreePaths)) {
-        repositoriesStore.setBranch(repoPath, branchName, { worktreePath: wtPath });
-      }
+      batch(() => {
+        for (const branchName of toRemove) {
+          repositoriesStore.removeBranch(repoPath, branchName);
+        }
+        for (const [branchName, wtPath] of Object.entries(worktreePaths)) {
+          repositoriesStore.setBranch(repoPath, branchName, { worktreePath: wtPath });
+        }
+        if (showAllBranches) {
+          const updatedRepo = repositoriesStore.get(repoPath);
+          for (const branchName of localBranches) {
+            if (!(branchName in worktreePaths) && !updatedRepo?.branches[branchName]) {
+              repositoriesStore.setBranch(repoPath, branchName, { worktreePath: null });
+            }
+          }
+        }
+      });
 
       const updatedRepo = repositoriesStore.get(repoPath);
       if (!updatedRepo) return;
-
-      // Add local-only branches not covered by worktrees
-      if (showAllBranches) {
-        for (const branchName of localBranches) {
-          if (!(branchName in worktreePaths) && !updatedRepo.branches[branchName]) {
-            repositoriesStore.setBranch(repoPath, branchName, { worktreePath: null });
-          }
-        }
-      }
 
       await Promise.all(Object.values(updatedRepo.branches).map(async (branch) => {
         if (!branch.worktreePath) return;
@@ -133,6 +141,19 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
   const handleBranchSelect = async (repoPath: string, branchName: string) => {
     console.log(`[BranchSelect] Switching to ${branchName}`);
+
+    // Save the current active terminal for the branch we're leaving
+    const prevRepo = repositoriesStore.getActive();
+    if (prevRepo?.activeBranch) {
+      const currentActiveId = terminalsStore.state.activeId;
+      if (currentActiveId) {
+        const prevBranch = prevRepo.branches[prevRepo.activeBranch];
+        if (prevBranch?.terminals.includes(currentActiveId)) {
+          repositoriesStore.setBranch(prevRepo.path, prevRepo.activeBranch, { lastActiveTerminal: currentActiveId });
+        }
+      }
+    }
+
     setCurrentRepoPath(repoPath);
     repositoriesStore.setActive(repoPath);
     repositoriesStore.setActiveBranch(repoPath, branchName);
@@ -152,7 +173,13 @@ export function useGitOperations(deps: GitOperationsDeps) {
     const validTerminals = filterValidTerminals(branch?.terminals, terminalsStore.getIds());
 
     if (validTerminals.length > 0) {
-      terminalsStore.setActive(validTerminals[0]);
+      // Restore the last active terminal for this branch, or fall back to first
+      const remembered = branch?.lastActiveTerminal;
+      if (remembered && validTerminals.includes(remembered)) {
+        terminalsStore.setActive(remembered);
+      } else {
+        terminalsStore.setActive(validTerminals[0]);
+      }
     } else if (branch?.savedTerminals && branch.savedTerminals.length > 0) {
       // Lazy restore: create terminals from persisted session state
       let firstId: string | null = null;

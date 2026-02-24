@@ -127,7 +127,10 @@ function activePrStatus(repoPath: string, branch: string) {
     }
     entry.lastCheck = now;
 
-    if (entry.ms >= MERGED_GRACE_MS) return null;
+    if (entry.ms >= MERGED_GRACE_MS) {
+      mergedActivityAccum.delete(prKey);
+      return null;
+    }
   }
 
   return pr;
@@ -145,6 +148,7 @@ export const BranchItem: Component<{
   isActive: boolean;
   canRemove: boolean;
   shortcutIndex?: number;
+  agentMenuItems?: () => ContextMenuItem[];
   onSelect: () => void;
   onAddTerminal: () => void;
   onRemove: () => void;
@@ -182,8 +186,12 @@ export const BranchItem: Component<{
     const items: ContextMenuItem[] = [
       { label: "Copy Path", action: handleCopyPath, disabled: !props.branch.worktreePath },
       { label: "Add Terminal", action: props.onAddTerminal },
-      { label: "Rename Branch", action: props.onRename, disabled: props.branch.isMain },
     ];
+    const agentItems = props.agentMenuItems?.();
+    if (agentItems && agentItems.length > 0) {
+      items.push(...agentItems);
+    }
+    items.push({ label: "Rename Branch", action: props.onRename, disabled: props.branch.isMain });
     if (!props.branch.isMain && props.branch.worktreePath && props.canRemove) {
       items.push({ label: "Delete Worktree", action: props.onRemove, separator: true });
     }
@@ -286,6 +294,7 @@ export const RepoSection: Component<{
   onRemoveBranch: (branchName: string) => void;
   onRenameBranch: (branchName: string) => void;
   onShowPrDetail: (branchName: string) => void;
+  buildAgentMenuItems?: (branchName: string) => ContextMenuItem[];
   onAddWorktree: () => void;
   onSettings: () => void;
   onRemove: () => void;
@@ -424,6 +433,7 @@ export const RepoSection: Component<{
                 isActive={repositoriesStore.state.activeRepoPath === props.repo.path && props.repo.activeBranch === branch.name}
                 canRemove={sortedBranches().length > 1}
                 shortcutIndex={props.quickSwitcherActive ? props.branchShortcutStart + index() : undefined}
+                agentMenuItems={props.buildAgentMenuItems ? () => props.buildAgentMenuItems!(branch.name) : undefined}
                 onSelect={() => props.onBranchSelect(branch.name)}
                 onAddTerminal={() => props.onAddTerminal(branch.name)}
                 onRemove={() => props.onRemoveBranch(branch.name)}

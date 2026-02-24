@@ -219,15 +219,17 @@ const AgentRow: Component<{
     }
   };
 
+  const isEnabled = () => settingsStore.isAgentEnabled(props.agentType);
+
   return (
     <div class={a.agentRow}>
       <div class={a.agentHeader} onClick={handleExpand}>
         <div class={a.agentInfo}>
           <div class={a.agentNameRow}>
-            <div class={a.agentIcon} style={{ background: display().color }}>
+            <div class={a.agentIcon} style={{ background: display().color, opacity: isEnabled() ? 1 : 0.4 }}>
               <AgentIcon agent={props.agentType} size={16} />
             </div>
-            <span class={a.agentName}>{agent().name}</span>
+            <span class={a.agentName} style={{ opacity: isEnabled() ? 1 : 0.5 }}>{agent().name}</span>
             <Show when={props.detection?.version}>
               <span class={a.agentVersion}>{props.detection!.version}</span>
             </Show>
@@ -240,6 +242,17 @@ const AgentRow: Component<{
             <Show when={mcpStatus()?.installed}>
               <span class={a.badge} data-type="mcp">MCP</span>
             </Show>
+            <label
+              class={a.toggleRow}
+              style={{ "margin-left": "auto" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <input
+                type="checkbox"
+                checked={isEnabled()}
+                onChange={() => settingsStore.toggleAgent(props.agentType)}
+              />
+            </label>
           </div>
         </div>
         <span class={a.expandIcon} classList={{ [a.expanded]: expanded() }}>&#9654;</span>

@@ -253,11 +253,11 @@
 }
 
 .dragOverTop {
-  border-top: 2px solid var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
 }
 
 .dragOverBottom {
-  border-bottom: 2px solid var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .dragOverTarget {

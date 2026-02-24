@@ -15,6 +15,7 @@ export const ParkedReposPopover: Component<ParkedReposPopoverProps> = (props) =>
 
   // Close on click outside or Escape
   onMount(() => {
+    let attached = false;
     const handleClick = (e: MouseEvent) => {
       if (popoverRef && !popoverRef.contains(e.target as Node)) {
         props.onClose();
@@ -24,13 +25,17 @@ export const ParkedReposPopover: Component<ParkedReposPopoverProps> = (props) =>
       if (e.key === "Escape") props.onClose();
     };
     // Delay listener to avoid closing from the click that opened us
-    requestAnimationFrame(() => {
+    const rafId = requestAnimationFrame(() => {
+      attached = true;
       document.addEventListener("mousedown", handleClick);
       document.addEventListener("keydown", handleKey);
     });
     onCleanup(() => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("keydown", handleKey);
+      cancelAnimationFrame(rafId);
+      if (attached) {
+        document.removeEventListener("mousedown", handleClick);
+        document.removeEventListener("keydown", handleKey);
+      }
     });
   });
 
