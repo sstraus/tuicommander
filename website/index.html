@@ -187,12 +187,12 @@
   </section>
 
   <!-- ============================================
-       FEATURE: VOICE DICTATION
+       FEATURE PAIR: VOICE + REMOTE (side by side)
        ============================================ -->
-  <section class="feature" data-sal="slide-up">
+  <section class="feature-pair" data-sal="slide-up">
     <div class="container">
-      <div class="feature-inner">
-        <div class="feature-content">
+      <div class="feature-pair-grid">
+        <div class="feature-card">
           <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
           <h3>Talk to Your Agents</h3>
           <div class="feature-problem">
@@ -208,43 +208,7 @@
             <li>Correction dictionary for domain-specific terms</li>
           </ul>
         </div>
-        <div class="feature-visual">
-          <div class="code-block" style="padding: 24px;">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px; color: var(--fg-muted); font-size: 0.8rem;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-              <span style="color: var(--accent);">Recording...</span>
-              <span style="margin-left: auto;">whisper-large-v3-turbo</span>
-            </div>
-            <div style="color: var(--success); font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.6; margin-bottom: 20px;">
-              "Refactor the auth module to use JWT tokens instead of sessions"
-            </div>
-            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px; font-size: 0.8rem;">
-              <div style="display: flex; justify-content: space-between; color: var(--fg-muted); margin-bottom: 8px;">
-                <span>Confidence</span>
-                <span style="color: var(--success);">97.2%</span>
-              </div>
-              <div style="display: flex; justify-content: space-between; color: var(--fg-muted); margin-bottom: 8px;">
-                <span>Processing</span>
-                <span>GPU (Metal)</span>
-              </div>
-              <div style="display: flex; justify-content: space-between; color: var(--fg-muted);">
-                <span>Target</span>
-                <span>Terminal #2 — Claude Code</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================
-       FEATURE: REMOTE ACCESS
-       ============================================ -->
-  <section class="feature" data-sal="slide-up">
-    <div class="container">
-      <div class="feature-inner">
-        <div class="feature-content">
+        <div class="feature-card">
           <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/><path d="M9 6h6"/></svg>
           <h3>Control It from Your Mobile Device</h3>
           <div class="feature-problem">
@@ -260,22 +224,6 @@
             <li>Monitor agents or approve prompts from any device</li>
             <li>Secure tunnel with Cloudflare or Tailscale</li>
           </ul>
-        </div>
-        <div class="feature-visual">
-          <div class="code-block" style="text-align: center; padding: 40px 24px;">
-            <div style="font-family: var(--font-mono); font-size: 0.85rem; margin-bottom: 16px; color: var(--fg-muted);">
-              Open on any device:
-            </div>
-            <div style="font-family: var(--font-mono); font-size: 1.1rem; color: var(--accent); margin-bottom: 24px;">
-              http://192.168.1.42:9876
-            </div>
-            <div style="display: inline-block; padding: 16px; background: #fff; border-radius: 8px;">
-              <svg width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="#fff"/><g fill="#000"><rect x="10" y="10" width="8" height="8"/><rect x="18" y="10" width="8" height="8"/><rect x="26" y="10" width="8" height="8"/><rect x="34" y="10" width="8" height="8"/><rect x="42" y="10" width="8" height="8"/><rect x="10" y="18" width="8" height="8"/><rect x="42" y="18" width="8" height="8"/><rect x="10" y="26" width="8" height="8"/><rect x="26" y="26" width="8" height="8"/><rect x="42" y="26" width="8" height="8"/><rect x="10" y="34" width="8" height="8"/><rect x="26" y="34" width="8" height="8"/><rect x="42" y="34" width="8" height="8"/><rect x="10" y="42" width="8" height="8"/><rect x="18" y="42" width="8" height="8"/><rect x="26" y="42" width="8" height="8"/><rect x="34" y="42" width="8" height="8"/><rect x="42" y="42" width="8" height="8"/><rect x="58" y="10" width="8" height="8"/><rect x="74" y="10" width="8" height="8"/><rect x="82" y="10" width="8" height="8"/><rect x="66" y="18" width="8" height="8"/><rect x="58" y="26" width="8" height="8"/><rect x="74" y="26" width="8" height="8"/><rect x="58" y="34" width="8" height="8"/><rect x="66" y="34" width="8" height="8"/><rect x="82" y="42" width="8" height="8"/><rect x="58" y="58" width="8" height="8"/><rect x="66" y="58" width="8" height="8"/><rect x="74" y="58" width="8" height="8"/><rect x="82" y="58" width="8" height="8"/><rect x="58" y="66" width="8" height="8"/><rect x="82" y="66" width="8" height="8"/><rect x="58" y="74" width="8" height="8"/><rect x="74" y="74" width="8" height="8"/><rect x="82" y="74" width="8" height="8"/><rect x="58" y="82" width="8" height="8"/><rect x="74" y="82" width="8" height="8"/><rect x="82" y="82" width="8" height="8"/></g></svg>
-            </div>
-            <div style="color: var(--fg-muted); margin-top: 12px; font-size: 0.8rem;">
-              Scan to connect from any device
-            </div>
-          </div>
         </div>
       </div>
     </div>

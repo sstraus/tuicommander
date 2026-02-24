@@ -250,6 +250,29 @@ section {
 }
 
 /* ============================================
+   FEATURE PAIR (side-by-side cards)
+   ============================================ */
+.feature-pair {
+  padding: var(--section-gap) 0;
+}
+.feature-pair-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+}
+.feature-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 40px;
+}
+.feature-card h3 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+/* ============================================
    FEATURE SECTIONS
    ============================================ */
 .feature {
@@ -586,6 +609,13 @@ section {
   .hero-screenshot {
     margin: 0 -12px;
     border-radius: 8px;
+  }
+  .feature-pair-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .feature-card {
+    padding: 28px;
   }
   .feature-inner {
     grid-template-columns: 1fr;
