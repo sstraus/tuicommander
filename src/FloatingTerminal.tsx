@@ -5,6 +5,11 @@ import { terminalsStore } from "./stores/terminals";
 import { applyAppTheme } from "./themes";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emitTo } from "@tauri-apps/api/event";
+import { isMacOS } from "./platform";
+
+const MIN_FONT_SIZE = 8;
+const MAX_FONT_SIZE = 32;
+const FONT_STEP = 2;
 
 /** Parse URL hash params: #/floating?sessionId=...&tabId=...&name=... */
 function getHashParams(): { sessionId: string; tabId: string; name: string } {
@@ -25,8 +30,32 @@ function getHashParams(): { sessionId: string; tabId: string; name: string } {
 export const FloatingTerminal: Component = () => {
   const { sessionId, tabId, name } = getHashParams();
   const [ready, setReady] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+
+  // Validate required params before doing anything
+  if (!sessionId || !tabId) {
+    return (
+      <div style={{
+        display: "flex",
+        "align-items": "center",
+        "justify-content": "center",
+        height: "100vh",
+        color: "#f44",
+        background: "#1e1e1e",
+        "font-family": "monospace",
+        "font-size": "14px",
+        padding: "24px",
+      }}>
+        Missing sessionId or tabId — cannot attach to terminal.
+      </div>
+    );
+  }
 
   onMount(async () => {
+    // Remove the splash screen immediately (shared index.html has a #splash div
+    // that is normally removed by useAppInit in the main window).
+    document.getElementById("splash")?.remove();
+
     // Bootstrap settings so theme and fonts are available
     await settingsStore.hydrate().catch(() => {});
 
@@ -58,6 +87,56 @@ export const FloatingTerminal: Component = () => {
   // Apply theme to the floating window
   createEffect(() => applyAppTheme(settingsStore.state.theme));
 
+  // Keyboard shortcuts: zoom (Cmd/Ctrl +/-/0) and close (Cmd/Ctrl+W)
+  onMount(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = isMacOS() ? e.metaKey : e.ctrlKey;
+      if (!mod) return;
+
+      switch (e.key) {
+        case "=":
+        case "+": {
+          e.preventDefault();
+          const current = terminalsStore.get(tabId)?.fontSize ?? settingsStore.state.defaultFontSize;
+          terminalsStore.setFontSize(tabId, Math.min(MAX_FONT_SIZE, current + FONT_STEP));
+          break;
+        }
+        case "-": {
+          e.preventDefault();
+          const current = terminalsStore.get(tabId)?.fontSize ?? settingsStore.state.defaultFontSize;
+          terminalsStore.setFontSize(tabId, Math.max(MIN_FONT_SIZE, current - FONT_STEP));
+          break;
+        }
+        case "0": {
+          e.preventDefault();
+          terminalsStore.setFontSize(tabId, settingsStore.state.defaultFontSize);
+          break;
+        }
+        case "w":
+        case "W": {
+          e.preventDefault();
+          getCurrentWebviewWindow().close();
+          break;
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handler);
+    onCleanup(() => document.removeEventListener("keydown", handler));
+  });
+
+  // Auto-close when PTY session exits
+  const handleSessionExit = () => {
+    setError("Session ended");
+    // Brief delay so the user sees "[Process exited]" before the window closes
+    setTimeout(async () => {
+      try {
+        await emitTo("main", "reattach-terminal", { tabId, sessionId });
+      } catch { /* main window may already be gone */ }
+      getCurrentWebviewWindow().close().catch(() => {});
+    }, 1500);
+  };
+
   // Notify main window on close so it can reattach the tab
   onMount(() => {
     const win = getCurrentWebviewWindow();
@@ -82,8 +161,24 @@ export const FloatingTerminal: Component = () => {
       <Show when={ready()}>
         <Terminal
           id={tabId}
+          alwaysVisible
           onFocus={() => {}}
+          onSessionExit={handleSessionExit}
         />
+      </Show>
+      <Show when={error()}>
+        <div style={{
+          position: "absolute",
+          bottom: "8px",
+          left: "0",
+          right: "0",
+          "text-align": "center",
+          color: "#848d97",
+          "font-family": "monospace",
+          "font-size": "12px",
+        }}>
+          {error()} — closing...
+        </div>
       </Show>
     </div>
   );
