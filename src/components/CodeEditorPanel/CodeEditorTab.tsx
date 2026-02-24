@@ -226,11 +226,14 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
           onClick={() => setIsReadOnly((v) => !v)}
           title={isReadOnly() ? t("codeEditor.unlock", "Unlock editing") : t("codeEditor.lock", "Lock (read-only)")}
         >
-          {isReadOnly() ? "\u{1F512}" : "\u{1F513}"}
+          {isReadOnly()
+            ? <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a3 3 0 0 0-3 3v3H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-1V4a3 3 0 0 0-3-3zm1.5 6H6.5V4a1.5 1.5 0 0 1 3 0v3z"/></svg>
+            : <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a3 3 0 0 1 3 3v1h.5a1.5 1.5 0 0 1 1.5 1.5V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6.5A1.5 1.5 0 0 1 4.5 5H5V4a3 3 0 0 1 3-3zm1.5 4V4a1.5 1.5 0 0 0-3 0v1h3z"/></svg>
+          }
         </button>
         <Show when={isDirty() && !isReadOnly()}>
-          <button class={e.btnSave} onClick={handleSave}>
-            {t("codeEditor.save", "Save")}
+          <button class={e.btn} onClick={handleSave} title={`${t("codeEditor.save", "Save")} (${"\u2318"}S)`}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M13.354 1.146a.5.5 0 0 1 .146.354v12a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 2.5 13.5v-11A1.5 1.5 0 0 1 4 1h8.5a.5.5 0 0 1 .354.146L13.354 1.146zM4 2.5a.5.5 0 0 0-.5.5v10.5a.5.5 0 0 0 .5.5h1V10a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4h1a.5.5 0 0 0 .5-.5V2.207L11.793 2H11v2.5A1.5 1.5 0 0 1 9.5 6h-3A1.5 1.5 0 0 1 5 4.5V2H4zm2 0v2.5a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5V2H6zm0 8v4h4v-4H6z"/></svg>
           </button>
         </Show>
       </div>

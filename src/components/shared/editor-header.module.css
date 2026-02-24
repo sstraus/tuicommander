@@ -41,11 +41,6 @@
   color: var(--fg-primary);
 }
 
-.btnSave {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.btnSave:hover {
-  background: rgba(122, 162, 247, 0.15);
+.btn svg {
+  display: block;
 }
