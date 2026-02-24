@@ -314,6 +314,25 @@ function createPluginRegistry() {
         statusBarTicker.removeMessage(id, pluginId);
       },
 
+      setTicker(options) {
+        requireCapability(pluginId, capabilities, "ui:ticker");
+        statusBarTicker.addMessage({
+          id: options.id,
+          pluginId,
+          text: options.text,
+          label: options.label,
+          icon: options.icon,
+          priority: options.priority ?? 0,
+          ttlMs: options.ttlMs ?? 60_000,
+          onClick: options.onClick,
+        });
+      },
+
+      clearTicker(id: string) {
+        requireCapability(pluginId, capabilities, "ui:ticker");
+        statusBarTicker.removeMessage(id, pluginId);
+      },
+
       // -- Tier 3d: Panel UI --
 
       openPanel(options: OpenPanelOptions): PanelHandle {

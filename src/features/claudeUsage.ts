@@ -54,7 +54,7 @@ export function buildTickerText(api: UsageApiResponse): string {
   if (api.seven_day) {
     parts.push(`7d: ${Math.round(api.seven_day.utilization)}%`);
   }
-  return parts.length > 0 ? `Claude: ${parts.join(" · ")}` : "Claude Usage";
+  return parts.length > 0 ? parts.join(" · ") : "no data";
 }
 
 /** Determine ticker priority from usage levels.
@@ -88,6 +88,7 @@ async function poll(): Promise<void> {
     statusBarTicker.addMessage({
       id: TICKER_ID,
       pluginId: FEATURE_ID,
+      label: "Usage",
       text: buildTickerText(api),
       icon: CHART_SVG,
       priority: getTickerPriority(api),
@@ -102,15 +103,16 @@ async function poll(): Promise<void> {
     const isAuthError = errStr.includes("401") || errStr.includes("403");
     const isParseError = errStr.includes("Failed to parse");
     const text = isTokenMissing
-      ? "Claude: no token"
+      ? "no token"
       : isAuthError
-        ? "Claude: token expired"
+        ? "token expired"
         : isParseError
-          ? "Claude: API changed"
-          : "Claude: offline";
+          ? "API changed"
+          : "offline";
     statusBarTicker.addMessage({
       id: TICKER_ID,
       pluginId: FEATURE_ID,
+      label: "Usage",
       text,
       icon: CHART_SVG,
       priority: 5,
