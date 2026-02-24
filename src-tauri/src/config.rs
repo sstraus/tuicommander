@@ -825,6 +825,10 @@ mod tests {
         let cfg = UIPrefsConfig {
             sidebar_visible: false,
             sidebar_width: 300,
+            diff_panel_visible: true,
+            markdown_panel_visible: false,
+            notes_panel_visible: false,
+            file_browser_panel_visible: true,
             diff_panel_width: 500,
             markdown_panel_width: 450,
             notes_panel_width: 320,
