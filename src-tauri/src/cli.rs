@@ -31,6 +31,7 @@ fn extra_bin_dirs() -> &'static [String] {
         #[cfg(target_os = "linux")]
         {
             dirs.extend([
+                "/usr/bin".to_string(),
                 "/usr/local/bin".to_string(),
                 format!("{home}/.local/bin"),
                 "/snap/bin".to_string(),

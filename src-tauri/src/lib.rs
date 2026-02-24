@@ -644,6 +644,7 @@ pub fn run() {
             pty::resize_pty,
             pty::pause_pty,
             pty::resume_pty,
+            pty::get_kitty_flags,
             pty::close_pty,
             worktree::get_worktrees_dir,
             git::get_repo_info,

@@ -365,6 +365,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
       unlistenKitty = await listen<number>(`kitty-keyboard-${targetSessionId}`, (event) => {
         kittyFlags = event.payload;
       });
+
+      // Sync initial kitty flags — the push event may have fired before listener attached
+      try {
+        const flags = await invoke<number>("get_kitty_flags", { sessionId: targetSessionId });
+        if (flags > 0) {
+          kittyFlags = flags;
+        }
+      } catch {
+        // Ignore — session may not exist yet (fresh create)
+      }
     }
   };
 
@@ -469,6 +479,26 @@ export const Terminal: Component<TerminalProps> = (props) => {
         event.preventDefault();
         setSearchVisible(false);
         return false;
+      }
+
+      // Shift+Enter → ESC CR (\x1b\r): standard multi-line newline for CLI apps
+      // (e.g. Claude Code, Ink). Native terminals like ghostty/kitty/WezTerm send
+      // this sequence natively; we replicate the behavior for our embedded terminal.
+      // NOTE: this intentionally runs BEFORE the kitty keyboard block below.
+      // CC expects \x1b\r from the terminal, not kitty CSI u (\x1b[13;2u).
+      // Block ALL event types (keydown + keypress + keyup) — xterm fires keypress
+      // for Enter which would send a bare \r and override our \x1b\r.
+      if (event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (event.type === "keydown") {
+          terminal!.input("\x1b\r", true);
+        }
+        return false;
+      }
+
+      // Shift+Tab: prevent browser focus navigation while letting xterm send CSI Z
+      if (event.key === "Tab" && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        return true;
       }
 
       // Kitty keyboard protocol: encode special keys when flag 1 (disambiguate) is active

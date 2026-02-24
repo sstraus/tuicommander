@@ -43,11 +43,18 @@ pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
         // Signal kitty keyboard protocol support so apps (e.g. Claude Code / Ink)
         // detect it via heuristic precheck and proceed to query confirmation.
         cmd.env("KITTY_WINDOW_ID", "1");
-        // Announce as kitty so Claude Code's terminal detection allow-list
-        // enables kitty keyboard protocol. CC checks TERM_PROGRAM before
-        // KITTY_WINDOW_ID, so a custom name would shadow the fallback.
+        // Announce as ghostty so Claude Code's terminal detection allow-list
+        // enables kitty keyboard protocol. CC ≥v2.1.52 only recognizes
+        // WezTerm, ghostty, and iTerm.app — "kitty" was removed from the list.
+        // ghostty is chosen because it has no iTerm/WezTerm-specific side effects.
         // On macOS this also prevents /etc/zshrc sourcing zshrc_Apple_Terminal.
-        cmd.env("TERM_PROGRAM", "kitty");
+        cmd.env("TERM_PROGRAM", "ghostty");
+        // CC also checks TERM_PROGRAM_VERSION — missing or matching /^[0-2]\./
+        // causes rejection.  Use a value that passes the gate.
+        cmd.env("TERM_PROGRAM_VERSION", "3.0.0");
+        // Prevent nested-session detection when TUI Commander itself runs
+        // inside a Claude Code session (CLAUDECODE env var would propagate).
+        cmd.env_remove("CLAUDECODE");
         if let Ok(lang) = std::env::var("LANG") {
             cmd.env("LANG", lang);
         } else {
@@ -668,6 +675,20 @@ pub(crate) fn resume_pty(state: State<'_, Arc<AppState>>, session_id: String) ->
         .ok_or_else(|| format!("Session not found: {session_id}"))?;
     entry.lock().paused.store(false, Ordering::Relaxed);
     Ok(())
+}
+
+/// Query current kitty keyboard protocol flags for a session.
+/// Returns 0 if the session has no kitty state (protocol not activated).
+#[tauri::command]
+pub(crate) fn get_kitty_flags(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> u32 {
+    state
+        .kitty_states
+        .get(&session_id)
+        .map(|entry| entry.lock().current_flags())
+        .unwrap_or(0)
 }
 
 /// Close a PTY session with graceful shutdown and optional worktree cleanup.

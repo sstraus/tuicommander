@@ -114,13 +114,20 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       repositoriesStore.removeTerminalFromBranch(activeRepo.path, activeRepo.activeBranch, id);
     }
 
+    const wasActive = terminalsStore.state.activeId === id;
     terminalsStore.remove(id);
 
-    if (survivorId) {
-      terminalsStore.setActive(survivorId);
-    } else if (activeRepo && activeRepo.activeBranch) {
-      const branchTerminals = activeRepo.branches[activeRepo.activeBranch]?.terminals || [];
-      terminalsStore.setActive(branchTerminals.length > 0 ? branchTerminals[branchTerminals.length - 1] : null);
+    // Focus the next tab when closing the active one — handleTerminalSelect
+    // sets activeId AND calls ref.focus() (terminalsStore.remove only sets activeId).
+    if (wasActive) {
+      const nextId = survivorId
+        ?? (activeRepo?.activeBranch
+          ? ((t) => t.length > 0 ? t[t.length - 1] : null)(activeRepo.branches[activeRepo.activeBranch]?.terminals ?? [])
+          : null)
+        ?? terminalsStore.state.activeId; // fallback: store's own pick
+      if (nextId) {
+        requestAnimationFrame(() => handleTerminalSelect(nextId));
+      }
     }
   };
 
