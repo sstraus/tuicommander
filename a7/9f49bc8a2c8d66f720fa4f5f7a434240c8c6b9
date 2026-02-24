@@ -1,0 +1,25 @@
+Makefile
+  2cfc0e82fdab6b3c 129,149,154,157,159-166
+CHANGELOG.md
+  2cfc0e82fdab6b3c 12-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "a79f49bc8a2c8d66f720fa4f5f7a434240c8c6b9",
+  "prompts": {
+    "2cfc0e82fdab6b3c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b96ef939-5ad1-4fd4-9636-0e441d573bda",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 0,
+      "accepted_lines": 20,
+      "overriden_lines": 0
+    }
+  }
+}
