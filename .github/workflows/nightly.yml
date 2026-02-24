@@ -21,6 +21,15 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Move tip tag to current commit
+        run: |
+          git tag -f tip
+          git push origin tip --force
+
       - name: Delete old nightly assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
