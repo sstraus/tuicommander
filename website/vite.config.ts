@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  base: "/tuicommander/",
+  base: "/",
   build: {
     outDir: "dist",
   },
