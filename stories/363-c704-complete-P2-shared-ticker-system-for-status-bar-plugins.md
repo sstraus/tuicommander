@@ -1,10 +1,10 @@
 ---
-id: "363-c704"
-title: "Shared ticker system for status bar plugins"
-status: pending
+id: 363-c704
+title: Shared ticker system for status bar plugins
+status: complete
 priority: P2
-created: 2026-02-24T17:44:07.393Z
-updated: 2026-02-24T17:44:07.393Z
+created: "2026-02-24T17:44:07.393Z"
+updated: "2026-02-24T18:04:22.054Z"
 dependencies: []
 ---
 
@@ -39,4 +39,6 @@ The status bar ticker slot is a single area currently owned by one plugin at a t
 - docs/plugins.md
 
 ## Work Log
+
+### 2026-02-24T18:03:47.014Z - Implemented: store extension (label, getRotationState, advanceManually, priority tiers), TickerArea component (counter badge, click-to-cycle, right-click popover), StatusBar integration, setTicker/clearTicker plugin API, Claude Usage migration, documentation updates. All checks pass.
 
