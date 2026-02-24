@@ -1,4 +1,5 @@
-import { createTabManager, type BaseTab } from "./tabManager";
+import { createTabManager, makeBranchKey, type BaseTab } from "./tabManager";
+import { repositoriesStore } from "./repositories";
 
 export type DiffStatus = "M" | "A" | "D" | "R";
 
@@ -11,6 +12,15 @@ export interface DiffTabData extends BaseTab {
   scope?: string; // "working" (default) or "committed" (HEAD~1)
 }
 
+/** Get the branch key for the currently active repo+branch */
+function currentBranchKey(): string | undefined {
+  const repoPath = repositoriesStore.state.activeRepoPath;
+  if (!repoPath) return undefined;
+  const repo = repositoriesStore.state.repositories[repoPath];
+  if (!repo?.activeBranch) return undefined;
+  return makeBranchKey(repoPath, repo.activeBranch);
+}
+
 function createDiffTabsStore() {
   const base = createTabManager<DiffTabData>();
 
@@ -21,8 +31,10 @@ function createDiffTabsStore() {
     clearAll: base.clearAll,
     get: base.get,
     getIds: base.getIds,
+    getVisibleIds: base.getVisibleIds,
     getActive: base.getActive,
     getCount: base.getCount,
+    setPinned: base.setPinned,
 
     /** Add a new diff tab (or return existing if same file+scope already open) */
     add(repoPath: string, filePath: string, status: DiffStatus, scope?: string): string {
@@ -36,7 +48,7 @@ function createDiffTabsStore() {
 
       const id = base._nextId("diff");
       const fileName = filePath.split("/").pop() || filePath;
-      return base._addTab({ id, repoPath, filePath, fileName, status, scope });
+      return base._addTab({ id, repoPath, filePath, fileName, status, scope, branchKey: currentBranchKey() });
     },
 
     /** Clear all diff tabs for a repository */

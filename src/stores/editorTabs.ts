@@ -1,4 +1,5 @@
-import { createTabManager, type BaseTab } from "./tabManager";
+import { createTabManager, makeBranchKey, type BaseTab } from "./tabManager";
+import { repositoriesStore } from "./repositories";
 
 /** Editor tab data */
 export interface EditorTabData extends BaseTab {
@@ -6,6 +7,15 @@ export interface EditorTabData extends BaseTab {
   filePath: string;
   fileName: string; // Display name (basename of filePath)
   isDirty: boolean;
+}
+
+/** Get the branch key for the currently active repo+branch */
+function currentBranchKey(): string | undefined {
+  const repoPath = repositoriesStore.state.activeRepoPath;
+  if (!repoPath) return undefined;
+  const repo = repositoriesStore.state.repositories[repoPath];
+  if (!repo?.activeBranch) return undefined;
+  return makeBranchKey(repoPath, repo.activeBranch);
 }
 
 function createEditorTabsStore() {
@@ -18,8 +28,10 @@ function createEditorTabsStore() {
     clearAll: base.clearAll,
     get: base.get,
     getIds: base.getIds,
+    getVisibleIds: base.getVisibleIds,
     getActive: base.getActive,
     getCount: base.getCount,
+    setPinned: base.setPinned,
 
     /** Add a new editor tab (or activate existing if same file already open) */
     add(repoPath: string, filePath: string): string {
@@ -33,7 +45,7 @@ function createEditorTabsStore() {
 
       const id = base._nextId("edit");
       const fileName = filePath.split("/").pop() || filePath;
-      return base._addTab({ id, repoPath, filePath, fileName, isDirty: false });
+      return base._addTab({ id, repoPath, filePath, fileName, isDirty: false, branchKey: currentBranchKey() });
     },
 
     /** Mark a tab as dirty or clean */

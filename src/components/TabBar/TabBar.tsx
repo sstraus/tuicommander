@@ -5,6 +5,7 @@ import { diffTabsStore } from "../../stores/diffTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { settingsStore } from "../../stores/settings";
+import { makeBranchKey } from "../../stores/tabManager";
 import { getModifierSymbol } from "../../platform";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { t } from "../../i18n";
@@ -68,9 +69,13 @@ export const TabBar: Component<TabBarProps> = (props) => {
     if (!id) return [];
 
     if (id.startsWith("diff-")) {
-      const ids = diffTabsStore.getIds();
+      const tab = diffTabsStore.get(id);
+      const ids = visibleDiffIds();
       const idx = ids.indexOf(id);
+      const isPinned = tab?.pinned ?? false;
       return [
+        { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => diffTabsStore.setPinned(id, !isPinned) },
+        { label: "", separator: true, action: () => {} },
         { label: t("tabBar.closeTab", "Close Tab"), action: () => { diffTabsStore.remove(id); props.onTabClose(id); } },
         { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
         { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
@@ -78,9 +83,13 @@ export const TabBar: Component<TabBarProps> = (props) => {
     }
 
     if (id.startsWith("md-")) {
-      const ids = mdTabsStore.getIds();
+      const tab = mdTabsStore.get(id);
+      const ids = visibleMdIds();
       const idx = ids.indexOf(id);
+      const isPinned = tab?.pinned ?? false;
       return [
+        { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => mdTabsStore.setPinned(id, !isPinned) },
+        { label: "", separator: true, action: () => {} },
         { label: t("tabBar.closeTab", "Close Tab"), action: () => { mdTabsStore.remove(id); props.onTabClose(id); } },
         { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
         { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
@@ -88,9 +97,13 @@ export const TabBar: Component<TabBarProps> = (props) => {
     }
 
     if (id.startsWith("edit-")) {
-      const ids = editorTabsStore.getIds();
+      const tab = editorTabsStore.get(id);
+      const ids = visibleEditIds();
       const idx = ids.indexOf(id);
+      const isPinned = tab?.pinned ?? false;
       return [
+        { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => editorTabsStore.setPinned(id, !isPinned) },
+        { label: "", separator: true, action: () => {} },
         { label: t("tabBar.closeTab", "Close Tab"), action: () => { editorTabsStore.remove(id); props.onTabClose(id); } },
         { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
         { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
@@ -127,6 +140,35 @@ export const TabBar: Component<TabBarProps> = (props) => {
     const branch = repo.branches[repo.activeBranch];
     return branch?.terminals || [];
   };
+
+  // Branch key for filtering non-terminal tabs
+  const activeBranchKey = () => {
+    const repoPath = repositoriesStore.state.activeRepoPath;
+    if (!repoPath) return null;
+    const repo = repositoriesStore.state.repositories[repoPath];
+    if (!repo?.activeBranch) return null;
+    return makeBranchKey(repoPath, repo.activeBranch);
+  };
+
+  const visibleDiffIds = () => diffTabsStore.getVisibleIds(activeBranchKey());
+  const visibleMdIds = () => mdTabsStore.getVisibleIds(activeBranchKey());
+  const visibleEditIds = () => editorTabsStore.getVisibleIds(activeBranchKey());
+
+  // Deactivate non-terminal tabs that become invisible after branch switch
+  createEffect(() => {
+    const diffActive = diffTabsStore.state.activeId;
+    if (diffActive && !visibleDiffIds().includes(diffActive)) {
+      diffTabsStore.setActive(null);
+    }
+    const mdActive = mdTabsStore.state.activeId;
+    if (mdActive && !visibleMdIds().includes(mdActive)) {
+      mdTabsStore.setActive(null);
+    }
+    const editActive = editorTabsStore.state.activeId;
+    if (editActive && !visibleEditIds().includes(editActive)) {
+      editorTabsStore.setActive(null);
+    }
+  });
 
   const handleDragStart = (e: DragEvent, id: string) => {
     if (!e.dataTransfer) return;
@@ -327,7 +369,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
       </For>
 
       {/* Diff tabs */}
-      <For each={diffTabsStore.getIds()}>
+      <For each={visibleDiffIds()}>
         {(id) => {
           const diffTab = () => diffTabsStore.get(id);
           const isActive = () => diffTabsStore.state.activeId === id;
@@ -349,6 +391,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                     <path fill-rule="evenodd" d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM8 6a.5.5 0 01.5.5v1h1a.5.5 0 010 1h-1v1a.5.5 0 01-1 0v-1h-1a.5.5 0 010-1h1v-1A.5.5 0 018 6zm-3 5a.5.5 0 000 1h5a.5.5 0 000-1H5z"/>
                   </svg>
                 </span>
+                <Show when={diffTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.854a.5.5 0 1 1 .708-.708l4 4a.5.5 0 0 1-.708.708L7.5 4.208V6.5a.5.5 0 0 1-.146.354L5 9.207l1.146 1.147a.5.5 0 0 1-.353.853H2.5a.5.5 0 0 1-.354-.853L3.293 9.207 1 6.914a.5.5 0 0 1 0-.707L4.146.854z" transform="rotate(45 8 8)"/></svg></span></Show>
                 <span class={s.tabName}>{diffTab()?.fileName}{diffTab()?.scope ? ` (${diffTab()?.scope?.slice(0, 7)})` : ""}</span>
                 <button
                   class={s.tabClose}
@@ -368,7 +411,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
       </For>
 
       {/* Markdown tabs */}
-      <For each={mdTabsStore.getIds()}>
+      <For each={visibleMdIds()}>
         {(id) => {
           const mdTab = () => mdTabsStore.get(id);
           const isActive = () => mdTabsStore.state.activeId === id;
@@ -390,6 +433,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                     <path fill-rule="evenodd" d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM4.5 7.5h7a.5.5 0 010 1h-7a.5.5 0 010-1zm0 2.5h7a.5.5 0 010 1h-7a.5.5 0 010-1zm0 2.5h4a.5.5 0 010 1h-4a.5.5 0 010-1z"/>
                   </svg>
                 </span>
+                <Show when={mdTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.854a.5.5 0 1 1 .708-.708l4 4a.5.5 0 0 1-.708.708L7.5 4.208V6.5a.5.5 0 0 1-.146.354L5 9.207l1.146 1.147a.5.5 0 0 1-.353.853H2.5a.5.5 0 0 1-.354-.853L3.293 9.207 1 6.914a.5.5 0 0 1 0-.707L4.146.854z" transform="rotate(45 8 8)"/></svg></span></Show>
                 <span class={s.tabName}>{(() => { const tab = mdTab(); return tab?.type === "file" ? tab.fileName : tab?.title; })()}</span>
                 <button
                   class={s.tabClose}
@@ -409,7 +453,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
       </For>
 
       {/* Editor tabs */}
-      <For each={editorTabsStore.getIds()}>
+      <For each={visibleEditIds()}>
         {(id) => {
           const editTab = () => editorTabsStore.get(id);
           const isActive = () => editorTabsStore.state.activeId === id;
@@ -432,6 +476,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                     : <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M11.13 1.47a1.5 1.5 0 012.12 0l1.28 1.28a1.5 1.5 0 010 2.12L5.9 13.5a1 1 0 01-.5.27l-3.5.87a.5.5 0 01-.6-.6l.87-3.5a1 1 0 01.27-.5L11.13 1.47zm1.07 1.06L3.74 11l-.58 2.34 2.34-.58 8.47-8.46-1.77-1.77z"/></svg>
                   }
                 </span>
+                <Show when={editTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.854a.5.5 0 1 1 .708-.708l4 4a.5.5 0 0 1-.708.708L7.5 4.208V6.5a.5.5 0 0 1-.146.354L5 9.207l1.146 1.147a.5.5 0 0 1-.353.853H2.5a.5.5 0 0 1-.354-.853L3.293 9.207 1 6.914a.5.5 0 0 1 0-.707L4.146.854z" transform="rotate(45 8 8)"/></svg></span></Show>
                 <span class={s.tabName}>{editTab()?.fileName}</span>
                 <button
                   class={s.tabClose}

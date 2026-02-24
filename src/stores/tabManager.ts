@@ -5,6 +5,15 @@ import { createStore, produce, type SetStoreFunction } from "solid-js/store";
  */
 export interface BaseTab {
   id: string;
+  /** When true, tab is visible across all branches */
+  pinned?: boolean;
+  /** Scope key: "repoPath|branchName" — tab only visible in this branch unless pinned */
+  branchKey?: string;
+}
+
+/** Build a branch scope key for tab filtering */
+export function makeBranchKey(repoPath: string, branchName: string): string {
+  return `${repoPath}|${branchName}`;
 }
 
 /**
@@ -81,6 +90,25 @@ export function createTabManager<T extends BaseTab>() {
 
     getCount(): number {
       return Object.keys(state.tabs).length;
+    },
+
+    /** Toggle pinned state for a tab */
+    setPinned(id: string, pinned: boolean): void {
+      if (state.tabs[id]) {
+        setState("tabs", produce((tabs: Record<string, T>) => {
+          if (tabs[id]) tabs[id].pinned = pinned;
+        }));
+      }
+    },
+
+    /** Get tab IDs visible for the given branch key (pinned + matching branch + unscoped) */
+    getVisibleIds(currentBranchKey: string | null): string[] {
+      return Object.keys(state.tabs).filter((id) => {
+        const tab = state.tabs[id];
+        if (tab.pinned) return true;
+        if (!tab.branchKey) return true; // unscoped tabs (backward compat / global)
+        return tab.branchKey === currentBranchKey;
+      });
     },
 
     /** Clear tabs matching a predicate */

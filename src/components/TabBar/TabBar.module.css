@@ -119,6 +119,15 @@
   color: var(--fg-primary);
 }
 
+/* Pin icon for pinned tabs */
+.pinIcon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-muted);
+  margin-right: 2px;
+  opacity: 0.7;
+}
+
 /* Tab activity/idle indicators */
 .tab.hasActivity .tabIcon {
   color: var(--accent);

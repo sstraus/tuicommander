@@ -1,4 +1,5 @@
-import { createTabManager, type BaseTab } from "./tabManager";
+import { createTabManager, makeBranchKey, type BaseTab } from "./tabManager";
+import { repositoriesStore } from "./repositories";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,6 +45,15 @@ export type MdTabData = FileTab | VirtualTab | PluginPanelTab | ClaudeUsageTab;
 // Store
 // ---------------------------------------------------------------------------
 
+/** Get the branch key for the currently active repo+branch */
+function currentBranchKey(): string | undefined {
+  const repoPath = repositoriesStore.state.activeRepoPath;
+  if (!repoPath) return undefined;
+  const repo = repositoriesStore.state.repositories[repoPath];
+  if (!repo?.activeBranch) return undefined;
+  return makeBranchKey(repoPath, repo.activeBranch);
+}
+
 function createMdTabsStore() {
   const base = createTabManager<MdTabData>();
 
@@ -54,8 +64,10 @@ function createMdTabsStore() {
     clearAll: base.clearAll,
     get: base.get,
     getIds: base.getIds,
+    getVisibleIds: base.getVisibleIds,
     getActive: base.getActive,
     getCount: base.getCount,
+    setPinned: base.setPinned,
 
     /** Add a file-based markdown tab (or return existing if same file already open) */
     add(repoPath: string, filePath: string): string {
@@ -69,7 +81,7 @@ function createMdTabsStore() {
 
       const id = base._nextId("md");
       const fileName = filePath.split("/").pop() || filePath;
-      return base._addTab({ type: "file", id, repoPath, filePath, fileName } as FileTab);
+      return base._addTab({ type: "file", id, repoPath, filePath, fileName, branchKey: currentBranchKey() } as FileTab);
     },
 
     /** Add a virtual markdown tab (or return existing if same contentUri already open) */
@@ -83,7 +95,7 @@ function createMdTabsStore() {
       }
 
       const id = base._nextId("md");
-      return base._addTab({ type: "virtual", id, title, contentUri } as VirtualTab);
+      return base._addTab({ type: "virtual", id, title, contentUri, pinned: true } as VirtualTab);
     },
 
     /**
@@ -100,7 +112,7 @@ function createMdTabsStore() {
       }
 
       const id = base._nextId("md");
-      return base._addTab({ type: "plugin-panel", id, title, pluginId, html } as PluginPanelTab);
+      return base._addTab({ type: "plugin-panel", id, title, pluginId, html, pinned: true } as PluginPanelTab);
     },
 
     /** Update the HTML content of an existing plugin panel tab */
@@ -122,7 +134,7 @@ function createMdTabsStore() {
       }
 
       const id = base._nextId("md");
-      return base._addTab({ type: "claude-usage", id, title: "Claude Usage" } as ClaudeUsageTab);
+      return base._addTab({ type: "claude-usage", id, title: "Claude Usage", pinned: true } as ClaudeUsageTab);
     },
 
     /** Clear all file-based markdown tabs for a repository (virtual tabs are unaffected) */
