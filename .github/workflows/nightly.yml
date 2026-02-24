@@ -16,7 +16,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cleanup:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old nightly assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete all existing assets from the tip release so only the
+          # current build's artifacts remain after the build matrix completes.
+          gh release view tip --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null | while read -r name; do
+            echo "Deleting $name"
+            gh release delete-asset tip "$name" --repo "$GITHUB_REPOSITORY" --yes
+          done
+
   build:
+    needs: cleanup
     permissions:
       contents: write
     strategy:
