@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://sstraus.github.io/tuicommander/sitemap.xml
