@@ -1,0 +1,33 @@
+src/components/Terminal/Terminal.tsx
+  f53e6f15d2574b14 369-374
+src/hooks/useTerminalLifecycle.ts
+  f53e6f15d2574b14 123-125,127,130-137
+src/transport.ts
+  f53e6f15d2574b14 94-95
+src-tauri/src/mcp_http/mod.rs
+  f53e6f15d2574b14 122
+src/hooks/usePty.ts
+  f53e6f15d2574b14 84-88,127
+src-tauri/src/mcp_http/session.rs
+  f53e6f15d2574b14 321-332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "1dcec4ebf74d4e506c678f9c7bff59e0fcf81e47",
+  "prompts": {
+    "f53e6f15d2574b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6fd11954-bcf6-4cca-9b4c-080de1fc0a6f",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 40,
+      "total_deletions": 13,
+      "accepted_lines": 234,
+      "overriden_lines": 0
+    }
+  }
+}
