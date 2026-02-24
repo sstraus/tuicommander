@@ -237,22 +237,16 @@ const AgentRow: Component<{
               when={props.detection?.available}
               fallback={<span class={a.badge} data-type="notfound">Not found</span>}
             >
-              <span class={a.badge} data-type="available">Available</span>
+              <Show
+                when={isEnabled()}
+                fallback={<span class={a.badge} data-type="disabled">Disabled</span>}
+              >
+                <span class={a.badge} data-type="available">Available</span>
+              </Show>
             </Show>
             <Show when={mcpStatus()?.installed}>
               <span class={a.badge} data-type="mcp">MCP</span>
             </Show>
-            <label
-              class={a.toggleRow}
-              style={{ "margin-left": "auto" }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <input
-                type="checkbox"
-                checked={isEnabled()}
-                onChange={() => settingsStore.toggleAgent(props.agentType)}
-              />
-            </label>
           </div>
         </div>
         <span class={a.expandIcon} classList={{ [a.expanded]: expanded() }}>&#9654;</span>
@@ -260,6 +254,18 @@ const AgentRow: Component<{
 
       <Show when={expanded()}>
         <div class={a.agentExpanded}>
+          {/* Enable/Disable toggle */}
+          <div class={a.expandedSection}>
+            <label class={a.toggleRow} onClick={(e) => e.stopPropagation()}>
+              <input
+                type="checkbox"
+                checked={isEnabled()}
+                onChange={() => settingsStore.toggleAgent(props.agentType)}
+              />
+              <span>Enabled</span>
+            </label>
+          </div>
+
           {/* Run Configurations */}
           <div class={a.expandedSection}>
             <div class={a.expandedLabel}>Run Configurations</div>

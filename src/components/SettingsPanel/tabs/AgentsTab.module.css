@@ -85,6 +85,11 @@
   color: var(--fg-muted);
 }
 
+.badge[data-type="disabled"] {
+  background: rgba(248, 81, 73, 0.1);
+  color: var(--fg-muted);
+}
+
 .badge[data-type="mcp"] {
   background: rgba(88, 166, 255, 0.15);
   color: var(--accent);
