@@ -119,6 +119,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/sessions/{id}/output", get(session::get_output))
         .route("/sessions/{id}/pause", post(session::pause_session))
         .route("/sessions/{id}/resume", post(session::resume_session))
+        .route("/sessions/{id}/kitty-flags", get(session::get_kitty_flags))
         .route("/sessions/{id}/foreground", get(session::get_foreground_process))
         .route("/sessions/{id}", delete(session::close_session))
         // WebSocket streaming

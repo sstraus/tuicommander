@@ -120,13 +120,21 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     // Focus the next tab when closing the active one — handleTerminalSelect
     // sets activeId AND calls ref.focus() (terminalsStore.remove only sets activeId).
     if (wasActive) {
+      const branchTerminals = activeRepo?.activeBranch
+        ? (activeRepo.branches[activeRepo.activeBranch]?.terminals ?? [])
+        : [];
       const nextId = survivorId
-        ?? (activeRepo?.activeBranch
-          ? ((t) => t.length > 0 ? t[t.length - 1] : null)(activeRepo.branches[activeRepo.activeBranch]?.terminals ?? [])
-          : null)
+        ?? (branchTerminals.length > 0 ? branchTerminals[branchTerminals.length - 1] : null)
         ?? terminalsStore.state.activeId; // fallback: store's own pick
       if (nextId) {
-        requestAnimationFrame(() => handleTerminalSelect(nextId));
+        // Defer one frame: SolidJS renders the next terminal on remove(),
+        // but ref.focus() inside handleTerminalSelect needs the DOM node present.
+        // Guard: the target may have been closed by a concurrent close-all loop.
+        requestAnimationFrame(() => {
+          if (terminalsStore.get(nextId) || nextId.startsWith("diff-") || nextId.startsWith("md-") || nextId.startsWith("edit-")) {
+            handleTerminalSelect(nextId);
+          }
+        });
       }
     }
   };

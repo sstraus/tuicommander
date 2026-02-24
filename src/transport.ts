@@ -91,6 +91,8 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
       return { method: "POST", path: `/sessions/${args.sessionId}/pause` };
     case "resume_pty":
       return { method: "POST", path: `/sessions/${args.sessionId}/resume` };
+    case "get_kitty_flags":
+      return { method: "GET", path: `/sessions/${args.sessionId}/kitty-flags` };
     case "close_pty":
       return { method: "DELETE", path: `/sessions/${args.sessionId}` };
     case "get_session_foreground_process":

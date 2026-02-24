@@ -318,6 +318,18 @@ pub(super) async fn resume_session(
     (StatusCode::OK, Json(serde_json::json!({"ok": true})))
 }
 
+pub(super) async fn get_kitty_flags(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> impl IntoResponse {
+    let flags = state
+        .kitty_states
+        .get(&session_id)
+        .map(|entry| entry.lock().current_flags())
+        .unwrap_or(0);
+    (StatusCode::OK, Json(serde_json::json!(flags)))
+}
+
 pub(super) async fn get_foreground_process(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,

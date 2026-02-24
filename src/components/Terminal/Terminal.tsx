@@ -366,14 +366,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
         kittyFlags = event.payload;
       });
 
-      // Sync initial kitty flags — the push event may have fired before listener attached
-      try {
-        const flags = await invoke<number>("get_kitty_flags", { sessionId: targetSessionId });
-        if (flags > 0) {
-          kittyFlags = flags;
-        }
-      } catch {
-        // Ignore — session may not exist yet (fresh create)
+      // Sync initial kitty flags — the push event may have fired before listener attached.
+      // Only apply if the listener hasn't already updated kittyFlags (race guard).
+      const preListenFlags = kittyFlags;
+      const flags = await pty.getKittyFlags(targetSessionId);
+      if (flags > 0 && kittyFlags === preListenFlags) {
+        kittyFlags = flags;
       }
     }
   };
