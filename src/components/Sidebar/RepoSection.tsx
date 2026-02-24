@@ -36,7 +36,7 @@ const PR_BADGE_CLASSES: Record<string, string> = {
 export const BranchIcon: Component<{ isMain: boolean; isShell?: boolean; hasQuestion?: boolean }> = (props) => (
   <span class={cx(s.branchIcon, BRANCH_ICON_CLASSES[props.hasQuestion ? "question" : props.isShell ? "feature" : props.isMain ? "main" : "feature"])}>
     {props.hasQuestion ? "?" : props.isShell
-      ? <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M2 3l5 4.5L2 12v1h12v-1.5H6.3L11 7.5 6.3 3.5H14V2H2v1z"/></svg>
+      ? <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1 3l5 5-5 5h2l5-5-5-5H1zm7 9h7v2H8v-2z"/></svg>
       : props.isMain
       ? <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M9.2 1.2v4.4L13 3.2a1.3 1.3 0 1 1 1.3 2.3L10.5 8l3.8 2.5a1.3 1.3 0 1 1-1.3 2.3L9.2 10.4v4.4a1.2 1.2 0 0 1-2.4 0v-4.4L3 13a1.3 1.3 0 1 1-1.3-2.3L5.5 8 1.7 5.5A1.3 1.3 0 0 1 3 3.2l3.8 2.4V1.2a1.2 1.2 0 0 1 2.4 0z"/></svg>
       : <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/></svg>}

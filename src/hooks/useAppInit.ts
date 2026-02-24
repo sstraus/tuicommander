@@ -323,6 +323,21 @@ export async function initApp(deps: AppInitDeps) {
     terminalsStore.setActive(terminalsStore.getIds()[0]);
   }
 
+  // Ensure non-git repos have a shell branch (migration for repos persisted
+  // before the shell-branch feature existed, or added via external paths).
+  for (const repoPath of repositoriesStore.getPaths()) {
+    const repo = repositoriesStore.get(repoPath);
+    if (repo && repo.isGitRepo === false && Object.keys(repo.branches).length === 0) {
+      const shellBranch = "shell";
+      repositoriesStore.setBranch(repoPath, shellBranch, {
+        worktreePath: repoPath,
+        isMain: true,
+        isShell: true,
+      });
+      repositoriesStore.setActiveBranch(repoPath, shellBranch);
+    }
+  }
+
   // Refresh git stats for persisted repos
   deps.refreshAllBranchStats();
 
