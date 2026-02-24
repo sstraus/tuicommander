@@ -333,8 +333,10 @@ fn get_local_ip(state: State<'_, Arc<AppState>>) -> Option<String> {
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct MarkdownFileEntry {
     pub path: String,
-    /// Git status: "modified", "staged", "untracked", or "" (clean/ignored).
+    /// Git status: "modified", "staged", "untracked", or "" (clean).
     pub git_status: String,
+    /// Whether the file is listed in .gitignore.
+    pub is_ignored: bool,
 }
 
 /// List all markdown files in a repository recursively, with git status (shared logic)
@@ -378,12 +380,16 @@ pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<MarkdownFileE
     // Passing "" scans whole repo but parse_git_status is fast (single git status call)
     let git_statuses = fs::parse_git_status(&path, "");
 
+    // Detect gitignored paths
+    let ignored_set = fs::get_ignored_paths(&path, &md_paths);
+
     // Build entries with status
     let mut entries: Vec<MarkdownFileEntry> = md_paths
         .into_iter()
         .map(|p| {
             let git_status = git_statuses.get(&p).cloned().unwrap_or_default();
-            MarkdownFileEntry { path: p, git_status }
+            let is_ignored = ignored_set.contains(&p);
+            MarkdownFileEntry { path: p, git_status, is_ignored }
         })
         .collect();
 
@@ -573,6 +579,34 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry, ()>::new("navigation-guard")
+                .on_navigation(|_webview, url| {
+                    // Allow internal navigation (tauri://, localhost in dev)
+                    let scheme = url.scheme();
+                    if scheme == "tauri" || scheme == "asset" || scheme == "plugin" {
+                        return true;
+                    }
+                    #[cfg(dev)]
+                    if url.host_str() == Some("localhost") {
+                        return true;
+                    }
+                    // External URL — open in system browser, block webview navigation
+                    if scheme == "http" || scheme == "https" {
+                        let url_str = url.to_string();
+                        eprintln!("[NavigationGuard] Opening in browser: {url_str}");
+                        #[cfg(target_os = "macos")]
+                        let _ = std::process::Command::new("open").arg(&url_str).spawn();
+                        #[cfg(target_os = "linux")]
+                        let _ = std::process::Command::new("xdg-open").arg(&url_str).spawn();
+                        #[cfg(target_os = "windows")]
+                        let _ = std::process::Command::new("cmd").args(["/c", "start", &url_str]).spawn();
+                        return false;
+                    }
+                    true
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(
