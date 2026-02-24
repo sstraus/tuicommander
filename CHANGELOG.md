@@ -11,6 +11,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.5.4] - 2026-02-24
+
+### Terminal
+
+- **Ghostty terminal identity** — Switch from kitty to ghostty for Claude Code's terminal detection allow-list (CC v2.1.52 compatibility)
+- **Shift+Enter multi-line input** — Sends `\x1b\r` (ESC+CR) for multi-line newlines in Claude Code and other CLI apps
+- **Shift+Tab focus fix** — Prevents browser focus navigation while letting xterm send CSI Z to PTY
+- **Kitty flags initial sync** — Race condition fix: query kitty flags on listener attach to avoid missed push events
+- **Tab close focus transfer** — Closing the active tab now properly focuses the next tab via `handleTerminalSelect` (includes `ref.focus()`)
+
+### Infrastructure
+
+- **Transport layer compliance** — `get_kitty_flags` routed through `usePty`/`transport.ts` with HTTP handler for browser mode
+- **Linux CLI resolution** — Added `/usr/bin` to `extra_bin_dirs` for minimal desktop environments
+- **Nested session guard** — `env_remove("CLAUDECODE")` prevents "cannot launch inside another CC session" error
+
+### Fixed
+
+- **Windows clippy errors** — Unused variables and collapsible ifs
+- **rAF close-all guard** — Prevent crash when concurrent tab closes race with deferred focus callback
+
+---
+
 ## [0.5.0] - Unreleased
 
 ### Plugin System
