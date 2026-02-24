@@ -8,6 +8,7 @@ import { useGitHub } from "../../hooks/useGitHub";
 import { githubStore } from "../../stores/github";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { statusBarTicker } from "../../stores/statusBarTicker";
+import { TickerArea } from "./TickerArea";
 import { formatWaitTime } from "../../rate-limit";
 import { dictationStore } from "../../stores/dictation";
 import { notesStore } from "../../stores/notes";
@@ -112,16 +113,6 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   const github = useGitHub(getRepoPath);
 
   const notesBadgeCount = () => notesStore.filteredCount(props.currentRepoPath ?? null);
-
-  // Ticker message — memoized to avoid keyed Show re-renders on every tick
-  const visibleTickerMessage = createMemo(() => {
-    const msg = statusBarTicker.getCurrentMessage();
-    if (!msg) return null;
-    // Hide claude-usage ticker when it's already shown in the agent badge
-    const activeAgent = terminalsStore.getActive()?.agentType;
-    if (activeAgent === "claude" && msg.pluginId === "claude-usage") return null;
-    return msg;
-  });
 
   // Get PR data with lifecycle rules:
   // - CLOSED: never show
@@ -257,18 +248,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
             );
           }}
         </Show>
-        <Show when={visibleTickerMessage()}>
-          <span
-            class={cx(s.tickerMessage, visibleTickerMessage()!.priority >= 80 && s.tickerWarning, visibleTickerMessage()!.onClick && s.tickerClickable)}
-            title={visibleTickerMessage()!.text}
-            onClick={() => visibleTickerMessage()!.onClick?.()}
-          >
-            <Show when={visibleTickerMessage()!.icon}>
-              <span class={s.tickerIcon} innerHTML={visibleTickerMessage()!.icon!} />
-            </Show>
-            {visibleTickerMessage()!.text}
-          </span>
-        </Show>
+        <TickerArea />
       </div>
 
       {/* GitHub PR + CI badges */}

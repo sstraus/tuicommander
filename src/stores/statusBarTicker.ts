@@ -11,6 +11,8 @@ export interface TickerMessage {
   pluginId: string;
   /** Display text (short, ~40 chars max for status bar) */
   text: string;
+  /** Human-readable source label shown before the text (e.g. "Usage") */
+  label?: string;
   /** Optional inline SVG icon */
   icon?: string;
   /** Higher = more visible. Default 0. Messages >=80 get warning styling. */
@@ -23,8 +25,18 @@ export interface TickerMessage {
   onClick?: () => void;
 }
 
+/** Rotation state exposed to the TickerArea component */
+export interface RotationState {
+  /** Currently displayed message, or null if none */
+  message: TickerMessage | null;
+  /** 1-indexed position in the rotation list (0 when no messages) */
+  current: number;
+  /** Total messages in the rotation list (0 when no messages) */
+  total: number;
+}
+
 // ---------------------------------------------------------------------------
-// Store
+// Constants
 // ---------------------------------------------------------------------------
 
 /** Rotation interval between same-priority messages */
@@ -33,11 +45,33 @@ const ROTATION_MS = 5_000;
 /** Scavenge interval for expired messages */
 const SCAVENGE_MS = 1_000;
 
+/** Pause duration after manual cycle (click-to-advance) */
+const MANUAL_PAUSE_MS = 10_000;
+
+/** Priority >= this value pins the message (no rotation) */
+export const URGENT_PRIORITY = 100;
+
+/** Priority < this value appears only in the popover, not in rotation */
+export const LOW_PRIORITY_THRESHOLD = 10;
+
+// ---------------------------------------------------------------------------
+// Store
+// ---------------------------------------------------------------------------
+
 function createStatusBarTicker() {
   const [messages, setMessages] = createSignal<TickerMessage[]>([]);
   const [rotationIndex, setRotationIndex] = createSignal(0);
   let scavengeTimer: ReturnType<typeof setInterval> | null = null;
   let rotationTimer: ReturnType<typeof setInterval> | null = null;
+  let pauseTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Filter to active (non-expired) messages */
+  function activeMessages(): TickerMessage[] {
+    const now = Date.now();
+    return messages().filter(
+      (m) => m.ttlMs === 0 || now - m.createdAt < m.ttlMs,
+    );
+  }
 
   /** Remove expired messages */
   function scavenge(): void {
@@ -72,6 +106,21 @@ function createStatusBarTicker() {
     }
   }
 
+  /** Stop rotation timer, restart after pause duration */
+  function pauseRotation(): void {
+    if (rotationTimer) {
+      clearInterval(rotationTimer);
+      rotationTimer = null;
+    }
+    if (pauseTimer) clearTimeout(pauseTimer);
+    pauseTimer = setTimeout(() => {
+      pauseTimer = null;
+      if (messages().length > 0 && !rotationTimer) {
+        rotationTimer = setInterval(rotate, ROTATION_MS);
+      }
+    }, MANUAL_PAUSE_MS);
+  }
+
   return {
     /**
      * Add or update a ticker message. If a message with the same id+pluginId
@@ -103,32 +152,64 @@ function createStatusBarTicker() {
     /**
      * Get the current message to display. Returns the highest-priority
      * non-expired message, rotating among equal-priority messages.
+     * @deprecated Use getRotationState() for richer display info.
      */
     getCurrentMessage(): TickerMessage | null {
-      const now = Date.now();
-      const active = messages().filter(
-        (m) => m.ttlMs === 0 || now - m.createdAt < m.ttlMs,
-      );
+      const active = activeMessages();
       if (active.length === 0) return null;
 
-      // Sort by priority descending
       const sorted = [...active].sort((a, b) => b.priority - a.priority);
       const maxPriority = sorted[0].priority;
-
-      // Get all messages at the highest priority level
       const topPriority = sorted.filter((m) => m.priority === maxPriority);
-
-      // Rotate among top-priority messages
       const idx = rotationIndex() % topPriority.length;
       return topPriority[idx];
     },
 
+    /**
+     * Get rotation state for the TickerArea component.
+     * Respects priority tiers: urgent pins, normal rotates, low is popover-only.
+     */
+    getRotationState(): RotationState {
+      const active = activeMessages();
+      if (active.length === 0) return { message: null, current: 0, total: 0 };
+
+      // Separate by priority tier
+      const urgent = active.filter((m) => m.priority >= URGENT_PRIORITY);
+      const normal = active.filter(
+        (m) => m.priority >= LOW_PRIORITY_THRESHOLD && m.priority < URGENT_PRIORITY,
+      );
+
+      // Urgent messages take precedence
+      const pool = urgent.length > 0 ? urgent : normal;
+      if (pool.length === 0) return { message: null, current: 0, total: 0 };
+
+      // Sort by priority descending for stable ordering
+      pool.sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt);
+
+      const idx = rotationIndex() % pool.length;
+      return {
+        message: pool[idx],
+        current: idx + 1,
+        total: pool.length,
+      };
+    },
+
+    /** Get all active (non-expired) messages sorted by priority desc (for popover) */
+    getActiveMessages(): TickerMessage[] {
+      return [...activeMessages()].sort(
+        (a, b) => b.priority - a.priority || a.createdAt - b.createdAt,
+      );
+    },
+
     /** Get all active (non-expired) messages */
     getAll(): TickerMessage[] {
-      const now = Date.now();
-      return messages().filter(
-        (m) => m.ttlMs === 0 || now - m.createdAt < m.ttlMs,
-      );
+      return activeMessages();
+    },
+
+    /** Advance to next message manually and pause auto-rotation for 10s */
+    advanceManually(): void {
+      setRotationIndex((prev) => prev + 1);
+      pauseRotation();
     },
 
     /** Clear all messages and stop timers (for testing) */
@@ -136,6 +217,10 @@ function createStatusBarTicker() {
       setMessages([]);
       setRotationIndex(0);
       stopTimers();
+      if (pauseTimer) {
+        clearTimeout(pauseTimer);
+        pauseTimer = null;
+      }
     },
 
     /** Manually trigger scavenge (for testing) */
