@@ -333,7 +333,7 @@ pub(super) async fn get_foreground_process(
         }
         #[cfg(windows)]
         {
-            let _ = session;
+            drop(session);
             None
         }
     })();

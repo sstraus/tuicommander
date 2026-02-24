@@ -183,28 +183,25 @@ fn get_local_ips_with_config(ipv6_enabled: bool) -> Vec<LocalIpEntry> {
         let mut result = Vec::new();
         use std::net::UdpSocket;
         // IPv4 route trick
-        if let Ok(sock) = UdpSocket::bind("0.0.0.0:0") {
-            if sock.connect("8.8.8.8:80").is_ok() {
-                if let Ok(addr) = sock.local_addr() {
-                    let ip = addr.ip().to_string();
-                    if !ip.starts_with("127.") {
-                        result.push(LocalIpEntry { ip, label: "Network".to_string() });
-                    }
-                }
+        if let Ok(sock) = UdpSocket::bind("0.0.0.0:0")
+            && sock.connect("8.8.8.8:80").is_ok()
+            && let Ok(addr) = sock.local_addr()
+        {
+            let ip = addr.ip().to_string();
+            if !ip.starts_with("127.") {
+                result.push(LocalIpEntry { ip, label: "Network".to_string() });
             }
         }
         // IPv6 route trick
-        if ipv6_enabled {
-            if let Ok(sock) = UdpSocket::bind("[::]:0") {
-                if sock.connect("[2001:4860:4860::8888]:80").is_ok() {
-                    if let Ok(addr) = sock.local_addr() {
-                        let ip_str = addr.ip().to_string();
-                        if !ip_str.starts_with("::1") {
-                            let label = classify_ipv6_addr(&addr.ip());
-                            result.push(LocalIpEntry { ip: ip_str, label });
-                        }
-                    }
-                }
+        if ipv6_enabled
+            && let Ok(sock) = UdpSocket::bind("[::]:0")
+            && sock.connect("[2001:4860:4860::8888]:80").is_ok()
+            && let Ok(addr) = sock.local_addr()
+        {
+            let ip_str = addr.ip().to_string();
+            if !ip_str.starts_with("::1") {
+                let label = classify_ipv6_addr(&addr.ip());
+                result.push(LocalIpEntry { ip: ip_str, label });
             }
         }
         result
@@ -264,6 +261,7 @@ fn enumerate_unix_ips(ipv6_enabled: bool) -> Vec<LocalIpEntry> {
 }
 
 /// Classify a non-loopback IPv4 address into a human-readable label.
+#[cfg(unix)]
 fn classify_ip(ip: std::net::Ipv4Addr, iface: &str, has_broadcast: bool) -> String {
     let o = ip.octets();
     // Tailscale: 100.64.0.0 – 100.127.255.255 (CGNAT / RFC 6598)

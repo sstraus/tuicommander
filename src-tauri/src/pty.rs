@@ -832,11 +832,8 @@ fn deepest_descendant_pid(root_pid: u32) -> Option<u32> {
 
         // Walk from root_pid to the deepest single child — O(depth) via HashMap
         let mut current = root_pid;
-        loop {
-            match children_map.get(&current).map(Vec::as_slice) {
-                Some([only_child]) => current = *only_child,
-                _ => break, // 0 children (leaf) or multiple children (ambiguous)
-            }
+        while let Some([only_child]) = children_map.get(&current).map(Vec::as_slice) {
+            current = *only_child;
         }
 
         Some(current)

@@ -63,17 +63,13 @@ pub(crate) fn read_from_keychain(service_name: &str) -> Result<Option<String>, S
 
 /// Linux/Windows: read from `~/.claude/.credentials.json`.
 #[cfg(not(target_os = "macos"))]
-pub(crate) fn read_from_json_file(service_name: &str) -> Result<Option<String>, String> {
+pub(crate) fn read_from_json_file(_service_name: &str) -> Result<Option<String>, String> {
     let path = credentials_json_path()?;
     match std::fs::read_to_string(&path) {
         Ok(content) => {
-            // Parse the JSON file and extract the value for the service name key
-            let parsed: serde_json::Value = serde_json::from_str(&content)
+            // Validate the JSON is parseable before returning
+            let _parsed: serde_json::Value = serde_json::from_str(&content)
                 .map_err(|e| format!("Failed to parse credentials file: {e}"))?;
-            // Convert service name to the camelCase key format used in the JSON
-            // "Claude Code-credentials" → "claudeAiOauth" is stored at the root level
-            // For general use, return the raw JSON string of the whole file
-            // The plugin will extract what it needs
             Ok(Some(content))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
