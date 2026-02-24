@@ -542,10 +542,10 @@ pub(super) async fn mcp_post(
                 "result": { "tools": tools }
             });
             let mut resp = Json(response).into_response();
-            if let Some(sid) = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok()) {
-                if let Ok(val) = sid.parse() {
-                    resp.headers_mut().insert(MCP_SESSION_HEADER, val);
-                }
+            if let Some(sid) = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok())
+                && let Ok(val) = sid.parse()
+            {
+                resp.headers_mut().insert(MCP_SESSION_HEADER, val);
             }
             resp
         }
@@ -574,10 +574,10 @@ pub(super) async fn mcp_post(
                 }
             });
             let mut resp = Json(response).into_response();
-            if let Some(sid) = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok()) {
-                if let Ok(val) = sid.parse() {
-                    resp.headers_mut().insert(MCP_SESSION_HEADER, val);
-                }
+            if let Some(sid) = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok())
+                && let Ok(val) = sid.parse()
+            {
+                resp.headers_mut().insert(MCP_SESSION_HEADER, val);
             }
             resp
         }
