@@ -147,6 +147,8 @@ export async function initApp(deps: AppInitDeps) {
   // Start HEAD and repo file watchers for all known repos (Tauri-only: no HTTP equivalent)
   if (isTauri()) {
     for (const repoPath of repositoriesStore.getPaths()) {
+      // Skip non-git directories — no .git/ to watch
+      if (repositoriesStore.get(repoPath)?.isGitRepo === false) continue;
       invoke("start_head_watcher", { repoPath }).catch((err) =>
         console.warn(`[HeadWatcher] Failed to start for ${repoPath}:`, err),
       );

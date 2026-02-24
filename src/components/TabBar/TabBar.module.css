@@ -142,7 +142,7 @@
 }
 
 .tab.awaitingQuestion .tabIcon {
-  color: var(--warning);
+  color: var(--attention);
 }
 
 .tab.awaitingError .tabIcon {

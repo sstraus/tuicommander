@@ -1,10 +1,10 @@
 ---
 id: 362-da09
 title: Branch rename on HEAD change + show all branches per repo
-status: ready
+status: complete
 priority: P2
 created: "2026-02-23T18:56:02.638Z"
-updated: "2026-02-23T18:56:05.239Z"
+updated: "2026-02-23T19:10:23.470Z"
 dependencies: []
 ---
 
@@ -49,4 +49,6 @@ When a terminal does git checkout -b new-branch, the sidebar creates a duplicate
 - plans/branch-rename-and-show-all-branches.md
 
 ## Work Log
+
+### 2026-02-23T19:10:20.934Z - Implemented: branch rename on HEAD change (renameBranch instead of creating duplicate), show all branches per repo with context menu toggle and global default setting. TDD: 14 new tests. make check green.
 

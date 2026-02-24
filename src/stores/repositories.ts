@@ -8,6 +8,7 @@ const LEGACY_STORAGE_KEY = "tui-commander-repos";
 export interface BranchState {
   name: string;
   isMain: boolean; // true for main/master/develop
+  isShell?: boolean; // true for non-git directory shell entries
   worktreePath: string | null; // Path to worktree directory (null for main branch)
   terminals: string[]; // terminal IDs belonging to this branch
   hadTerminals: boolean; // true once a terminal has been created — suppresses auto-spawn after close-all
@@ -23,6 +24,7 @@ export interface RepositoryState {
   path: string;
   displayName: string;
   initials: string;
+  isGitRepo?: boolean; // false for plain directories (defaults to true for backward compat)
   expanded: boolean; // Whether branches are expanded/collapsed
   collapsed: boolean; // Whether entire repo is collapsed to icon only
   parked: boolean;    // Whether repo is hidden from sidebar (recallable via popover)
@@ -212,11 +214,12 @@ function createRepositoriesStore() {
     },
 
     /** Add a repository */
-    add(repo: { path: string; displayName: string; initials?: string; showAllBranches?: boolean }): void {
+    add(repo: { path: string; displayName: string; initials?: string; showAllBranches?: boolean; isGitRepo?: boolean }): void {
       setState("repositories", repo.path, {
         path: repo.path,
         displayName: repo.displayName,
         initials: repo.initials ?? "",
+        isGitRepo: repo.isGitRepo ?? true,
         expanded: true,
         collapsed: false,
         parked: false,

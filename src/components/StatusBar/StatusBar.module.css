@@ -43,9 +43,8 @@
 
 .info {
   color: var(--fg-muted);
-  flex: 0 1 auto;
-  max-width: clamp(120px, 30%, 400px);
-  min-width: 0;
+  flex: 1 1 0;
+  min-width: 60px;
   overflow: hidden;
 }
 
@@ -81,8 +80,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 150px;
-  flex-shrink: 10;
+  flex: 0 10 auto;
 }
 
 .cwd:hover {
@@ -147,8 +145,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 0 1 auto;
-  max-width: 300px;
-  min-width: 80px;
+  min-width: 60px;
 }
 
 .tickerClickable {

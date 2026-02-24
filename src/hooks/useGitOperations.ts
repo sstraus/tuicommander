@@ -12,7 +12,7 @@ import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
 /** Dependencies injected into useGitOperations */
 export interface GitOperationsDeps {
   repo: {
-    getInfo: (path: string) => Promise<{ path: string; name: string; initials: string; branch: string; status: "clean" | "dirty" | "conflict" | "merge" | "not-git" | "unknown" }>;
+    getInfo: (path: string) => Promise<{ path: string; name: string; initials: string; branch: string; status: "clean" | "dirty" | "conflict" | "merge" | "not-git" | "unknown"; is_git_repo: boolean }>;
     getDiffStats: (path: string) => Promise<{ additions: number; deletions: number }>;
     getWorktreePaths: (repoPath: string) => Promise<Record<string, string>>;
     removeWorktree: (repoPath: string, branchName: string) => Promise<void>;
@@ -54,7 +54,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
   const refreshAllBranchStats = async () => {
     await Promise.all(repositoriesStore.getPaths().map(async (repoPath) => {
-      if (!repositoriesStore.get(repoPath)) return;
+      const repo = repositoriesStore.get(repoPath);
+      if (!repo) return;
+      // Skip non-git directories — no worktrees or branch stats to refresh
+      if (repo.isGitRepo === false) return;
 
       const showAllBranches = repositoriesStore.get(repoPath)?.showAllBranches ?? false;
       const [worktreePaths, localBranches] = await Promise.all([
@@ -350,17 +353,33 @@ export function useGitOperations(deps: GitOperationsDeps) {
         await deps.closeTerminal(id, true);
       }
 
-      repositoriesStore.add({ path: info.path, displayName: info.name, initials: info.initials, showAllBranches: settingsStore.state.showAllBranches });
+      repositoriesStore.add({
+        path: info.path,
+        displayName: info.name,
+        initials: info.initials,
+        showAllBranches: settingsStore.state.showAllBranches,
+        isGitRepo: info.is_git_repo,
+      });
 
       if (info.branch) {
         repositoriesStore.setBranch(info.path, info.branch, { worktreePath: info.path });
         repositoriesStore.setActiveBranch(info.path, info.branch);
         await handleAddTerminalToBranch(info.path, info.branch);
+      } else if (!info.is_git_repo) {
+        // Non-git directory: create a shell entry so the user can open terminals
+        const shellBranch = "shell";
+        repositoriesStore.setBranch(info.path, shellBranch, {
+          worktreePath: info.path,
+          isMain: true,
+          isShell: true,
+        });
+        repositoriesStore.setActiveBranch(info.path, shellBranch);
+        await handleAddTerminalToBranch(info.path, shellBranch);
       }
 
       repositoriesStore.setActive(info.path);
       setCurrentRepoPath(info.path);
-      setCurrentBranch(info.branch);
+      setCurrentBranch(info.branch || (!info.is_git_repo ? "shell" : ""));
       setRepoStatus(info.status === "not-git" ? "unknown" : info.status);
 
       refreshAllBranchStats();

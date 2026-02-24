@@ -113,6 +113,16 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 
   const notesBadgeCount = () => notesStore.filteredCount(props.currentRepoPath ?? null);
 
+  // Ticker message — memoized to avoid keyed Show re-renders on every tick
+  const visibleTickerMessage = createMemo(() => {
+    const msg = statusBarTicker.getCurrentMessage();
+    if (!msg) return null;
+    // Hide claude-usage ticker when it's already shown in the agent badge
+    const activeAgent = terminalsStore.getActive()?.agentType;
+    if (activeAgent === "claude" && msg.pluginId === "claude-usage") return null;
+    return msg;
+  });
+
   // Get PR data with lifecycle rules:
   // - CLOSED: never show
   // - MERGED: show until 5 min of accumulated user activity, then hide
@@ -214,8 +224,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
                 : null;
             return (
               <span
-                class={s.agentBadge}
-                style={claudeTicker()?.onClick ? { cursor: "pointer" } : undefined}
+                class={cx(s.agentBadge, claudeTicker()?.onClick && s.tickerClickable)}
                 onClick={() => claudeTicker()?.onClick?.()}
                 title={
                   rl()
@@ -248,56 +257,41 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
             );
           }}
         </Show>
-        <Show when={(() => {
-          const msg = statusBarTicker.getCurrentMessage();
-          if (!msg) return null;
-          // Hide claude-usage ticker when it's already shown in the agent badge
-          const activeAgent = terminalsStore.getActive()?.agentType;
-          if (activeAgent === "claude" && msg.pluginId === "claude-usage") return null;
-          return msg;
-        })()}>
-          {(msg) => (
-            <span
-              class={cx(s.tickerMessage, msg().priority >= 80 && s.tickerWarning, msg().onClick && s.tickerClickable)}
-              title={msg().text}
-              onClick={() => msg().onClick?.()}
-            >
-              <Show when={msg().icon}>
-                {(icon) => <span class={s.tickerIcon} innerHTML={icon()} />}
-              </Show>
-              {msg().text}
-            </span>
-          )}
+        <Show when={visibleTickerMessage()}>
+          <span
+            class={cx(s.tickerMessage, visibleTickerMessage()!.priority >= 80 && s.tickerWarning, visibleTickerMessage()!.onClick && s.tickerClickable)}
+            title={visibleTickerMessage()!.text}
+            onClick={() => visibleTickerMessage()!.onClick?.()}
+          >
+            <Show when={visibleTickerMessage()!.icon}>
+              <span class={s.tickerIcon} innerHTML={visibleTickerMessage()!.icon!} />
+            </Show>
+            {visibleTickerMessage()!.text}
+          </span>
         </Show>
       </div>
 
       {/* GitHub PR + CI badges */}
       <Show when={activePrData()}>
-        {(pr) => (
-          <div class={s.githubStatus}>
-            <PrBadge
-              number={pr().number}
-              title={pr().title}
-              state={pr().state}
-              mergeable={pr().mergeable}
-              mergeStateStatus={pr().merge_state_status}
-              onClick={() => setShowPrDetailPopover(true)}
-            />
-            <Show when={pr().checks}>
-              {(checks) => (
-                <Show when={checks().total > 0}>
-                  <span onClick={handleCiBadgeClick} style={{ cursor: "pointer" }}>
-                    <CiBadge
-                      status={checks().failed > 0 ? "completed" : checks().pending > 0 ? "in_progress" : "completed"}
-                      conclusion={checks().failed > 0 ? "failure" : checks().pending > 0 ? null : "success"}
-                      workflowName="CI"
-                    />
-                  </span>
-                </Show>
-              )}
-            </Show>
-          </div>
-        )}
+        <div class={s.githubStatus}>
+          <PrBadge
+            number={activePrData()!.number}
+            title={activePrData()!.title}
+            state={activePrData()!.state}
+            mergeable={activePrData()!.mergeable}
+            mergeStateStatus={activePrData()!.merge_state_status}
+            onClick={() => setShowPrDetailPopover(true)}
+          />
+          <Show when={activePrData()!.checks && activePrData()!.checks!.total > 0}>
+            <span onClick={handleCiBadgeClick} style={{ cursor: "pointer" }}>
+              <CiBadge
+                status={activePrData()!.checks!.failed > 0 ? "completed" : activePrData()!.checks!.pending > 0 ? "in_progress" : "completed"}
+                conclusion={activePrData()!.checks!.failed > 0 ? "failure" : activePrData()!.checks!.pending > 0 ? null : "success"}
+                workflowName="CI"
+              />
+            </span>
+          </Show>
+        </div>
       </Show>
 
       {/* Right section - controls */}

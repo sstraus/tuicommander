@@ -265,8 +265,8 @@
 
 /* Awaiting Input Visual Indicators */
 @keyframes pulse-question {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(122, 162, 247, 0); }
-  50% { box-shadow: 0 0 12px 4px rgba(122, 162, 247, 0.4); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 152, 76, 0); }
+  50% { box-shadow: 0 0 12px 4px rgba(232, 152, 76, 0.4); }
 }
 
 @keyframes pulse-error {
@@ -281,7 +281,7 @@
 
 .terminal-pane.awaiting-question {
   animation: pulse-question 2s ease-in-out infinite;
-  border: 2px solid var(--accent);
+  border: 2px solid var(--attention);
   border-radius: var(--radius-md);
 }
 
