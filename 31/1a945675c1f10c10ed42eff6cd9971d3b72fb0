@@ -1,0 +1,52 @@
+src-tauri/src/state.rs
+  0db202d99884bbab 565-567,937
+src/components/ActivityDashboard/ActivityDashboard.module.css
+  0db202d99884bbab 68-69,84-88,140-158,160-162
+src-tauri/src/lib.rs
+  0db202d99884bbab 563,689
+src/stores/terminals.ts
+  0db202d99884bbab 38,88,91,96-97,134-138
+src-tauri/src/pty.rs
+  0db202d99884bbab 663-667,686-694
+src-tauri/src/mcp_http/mod.rs
+  0db202d99884bbab 363
+src/components/Terminal/Terminal.tsx
+  0db202d99884bbab 376-379
+src/components/ActivityDashboard/ActivityDashboard.tsx
+  0db202d99884bbab 37-43,92,101,128-129,132-141
+src/plugins/index.ts
+  0db202d99884bbab 10,13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "311a945675c1f10c10ed42eff6cd9971d3b72fb0",
+  "prompts": {
+    "0db202d99884bbab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7949bb3b-6709-421b-9974-8488f70abef4",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 94,
+      "total_deletions": 14,
+      "accepted_lines": 92,
+      "overriden_lines": 0
+    },
+    "519d05160e6ef99a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "95ef6175-af0b-4b4b-988c-dc5c5c94ec8a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    }
+  }
+}
