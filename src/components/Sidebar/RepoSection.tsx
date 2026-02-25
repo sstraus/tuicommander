@@ -226,6 +226,9 @@ export const BranchItem: Component<{
           {props.branch.name}
         </span>
       </div>
+      <Show when={props.branch.isMerged && !props.branch.isMain}>
+        <span class={s.mergedBadge} title="Branch is merged into main">Merged</span>
+      </Show>
       <Show when={activePrStatus(props.repoPath, props.branch.name)}>
         {(() => {
           const prData = () => activePrStatus(props.repoPath, props.branch.name)!;

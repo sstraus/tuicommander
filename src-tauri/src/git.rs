@@ -494,6 +494,40 @@ pub(crate) fn sort_branches(branches: &mut [serde_json::Value]) {
     });
 }
 
+/// Get local branches that are fully merged into the repo's main branch.
+/// Returns a set of branch names whose tips are reachable from the main branch HEAD.
+pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, String> {
+    // Find the main branch name
+    let main_branch = ["main", "master", "develop"].iter().find_map(|name| {
+        let check = Command::new(crate::agent::resolve_cli("git"))
+            .current_dir(repo_path)
+            .args(["rev-parse", "--verify", &format!("refs/heads/{name}")])
+            .output()
+            .ok()?;
+        if check.status.success() { Some(name.to_string()) } else { None }
+    }).unwrap_or_else(|| "main".to_string());
+
+    let output = Command::new(crate::agent::resolve_cli("git"))
+        .current_dir(repo_path)
+        .args(["branch", "--merged", &main_branch, "--format=%(refname:short)"])
+        .output()
+        .map_err(|e| format!("Failed to run git branch --merged: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git branch --merged failed: {stderr}"));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+}
+
+/// Tauri command: get branches merged into the main branch
+#[tauri::command]
+pub(crate) fn get_merged_branches(repo_path: String) -> Result<Vec<String>, String> {
+    get_merged_branches_impl(Path::new(&repo_path))
+}
+
 /// Get git branches for a repository (Story 052)
 #[tauri::command]
 pub(crate) fn get_git_branches(path: String) -> Result<Vec<serde_json::Value>, String> {
@@ -951,5 +985,20 @@ mod tests {
         let git_dir = resolve_git_dir(&repo_root);
         assert!(git_dir.is_some(), "Should resolve .git dir for this repo");
         assert!(git_dir.unwrap().join("HEAD").exists(), ".git dir should contain HEAD");
+    }
+
+    #[test]
+    fn test_get_merged_branches_against_real_repo() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let repo_root = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
+
+        let result = get_merged_branches_impl(&repo_root);
+        assert!(result.is_ok(), "get_merged_branches_impl should succeed on real repo");
+        let merged = result.unwrap();
+        // The current branch should always be in `git branch --merged HEAD`
+        let current = read_branch_from_head(&repo_root);
+        if let Some(ref branch) = current {
+            assert!(merged.contains(branch), "current branch should be merged into itself");
+        }
     }
 }

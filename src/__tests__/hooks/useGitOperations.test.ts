@@ -27,6 +27,7 @@ describe("useGitOperations", () => {
     listBaseRefOptions: vi.fn().mockResolvedValue(["main"]),
     mergeAndArchiveWorktree: vi.fn().mockResolvedValue({ merged: true, action: "archived", archive_path: null }),
     listLocalBranches: vi.fn().mockResolvedValue(["main"]),
+    getMergedBranches: vi.fn().mockResolvedValue(["main"]),
   };
 
   const mockPty = {

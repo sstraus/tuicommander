@@ -24,6 +24,7 @@ export interface GitOperationsDeps {
     listBaseRefOptions: (repoPath: string) => Promise<string[]>;
     mergeAndArchiveWorktree: (repoPath: string, branchName: string, targetBranch: string, afterMerge: string) => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
     listLocalBranches: (repoPath: string) => Promise<string[]>;
+    getMergedBranches: (repoPath: string) => Promise<string[]>;
   };
   pty: {
     canSpawn: () => Promise<boolean>;
@@ -65,10 +66,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
       if (repo.isGitRepo === false) return;
 
       const showAllBranches = repositoriesStore.get(repoPath)?.showAllBranches ?? false;
-      const [worktreePaths, localBranches] = await Promise.all([
+      const [worktreePaths, localBranches, mergedBranches] = await Promise.all([
         deps.repo.getWorktreePaths(repoPath),
         showAllBranches ? deps.repo.listLocalBranches(repoPath) : Promise.resolve([] as string[]),
+        deps.repo.getMergedBranches(repoPath),
       ]);
+      const mergedSet = new Set(mergedBranches);
 
       const currentRepo = repositoriesStore.get(repoPath);
       if (!currentRepo) return;
@@ -113,13 +116,13 @@ export function useGitOperations(deps: GitOperationsDeps) {
           repositoriesStore.removeBranch(repoPath, branchName);
         }
         for (const [branchName, wtPath] of Object.entries(worktreePaths)) {
-          repositoriesStore.setBranch(repoPath, branchName, { worktreePath: wtPath });
+          repositoriesStore.setBranch(repoPath, branchName, { worktreePath: wtPath, isMerged: mergedSet.has(branchName) });
         }
         if (showAllBranches) {
           const updatedRepo = repositoriesStore.get(repoPath);
           for (const branchName of localBranches) {
             if (!(branchName in worktreePaths) && !updatedRepo?.branches[branchName]) {
-              repositoriesStore.setBranch(repoPath, branchName, { worktreePath: null });
+              repositoriesStore.setBranch(repoPath, branchName, { worktreePath: null, isMerged: mergedSet.has(branchName) });
             }
           }
         }

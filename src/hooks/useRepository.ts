@@ -163,6 +163,16 @@ export function useRepository() {
     subject: string;
   }
 
+  /** Get branches fully merged into the repo's main branch */
+  async function getMergedBranches(repoPath: string): Promise<string[]> {
+    try {
+      return await invoke<string[]>("get_merged_branches", { repoPath });
+    } catch (err) {
+      appLogger.error("git", `Failed to get merged branches for ${repoPath}`, err);
+      return [];
+    }
+  }
+
   /** List local branch names for a repository */
   async function listLocalBranches(repoPath: string): Promise<string[]> {
     try {
@@ -200,6 +210,7 @@ export function useRepository() {
     generateCloneBranchName,
     listBaseRefOptions,
     mergeAndArchiveWorktree,
+    getMergedBranches,
     listLocalBranches,
     getRecentCommits,
   };

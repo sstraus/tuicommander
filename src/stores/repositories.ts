@@ -16,6 +16,7 @@ export interface BranchState {
   lastActiveTerminal: string | null; // last active terminal ID when leaving this branch
   additions: number;
   deletions: number;
+  isMerged: boolean; // true when branch is fully merged into the repo's main branch
   runCommand?: string; // Saved run command for this branch
   savedTerminals?: SavedTerminal[]; // Persisted terminal metadata for session restore
 }
@@ -301,6 +302,7 @@ function createRepositoriesStore() {
           lastActiveTerminal: null,
           additions: 0,
           deletions: 0,
+          isMerged: false,
           ...data,
         });
       }
