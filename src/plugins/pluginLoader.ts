@@ -43,6 +43,8 @@ export interface PluginManifest {
   author?: string;
   capabilities: string[];
   allowed_urls?: string[];
+  /** Agent types this plugin targets (e.g. ["claude"]). Empty/omitted = universal. */
+  agent_types?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +222,7 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
   }
 
   const plugin = (mod as { default: TuiPlugin }).default;
-  pluginRegistry.register(plugin, manifest.capabilities, manifest.allowed_urls);
+  pluginRegistry.register(plugin, manifest.capabilities, manifest.allowed_urls, manifest.agent_types);
   loadedPluginIds.add(manifest.id);
   logger.info(`Loaded v${manifest.version}`);
   console.log(`[pluginLoader] loaded plugin "${manifest.id}" v${manifest.version}`);

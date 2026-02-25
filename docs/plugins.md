@@ -110,6 +110,7 @@ File: `~/.config/tuicommander/plugins/{id}/manifest.json`
 | `author` | string | no | Author name |
 | `capabilities` | string[] | no | Tier 3/4 capabilities needed (defaults to `[]`) |
 | `allowedUrls` | string[] | no | URL patterns allowed for `net:http` (e.g. `["https://api.example.com/*"]`) |
+| `agentTypes` | string[] | no | Agent types this plugin targets (e.g. `["claude"]`). Omit or `[]` for universal plugins. |
 
 ### Validation Rules
 
@@ -526,6 +527,27 @@ const tail = await host.readFileTail("/Users/me/.claude/hud-tracking.jsonl", 512
 const lines = tail.split("\n").filter(Boolean);
 ```
 
+### Tier 3h: CLI Execution (capability-gated)
+
+#### host.execCli(binary, args, cwd?) -> Promise<string>
+
+Execute a whitelisted CLI binary and return its stdout. **Requires `"exec:cli"` capability.**
+
+Only binaries in the server-side allowlist can be executed. Currently allowed: `mdkb`.
+
+```typescript
+const raw = await host.execCli("mdkb", ["--format", "json", "status"], "/Users/me/project");
+const status = JSON.parse(raw);
+console.log(status.index.documents); // 1486
+```
+
+**Security and limits:**
+- Only whitelisted binaries can be executed (command injection is not possible)
+- Working directory must be absolute and within `$HOME`
+- 30-second timeout
+- 5 MB stdout limit
+- Binary is resolved via PATH lookup and known install locations (`~/.cargo/bin/`, `/usr/local/bin/`, etc.)
+
 ### Tier 4: Scoped Tauri Invoke (whitelisted commands only)
 
 #### host.invoke<T>(cmd, args?) -> Promise<T>
@@ -583,8 +605,84 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `fs:read` | `host.readFile()`, `host.readFileTail()` | Can read files within `$HOME` (10 MB limit) |
 | `fs:list` | `host.listDirectory()` | Can list directory contents within `$HOME` |
 | `fs:watch` | `host.watchPath()` | Can watch filesystem paths within `$HOME` for changes |
+| `exec:cli` | `host.execCli()` | Can execute whitelisted CLI binaries (see below) |
 
 Tier 1, Tier 2, and plugin data commands are always available without capabilities.
+
+## Agent-Scoped Plugins
+
+Plugins can declare which AI agents they target via the `agentTypes` manifest field:
+
+```json
+{
+  "id": "claude-usage",
+  "agentTypes": ["claude"],
+  ...
+}
+```
+
+### Behavior
+
+- **Universal plugins** (`agentTypes` omitted or `[]`): receive events from all terminals. This is the default.
+- **Agent-scoped plugins** (`agentTypes: ["claude"]`): output watchers and structured event handlers only fire for terminals where the detected foreground process matches one of the listed agent types.
+
+### What gets filtered
+
+| Dispatch method | Filtered by agentTypes |
+|----------------|----------------------|
+| `registerOutputWatcher` callbacks | Yes |
+| `registerStructuredEventHandler` callbacks | Yes |
+| All other PluginHost methods (Tier 1-4) | No — always available |
+
+### How agent detection works
+
+TUICommander polls the foreground process of each terminal's PTY every 3 seconds (via `get_session_foreground_process`). The process name is classified into an agent type:
+
+| Process name | Agent type |
+|-------------|-----------|
+| `claude` | `"claude"` |
+| `gemini` | `"gemini"` |
+| `opencode` | `"opencode"` |
+| `aider` | `"aider"` |
+| `codex` | `"codex"` |
+| `amp` | `"amp"` |
+| `jules` | `"jules"` |
+| `cursor-agent` | `"cursor"` |
+| `oz` | `"warp"` |
+| `gitpod` | `"ona"` |
+| `droid` | `"droid"` |
+| `git` | `"git"` |
+| (anything else) | `null` (plain shell) |
+
+### Timing considerations
+
+Agent detection is polled, not instant. When a user launches `claude` in a terminal, there is a brief window (up to 3 seconds) before the first poll detects it. During this window, agent-scoped plugins will not receive events from that terminal. This is by design — it avoids false matches during shell startup.
+
+### Example: Claude-only plugin
+
+```json
+{
+  "id": "claude-usage",
+  "name": "Claude Usage Dashboard",
+  "version": "1.0.0",
+  "minAppVersion": "0.3.0",
+  "main": "main.js",
+  "agentTypes": ["claude"],
+  "capabilities": ["fs:read", "ui:panel", "ui:ticker"]
+}
+```
+
+This plugin's output watchers will only fire when the terminal is running Claude Code. If the user switches to a plain shell or runs Gemini, the watchers are silently skipped.
+
+### Example: Multi-agent plugin
+
+```json
+{
+  "agentTypes": ["claude", "gemini", "codex"]
+}
+```
+
+Targets Claude, Gemini, and Codex terminals. All other terminals are ignored.
 
 ## Content URI Format
 
@@ -708,7 +806,7 @@ Built-in plugins are TypeScript modules in `src/plugins/` compiled with the app.
 |--------|------|---------|---------|
 | `plan` | `planPlugin.ts` | ACTIVE PLAN | `plan-file` structured events |
 
-The `wiz-stories` plugin was extracted to an external plugin in `examples/plugins/wiz-stories/`.
+The `wiz-stories` plugin was extracted to an external plugin in the [tuicommander-plugins](https://github.com/sstraus/tuicommander-plugins) repo (submodule at `plugins/wiz-stories/`).
 
 To create a built-in plugin, add it to `BUILTIN_PLUGINS` in `src/plugins/index.ts`.
 
@@ -882,8 +980,16 @@ See `examples/plugins/` for complete working examples:
 | `auto-confirm` | 1+3 | `pty:write` | Auto-responding to Y/N prompts |
 | `ci-notifier` | 1+3 | `ui:sound`, `ui:markdown` | Sound notifications, markdown panels |
 | `repo-dashboard` | 1+2 | none | Read-only state, dynamic markdown |
-| `wiz-stories` | 1+4 | `invoke:read_file`, `invoke:list_markdown_files`, `ui:markdown` | Story tracking, markdown provider, session-to-repo resolution |
-| `wiz-reviews` | 1+4 | `invoke:read_file`, `ui:markdown` | Code review tracking, markdown provider |
+
+## Distributable Plugins
+
+Available from the [plugin registry](https://github.com/sstraus/tuicommander-plugins) (submodule at `plugins/`). Installable via Settings > Plugins > Browse.
+
+| Plugin | Tier | Capabilities | Description |
+|--------|------|-------------|-------------|
+| `wiz-stories` | 1+4 | `invoke:read_file`, `invoke:list_markdown_files`, `ui:markdown` | Story status tracking from terminal output |
+| `wiz-reviews` | 1+4 | `invoke:read_file`, `ui:markdown` | Code review tracking from terminal output |
+| `mdkb-dashboard` | 2+3 | `exec:cli`, `fs:read`, `ui:panel`, `ui:ticker` | mdkb knowledge base dashboard |
 
 ## Troubleshooting
 

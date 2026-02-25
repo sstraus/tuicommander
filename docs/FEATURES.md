@@ -753,6 +753,7 @@ All data persisted to platform config directory via Rust:
 - Credential API: cross-platform credential reading (macOS Keychain, Linux/Windows JSON file) with user consent
 - Panel API: rich HTML panels in sandboxed iframes (`sandbox="allow-scripts"`)
 - Shared ticker system: `setTicker`/`clearTicker` API with source labels, priority tiers (low <10, normal 10-99, urgent >=100), counter badge, click-to-cycle, right-click popover
+- Agent-scoped plugins: `agentTypes` manifest field restricts output watchers and structured events to terminals running specific agents (e.g. `["claude"]`)
 
 ### 17.2 Plugin Management (Settings > Plugins)
 - **Installed tab:** List all plugins with enable/disable toggle, logs viewer, uninstall button

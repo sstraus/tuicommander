@@ -164,6 +164,14 @@ function createTerminalsStore() {
       return state.terminals[id];
     },
 
+    /** Get the agentType for a PTY session, or null if not found */
+    getAgentTypeForSession(sessionId: string): string | null {
+      for (const t of Object.values(state.terminals)) {
+        if (t.sessionId === sessionId) return t.agentType ?? null;
+      }
+      return null;
+    },
+
     /** Get active terminal */
     getActive(): TerminalState | undefined {
       return state.activeId ? state.terminals[state.activeId] : undefined;

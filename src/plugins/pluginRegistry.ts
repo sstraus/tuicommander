@@ -47,7 +47,7 @@ import type {
  */
 function createPluginRegistry() {
   // Active plugin → its aggregated Disposable (wraps all sub-registrations)
-  const plugins = new Map<string, { plugin: TuiPlugin; disposable: Disposable }>();
+  const plugins = new Map<string, { plugin: TuiPlugin; disposable: Disposable; agentTypes: readonly string[] }>();
 
   // Global watcher list — all watchers from all plugins, tagged with pluginId
   const outputWatchers: Array<{ pluginId: string; watcher: OutputWatcher }> = [];
@@ -60,6 +60,18 @@ function createPluginRegistry() {
     string,
     Array<{ pluginId: string; handler: (payload: unknown, sessionId: string) => void }>
   >();
+
+  // -------------------------------------------------------------------------
+  // Agent-type filtering
+  // -------------------------------------------------------------------------
+
+  /** Returns true if a plugin should receive events from a given session. */
+  function pluginMatchesSession(pluginId: string, sessionId: string): boolean {
+    const entry = plugins.get(pluginId);
+    if (!entry || entry.agentTypes.length === 0) return true; // universal plugin
+    const agentType = terminalsStore.getAgentTypeForSession(sessionId);
+    return agentType !== null && entry.agentTypes.includes(agentType);
+  }
 
   // -------------------------------------------------------------------------
   // Capability checking
@@ -441,8 +453,10 @@ function createPluginRegistry() {
    * @param plugin - The plugin to register
    * @param capabilities - Optional set of declared capabilities for external plugins.
    *   Pass null or omit for built-in plugins (unrestricted access).
+   * @param agentTypes - Optional list of agent types this plugin targets.
+   *   Empty or omit for universal plugins.
    */
-  function register(plugin: TuiPlugin, capabilities?: string[], allowedUrls?: string[]): void {
+  function register(plugin: TuiPlugin, capabilities?: string[], allowedUrls?: string[], agentTypes?: string[]): void {
     // Replace existing registration for same id
     if (plugins.has(plugin.id)) {
       unregister(plugin.id);
@@ -478,6 +492,7 @@ function createPluginRegistry() {
           }
         },
       },
+      agentTypes: agentTypes ?? [],
     });
   }
 
@@ -508,6 +523,7 @@ function createPluginRegistry() {
    */
   function dispatchLine(cleanLine: string, sessionId: string): void {
     for (const { pluginId, watcher } of outputWatchers) {
+      if (!pluginMatchesSession(pluginId, sessionId)) continue;
       const { pattern, onMatch } = watcher;
       // Reset global regex state before each test to avoid position carry-over
       if (pattern.global) pattern.lastIndex = 0;
@@ -555,6 +571,7 @@ function createPluginRegistry() {
     const handlers = structuredHandlers.get(type);
     if (!handlers) return;
     for (const { pluginId, handler } of handlers) {
+      if (!pluginMatchesSession(pluginId, sessionId)) continue;
       queueMicrotask(() => {
         try {
           handler(payload, sessionId);

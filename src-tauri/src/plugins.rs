@@ -42,6 +42,10 @@ pub struct PluginManifest {
     /// URL patterns allowed for net:http requests (e.g. "https://api.example.com/*")
     #[serde(default, rename = "allowedUrls")]
     pub allowed_urls: Vec<String>,
+    /// Agent types this plugin is specific to (e.g. ["claude", "gemini"]).
+    /// Empty means the plugin is universal and active for all terminals.
+    #[serde(default, rename = "agentTypes")]
+    pub agent_types: Vec<String>,
 }
 
 /// Known capability strings. Anything outside this set is rejected.
@@ -58,6 +62,7 @@ const KNOWN_CAPABILITIES: &[&str] = &[
     "credentials:read",
     "ui:panel",
     "ui:ticker",
+    "exec:cli",
 ];
 
 /// Validate a parsed manifest for required fields and sanity.
@@ -718,6 +723,7 @@ mod tests {
             author: None,
             capabilities: vec![],
             allowed_urls: vec![],
+            agent_types: vec![],
         }
     }
 
