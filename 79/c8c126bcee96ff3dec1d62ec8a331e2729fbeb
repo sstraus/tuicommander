@@ -1,0 +1,50 @@
+src/stores/repositories.ts
+  cd81a6375b058f43 290-295
+src/App.tsx
+  cd81a6375b058f43 935-936,938,940
+src/stores/appLogger.ts
+  cd81a6375b058f43 139
+src/hooks/useGitOperations.ts
+  cd81a6375b058f43 3,61-83,88-107,121-134,141,145-153,159,167-169,262-283,285-286
+src/hooks/useRepository.ts
+  cd81a6375b058f43 65,171
+src-tauri/src/git.rs
+  cd81a6375b058f43 498-529,532,534-537,539-542,546,1066,1068,1072,1074,1076-1094
+src/components/Sidebar/RepoSection.tsx
+  cd81a6375b058f43 199-200,204,207
+src/components/StatusBar/StatusBar.tsx
+  cd81a6375b058f43 282-284,286-288
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "79c8c126bcee96ff3dec1d62ec8a331e2729fbeb",
+  "prompts": {
+    "2ebb7be744ca2a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d97c5139-305e-495e-b249-8c8d0ce03059",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 141,
+      "overriden_lines": 0
+    },
+    "cd81a6375b058f43": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b6eba1b9-c13e-49ba-bf2f-58c1831edd1d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 198,
+      "total_deletions": 60,
+      "accepted_lines": 186,
+      "overriden_lines": 0
+    }
+  }
+}
