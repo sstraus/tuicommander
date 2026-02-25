@@ -1,0 +1,38 @@
+examples/plugins/report-watcher/manifest.json
+  257732b56920e340 1-13
+examples/plugins/report-watcher/main.js
+  257732b56920e340 1-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "40653b942d79e157d6992e24a43a5d9ed340712d",
+  "prompts": {
+    "257732b56920e340": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce8b00ba-fa41-4d08-9af6-c1064e66eb50",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 110,
+      "total_deletions": 0,
+      "accepted_lines": 110,
+      "overriden_lines": 0
+    },
+    "519d05160e6ef99a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "95ef6175-af0b-4b4b-988c-dc5c5c94ec8a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 342,
+      "overriden_lines": 0
+    }
+  }
+}
