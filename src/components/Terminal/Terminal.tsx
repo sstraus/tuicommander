@@ -649,18 +649,38 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
       const onOpenFilePath = props.onOpenFilePath; // capture for closure
 
+      // Cache resolved links per line to avoid flicker from async IPC on every mouse move.
+      // Key: "lineNumber:lineText", value: resolved ILink[] or undefined.
+      // Capped at 200 entries; cleared wholesale when full (lines rarely re-hover after scroll).
+      const linkCache = new Map<string, import("@xterm/xterm").ILink[] | undefined>();
+      const cacheSet = (key: string, val: import("@xterm/xterm").ILink[] | undefined) => {
+        if (linkCache.size >= 200) linkCache.clear();
+        linkCache.set(key, val);
+      };
+
       terminal.registerLinkProvider({
         provideLinks(bufferLineNumber: number, callback: (links: import("@xterm/xterm").ILink[] | undefined) => void) {
           const bufLine = terminal!.buffer.active.getLine(bufferLineNumber - 1);
           if (!bufLine) { callback(undefined); return; }
           const lineText = bufLine.translateToString();
+
+          const cacheKey = `${bufferLineNumber}:${lineText}`;
+          if (linkCache.has(cacheKey)) {
+            callback(linkCache.get(cacheKey));
+            return;
+          }
+
           const matches: { text: string; index: number }[] = [];
           let match: RegExpExecArray | null;
           filePathRegex.lastIndex = 0;
           while ((match = filePathRegex.exec(lineText)) !== null) {
             matches.push({ text: match[1], index: lineText.indexOf(match[1], match.index) });
           }
-          if (matches.length === 0) { callback(undefined); return; }
+          if (matches.length === 0) {
+            cacheSet(cacheKey, undefined);
+            callback(undefined);
+            return;
+          }
 
           // Get cwd from the terminal's PTY session
           const termData = terminalsStore.get(props.id);
@@ -704,9 +724,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
                 },
               });
             }
-            callback(links.length > 0 ? links : undefined);
+            const result = links.length > 0 ? links : undefined;
+            cacheSet(cacheKey, result);
+            callback(result);
           }).catch(() => {
             // Ensure xterm always gets its callback even on failure
+            cacheSet(cacheKey, undefined);
             callback(undefined);
           });
         },
