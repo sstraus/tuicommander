@@ -28,6 +28,24 @@
   color: var(--fg-primary);
 }
 
+.baseRefRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.baseRefRow label {
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+  white-space: nowrap;
+}
+
+.baseRefRow select {
+  flex: 1;
+  min-width: 0;
+}
+
 .branchList {
   max-height: 150px;
   overflow-y: auto;

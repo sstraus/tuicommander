@@ -8,6 +8,8 @@ import s from "./CreateWorktreeDialog.module.css";
 export interface WorktreeCreateOptions {
   branchName: string;
   createBranch: boolean;
+  /** Base ref to create the worktree from (branch name or "HEAD") */
+  baseRef: string;
 }
 
 export interface CreateWorktreeDialogProps {
@@ -18,6 +20,8 @@ export interface CreateWorktreeDialogProps {
   worktreeBranches: string[];
   /** Base directory where worktrees are created */
   worktreesDir: string;
+  /** Available base refs for the "Start from" dropdown (first is default) */
+  baseRefs?: string[];
   /** Generate a random branch name */
   onGenerateName?: () => Promise<string>;
   onClose: () => void;
@@ -31,8 +35,12 @@ function sanitizeForPath(name: string): string {
 
 export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props) => {
   const [branchName, setBranchName] = createSignal("");
+  const [baseRef, setBaseRef] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   let inputRef: HTMLInputElement | undefined;
+
+  /** Available base refs — first entry is the default */
+  const availableBaseRefs = () => props.baseRefs ?? [];
 
   const trimmedName = () => branchName().trim();
 
@@ -67,6 +75,7 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
   createEffect(() => {
     if (props.visible) {
       setBranchName("");
+      setBaseRef(availableBaseRefs()[0] ?? "");
       setError(null);
       setTimeout(() => {
         if (inputRef) {
@@ -106,7 +115,7 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
 
     if (isExistingBranch()) {
       // Check out existing branch into new worktree
-      props.onCreate({ branchName: name, createBranch: false });
+      props.onCreate({ branchName: name, createBranch: false, baseRef: baseRef() });
     } else {
       // New branch — validate name
       const validationError = validateBranchName(name);
@@ -114,7 +123,7 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
         setError(validationError);
         return;
       }
-      props.onCreate({ branchName: name, createBranch: true });
+      props.onCreate({ branchName: name, createBranch: true, baseRef: baseRef() });
     }
   };
 
@@ -168,6 +177,20 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
                 </button>
               </Show>
             </div>
+
+            <Show when={availableBaseRefs().length > 1 && !isExistingBranch()}>
+              <div class={s.baseRefRow}>
+                <label>{t("createWorktree.startFrom", "Start from")}</label>
+                <select
+                  value={baseRef()}
+                  onChange={(e) => setBaseRef(e.currentTarget.value)}
+                >
+                  <For each={availableBaseRefs()}>
+                    {(ref) => <option value={ref}>{ref}</option>}
+                  </For>
+                </select>
+              </div>
+            </Show>
 
             <div class={s.branchList}>
               <For each={filteredBranches()}>

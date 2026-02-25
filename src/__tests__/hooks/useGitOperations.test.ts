@@ -610,7 +610,7 @@ describe("useGitOperations", () => {
       // Open dialog first
       await gitOps.handleAddWorktree("/repo");
       // Confirm creation
-      await gitOps.confirmCreateWorktree({ branchName: "bold-nexus-042", createBranch: true });
+      await gitOps.confirmCreateWorktree({ branchName: "bold-nexus-042", createBranch: true, baseRef: "main" });
 
       expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "bold-nexus-042", true);
       expect(mockSetStatusInfo).toHaveBeenCalledWith("Created worktree bold-nexus-042");
@@ -630,7 +630,7 @@ describe("useGitOperations", () => {
       mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
 
       await gitOps.handleAddWorktree("/repo");
-      await gitOps.confirmCreateWorktree({ branchName: "develop", createBranch: false });
+      await gitOps.confirmCreateWorktree({ branchName: "develop", createBranch: false, baseRef: "main" });
 
       expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "develop", false);
       expect(mockSetStatusInfo).toHaveBeenCalledWith("Created worktree develop");
@@ -643,7 +643,7 @@ describe("useGitOperations", () => {
       mockRepo.createWorktree.mockRejectedValue(new Error("branch exists"));
 
       await gitOps.handleAddWorktree("/repo");
-      await gitOps.confirmCreateWorktree({ branchName: "bold-nexus-042", createBranch: true });
+      await gitOps.confirmCreateWorktree({ branchName: "bold-nexus-042", createBranch: true, baseRef: "main" });
 
       expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("Failed to create worktree"));
     });
