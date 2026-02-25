@@ -111,7 +111,7 @@
 ### 2.3 Branch Items
 - Click: switch to branch (shows its terminals, creates worktree if needed)
 - Double-click branch name: rename branch
-- Right-click context menu: Copy Path, Add Terminal, Delete Worktree, Open in IDE, Rename Branch
+- Right-click context menu: Copy Path, Add Terminal, Create Worktree, Merge & Archive, Delete Worktree, Open in IDE, Rename Branch
 - CI ring: proportional arc segments (green=passed, red=failed, yellow=pending)
 - PR badge: colored by state (green=open, purple=merged, red=closed, gray=draft) — click for detail popover
 - Diff stats: `+N / -N` additions/deletions
@@ -379,10 +379,14 @@
 
 ### 7.2 Worktrees
 - Auto-creation on branch select (non-main branches)
-- Storage: `{config_dir}/worktrees/{repo}--{branch}`
+- Configurable storage strategies: sibling (`__wt`), app directory, or inside-repo (`.worktrees/`)
 - Sci-fi themed auto-generated names
-- Per-repo settings: base branch, copy ignored/untracked files
+- Three creation flows: dialog (with base ref dropdown), instant (auto-name), right-click branch (quick-clone with hybrid `{branch}--{random}` name)
+- Base ref selection: choose which branch to start from when creating new worktrees
+- Per-repo settings: storage strategy, prompt on create, delete branch on remove, auto-archive, orphan cleanup, PR merge strategy, after-merge behavior
 - Setup script: runs once after creation (e.g., `npm install`)
+- Merge & Archive: right-click → merge branch into main, then archive or delete based on setting
+- External worktree detection: monitors `.git/worktrees/` for changes from CLI or other tools
 - Remove via sidebar `×` button or context menu (with confirmation)
 
 ### 7.3 HEAD File Watcher
@@ -520,7 +524,7 @@
 
 ### 11.4 Repository Settings (per-repo)
 - Display name
-- Worktree tab: base branch, copy ignored/untracked files
+- Worktree tab: storage strategy, prompt on create, delete branch on remove, auto-archive, orphan cleanup, PR merge strategy, after-merge action (each overridable from global defaults)
 - Scripts tab: setup script (post-worktree), run script (`Cmd+R`)
 
 ### 11.5 Notifications
