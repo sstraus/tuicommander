@@ -62,7 +62,7 @@ export function useRepository() {
     try {
       return await invoke<Record<string, string>>("get_worktree_paths", { repoPath });
     } catch (err) {
-      appLogger.error("git", `Failed to get worktree paths for ${repoPath}`, err);
+      appLogger.warn("git", `Failed to get worktree paths for ${repoPath}`, err);
       return {};
     }
   }
@@ -168,7 +168,7 @@ export function useRepository() {
     try {
       return await invoke<string[]>("get_merged_branches", { path: repoPath });
     } catch (err) {
-      appLogger.error("git", `Failed to get merged branches for ${repoPath}`, err);
+      appLogger.warn("git", `Failed to get merged branches for ${repoPath}`, err);
       return [];
     }
   }

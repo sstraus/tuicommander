@@ -72,7 +72,7 @@ function createAppLogger() {
       head = (head + 1) % MAX_ENTRIES;
     }
 
-    if (level === "error" || level === "warn") {
+    if (level === "error") {
       setUnseenErrorCount((c) => c + 1);
     }
 
@@ -136,7 +136,7 @@ function createAppLogger() {
     /** Reset unseen error count (called when panel opens) */
     markSeen,
 
-    /** Number of error/warn entries since last markSeen(). Reactive. */
+    /** Number of error entries since last markSeen(). Reactive. */
     unseenErrorCount,
 
     /** Total entry count. Reactive. */

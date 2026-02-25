@@ -287,6 +287,12 @@ function createRepositoriesStore() {
       save();
     },
 
+    /** Update git repo status (used when a directory gains or loses .git) */
+    setIsGitRepo(path: string, isGitRepo: boolean): void {
+      setState("repositories", path, "isGitRepo", isGitRepo);
+      save();
+    },
+
     /** Add or update a branch */
     setBranch(repoPath: string, branchName: string, data?: Partial<BranchState>): void {
       const existing = state.repositories[repoPath]?.branches[branchName];

@@ -1,6 +1,6 @@
 import { createSignal, batch } from "solid-js";
 import { terminalsStore } from "../stores/terminals";
-import { repositoriesStore } from "../stores/repositories";
+import { repositoriesStore, type RepositoryState } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
 import { appLogger } from "../stores/appLogger";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -58,12 +58,53 @@ export function useGitOperations(deps: GitOperationsDeps) {
     baseRefs: string[];
   } | null>(null);
 
+  /** Transition a repo from git to shell mode (e.g. .git was removed) */
+  const transitionToShell = (repoPath: string, currentRepo: RepositoryState) => {
+    batch(() => {
+      // Migrate all terminals to a shell branch
+      const allTerminals: string[] = [];
+      for (const branch of Object.values(currentRepo.branches)) {
+        allTerminals.push(...branch.terminals);
+        repositoriesStore.removeBranch(repoPath, branch.name);
+      }
+      repositoriesStore.setIsGitRepo(repoPath, false);
+      const shellBranch = "shell";
+      repositoriesStore.setBranch(repoPath, shellBranch, {
+        worktreePath: repoPath,
+        isMain: true,
+        isShell: true,
+      });
+      for (const termId of allTerminals) {
+        repositoriesStore.addTerminalToBranch(repoPath, shellBranch, termId);
+      }
+      repositoriesStore.setActiveBranch(repoPath, shellBranch);
+    });
+  };
+
   const refreshAllBranchStats = async () => {
     await Promise.all(repositoriesStore.getPaths().map(async (repoPath) => {
       const repo = repositoriesStore.get(repoPath);
       if (!repo) return;
-      // Skip non-git directories — no worktrees or branch stats to refresh
-      if (repo.isGitRepo === false) return;
+      // Non-git directories: check if they became a git repo
+      if (repo.isGitRepo === false) {
+        try {
+          const info = await deps.repo.getInfo(repoPath);
+          if (info.is_git_repo && info.branch) {
+            // Directory gained .git — transition to git mode
+            batch(() => {
+              for (const branch of Object.values(repo.branches)) {
+                repositoriesStore.removeBranch(repoPath, branch.name);
+              }
+              repositoriesStore.setIsGitRepo(repoPath, true);
+              repositoriesStore.setBranch(repoPath, info.branch, { worktreePath: repoPath });
+              repositoriesStore.setActiveBranch(repoPath, info.branch);
+            });
+          }
+        } catch {
+          // Probe failed — stay in shell mode
+        }
+        return;
+      }
 
       const showAllBranches = repositoriesStore.get(repoPath)?.showAllBranches ?? false;
       const [worktreePaths, localBranches, mergedBranches] = await Promise.all([
@@ -76,27 +117,46 @@ export function useGitOperations(deps: GitOperationsDeps) {
       const currentRepo = repositoriesStore.get(repoPath);
       if (!currentRepo) return;
 
-      const branchCount = Object.keys(currentRepo.branches).length;
-      // Guard: an empty worktree response when branches exist likely indicates a
-      // backend error. Clearing branches in that case would destroy UI state.
-      if (Object.keys(worktreePaths).length === 0 && branchCount > 0) {
-        console.warn(`[refreshAllBranchStats] getWorktreePaths returned empty for ${repoPath} with ${branchCount} branch(es) — skipping clear`);
-        return;
+      if (Object.keys(worktreePaths).length === 0) {
+        // Worktrees came back empty — either a transient backend error or the
+        // repo is no longer a git repo. Probe to find out.
+        try {
+          const info = await deps.repo.getInfo(repoPath);
+          if (!info.is_git_repo) {
+            transitionToShell(repoPath, currentRepo);
+            return;
+          }
+        } catch {
+          // getInfo failed — don't destroy UI state
+        }
+        // Still a git repo but no worktrees returned — skip to avoid
+        // destroying existing branch state on a transient error.
+        if (Object.keys(currentRepo.branches).length > 0) return;
       }
 
       // Compute the target set of branches to keep, then apply all
       // mutations in a single batch to prevent intermediate renders
       // (which caused the sidebar to flash/jump during refresh).
       const localSet = new Set(localBranches);
+      const storeIds = new Set(terminalsStore.getIds());
       const toRemove: string[] = [];
       for (const branchName of Object.keys(currentRepo.branches)) {
         if (!(branchName in worktreePaths) && !localSet.has(branchName)) {
+          // Never remove a branch that still has live terminals in the store
+          const branchState = currentRepo.branches[branchName];
+          const hasLiveTerminals = branchState?.terminals.some(id => storeIds.has(id));
+          if (hasLiveTerminals) {
+            appLogger.info("terminal", `refreshAllBranchStats: keeping "${branchName}" — has live terminals`, {
+              terminals: branchState.terminals,
+            });
+            continue;
+          }
           toRemove.push(branchName);
         }
       }
 
       if (toRemove.length > 0) {
-        appLogger.warn("terminal", `refreshAllBranchStats removing branches from ${repoPath}`, {
+        appLogger.info("terminal", `refreshAllBranchStats removing branches from ${repoPath}`, {
           toRemove,
           worktreePathKeys: Object.keys(worktreePaths),
           localBranches: [...localSet],
@@ -104,15 +164,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
         });
       }
 
+      // Find the main branch to migrate orphaned terminals into
+      const mainBranchName = Object.values(currentRepo.branches).find(b => b.isMain)?.name;
+
       batch(() => {
         for (const branchName of toRemove) {
-          const branchState = repositoriesStore.get(repoPath)?.branches[branchName];
-          if (branchState?.terminals.length) {
-            appLogger.error("terminal", `refreshAllBranchStats REMOVING branch "${branchName}" that still has terminals!`, {
-              terminals: [...branchState.terminals],
-              hadTerminals: branchState.hadTerminals,
-            });
-          }
           repositoriesStore.removeBranch(repoPath, branchName);
         }
         for (const [branchName, wtPath] of Object.entries(worktreePaths)) {
@@ -203,7 +259,31 @@ export function useGitOperations(deps: GitOperationsDeps) {
       }
     }
 
-    const branch = repositoriesStore.get(repoPath)?.branches[branchName];
+    let branch = repositoriesStore.get(repoPath)?.branches[branchName];
+
+    // Adopt orphaned terminals whose cwd matches this branch's worktree path.
+    // This recovers terminals that lost their branch association (e.g. after a
+    // refreshAllBranchStats race condition recreated the branch fresh).
+    if (branch?.worktreePath) {
+      const branchTermSet = new Set(branch.terminals);
+      for (const id of terminalsStore.getIds()) {
+        if (branchTermSet.has(id)) continue;
+        const term = terminalsStore.get(id);
+        if (term?.cwd === branch.worktreePath) {
+          // Check this terminal isn't claimed by another branch
+          const claimedElsewhere = Object.values(
+            repositoriesStore.get(repoPath)?.branches ?? {},
+          ).some((b) => b.name !== branchName && b.terminals.includes(id));
+          if (!claimedElsewhere) {
+            appLogger.info("terminal", `BranchSelect: adopting orphan ${id} into ${branchName} (cwd matches worktreePath)`);
+            repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
+          }
+        }
+      }
+      // Re-read branch state after potential adoptions
+      branch = repositoriesStore.get(repoPath)?.branches[branchName];
+    }
+
     const validTerminals = filterValidTerminals(branch?.terminals, terminalsStore.getIds());
     appLogger.info("terminal", `BranchSelect → ${branchName}`, { branchTerminals: branch?.terminals, storeIds: terminalsStore.getIds(), valid: validTerminals, hadTerminals: branch?.hadTerminals, savedTerminals: branch?.savedTerminals?.length ?? 0 });
     if (validTerminals.length === 0 && (branch?.terminals?.length ?? 0) > 0) {

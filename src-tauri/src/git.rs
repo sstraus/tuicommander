@@ -495,26 +495,55 @@ pub(crate) fn sort_branches(branches: &mut [serde_json::Value]) {
     });
 }
 
+/// Detect the default/primary branch for a repository via file I/O.
+///
+/// Strategy (in order):
+/// 1. Check `MAIN_BRANCH_CANDIDATES` against local refs
+/// 2. Read `refs/remotes/origin/HEAD` symref (set by `git clone` or `git remote set-head`)
+/// 3. Return `None` if no default branch can be determined
+fn detect_default_branch(git_dir: &Path) -> Option<String> {
+    // 1. Check well-known candidate names in local refs
+    if let Some(name) = MAIN_BRANCH_CANDIDATES.iter().find(|name| {
+        git_dir.join("refs/heads").join(name).exists()
+            || packed_ref_exists(git_dir, &format!("refs/heads/{name}"))
+    }) {
+        return Some(name.to_string());
+    }
+
+    // 2. Read origin/HEAD symref (e.g. "ref: refs/remotes/origin/main\n")
+    let origin_head = git_dir.join("refs/remotes/origin/HEAD");
+    if let Ok(content) = fs::read_to_string(&origin_head) {
+        if let Some(target) = content.trim().strip_prefix("ref: refs/remotes/origin/") {
+            let branch = target.trim();
+            // Verify the branch exists locally before using it
+            if git_dir.join("refs/heads").join(branch).exists()
+                || packed_ref_exists(git_dir, &format!("refs/heads/{branch}"))
+            {
+                return Some(branch.to_string());
+            }
+        }
+    }
+
+    None
+}
+
 /// Get local branches that are fully merged into the repo's main branch.
 /// Returns branch names whose tips are reachable from the main branch HEAD.
+/// Returns an empty vec (not an error) when the repo has no detectable default branch.
 pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, String> {
-    let git_dir = resolve_git_dir(repo_path)
-        .ok_or_else(|| format!("Not a git repository: {}", repo_path.display()))?;
+    let git_dir = match resolve_git_dir(repo_path) {
+        Some(d) => d,
+        None => return Ok(vec![]),  // Not a git repo — graceful no-op
+    };
 
-    // Find the main branch via file I/O (no subprocess)
-    let main_branch = MAIN_BRANCH_CANDIDATES.iter().find(|name| {
-        // Check packed-refs first, then loose refs
-        git_dir.join("refs/heads").join(name).exists()
-            || packed_ref_exists(&git_dir, &format!("refs/heads/{name}"))
-    }).ok_or_else(|| format!(
-        "No standard main branch found in {} (checked: {})",
-        repo_path.display(),
-        MAIN_BRANCH_CANDIDATES.join(", "),
-    ))?;
+    let main_branch = match detect_default_branch(&git_dir) {
+        Some(b) => b,
+        None => return Ok(vec![]),  // No default branch — graceful no-op
+    };
 
     let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(repo_path)
-        .args(["branch", "--merged", main_branch, "--format=%(refname:short)"])
+        .args(["branch", "--merged", &main_branch, "--format=%(refname:short)"])
         .output()
         .map_err(|e| format!("Failed to run git branch --merged: {e}"))?;
 
@@ -1034,14 +1063,34 @@ mod tests {
     }
 
     #[test]
-    fn test_get_merged_branches_rejects_nonexistent_path() {
+    fn test_get_merged_branches_returns_empty_for_nonexistent_path() {
         let result = get_merged_branches_impl(Path::new("/nonexistent/path/xyz"));
-        assert!(result.is_err(), "should fail for nonexistent path");
+        assert_eq!(result.unwrap(), Vec::<String>::new(), "should return empty vec for nonexistent path");
     }
 
     #[test]
-    fn test_get_merged_branches_rejects_non_git_directory() {
+    fn test_get_merged_branches_returns_empty_for_non_git_directory() {
         let result = get_merged_branches_impl(&std::env::temp_dir());
-        assert!(result.is_err(), "should fail for non-git directory");
+        assert_eq!(result.unwrap(), Vec::<String>::new(), "should return empty vec for non-git directory");
+    }
+
+    #[test]
+    fn test_detect_default_branch_for_real_repo() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let repo_root = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
+        let git_dir = resolve_git_dir(&repo_root).expect("should resolve git dir");
+
+        let branch = detect_default_branch(&git_dir);
+        assert!(branch.is_some(), "should detect a default branch for this repo");
+        // This repo uses 'main'
+        assert_eq!(branch.unwrap(), "main");
+    }
+
+    #[test]
+    fn test_detect_default_branch_returns_none_for_non_git() {
+        let tmp = std::env::temp_dir();
+        // temp_dir has no .git — resolve_git_dir returns None, so we
+        // test detect_default_branch with a fake path that has no refs
+        assert!(detect_default_branch(&tmp).is_none());
     }
 }

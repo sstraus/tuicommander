@@ -932,10 +932,12 @@ const App: Component = () => {
           onMergeAndArchive={(repoPath, branchName) => {
             const repoState = repositoriesStore.get(repoPath);
             const mainBranch = repoState ? Object.values(repoState.branches).find(b => b.isMain)?.name : undefined;
-            if (!mainBranch) return;
+            if (!mainBranch) {
+              setStatusInfo("Cannot merge: no main branch found");
+              return;
+            }
             const effective = repoSettingsStore.getEffective(repoPath);
-            if (!effective) return;
-            const afterMerge = effective.afterMerge;
+            const afterMerge = effective?.afterMerge ?? "archive";
             gitOps.handleMergeAndArchive(repoPath, branchName, mainBranch, afterMerge);
           }}
           creatingWorktreeRepos={gitOps.creatingWorktreeRepos()}

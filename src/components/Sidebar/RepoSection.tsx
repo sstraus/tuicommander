@@ -196,14 +196,15 @@ export const BranchItem: Component<{
       if (agentItems && agentItems.length > 0) {
         items.push(...agentItems);
       }
-      items.push({ label: "Rename Branch", action: props.onRename, disabled: props.branch.isMain });
+      const isLinkedWorktree = !!props.branch.worktreePath && props.branch.worktreePath !== props.repoPath;
+      items.push({ label: isLinkedWorktree ? "Rename Worktree" : "Rename Branch", action: props.onRename, disabled: props.branch.isMain });
       if (!props.branch.isMain && !props.branch.worktreePath && props.onCreateWorktreeFromBranch) {
         items.push({ label: "Create Worktree", action: props.onCreateWorktreeFromBranch });
       }
-      if (!props.branch.isMain && props.branch.worktreePath && props.onMergeAndArchive) {
+      if (!props.branch.isMain && isLinkedWorktree && props.onMergeAndArchive) {
         items.push({ label: "Merge & Archive", action: props.onMergeAndArchive });
       }
-      if (!props.branch.isMain && props.branch.worktreePath && props.canRemove) {
+      if (!props.branch.isMain && isLinkedWorktree && props.canRemove) {
         items.push({ label: "Delete Worktree", action: props.onRemove, separator: true });
       }
     }

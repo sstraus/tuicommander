@@ -279,13 +279,13 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
       {/* Right section - controls */}
       <div class={cx(s.section, s.controls)}>
         {/* Toggle buttons */}
-        <button class="toggle-btn" onClick={() => props.onToggleErrorLog?.()} title={`Error Log (${getModifierSymbol()}${"\u21e7"}E)`} style={{ position: "relative" }}>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-          <Show when={appLogger.unseenErrorCount() > 0}>
+        <Show when={appLogger.unseenErrorCount() > 0}>
+          <button class="toggle-btn" onClick={() => props.onToggleErrorLog?.()} title={`Error Log (${getModifierSymbol()}${"\u21e7"}E)`} style={{ position: "relative" }}>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
             <span class={s.toggleBadge} style={{ background: "var(--error)", color: "#000" }}>{appLogger.unseenErrorCount()}</span>
-          </Show>
-          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}{"\u21e7"}E</span>
-        </button>
+            <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}{"\u21e7"}E</span>
+          </button>
+        </Show>
         <button class="toggle-btn" onClick={() => props.onToggleNotes?.()} title={`${t("statusBar.toggleNotes", "Toggle Ideas Panel")} (${getModifierSymbol()}N)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 21c0 .5.4 1 1 1h4c.6 0 1-.5 1-1v-1H9v1zm3-19C8.1 2 5 5.1 5 9c0 2.4 1.2 4.5 3 5.7V17c0 .5.4 1 1 1h6c.6 0 1-.5 1-1v-2.3c1.8-1.3 3-3.4 3-5.7 0-3.9-3.1-7-7-7z"/></svg>
           <Show when={notesBadgeCount() > 0}>
