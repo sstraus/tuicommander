@@ -37,7 +37,7 @@ export function useRepository() {
     try {
       return await invoke<{ additions: number; deletions: number }>("get_diff_stats", { path, scope });
     } catch (err) {
-      console.debug("Failed to get diff stats:", { path, err });
+      appLogger.debug("git", "Failed to get diff stats", { path, err });
       return { additions: 0, deletions: 0 };
     }
   }
@@ -72,7 +72,7 @@ export function useRepository() {
     try {
       return await invoke<ChangedFile[]>("get_changed_files", { path, scope });
     } catch (err) {
-      console.error("Failed to get changed files:", err);
+      appLogger.error("git", "Failed to get changed files", err);
       return [];
     }
   }
@@ -82,7 +82,7 @@ export function useRepository() {
     try {
       return await invoke<string>("get_file_diff", { path, file, scope });
     } catch (err) {
-      console.error("Failed to get file diff:", err);
+      appLogger.error("git", "Failed to get file diff", err);
       return "";
     }
   }
@@ -99,7 +99,7 @@ export function useRepository() {
     try {
       return await invoke<MarkdownFileEntry[]>("list_markdown_files", { path });
     } catch (err) {
-      console.error("Failed to list markdown files:", err);
+      appLogger.error("git", "Failed to list markdown files", err);
       return [];
     }
   }
@@ -109,7 +109,7 @@ export function useRepository() {
     try {
       return await invoke<string>("read_file", { path, file });
     } catch (err) {
-      console.error("Failed to read file:", err);
+      appLogger.error("git", "Failed to read file", err);
       return "";
     }
   }
@@ -178,7 +178,7 @@ export function useRepository() {
     try {
       return await invoke<string[]>("list_local_branches", { repoPath });
     } catch (err) {
-      console.error("Failed to list local branches:", err);
+      appLogger.error("git", "Failed to list local branches", err);
       return [];
     }
   }
@@ -188,7 +188,7 @@ export function useRepository() {
     try {
       return await invoke<RecentCommit[]>("get_recent_commits", { path, count });
     } catch (err) {
-      console.error("Failed to get recent commits:", err);
+      appLogger.error("git", "Failed to get recent commits", err);
       return [];
     }
   }

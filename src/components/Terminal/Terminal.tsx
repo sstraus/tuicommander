@@ -223,19 +223,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
     if (!busyFlagged || storeState !== "busy") {
       busyFlagged = true;
       if (storeState !== "busy") {
-        console.debug(`[ShellState] ${props.id} → "busy" (PTY output, was "${storeState}")`);
+        appLogger.debug("terminal", `[ShellState] ${props.id} → "busy" (PTY output, was "${storeState}")`);
         terminalsStore.update(props.id, { shellState: "busy" });
       }
       // New output after idle means the user answered any pending prompt
       if (terminalsStore.get(props.id)?.awaitingInput) {
-        console.debug(`[ShellState] ${props.id} clearAwaitingInput (new PTY output while awaiting)`);
+        appLogger.debug("terminal", `[ShellState] ${props.id} clearAwaitingInput (new PTY output while awaiting)`);
         terminalsStore.clearAwaitingInput(props.id);
       }
     }
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       busyFlagged = false;
-      console.debug(`[ShellState] ${props.id} → "idle" (500ms timeout)`);
+      appLogger.debug("terminal", `[ShellState] ${props.id} → "idle" (500ms timeout)`);
       terminalsStore.update(props.id, { shellState: "idle" });
 
       // Auto-resume agent on first shell idle after restore
@@ -304,11 +304,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
       unlistenParsed = await listen<ParsedEvent>(`pty-parsed-${targetSessionId}`, (event) => {
         const parsed = event.payload;
 
-        console.debug(`[ParsedEvent] ${props.id} type="${parsed.type}"`, parsed);
+        appLogger.debug("terminal", `[ParsedEvent] ${props.id} type="${parsed.type}"`, parsed);
 
         switch (parsed.type) {
           case "progress": {
-            console.debug(`[ParsedEvent] ${props.id} progress state=${parsed.state} value=${parsed.value} → clearAwaitingInput`);
+            appLogger.debug("terminal", `[ParsedEvent] ${props.id} progress state=${parsed.state} value=${parsed.value} → clearAwaitingInput`);
             terminalsStore.clearAwaitingInput(props.id);
             if (parsed.state === 0) {
               terminalsStore.update(props.id, { progress: null });
@@ -319,7 +319,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
           case "status-line": {
             // Agent is working again — clear any question state
-            console.debug(`[ParsedEvent] ${props.id} status-line task="${parsed.task_name}" → clearAwaitingInput`);
+            appLogger.debug("terminal", `[ParsedEvent] ${props.id} status-line task="${parsed.task_name}" → clearAwaitingInput`);
             terminalsStore.clearAwaitingInput(props.id);
             const now = Date.now();
             const currentTerm = terminalsStore.get(props.id);
@@ -335,7 +335,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
           case "rate-limit": {
             const detectedAgent = terminalsStore.get(props.id)?.agentType;
-            console.debug(`[RateLimit DEBUG] pattern=${parsed.pattern_name} matched="${parsed.matched_text}" agent=${detectedAgent ?? "none"} sessionId=${targetSessionId}`);
+            appLogger.debug("terminal", `[RateLimit] pattern=${parsed.pattern_name} matched="${parsed.matched_text}" agent=${detectedAgent ?? "none"} sessionId=${targetSessionId}`);
             if (detectedAgent) {
               const info = {
                 agentType: detectedAgent,
@@ -351,20 +351,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           }
           case "question":
-            console.debug(`[ParsedEvent] ${props.id} question prompt="${parsed.prompt_text}" → setAwaitingInput("question")`);
+            appLogger.debug("terminal", `[ParsedEvent] ${props.id} question prompt="${parsed.prompt_text}" → setAwaitingInput("question")`);
             terminalsStore.setAwaitingInput(props.id, "question");
             if (terminalsStore.state.activeId !== props.id) {
               notificationsStore.playQuestion();
             }
             break;
           case "usage-limit":
-            console.debug(`[ParsedEvent] ${props.id} usage-limit ${parsed.percentage}% ${parsed.limit_type}`);
+            appLogger.debug("terminal", `[ParsedEvent] ${props.id} usage-limit ${parsed.percentage}% ${parsed.limit_type}`);
             terminalsStore.update(props.id, {
               usageLimit: { percentage: parsed.percentage, limitType: parsed.limit_type },
             });
             break;
           case "plan-file":
-            console.debug(`[ParsedEvent] ${props.id} plan-file path="${parsed.path}" → setAwaitingInput("question")`);
+            appLogger.debug("terminal", `[ParsedEvent] ${props.id} plan-file path="${parsed.path}" → setAwaitingInput("question")`);
             // Mark terminal as awaiting input — the plan needs user approval
             terminalsStore.setAwaitingInput(props.id, "question");
             if (terminalsStore.state.activeId !== props.id) {
@@ -373,7 +373,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             // Also handled by planPlugin via dispatchStructuredEvent below
             break;
           case "user-input":
-            console.debug(`[ParsedEvent] ${props.id} user-input content="${(parsed as { content: string }).content.slice(0, 80)}"`);
+            appLogger.debug("terminal", `[ParsedEvent] ${props.id} user-input content="${(parsed as { content: string }).content.slice(0, 80)}"`);
             // Refresh last relevant prompt from Rust (word-count filtering happens backend-side)
             invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
               if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
@@ -384,7 +384,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             const kind = (parsed as { error_kind: string }).error_kind;
             const patternName = (parsed as { pattern_name: string }).pattern_name;
             const matchedText = (parsed as { matched_text: string }).matched_text;
-            console.warn(`[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
+            appLogger.warn("terminal", `[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
             appLogger.error("terminal", `API error (${kind}): ${matchedText}`);
             if (terminalsStore.state.activeId !== props.id) {
               notificationsStore.playError();
@@ -418,7 +418,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   if (existingSessionId) {
     sessionId = existingSessionId;
     attachSessionListeners(existingSessionId).catch((err) =>
-      console.error("[Terminal] Failed to attach session listeners:", err),
+      appLogger.error("terminal", "Failed to attach session listeners", err),
     );
   }
 
@@ -758,7 +758,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           clearTimeout(resizeTimer);
           if (sessionId && terminal && terminal.rows > 0 && terminal.cols > 0) {
             pty.resize(sessionId, terminal.rows, terminal.cols).catch((err) => {
-              console.error("[Terminal] ResizeObserver resize failed:", err);
+              appLogger.error("terminal", "ResizeObserver resize failed", err);
             });
           }
         });
@@ -774,7 +774,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         try {
           await pty.write(sessionId, data);
         } catch (err) {
-          console.error("Failed to write to PTY:", err);
+          appLogger.error("terminal", "Failed to write to PTY", err);
         }
       }
     });
@@ -788,7 +788,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             try {
               await pty.resize(sessionId, rows, cols);
             } catch (err) {
-              console.error("Failed to resize PTY:", err);
+              appLogger.error("terminal", "Failed to resize PTY", err);
             }
           }
         }, 150);
@@ -812,7 +812,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         } else if (remaining > 0) {
           tryFit(remaining - 1);
         } else {
-          console.warn('[Terminal] Container has zero dimensions after retries, proceeding with defaults');
+          appLogger.warn("terminal", "Container has zero dimensions after retries, proceeding with defaults");
           onReady?.();
         }
       });
@@ -952,7 +952,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       // Write to PTY stdin (sends as user input to the shell)
       if (sessionId) {
         pty.write(sessionId, data).catch((err) => {
-          console.error("Failed to write to PTY:", err);
+          appLogger.error("terminal", "Failed to write to PTY", err);
         });
       }
     },

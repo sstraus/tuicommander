@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { invoke } from "../invoke";
+import { appLogger } from "../stores/appLogger";
 import type { AgentType } from "../agents";
 
 /** Agent binary detection result */
@@ -60,7 +61,7 @@ export function useAgentDetection() {
       }
       setDetections(newMap);
     } catch (err) {
-      console.error("Failed to detect agents:", err);
+      appLogger.error("app", "Failed to detect agents", err);
     } finally {
       setLoading(false);
     }

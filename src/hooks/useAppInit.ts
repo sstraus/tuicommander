@@ -77,22 +77,22 @@ function collectTerminalSnapshots(): Map<string, Map<string, SavedTerminal[]>> {
 /** App initialization: hydrate stores, reconnect PTY sessions, restore state */
 export async function initApp(deps: AppInitDeps) {
   appLogger.error("app", `initApp called — existing terminals: [${terminalsStore.getIds().join(", ")}]`);
-  console.log("[SolidJS] App mounted");
+  appLogger.debug("app", "SolidJS App mounted");
 
   const platform = deps.applyPlatformClass();
-  console.log(`[Platform] Detected: ${platform}`);
+  appLogger.debug("app", `Platform detected: ${platform}`);
 
   // Detect lazygit binary (Story 048)
   try {
     const detection = await deps.detectBinary("lazygit");
     deps.setLazygitAvailable(detection.path !== null);
     if (detection.path) {
-      console.log(`[Lazygit] Found: ${detection.path} (${detection.version ?? "unknown version"})`);
+      appLogger.info("app", `Lazygit found: ${detection.path} (${detection.version ?? "unknown version"})`);
     } else {
-      console.log("[Lazygit] Not found — lazygit features disabled");
+      appLogger.info("app", "Lazygit not found — lazygit features disabled");
     }
   } catch {
-    console.warn("[Lazygit] Detection failed");
+    appLogger.warn("app", "Lazygit detection failed");
     deps.setLazygitAvailable(false);
   }
 
@@ -135,7 +135,7 @@ export async function initApp(deps: AppInitDeps) {
         const t = terminalsStore.get(id);
         if (t?.sessionId) {
           deps.pty.close(t.sessionId).catch((err) =>
-            console.warn(`Failed to close PTY session ${t.sessionId} on unload:`, err),
+            appLogger.warn("app", `Failed to close PTY session ${t.sessionId} on unload`, err),
           );
         }
       }
@@ -167,10 +167,10 @@ export async function initApp(deps: AppInitDeps) {
       // Skip non-git directories — no .git/ to watch
       if (repositoriesStore.get(repoPath)?.isGitRepo === false) continue;
       invoke("start_head_watcher", { repoPath }).catch((err) =>
-        console.warn(`[HeadWatcher] Failed to start for ${repoPath}:`, err),
+        appLogger.warn("app", `HeadWatcher failed to start for ${repoPath}`, err),
       );
       invoke("start_repo_watcher", { repoPath }).catch((err) =>
-        console.warn(`[RepoWatcher] Failed to start for ${repoPath}:`, err),
+        appLogger.warn("app", `RepoWatcher failed to start for ${repoPath}`, err),
       );
     }
   }
@@ -183,7 +183,7 @@ export async function initApp(deps: AppInitDeps) {
     // Only update if branch actually changed
     if (repo.activeBranch === branch) return;
 
-    console.log(`[HeadWatcher] ${repo_path}: branch changed to ${branch}`);
+    appLogger.info("app", `HeadWatcher: ${repo_path} branch changed to ${branch}`);
 
     const oldBranch = repo.activeBranch;
     const oldBranchState = oldBranch ? repo.branches[oldBranch] : null;
@@ -202,10 +202,10 @@ export async function initApp(deps: AppInitDeps) {
 
     // Invalidate caches so next poll fetches fresh data
     invoke("clear_caches").catch((err) =>
-      console.debug("[Cache] Failed to clear caches:", err),
+      appLogger.debug("app", "Failed to clear caches", err),
     );
   }).catch((err) =>
-    console.error("[HeadWatcher] Failed to register head-changed listener:", err),
+    appLogger.error("app", "Failed to register head-changed listener", err),
   );
 
   // Listen for .git/ directory changes (index, refs, etc.) to refresh panels
@@ -214,7 +214,7 @@ export async function initApp(deps: AppInitDeps) {
     const { repo_path } = event.payload;
     // Invalidate caches so panels fetch fresh data
     invoke("clear_caches").catch((err) =>
-      console.debug("[Cache] Failed to clear caches:", err),
+      appLogger.debug("app", "Failed to clear caches", err),
     );
     // Bump revision counter — panels tracking this signal will re-fetch
     repositoriesStore.bumpRevision(repo_path);
@@ -227,7 +227,7 @@ export async function initApp(deps: AppInitDeps) {
       deps.refreshAllBranchStats();
     }, 500);
   }).catch((err) =>
-    console.error("[RepoWatcher] Failed to register repo-changed listener:", err),
+    appLogger.error("app", "Failed to register repo-changed listener", err),
   );
 
   // Listen for sessions created/closed by remote clients (browser UI)
@@ -240,7 +240,7 @@ export async function initApp(deps: AppInitDeps) {
       );
       if (existing) return;
 
-      console.log(`[Remote] Session created: ${session_id}`);
+      appLogger.info("app", `Remote session created: ${session_id}`);
       const id = terminalsStore.add({
         sessionId: session_id,
         fontSize: deps.getDefaultFontSize(),
@@ -273,7 +273,7 @@ export async function initApp(deps: AppInitDeps) {
         }
       }
     }).catch((err) =>
-      console.error("[Remote] Failed to register session-created listener:", err),
+      appLogger.error("app", "Failed to register session-created listener", err),
     );
 
     listen<{ session_id: string }>("session-closed", (event) => {
@@ -282,11 +282,11 @@ export async function initApp(deps: AppInitDeps) {
         (id) => terminalsStore.get(id)?.sessionId === session_id,
       );
       if (termId) {
-        console.log(`[Remote] Session closed: ${session_id}`);
+        appLogger.info("app", `Remote session closed: ${session_id}`);
         terminalsStore.remove(termId);
       }
     }).catch((err) =>
-      console.error("[Remote] Failed to register session-closed listener:", err),
+      appLogger.error("app", "Failed to register session-closed listener", err),
     );
   }
 
@@ -295,7 +295,7 @@ export async function initApp(deps: AppInitDeps) {
   try {
     survivingSessions = await deps.pty.listActiveSessions();
   } catch (err) {
-    console.warn("[PTY] Failed to list active sessions (server unreachable or auth failure):", err);
+    appLogger.warn("app", "Failed to list active sessions (server unreachable or auth failure)", err);
   }
 
   // Clear stale terminal IDs from previous session
@@ -305,7 +305,7 @@ export async function initApp(deps: AppInitDeps) {
 
   // Re-adopt surviving PTY sessions or start fresh
   if (survivingSessions.length > 0) {
-    console.log(`[PTY Reconnect] Found ${survivingSessions.length} surviving session(s)`);
+    appLogger.info("app", `PTY reconnect: found ${survivingSessions.length} surviving session(s)`);
     for (const session of survivingSessions) {
       const id = terminalsStore.add({
         sessionId: session.session_id,

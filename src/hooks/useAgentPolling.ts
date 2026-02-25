@@ -1,6 +1,7 @@
 import { createEffect, onCleanup } from "solid-js";
 import { invoke } from "../invoke";
 import { terminalsStore } from "../stores/terminals";
+import { appLogger } from "../stores/appLogger";
 import type { AgentType } from "../agents";
 
 /** Polling interval for foreground process detection (ms) */
@@ -33,7 +34,7 @@ export function useAgentPolling(): void {
           const agentType = result as AgentType | null;
           const current = terminalsStore.get(termId);
           if (current && current.agentType !== agentType) {
-            console.debug(`[AgentPoll] ${termId} agentType "${current.agentType}" → "${agentType}"`);
+            appLogger.debug("app", `[AgentPoll] ${termId} agentType "${current.agentType}" → "${agentType}"`);
             terminalsStore.update(termId, { agentType });
           }
         } catch {

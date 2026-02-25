@@ -119,7 +119,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       try {
         await deps.pty.close(terminal.sessionId);
       } catch (err) {
-        console.error("Failed to close PTY:", err);
+        appLogger.error("terminal", "Failed to close PTY", err);
       }
     }
 
@@ -284,7 +284,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
         deps.setStatusInfo("Copied to clipboard");
       }
     } catch (err) {
-      console.error("Failed to copy:", err);
+      appLogger.error("terminal", "Failed to copy", err);
     }
   };
 
@@ -296,7 +296,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
         active.ref.write(text);
       }
     } catch (err) {
-      console.error("Failed to paste:", err);
+      appLogger.error("terminal", "Failed to paste", err);
     }
   };
 

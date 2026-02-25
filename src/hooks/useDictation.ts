@@ -1,4 +1,5 @@
 import { terminalsStore } from "../stores/terminals";
+import { appLogger } from "../stores/appLogger";
 /** Dependencies injected into useDictation */
 export interface DictationDeps {
   pty: {
@@ -56,7 +57,7 @@ export function useDictation(deps: DictationDeps) {
         deps.setStatusInfo("Dictation: recording…");
         return true;
       } catch (err) {
-        console.error("Dictation start failed:", err);
+        appLogger.error("dictation", "Dictation start failed", err);
         deps.setStatusInfo("Dictation: failed to start recording");
         return false;
       }
@@ -104,7 +105,7 @@ export function useDictation(deps: DictationDeps) {
           deps.setStatusInfo("Ready");
           requestAnimationFrame(() => active.ref?.focus());
         } catch (err) {
-          console.error("[Dictation] Failed to write to terminal:", err);
+          appLogger.error("dictation", "Failed to write to terminal", err);
           deps.setStatusInfo("Dictation: failed to write to terminal");
         }
       } else {

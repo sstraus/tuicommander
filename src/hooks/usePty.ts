@@ -1,4 +1,5 @@
 import { rpc } from "../transport";
+import { appLogger } from "../stores/appLogger";
 import type { PtyConfig, OrchestratorStats } from "../types";
 
 /** Worktree configuration */
@@ -40,7 +41,7 @@ export function usePty() {
     try {
       return await rpc<boolean>("can_spawn_session");
     } catch (err) {
-      console.error("Failed to check session limit:", err);
+      appLogger.error("terminal", "Failed to check session limit", err);
       return false;
     }
   }
