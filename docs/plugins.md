@@ -980,6 +980,7 @@ See `examples/plugins/` for complete working examples:
 | `auto-confirm` | 1+3 | `pty:write` | Auto-responding to Y/N prompts |
 | `ci-notifier` | 1+3 | `ui:sound`, `ui:markdown` | Sound notifications, markdown panels |
 | `repo-dashboard` | 1+2 | none | Read-only state, dynamic markdown |
+| `claude-status` | 1 | none | **Agent-scoped** (`agentTypes: ["claude"]`), structured events |
 
 ## Distributable Plugins
 

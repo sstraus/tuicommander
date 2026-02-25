@@ -1,0 +1,11 @@
+{
+  "id": "claude-status",
+  "name": "Claude Status",
+  "version": "1.0.0",
+  "minAppVersion": "0.3.0",
+  "main": "main.js",
+  "description": "Tracks Claude Code usage limits and rate limit events. Agent-scoped: only active for Claude terminals.",
+  "author": "TUICommander",
+  "agentTypes": ["claude"],
+  "capabilities": []
+}
