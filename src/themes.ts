@@ -1,4 +1,5 @@
 import type { ITheme } from "@xterm/xterm";
+import { appLogger } from "./stores/appLogger";
 
 /** Available terminal color themes */
 export const TERMINAL_THEMES: Record<string, ITheme> = {
@@ -498,7 +499,7 @@ function camelToKebab(str: string): string {
 /** Apply an app theme by setting CSS custom properties on the document root */
 export function applyAppTheme(key: string): void {
   if (!(key in APP_THEMES)) {
-    console.warn(`Unknown theme "${key}", falling back to vscode-dark`);
+    appLogger.warn("app", `Unknown theme "${key}", falling back to vscode-dark`);
   }
   const theme = getAppTheme(key);
   const root = document.documentElement.style;

@@ -1,6 +1,7 @@
 import { invoke } from "../invoke";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
+import { appLogger } from "../stores/appLogger";
 import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -60,7 +61,7 @@ const planMarkdownProvider: MarkdownProvider = {
     try {
       return await invoke<string>("plugin_read_file", { path: rawPath, pluginId: PLUGIN_ID });
     } catch (err) {
-      console.warn("[planPlugin] Failed to read plan file:", rawPath, err);
+      appLogger.warn("plugin", `Failed to read plan file: ${rawPath}`, err);
       return null;
     }
   },

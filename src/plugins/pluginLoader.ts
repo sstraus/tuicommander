@@ -9,6 +9,7 @@
 import { invoke, listen } from "../invoke";
 import { pluginRegistry } from "./pluginRegistry";
 import { pluginStore } from "../stores/pluginStore";
+import { appLogger } from "../stores/appLogger";
 import type { TuiPlugin } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -207,7 +208,7 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
     mod = await import(/* @vite-ignore */ url);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[pluginLoader] failed to import "${manifest.id}":`, err);
+    appLogger.error("plugin", `Failed to import plugin "${manifest.id}"`, err);
     logger.error(`Import failed: ${msg}`, err);
     pluginStore.updatePlugin(manifest.id, { error: msg });
     return;
@@ -215,7 +216,7 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
 
   const moduleError = validateModule(mod, manifest.id);
   if (moduleError) {
-    console.error(`[pluginLoader] invalid module for "${manifest.id}": ${moduleError}`);
+    appLogger.error("plugin", `Invalid module for plugin "${manifest.id}": ${moduleError}`);
     logger.error(`Module validation failed: ${moduleError}`);
     pluginStore.updatePlugin(manifest.id, { error: moduleError });
     return;
@@ -225,7 +226,7 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
   pluginRegistry.register(plugin, manifest.capabilities, manifest.allowed_urls, manifest.agent_types);
   loadedPluginIds.add(manifest.id);
   logger.info(`Loaded v${manifest.version}`);
-  console.log(`[pluginLoader] loaded plugin "${manifest.id}" v${manifest.version}`);
+  appLogger.info("plugin", `Loaded plugin "${manifest.id}" v${manifest.version}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -241,7 +242,7 @@ async function handlePluginChanged(event: { payload: string[] }): Promise<void> 
   if (!Array.isArray(changedIds) || changedIds.length === 0) return;
 
   for (const pluginId of changedIds) {
-    console.log(`[pluginLoader] plugin-changed event for "${pluginId}", reloading...`);
+    appLogger.info("plugin", `Plugin "${pluginId}" changed, reloading...`);
 
     // Unregister if previously loaded
     if (loadedPluginIds.has(pluginId)) {
@@ -254,20 +255,20 @@ async function handlePluginChanged(event: { payload: string[] }): Promise<void> 
     try {
       manifests = await invoke<PluginManifest[]>("list_user_plugins");
     } catch (err) {
-      console.error("[pluginLoader] failed to list plugins for reload:", err);
+      appLogger.error("plugin", "Failed to list plugins for reload", err);
       return;
     }
 
     const manifest = manifests.find((m) => m.id === pluginId);
     if (!manifest) {
-      console.warn(`[pluginLoader] plugin "${pluginId}" not found after change event`);
+      appLogger.warn("plugin", `Plugin "${pluginId}" not found after change event`);
       pluginStore.removePlugin(pluginId);
       continue;
     }
 
     const manifestError = validateManifest(manifest);
     if (manifestError) {
-      console.error(`[pluginLoader] ${manifestError}`);
+      appLogger.error("plugin", manifestError);
       pluginStore.getLogger(pluginId).error(manifestError);
       pluginStore.updatePlugin(pluginId, { error: manifestError, loaded: false });
       continue;
@@ -304,7 +305,7 @@ export async function loadUserPlugins(): Promise<void> {
   try {
     await listen("plugin-changed", handlePluginChanged);
   } catch (err) {
-    console.warn("[pluginLoader] failed to listen for plugin-changed events:", err);
+    appLogger.warn("plugin", "Failed to listen for plugin-changed events", err);
   }
 
   // Discover plugins
@@ -312,7 +313,7 @@ export async function loadUserPlugins(): Promise<void> {
   try {
     manifests = await invoke<PluginManifest[]>("list_user_plugins");
   } catch (err) {
-    console.error("[pluginLoader] failed to discover user plugins:", err);
+    appLogger.error("plugin", "Failed to discover user plugins", err);
     return;
   }
 
@@ -320,7 +321,7 @@ export async function loadUserPlugins(): Promise<void> {
   for (const manifest of manifests) {
     const error = validateManifest(manifest);
     if (error) {
-      console.error(`[pluginLoader] skipping plugin: ${error}`);
+      appLogger.error("plugin", `Skipping plugin: ${error}`);
       continue;
     }
 
@@ -331,7 +332,7 @@ export async function loadUserPlugins(): Promise<void> {
         enabled: false,
         loaded: false,
       });
-      console.log(`[pluginLoader] plugin "${manifest.id}" is disabled, skipping load`);
+      appLogger.info("plugin", `Plugin "${manifest.id}" is disabled, skipping`);
       continue;
     }
 

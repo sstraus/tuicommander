@@ -1,3 +1,5 @@
+import { appLogger } from "./stores/appLogger";
+
 /** Notification sound types */
 export type NotificationSound = "question" | "error" | "completion" | "warning";
 
@@ -162,7 +164,7 @@ export class NotificationManager {
     try {
       await playSoundSequence(SOUNDS[sound], this.config.volume);
     } catch (err) {
-      console.warn("Failed to play notification sound:", err);
+      appLogger.warn("app", "Failed to play notification sound", err);
     }
   }
 

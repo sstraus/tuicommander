@@ -490,6 +490,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
       cursorBlink: true,
       allowProposedApi: true,
       macOptionIsMeta: false, // Right Option keeps macOS composition (π, ∑, @…)
+      // Override xterm's default OSC 8 link handler — the built-in one calls
+      // window.confirm("WARNING: potentially dangerous") + window.open(), which
+      // shows a scary dialog and then fails in Tauri (window.open is a no-op).
+      linkHandler: {
+        activate: (_event, uri) => handleOpenUrl(uri),
+      },
     });
 
     // iTerm2-style Option key split (macOS only):

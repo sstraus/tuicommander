@@ -26,7 +26,7 @@ function parseDeepLink(urlString: string): { command: string; params: URLSearchP
 async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): Promise<void> {
   const parsed = parseDeepLink(urlString);
   if (!parsed) {
-    console.warn("[DeepLink] Unrecognised URL:", urlString);
+    appLogger.warn("app", `Unrecognised deep link URL: ${urlString}`);
     return;
   }
 
@@ -36,12 +36,12 @@ async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): 
     case "install-plugin": {
       const url = params.get("url");
       if (!url) {
-        console.warn("[DeepLink] install-plugin: missing url parameter");
+        appLogger.warn("app", "Deep link install-plugin: missing url parameter");
         return;
       }
       // Security: HTTPS only
       if (!url.startsWith("https://")) {
-        console.warn("[DeepLink] install-plugin: only HTTPS URLs are allowed");
+        appLogger.warn("app", "Deep link install-plugin: only HTTPS URLs are allowed");
         return;
       }
       // Confirmation dialog before downloading
@@ -62,12 +62,12 @@ async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): 
     case "open-repo": {
       const path = params.get("path");
       if (!path) {
-        console.warn("[DeepLink] open-repo: missing path parameter");
+        appLogger.warn("app", "Deep link open-repo: missing path parameter");
         return;
       }
       // Security: only allow repos already in the repo list
       if (!(path in repositoriesStore.state.repositories)) {
-        console.warn("[DeepLink] open-repo: path not in repo list:", path);
+        appLogger.warn("app", `Deep link open-repo: path not in repo list: ${path}`);
         return;
       }
       repositoriesStore.setActive(path);
@@ -81,7 +81,7 @@ async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): 
     }
 
     default:
-      console.warn("[DeepLink] Unknown command:", command);
+      appLogger.warn("app", `Deep link unknown command: ${command}`);
   }
 }
 
@@ -92,7 +92,7 @@ export function initDeepLinkHandler(callbacks: DeepLinkCallbacks): void {
   onOpenUrl((urls: string[]) => {
     for (const url of urls) {
       handleDeepLink(url, callbacks).catch((err) =>
-        console.error("[DeepLink] Handler error:", err),
+        appLogger.error("app", "Deep link handler error", err),
       );
     }
   }).catch((err) => {
