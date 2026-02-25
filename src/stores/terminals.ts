@@ -1,6 +1,7 @@
 import { createStore, produce } from "solid-js/store";
 import type { AgentType } from "../agents";
 import { appLogger } from "./appLogger";
+import { repositoriesStore } from "./repositories";
 
 /** Type of input being awaited */
 export type AwaitingInputType = "question" | "error" | "confirmation" | null;
@@ -100,21 +101,49 @@ function createTerminalsStore() {
     /** Remove a terminal */
     remove(id: string): void {
       appLogger.info("terminal", `TermStore.remove(${id})`, { remaining: Object.keys(state.terminals).filter(k => k !== id) });
+      // Pre-compute the fallback: prefer siblings on the active branch, then any remaining
+      let fallbackId: string | null = null;
+      if (state.activeId === id) {
+        const branchTerminals = repositoriesStore.getActiveTerminals();
+        const siblings = branchTerminals.filter(tid => tid !== id && state.terminals[tid]);
+        if (siblings.length > 0) {
+          fallbackId = siblings[siblings.length - 1];
+        } else {
+          // No branch context or no branch siblings — pick any remaining terminal
+          const remaining = Object.keys(state.terminals).filter(k => k !== id);
+          fallbackId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+        }
+      }
       setState(
         produce((s) => {
           delete s.terminals[id];
-          // If we removed the active terminal, select another
           if (s.activeId === id) {
-            const remaining = Object.keys(s.terminals);
-            s.activeId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+            s.activeId = fallbackId;
           }
         })
       );
     },
 
-    /** Set the active terminal (clears unread activity indicator, preserves shell state) */
+    /** Set the active terminal (clears unread activity indicator, preserves shell state).
+     *  Rejects activation of terminals that belong to a different repo/branch
+     *  to prevent cross-repo terminal bleed-through (e.g. stray focus events on hidden terminals). */
     setActive(id: string | null): void {
       if (id) {
+        // Guard: reject activating a terminal owned by a different repo/branch.
+        // Terminals not yet assigned to any branch (freshly created) are allowed through.
+        const activeTerminals = repositoriesStore.getActiveTerminals();
+        if (activeTerminals.length > 0 && !activeTerminals.includes(id)) {
+          // Check if this terminal belongs to ANY branch (i.e. it's cross-repo)
+          const ownerRepo = repositoriesStore.getRepoPathForTerminal(id);
+          if (ownerRepo !== null) {
+            appLogger.warn("terminal", `setActive BLOCKED: ${id} belongs to another repo/branch`, {
+              ownerRepo,
+              activeTerminals,
+              currentActiveId: state.activeId,
+            });
+            return;
+          }
+        }
         console.debug(`[TermStore] setActive(${id}) shellState="${state.terminals[id]?.shellState}" (preserved), activity → false`);
         setState("terminals", id, "activity", false);
       }

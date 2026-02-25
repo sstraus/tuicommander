@@ -576,6 +576,49 @@ describe("useTerminalLifecycle", () => {
 
       expect(terminalsStore.state.activeId).toBe(id);
     });
+
+    it("blocks activation of a terminal belonging to another repo/branch", () => {
+      // Set up two repos with terminals on different branches
+      repositoriesStore.add({ path: "/repo-a", displayName: "Repo A" });
+      repositoriesStore.setBranch("/repo-a", "main", { worktreePath: "/repo-a" });
+      repositoriesStore.setActive("/repo-a");
+      repositoriesStore.setActiveBranch("/repo-a", "main");
+
+      repositoriesStore.add({ path: "/repo-b", displayName: "Repo B" });
+      repositoriesStore.setBranch("/repo-b", "develop", { worktreePath: "/repo-b" });
+
+      const termA = terminalsStore.add({ sessionId: null, fontSize: 14, name: "A1", cwd: "/repo-a", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo-a", "main", termA);
+      terminalsStore.setActive(termA);
+
+      const termB = terminalsStore.add({ sessionId: null, fontSize: 14, name: "B1", cwd: "/repo-b", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo-b", "develop", termB);
+
+      // Attempt to focus the terminal from repo B while repo A is active
+      lifecycle.handleTerminalFocus(termB);
+
+      // Should be blocked — termA should remain active
+      expect(terminalsStore.state.activeId).toBe(termA);
+    });
+
+    it("allows activation of unassigned terminals (no branch ownership)", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main");
+
+      const termOwned = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: "/repo", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "main", termOwned);
+      terminalsStore.setActive(termOwned);
+
+      // Create a terminal not assigned to any branch (e.g. freshly created)
+      const termOrphan = terminalsStore.add({ sessionId: null, fontSize: 14, name: "Orphan", cwd: null, awaitingInput: null });
+
+      lifecycle.handleTerminalFocus(termOrphan);
+
+      // Should be allowed — orphan terminals are not blocked
+      expect(terminalsStore.state.activeId).toBe(termOrphan);
+    });
   });
 
   describe("closeTerminal (branch tracking)", () => {
