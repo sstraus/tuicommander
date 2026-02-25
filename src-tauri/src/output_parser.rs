@@ -120,6 +120,18 @@ impl OutputParser {
     fn parse_rate_limit(&self, text: &str) -> Option<ParsedEvent> {
         for pattern in &self.rate_limit_patterns {
             if let Some(m) = pattern.regex.find(text) {
+                // Guard: reject matches that appear inside source code or documentation.
+                // Real API errors appear on their own line (e.g. "Error: rate_limit_error"),
+                // not inside string literals, comments, regex patterns, or test assertions.
+                let match_line = text[..m.start()]
+                    .rfind('\n')
+                    .map(|nl| &text[nl + 1..])
+                    .unwrap_or(text);
+                let match_line = match_line.lines().next().unwrap_or(match_line);
+                if line_is_source_code(match_line) {
+                    continue;
+                }
+
                 let retry_after_ms = if pattern.has_retry_capture {
                     pattern.regex.captures(text).and_then(|caps| {
                         caps.get(1).and_then(|g| {
@@ -138,6 +150,43 @@ impl OutputParser {
         }
         None
     }
+}
+
+/// Returns true if a line looks like source code, documentation, or agent commentary
+/// rather than a real API error. This prevents false-positive rate-limit detection when
+/// agents read/discuss source files that contain error-code strings.
+fn line_is_source_code(line: &str) -> bool {
+    let trimmed = line.trim();
+    // Rust/JS string literals or regex patterns containing the match
+    if trimmed.contains("r\"") || trimmed.contains("r#\"") {
+        return true;
+    }
+    // Line comments (Rust, JS, Python, shell)
+    if trimmed.starts_with("//") || trimmed.starts_with('#') {
+        return true;
+    }
+    // Function/const/let/var/test declarations (code context)
+    if trimmed.starts_with("fn ")
+        || trimmed.starts_with("const ")
+        || trimmed.starts_with("let ")
+        || trimmed.starts_with("rl(")
+        || trimmed.starts_with("assert")
+    {
+        return true;
+    }
+    // Indented code (4+ spaces or tab) with string delimiters around the match
+    if (trimmed.len() < line.len().saturating_sub(3)) && (trimmed.contains('"') || trimmed.contains('\'')) {
+        return true;
+    }
+    // Markdown code fences or bullet points discussing patterns
+    if trimmed.starts_with("```") || trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+        return true;
+    }
+    // Line contains pipe characters (markdown tables, test output)
+    if trimmed.contains(" | ") && trimmed.starts_with('|') {
+        return true;
+    }
+    false
 }
 
 fn build_rate_limit_patterns() -> Vec<RateLimitPattern> {
@@ -344,19 +393,63 @@ fn parse_question(clean: &str) -> Option<ParsedEvent> {
 
 /// Extract the last non-empty line ending with `?` from a chunk of text.
 /// Used by the silence-based question detector: if an agent prints a line ending
-/// with `?` and then goes silent for 5 seconds, it's likely waiting for input.
-/// Returns None if no line ends with `?`.
+/// with `?` and then goes silent, it's likely waiting for input.
+/// Returns None if no line ends with `?` or if the line looks like code/markdown
+/// rather than a genuine interactive prompt.
 pub(crate) fn extract_last_question_line(text: &str) -> Option<String> {
     let clean = strip_ansi(text);
     // Only check the last non-empty line — a question buried mid-output
     // with more content after it is not an unanswered prompt.
-    let last = clean.lines().rev().find(|l| !l.trim().is_empty())?;
-    let trimmed = last.trim();
-    if trimmed.ends_with('?') {
-        Some(trimmed.to_string())
-    } else {
-        None
+    let last_clean = clean.lines().rev().find(|l| !l.trim().is_empty())?;
+    let trimmed = last_clean.trim();
+    if !trimmed.ends_with('?') {
+        return None;
     }
+    // Find the corresponding raw line for structural checks (indentation, tabs).
+    // strip_ansi removes control chars like \t, so we need the original text.
+    let last_raw = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or(last_clean);
+    // Reject lines that look like source code, comments, or markdown prose
+    // rather than genuine interactive prompts.
+    if line_is_likely_not_a_prompt(last_raw, trimmed) {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+/// Returns true if a `?`-ending line is likely agent prose, code, or documentation
+/// rather than an interactive prompt waiting for user input.
+/// `raw_line`: the original PTY line (may contain tabs, ANSI), used for indentation checks.
+/// `clean_trimmed`: the ANSI-stripped, trimmed content, used for content-based checks.
+fn line_is_likely_not_a_prompt(raw_line: &str, clean_trimmed: &str) -> bool {
+    // Indented code (4+ spaces or tab prefix = code block) — check raw line for structural indent
+    if raw_line.starts_with("    ") || raw_line.starts_with('\t') {
+        return true;
+    }
+    // Code comments (check trimmed content since indent is already handled above)
+    if clean_trimmed.starts_with("//")
+        || clean_trimmed.starts_with('#')
+        || clean_trimmed.starts_with("/*")
+        || clean_trimmed.starts_with('*')
+    {
+        return true;
+    }
+    // Markdown list items or blockquotes
+    if clean_trimmed.starts_with("- ") || clean_trimmed.starts_with("> ") {
+        return true;
+    }
+    // Lines containing backtick-wrapped code fragments
+    if clean_trimmed.contains('`') {
+        return true;
+    }
+    // Long lines (>120 chars) are almost always prose, not prompts
+    if clean_trimmed.len() > 120 {
+        return true;
+    }
+    // Lines with markdown bold/italic markers
+    if clean_trimmed.contains("**") || clean_trimmed.contains("__") {
+        return true;
+    }
+    false
 }
 
 /// Detect plan file paths in pre-stripped terminal output.
@@ -703,6 +796,67 @@ mod tests {
         );
     }
 
+    // --- Silence detector false-positive guard tests ---
+
+    #[test]
+    fn test_extract_question_rejects_code_comments() {
+        assert_eq!(extract_last_question_line("// should we handle this case?"), None);
+        assert_eq!(extract_last_question_line("# what about edge cases?"), None);
+        assert_eq!(extract_last_question_line("/* is this correct?"), None);
+        assert_eq!(extract_last_question_line("* should we retry?"), None);
+    }
+
+    #[test]
+    fn test_extract_question_rejects_indented_code() {
+        assert_eq!(extract_last_question_line("    if condition.is_valid?"), None);
+        assert_eq!(extract_last_question_line("\tis_ready?"), None);
+    }
+
+    #[test]
+    fn test_extract_question_rejects_markdown_prose() {
+        assert_eq!(extract_last_question_line("- What should we do about this?"), None);
+        assert_eq!(extract_last_question_line("> Do you agree with this approach?"), None);
+        assert_eq!(extract_last_question_line("Have you tried using `foo.bar()?` instead?"), None);
+        assert_eq!(extract_last_question_line("**Should we refactor this?**"), None);
+    }
+
+    #[test]
+    fn test_extract_question_rejects_long_prose() {
+        let long_line = format!("{}?", "a".repeat(121));
+        assert_eq!(extract_last_question_line(&long_line), None);
+    }
+
+    #[test]
+    fn test_extract_question_accepts_real_prompts() {
+        // Short, plain prompts that ARE genuine interactive questions
+        assert!(extract_last_question_line("Continue?").is_some());
+        assert!(extract_last_question_line("Do you want to continue?").is_some());
+        assert!(extract_last_question_line("Apply changes?").is_some());
+        assert!(extract_last_question_line("Proceed with deletion?").is_some());
+        assert!(extract_last_question_line("Enter filename?").is_some());
+    }
+
+    #[test]
+    fn test_line_is_likely_not_a_prompt_fn() {
+        // Helper: for non-indented lines, raw and trimmed are the same
+        let check = |line: &str| line_is_likely_not_a_prompt(line, line.trim());
+
+        // Should be filtered (not prompts)
+        assert!(check("// is this a question?"));
+        assert!(check("# what about this?"));
+        assert!(line_is_likely_not_a_prompt("    indented code question?", "indented code question?"));
+        assert!(line_is_likely_not_a_prompt("\tindented code question?", "indented code question?"));
+        assert!(check("- list item question?"));
+        assert!(check("> blockquote question?"));
+        assert!(check("uses `backticks` question?"));
+        assert!(check("**bold** question?"));
+
+        // Should pass (real prompts)
+        assert!(!check("Continue?"));
+        assert!(!check("Apply changes?"));
+        assert!(!check("Do you want to proceed?"));
+    }
+
     // --- Plan file detection tests ---
 
     fn get_plan_path(events: &[ParsedEvent]) -> Option<String> {
@@ -827,5 +981,67 @@ mod tests {
         assert!(has_rate_limit(&parser.parse("RateLimitError: exceeded quota")));
         assert!(has_rate_limit(&parser.parse("RESOURCE_EXHAUSTED")));
         assert!(has_rate_limit(&parser.parse("Retry-After: 60")));
+    }
+
+    // --- Source code false-positive guard tests ---
+
+    #[test]
+    fn test_no_false_positive_rust_source_reading() {
+        let parser = OutputParser::new();
+        // Agent reading output_parser.rs — the exact lines that caused the bug
+        assert!(!has_rate_limit(&parser.parse(r#"        rl("claude-http-429", r"(?i)rate_limit_error", Some(60000), false),"#)));
+        assert!(!has_rate_limit(&parser.parse(r#"        rl("claude-overloaded", r"(?i)overloaded_error", Some(30000), false),"#)));
+        assert!(!has_rate_limit(&parser.parse(r#"        rl("openai-http-429", r"RateLimitError", Some(60000), false),"#)));
+        assert!(!has_rate_limit(&parser.parse(r#"        rl("gemini-resource-exhausted", r"RESOURCE_EXHAUSTED", Some(60000), false),"#)));
+        assert!(!has_rate_limit(&parser.parse(r#"        rl("retry-after-header", r"(?i)Retry-After:\s*(\d+)", None, true),"#)));
+    }
+
+    #[test]
+    fn test_no_false_positive_code_comments() {
+        let parser = OutputParser::new();
+        assert!(!has_rate_limit(&parser.parse("// Error: rate_limit_error")));
+        assert!(!has_rate_limit(&parser.parse("# Handle RESOURCE_EXHAUSTED from Gemini")));
+    }
+
+    #[test]
+    fn test_no_false_positive_test_assertions() {
+        let parser = OutputParser::new();
+        assert!(!has_rate_limit(&parser.parse(r#"        assert!(has_rate_limit(&parser.parse("Error: rate_limit_error")));"#)));
+        assert!(!has_rate_limit(&parser.parse(r#"        assert!(has_rate_limit(&parser.parse("RateLimitError: exceeded quota")));"#)));
+    }
+
+    #[test]
+    fn test_no_false_positive_markdown_code_fences() {
+        let parser = OutputParser::new();
+        assert!(!has_rate_limit(&parser.parse("```rust\nrl(\"claude-http-429\", r\"rate_limit_error\")")));
+        assert!(!has_rate_limit(&parser.parse("- `rate_limit_error` — Claude API error code")));
+        assert!(!has_rate_limit(&parser.parse("* Pattern `RateLimitError` matches OpenAI errors")));
+    }
+
+    #[test]
+    fn test_no_false_positive_markdown_table() {
+        let parser = OutputParser::new();
+        assert!(!has_rate_limit(&parser.parse("| `claude-http-429` | `rate_limit_error` | Claude API |")));
+    }
+
+    #[test]
+    fn test_line_is_source_code_fn() {
+        // Direct unit tests for the guard function
+        assert!(line_is_source_code(r#"        rl("claude-http-429", r"(?i)rate_limit_error", Some(60000), false),"#));
+        assert!(line_is_source_code("// rate_limit_error handling"));
+        assert!(line_is_source_code("# RESOURCE_EXHAUSTED"));
+        assert!(line_is_source_code("fn handle_rate_limit() {"));
+        assert!(line_is_source_code(r#"        assert!(has_rate_limit(&parser.parse("rate_limit_error")));"#));
+        assert!(line_is_source_code("```Error: rate_limit_error"));
+        assert!(line_is_source_code("- `rate_limit_error` is the error code"));
+        assert!(line_is_source_code("| pattern | rate_limit_error | desc |"));
+
+        // Real errors must NOT be classified as source code
+        assert!(!line_is_source_code("Error: rate_limit_error"));
+        assert!(!line_is_source_code("overloaded_error: service busy"));
+        assert!(!line_is_source_code("RateLimitError: exceeded quota"));
+        assert!(!line_is_source_code("RESOURCE_EXHAUSTED"));
+        assert!(!line_is_source_code("HTTP/1.1 429 Too Many Requests"));
+        assert!(!line_is_source_code("Retry-After: 60"));
     }
 }

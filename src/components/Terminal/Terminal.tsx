@@ -214,18 +214,25 @@ export const Terminal: Component<TerminalProps> = (props) => {
       terminalsStore.update(props.id, { activity: true });
     }
 
-    // Shell idle detection: mark busy on output, start 500ms idle timer
-    if (!busyFlagged) {
+    // Shell idle detection: mark busy on output, start 500ms idle timer.
+    // Always reconcile: if the store drifted (e.g. was reset externally), re-assert busy.
+    const storeState = terminalsStore.get(props.id)?.shellState;
+    if (!busyFlagged || storeState !== "busy") {
       busyFlagged = true;
-      terminalsStore.update(props.id, { shellState: "busy" });
+      if (storeState !== "busy") {
+        console.debug(`[ShellState] ${props.id} → "busy" (PTY output, was "${storeState}")`);
+        terminalsStore.update(props.id, { shellState: "busy" });
+      }
       // New output after idle means the user answered any pending prompt
       if (terminalsStore.get(props.id)?.awaitingInput) {
+        console.debug(`[ShellState] ${props.id} clearAwaitingInput (new PTY output while awaiting)`);
         terminalsStore.clearAwaitingInput(props.id);
       }
     }
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       busyFlagged = false;
+      console.debug(`[ShellState] ${props.id} → "idle" (500ms timeout)`);
       terminalsStore.update(props.id, { shellState: "idle" });
 
       // Auto-resume agent on first shell idle after restore
@@ -294,8 +301,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
       unlistenParsed = await listen<ParsedEvent>(`pty-parsed-${targetSessionId}`, (event) => {
         const parsed = event.payload;
 
+        console.debug(`[ParsedEvent] ${props.id} type="${parsed.type}"`, parsed);
+
         switch (parsed.type) {
           case "progress": {
+            console.debug(`[ParsedEvent] ${props.id} progress state=${parsed.state} value=${parsed.value} → clearAwaitingInput`);
             terminalsStore.clearAwaitingInput(props.id);
             if (parsed.state === 0) {
               terminalsStore.update(props.id, { progress: null });
@@ -306,6 +316,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
           case "status-line": {
             // Agent is working again — clear any question state
+            console.debug(`[ParsedEvent] ${props.id} status-line task="${parsed.task_name}" → clearAwaitingInput`);
             terminalsStore.clearAwaitingInput(props.id);
             const now = Date.now();
             const currentTerm = terminalsStore.get(props.id);
@@ -337,17 +348,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           }
           case "question":
+            console.debug(`[ParsedEvent] ${props.id} question prompt="${parsed.prompt_text}" → setAwaitingInput("question")`);
             terminalsStore.setAwaitingInput(props.id, "question");
             if (terminalsStore.state.activeId !== props.id) {
               notificationsStore.playQuestion();
             }
             break;
           case "usage-limit":
+            console.debug(`[ParsedEvent] ${props.id} usage-limit ${parsed.percentage}% ${parsed.limit_type}`);
             terminalsStore.update(props.id, {
               usageLimit: { percentage: parsed.percentage, limitType: parsed.limit_type },
             });
             break;
           case "plan-file":
+            console.debug(`[ParsedEvent] ${props.id} plan-file path="${parsed.path}" → setAwaitingInput("question")`);
             // Mark terminal as awaiting input — the plan needs user approval
             terminalsStore.setAwaitingInput(props.id, "question");
             if (terminalsStore.state.activeId !== props.id) {

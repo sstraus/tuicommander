@@ -7,23 +7,31 @@ import s from "./ActivityDashboard.module.css";
 
 /** Derive status label and CSS class from terminal state */
 function getTerminalStatus(
+  termId: string,
   shellState: string | null,
   awaitingInput: string | null,
   sessionId: string | null,
 ): { label: string; className: string } {
+  let result: { label: string; className: string };
+  let reason: string;
   if (sessionId && rateLimitStore.isRateLimited(sessionId)) {
-    return { label: "Rate limited", className: s.statusRateLimited };
+    result = { label: "Rate limited", className: s.statusRateLimited };
+    reason = `rateLimitStore.isRateLimited(${sessionId})=true`;
+  } else if (awaitingInput) {
+    result = { label: "Waiting for input", className: s.statusWaiting };
+    reason = `awaitingInput="${awaitingInput}"`;
+  } else if (shellState === "busy") {
+    result = { label: "Working", className: s.statusWorking };
+    reason = `shellState="busy"`;
+  } else if (shellState === "idle") {
+    result = { label: "Idle", className: s.statusIdle };
+    reason = `shellState="idle"`;
+  } else {
+    result = { label: "—", className: s.statusIdle };
+    reason = `shellState=${shellState === null ? "null" : `"${shellState}"`} (fallthrough)`;
   }
-  if (awaitingInput) {
-    return { label: "Waiting for input", className: s.statusWaiting };
-  }
-  if (shellState === "busy") {
-    return { label: "Working", className: s.statusWorking };
-  }
-  if (shellState === "idle") {
-    return { label: "Idle", className: s.statusIdle };
-  }
-  return { label: "—", className: s.statusIdle };
+  console.debug(`[ActivityDash] ${termId} → "${result.label}" because ${reason}`);
+  return result;
 }
 
 export const ActivityDashboard: Component = () => {
@@ -67,7 +75,7 @@ export const ActivityDashboard: Component = () => {
     return ids.map((id) => {
       const term = terminalsStore.get(id);
       if (!term) return null;
-      const status = getTerminalStatus(term.shellState, term.awaitingInput, term.sessionId);
+      const status = getTerminalStatus(id, term.shellState, term.awaitingInput, term.sessionId);
       return {
         id,
         name: term.name,

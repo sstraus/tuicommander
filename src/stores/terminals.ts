@@ -109,11 +109,11 @@ function createTerminalsStore() {
       );
     },
 
-    /** Set the active terminal (clears its activity and shell state indicators) */
+    /** Set the active terminal (clears unread activity indicator, preserves shell state) */
     setActive(id: string | null): void {
       if (id) {
+        console.debug(`[TermStore] setActive(${id}) shellState="${state.terminals[id]?.shellState}" (preserved), activity → false`);
         setState("terminals", id, "activity", false);
-        setState("terminals", id, "shellState", null);
       }
       setState("activeId", id);
     },
@@ -135,11 +135,15 @@ function createTerminalsStore() {
 
     /** Set terminal awaiting input state */
     setAwaitingInput(id: string, type: AwaitingInputType): void {
+      const prev = state.terminals[id]?.awaitingInput;
+      console.debug(`[TermStore] setAwaitingInput(${id}) "${prev}" → "${type}"`);
       setState("terminals", id, "awaitingInput", type);
     },
 
     /** Clear terminal awaiting input state */
     clearAwaitingInput(id: string): void {
+      const prev = state.terminals[id]?.awaitingInput;
+      if (prev) console.debug(`[TermStore] clearAwaitingInput(${id}) was "${prev}" → null`);
       setState("terminals", id, "awaitingInput", null);
     },
 

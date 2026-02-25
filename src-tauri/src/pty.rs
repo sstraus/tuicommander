@@ -71,8 +71,9 @@ pub(crate) fn resolve_shell(override_shell: Option<String>) -> String {
 }
 
 /// How long the agent must be silent after printing a `?`-ending line before
-/// we treat it as a question waiting for input.
-const SILENCE_QUESTION_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(5);
+/// we treat it as a question waiting for input. 10s is long enough to avoid
+/// false positives from AI agents that pause while thinking between API calls.
+const SILENCE_QUESTION_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// How often the timer thread wakes up to check for silence.
 const SILENCE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
