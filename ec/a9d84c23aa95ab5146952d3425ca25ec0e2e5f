@@ -1,0 +1,44 @@
+src-tauri/src/lib.rs
+  c8e5dad4dacdaf05 3,567,817-820
+src-tauri/src/state.rs
+  c8e5dad4dacdaf05 573-575,947
+src-tauri/src/app_logger.rs
+  c8e5dad4dacdaf05 1-312
+src/transport.ts
+  c8e5dad4dacdaf05 341-352
+src-tauri/src/mcp_http/mod.rs
+  c8e5dad4dacdaf05 366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "eca9d84c23aa95ab5146952d3425ca25ec0e2e5f",
+  "prompts": {
+    "2ebb7be744ca2a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d97c5139-305e-495e-b249-8c8d0ce03059",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 141,
+      "overriden_lines": 0
+    },
+    "c8e5dad4dacdaf05": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "588a3777-6f69-41aa-a7de-74a97ca85a2d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 336,
+      "total_deletions": 2,
+      "accepted_lines": 335,
+      "overriden_lines": 0
+    }
+  }
+}
