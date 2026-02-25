@@ -1,0 +1,40 @@
+src/components/Terminal/Terminal.module.css
+  c8e5dad4dacdaf05 17-55
+src/components/Terminal/Terminal.tsx
+  c8e5dad4dacdaf05 1,143,969-982,993-998
+src/__tests__/hooks/useGitOperations.test.ts
+  c8e5dad4dacdaf05 164-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "4ce49a8c0110384cbe51928b2f2375f83f4e81b9",
+  "prompts": {
+    "2ebb7be744ca2a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d97c5139-305e-495e-b249-8c8d0ce03059",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 141,
+      "overriden_lines": 0
+    },
+    "c8e5dad4dacdaf05": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "588a3777-6f69-41aa-a7de-74a97ca85a2d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 83,
+      "total_deletions": 12,
+      "accepted_lines": 83,
+      "overriden_lines": 0
+    }
+  }
+}
