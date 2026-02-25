@@ -1,0 +1,27 @@
+src-tauri/src/worktree.rs
+  2ebb7be744ca2a61 29,32,35,116,440,633
+src/App.tsx
+  2ebb7be744ca2a61 937
+src-tauri/src/plugin_fs.rs
+  2ebb7be744ca2a61 397-401,419-423
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "a0c53c8a3a500f8020030374b63c4ddc250f4c0f",
+  "prompts": {
+    "2ebb7be744ca2a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d97c5139-305e-495e-b249-8c8d0ce03059",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 23,
+      "total_deletions": 19,
+      "accepted_lines": 158,
+      "overriden_lines": 0
+    }
+  }
+}
