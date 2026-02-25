@@ -15,7 +15,6 @@ interface RustAppConfig {
   font_family: string;
   font_size: number;
   theme: string;
-  worktree_dir: string | null;
   mcp_server_enabled: boolean;
   ide: string;
   default_font_size: number;

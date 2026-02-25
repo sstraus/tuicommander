@@ -22,7 +22,6 @@ interface AppConfig {
   font_family: string;
   font_size: number;
   theme: string;
-  worktree_dir: string | null;
   mcp_server_enabled: boolean;
   mcp_port: number;
   remote_access_enabled: boolean;

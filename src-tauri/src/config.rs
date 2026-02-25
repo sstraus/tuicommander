@@ -176,7 +176,6 @@ pub(crate) struct AppConfig {
     pub(crate) font_family: String,
     pub(crate) font_size: u16,
     pub(crate) theme: String,
-    pub(crate) worktree_dir: Option<String>,
     /// Enable MCP HTTP API on localhost for external tool integration
     #[serde(default)]
     pub(crate) mcp_server_enabled: bool,
@@ -283,7 +282,6 @@ impl Default for AppConfig {
             font_family: "JetBrains Mono".to_string(),
             font_size: 14,
             theme: "vscode-dark".to_string(),
-            worktree_dir: None,
             mcp_server_enabled: false,
             mcp_port: default_mcp_port(),
             ide: String::new(),
@@ -718,7 +716,6 @@ mod tests {
             font_family: "Fira Code".to_string(),
             font_size: 16,
             theme: "dark".to_string(),
-            worktree_dir: Some("/tmp/wt".to_string()),
             mcp_server_enabled: true,
             mcp_port: 4000,
             ide: "cursor".to_string(),
