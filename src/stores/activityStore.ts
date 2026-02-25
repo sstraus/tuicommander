@@ -1,6 +1,7 @@
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
 import type { ActivityItem, ActivitySection, Disposable } from "../plugins/types";
+import { appLogger } from "./appLogger";
 
 /** Serializable subset of ActivityItem (no onClick function) */
 type PersistedActivityItem = Omit<ActivityItem, "onClick">;
@@ -18,7 +19,7 @@ function toPersistedItems(items: ActivityItem[]): PersistedActivityItem[] {
 /** Persist activity items to Rust backend (fire-and-forget) */
 function saveActivity(items: ActivityItem[]): void {
   invoke("save_activity", { items: toPersistedItems(items) }).catch((err) =>
-    console.error("Failed to save activity:", err),
+    appLogger.error("store", "Failed to save activity", err),
   );
 }
 
@@ -53,7 +54,7 @@ function createActivityStore() {
         );
       }
     } catch (err) {
-      console.debug("Failed to hydrate activity:", err);
+      appLogger.debug("store", "Failed to hydrate activity", err);
     }
   }
 

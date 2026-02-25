@@ -299,7 +299,7 @@ function createSettingsStore() {
         config.ide = ide;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist IDE to config:", err);
+        appLogger.error("config", "Failed to persist IDE to config", err);
         setState("ide", prevIde);
       }
     },
@@ -313,7 +313,7 @@ function createSettingsStore() {
         config.font_family = font;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist font to config:", err);
+        appLogger.error("config", "Failed to persist font to config", err);
         setState("font", prevFont);
       }
     },
@@ -325,7 +325,7 @@ function createSettingsStore() {
         const validated = validateFont(config.font_family);
         setState("font", validated);
       } catch (err) {
-        console.error("Failed to load font from config:", err);
+        appLogger.error("config", "Failed to load font from config", err);
       }
     },
 
@@ -339,7 +339,7 @@ function createSettingsStore() {
         config.default_font_size = clamped;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist defaultFontSize:", err);
+        appLogger.error("config", "Failed to persist defaultFontSize", err);
         setState("defaultFontSize", prev);
       }
     },
@@ -354,7 +354,7 @@ function createSettingsStore() {
         config.shell = value;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist shell to config:", err);
+        appLogger.error("config", "Failed to persist shell to config", err);
         setState("shell", prevShell);
       }
     },
@@ -368,7 +368,7 @@ function createSettingsStore() {
         config.theme = theme;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist theme to config:", err);
+        appLogger.error("config", "Failed to persist theme to config", err);
         setState("theme", prevTheme);
       }
     },
@@ -382,7 +382,7 @@ function createSettingsStore() {
         config.confirm_before_quit = enabled;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist confirmBeforeQuit:", err);
+        appLogger.error("config", "Failed to persist confirmBeforeQuit", err);
         setState("confirmBeforeQuit", prevValue);
       }
     },
@@ -396,7 +396,7 @@ function createSettingsStore() {
         config.confirm_before_closing_tab = enabled;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist confirmBeforeClosingTab:", err);
+        appLogger.error("config", "Failed to persist confirmBeforeClosingTab", err);
         setState("confirmBeforeClosingTab", prevValue);
       }
     },
@@ -410,7 +410,7 @@ function createSettingsStore() {
         config.split_tab_mode = mode;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist splitTabMode:", err);
+        appLogger.error("config", "Failed to persist splitTabMode", err);
         setState("splitTabMode", prevMode);
       }
     },
@@ -424,7 +424,7 @@ function createSettingsStore() {
         config.auto_show_pr_popover = enabled;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist autoShowPrPopover:", err);
+        appLogger.error("config", "Failed to persist autoShowPrPopover", err);
         setState("autoShowPrPopover", prevValue);
       }
     },
@@ -438,7 +438,7 @@ function createSettingsStore() {
         config.prevent_sleep_when_busy = enabled;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist preventSleepWhenBusy:", err);
+        appLogger.error("config", "Failed to persist preventSleepWhenBusy", err);
         setState("preventSleepWhenBusy", prevValue);
       }
     },
@@ -452,7 +452,7 @@ function createSettingsStore() {
         config.auto_update_enabled = enabled;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist autoUpdateEnabled:", err);
+        appLogger.error("config", "Failed to persist autoUpdateEnabled", err);
         setState("autoUpdateEnabled", prevValue);
       }
     },
@@ -466,7 +466,7 @@ function createSettingsStore() {
         config.update_channel = channel;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist updateChannel:", err);
+        appLogger.error("config", "Failed to persist updateChannel", err);
         setState("updateChannel", prevChannel);
       }
     },
@@ -481,7 +481,7 @@ function createSettingsStore() {
         config.language = language;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist language:", err);
+        appLogger.error("config", "Failed to persist language", err);
         setState("language", prevLang);
         setLocale(prevLang);
       }
@@ -497,7 +497,7 @@ function createSettingsStore() {
         config.max_tab_name_length = clamped;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist maxTabNameLength:", err);
+        appLogger.error("config", "Failed to persist maxTabNameLength", err);
         setState("maxTabNameLength", prev);
       }
     },
@@ -511,7 +511,7 @@ function createSettingsStore() {
         config.show_all_branches = enabled;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist showAllBranches:", err);
+        appLogger.error("config", "Failed to persist showAllBranches", err);
         setState("showAllBranches", prevValue);
       }
     },
@@ -527,7 +527,7 @@ function createSettingsStore() {
         config.disabled_agents = next;
         await invoke("save_config", { config });
       } catch (err) {
-        console.error("Failed to persist disabledAgents:", err);
+        appLogger.error("config", "Failed to persist disabledAgents", err);
         setState("disabledAgents", prev);
       }
     },

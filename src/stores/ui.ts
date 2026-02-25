@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
+import { appLogger } from "./appLogger";
 
 const LEGACY_SIDEBAR_VISIBLE_KEY = "tui-commander-sidebar-visible";
 const LEGACY_SIDEBAR_WIDTH_KEY = "tui-commander-sidebar-width";
@@ -82,7 +83,7 @@ function createUIStore() {
         notes_panel_width: state.notesPanelWidth,
         settings_nav_width: state.settingsNavWidth,
       },
-    }).catch((err) => console.debug("Failed to save UI prefs:", err));
+    }).catch((err) => appLogger.debug("store", "Failed to save UI prefs", err));
   }
 
   const actions = {
@@ -148,7 +149,7 @@ function createUIStore() {
           }
         }
       } catch (err) {
-        console.debug("Failed to hydrate UI prefs:", err);
+        appLogger.debug("store", "Failed to hydrate UI prefs", err);
       }
     },
 

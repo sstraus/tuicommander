@@ -1,5 +1,6 @@
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
+import { appLogger } from "./appLogger";
 
 /** A single note */
 export interface Note {
@@ -24,7 +25,7 @@ function generateId(): string {
 /** Persist notes to Rust backend (fire-and-forget) */
 function saveNotes(notes: Note[]): void {
   invoke("save_notes", { config: { notes } }).catch((err) =>
-    console.error("Failed to save notes:", err),
+    appLogger.error("store", "Failed to save notes", err),
   );
 }
 
@@ -49,7 +50,7 @@ function createNotesStore() {
           setState("notes", migrated);
         }
       } catch (err) {
-        console.debug("Failed to hydrate notes:", err);
+        appLogger.debug("store", "Failed to hydrate notes", err);
       }
     },
 

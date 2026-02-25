@@ -144,14 +144,14 @@ function createTerminalsStore() {
     /** Set terminal awaiting input state */
     setAwaitingInput(id: string, type: AwaitingInputType): void {
       const prev = state.terminals[id]?.awaitingInput;
-      console.debug(`[TermStore] setAwaitingInput(${id}) "${prev}" → "${type}"`);
+      appLogger.debug("terminal", `setAwaitingInput(${id}) "${prev}" → "${type}"`);
       setState("terminals", id, "awaitingInput", type);
     },
 
     /** Clear terminal awaiting input state */
     clearAwaitingInput(id: string): void {
       const prev = state.terminals[id]?.awaitingInput;
-      if (prev) console.debug(`[TermStore] clearAwaitingInput(${id}) was "${prev}" → null`);
+      if (prev) appLogger.debug("terminal", `clearAwaitingInput(${id}) was "${prev}" → null`);
       setState("terminals", id, "awaitingInput", null);
     },
 

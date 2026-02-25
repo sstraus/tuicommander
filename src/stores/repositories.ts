@@ -81,7 +81,7 @@ function saveReposImmediate(
   groupOrder: string[],
 ): void {
   if (!hydrated) {
-    console.warn("[Repositories] Save blocked — hydrate not yet complete");
+    appLogger.warn("store", "Repositories save blocked — hydrate not yet complete");
     return;
   }
   const serializable: Record<string, RepositoryState> = {};
@@ -100,7 +100,7 @@ function saveReposImmediate(
       groups,
       groupOrder,
     },
-  }).catch((err) => console.error("Failed to save repos:", err));
+  }).catch((err) => appLogger.error("store", "Failed to save repos", err));
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -213,7 +213,7 @@ function createRepositoriesStore() {
         }
         hydrated = true;
       } catch (err) {
-        console.error("Failed to hydrate repositories:", err);
+        appLogger.error("store", "Failed to hydrate repositories", err);
         // hydrated stays false — saves are blocked to prevent data loss
       }
     },

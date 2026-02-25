@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
+import { appLogger } from "./appLogger";
 
 /** Worktree storage strategy — mirrors Rust WorktreeStorage enum */
 export type WorktreeStorage = "sibling" | "app-dir" | "inside-repo";
@@ -63,7 +64,7 @@ function createRepoDefaultsStore() {
         pr_merge_strategy: state.prMergeStrategy,
         after_merge: state.afterMerge,
       },
-    }).catch((err) => console.error("Failed to save repo defaults:", err));
+    }).catch((err) => appLogger.error("config", "Failed to save repo defaults", err));
   }
 
   return {
@@ -102,7 +103,7 @@ function createRepoDefaultsStore() {
           });
         }
       } catch (err) {
-        console.debug("Failed to hydrate repo defaults:", err);
+        appLogger.debug("config", "Failed to hydrate repo defaults", err);
       }
     },
 

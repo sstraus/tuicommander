@@ -5,6 +5,7 @@ import {
   type ActionName,
 } from "../keybindingDefaults";
 import { invoke } from "../invoke";
+import { appLogger } from "./appLogger";
 
 interface KeybindingOverride {
   action: string;
@@ -62,7 +63,7 @@ export function createKeybindingsStore() {
 
         rebuildMaps(merged);
       } catch (err) {
-        console.debug("Failed to load keybindings overrides:", err);
+        appLogger.debug("config", "Failed to load keybindings overrides", err);
         // Keep defaults
       }
     },

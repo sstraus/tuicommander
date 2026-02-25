@@ -1,5 +1,6 @@
 import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "../invoke";
+import { appLogger } from "./appLogger";
 import { repoDefaultsStore } from "./repoDefaults";
 import type { WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge } from "./repoDefaults";
 
@@ -89,7 +90,7 @@ const LEGACY_STORAGE_KEY = "tui-commander-repo-settings";
 /** Persist settings to Rust backend (fire-and-forget) */
 function saveSettings(settings: Record<string, RepoSettings>): void {
   invoke("save_repo_settings", { config: { repos: settings } }).catch((err) =>
-    console.debug("Failed to save repo settings:", err),
+    appLogger.debug("config", "Failed to save repo settings", err),
   );
 }
 
@@ -119,7 +120,7 @@ function createRepoSettingsStore() {
           setState("settings", loaded.repos);
         }
       } catch (err) {
-        console.debug("Failed to hydrate repo settings:", err);
+        appLogger.debug("config", "Failed to hydrate repo settings", err);
       }
     },
 
@@ -208,7 +209,7 @@ function createRepoSettingsStore() {
       try {
         return await invoke<boolean>("check_has_custom_settings", { path });
       } catch (err) {
-        console.warn("[repoSettingsStore] hasCustomSettings IPC failed:", path, err);
+        appLogger.warn("config", "hasCustomSettings IPC failed", { path, err });
         return false;
       }
     },

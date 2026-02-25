@@ -1,5 +1,6 @@
 import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "../invoke";
+import { appLogger } from "./appLogger";
 
 /** Prompt category */
 export type PromptCategory = "custom" | "recent" | "favorite";
@@ -53,7 +54,7 @@ function savePrompts(prompts: Record<string, SavedPrompt>): void {
     pinned: p.isFavorite,
   }));
   invoke("save_prompt_library", { config: { prompts: promptArray } }).catch((err) =>
-    console.error("Failed to save prompt library:", err),
+    appLogger.error("store", "Failed to save prompt library", err),
   );
 }
 
@@ -113,7 +114,7 @@ function createPromptLibraryStore() {
           setState("prompts", restored);
         }
       } catch (err) {
-        console.debug("Failed to hydrate prompt library:", err);
+        appLogger.debug("store", "Failed to hydrate prompt library", err);
       }
     },
 

@@ -1,6 +1,7 @@
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
 import type { AgentType, AgentRunConfig, AgentsConfig } from "../agents";
+import { appLogger } from "./appLogger";
 
 interface AgentConfigsState {
   agents: Record<string, { run_configs: AgentRunConfig[] }>;
@@ -34,7 +35,7 @@ function createAgentConfigsStore() {
           s.loaded = true;
         }));
       } catch (err) {
-        console.error("Failed to hydrate agent configs:", err);
+        appLogger.error("config", "Failed to hydrate agent configs", err);
         setState("loaded", true);
       }
     },
@@ -65,7 +66,7 @@ function createAgentConfigsStore() {
       try {
         await saveToDisk();
       } catch (err) {
-        console.error("Failed to save agent config:", err);
+        appLogger.error("config", "Failed to save agent config", err);
       }
     },
 
@@ -79,7 +80,7 @@ function createAgentConfigsStore() {
       try {
         await saveToDisk();
       } catch (err) {
-        console.error("Failed to save agent config:", err);
+        appLogger.error("config", "Failed to save agent config", err);
       }
     },
 
@@ -98,7 +99,7 @@ function createAgentConfigsStore() {
       try {
         await saveToDisk();
       } catch (err) {
-        console.error("Failed to save agent config:", err);
+        appLogger.error("config", "Failed to save agent config", err);
       }
     },
 
@@ -115,7 +116,7 @@ function createAgentConfigsStore() {
       try {
         await saveToDisk();
       } catch (err) {
-        console.error("Failed to save agent config:", err);
+        appLogger.error("config", "Failed to save agent config", err);
       }
     },
   };

@@ -230,7 +230,7 @@ function createGitHubStore() {
           setState("repos", path, "remoteStatus", remoteStatus);
         }
       } catch (err) {
-        console.debug(`[GitHub] Immediate poll failed for ${path}:`, err);
+        appLogger.debug("github", `Immediate poll failed for ${path}`, err);
       }
     }, 2000);
 

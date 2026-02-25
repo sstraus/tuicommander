@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store";
 import { invoke, listen } from "../invoke";
+import { appLogger } from "./appLogger";
 
 /** Dictation config persisted to ~/.tuicommander/dictation-config.json */
 interface DictationConfig {
@@ -113,7 +114,7 @@ function createDictationStore() {
           selectedModel: config.model ?? "large-v3-turbo",
         });
       } catch (err) {
-        console.error("Failed to get dictation config:", err);
+        appLogger.error("dictation", "Failed to get dictation config", err);
       }
     },
 
@@ -129,7 +130,7 @@ function createDictationStore() {
         await invoke("set_dictation_config", { config });
         setState(partial as Partial<DictationStoreState>);
       } catch (err) {
-        console.error("Failed to save dictation config:", err);
+        appLogger.error("dictation", "Failed to save dictation config", err);
       }
     },
 
@@ -161,7 +162,7 @@ function createDictationStore() {
           processing: status.processing,
         });
       } catch (err) {
-        console.error("Failed to get dictation status:", err);
+        appLogger.error("dictation", "Failed to get dictation status", err);
       }
     },
 
@@ -171,7 +172,7 @@ function createDictationStore() {
         const map = await invoke<Record<string, string>>("get_correction_map");
         setState("corrections", map);
       } catch (err) {
-        console.error("Failed to get correction map:", err);
+        appLogger.error("dictation", "Failed to get correction map", err);
       }
     },
 
@@ -181,7 +182,7 @@ function createDictationStore() {
         await invoke("set_correction_map", { map });
         setState("corrections", map);
       } catch (err) {
-        console.error("Failed to save corrections:", err);
+        appLogger.error("dictation", "Failed to save corrections", err);
       }
     },
 
@@ -191,7 +192,7 @@ function createDictationStore() {
         const devices = await invoke<AudioDevice[]>("list_audio_devices");
         setState("devices", devices);
       } catch (err) {
-        console.error("Failed to list audio devices:", err);
+        appLogger.error("dictation", "Failed to list audio devices", err);
       }
     },
 
@@ -201,7 +202,7 @@ function createDictationStore() {
         const models = await invoke<ModelInfo[]>("get_model_info");
         setState("models", models);
       } catch (err) {
-        console.error("Failed to get model info:", err);
+        appLogger.error("dictation", "Failed to get model info", err);
       }
     },
 
@@ -217,7 +218,7 @@ function createDictationStore() {
         await invoke("delete_whisper_model", { modelName: name });
         await actions.refreshModels();
       } catch (err) {
-        console.error("Failed to delete model:", err);
+        appLogger.error("dictation", "Failed to delete model", err);
       }
     },
 
@@ -230,7 +231,7 @@ function createDictationStore() {
         await actions.refreshStatus();
         await actions.refreshModels();
       } catch (err) {
-        console.error("Model download failed:", err);
+        appLogger.error("dictation", "Model download failed", err);
       } finally {
         setState("downloading", false);
       }
@@ -243,7 +244,7 @@ function createDictationStore() {
         await invoke("start_dictation");
         setState("recording", true);
       } catch (err) {
-        console.error("Failed to start recording:", err);
+        appLogger.error("dictation", "Failed to start recording", err);
       } finally {
         setState("loading", false);
       }
@@ -257,7 +258,7 @@ function createDictationStore() {
         setState("processing", false);
         return text;
       } catch (err) {
-        console.error("Failed to stop recording:", err);
+        appLogger.error("dictation", "Failed to stop recording", err);
         setState("recording", false);
         setState("processing", false);
         return null;
@@ -269,7 +270,7 @@ function createDictationStore() {
       try {
         return await invoke<string>("inject_text", { text });
       } catch (err) {
-        console.error("Failed to inject text:", err);
+        appLogger.error("dictation", "Failed to inject text", err);
         return null;
       }
     },

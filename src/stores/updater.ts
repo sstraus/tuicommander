@@ -4,6 +4,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { isTauri } from "../transport";
 import { settingsStore } from "./settings";
 import type { UpdateChannel } from "./settings";
+import { appLogger } from "./appLogger";
 
 /** GitHub release manifest URLs per update channel */
 const CHANNEL_ENDPOINTS: Record<UpdateChannel, string> = {
@@ -99,7 +100,7 @@ function createUpdaterStore() {
         }
       } catch (err) {
         const raw = err instanceof Error ? err.message : String(err);
-        console.error("Update check failed:", raw);
+        appLogger.error("app", "Update check failed", raw);
         const message = /fetch|valid release|404|not found/i.test(raw)
           ? "No published releases found yet"
           : raw;
@@ -132,7 +133,7 @@ function createUpdaterStore() {
         await relaunch();
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error("Update install failed:", message);
+        appLogger.error("app", "Update install failed", message);
         setState({ error: message, downloading: false });
       }
     },

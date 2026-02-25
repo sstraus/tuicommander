@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
+import { appLogger } from "./appLogger";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "../transport";
 import {
@@ -22,7 +23,7 @@ function copyDefaults(): NotificationConfig {
 /** Persist config to Rust backend (fire-and-forget) */
 function saveConfig(config: NotificationConfig): void {
   invoke("save_notification_config", { config }).catch((err) =>
-    console.debug("Failed to save notification config:", err),
+    appLogger.debug("config", "Failed to save notification config", err),
   );
 }
 
@@ -63,7 +64,7 @@ function createNotificationsStore() {
         setState("config", config);
         notificationManager.updateConfig(config);
       } catch (err) {
-        console.debug("Failed to hydrate notification config:", err);
+        appLogger.debug("config", "Failed to hydrate notification config", err);
       }
     },
 
