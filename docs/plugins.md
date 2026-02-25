@@ -806,7 +806,7 @@ Built-in plugins are TypeScript modules in `src/plugins/` compiled with the app.
 |--------|------|---------|---------|
 | `plan` | `planPlugin.ts` | ACTIVE PLAN | `plan-file` structured events |
 
-The `wiz-stories` plugin was extracted to an external plugin in the [tuicommander-plugins](https://github.com/sstraus/tuicommander-plugins) repo (submodule at `plugins/wiz-stories/`).
+See `examples/plugins/report-watcher/` for a template showing how to extract terminal output into Activity Center items with a markdown viewer.
 
 To create a built-in plugin, add it to `BUILTIN_PLUGINS` in `src/plugins/index.ts`.
 
@@ -988,8 +988,6 @@ Available from the [plugin registry](https://github.com/sstraus/tuicommander-plu
 
 | Plugin | Tier | Capabilities | Description |
 |--------|------|-------------|-------------|
-| `wiz-stories` | 1+4 | `invoke:read_file`, `invoke:list_markdown_files`, `ui:markdown` | Story status tracking from terminal output |
-| `wiz-reviews` | 1+4 | `invoke:read_file`, `ui:markdown` | Code review tracking from terminal output |
 | `mdkb-dashboard` | 2+3 | `exec:cli`, `fs:read`, `ui:panel`, `ui:ticker` | mdkb knowledge base dashboard |
 
 ## Troubleshooting

@@ -86,8 +86,7 @@ TUICommander ships with example plugins in `examples/plugins/`:
 | `auto-confirm` | Auto-responds to Y/N prompts in terminal |
 | `ci-notifier` | Sound notifications and markdown panels for CI events |
 | `repo-dashboard` | Reads repo state, generates dynamic markdown summaries |
-| `wiz-stories` | Story tracking with markdown provider |
-| `wiz-reviews` | Code review tracking with markdown provider |
+| `report-watcher` | Watches terminal for generated report files, shows them in Activity Center |
 
 ## Writing Your Own Plugin
 

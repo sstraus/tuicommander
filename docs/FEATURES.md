@@ -784,5 +784,4 @@ See `examples/plugins/` for reference implementations:
 - `auto-confirm` — Auto-respond to Y/N prompts
 - `ci-notifier` — Sound notifications and markdown panels
 - `repo-dashboard` — Read-only state and dynamic markdown
-- `wiz-stories` — Story tracking with markdown provider
-- `wiz-reviews` — Code review tracking with markdown provider
+- `report-watcher` — Generic report file watcher with markdown viewer
