@@ -1,6 +1,6 @@
 import { Component, For, Show } from "solid-js";
 import type { RepoSettings } from "../../../stores/repoSettings";
-import type { RepoDefaults } from "../../../stores/repoDefaults";
+import type { RepoDefaults, WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge } from "../../../stores/repoDefaults";
 import { PRESET_COLORS } from "./AppearanceTab";
 import { isMacOS } from "../../../platform";
 import { t } from "../../../i18n";
@@ -18,6 +18,9 @@ function effectiveBool(override: boolean | null, fallback: boolean): boolean {
   return override ?? fallback;
 }
 
+/** "inherit" sentinel value for nullable dropdowns */
+const INHERIT = "__inherit__";
+
 export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
   const branchOptions = [
     { value: "automatic", label: t("repoWorktree.baseBranch.automatic", "Automatic") },
@@ -25,9 +28,6 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
     { value: "master", label: "master" },
     { value: "develop", label: "develop" },
   ];
-
-  /** "inherit" sentinel value for the baseBranch dropdown */
-  const INHERIT = "__inherit__";
 
   const baseBranchValue = () => props.settings.baseBranch ?? INHERIT;
 
@@ -140,6 +140,116 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
             </Show>
           </span>
         </div>
+      </div>
+
+      <h3>{t("repoWorktree.heading.worktreeSettings", "Worktree Settings")}</h3>
+
+      <div class={s.group}>
+        <label>{t("repoWorktree.label.worktreeStorage", "Storage Strategy")}</label>
+        <select
+          value={props.settings.worktreeStorage ?? INHERIT}
+          onChange={(e) => props.onUpdate("worktreeStorage", e.currentTarget.value === INHERIT ? null : e.currentTarget.value as WorktreeStorage)}
+        >
+          <option value={INHERIT}>
+            {t("repoWorktree.worktreeStorage.useDefault", "Use global default ({default})", { default: props.defaults.worktreeStorage })}
+          </option>
+          <option value="sibling">{t("repoWorktree.worktreeStorage.sibling", "Sibling directory (__wt)")}</option>
+          <option value="app-dir">{t("repoWorktree.worktreeStorage.appDir", "App config directory")}</option>
+          <option value="inside-repo">{t("repoWorktree.worktreeStorage.insideRepo", "Inside repository (.worktrees)")}</option>
+        </select>
+      </div>
+
+      <div class={s.group}>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={effectiveBool(props.settings.promptOnCreate, props.defaults.promptOnCreate)}
+            onChange={(e) => props.onUpdate("promptOnCreate", e.currentTarget.checked)}
+          />
+          <span>
+            {t("repoWorktree.toggle.promptOnCreate", "Prompt for branch name during creation")}
+            <Show when={props.settings.promptOnCreate === null}>
+              <span class={s.hintInline}> {t("repoWorktree.hint.globalDefault", "(Global Default)")}</span>
+            </Show>
+          </span>
+        </div>
+      </div>
+
+      <div class={s.group}>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={effectiveBool(props.settings.deleteBranchOnRemove, props.defaults.deleteBranchOnRemove)}
+            onChange={(e) => props.onUpdate("deleteBranchOnRemove", e.currentTarget.checked)}
+          />
+          <span>
+            {t("repoWorktree.toggle.deleteBranchOnRemove", "Delete local branch when removing worktree")}
+            <Show when={props.settings.deleteBranchOnRemove === null}>
+              <span class={s.hintInline}> {t("repoWorktree.hint.globalDefault", "(Global Default)")}</span>
+            </Show>
+          </span>
+        </div>
+      </div>
+
+      <div class={s.group}>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={effectiveBool(props.settings.autoArchiveMerged, props.defaults.autoArchiveMerged)}
+            onChange={(e) => props.onUpdate("autoArchiveMerged", e.currentTarget.checked)}
+          />
+          <span>
+            {t("repoWorktree.toggle.autoArchiveMerged", "Auto-archive merged worktrees")}
+            <Show when={props.settings.autoArchiveMerged === null}>
+              <span class={s.hintInline}> {t("repoWorktree.hint.globalDefault", "(Global Default)")}</span>
+            </Show>
+          </span>
+        </div>
+      </div>
+
+      <div class={s.group}>
+        <label>{t("repoWorktree.label.orphanCleanup", "Orphan Worktree Cleanup")}</label>
+        <select
+          value={props.settings.orphanCleanup ?? INHERIT}
+          onChange={(e) => props.onUpdate("orphanCleanup", e.currentTarget.value === INHERIT ? null : e.currentTarget.value as OrphanCleanup)}
+        >
+          <option value={INHERIT}>
+            {t("repoWorktree.orphanCleanup.useDefault", "Use global default ({default})", { default: props.defaults.orphanCleanup })}
+          </option>
+          <option value="ask">{t("repoWorktree.orphanCleanup.ask", "Ask before removing")}</option>
+          <option value="on">{t("repoWorktree.orphanCleanup.on", "Auto-remove")}</option>
+          <option value="off">{t("repoWorktree.orphanCleanup.off", "Keep (mark as detached)")}</option>
+        </select>
+      </div>
+
+      <div class={s.group}>
+        <label>{t("repoWorktree.label.prMergeStrategy", "PR Merge Strategy")}</label>
+        <select
+          value={props.settings.prMergeStrategy ?? INHERIT}
+          onChange={(e) => props.onUpdate("prMergeStrategy", e.currentTarget.value === INHERIT ? null : e.currentTarget.value as MergeStrategy)}
+        >
+          <option value={INHERIT}>
+            {t("repoWorktree.mergeStrategy.useDefault", "Use global default ({default})", { default: props.defaults.prMergeStrategy })}
+          </option>
+          <option value="merge">{t("repoWorktree.mergeStrategy.merge", "Merge")}</option>
+          <option value="squash">{t("repoWorktree.mergeStrategy.squash", "Squash")}</option>
+          <option value="rebase">{t("repoWorktree.mergeStrategy.rebase", "Rebase")}</option>
+        </select>
+      </div>
+
+      <div class={s.group}>
+        <label>{t("repoWorktree.label.afterMerge", "After Merge Behavior")}</label>
+        <select
+          value={props.settings.afterMerge ?? INHERIT}
+          onChange={(e) => props.onUpdate("afterMerge", e.currentTarget.value === INHERIT ? null : e.currentTarget.value as WorktreeAfterMerge)}
+        >
+          <option value={INHERIT}>
+            {t("repoWorktree.afterMerge.useDefault", "Use global default ({default})", { default: props.defaults.afterMerge })}
+          </option>
+          <option value="archive">{t("repoWorktree.afterMerge.archive", "Archive worktree")}</option>
+          <option value="delete">{t("repoWorktree.afterMerge.delete", "Delete worktree")}</option>
+          <option value="ask">{t("repoWorktree.afterMerge.ask", "Ask each time")}</option>
+        </select>
       </div>
 
       <Show when={isMacOS()}>

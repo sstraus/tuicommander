@@ -3,6 +3,7 @@ import { settingsStore, IDE_NAMES } from "../../../stores/settings";
 import { repoDefaultsStore } from "../../../stores/repoDefaults";
 import { updaterStore } from "../../../stores/updater";
 import type { IdeType, UpdateChannel } from "../../../stores/settings";
+import type { WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge } from "../../../stores/repoDefaults";
 import { t } from "../../../i18n";
 import s from "../Settings.module.css";
 
@@ -230,6 +231,98 @@ export const GeneralTab: Component = () => {
           rows={4}
         />
         <p class={s.hint}>{t("general.hint.defaultRunScript", "Shell script run when launching the worktree")}</p>
+      </div>
+
+      <h3>{t("general.heading.worktreeDefaults", "Worktree Defaults")}</h3>
+      <p class={s.hint} style={{ "margin-bottom": "12px" }}>
+        {t("general.hint.worktreeDefaults", "Default worktree behavior for all repositories")}
+      </p>
+
+      <div class={s.group}>
+        <label>{t("general.label.worktreeStorage", "Storage Strategy")}</label>
+        <select
+          value={repoDefaultsStore.state.worktreeStorage}
+          onChange={(e) => repoDefaultsStore.setWorktreeStorage(e.currentTarget.value as WorktreeStorage)}
+        >
+          <option value="sibling">{t("general.worktreeStorage.sibling", "Sibling directory (__wt)")}</option>
+          <option value="app-dir">{t("general.worktreeStorage.appDir", "App config directory")}</option>
+          <option value="inside-repo">{t("general.worktreeStorage.insideRepo", "Inside repository (.worktrees)")}</option>
+        </select>
+        <p class={s.hint}>{t("general.hint.worktreeStorage", "Where to create worktree directories")}</p>
+      </div>
+
+      <div class={s.group}>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={repoDefaultsStore.state.promptOnCreate}
+            onChange={(e) => repoDefaultsStore.setPromptOnCreate(e.currentTarget.checked)}
+          />
+          <span>{t("general.toggle.promptOnCreate", "Prompt for branch name during creation")}</span>
+        </div>
+        <p class={s.hint}>{t("general.hint.promptOnCreate", "Show dialog when creating worktrees from \"+\" button. When off, creates instantly with auto-generated name")}</p>
+      </div>
+
+      <div class={s.group}>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={repoDefaultsStore.state.deleteBranchOnRemove}
+            onChange={(e) => repoDefaultsStore.setDeleteBranchOnRemove(e.currentTarget.checked)}
+          />
+          <span>{t("general.toggle.deleteBranchOnRemove", "Delete local branch when removing worktree")}</span>
+        </div>
+      </div>
+
+      <div class={s.group}>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={repoDefaultsStore.state.autoArchiveMerged}
+            onChange={(e) => repoDefaultsStore.setAutoArchiveMerged(e.currentTarget.checked)}
+          />
+          <span>{t("general.toggle.autoArchiveMerged", "Auto-archive merged worktrees")}</span>
+        </div>
+        <p class={s.hint}>{t("general.hint.autoArchiveMerged", "Move worktree to archive directory when its PR is merged")}</p>
+      </div>
+
+      <div class={s.group}>
+        <label>{t("general.label.orphanCleanup", "Orphan Worktree Cleanup")}</label>
+        <select
+          value={repoDefaultsStore.state.orphanCleanup}
+          onChange={(e) => repoDefaultsStore.setOrphanCleanup(e.currentTarget.value as OrphanCleanup)}
+        >
+          <option value="ask">{t("general.orphanCleanup.ask", "Ask before removing")}</option>
+          <option value="on">{t("general.orphanCleanup.on", "Auto-remove")}</option>
+          <option value="off">{t("general.orphanCleanup.off", "Keep (mark as detached)")}</option>
+        </select>
+        <p class={s.hint}>{t("general.hint.orphanCleanup", "Handle worktrees whose branch was deleted")}</p>
+      </div>
+
+      <div class={s.group}>
+        <label>{t("general.label.prMergeStrategy", "PR Merge Strategy")}</label>
+        <select
+          value={repoDefaultsStore.state.prMergeStrategy}
+          onChange={(e) => repoDefaultsStore.setPrMergeStrategy(e.currentTarget.value as MergeStrategy)}
+        >
+          <option value="merge">{t("general.mergeStrategy.merge", "Merge")}</option>
+          <option value="squash">{t("general.mergeStrategy.squash", "Squash")}</option>
+          <option value="rebase">{t("general.mergeStrategy.rebase", "Rebase")}</option>
+        </select>
+        <p class={s.hint}>{t("general.hint.prMergeStrategy", "Default merge strategy for worktree branches")}</p>
+      </div>
+
+      <div class={s.group}>
+        <label>{t("general.label.afterMerge", "After Merge Behavior")}</label>
+        <select
+          value={repoDefaultsStore.state.afterMerge}
+          onChange={(e) => repoDefaultsStore.setAfterMerge(e.currentTarget.value as WorktreeAfterMerge)}
+        >
+          <option value="archive">{t("general.afterMerge.archive", "Archive worktree")}</option>
+          <option value="delete">{t("general.afterMerge.delete", "Delete worktree")}</option>
+          <option value="ask">{t("general.afterMerge.ask", "Ask each time")}</option>
+        </select>
+        <p class={s.hint}>{t("general.hint.afterMerge", "What to do with the worktree after merging its branch")}</p>
       </div>
 
     </div>

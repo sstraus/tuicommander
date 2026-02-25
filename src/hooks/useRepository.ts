@@ -48,13 +48,13 @@ export function useRepository() {
   }
 
   /** Create a new worktree with a branch */
-  async function createWorktree(baseRepo: string, branchName: string, createBranch?: boolean): Promise<{
+  async function createWorktree(baseRepo: string, branchName: string, createBranch?: boolean, baseRef?: string): Promise<{
     name: string;
     path: string;
     branch: string;
     base_repo: string;
   }> {
-    return await invoke("create_worktree", { baseRepo, branchName, createBranch });
+    return await invoke("create_worktree", { baseRepo, branchName, createBranch, baseRef });
   }
 
   /** Get worktree paths: branch name → worktree directory */
@@ -119,6 +119,43 @@ export function useRepository() {
     return await invoke<string>("generate_worktree_name_cmd", { existingNames });
   }
 
+  /** Generate a hybrid clone branch name: `{sanitized_source}--{random_name}` */
+  async function generateCloneBranchName(sourceBranch: string, existingNames: string[]): Promise<string> {
+    return await invoke<string>("generate_clone_branch_name_cmd", { sourceBranch, existingNames });
+  }
+
+  /** List base ref options for the create worktree dropdown (default branch first) */
+  async function listBaseRefOptions(repoPath: string): Promise<string[]> {
+    try {
+      return await invoke<string[]>("list_base_ref_options", { repoPath });
+    } catch (err) {
+      appLogger.error("git", `Failed to list base ref options for ${repoPath}`, err);
+      return [];
+    }
+  }
+
+  /** Result of merge-and-archive operation */
+  interface MergeArchiveResult {
+    merged: boolean;
+    action: string;
+    archive_path: string | null;
+  }
+
+  /** Merge a worktree branch into target, then archive or delete */
+  async function mergeAndArchiveWorktree(
+    repoPath: string,
+    branchName: string,
+    targetBranch: string,
+    afterMerge: string,
+  ): Promise<MergeArchiveResult> {
+    return await invoke<MergeArchiveResult>("merge_and_archive_worktree", {
+      repoPath,
+      branchName,
+      targetBranch,
+      afterMerge,
+    });
+  }
+
   /** Recent commit entry */
   interface RecentCommit {
     hash: string;
@@ -160,6 +197,9 @@ export function useRepository() {
     listMarkdownFiles,
     readFile,
     generateWorktreeName,
+    generateCloneBranchName,
+    listBaseRefOptions,
+    mergeAndArchiveWorktree,
     listLocalBranches,
     getRecentCommits,
   };

@@ -246,3 +246,17 @@ Features to test when TUICommander is more usable.
 - [ ] Deep link: `tuic://open-repo?path=...` switches to repo (only if in sidebar)
 - [ ] Hot-reload still works after enable/disable/uninstall operations
 - [ ] Plugin errors show error badge and are visible in log viewer
+
+## Worktree Overhaul
+- [ ] Settings → General → Worktree Defaults: all 7 dropdowns/toggles render and save
+- [ ] Settings → Repository → Worktree: per-repo overrides with "Use global default" option
+- [ ] Storage strategy: test sibling (`__wt`), app dir, and inside-repo paths
+- [ ] `+` button (prompt on): dialog opens with branch list, base ref dropdown, generate name button
+- [ ] `+` button (prompt off): instant creation with auto-generated name
+- [ ] Right-click branch → Create Worktree: creates `{branch}--{random}` clone worktree
+- [ ] Right-click worktree branch → Merge & Archive: merges into main, archives/deletes based on setting
+- [ ] Merge with conflicts: error message shown, merge aborted, worktree intact
+- [ ] External worktree created via CLI: detected in sidebar after refresh
+- [ ] After merge "archive" mode: directory moved to `__archived/`
+- [ ] After merge "delete" mode: worktree and branch removed entirely
+- [ ] CreateWorktreeDialog base ref dropdown: default branch first, all local branches listed

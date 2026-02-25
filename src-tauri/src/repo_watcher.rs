@@ -19,12 +19,18 @@ pub(crate) struct RepoChangedPayload {
 
 /// Check whether a changed path within `.git/` is relevant to panels.
 /// We only care about changes that affect repo state visible to users:
-/// index (staging), refs (commits/branches), and merge/rebase state.
+/// index (staging), refs (commits/branches), merge/rebase state, and
+/// worktree entries (external worktree creation/removal).
 /// Note: HEAD is handled by `head_watcher` exclusively to avoid redundant events.
 pub(crate) fn is_relevant_git_path(path: &Path) -> bool {
     // refs/ directory: any change under it (commits, branch creates/deletes, tags)
     // Use path components instead of string contains to work on both Unix and Windows
     if path.components().any(|c| c.as_os_str() == "refs") {
+        return true;
+    }
+
+    // worktrees/ directory: changes here mean external worktree add/remove
+    if path.components().any(|c| c.as_os_str() == "worktrees") {
         return true;
     }
 
@@ -105,6 +111,17 @@ pub(crate) fn start_watching(repo_path: &str, app_handle: &AppHandle) -> Result<
             .map_err(|e| format!("Failed to watch .git/refs/: {e}"))?;
     }
 
+    // Watch .git/worktrees/ non-recursively to detect external worktree add/remove.
+    // We only care about directory-level changes (new/removed entries), not file
+    // modifications within each worktree's admin dir.
+    let worktrees_dir = git_dir.join("worktrees");
+    if worktrees_dir.is_dir() {
+        debouncer
+            .watcher()
+            .watch(worktrees_dir.as_path(), RecursiveMode::NonRecursive)
+            .map_err(|e| format!("Failed to watch .git/worktrees/: {e}"))?;
+    }
+
     state.repo_watchers.insert(repo_path.to_string(), debouncer);
     Ok(())
 }
@@ -146,6 +163,14 @@ mod tests {
         )));
         assert!(is_relevant_git_path(&PathBuf::from(
             "/repo/.git/refs/tags/v1.0"
+        )));
+
+        // worktrees/ directory: detect external worktree add/remove
+        assert!(is_relevant_git_path(&PathBuf::from(
+            "/repo/.git/worktrees/my-wt"
+        )));
+        assert!(is_relevant_git_path(&PathBuf::from(
+            "/repo/.git/worktrees/my-wt/gitdir"
         )));
 
         // HEAD is handled by head_watcher — should NOT match here

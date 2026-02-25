@@ -62,9 +62,10 @@ export const ErrorLogPanel: Component = () => {
 
   const isOpen = () => errorLogStore.state.isOpen;
 
-  // Mark errors as seen when panel opens
+  // Mark errors as seen while panel is open (including new arrivals)
   createEffect(() => {
     if (isOpen()) {
+      appLogger.entryCount(); // subscribe to new entries
       appLogger.markSeen();
     }
   });

@@ -17,9 +17,12 @@ export interface GitOperationsDeps {
     getDiffStats: (path: string) => Promise<{ additions: number; deletions: number }>;
     getWorktreePaths: (repoPath: string) => Promise<Record<string, string>>;
     removeWorktree: (repoPath: string, branchName: string) => Promise<void>;
-    createWorktree: (baseRepo: string, branchName: string, createBranch?: boolean) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;
+    createWorktree: (baseRepo: string, branchName: string, createBranch?: boolean, baseRef?: string) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;
     renameBranch: (repoPath: string, oldName: string, newName: string) => Promise<void>;
     generateWorktreeName: (existingNames: string[]) => Promise<string>;
+    generateCloneBranchName: (sourceBranch: string, existingNames: string[]) => Promise<string>;
+    listBaseRefOptions: (repoPath: string) => Promise<string[]>;
+    mergeAndArchiveWorktree: (repoPath: string, branchName: string, targetBranch: string, afterMerge: string) => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
     listLocalBranches: (repoPath: string) => Promise<string[]>;
   };
   pty: {
@@ -51,6 +54,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     existingBranches: string[];
     worktreeBranches: string[];
     worktreesDir: string;
+    baseRefs: string[];
   } | null>(null);
 
   const refreshAllBranchStats = async () => {
@@ -425,10 +429,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
     const worktreeBranches = repoState ? Object.keys(repoState.branches) : [];
 
     // Fetch data for the dialog in parallel
-    const [suggestedName, localBranches, worktreesDir] = await Promise.all([
+    const [suggestedName, localBranches, worktreesDir, baseRefs] = await Promise.all([
       deps.repo.generateWorktreeName(worktreeBranches),
       deps.repo.listLocalBranches(repoPath),
       deps.pty.getWorktreesDir(),
+      deps.repo.listBaseRefOptions(repoPath),
     ]);
 
     setWorktreeDialogState({
@@ -437,6 +442,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       existingBranches: localBranches,
       worktreeBranches,
       worktreesDir,
+      baseRefs,
     });
   };
 
@@ -452,7 +458,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
     try {
       deps.setStatusInfo(`Creating worktree ${options.branchName}...`);
-      const result = await deps.repo.createWorktree(repoPath, options.branchName, options.createBranch);
+      const result = await deps.repo.createWorktree(repoPath, options.branchName, options.createBranch, options.baseRef);
 
       repositoriesStore.setBranch(repoPath, result.branch, { worktreePath: result.path });
       repositoriesStore.setActiveBranch(repoPath, result.branch);
@@ -474,6 +480,82 @@ export function useGitOperations(deps: GitOperationsDeps) {
         next.delete(repoPath);
         return next;
       });
+    }
+  };
+
+  /** Quick-clone flow: right-click branch → instant worktree with hybrid name */
+  const handleCreateWorktreeFromBranch = async (repoPath: string, branchName: string) => {
+    if (creatingWorktreeRepos().has(repoPath)) return;
+    setCreatingWorktreeRepos((prev) => new Set([...prev, repoPath]));
+
+    try {
+      const repoState = repositoriesStore.get(repoPath);
+      const existingBranches = repoState ? Object.keys(repoState.branches) : [];
+      const cloneName = await deps.repo.generateCloneBranchName(branchName, existingBranches);
+
+      deps.setStatusInfo(`Creating worktree ${cloneName}...`);
+      const result = await deps.repo.createWorktree(repoPath, cloneName, true, branchName);
+
+      repositoriesStore.setBranch(repoPath, result.branch, { worktreePath: result.path });
+      repositoriesStore.setActiveBranch(repoPath, result.branch);
+
+      await handleAddTerminalToBranch(repoPath, result.branch);
+
+      try {
+        const stats = await deps.repo.getDiffStats(result.path);
+        repositoriesStore.updateBranchStats(repoPath, result.branch, stats.additions, stats.deletions);
+      } catch { /* ignore */ }
+
+      deps.setStatusInfo(`Created worktree ${cloneName}`);
+    } catch (err) {
+      appLogger.error("git", "Failed to create worktree from branch", err);
+      deps.setStatusInfo(`Failed to create worktree: ${err}`);
+    } finally {
+      setCreatingWorktreeRepos((prev) => {
+        const next = new Set(prev);
+        next.delete(repoPath);
+        return next;
+      });
+    }
+  };
+
+  /** Merge a worktree branch into target, then archive/delete based on setting */
+  const handleMergeAndArchive = async (
+    repoPath: string,
+    branchName: string,
+    targetBranch: string,
+    afterMerge: string,
+  ) => {
+    try {
+      deps.setStatusInfo(`Merging ${branchName} into ${targetBranch}...`);
+
+      // Close terminals for this branch before merge
+      const repoState = repositoriesStore.get(repoPath);
+      const branch = repoState?.branches[branchName];
+      if (branch) {
+        for (const termId of branch.terminals) {
+          await deps.closeTerminal(termId, true);
+        }
+      }
+
+      const result = await deps.repo.mergeAndArchiveWorktree(repoPath, branchName, targetBranch, afterMerge);
+
+      if (result.action === "pending") {
+        // "ask" mode — the merge succeeded but user needs to decide
+        // For now, archive by default (the dialog would be handled upstream)
+        deps.setStatusInfo(`Merged ${branchName} into ${targetBranch}`);
+      } else {
+        deps.setStatusInfo(`Merged ${branchName} into ${targetBranch} (${result.action})`);
+      }
+
+      // Remove branch from sidebar
+      repositoriesStore.removeBranch(repoPath, branchName);
+
+      // Refresh to pick up updated branch stats
+      refreshAllBranchStats();
+    } catch (err) {
+      appLogger.error("git", "Failed to merge and archive worktree", err);
+      deps.setStatusInfo(`Failed to merge: ${err}`);
     }
   };
 
@@ -573,6 +655,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
     handleAddRepo,
     handleAddWorktree,
     confirmCreateWorktree,
+    handleCreateWorktreeFromBranch,
+    handleMergeAndArchive,
     worktreeDialogState,
     setWorktreeDialogState,
     creatingWorktreeRepos,

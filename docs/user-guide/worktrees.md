@@ -16,45 +16,67 @@ When you click a non-main branch in the sidebar:
 
 Main branches (main, master, develop) use the original repository directory — no worktree is created.
 
-## Worktree Storage
+## Worktree Storage Strategies
 
-Worktrees are stored in:
-- macOS: `~/Library/Application Support/tuicommander/worktrees/`
-- Linux: `~/.config/tuicommander/worktrees/`
-- Windows: `%APPDATA%/tuicommander/worktrees/`
+Configure where worktrees are stored (Settings → General → Worktree Defaults → Storage):
 
-Named as: `{repo-name}--{branch-name}`
+| Strategy | Location | Use case |
+|----------|----------|----------|
+| **Sibling** (default) | `{repo_parent}/{repo_name}__wt/` | Keeps worktrees near the repo |
+| **App directory** | `~/Library/Application Support/tuicommander/worktrees/{repo_name}/` | Centralised storage |
+| **Inside repo** | `{repo_path}/.worktrees/` | Self-contained, add to `.gitignore` |
+
+Override per-repo in Settings → Repository → Worktree.
 
 ## Creating Worktrees
 
-### From Existing Branch
+### From the `+` Button (with prompt)
 
-Click any branch in the sidebar. If no worktree exists, one is created automatically.
+Click `+` next to a repository name. A dialog opens where you can:
+- Type a new branch name (creates branch + worktree)
+- Select an existing branch from the list
+- Choose a "Start from" base ref (default branch, or any local branch)
+- Generate a random sci-fi name
 
-### New Branch + Worktree
+### From the `+` Button (instant mode)
 
-Click the `+` button next to a repository name. This creates a new branch (with a generated name) and its worktree.
+When "Prompt on create" is off (Settings → Worktree Defaults), clicking `+` instantly creates a worktree with an auto-generated name based on the default branch.
 
-## Worktree Configuration
+### From Branch Right-Click (quick-clone)
 
-Per-repository worktree settings (Settings → Repository → Worktree):
+Right-click any non-main branch without a worktree → **Create Worktree**. This creates a new branch named `{source}--{random-name}` based on the selected branch, with a worktree directory.
 
-| Setting | Description |
-|---------|-------------|
-| **Base branch** | Branch to create worktrees from (auto, main, master, develop) |
-| **Copy ignored files** | Copy .gitignored files to new worktrees |
-| **Copy untracked files** | Copy untracked files to new worktrees |
+## Worktree Settings
 
-### Setup Script
+Global defaults apply to all repos. Per-repo overrides take precedence when set.
 
-Configure a script to run after worktree creation (Settings → Repository → Scripts):
+### Global Defaults (Settings → General → Worktree Defaults)
 
-```bash
-npm install
-cp .env.example .env
-```
+| Setting | Options | Default |
+|---------|---------|---------|
+| **Storage** | Sibling / App directory / Inside repo | Sibling |
+| **Prompt on create** | On / Off | On |
+| **Delete branch on remove** | On / Off | On |
+| **Auto-archive merged** | On / Off | Off |
+| **Orphan cleanup** | Manual / Prompt / Auto | Manual |
+| **PR merge strategy** | Merge / Squash / Rebase | Merge |
+| **After merge** | Archive / Delete / Ask | Archive |
 
-This runs once, immediately after the worktree is created.
+### Per-Repository Overrides (Settings → Repository → Worktree)
+
+Each setting can use the global default or be overridden for a specific repository.
+
+## Merge & Archive
+
+Right-click a worktree branch → **Merge & Archive** to:
+
+1. Merge the branch into the main branch
+2. Handle the worktree based on the "After merge" setting:
+   - **Archive**: Moves the worktree directory to `__archived/` (accessible but removed from sidebar)
+   - **Delete**: Removes the worktree and branch entirely
+   - **Ask**: Merge succeeds, then you choose what to do
+
+The merge uses `--no-edit` for a clean fast-forward or merge commit. If conflicts are detected, the merge is aborted and the worktree is left intact.
 
 ## Removing Worktrees
 
@@ -66,6 +88,10 @@ Removing a worktree:
 1. Closes all terminals associated with that branch
 2. Runs `git worktree remove` to clean up
 3. Removes the branch entry from the sidebar
+
+## External Worktree Detection
+
+TUICommander monitors `.git/worktrees/` for changes. Worktrees created outside the app (via CLI or other tools) are detected and appear in the sidebar after the next refresh.
 
 ## Branch Switching
 

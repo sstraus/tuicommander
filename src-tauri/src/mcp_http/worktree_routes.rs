@@ -54,7 +54,7 @@ pub(super) async fn create_worktree_http(
         branch: Some(body.branch_name),
         create_branch: body.create_branch.unwrap_or(true),
     };
-    match crate::worktree::create_worktree_internal(&state.worktrees_dir, &config) {
+    match crate::worktree::create_worktree_internal(&state.worktrees_dir, &config, None) {
         Ok(wt) => (
             StatusCode::CREATED,
             Json(serde_json::json!({

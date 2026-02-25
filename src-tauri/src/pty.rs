@@ -516,7 +516,7 @@ pub(crate) async fn create_pty_with_worktree(
     worktree_config: WorktreeConfig,
 ) -> Result<WorktreeResult, String> {
     // Create the worktree first
-    let worktree = create_worktree_internal(&state.worktrees_dir, &worktree_config)?;
+    let worktree = create_worktree_internal(&state.worktrees_dir, &worktree_config, None)?;
     let worktree_path = worktree.path.clone();
 
     // Wrap PTY creation so we can clean up the worktree on failure

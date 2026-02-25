@@ -89,6 +89,13 @@ describe("SettingsPanel — repo context", () => {
       runScript: "",
       color: "",
       terminalMetaHotkeys: null,
+      worktreeStorage: null,
+      promptOnCreate: null,
+      deleteBranchOnRemove: null,
+      autoArchiveMerged: null,
+      orphanCleanup: null,
+      prMergeStrategy: null,
+      afterMerge: null,
     };
     vi.mocked(repoSettingsStore.getOrCreate).mockReturnValue(mockSettings);
   });

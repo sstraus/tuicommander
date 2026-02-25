@@ -7,6 +7,7 @@
 
 import { statusBarTicker } from "../stores/statusBarTicker";
 import { mdTabsStore } from "../stores/mdTabs";
+import { appLogger } from "../stores/appLogger";
 import { invoke } from "../invoke";
 
 // ---------------------------------------------------------------------------
@@ -97,7 +98,6 @@ async function poll(): Promise<void> {
     });
 
   } catch (err) {
-    console.error("[claudeUsage] API poll failed:", err);
     const errStr = String(err);
     const isTokenMissing = errStr.includes("No Claude OAuth token");
     const isAuthError = errStr.includes("401") || errStr.includes("403");
@@ -109,6 +109,12 @@ async function poll(): Promise<void> {
         : isParseError
           ? "API changed"
           : "offline";
+
+    // Log full error detail to appLogger so it's visible in ErrorLogPanel
+    if (!isTokenMissing) {
+      appLogger.warn("network", `Claude usage poll: ${text}`, errStr);
+    }
+
     statusBarTicker.addMessage({
       id: TICKER_ID,
       pluginId: FEATURE_ID,

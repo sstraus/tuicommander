@@ -170,6 +170,55 @@ pub(crate) enum SplitTabMode {
     Unified,
 }
 
+/// Where to create worktree directories
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum WorktreeStorage {
+    /// `~/dev/myrepo__wt/feat-123` — sibling dir next to repo
+    #[default]
+    Sibling,
+    /// `~/Library/.../tuicommander/worktrees/repo/feat-123` — app config dir
+    AppDir,
+    /// `<repo>/.worktrees/feat-123` — inside the repository
+    InsideRepo,
+}
+
+/// How to handle orphan worktrees (branch deleted)
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum OrphanCleanup {
+    /// Auto-remove worktree + prune
+    On,
+    /// Ignore, keep in sidebar
+    Off,
+    /// Show toast with Remove/Keep action
+    #[default]
+    Ask,
+}
+
+/// Git merge strategy for PRs
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum MergeStrategy {
+    #[default]
+    Merge,
+    Squash,
+    Rebase,
+}
+
+/// What to do with a worktree after its branch is merged
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum WorktreeAfterMerge {
+    /// Move to __archived/ subdir
+    #[default]
+    Archive,
+    /// Remove worktree and branch entirely
+    Delete,
+    /// Show confirmation dialog
+    Ask,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct AppConfig {
     pub(crate) shell: Option<String>,
@@ -440,6 +489,21 @@ pub(crate) struct RepoSettingsEntry {
     pub(crate) run_script: Option<String>,
     #[serde(default)]
     pub(crate) color: String,
+    // -- Worktree settings (null = inherit from global) --
+    #[serde(default)]
+    pub(crate) worktree_storage: Option<WorktreeStorage>,
+    #[serde(default)]
+    pub(crate) prompt_on_create: Option<bool>,
+    #[serde(default)]
+    pub(crate) delete_branch_on_remove: Option<bool>,
+    #[serde(default)]
+    pub(crate) auto_archive_merged: Option<bool>,
+    #[serde(default)]
+    pub(crate) orphan_cleanup: Option<OrphanCleanup>,
+    #[serde(default)]
+    pub(crate) pr_merge_strategy: Option<MergeStrategy>,
+    #[serde(default)]
+    pub(crate) after_merge: Option<WorktreeAfterMerge>,
 }
 
 impl RepoSettingsEntry {
@@ -451,6 +515,13 @@ impl RepoSettingsEntry {
             || self.setup_script.is_some()
             || self.run_script.is_some()
             || !self.color.is_empty()
+            || self.worktree_storage.is_some()
+            || self.prompt_on_create.is_some()
+            || self.delete_branch_on_remove.is_some()
+            || self.auto_archive_merged.is_some()
+            || self.orphan_cleanup.is_some()
+            || self.pr_merge_strategy.is_some()
+            || self.after_merge.is_some()
     }
 }
 
@@ -467,6 +538,21 @@ pub(crate) struct RepoDefaultsConfig {
     pub(crate) setup_script: String,
     #[serde(default)]
     pub(crate) run_script: String,
+    // -- Worktree settings --
+    #[serde(default)]
+    pub(crate) worktree_storage: WorktreeStorage,
+    #[serde(default = "default_true")]
+    pub(crate) prompt_on_create: bool,
+    #[serde(default = "default_true")]
+    pub(crate) delete_branch_on_remove: bool,
+    #[serde(default)]
+    pub(crate) auto_archive_merged: bool,
+    #[serde(default)]
+    pub(crate) orphan_cleanup: OrphanCleanup,
+    #[serde(default)]
+    pub(crate) pr_merge_strategy: MergeStrategy,
+    #[serde(default)]
+    pub(crate) after_merge: WorktreeAfterMerge,
 }
 
 impl Default for RepoDefaultsConfig {
@@ -477,6 +563,13 @@ impl Default for RepoDefaultsConfig {
             copy_untracked_files: false,
             setup_script: String::new(),
             run_script: String::new(),
+            worktree_storage: WorktreeStorage::default(),
+            prompt_on_create: true,
+            delete_branch_on_remove: true,
+            auto_archive_merged: false,
+            orphan_cleanup: OrphanCleanup::default(),
+            pr_merge_strategy: MergeStrategy::default(),
+            after_merge: WorktreeAfterMerge::default(),
         }
     }
 }
@@ -855,6 +948,13 @@ mod tests {
                 setup_script: Some("npm install".to_string()),
                 run_script: Some("npm start".to_string()),
                 color: String::new(),
+                worktree_storage: None,
+                prompt_on_create: None,
+                delete_branch_on_remove: None,
+                auto_archive_merged: None,
+                orphan_cleanup: None,
+                pr_merge_strategy: None,
+                after_merge: None,
             },
         );
         let loaded: RepoSettingsMap =
@@ -1090,5 +1190,124 @@ mod tests {
     fn agents_config_missing_file_returns_default() {
         let cfg: AgentsConfig = load_json_config("nonexistent-agents-12345.json");
         assert!(cfg.agents.is_empty());
+    }
+
+    // -- Worktree config tests --
+
+    #[test]
+    fn worktree_enums_serialize_as_expected() {
+        assert_eq!(serde_json::to_string(&WorktreeStorage::Sibling).unwrap(), r#""sibling""#);
+        assert_eq!(serde_json::to_string(&WorktreeStorage::AppDir).unwrap(), r#""app-dir""#);
+        assert_eq!(serde_json::to_string(&WorktreeStorage::InsideRepo).unwrap(), r#""inside-repo""#);
+        assert_eq!(serde_json::to_string(&OrphanCleanup::Ask).unwrap(), r#""ask""#);
+        assert_eq!(serde_json::to_string(&OrphanCleanup::On).unwrap(), r#""on""#);
+        assert_eq!(serde_json::to_string(&MergeStrategy::Squash).unwrap(), r#""squash""#);
+        assert_eq!(serde_json::to_string(&WorktreeAfterMerge::Archive).unwrap(), r#""archive""#);
+        assert_eq!(serde_json::to_string(&WorktreeAfterMerge::Delete).unwrap(), r#""delete""#);
+    }
+
+    #[test]
+    fn worktree_enums_deserialize() {
+        assert_eq!(serde_json::from_str::<WorktreeStorage>(r#""sibling""#).unwrap(), WorktreeStorage::Sibling);
+        assert_eq!(serde_json::from_str::<WorktreeStorage>(r#""app-dir""#).unwrap(), WorktreeStorage::AppDir);
+        assert_eq!(serde_json::from_str::<WorktreeStorage>(r#""inside-repo""#).unwrap(), WorktreeStorage::InsideRepo);
+        assert_eq!(serde_json::from_str::<OrphanCleanup>(r#""ask""#).unwrap(), OrphanCleanup::Ask);
+        assert_eq!(serde_json::from_str::<MergeStrategy>(r#""rebase""#).unwrap(), MergeStrategy::Rebase);
+        assert_eq!(serde_json::from_str::<WorktreeAfterMerge>(r#""ask""#).unwrap(), WorktreeAfterMerge::Ask);
+    }
+
+    #[test]
+    fn repo_defaults_worktree_fields_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let cfg = RepoDefaultsConfig {
+            worktree_storage: WorktreeStorage::InsideRepo,
+            prompt_on_create: false,
+            delete_branch_on_remove: false,
+            auto_archive_merged: true,
+            orphan_cleanup: OrphanCleanup::On,
+            pr_merge_strategy: MergeStrategy::Squash,
+            after_merge: WorktreeAfterMerge::Delete,
+            ..RepoDefaultsConfig::default()
+        };
+        let loaded: RepoDefaultsConfig = round_trip_in_dir(dir.path(), "repo-defaults.json", &cfg);
+        assert_eq!(loaded.worktree_storage, WorktreeStorage::InsideRepo);
+        assert!(!loaded.prompt_on_create);
+        assert!(!loaded.delete_branch_on_remove);
+        assert!(loaded.auto_archive_merged);
+        assert_eq!(loaded.orphan_cleanup, OrphanCleanup::On);
+        assert_eq!(loaded.pr_merge_strategy, MergeStrategy::Squash);
+        assert_eq!(loaded.after_merge, WorktreeAfterMerge::Delete);
+    }
+
+    #[test]
+    fn repo_defaults_serde_default_for_worktree_fields() {
+        // Old config without worktree fields should deserialize with defaults
+        let json = r#"{"base_branch":"automatic","copy_ignored_files":false}"#;
+        let loaded: RepoDefaultsConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(loaded.worktree_storage, WorktreeStorage::Sibling);
+        assert!(loaded.prompt_on_create);
+        assert!(loaded.delete_branch_on_remove);
+        assert!(!loaded.auto_archive_merged);
+        assert_eq!(loaded.orphan_cleanup, OrphanCleanup::Ask);
+        assert_eq!(loaded.pr_merge_strategy, MergeStrategy::Merge);
+        assert_eq!(loaded.after_merge, WorktreeAfterMerge::Archive);
+    }
+
+    #[test]
+    fn repo_settings_entry_worktree_fields_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let mut map = RepoSettingsMap::default();
+        map.repos.insert(
+            "/my/repo".to_string(),
+            RepoSettingsEntry {
+                path: "/my/repo".to_string(),
+                worktree_storage: Some(WorktreeStorage::AppDir),
+                prompt_on_create: Some(false),
+                delete_branch_on_remove: Some(false),
+                auto_archive_merged: Some(true),
+                orphan_cleanup: Some(OrphanCleanup::Off),
+                pr_merge_strategy: Some(MergeStrategy::Rebase),
+                after_merge: Some(WorktreeAfterMerge::Ask),
+                ..RepoSettingsEntry::default()
+            },
+        );
+        let loaded: RepoSettingsMap = round_trip_in_dir(dir.path(), "repo-settings.json", &map);
+        let entry = loaded.repos.get("/my/repo").unwrap();
+        assert_eq!(entry.worktree_storage, Some(WorktreeStorage::AppDir));
+        assert_eq!(entry.prompt_on_create, Some(false));
+        assert_eq!(entry.delete_branch_on_remove, Some(false));
+        assert_eq!(entry.auto_archive_merged, Some(true));
+        assert_eq!(entry.orphan_cleanup, Some(OrphanCleanup::Off));
+        assert_eq!(entry.pr_merge_strategy, Some(MergeStrategy::Rebase));
+        assert_eq!(entry.after_merge, Some(WorktreeAfterMerge::Ask));
+    }
+
+    #[test]
+    fn repo_settings_entry_null_worktree_fields() {
+        // Old repo settings without worktree fields should have None
+        let json = r#"{"path":"/my/repo","display_name":"test","base_branch":"main"}"#;
+        let entry: RepoSettingsEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.worktree_storage, None);
+        assert_eq!(entry.prompt_on_create, None);
+        assert_eq!(entry.delete_branch_on_remove, None);
+        assert_eq!(entry.orphan_cleanup, None);
+    }
+
+    #[test]
+    fn has_custom_settings_true_when_worktree_storage_set() {
+        let entry = RepoSettingsEntry {
+            worktree_storage: Some(WorktreeStorage::InsideRepo),
+            ..RepoSettingsEntry::default()
+        };
+        assert!(entry.has_custom_settings());
+    }
+
+    #[test]
+    fn has_custom_settings_true_when_prompt_on_create_set() {
+        let entry = RepoSettingsEntry {
+            prompt_on_create: Some(false),
+            ..RepoSettingsEntry::default()
+        };
+        assert!(entry.has_custom_settings());
     }
 }

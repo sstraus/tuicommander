@@ -27,6 +27,6 @@ export { notificationsStore } from "./notifications";
 export { repoSettingsStore } from "./repoSettings";
 export type { RepoSettings, EffectiveRepoSettings } from "./repoSettings";
 export { repoDefaultsStore } from "./repoDefaults";
-export type { RepoDefaults } from "./repoDefaults";
+export type { RepoDefaults, WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge } from "./repoDefaults";
 
 export { githubStore } from "./github";
