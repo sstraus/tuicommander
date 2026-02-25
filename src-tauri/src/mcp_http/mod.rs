@@ -348,6 +348,7 @@ mod tests {
             ws_clients: DashMap::new(),
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
             repo_info_cache: DashMap::new(),
+            merged_branches_cache: DashMap::new(),
             github_status_cache: DashMap::new(),
             head_watchers: DashMap::new(),
             repo_watchers: DashMap::new(),

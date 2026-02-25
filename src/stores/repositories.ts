@@ -188,6 +188,9 @@ function createRepositoriesStore() {
               if (branch.savedTerminals === undefined) {
                 branch.savedTerminals = [];
               }
+              if (branch.isMerged === undefined) {
+                branch.isMerged = false;
+              }
             }
           });
           setState("repositories", repos);

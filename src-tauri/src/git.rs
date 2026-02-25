@@ -463,12 +463,13 @@ pub(crate) fn get_initials(name: String) -> String {
     get_repo_initials(&name)
 }
 
+/// Canonical list of branch names considered "main" / primary.
+/// Used by both `is_main_branch()` and `get_merged_branches_impl()`.
+pub(crate) const MAIN_BRANCH_CANDIDATES: &[&str] = &["main", "master", "develop", "development", "dev"];
+
 /// Check if a branch name is a main/primary branch
 pub(crate) fn is_main_branch(branch_name: &str) -> bool {
-    matches!(
-        branch_name.to_lowercase().as_str(),
-        "main" | "master" | "develop" | "development" | "dev"
-    )
+    MAIN_BRANCH_CANDIDATES.contains(&branch_name.to_lowercase().as_str())
 }
 
 /// Check if a branch name is a main/primary branch (Tauri command)
@@ -495,21 +496,25 @@ pub(crate) fn sort_branches(branches: &mut [serde_json::Value]) {
 }
 
 /// Get local branches that are fully merged into the repo's main branch.
-/// Returns a set of branch names whose tips are reachable from the main branch HEAD.
+/// Returns branch names whose tips are reachable from the main branch HEAD.
 pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, String> {
-    // Find the main branch name
-    let main_branch = ["main", "master", "develop"].iter().find_map(|name| {
-        let check = Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(repo_path)
-            .args(["rev-parse", "--verify", &format!("refs/heads/{name}")])
-            .output()
-            .ok()?;
-        if check.status.success() { Some(name.to_string()) } else { None }
-    }).unwrap_or_else(|| "main".to_string());
+    let git_dir = resolve_git_dir(repo_path)
+        .ok_or_else(|| format!("Not a git repository: {}", repo_path.display()))?;
+
+    // Find the main branch via file I/O (no subprocess)
+    let main_branch = MAIN_BRANCH_CANDIDATES.iter().find(|name| {
+        // Check packed-refs first, then loose refs
+        git_dir.join("refs/heads").join(name).exists()
+            || packed_ref_exists(&git_dir, &format!("refs/heads/{name}"))
+    }).ok_or_else(|| format!(
+        "No standard main branch found in {} (checked: {})",
+        repo_path.display(),
+        MAIN_BRANCH_CANDIDATES.join(", "),
+    ))?;
 
     let output = Command::new(crate::agent::resolve_cli("git"))
         .current_dir(repo_path)
-        .args(["branch", "--merged", &main_branch, "--format=%(refname:short)"])
+        .args(["branch", "--merged", main_branch, "--format=%(refname:short)"])
         .output()
         .map_err(|e| format!("Failed to run git branch --merged: {e}"))?;
 
@@ -522,10 +527,30 @@ pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, 
     Ok(stdout.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
 }
 
-/// Tauri command: get branches merged into the main branch
+/// Check whether a ref exists in .git/packed-refs (for repos that have been gc'd).
+fn packed_ref_exists(git_dir: &Path, ref_name: &str) -> bool {
+    let packed_refs = git_dir.join("packed-refs");
+    fs::read_to_string(packed_refs)
+        .map(|content| content.lines().any(|line| {
+            // Lines are "<sha> <ref>" or comments starting with '#'/'^'
+            line.split_whitespace().nth(1) == Some(ref_name)
+        }))
+        .unwrap_or(false)
+}
+
+/// Tauri command: get branches merged into the main branch (cached, 5s TTL)
 #[tauri::command]
-pub(crate) fn get_merged_branches(repo_path: String) -> Result<Vec<String>, String> {
-    get_merged_branches_impl(Path::new(&repo_path))
+pub(crate) fn get_merged_branches(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+) -> Result<Vec<String>, String> {
+    if let Some(cached) = AppState::get_cached(&state.merged_branches_cache, &path, GIT_CACHE_TTL) {
+        return Ok(cached);
+    }
+
+    let result = get_merged_branches_impl(Path::new(&path))?;
+    AppState::set_cached(&state.merged_branches_cache, path, result.clone());
+    Ok(result)
 }
 
 /// Get git branches for a repository (Story 052)
@@ -992,13 +1017,31 @@ mod tests {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         let repo_root = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
 
-        let result = get_merged_branches_impl(&repo_root);
-        assert!(result.is_ok(), "get_merged_branches_impl should succeed on real repo");
-        let merged = result.unwrap();
-        // The current branch should always be in `git branch --merged HEAD`
-        let current = read_branch_from_head(&repo_root);
-        if let Some(ref branch) = current {
-            assert!(merged.contains(branch), "current branch should be merged into itself");
+        let merged = get_merged_branches_impl(&repo_root)
+            .expect("get_merged_branches_impl should succeed on real repo");
+
+        // The main branch itself should always appear in its own --merged list
+        let has_main = merged.iter().any(|b| MAIN_BRANCH_CANDIDATES.contains(&b.as_str()));
+        assert!(has_main, "at least one main branch candidate should be in the merged list, got: {merged:?}");
+
+        // On main, the current branch must be in the list; on a feature branch it may not be
+        if let Some(current) = read_branch_from_head(&repo_root) {
+            if is_main_branch(&current) {
+                assert!(merged.contains(&current), "main branch '{current}' should be in its own merged list");
+            }
         }
+        // Detached HEAD: the merged list is still non-empty (at minimum the main branch itself)
+    }
+
+    #[test]
+    fn test_get_merged_branches_rejects_nonexistent_path() {
+        let result = get_merged_branches_impl(Path::new("/nonexistent/path/xyz"));
+        assert!(result.is_err(), "should fail for nonexistent path");
+    }
+
+    #[test]
+    fn test_get_merged_branches_rejects_non_git_directory() {
+        let result = get_merged_branches_impl(&std::env::temp_dir());
+        assert!(result.is_err(), "should fail for non-git directory");
     }
 }

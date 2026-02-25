@@ -530,6 +530,8 @@ pub struct AppState {
     pub(crate) config: parking_lot::RwLock<crate::config::AppConfig>,
     /// TTL cache for get_repo_info results, keyed by repo path
     pub(crate) repo_info_cache: DashMap<String, (crate::git::RepoInfo, Instant)>,
+    /// TTL cache for get_merged_branches results, keyed by repo path
+    pub(crate) merged_branches_cache: DashMap<String, (Vec<String>, Instant)>,
     /// TTL cache for get_repo_pr_statuses results, keyed by repo path
     pub(crate) github_status_cache: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
     /// File watchers for .git/HEAD per repo (keyed by repo path)
@@ -599,12 +601,14 @@ impl AppState {
     /// Invalidate all operation caches (git + GitHub).
     pub(crate) fn clear_caches(&self) {
         self.repo_info_cache.clear();
+        self.merged_branches_cache.clear();
         self.github_status_cache.clear();
     }
 
     /// Invalidate caches for a specific repo path.
     pub(crate) fn invalidate_repo_caches(&self, path: &str) {
         self.repo_info_cache.remove(path);
+        self.merged_branches_cache.remove(path);
         self.github_status_cache.remove(path);
     }
 
@@ -922,6 +926,7 @@ mod tests {
             ws_clients: dashmap::DashMap::new(),
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
             repo_info_cache: dashmap::DashMap::new(),
+            merged_branches_cache: dashmap::DashMap::new(),
             github_status_cache: dashmap::DashMap::new(),
             head_watchers: dashmap::DashMap::new(),
             repo_watchers: dashmap::DashMap::new(),
