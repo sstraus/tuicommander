@@ -1,3 +1,4 @@
+use crate::config::WorktreeStorage;
 use crate::state::{AppState, WorktreeInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,6 +20,36 @@ pub(crate) struct WorktreeResult {
     pub(crate) session_id: String,
     pub(crate) worktree_path: String,
     pub(crate) branch: Option<String>,
+}
+
+/// Resolve the worktree base directory for a given repo + storage strategy.
+///
+/// - `Sibling`: `{repo_parent}/{repo_name}__wt/`
+/// - `AppDir`: `{app_config_dir}/worktrees/{repo_name}/`
+/// - `InsideRepo`: `{repo_path}/.worktrees/`
+pub(crate) fn resolve_worktree_dir(
+    repo_path: &Path,
+    strategy: &WorktreeStorage,
+    app_worktrees_dir: &Path,
+) -> PathBuf {
+    match strategy {
+        WorktreeStorage::Sibling => {
+            let repo_name = repo_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "repo".to_string());
+            let parent = repo_path.parent().unwrap_or(repo_path);
+            parent.join(format!("{repo_name}__wt"))
+        }
+        WorktreeStorage::AppDir => {
+            let repo_name = repo_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "repo".to_string());
+            app_worktrees_dir.join(repo_name)
+        }
+        WorktreeStorage::InsideRepo => repo_path.join(".worktrees"),
+    }
 }
 
 /// Sanitize task name for use as directory name
@@ -520,5 +551,37 @@ mod tests {
         let worktree = result.unwrap();
         assert_eq!(worktree.name, "fix-bug--123--add-feature-");
         assert!(worktree.path.exists());
+    }
+
+    #[test]
+    fn resolve_worktree_dir_sibling() {
+        let repo = Path::new("/home/user/dev/myrepo");
+        let app_dir = Path::new("/app/worktrees");
+        let result = resolve_worktree_dir(repo, &WorktreeStorage::Sibling, app_dir);
+        assert_eq!(result, PathBuf::from("/home/user/dev/myrepo__wt"));
+    }
+
+    #[test]
+    fn resolve_worktree_dir_app_dir() {
+        let repo = Path::new("/home/user/dev/myrepo");
+        let app_dir = Path::new("/app/worktrees");
+        let result = resolve_worktree_dir(repo, &WorktreeStorage::AppDir, app_dir);
+        assert_eq!(result, PathBuf::from("/app/worktrees/myrepo"));
+    }
+
+    #[test]
+    fn resolve_worktree_dir_inside_repo() {
+        let repo = Path::new("/home/user/dev/myrepo");
+        let app_dir = Path::new("/app/worktrees");
+        let result = resolve_worktree_dir(repo, &WorktreeStorage::InsideRepo, app_dir);
+        assert_eq!(result, PathBuf::from("/home/user/dev/myrepo/.worktrees"));
+    }
+
+    #[test]
+    fn resolve_worktree_dir_sibling_with_dots_in_name() {
+        let repo = Path::new("/home/user/dev/my.project.name");
+        let app_dir = Path::new("/app/worktrees");
+        let result = resolve_worktree_dir(repo, &WorktreeStorage::Sibling, app_dir);
+        assert_eq!(result, PathBuf::from("/home/user/dev/my.project.name__wt"));
     }
 }
