@@ -1,0 +1,64 @@
+src/stores/notes.ts
+  c8e5dad4dacdaf05 3,28,53
+src/stores/github.ts
+  c8e5dad4dacdaf05 233
+src/stores/terminals.ts
+  c8e5dad4dacdaf05 147,154
+src/stores/notifications.ts
+  c8e5dad4dacdaf05 3,26,67
+src/stores/repositories.ts
+  c8e5dad4dacdaf05 84,103,216
+src/stores/ui.ts
+  c8e5dad4dacdaf05 3,86,152
+src/stores/activityStore.ts
+  c8e5dad4dacdaf05 4,22,57
+src/stores/repoSettings.ts
+  c8e5dad4dacdaf05 3,93,123,212
+src/stores/keybindings.ts
+  c8e5dad4dacdaf05 8,66
+src/stores/promptLibrary.ts
+  c8e5dad4dacdaf05 3,57,117
+src/stores/dictation.ts
+  c8e5dad4dacdaf05 3,117,133,165,175,185,195,205,221,234,247,261,273
+src/stores/agentConfigs.ts
+  c8e5dad4dacdaf05 4,38,69,83,102,119
+src/stores/settings.ts
+  c8e5dad4dacdaf05 302,316,328,342,357,371,385,399,413,427,441,455,469,484,500,514,530
+src/stores/updater.ts
+  c8e5dad4dacdaf05 7,103,136
+src/stores/repoDefaults.ts
+  c8e5dad4dacdaf05 3,67,106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "e133fd652d4e64e24796e33a0d5cf7c3657341e3",
+  "prompts": {
+    "2ebb7be744ca2a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d97c5139-305e-495e-b249-8c8d0ce03059",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 141,
+      "overriden_lines": 0
+    },
+    "c8e5dad4dacdaf05": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "588a3777-6f69-41aa-a7de-74a97ca85a2d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 69,
+      "total_deletions": 58,
+      "accepted_lines": 69,
+      "overriden_lines": 0
+    }
+  }
+}
