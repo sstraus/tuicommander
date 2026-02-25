@@ -1,0 +1,33 @@
+src/hooks/useRepository.ts
+  2ebb7be744ca2a61 169
+src/stores/repositories.ts
+  2ebb7be744ca2a61 191-193
+src-tauri/src/git.rs
+  2ebb7be744ca2a61 466-469,472,501-502,504-513,530-538,541,544-553,1020-1031,1033-1045
+src-tauri/src/mcp_http/mod.rs
+  2ebb7be744ca2a61 351
+src-tauri/src/state.rs
+  2ebb7be744ca2a61 533-534,604,611,929
+src-tauri/src/lib.rs
+  2ebb7be744ca2a61 551
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "4d35e6d909293170b076e3a298818fc75bf6b9a4",
+  "prompts": {
+    "2ebb7be744ca2a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d97c5139-305e-495e-b249-8c8d0ce03059",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 223,
+      "total_deletions": 29,
+      "accepted_lines": 217,
+      "overriden_lines": 0
+    }
+  }
+}
