@@ -1,0 +1,53 @@
+src/components/MarkdownTab/MarkdownTab.module.css
+  c93ee44f508e6b4b 16-18
+src/hooks/useGitOperations.ts
+  0db202d99884bbab 91-99,102-108,163-172
+src/stores/repositories.ts
+  0db202d99884bbab 4,319,330-331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "a868eb8dee39e6183516674ef24484db57328689",
+  "prompts": {
+    "0db202d99884bbab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7949bb3b-6709-421b-9974-8488f70abef4",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 30,
+      "total_deletions": 3,
+      "accepted_lines": 30,
+      "overriden_lines": 0
+    },
+    "519d05160e6ef99a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "95ef6175-af0b-4b4b-988c-dc5c5c94ec8a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    },
+    "c93ee44f508e6b4b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9024e71-67a9-44a0-827f-ec970e610e2f",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 0,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  }
+}
