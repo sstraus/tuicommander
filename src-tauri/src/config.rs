@@ -372,6 +372,8 @@ pub(crate) struct NotificationSounds {
     pub(crate) completion: bool,
     #[serde(default = "default_true")]
     pub(crate) warning: bool,
+    #[serde(default = "default_true")]
+    pub(crate) info: bool,
 }
 
 impl Default for NotificationSounds {
@@ -381,6 +383,7 @@ impl Default for NotificationSounds {
             error: true,
             completion: true,
             warning: true,
+            info: true,
         }
     }
 }
@@ -899,6 +902,7 @@ mod tests {
                 error: false,
                 completion: true,
                 warning: false,
+                info: true,
             },
         };
         let loaded: NotificationConfig =

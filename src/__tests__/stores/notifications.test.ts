@@ -22,6 +22,7 @@ vi.mock("../../notifications", () => ({
     playError: vi.fn().mockResolvedValue(undefined),
     playCompletion: vi.fn().mockResolvedValue(undefined),
     playWarning: vi.fn().mockResolvedValue(undefined),
+    playInfo: vi.fn().mockResolvedValue(undefined),
     updateConfig: vi.fn(),
     setEnabled: vi.fn(),
     setVolume: vi.fn(),
@@ -30,13 +31,13 @@ vi.mock("../../notifications", () => ({
     getConfig: vi.fn().mockReturnValue({
       enabled: true,
       volume: 0.5,
-      sounds: { question: true, error: true, completion: true, warning: true },
+      sounds: { question: true, error: true, completion: true, warning: true, info: true },
     }),
   },
   DEFAULT_NOTIFICATION_CONFIG: {
     enabled: true,
     volume: 0.5,
-    sounds: { question: true, error: true, completion: true, warning: true },
+    sounds: { question: true, error: true, completion: true, warning: true, info: true },
   },
 }));
 
@@ -48,6 +49,7 @@ describe("notificationsStore", () => {
     playError: ReturnType<typeof vi.fn>;
     playCompletion: ReturnType<typeof vi.fn>;
     playWarning: ReturnType<typeof vi.fn>;
+    playInfo: ReturnType<typeof vi.fn>;
     updateConfig: ReturnType<typeof vi.fn>;
     setEnabled: ReturnType<typeof vi.fn>;
     setVolume: ReturnType<typeof vi.fn>;
@@ -348,6 +350,13 @@ describe("notificationsStore", () => {
     it("plays warning sound via play()", async () => {
       await store.playWarning();
       expect(mockManager.play).toHaveBeenCalledWith("warning");
+    });
+  });
+
+  describe("playInfo()", () => {
+    it("plays info sound via play()", async () => {
+      await store.playInfo();
+      expect(mockManager.play).toHaveBeenCalledWith("info");
     });
   });
 

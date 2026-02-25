@@ -118,6 +118,11 @@ function createNotificationsStore() {
       await actions.play("warning");
     },
 
+    /** Play info notification */
+    async playInfo(): Promise<void> {
+      await actions.play("info");
+    },
+
     /** Test a notification sound (bypasses enabled check) */
     async testSound(sound: NotificationSound): Promise<void> {
       const wasEnabled = state.config.enabled;

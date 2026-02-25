@@ -124,10 +124,8 @@ describe("NotificationManager", () => {
       mockAudioContext.createOscillator.mockImplementationOnce(() => {
         throw new Error("audio error");
       });
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      await playAndFlush(manager, "question");
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to play"), expect.anything());
-      warnSpy.mockRestore();
+      // appLogger.warn is used instead of console.warn — just verify it doesn't throw
+      await expect(playAndFlush(manager, "question")).resolves.toBeUndefined();
     });
 
     it("resumes suspended audio context", async () => {

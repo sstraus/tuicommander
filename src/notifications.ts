@@ -1,7 +1,7 @@
 import { appLogger } from "./stores/appLogger";
 
 /** Notification sound types */
-export type NotificationSound = "question" | "error" | "completion" | "warning";
+export type NotificationSound = "question" | "error" | "completion" | "warning" | "info";
 
 /** Notification configuration */
 export interface NotificationConfig {
@@ -19,6 +19,7 @@ export const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
     error: true,
     completion: true,
     warning: true,
+    info: true,
   },
 };
 
@@ -69,6 +70,13 @@ const SOUNDS: Record<NotificationSound, SoundSequence> = {
       { frequency: 440, duration: 0.08, wave: "triangle" },
     ],
     gap: 0.06,
+  },
+  // Soft single pluck: G5 (subtle, non-intrusive)
+  info: {
+    notes: [
+      { frequency: 784, duration: 0.08, wave: "sine" },
+    ],
+    gap: 0,
   },
 };
 
@@ -186,6 +194,11 @@ export class NotificationManager {
   /** Play warning notification */
   async playWarning(): Promise<void> {
     return this.play("warning");
+  }
+
+  /** Play info notification */
+  async playInfo(): Promise<void> {
+    return this.play("info");
   }
 
   /** Update configuration */

@@ -19,6 +19,7 @@ function SoundPatternSvg(props: { sound: NotificationSound }) {
     completion: [{ x: 10, y: 16 }, { x: 24, y: 10 }, { x: 38, y: 4 }], // C5 → E5 → G5
     error:      [{ x: 14, y: 8 }, { x: 30, y: 16 }],             // E4 → C4 descending
     warning:    [{ x: 14, y: 12 }, { x: 30, y: 12 }],            // A4 × 2 same pitch
+    info:       [{ x: 22, y: 4 }],                                 // G5 single note
   };
 
   const colors: Record<NotificationSound, string> = {
@@ -26,11 +27,12 @@ function SoundPatternSvg(props: { sound: NotificationSound }) {
     completion: "var(--success)",
     error: "var(--error)",
     warning: "var(--accent)",
+    info: "var(--fg-muted)",
   };
 
   const notes = patterns[props.sound];
   const color = colors[props.sound];
-  const w = props.sound === "completion" ? 36 : 32;
+  const w = props.sound === "completion" ? 36 : props.sound === "info" ? 24 : 32;
 
   return (
     <svg viewBox={`0 0 ${w} 18`} width={w} height="14" style={{ "vertical-align": "middle", "flex-shrink": "0" }}>
@@ -148,6 +150,7 @@ export const NotificationsTab: Component = () => {
     { key: "error", label: t("notifications.sound.error", "Error") },
     { key: "completion", label: t("notifications.sound.completion", "Completion") },
     { key: "warning", label: t("notifications.sound.warning", "Warning") },
+    { key: "info", label: t("notifications.sound.info", "Info") },
   ];
 
   return (

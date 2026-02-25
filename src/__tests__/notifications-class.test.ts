@@ -184,6 +184,12 @@ describe("NotificationManager", () => {
       await manager.playWarning();
       expect(spy).toHaveBeenCalledWith("warning");
     });
+
+    it("playInfo calls play with 'info'", async () => {
+      const spy = vi.spyOn(manager, "play").mockResolvedValue(undefined);
+      await manager.playInfo();
+      expect(spy).toHaveBeenCalledWith("info");
+    });
   });
 
   describe("updateConfig()", () => {
