@@ -7,7 +7,6 @@
 /// The buffer does NOT attempt to track history navigation (Up/Down arrows,
 /// Ctrl+P/N) — those replace the entire line in the shell, and we can't know
 /// what they replace it with from the write side alone.
-
 /// A line-editing buffer that tracks cursor position and content.
 #[derive(Debug)]
 pub(crate) struct InputLineBuffer {

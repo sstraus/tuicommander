@@ -1,4 +1,3 @@
-use crate::config::WorktreeStorage;
 use crate::state::{AppState, WorktreeInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -27,11 +26,13 @@ pub(crate) struct WorktreeResult {
 /// - `Sibling`: `{repo_parent}/{repo_name}__wt/`
 /// - `AppDir`: `{app_config_dir}/worktrees/{repo_name}/`
 /// - `InsideRepo`: `{repo_path}/.worktrees/`
+#[cfg(test)]
 pub(crate) fn resolve_worktree_dir(
     repo_path: &Path,
-    strategy: &WorktreeStorage,
+    strategy: &crate::config::WorktreeStorage,
     app_worktrees_dir: &Path,
 ) -> PathBuf {
+    use crate::config::WorktreeStorage;
     match strategy {
         WorktreeStorage::Sibling => {
             let repo_name = repo_path
@@ -111,10 +112,10 @@ pub(crate) fn create_worktree_internal(
         }
 
     // Append base_ref as start-point when creating a new branch
-    if config.create_branch {
-        if let Some(start_point) = base_ref {
-            cmd.arg(start_point);
-        }
+    if config.create_branch
+        && let Some(start_point) = base_ref
+    {
+        cmd.arg(start_point);
     }
 
     let output = cmd
@@ -435,10 +436,10 @@ pub(crate) fn get_remote_default_branch(repo_path: &str) -> Result<String, Strin
         let stdout = String::from_utf8_lossy(&output.stdout);
         let trimmed = stdout.trim();
         // Output is like "refs/remotes/origin/main"
-        if let Some(branch) = trimmed.strip_prefix("refs/remotes/origin/") {
-            if !branch.is_empty() {
-                return Ok(branch.to_string());
-            }
+        if let Some(branch) = trimmed.strip_prefix("refs/remotes/origin/")
+            && !branch.is_empty()
+        {
+            return Ok(branch.to_string());
         }
     }
 
@@ -629,6 +630,7 @@ fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<String, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::WorktreeStorage;
     use std::fs;
     use tempfile::TempDir;
 

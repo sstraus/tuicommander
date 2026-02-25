@@ -934,6 +934,7 @@ const App: Component = () => {
             const mainBranch = repoState ? Object.values(repoState.branches).find(b => b.isMain)?.name : undefined;
             if (!mainBranch) return;
             const effective = repoSettingsStore.getEffective(repoPath);
+            if (!effective) return;
             const afterMerge = effective.afterMerge;
             gitOps.handleMergeAndArchive(repoPath, branchName, mainBranch, afterMerge);
           }}
