@@ -338,6 +338,18 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
     case "list_user_plugins":
       return { method: "GET", path: "/plugins/list" };
 
+    // --- App Logger ---
+    case "push_log":
+      return {
+        method: "POST",
+        path: "/logs",
+        body: { level: args.level, source: args.source, message: args.message, data_json: args.dataJson },
+      };
+    case "get_logs":
+      return { method: "GET", path: `/logs?limit=${args.limit ?? 0}` };
+    case "clear_logs":
+      return { method: "DELETE", path: "/logs" };
+
     default:
       throw new Error(`No HTTP mapping for command: ${command}`);
   }

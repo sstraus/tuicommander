@@ -1,5 +1,6 @@
 pub(crate) mod agent;
 pub(crate) mod agent_mcp;
+pub(crate) mod app_logger;
 pub(crate) mod claude_usage;
 pub(crate) mod cli;
 pub(crate) mod config;
@@ -563,6 +564,7 @@ pub fn run() {
         input_buffers: DashMap::new(),
         last_prompts: DashMap::new(),
         claude_usage_cache: parking_lot::Mutex::new(claude_usage::load_cache_from_disk()),
+        log_buffer: parking_lot::Mutex::new(app_logger::LogRingBuffer::new(app_logger::LOG_RING_CAPACITY)),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled
@@ -812,7 +814,10 @@ pub fn run() {
             claude_usage::get_claude_usage_api,
             claude_usage::get_claude_usage_timeline,
             claude_usage::get_claude_session_stats,
-            claude_usage::get_claude_project_list
+            claude_usage::get_claude_project_list,
+            app_logger::push_log,
+            app_logger::get_logs,
+            app_logger::clear_logs
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -363,6 +363,7 @@ mod tests {
             input_buffers: DashMap::new(),
             last_prompts: DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
         })
     }
 

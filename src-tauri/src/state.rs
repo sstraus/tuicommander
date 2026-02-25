@@ -570,6 +570,9 @@ pub struct AppState {
     /// Incremental cache for Claude session transcript parsing.
     /// Loaded from disk on startup, persisted after each scan.
     pub(crate) claude_usage_cache: Mutex<crate::claude_usage::SessionStatsCache>,
+    /// Centralized application log ring buffer (1000 entries).
+    /// Frontend pushes via push_log, reads via get_logs.
+    pub(crate) log_buffer: Mutex<crate::app_logger::LogRingBuffer>,
 }
 
 impl AppState {
@@ -941,6 +944,7 @@ mod tests {
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
         }
     }
 
