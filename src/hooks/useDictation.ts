@@ -22,37 +22,64 @@ export interface DictationDeps {
 
 /** Dictation: start/stop recording, transcription, and terminal injection */
 export function useDictation(deps: DictationDeps) {
+  // Track the in-flight start promise so stop can await it.
+  // Without this, a fast key release can fire handleDictationStop before
+  // startRecording resolves, causing it to see recording=false and bail.
+  let startPromise: Promise<boolean> | null = null;
+
+  // Capture the focused element at key-press time. During push-to-talk the
+  // focus may shift (e.g. to the terminal) by the time the key is released,
+  // so we snapshot it here to guarantee dictation targets the right element.
+  let focusTarget: Element | null = null;
+
   const handleDictationStart = async () => {
     if (!deps.dictation.state.enabled) return;
     if (deps.dictation.state.recording || deps.dictation.state.processing || deps.dictation.state.loading) return;
 
-    await deps.dictation.refreshStatus();
-    if (deps.dictation.state.modelStatus === "not_downloaded") {
-      deps.setStatusInfo("Dictation: model not downloaded — open Settings > Dictation");
-      deps.openSettings("dictation");
-      return;
-    }
+    // Snapshot focus target before any async work
+    focusTarget = document.activeElement;
 
-    if (deps.dictation.state.modelStatus !== "ready") {
-      deps.setStatusInfo("Dictation: loading model into memory (first use takes a moment)…");
-    }
+    startPromise = (async () => {
+      await deps.dictation.refreshStatus();
+      if (deps.dictation.state.modelStatus === "not_downloaded") {
+        deps.setStatusInfo("Dictation: model not downloaded — open Settings > Dictation");
+        deps.openSettings("dictation");
+        return false;
+      }
 
-    try {
-      await deps.dictation.startRecording();
-      deps.setStatusInfo("Dictation: recording…");
-    } catch (err) {
-      console.error("Dictation start failed:", err);
-      deps.setStatusInfo("Dictation: failed to start recording");
-    }
+      if (deps.dictation.state.modelStatus !== "ready") {
+        deps.setStatusInfo("Dictation: loading model into memory (first use takes a moment)…");
+      }
+
+      try {
+        await deps.dictation.startRecording();
+        deps.setStatusInfo("Dictation: recording…");
+        return true;
+      } catch (err) {
+        console.error("Dictation start failed:", err);
+        deps.setStatusInfo("Dictation: failed to start recording");
+        return false;
+      }
+    })();
+
+    await startPromise;
   };
 
   const handleDictationStop = async () => {
+    // Wait for any in-flight start to finish before checking state
+    if (startPromise) {
+      const started = await startPromise;
+      startPromise = null;
+      if (!started) return;
+    }
+
     if (!deps.dictation.state.recording) return;
     deps.setStatusInfo("Dictation: transcribing…");
     const text = await deps.dictation.stopRecording();
     if (text && text.trim()) {
-      // If a text input or textarea has focus, insert there instead of the terminal
-      const el = document.activeElement;
+      // Use the focus target captured at key-press time
+      const el = focusTarget;
+      focusTarget = null;
       if (el && (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) {
         const start = el.selectionStart ?? el.value.length;
         const end = el.selectionEnd ?? start;
@@ -84,6 +111,7 @@ export function useDictation(deps: DictationDeps) {
         deps.setStatusInfo("Dictation: no active terminal");
       }
     } else {
+      focusTarget = null;
       deps.setStatusInfo("Ready");
     }
   };

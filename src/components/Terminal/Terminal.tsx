@@ -30,7 +30,8 @@ type ParsedEvent =
   | { type: "question"; prompt_text: string }
   | { type: "usage-limit"; percentage: number; limit_type: string }
   | { type: "plan-file"; path: string }
-  | { type: "user-input"; content: string };
+  | { type: "user-input"; content: string }
+  | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string };
 
 export interface TerminalProps {
   id: string;
@@ -378,6 +379,18 @@ export const Terminal: Component<TerminalProps> = (props) => {
               if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
             });
             break;
+          case "api-error": {
+            const agent = terminalsStore.get(props.id)?.agentType;
+            const kind = (parsed as { error_kind: string }).error_kind;
+            const patternName = (parsed as { pattern_name: string }).pattern_name;
+            const matchedText = (parsed as { matched_text: string }).matched_text;
+            console.warn(`[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
+            appLogger.error("terminal", `API error (${kind}): ${matchedText}`);
+            if (terminalsStore.state.activeId !== props.id) {
+              notificationsStore.playError();
+            }
+            break;
+          }
         }
 
         // Also dispatch to plugin structured event handlers

@@ -45,6 +45,11 @@ describe("useDictation", () => {
       modelStatus: "ready",
     };
 
+    // Default: startRecording sets recording=true (mimics real store behavior)
+    mockDictationStore.startRecording.mockImplementation(async () => {
+      mockDictationStore.state.recording = true;
+    });
+
     dictation = useDictation({
       pty: mockPty,
       dictation: mockDictationStore,
@@ -129,8 +134,6 @@ describe("useDictation", () => {
 
   describe("handleDictationStop", () => {
     it("transcribes and writes to active terminal", async () => {
-      mockDictationStore.state.recording = true;
-
       const id = terminalsStore.add({
         sessionId: "sess-1",
         fontSize: 14,
@@ -140,6 +143,8 @@ describe("useDictation", () => {
       });
       terminalsStore.setActive(id);
 
+      // Full push-to-talk cycle: start then stop
+      await dictation.handleDictationStart();
       await dictation.handleDictationStop();
 
       expect(mockSetStatusInfo).toHaveBeenCalledWith("Dictation: transcribing…");
@@ -148,7 +153,7 @@ describe("useDictation", () => {
       expect(mockSetStatusInfo).toHaveBeenCalledWith("Ready");
     });
 
-    it("does nothing when not recording", async () => {
+    it("does nothing when not recording and no pending start", async () => {
       mockDictationStore.state.recording = false;
 
       await dictation.handleDictationStop();
@@ -157,17 +162,17 @@ describe("useDictation", () => {
     });
 
     it("sets status when no active terminal", async () => {
-      mockDictationStore.state.recording = true;
-
+      // Start then stop with no terminal active
+      await dictation.handleDictationStart();
       await dictation.handleDictationStop();
 
       expect(mockSetStatusInfo).toHaveBeenCalledWith("Dictation: no active terminal");
     });
 
     it("resets status when transcription is empty", async () => {
-      mockDictationStore.state.recording = true;
       mockDictationStore.stopRecording.mockResolvedValueOnce("   ");
 
+      await dictation.handleDictationStart();
       await dictation.handleDictationStop();
 
       expect(mockPty.write).not.toHaveBeenCalled();
@@ -175,9 +180,9 @@ describe("useDictation", () => {
     });
 
     it("resets status when transcription is null", async () => {
-      mockDictationStore.state.recording = true;
       mockDictationStore.stopRecording.mockResolvedValueOnce(null);
 
+      await dictation.handleDictationStart();
       await dictation.handleDictationStop();
 
       expect(mockPty.write).not.toHaveBeenCalled();
@@ -185,8 +190,6 @@ describe("useDictation", () => {
     });
 
     it("inserts into focused textarea instead of terminal", async () => {
-      mockDictationStore.state.recording = true;
-
       const textarea = document.createElement("textarea");
       textarea.value = "existing ";
       textarea.selectionStart = 9;
@@ -195,6 +198,8 @@ describe("useDictation", () => {
       textarea.focus();
 
       try {
+        // Focus captured at start time
+        await dictation.handleDictationStart();
         await dictation.handleDictationStop();
 
         expect(textarea.value).toBe("existing hello world");
@@ -206,8 +211,6 @@ describe("useDictation", () => {
     });
 
     it("inserts into focused input instead of terminal", async () => {
-      mockDictationStore.state.recording = true;
-
       const input = document.createElement("input");
       input.type = "text";
       input.value = "";
@@ -215,6 +218,7 @@ describe("useDictation", () => {
       input.focus();
 
       try {
+        await dictation.handleDictationStart();
         await dictation.handleDictationStop();
 
         expect(input.value).toBe("hello world");
@@ -226,8 +230,6 @@ describe("useDictation", () => {
     });
 
     it("replaces selected text in focused textarea", async () => {
-      mockDictationStore.state.recording = true;
-
       const textarea = document.createElement("textarea");
       textarea.value = "replace THIS please";
       textarea.selectionStart = 8;
@@ -236,9 +238,96 @@ describe("useDictation", () => {
       textarea.focus();
 
       try {
+        await dictation.handleDictationStart();
         await dictation.handleDictationStop();
 
         expect(textarea.value).toBe("replace hello world please");
+        expect(mockPty.write).not.toHaveBeenCalled();
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    });
+  });
+
+  describe("push-to-talk race condition", () => {
+    it("stop waits for slow start before proceeding", async () => {
+      // Simulate slow startRecording (model loading, mic init)
+      let resolveStart: (() => void) | null = null;
+      mockDictationStore.startRecording.mockImplementationOnce(() =>
+        new Promise<void>((resolve) => {
+          resolveStart = () => {
+            mockDictationStore.state.recording = true;
+            resolve();
+          };
+        }),
+      );
+
+      // Start fires (key press) — does NOT await (simulates keyboard handler fire-and-forget)
+      const startDone = dictation.handleDictationStart();
+
+      // Flush microtasks so start progresses past refreshStatus into startRecording
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Stop fires (key release) before start resolves
+      const stopDone = dictation.handleDictationStop();
+
+      // Now let start resolve
+      expect(resolveStart).not.toBeNull();
+      resolveStart!();
+
+      await startDone;
+      await stopDone;
+
+      // Stop should have waited for start and then called stopRecording
+      expect(mockDictationStore.stopRecording).toHaveBeenCalled();
+    });
+
+    it("stop bails when start failed", async () => {
+      mockDictationStore.startRecording.mockRejectedValueOnce(new Error("no mic"));
+
+      await dictation.handleDictationStart();
+      await dictation.handleDictationStop();
+
+      // Start failed → stop should not call stopRecording
+      expect(mockDictationStore.stopRecording).not.toHaveBeenCalled();
+    });
+
+    it("captures focus target at start time, not stop time", async () => {
+      // Focus a textarea at start time
+      const textarea = document.createElement("textarea");
+      textarea.value = "";
+      document.body.appendChild(textarea);
+      textarea.focus();
+
+      let resolveStart: (() => void) | null = null;
+      mockDictationStore.startRecording.mockImplementationOnce(() =>
+        new Promise<void>((resolve) => {
+          resolveStart = () => {
+            mockDictationStore.state.recording = true;
+            resolve();
+          };
+        }),
+      );
+
+      const startDone = dictation.handleDictationStart();
+
+      // Flush microtasks so start progresses past refreshStatus into startRecording
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Focus shifts away before stop
+      textarea.blur();
+
+      const stopDone = dictation.handleDictationStop();
+
+      expect(resolveStart).not.toBeNull();
+      resolveStart!();
+
+      await startDone;
+      await stopDone;
+
+      try {
+        // Text should still be inserted into the textarea (captured at start)
+        expect(textarea.value).toBe("hello world");
         expect(mockPty.write).not.toHaveBeenCalled();
       } finally {
         document.body.removeChild(textarea);
