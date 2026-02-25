@@ -88,8 +88,24 @@ export function useGitOperations(deps: GitOperationsDeps) {
         }
       }
 
+      if (toRemove.length > 0) {
+        appLogger.warn("terminal", `refreshAllBranchStats removing branches from ${repoPath}`, {
+          toRemove,
+          worktreePathKeys: Object.keys(worktreePaths),
+          localBranches: [...localSet],
+          existingBranches: Object.keys(currentRepo.branches),
+        });
+      }
+
       batch(() => {
         for (const branchName of toRemove) {
+          const branchState = repositoriesStore.get(repoPath)?.branches[branchName];
+          if (branchState?.terminals.length) {
+            appLogger.error("terminal", `refreshAllBranchStats REMOVING branch "${branchName}" that still has terminals!`, {
+              terminals: [...branchState.terminals],
+              hadTerminals: branchState.hadTerminals,
+            });
+          }
           repositoriesStore.removeBranch(repoPath, branchName);
         }
         for (const [branchName, wtPath] of Object.entries(worktreePaths)) {
@@ -144,14 +160,21 @@ export function useGitOperations(deps: GitOperationsDeps) {
   };
 
   const handleBranchSelect = async (repoPath: string, branchName: string) => {
-    console.log(`[BranchSelect] Switching to ${branchName}`);
+    // Log the state we're LEAVING — critical for diagnosing terminal disappearance
+    const prevRepo = repositoriesStore.getActive();
+    const prevBranchName = prevRepo?.activeBranch;
+    const prevBranch = prevBranchName ? prevRepo?.branches[prevBranchName] : null;
+    appLogger.info("terminal", `BranchSelect LEAVING ${prevRepo?.path ?? "(none)"}/${prevBranchName ?? "(none)"}`, {
+      prevTerminals: prevBranch?.terminals ?? [],
+      prevHadTerminals: prevBranch?.hadTerminals,
+      activeTerminalId: terminalsStore.state.activeId,
+      allStoreIds: terminalsStore.getIds(),
+    });
 
     // Save the current active terminal for the branch we're leaving
-    const prevRepo = repositoriesStore.getActive();
     if (prevRepo?.activeBranch) {
       const currentActiveId = terminalsStore.state.activeId;
       if (currentActiveId) {
-        const prevBranch = prevRepo.branches[prevRepo.activeBranch];
         if (prevBranch?.terminals.includes(currentActiveId)) {
           repositoriesStore.setBranch(prevRepo.path, prevRepo.activeBranch, { lastActiveTerminal: currentActiveId });
         }

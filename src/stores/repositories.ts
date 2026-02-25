@@ -1,6 +1,7 @@
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
 import type { SavedTerminal } from "../types";
+import { appLogger } from "./appLogger";
 
 const LEGACY_STORAGE_KEY = "tui-commander-repos";
 
@@ -315,6 +316,7 @@ function createRepositoriesStore() {
     addTerminalToBranch(repoPath: string, branchName: string, terminalId: string): void {
       const branch = state.repositories[repoPath]?.branches[branchName];
       if (branch && !branch.terminals.includes(terminalId)) {
+        appLogger.info("terminal", `addTerminalToBranch ${branchName} += ${terminalId}`, { before: [...branch.terminals] });
         setState("repositories", repoPath, "branches", branchName, "terminals", (t) => [...t, terminalId]);
         if (!branch.hadTerminals) {
           setState("repositories", repoPath, "branches", branchName, "hadTerminals", true);
@@ -325,6 +327,8 @@ function createRepositoriesStore() {
 
     /** Remove terminal from branch */
     removeTerminalFromBranch(repoPath: string, branchName: string, terminalId: string): void {
+      const branch = state.repositories[repoPath]?.branches[branchName];
+      appLogger.info("terminal", `removeTerminalFromBranch ${branchName} -= ${terminalId}`, { before: branch?.terminals ? [...branch.terminals] : [] });
       setState("repositories", repoPath, "branches", branchName, "terminals", (t) =>
         t.filter((id) => id !== terminalId)
       );
