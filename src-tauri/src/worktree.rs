@@ -379,6 +379,61 @@ pub(crate) fn list_local_branches(repo_path: String) -> Result<Vec<String>, Stri
     Ok(branches)
 }
 
+/// Get the remote default branch for a repo.
+///
+/// Tries `git symbolic-ref refs/remotes/origin/HEAD` first, then falls back
+/// to checking if `main` or `master` exist as local branches.
+pub(crate) fn get_remote_default_branch(repo_path: &str) -> Result<String, String> {
+    // Try symbolic-ref first (cheapest, no network)
+    let output = Command::new(crate::agent::resolve_cli("git"))
+        .current_dir(repo_path)
+        .args(["symbolic-ref", "refs/remotes/origin/HEAD"])
+        .output()
+        .map_err(|e| format!("Failed to run git symbolic-ref: {e}"))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let trimmed = stdout.trim();
+        // Output is like "refs/remotes/origin/main"
+        if let Some(branch) = trimmed.strip_prefix("refs/remotes/origin/") {
+            if !branch.is_empty() {
+                return Ok(branch.to_string());
+            }
+        }
+    }
+
+    // Fallback: check if main or master branches exist locally
+    let branches = list_local_branches(repo_path.to_string()).unwrap_or_default();
+    if branches.contains(&"main".to_string()) {
+        return Ok("main".to_string());
+    }
+    if branches.contains(&"master".to_string()) {
+        return Ok("master".to_string());
+    }
+
+    // Last resort: return "main"
+    Ok("main".to_string())
+}
+
+/// List available base ref options for the CreateWorktreeDialog dropdown.
+///
+/// Returns a list of refs with the remote default branch first, followed by
+/// all local branches (excluding the default which is already listed).
+#[tauri::command]
+pub(crate) fn list_base_ref_options(repo_path: String) -> Result<Vec<String>, String> {
+    let default_branch = get_remote_default_branch(&repo_path)?;
+    let all_branches = list_local_branches(repo_path)?;
+
+    let mut refs = vec![default_branch.clone()];
+    for branch in all_branches {
+        if branch != default_branch {
+            refs.push(branch);
+        }
+    }
+
+    Ok(refs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -583,5 +638,48 @@ mod tests {
         let app_dir = Path::new("/app/worktrees");
         let result = resolve_worktree_dir(repo, &WorktreeStorage::Sibling, app_dir);
         assert_eq!(result, PathBuf::from("/home/user/dev/my.project.name__wt"));
+    }
+
+    #[test]
+    fn get_remote_default_branch_from_test_repo() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+        // Test repo has no remote, so should fall back to checking local branches.
+        // git init creates "master" or "main" depending on config.
+        let result = get_remote_default_branch(&repo_path);
+        assert!(result.is_ok());
+        let branch = result.unwrap();
+        // Should be "main" or "master" (depends on git version default)
+        assert!(
+            branch == "main" || branch == "master",
+            "Expected main or master, got: {branch}"
+        );
+    }
+
+    #[test]
+    fn list_base_ref_options_returns_default_first() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+
+        // Create a second branch
+        Command::new(crate::agent::resolve_cli("git"))
+            .current_dir(repo.path())
+            .args(["branch", "feature-x"])
+            .output()
+            .expect("Failed to create branch");
+
+        let refs = list_base_ref_options(repo_path).unwrap();
+        assert!(refs.len() >= 2, "Expected at least 2 refs, got: {refs:?}");
+        // First entry should be the default branch (main or master)
+        assert!(
+            refs[0] == "main" || refs[0] == "master",
+            "First ref should be default branch, got: {}",
+            refs[0]
+        );
+        // feature-x should be in the list
+        assert!(refs.contains(&"feature-x".to_string()), "feature-x not found in {refs:?}");
+        // No duplicates
+        let unique: std::collections::HashSet<_> = refs.iter().collect();
+        assert_eq!(unique.len(), refs.len(), "Duplicate refs found: {refs:?}");
     }
 }
