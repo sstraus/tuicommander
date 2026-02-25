@@ -853,7 +853,8 @@ Built-in plugins are TypeScript modules in `src/plugins/` compiled with the app.
 
 | Plugin | File | Section | Detects |
 |--------|------|---------|---------|
-| `plan` | `planPlugin.ts` | ACTIVE PLAN | `plan-file` structured events |
+| `plan` | `planPlugin.ts` | ACTIVE PLAN | `plan-file` structured events (repo-scoped) |
+| `session-prompt` | `sessionPromptPlugin.ts` | SESSION PROMPTS | `user-input` structured events |
 
 See `examples/plugins/report-watcher/` for a template showing how to extract terminal output into Activity Center items with a markdown viewer.
 
@@ -935,12 +936,21 @@ The Rust `OutputParser` detects patterns in terminal output and emits typed even
 
 ### plan-file
 
-Detected when a plan file path appears in terminal output.
+Detected when a plan file path appears in terminal output. The path is always resolved to an absolute path before emission:
+
+- Relative paths (e.g. `plans/foo.md`, `.claude/plans/bar.md`) are resolved against the terminal session's CWD
+- Tilde paths (`~/.claude/plans/bar.md`) are expanded to the user's home directory
+- Already-absolute paths are passed through unchanged
+
+If the session has no CWD (rare), relative paths are emitted as-is and may fail to open.
 
 ```typescript
 { type: "plan-file", path: string }
-// path: relative or absolute, e.g. "plans/foo.md", ".claude/plans/bar.md"
+// path: always absolute, e.g. "/Users/me/project/plans/foo.md",
+//       "/Users/me/.claude/plans/graceful-rolling-quasar.md"
 ```
+
+**Repo scoping:** The built-in `plan` plugin only displays plans from terminals whose CWD matches the active repository in the sidebar. Plans from other projects are silently filtered out.
 
 ### rate-limit
 

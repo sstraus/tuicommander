@@ -175,6 +175,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
     const branch = repositoriesStore.get(repoPath)?.branches[branchName];
     const validTerminals = filterValidTerminals(branch?.terminals, terminalsStore.getIds());
+    appLogger.info("terminal", `BranchSelect → ${branchName}`, { branchTerminals: branch?.terminals, storeIds: terminalsStore.getIds(), valid: validTerminals, hadTerminals: branch?.hadTerminals, savedTerminals: branch?.savedTerminals?.length ?? 0 });
+    if (validTerminals.length === 0 && (branch?.terminals?.length ?? 0) > 0) {
+      appLogger.warn("terminal", `BranchSelect MISMATCH: branch has terminals ${JSON.stringify(branch?.terminals)} but none found in store ${JSON.stringify(terminalsStore.getIds())}. Will create fresh terminal.`);
+    }
 
     if (validTerminals.length > 0) {
       // Restore the last active terminal for this branch, or fall back to first

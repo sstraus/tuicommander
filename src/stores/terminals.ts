@@ -1,5 +1,6 @@
 import { createStore, produce } from "solid-js/store";
 import type { AgentType } from "../agents";
+import { appLogger } from "./appLogger";
 
 /** Type of input being awaited */
 export type AwaitingInputType = "question" | "error" | "confirmation" | null;
@@ -97,6 +98,7 @@ function createTerminalsStore() {
 
     /** Remove a terminal */
     remove(id: string): void {
+      appLogger.info("terminal", `TermStore.remove(${id})`, { remaining: Object.keys(state.terminals).filter(k => k !== id) });
       setState(
         produce((s) => {
           delete s.terminals[id];

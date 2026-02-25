@@ -65,18 +65,41 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     return id;
   };
 
+  /** After closing a non-terminal tab, select a sibling or fall back to the last terminal */
+  const selectAfterNonTerminalClose = (store: { getIds: () => string[]; setActive: (id: string | null) => void }, closedId: string) => {
+    const remaining = store.getIds().filter((i) => i !== closedId);
+    if (remaining.length > 0) {
+      handleTerminalSelect(remaining[remaining.length - 1]);
+    } else {
+      // No more tabs of this type — return to last terminal on active branch
+      const activeRepo = repositoriesStore.getActive();
+      const branchTerminals = activeRepo?.activeBranch
+        ? (activeRepo.branches[activeRepo.activeBranch]?.terminals ?? [])
+        : [];
+      const nextTerminal = branchTerminals.length > 0
+        ? branchTerminals[branchTerminals.length - 1]
+        : terminalsStore.getIds()[0] ?? null;
+      if (nextTerminal) {
+        handleTerminalSelect(nextTerminal);
+      }
+    }
+  };
+
   const closeTerminal = async (id: string, skipConfirm = false) => {
     if (id.startsWith("diff-")) {
+      selectAfterNonTerminalClose(diffTabsStore, id);
       diffTabsStore.remove(id);
       return;
     }
 
     if (id.startsWith("md-")) {
+      selectAfterNonTerminalClose(mdTabsStore, id);
       mdTabsStore.remove(id);
       return;
     }
 
     if (id.startsWith("edit-")) {
+      selectAfterNonTerminalClose(editorTabsStore, id);
       editorTabsStore.remove(id);
       return;
     }

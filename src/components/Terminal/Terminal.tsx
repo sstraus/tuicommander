@@ -13,6 +13,7 @@ import { settingsStore, FONT_FAMILIES } from "../../stores/settings";
 import { getTerminalTheme } from "../../themes";
 import { terminalsStore } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
+import { appLogger } from "../../stores/appLogger";
 import { notificationsStore } from "../../stores/notifications";
 import { invoke } from "../../invoke";
 import { isMacOS } from "../../platform";
@@ -408,6 +409,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const initSession = async () => {
     if (sessionInitialized || !terminal) return;
     sessionInitialized = true;
+    appLogger.info("terminal", `initSession(${props.id}) — existing sessionId=${sessionId ?? "null"}`);
 
     try {
       let reconnected = false;
@@ -416,8 +418,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
         try {
           await pty.resize(sessionId, terminal.rows, terminal.cols);
           reconnected = true;
+          appLogger.info("terminal", `initSession(${props.id}) — reconnected to ${sessionId}`);
         } catch {
           // Session no longer exists (app restarted) - create fresh
+          appLogger.warn("terminal", `initSession(${props.id}) — resize failed for ${sessionId}, creating FRESH session`);
           sessionId = null;
           unsubscribePty?.();
           unlistenParsed?.();
@@ -426,6 +430,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
       }
       if (!reconnected) {
+        appLogger.warn("terminal", `initSession(${props.id}) — creating FRESH PTY session (no prior sessionId)`);
         sessionId = await pty.createSession({
           rows: terminal.rows,
           cols: terminal.cols,
@@ -599,7 +604,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
-    terminal.loadAddon(new WebLinksAddon((_event, uri) => handleOpenUrl(uri)));
+    terminal.loadAddon(new WebLinksAddon((event, uri) => {
+      if (event.button !== 0) return; // only activate on left-click
+      handleOpenUrl(uri);
+    }));
 
     searchAddon = new SearchAddon();
     terminal.loadAddon(searchAddon);
@@ -670,7 +678,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
                   end: { x: startCol + r.text.length - 1, y: bufferLineNumber },
                 },
                 text: r.text,
-                activate: () => onOpenFilePath(r.resolved.absolute_path, line, col),
+                activate: (event: MouseEvent) => {
+                  if (event.button !== 0) return; // only activate on left-click
+                  onOpenFilePath(r.resolved.absolute_path, line, col);
+                },
               });
             }
             callback(links.length > 0 ? links : undefined);

@@ -175,6 +175,11 @@ pub(crate) fn spawn_reader_thread(
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
         let parser = OutputParser::new();
+        // Resolve session CWD once for resolving relative plan-file paths
+        let session_cwd: Option<String> = state
+            .sessions
+            .get(&session_id)
+            .and_then(|s| s.lock().cwd.clone());
         loop {
             while paused.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -229,9 +234,24 @@ pub(crate) fn spawn_reader_thread(
                         let events = parser.parse(&data);
                         let regex_found_question = events.iter().any(|e| matches!(e, ParsedEvent::Question { .. }));
                         for event in &events {
+                            // Resolve relative plan-file paths to absolute using session CWD
+                            let resolved = if let ParsedEvent::PlanFile { path } = event {
+                                if !path.starts_with('/') {
+                                    if let Some(ref cwd) = session_cwd {
+                                        let abs = format!("{}/{}", cwd.trim_end_matches('/'), path);
+                                        Some(ParsedEvent::PlanFile { path: abs })
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            };
                             let _ = app.emit(
                                 &format!("pty-parsed-{session_id}"),
-                                event,
+                                resolved.as_ref().unwrap_or(event),
                             );
                         }
 

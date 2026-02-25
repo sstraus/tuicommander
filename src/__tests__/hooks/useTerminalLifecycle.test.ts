@@ -4,6 +4,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
+import { editorTabsStore } from "../../stores/editorTabs";
 import { useTerminalLifecycle } from "../../hooks/useTerminalLifecycle";
 
 // Reset store state between tests by removing all terminals
@@ -16,6 +17,9 @@ function resetStores() {
   }
   for (const id of mdTabsStore.getIds()) {
     mdTabsStore.remove(id);
+  }
+  for (const id of editorTabsStore.getIds()) {
+    editorTabsStore.remove(id);
   }
   for (const path of repositoriesStore.getPaths()) {
     repositoriesStore.remove(path);
@@ -276,6 +280,56 @@ describe("useTerminalLifecycle", () => {
 
       await lifecycle.closeTerminal(ids[0]);
       expect(mdTabsStore.getIds().length).toBe(0);
+    });
+
+    it("restores terminal focus when closing last diff tab", async () => {
+      const termId = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main");
+      repositoriesStore.addTerminalToBranch("/repo", "main", termId);
+
+      diffTabsStore.add("/repo", "file.ts", "M");
+      const diffId = diffTabsStore.getIds()[0];
+      // Simulate selecting the diff tab (sets terminalsStore.activeId to null)
+      lifecycle.handleTerminalSelect(diffId);
+      expect(terminalsStore.state.activeId).toBeNull();
+
+      await lifecycle.closeTerminal(diffId);
+      expect(diffTabsStore.getIds().length).toBe(0);
+      expect(terminalsStore.state.activeId).toBe(termId);
+    });
+
+    it("restores terminal focus when closing last editor tab", async () => {
+      const termId = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main");
+      repositoriesStore.addTerminalToBranch("/repo", "main", termId);
+
+      editorTabsStore.add("/repo/file.ts", "file.ts");
+      const editId = editorTabsStore.getIds()[0];
+      lifecycle.handleTerminalSelect(editId);
+      expect(terminalsStore.state.activeId).toBeNull();
+
+      await lifecycle.closeTerminal(editId);
+      expect(editorTabsStore.getIds().length).toBe(0);
+      expect(terminalsStore.state.activeId).toBe(termId);
+    });
+
+    it("selects sibling diff tab when closing one of multiple diff tabs", async () => {
+      diffTabsStore.add("/repo", "a.ts", "M");
+      diffTabsStore.add("/repo", "b.ts", "A");
+      const ids = diffTabsStore.getIds();
+      expect(ids.length).toBe(2);
+
+      lifecycle.handleTerminalSelect(ids[0]);
+      await lifecycle.closeTerminal(ids[0]);
+      expect(diffTabsStore.getIds().length).toBe(1);
+      // Should activate the remaining diff tab, not fall back to terminal
+      expect(diffTabsStore.state.activeId).toBe(ids[1]);
     });
   });
 

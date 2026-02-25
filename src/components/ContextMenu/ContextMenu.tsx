@@ -122,6 +122,7 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
       <div
         ref={menuRef}
         class={s.menu}
+        onClick={(e) => e.stopPropagation()}
         style={{
           left: `${getPosition().x}px`,
           top: `${getPosition().y}px`,
