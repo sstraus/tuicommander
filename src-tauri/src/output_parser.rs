@@ -49,12 +49,20 @@ pub enum ParsedEvent {
     UserInput {
         content: String,
     },
+    /// API error from an agent (5xx server error, auth failure, etc.)
+    #[serde(rename = "api-error")]
+    ApiError {
+        pattern_name: String,
+        matched_text: String,
+        error_kind: String, // "server", "auth", "unknown"
+    },
 }
 
 /// OutputParser: detects structured events in PTY output text.
 /// Designed to run in the Rust reader thread, eliminating JS regex overhead.
 pub struct OutputParser {
     rate_limit_patterns: Vec<RateLimitPattern>,
+    api_error_patterns: Vec<ApiErrorPattern>,
 }
 
 #[derive(Clone)]
@@ -65,15 +73,25 @@ struct RateLimitPattern {
     has_retry_capture: bool,
 }
 
+#[derive(Clone)]
+struct ApiErrorPattern {
+    name: &'static str,
+    regex: regex::Regex,
+    error_kind: &'static str, // "server", "auth", "unknown"
+}
+
 lazy_static::lazy_static! {
     /// Pre-built rate limit patterns — compiled once at first use.
     static ref RATE_LIMIT_PATTERNS: Vec<RateLimitPattern> = build_rate_limit_patterns();
+    /// Pre-built API error patterns — compiled once at first use.
+    static ref API_ERROR_PATTERNS: Vec<ApiErrorPattern> = build_api_error_patterns();
 }
 
 impl OutputParser {
     pub fn new() -> Self {
         Self {
             rate_limit_patterns: RATE_LIMIT_PATTERNS.clone(),
+            api_error_patterns: API_ERROR_PATTERNS.clone(),
         }
     }
 
@@ -101,6 +119,11 @@ impl OutputParser {
 
         // Rate limit detection (operates on raw text — patterns target structured error codes)
         if let Some(evt) = self.parse_rate_limit(text) {
+            events.push(evt);
+        }
+
+        // API error detection (5xx, auth errors — distinct from rate limits)
+        if let Some(evt) = self.parse_api_error(text) {
             events.push(evt);
         }
 
@@ -155,6 +178,28 @@ impl OutputParser {
         }
         None
     }
+
+    fn parse_api_error(&self, text: &str) -> Option<ParsedEvent> {
+        for pattern in &self.api_error_patterns {
+            if let Some(m) = pattern.regex.find(text) {
+                // Guard: reject matches inside source code or documentation.
+                let match_line = text[..m.start()]
+                    .rfind('\n')
+                    .map(|nl| &text[nl + 1..])
+                    .unwrap_or(text);
+                let match_line = match_line.lines().next().unwrap_or(match_line);
+                if line_is_source_code(match_line) {
+                    continue;
+                }
+                return Some(ParsedEvent::ApiError {
+                    pattern_name: pattern.name.to_string(),
+                    matched_text: m.as_str().to_string(),
+                    error_kind: pattern.error_kind.to_string(),
+                });
+            }
+        }
+        None
+    }
 }
 
 /// Returns true if a line looks like source code, documentation, or agent commentary
@@ -162,9 +207,15 @@ impl OutputParser {
 /// agents read/discuss source files that contain error-code strings.
 fn line_is_source_code(line: &str) -> bool {
     let trimmed = line.trim();
-    // Rust/JS string literals or regex patterns containing the match
-    if trimmed.contains("r\"") || trimmed.contains("r#\"") {
+    // Rust raw string literals: r"...", r#"..."# (must be preceded by whitespace or line start)
+    if trimmed.contains("r#\"") {
         return true;
+    }
+    // r" preceded by whitespace/punctuation (not alphanumeric) — avoids matching "error", "server", etc.
+    if let Some(idx) = trimmed.find("r\"") {
+        if idx == 0 || !trimmed.as_bytes()[idx - 1].is_ascii_alphanumeric() {
+            return true;
+        }
     }
     // Line comments (Rust, JS, Python, shell)
     if trimmed.starts_with("//") || trimmed.starts_with('#') {
@@ -226,6 +277,57 @@ fn rl(name: &'static str, pattern: &str, retry_after_ms: Option<u64>, has_retry_
         regex: regex::Regex::new(pattern).unwrap(),
         retry_after_ms,
         has_retry_capture,
+    }
+}
+
+fn build_api_error_patterns() -> Vec<ApiErrorPattern> {
+    // Patterns for API errors that are NOT rate limits (5xx, auth, server errors).
+    // Checked in order; first match wins.
+    //
+    // Two tiers:
+    //   1. Agent-specific patterns (exact CLI output formats)
+    //   2. Provider-level patterns (JSON error structures from any CLI that prints raw API responses)
+    vec![
+        // === Agent-specific patterns ===
+
+        // Claude Code: API Error: 5xx with JSON body
+        ae("claude-api-error", r#""type":"api_error""#, "server"),
+        // Claude Code: authentication_error in JSON body (401) — also used by OpenAI
+        ae("claude-auth-error", r#""type":"authentication_error""#, "auth"),
+        // Gemini CLI: API Error: got status: UNAVAILABLE/INTERNAL
+        ae("gemini-server-error", r"API Error: got status: (?:UNAVAILABLE|INTERNAL)", "server"),
+        // Aider: litellm server/auth exceptions
+        ae("aider-server-error", r"litellm\.(?:InternalServerError|ServiceUnavailableError|APIError):", "server"),
+        ae("aider-auth-error", r"litellm\.AuthenticationError:", "auth"),
+        // Aider: user-facing translated messages
+        ae("aider-server-msg", r"The API provider's servers are down or overloaded", "server"),
+        ae("aider-auth-msg", r"The API provider is not able to authenticate you", "auth"),
+        // Codex CLI: stream error with retry exhaustion (non-429 status)
+        ae("codex-stream-error", r"stream error: exceeded retry limit, last status: [45]\d\d", "server"),
+        // Copilot CLI: token/auth failures
+        ae("copilot-auth-error", r"(?:Failed to get copilot token|copilot token.*expired|request failed unexpectedly)", "auth"),
+
+        // === Provider-level JSON error patterns ===
+        // These fire when any CLI prints the raw API error response.
+
+        // OpenAI: {"error":{"type":"server_error",...}}
+        ae("openai-server-error", r#""type"\s*:\s*"server_error""#, "server"),
+        // Google Gemini/Vertex: {"error":{"status":"INTERNAL"}} or "UNAVAILABLE"
+        ae("google-api-server", r#""status"\s*:\s*"(?:INTERNAL|UNAVAILABLE)""#, "server"),
+        // Google auth: {"error":{"status":"UNAUTHENTICATED"}} or API_KEY_INVALID
+        ae("google-api-auth", r#""status"\s*:\s*"UNAUTHENTICATED""#, "auth"),
+        // OpenRouter: numeric code in JSON with provider_name metadata
+        ae("openrouter-server", r#""provider_name"\s*:"#, "server"),
+        // MiniMax: {"base_resp":{"status_code":1013,...}} — unique field name
+        ae("minimax-server", r#""base_resp"\s*:"#, "server"),
+    ]
+}
+
+fn ae(name: &'static str, pattern: &str, error_kind: &'static str) -> ApiErrorPattern {
+    ApiErrorPattern {
+        name,
+        regex: regex::Regex::new(pattern).unwrap(),
+        error_kind,
     }
 }
 
@@ -1048,5 +1150,225 @@ mod tests {
         assert!(!line_is_source_code("RESOURCE_EXHAUSTED"));
         assert!(!line_is_source_code("HTTP/1.1 429 Too Many Requests"));
         assert!(!line_is_source_code("Retry-After: 60"));
+    }
+
+    // --- API error detection tests ---
+
+    fn has_api_error(events: &[ParsedEvent]) -> bool {
+        events.iter().any(|e| matches!(e, ParsedEvent::ApiError { .. }))
+    }
+
+    fn get_api_error(events: &[ParsedEvent]) -> Option<(&str, &str, &str)> {
+        events.iter().find_map(|e| match e {
+            ParsedEvent::ApiError { pattern_name, matched_text, error_kind } =>
+                Some((pattern_name.as_str(), matched_text.as_str(), error_kind.as_str())),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn test_api_error_claude_500() {
+        let parser = OutputParser::new();
+        let input = r#"API Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"},"request_id":"req_011CYV92oEFMbcz45mjVYssM"}"#;
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Claude API error");
+        assert_eq!(name, "claude-api-error");
+        assert_eq!(kind, "server");
+    }
+
+    #[test]
+    fn test_api_error_claude_529_overloaded() {
+        let parser = OutputParser::new();
+        // 529 overloaded should be caught by rate limit (overloaded_error), not api-error
+        // But the api_error JSON type should NOT match overloaded_error
+        let input = r#"API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#;
+        // overloaded_error is a rate limit pattern, not api-error
+        assert!(!has_api_error(&parser.parse(input)));
+        assert!(has_rate_limit(&parser.parse(input)));
+    }
+
+    #[test]
+    fn test_api_error_claude_auth() {
+        let parser = OutputParser::new();
+        let input = r#"API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid bearer token"}}"#;
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Claude auth error");
+        assert_eq!(name, "claude-auth-error");
+        assert_eq!(kind, "auth");
+    }
+
+    #[test]
+    fn test_api_error_gemini_unavailable() {
+        let parser = OutputParser::new();
+        let input = r#"API Error: got status: UNAVAILABLE. {"error":{"code":503,"message":"The model is overloaded."}}"#;
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Gemini UNAVAILABLE");
+        assert_eq!(name, "gemini-server-error");
+        assert_eq!(kind, "server");
+    }
+
+    #[test]
+    fn test_api_error_gemini_internal() {
+        let parser = OutputParser::new();
+        let input = r#"API Error: got status: INTERNAL. {"error":{"code":500,"message":"An internal error has occurred."}}"#;
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Gemini INTERNAL");
+        assert_eq!(name, "gemini-server-error");
+        assert_eq!(kind, "server");
+    }
+
+    #[test]
+    fn test_api_error_aider_server() {
+        let parser = OutputParser::new();
+        let input = r#"litellm.InternalServerError: AnthropicException - {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#;
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Aider server error");
+        assert_eq!(name, "aider-server-error");
+        assert_eq!(kind, "server");
+    }
+
+    #[test]
+    fn test_api_error_aider_auth() {
+        let parser = OutputParser::new();
+        let input = "litellm.AuthenticationError: AnthropicException - invalid x-api-key";
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Aider auth error");
+        assert_eq!(name, "aider-auth-error");
+        assert_eq!(kind, "auth");
+    }
+
+    #[test]
+    fn test_api_error_aider_translated_server() {
+        let parser = OutputParser::new();
+        let input = "The API provider's servers are down or overloaded.";
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Aider translated msg");
+        assert_eq!(name, "aider-server-msg");
+        assert_eq!(kind, "server");
+    }
+
+    #[test]
+    fn test_api_error_aider_translated_auth() {
+        let parser = OutputParser::new();
+        let input = "The API provider is not able to authenticate you. Check your API key.";
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Aider auth msg");
+        assert_eq!(name, "aider-auth-msg");
+        assert_eq!(kind, "auth");
+    }
+
+    #[test]
+    fn test_api_error_codex_stream_error() {
+        let parser = OutputParser::new();
+        let input = "⚠  stream error: exceeded retry limit, last status: 401 Unauthorized; retrying 5/5 in 3.087s…";
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Codex stream error");
+        assert_eq!(name, "codex-stream-error");
+        assert_eq!(kind, "server");
+    }
+
+    #[test]
+    fn test_api_error_codex_500() {
+        let parser = OutputParser::new();
+        let input = "stream error: exceeded retry limit, last status: 500 Internal Server Error";
+        let events = parser.parse(input);
+        assert!(has_api_error(&events));
+    }
+
+    #[test]
+    fn test_api_error_copilot_token() {
+        let parser = OutputParser::new();
+        let input = "Failed to get copilot token";
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Copilot token error");
+        assert_eq!(name, "copilot-auth-error");
+        assert_eq!(kind, "auth");
+    }
+
+    #[test]
+    fn test_api_error_copilot_request_failed() {
+        let parser = OutputParser::new();
+        let input = "request failed unexpectedly";
+        let events = parser.parse(input);
+        assert!(has_api_error(&events));
+    }
+
+    // --- Provider-level API error tests ---
+
+    #[test]
+    fn test_api_error_openai_server_error() {
+        let parser = OutputParser::new();
+        let input = r#"{"error":{"message":"The server had an error","type":"server_error","param":null,"code":null}}"#;
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect OpenAI server_error");
+        assert_eq!(name, "openai-server-error");
+        assert_eq!(kind, "server");
+    }
+
+    #[test]
+    fn test_api_error_google_internal() {
+        let parser = OutputParser::new();
+        let input = r#"{"error":{"code":500,"message":"An internal error has occurred.","status":"INTERNAL"}}"#;
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Google INTERNAL");
+        assert_eq!(name, "google-api-server");
+        assert_eq!(kind, "server");
+    }
+
+    #[test]
+    fn test_api_error_google_unavailable() {
+        let parser = OutputParser::new();
+        let input = r#"{"error":{"code":503,"message":"The service is currently unavailable.","status":"UNAVAILABLE"}}"#;
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Google UNAVAILABLE");
+        assert_eq!(name, "google-api-server");
+        assert_eq!(kind, "server");
+    }
+
+    #[test]
+    fn test_api_error_google_auth() {
+        let parser = OutputParser::new();
+        let input = r#"{"error":{"code":401,"message":"Request had invalid authentication credentials.","status":"UNAUTHENTICATED"}}"#;
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect Google UNAUTHENTICATED");
+        assert_eq!(name, "google-api-auth");
+        assert_eq!(kind, "auth");
+    }
+
+    #[test]
+    fn test_api_error_openrouter() {
+        let parser = OutputParser::new();
+        let input = r#"{"error":{"code":502,"message":"Your chosen model is down","metadata":{"provider_name":"Anthropic"}}}"#;
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect OpenRouter error");
+        assert_eq!(name, "openrouter-server");
+        assert_eq!(kind, "server");
+    }
+
+    #[test]
+    fn test_api_error_minimax() {
+        let parser = OutputParser::new();
+        let input = r#"{"id":"abc","base_resp":{"status_code":1013,"status_msg":"internal service error"}}"#;
+        let events = parser.parse(input);
+        let (name, _, kind) = get_api_error(&events).expect("should detect MiniMax error");
+        assert_eq!(name, "minimax-server");
+        assert_eq!(kind, "server");
+    }
+
+    #[test]
+    fn test_no_api_error_normal_output() {
+        let parser = OutputParser::new();
+        assert!(!has_api_error(&parser.parse("Building project... done")));
+        assert!(!has_api_error(&parser.parse("ls -la\ntotal 42")));
+        assert!(!has_api_error(&parser.parse("Hello world, everything is fine")));
+    }
+
+    #[test]
+    fn test_no_api_error_false_positive_source_code() {
+        let parser = OutputParser::new();
+        // Agent reading this very source file should not trigger
+        assert!(!has_api_error(&parser.parse("        ae(\"claude-api-error\", \"type\":\"api_error\", \"server\"),")));
+        assert!(!has_api_error(&parser.parse("// detect \"type\":\"api_error\" in JSON")));
+        assert!(!has_api_error(&parser.parse("# Handle authentication_error from Claude")));
     }
 }

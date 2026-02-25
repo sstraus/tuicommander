@@ -61,10 +61,29 @@ ParsedEvent::Progress {
 }
 ```
 
+### ApiError
+
+API errors from agents and providers (5xx server errors, auth failures):
+
+```rust
+ParsedEvent::ApiError {
+    pattern_name: String,    // e.g., "claude-api-error", "openai-server-error"
+    matched_text: String,    // The matched text
+    error_kind: String,      // "server", "auth", or "unknown"
+}
+```
+
+Detects errors from two tiers:
+- **Agent-specific**: Claude Code, Aider, Codex CLI, Gemini CLI, Copilot CLI
+- **Provider-level**: OpenAI, Anthropic, Google, OpenRouter, MiniMax JSON error structures
+
+Frontend plays an error notification sound and logs via `appLogger.error()`.
+
 ## Pattern Detection
 
 The parser uses regex patterns to detect:
 - Rate limit messages from Claude, Aider, OpenCode, Gemini, Codex
+- API errors from agents and API providers (5xx, auth failures)
 - GitHub/GitLab PR URLs in `gh pr create` output
 - OSC 9;4 terminal progress sequences
 - Agent status lines with timing/token info

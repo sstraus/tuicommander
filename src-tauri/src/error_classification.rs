@@ -5,7 +5,7 @@
 ///
 /// Classify an error message into a known error type.
 ///
-/// Returns one of: "rate_limit", "network", "auth", "validation", "unknown".
+/// Returns one of: "rate_limit", "server", "network", "auth", "validation", "unknown".
 #[allow(dead_code)] // Source-of-truth classifier; frontend mirrors these patterns
 pub(crate) fn classify_error(message: &str) -> &'static str {
     let lower = message.to_lowercase();
@@ -17,6 +17,18 @@ pub(crate) fn classify_error(message: &str) -> &'static str {
         || lower.contains("429")
     {
         return "rate_limit";
+    }
+
+    // Server error patterns (5xx, API errors)
+    if lower.contains("internal server error")
+        || lower.contains("api_error")
+        || lower.contains("500")
+        || lower.contains("502")
+        || lower.contains("503")
+        || lower.contains("service unavailable")
+        || lower.contains("overloaded")
+    {
+        return "server";
     }
 
     // Network patterns
@@ -74,6 +86,17 @@ mod tests {
         assert_eq!(classify_error("Too Many Requests"), "rate_limit");
         assert_eq!(classify_error("quota exceeded"), "rate_limit");
         assert_eq!(classify_error("Error 429"), "rate_limit");
+    }
+
+    #[test]
+    fn classifies_server_errors() {
+        assert_eq!(classify_error("Internal server error"), "server");
+        assert_eq!(classify_error("api_error: something broke"), "server");
+        assert_eq!(classify_error("HTTP 500"), "server");
+        assert_eq!(classify_error("Error 502 Bad Gateway"), "server");
+        assert_eq!(classify_error("503 Service Unavailable"), "server");
+        assert_eq!(classify_error("service unavailable"), "server");
+        assert_eq!(classify_error("The server is overloaded"), "server");
     }
 
     #[test]
