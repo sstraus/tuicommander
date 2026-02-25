@@ -329,12 +329,12 @@ fn parse_jsonl_line(line: &str, stats: &mut CachedFileStats) -> LineInfo {
         }
         "system" => {
             let subtype = obj.get("subtype").and_then(|s| s.as_str());
-            if subtype == Some("turn_duration") {
-                let timestamp = obj
-                    .get("timestamp")
-                    .and_then(|t| t.as_str())
-                    .map(|s| s.to_string());
+            let timestamp = obj
+                .get("timestamp")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string());
 
+            if subtype == Some("turn_duration") {
                 if let Some(ref ts) = timestamp {
                     // Extract date part "2026-02-04" from ISO timestamp
                     let date = &ts[..10.min(ts.len())];
@@ -353,20 +353,26 @@ fn parse_jsonl_line(line: &str, stats: &mut CachedFileStats) -> LineInfo {
                             day.session_count += 1;
                         }
                     }
-
-                    // Update first/last timestamps
-                    if stats.first_timestamp.is_none()
-                        || stats.first_timestamp.as_deref() > Some(ts.as_str())
-                    {
-                        stats.first_timestamp = Some(ts.clone());
-                    }
-                    if stats.last_timestamp.is_none()
-                        || stats.last_timestamp.as_deref() < Some(ts.as_str())
-                    {
-                        stats.last_timestamp = Some(ts.clone());
-                    }
                 }
+            }
 
+            // Update first/last timestamps for any system line with a timestamp
+            if let Some(ref ts) = timestamp {
+                if stats.first_timestamp.is_none()
+                    || stats.first_timestamp.as_deref() > Some(ts.as_str())
+                {
+                    stats.first_timestamp = Some(ts.clone());
+                }
+                if stats.last_timestamp.is_none()
+                    || stats.last_timestamp.as_deref() < Some(ts.as_str())
+                {
+                    stats.last_timestamp = Some(ts.clone());
+                }
+            }
+
+            // Return timestamp from any system subtype that has one,
+            // so the caller can flush pending assistant tokens
+            if timestamp.is_some() {
                 return LineInfo { timestamp, assistant_tokens: None };
             }
             empty
@@ -433,7 +439,7 @@ fn parse_jsonl_file_from_offset(
             pending_tokens = Some(tokens);
         }
 
-        // If this was a turn_duration with a timestamp, assign pending tokens
+        // If this line has a timestamp, assign pending tokens
         // to the hourly bucket and daily activity
         if let Some(ref ts) = info.timestamp
             && let Some((input, output)) = pending_tokens.take()
@@ -448,6 +454,27 @@ fn parse_jsonl_file_from_offset(
             }
 
             // Also populate daily_activity token counts
+            let date = &ts[..10.min(ts.len())];
+            if date.len() == 10 {
+                let day = stats.daily_activity.entry(date.to_string()).or_default();
+                day.input_tokens += input;
+                day.output_tokens += output;
+            }
+        }
+    }
+
+    // Flush orphan pending tokens using the last known timestamp.
+    // This happens when a session is still active: the final assistant
+    // message(s) have no following turn_duration to provide a timestamp.
+    if let Some((input, output)) = pending_tokens {
+        if let Some(ref ts) = stats.last_timestamp {
+            if ts.len() >= 13 {
+                let hour_key = &ts[..13];
+                let hourly = stats.hourly_tokens.entry(hour_key.to_string()).or_default();
+                hourly.input_tokens += input;
+                hourly.output_tokens += output;
+                hourly.message_count += 1;
+            }
             let date = &ts[..10.min(ts.len())];
             if date.len() == 10 {
                 let day = stats.daily_activity.entry(date.to_string()).or_default();
@@ -1118,6 +1145,83 @@ mod tests {
 
         // Cleanup
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn orphan_pending_tokens_flushed_to_last_known_hour() {
+        // Simulates an active session: assistant message followed by
+        // stop_hook_summary (which has a timestamp but is NOT turn_duration),
+        // then the file ends with no turn_duration to flush pending tokens.
+        let dir = std::env::temp_dir().join("claude_usage_orphan_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("orphan.jsonl");
+
+        let content = r#"{"type":"user","message":"hello"}
+{"type":"assistant","message":{"model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+{"type":"system","subtype":"turn_duration","timestamp":"2026-02-25T10:00:00Z","sessionId":"s1","durationMs":5000}
+{"type":"user","message":"do more"}
+{"type":"assistant","message":{"model":"claude-opus-4-6","usage":{"input_tokens":200,"output_tokens":80,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+{"type":"system","subtype":"stop_hook_summary","timestamp":"2026-02-25T10:05:00Z","sessionId":"s1"}
+{"type":"user","message":"and more"}
+{"type":"assistant","message":{"model":"claude-opus-4-6","usage":{"input_tokens":150,"output_tokens":60,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+"#;
+        std::fs::write(&path, content).unwrap();
+
+        let mut stats = CachedFileStats::default();
+        parse_jsonl_file_from_offset(&path, 0, &mut stats).unwrap();
+
+        // First assistant (100+50) should be bucketed at 10:00 via turn_duration
+        let h10 = stats.hourly_tokens.get("2026-02-25T10").unwrap();
+        // Second assistant (200+80) should be flushed by stop_hook_summary at 10:05 (same hour)
+        // Third assistant (150+60) has NO following timestamp — should be flushed
+        // using last_timestamp fallback (10:05, same hour bucket)
+        assert_eq!(h10.input_tokens, 100 + 200 + 150, "all tokens should be bucketed in hour 10");
+        assert_eq!(h10.output_tokens, 50 + 80 + 60);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn orphan_tokens_at_eof_use_last_timestamp() {
+        // File ends with assistant message, no system line after it.
+        // There IS a prior turn_duration so last_timestamp is known.
+        let dir = std::env::temp_dir().join("claude_usage_eof_orphan");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("eof.jsonl");
+
+        let content = r#"{"type":"assistant","message":{"model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+{"type":"system","subtype":"turn_duration","timestamp":"2026-02-25T14:00:00Z","sessionId":"s1","durationMs":5000}
+{"type":"assistant","message":{"model":"claude-opus-4-6","usage":{"input_tokens":300,"output_tokens":120,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+"#;
+        std::fs::write(&path, content).unwrap();
+
+        let mut stats = CachedFileStats::default();
+        parse_jsonl_file_from_offset(&path, 0, &mut stats).unwrap();
+
+        // Both should end up in hour 14
+        let h14 = stats.hourly_tokens.get("2026-02-25T14").unwrap();
+        assert_eq!(h14.input_tokens, 100 + 300);
+        assert_eq!(h14.output_tokens, 50 + 120);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stop_hook_summary_flushes_pending_tokens() {
+        // stop_hook_summary with a timestamp should flush pending tokens
+        // just like turn_duration does.
+        let mut stats = CachedFileStats::default();
+
+        let line1 = r#"{"type":"assistant","message":{"model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}"#;
+        let line2 = r#"{"type":"system","subtype":"stop_hook_summary","timestamp":"2026-02-25T15:30:00Z","sessionId":"s1"}"#;
+
+        let info1 = parse_jsonl_line(line1, &mut stats);
+        assert!(info1.assistant_tokens.is_some());
+
+        let info2 = parse_jsonl_line(line2, &mut stats);
+        // stop_hook_summary should return a timestamp so caller can flush
+        assert!(info2.timestamp.is_some());
+        assert_eq!(info2.timestamp.unwrap(), "2026-02-25T15:30:00Z");
     }
 
     #[test]
