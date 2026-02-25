@@ -284,12 +284,12 @@ describe("terminalsStore", () => {
       });
     });
 
-    it("clears shellState on setActive", () => {
+    it("preserves shellState on setActive", () => {
       createRoot((dispose) => {
         const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
         store.update(id, { shellState: "idle" });
         store.setActive(id);
-        expect(store.get(id)!.shellState).toBeNull();
+        expect(store.get(id)!.shellState).toBe("idle");
         dispose();
       });
     });

@@ -5,6 +5,7 @@ import { diffTabsStore } from "../stores/diffTabs";
 import { mdTabsStore } from "../stores/mdTabs";
 import { editorTabsStore } from "../stores/editorTabs";
 import { settingsStore } from "../stores/settings";
+import { appLogger } from "../stores/appLogger";
 import { filterValidTerminals } from "../utils/terminalFilter";
 
 const MIN_FONT_SIZE = 8;
@@ -299,7 +300,16 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     }
   };
 
+  /** Guard against cross-repo terminal activation from stray DOM focus events.
+   *  Hidden terminals (display:none) can receive xterm focus events — block those
+   *  and restore focus to the legitimate active terminal. */
   const handleTerminalFocus = (id: string) => {
+    const activeTerminals = repositoriesStore.getActiveTerminals();
+    if (activeTerminals.length > 0 && !activeTerminals.includes(id)) {
+      appLogger.warn("terminal", `handleTerminalFocus BLOCKED: ${id} not in active branch`, { activeTerminals });
+      terminalsStore.getActive()?.ref?.focus();
+      return;
+    }
     terminalsStore.setActive(id);
   };
 

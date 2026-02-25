@@ -601,23 +601,33 @@ describe("useTerminalLifecycle", () => {
       expect(terminalsStore.state.activeId).toBe(termA);
     });
 
-    it("allows activation of unassigned terminals (no branch ownership)", () => {
+    it("allows focus when no active branch context exists", () => {
+      // No repo/branch set up — guard skips (activeTerminals is empty)
+      const term = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+
+      lifecycle.handleTerminalFocus(term);
+
+      expect(terminalsStore.state.activeId).toBe(term);
+    });
+
+    it("blocks focus for same-repo different-branch terminal", () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo-feat" });
       repositoriesStore.setActive("/repo");
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      const termOwned = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: "/repo", awaitingInput: null });
-      repositoriesStore.addTerminalToBranch("/repo", "main", termOwned);
-      terminalsStore.setActive(termOwned);
+      const termMain = terminalsStore.add({ sessionId: null, fontSize: 14, name: "Main", cwd: "/repo", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "main", termMain);
+      terminalsStore.setActive(termMain);
 
-      // Create a terminal not assigned to any branch (e.g. freshly created)
-      const termOrphan = terminalsStore.add({ sessionId: null, fontSize: 14, name: "Orphan", cwd: null, awaitingInput: null });
+      const termFeature = terminalsStore.add({ sessionId: null, fontSize: 14, name: "Feature", cwd: "/repo-feat", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "feature", termFeature);
 
-      lifecycle.handleTerminalFocus(termOrphan);
+      lifecycle.handleTerminalFocus(termFeature);
 
-      // Should be allowed — orphan terminals are not blocked
-      expect(terminalsStore.state.activeId).toBe(termOrphan);
+      // Should be blocked — termMain should remain active
+      expect(terminalsStore.state.activeId).toBe(termMain);
     });
   });
 
