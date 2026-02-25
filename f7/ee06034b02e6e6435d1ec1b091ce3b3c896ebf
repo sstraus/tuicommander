@@ -1,0 +1,40 @@
+examples/plugins/claude-status/main.js
+  77b5d513999037d0 1-74
+docs/plugins.md
+  77b5d513999037d0 983
+examples/plugins/claude-status/manifest.json
+  77b5d513999037d0 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "f7ee06034b02e6e6435d1ec1b091ce3b3c896ebf",
+  "prompts": {
+    "519d05160e6ef99a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "95ef6175-af0b-4b4b-988c-dc5c5c94ec8a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 342,
+      "overriden_lines": 0
+    },
+    "77b5d513999037d0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fe7cbda9-e15e-44a7-9951-5979344beed7",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 86,
+      "total_deletions": 0,
+      "accepted_lines": 86,
+      "overriden_lines": 0
+    }
+  }
+}
