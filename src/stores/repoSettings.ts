@@ -1,6 +1,7 @@
 import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "../invoke";
 import { repoDefaultsStore } from "./repoDefaults";
+import type { WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge } from "./repoDefaults";
 
 /** Per-repository settings — overridable fields are nullable (null = inherit from global defaults) */
 export interface RepoSettings {
@@ -19,6 +20,20 @@ export interface RepoSettings {
   color: string;
   /** null = inherit global default (true on macOS). When false: left-Option sends composition chars instead of meta sequences */
   terminalMetaHotkeys: boolean | null;
+  /** null = inherit from repoDefaultsStore */
+  worktreeStorage: WorktreeStorage | null;
+  /** null = inherit from repoDefaultsStore */
+  promptOnCreate: boolean | null;
+  /** null = inherit from repoDefaultsStore */
+  deleteBranchOnRemove: boolean | null;
+  /** null = inherit from repoDefaultsStore */
+  autoArchiveMerged: boolean | null;
+  /** null = inherit from repoDefaultsStore */
+  orphanCleanup: OrphanCleanup | null;
+  /** null = inherit from repoDefaultsStore */
+  prMergeStrategy: MergeStrategy | null;
+  /** null = inherit from repoDefaultsStore */
+  afterMerge: WorktreeAfterMerge | null;
 }
 
 /** Fully resolved settings with no nulls — use getEffective() to obtain */
@@ -32,12 +47,21 @@ export interface EffectiveRepoSettings {
   runScript: string;
   color: string;
   terminalMetaHotkeys: boolean;
+  worktreeStorage: WorktreeStorage;
+  promptOnCreate: boolean;
+  deleteBranchOnRemove: boolean;
+  autoArchiveMerged: boolean;
+  orphanCleanup: OrphanCleanup;
+  prMergeStrategy: MergeStrategy;
+  afterMerge: WorktreeAfterMerge;
 }
 
 /** Fields that can be overridden per-repo (all others are repo-specific) */
 const OVERRIDABLE_NULL_DEFAULTS: Pick<
   RepoSettings,
-  "baseBranch" | "copyIgnoredFiles" | "copyUntrackedFiles" | "setupScript" | "runScript" | "terminalMetaHotkeys"
+  | "baseBranch" | "copyIgnoredFiles" | "copyUntrackedFiles" | "setupScript" | "runScript"
+  | "terminalMetaHotkeys" | "worktreeStorage" | "promptOnCreate" | "deleteBranchOnRemove"
+  | "autoArchiveMerged" | "orphanCleanup" | "prMergeStrategy" | "afterMerge"
 > = {
   baseBranch: null,
   copyIgnoredFiles: null,
@@ -45,6 +69,13 @@ const OVERRIDABLE_NULL_DEFAULTS: Pick<
   setupScript: null,
   runScript: null,
   terminalMetaHotkeys: null,
+  worktreeStorage: null,
+  promptOnCreate: null,
+  deleteBranchOnRemove: null,
+  autoArchiveMerged: null,
+  orphanCleanup: null,
+  prMergeStrategy: null,
+  afterMerge: null,
 };
 
 /** Repository settings store state */
@@ -132,6 +163,13 @@ function createRepoSettingsStore() {
         setupScript: settings.setupScript ?? defaults.setupScript,
         runScript: settings.runScript ?? defaults.runScript,
         terminalMetaHotkeys: settings.terminalMetaHotkeys ?? true,
+        worktreeStorage: settings.worktreeStorage ?? defaults.worktreeStorage,
+        promptOnCreate: settings.promptOnCreate ?? defaults.promptOnCreate,
+        deleteBranchOnRemove: settings.deleteBranchOnRemove ?? defaults.deleteBranchOnRemove,
+        autoArchiveMerged: settings.autoArchiveMerged ?? defaults.autoArchiveMerged,
+        orphanCleanup: settings.orphanCleanup ?? defaults.orphanCleanup,
+        prMergeStrategy: settings.prMergeStrategy ?? defaults.prMergeStrategy,
+        afterMerge: settings.afterMerge ?? defaults.afterMerge,
       };
     },
 
