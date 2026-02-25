@@ -326,7 +326,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
           case "rate-limit": {
             const detectedAgent = terminalsStore.get(props.id)?.agentType;
             appLogger.debug("terminal", `[RateLimit] pattern=${parsed.pattern_name} matched="${parsed.matched_text}" agent=${detectedAgent ?? "none"} sessionId=${targetSessionId}`);
-            if (detectedAgent) {
+            // Deduplicate: skip if this session was rate-limited less than 5s ago
+            // (resize redraws can re-match the same rate-limit text)
+            const existing = rateLimitStore.getRateLimitInfo(targetSessionId);
+            const recentlyDetected = existing && (Date.now() - existing.detectedAt) < 5000;
+            if (detectedAgent && !recentlyDetected) {
               const info = {
                 agentType: detectedAgent,
                 sessionId: targetSessionId,
@@ -347,12 +351,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
               notificationsStore.playQuestion();
             }
             break;
-          case "usage-limit":
-            appLogger.debug("terminal", `[ParsedEvent] ${props.id} usage-limit ${parsed.percentage}% ${parsed.limit_type}`);
-            terminalsStore.update(props.id, {
-              usageLimit: { percentage: parsed.percentage, limitType: parsed.limit_type },
-            });
+          case "usage-limit": {
+            const current = terminalsStore.get(props.id)?.usageLimit;
+            if (current?.percentage !== parsed.percentage || current?.limitType !== parsed.limit_type) {
+              appLogger.debug("terminal", `[ParsedEvent] ${props.id} usage-limit ${parsed.percentage}% ${parsed.limit_type}`);
+              terminalsStore.update(props.id, {
+                usageLimit: { percentage: parsed.percentage, limitType: parsed.limit_type },
+              });
+            }
             break;
+          }
           case "plan-file":
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} plan-file path="${parsed.path}"`);
             // Plan file detected — play a subtle info tone (not a question).
