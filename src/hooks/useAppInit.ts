@@ -76,7 +76,7 @@ function collectTerminalSnapshots(): Map<string, Map<string, SavedTerminal[]>> {
 
 /** App initialization: hydrate stores, reconnect PTY sessions, restore state */
 export async function initApp(deps: AppInitDeps) {
-  appLogger.error("app", `initApp called — existing terminals: [${terminalsStore.getIds().join(", ")}]`);
+  appLogger.info("app", `initApp called — existing terminals: [${terminalsStore.getIds().join(", ")}]`);
   appLogger.debug("app", "SolidJS App mounted");
 
   const platform = deps.applyPlatformClass();

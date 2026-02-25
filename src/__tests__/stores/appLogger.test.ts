@@ -200,19 +200,28 @@ describe("appLogger", () => {
 
   it("push sends null dataJson when no data provided", async () => {
     createRoot(() => {
-      appLogger.info("app", "plain message");
+      appLogger.warn("app", "plain message");
     });
 
     await vi.waitFor(() => {
       expect(mockRpc).toHaveBeenCalledWith(
         "push_log",
         expect.objectContaining({
-          level: "info",
+          level: "warn",
           source: "app",
           message: "plain message",
           dataJson: null,
         }),
       );
+    });
+  });
+
+  it("debug and info levels do not mirror to Rust", () => {
+    createRoot(() => {
+      mockRpc.mockClear();
+      appLogger.debug("app", "debug msg");
+      appLogger.info("app", "info msg");
+      expect(mockRpc).not.toHaveBeenCalled();
     });
   });
 

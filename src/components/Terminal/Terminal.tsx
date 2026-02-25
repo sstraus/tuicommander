@@ -364,11 +364,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
             });
             break;
           case "plan-file":
-            appLogger.debug("terminal", `[ParsedEvent] ${props.id} plan-file path="${parsed.path}" → setAwaitingInput("question")`);
-            // Mark terminal as awaiting input — the plan needs user approval
-            terminalsStore.setAwaitingInput(props.id, "question");
+            appLogger.debug("terminal", `[ParsedEvent] ${props.id} plan-file path="${parsed.path}"`);
+            // Plan file detected — play a subtle info tone (not a question).
             if (terminalsStore.state.activeId !== props.id) {
-              notificationsStore.playQuestion();
+              notificationsStore.playInfo();
             }
             // Also handled by planPlugin via dispatchStructuredEvent below
             break;
@@ -708,6 +707,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
               });
             }
             callback(links.length > 0 ? links : undefined);
+          }).catch(() => {
+            // Ensure xterm always gets its callback even on failure
+            callback(undefined);
           });
         },
       });

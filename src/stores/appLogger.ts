@@ -148,9 +148,12 @@ function createAppLogger() {
       case "debug": console.debug(tag, message, data !== undefined ? data : ""); break;
     }
 
-    // Mirror to Rust backend (fire-and-forget)
-    const dataJson = data !== undefined ? JSON.stringify(data) : undefined;
-    pushToRust(level, source, message, dataJson);
+    // Mirror warn/error to Rust backend for cross-reload durability.
+    // Skip debug/info — they're high-frequency (PTY events) and ephemeral.
+    if (level === "warn" || level === "error") {
+      const dataJson = data !== undefined ? JSON.stringify(data) : undefined;
+      pushToRust(level, source, message, dataJson);
+    }
   }
 
   function getEntries(): readonly AppLogEntry[] {
