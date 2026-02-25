@@ -142,6 +142,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
       const toRemove: string[] = [];
       for (const branchName of Object.keys(currentRepo.branches)) {
         if (!(branchName in worktreePaths) && !localSet.has(branchName)) {
+          // Never remove the active branch — it has the user's terminal focus
+          if (branchName === currentRepo.activeBranch) {
+            appLogger.warn("terminal", `refreshAllBranchStats: keeping "${branchName}" — is activeBranch of ${repoPath}`);
+            continue;
+          }
           // Never remove a branch that still has live terminals in the store
           const branchState = currentRepo.branches[branchName];
           const hasLiveTerminals = branchState?.terminals.some(id => storeIds.has(id));

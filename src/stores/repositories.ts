@@ -366,6 +366,15 @@ function createRepositoriesStore() {
       const repo = state.repositories[repoPath];
       if (!repo) return;
 
+      const branch = repo.branches[branchName];
+      if (branch) {
+        appLogger.error("terminal", `removeBranch "${branchName}" from ${repoPath}`, {
+          terminals: branch.terminals,
+          hadTerminals: branch.hadTerminals,
+          savedTerminals: branch.savedTerminals?.length ?? 0,
+        });
+      }
+
       setState(
         produce((s) => {
           const r = s.repositories[repoPath];

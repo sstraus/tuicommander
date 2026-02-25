@@ -2,6 +2,7 @@ import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
 import { githubStore } from "../stores/github";
+import { appLogger } from "../stores/appLogger";
 import { invoke, listen } from "../invoke";
 import { isTauri } from "../transport";
 import type { SavedTerminal } from "../types";
@@ -75,6 +76,7 @@ function collectTerminalSnapshots(): Map<string, Map<string, SavedTerminal[]>> {
 
 /** App initialization: hydrate stores, reconnect PTY sessions, restore state */
 export async function initApp(deps: AppInitDeps) {
+  appLogger.error("app", `initApp called — existing terminals: [${terminalsStore.getIds().join(", ")}]`);
   console.log("[SolidJS] App mounted");
 
   const platform = deps.applyPlatformClass();
@@ -106,8 +108,20 @@ export async function initApp(deps: AppInitDeps) {
     }
   });
 
+  // Periodic terminal snapshot — ensures savedTerminals is always fresh
+  // so app restart recovers terminals even if beforeunload fails.
+  const SNAPSHOT_INTERVAL_MS = 30_000;
+  const snapshotTimer = setInterval(() => {
+    const snapshots = collectTerminalSnapshots();
+    if (snapshots.size > 0) {
+      repositoriesStore.snapshotTerminals(snapshots);
+    }
+  }, SNAPSHOT_INTERVAL_MS);
+
   // Snapshot terminal metadata and close all PTY sessions on app exit
   window.addEventListener("beforeunload", () => {
+    clearInterval(snapshotTimer);
+
     // 1. Snapshot terminal metadata per repo/branch before closing
     const snapshots = collectTerminalSnapshots();
     if (snapshots.size > 0) {
