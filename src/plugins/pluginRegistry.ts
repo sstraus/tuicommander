@@ -105,6 +105,7 @@ function createPluginRegistry() {
 
       log(level, message, data) {
         logger.log(level, message, data);
+        appLogger.push(level, "plugin", `[${pluginId}] ${message}`, data);
       },
 
       // -- Tier 1: Activity Center + watchers + providers --
