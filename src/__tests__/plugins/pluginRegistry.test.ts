@@ -468,6 +468,93 @@ describe("PluginHost — Tier 2 read-only state", () => {
     }));
     expect(result).toBeNull();
   });
+
+  it("getTerminalState returns null when no terminal active", () => {
+    let result: ReturnType<PluginHost["getTerminalState"]> = undefined as never;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      result = host.getTerminalState();
+    }));
+    expect(result).toBeNull();
+  });
+
+  it("onStateChange returns a disposable", () => {
+    let disposable: { dispose: () => void } | null = null;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      disposable = host.onStateChange(() => {});
+    }));
+    expect(disposable).not.toBeNull();
+    expect(typeof disposable!.dispose).toBe("function");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 2b: git:read capability gating
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — git:read capability gating", () => {
+  it("external plugin without git:read throws on getGitBranches", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no capabilities
+    );
+    await expect(host!.getGitBranches("/some/repo")).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with git:read can call getGitBranches", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["git:read"],
+    );
+    // invoke is mocked to resolve — should not throw
+    await expect(host!.getGitBranches("/some/repo")).resolves.toBeDefined();
+  });
+
+  it("external plugin without git:read throws on getRecentCommits", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [],
+    );
+    await expect(host!.getRecentCommits("/some/repo")).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with git:read can call getRecentCommits", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["git:read"],
+    );
+    await expect(host!.getRecentCommits("/some/repo", 5)).resolves.toBeDefined();
+  });
+
+  it("external plugin without git:read throws on getGitDiff", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [],
+    );
+    await expect(host!.getGitDiff("/some/repo")).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with git:read can call getGitDiff", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["git:read"],
+    );
+    await expect(host!.getGitDiff("/some/repo", "staged")).resolves.toBeDefined();
+  });
+
+  it("built-in plugin can call git:read methods without capability", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    // Built-in plugins have null capabilities (unrestricted)
+    await expect(host!.getGitBranches("/some/repo")).resolves.toBeDefined();
+    await expect(host!.getRecentCommits("/some/repo")).resolves.toBeDefined();
+    await expect(host!.getGitDiff("/some/repo")).resolves.toBeDefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

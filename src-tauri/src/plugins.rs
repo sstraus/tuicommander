@@ -63,6 +63,7 @@ const KNOWN_CAPABILITIES: &[&str] = &[
     "ui:panel",
     "ui:ticker",
     "exec:cli",
+    "git:read",
 ];
 
 /// Validate a parsed manifest for required fields and sanity.

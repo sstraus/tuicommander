@@ -33,6 +33,8 @@ import type {
   RepoListEntry,
   PrNotificationSnapshot,
   RepoSettingsSnapshot,
+  StateChangeEvent,
+  TerminalStateSnapshot,
 } from "./types";
 
 /**
@@ -60,6 +62,9 @@ function createPluginRegistry() {
     string,
     Array<{ pluginId: string; handler: (payload: unknown, sessionId: string) => void }>
   >();
+
+  // State change listeners for terminal/branch changes
+  const stateChangeListeners: Array<{ pluginId: string; callback: (event: StateChangeEvent) => void }> = [];
 
   // -------------------------------------------------------------------------
   // Agent-type filtering
@@ -229,6 +234,57 @@ function createPluginRegistry() {
           baseBranch: effective.baseBranch,
           color: effective.color,
         };
+      },
+
+      getTerminalState(): TerminalStateSnapshot | null {
+        const terminal = terminalsStore.getActive();
+        if (!terminal) return null;
+        const repoPath = this.getRepoPathForSession(terminal.sessionId ?? "");
+        return {
+          sessionId: terminal.sessionId,
+          shellState: terminal.shellState,
+          agentType: terminal.agentType,
+          agentActive: terminal.agentType !== null,
+          awaitingInput: terminal.awaitingInput,
+          repoPath,
+        };
+      },
+
+      onStateChange(callback: (event: StateChangeEvent) => void): Disposable {
+        const entry = { pluginId, callback };
+        stateChangeListeners.push(entry);
+        return track({
+          dispose() {
+            const idx = stateChangeListeners.indexOf(entry);
+            if (idx >= 0) stateChangeListeners.splice(idx, 1);
+          },
+        });
+      },
+
+      // -- Tier 2b: Git read (capability-gated) --
+
+      async getGitBranches(repoPath: string): Promise<Array<{ name: string; isCurrent: boolean }>> {
+        requireCapability(pluginId, capabilities, "git:read");
+        const raw = await invoke<Array<{ name: string; is_current: boolean }>>(
+          "get_git_branches",
+          { path: repoPath },
+        );
+        return (raw ?? []).map((b) => ({ name: b.name, isCurrent: b.is_current }));
+      },
+
+      async getRecentCommits(repoPath: string, count?: number): Promise<Array<{ hash: string; message: string; author: string; date: string }>> {
+        requireCapability(pluginId, capabilities, "git:read");
+        const raw = await invoke<Array<{ hash: string; message: string; author: string; date: string }>>(
+          "get_recent_commits",
+          { path: repoPath, count: count ?? 20 },
+        );
+        return raw ?? [];
+      },
+
+      async getGitDiff(repoPath: string, scope?: "staged" | "unstaged"): Promise<string> {
+        requireCapability(pluginId, capabilities, "git:read");
+        const raw = await invoke<string>("get_git_diff", { path: repoPath, scope: scope ?? null });
+        return raw ?? "";
       },
 
       // -- Tier 3: Write actions (capability-gated) --
@@ -590,14 +646,27 @@ function createPluginRegistry() {
   }
 
   /** Remove all plugins and registrations (for testing). */
+  /** Notify all state change listeners of a terminal/branch state change */
+  function notifyStateChange(event: StateChangeEvent): void {
+    for (const { callback } of stateChangeListeners) {
+      try {
+        callback(event);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        appLogger.error("plugin", `State change listener threw: ${msg}`, err);
+      }
+    }
+  }
+
   function clear(): void {
     for (const id of [...plugins.keys()]) {
       unregister(id);
     }
     lineBuffers.clear();
+    stateChangeListeners.length = 0;
   }
 
-  return { register, unregister, processRawOutput, dispatchLine, dispatchStructuredEvent, removeSession, clear };
+  return { register, unregister, processRawOutput, dispatchLine, dispatchStructuredEvent, notifyStateChange, removeSession, clear };
 }
 
 export const pluginRegistry = createPluginRegistry();

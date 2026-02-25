@@ -291,6 +291,54 @@ const settings = host.getSettings("/Users/me/project");
 // { path, displayName, baseBranch: "main", color: "#3fb950" }
 ```
 
+#### host.getTerminalState() -> TerminalStateSnapshot | null
+
+Returns the active terminal's state snapshot.
+
+```typescript
+const state = host.getTerminalState();
+// { sessionId, shellState: "busy"|"idle"|null, agentType: "claude"|null,
+//   agentActive: boolean, awaitingInput: "question"|null, repoPath }
+```
+
+#### host.onStateChange(callback) -> Disposable
+
+Register a callback for terminal/branch state changes. Fires on agent start/stop, branch change, shell state change, and awaiting-input change.
+
+```typescript
+const sub = host.onStateChange((event) => {
+  // event.type: "agent-started" | "agent-stopped" | "branch-changed"
+  //           | "shell-state-changed" | "awaiting-input-changed"
+  // event.sessionId, event.terminalId, event.detail (branch name for branch-changed)
+});
+// sub.dispose() to unsubscribe
+```
+
+### Tier 2b: Git Read (capability-gated)
+
+These methods require declaring `"git:read"` in `manifest.json`. They provide read-only access to git repository state.
+
+#### host.getGitBranches(repoPath) -> Promise<Array<{ name, isCurrent }>>
+
+```typescript
+const branches = await host.getGitBranches("/Users/me/project");
+// [{ name: "main", isCurrent: true }, { name: "feature/x", isCurrent: false }]
+```
+
+#### host.getRecentCommits(repoPath, count?) -> Promise<Array<{ hash, message, author, date }>>
+
+```typescript
+const commits = await host.getRecentCommits("/Users/me/project", 5);
+// [{ hash: "abc1234", message: "fix: bug", author: "name", date: "2026-02-25" }]
+```
+
+#### host.getGitDiff(repoPath, scope?) -> Promise<string>
+
+```typescript
+const diff = await host.getGitDiff("/Users/me/project", "staged");
+// Returns unified diff string
+```
+
 ### Tier 3: Write Actions (capability-gated)
 
 These methods require declaring capabilities in `manifest.json`. Calling without the required capability throws `PluginCapabilityError`.
@@ -606,6 +654,7 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `fs:list` | `host.listDirectory()` | Can list directory contents within `$HOME` |
 | `fs:watch` | `host.watchPath()` | Can watch filesystem paths within `$HOME` for changes |
 | `exec:cli` | `host.execCli()` | Can execute whitelisted CLI binaries (see below) |
+| `git:read` | `host.getGitBranches()`, `host.getRecentCommits()`, `host.getGitDiff()` | Read-only access to git repository state |
 
 Tier 1, Tier 2, and plugin data commands are always available without capabilities.
 

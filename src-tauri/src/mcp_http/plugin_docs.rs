@@ -32,7 +32,7 @@ Constraints:
 - `id` must match directory name exactly, non-empty
 - `main` must be a filename only (no path separators or `..`)
 - `minAppVersion` must be <= current app version (current: 0.3.x)
-- `capabilities`: subset of `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `exec:cli`
+- `capabilities`: subset of `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `exec:cli`, `git:read`
 - `allowedUrls`: URL patterns for `net:http` (supports `*` wildcard for path prefix matching)
 - `agentTypes`: optional array of agent type strings. When set, output watchers and structured event handlers only fire for terminals running a matching agent. Omit or use `[]` for universal plugins. Valid values: `claude`, `gemini`, `opencode`, `aider`, `codex`, `amp`, `jules`, `cursor`, `warp`, `ona`, `droid`, `git`.
 - Module default export must have `id`, `onload(host)`, `onunload()`
@@ -158,6 +158,16 @@ host.getActiveTerminalSessionId()  // string | null
 host.getRepoPathForSession(sessionId: string)  // string | null (repo owning this terminal session)
 host.getPrNotifications()  // [{ id, repoPath, branch, prNumber, title, type }]
 host.getSettings(repoPath: string) // { path, displayName, baseBranch, color } | null
+host.getTerminalState()    // { sessionId, shellState, agentType, agentActive, awaitingInput, repoPath } | null
+host.onStateChange(cb)     // Disposable — fires on agent start/stop, branch/state change
+```
+
+### Tier 2b: Git Read (requires `git:read` capability)
+
+```typescript
+host.getGitBranches(repoPath)           // [{ name, isCurrent }]
+host.getRecentCommits(repoPath, count?) // [{ hash, message, author, date }]
+host.getGitDiff(repoPath, scope?)       // unified diff string (scope: "staged" | "unstaged")
 ```
 
 ### Tier 3: Write Actions (capability-gated)

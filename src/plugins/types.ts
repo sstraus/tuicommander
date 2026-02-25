@@ -153,6 +153,25 @@ export interface RepoSettingsSnapshot {
   color: string;
 }
 
+/** Read-only snapshot of a terminal's state for plugins */
+export interface TerminalStateSnapshot {
+  sessionId: string | null;
+  shellState: "busy" | "idle" | null;
+  agentType: string | null;
+  agentActive: boolean;
+  awaitingInput: "question" | "error" | "confirmation" | null;
+  repoPath: string | null;
+}
+
+/** Event payload for terminal/branch state changes */
+export interface StateChangeEvent {
+  type: "agent-started" | "agent-stopped" | "branch-changed" | "shell-state-changed" | "awaiting-input-changed";
+  sessionId: string | null;
+  terminalId: string;
+  /** For branch-changed: the new branch name */
+  detail?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Capabilities
 // ---------------------------------------------------------------------------
@@ -185,7 +204,8 @@ export type PluginCapability =
   | "credentials:read"
   | "ui:panel"
   | "ui:ticker"
-  | "exec:cli";
+  | "exec:cli"
+  | "git:read";
 
 /** Error thrown when a plugin calls a method without the required capability */
 export class PluginCapabilityError extends Error {
@@ -325,6 +345,38 @@ export interface PluginHost {
 
   /** Get effective settings for a repository */
   getSettings(repoPath: string): RepoSettingsSnapshot | null;
+
+  /** Get the active terminal's state snapshot, or null if no terminal is active */
+  getTerminalState(): TerminalStateSnapshot | null;
+
+  /**
+   * Register a callback for terminal/branch state changes.
+   * Fires on agent start/stop, branch change, shell state change, and awaiting-input change.
+   * Returns a Disposable to unsubscribe.
+   */
+  onStateChange(callback: (event: StateChangeEvent) => void): Disposable;
+
+  // -- Tier 2b: Git read (capability-gated) --
+
+  /**
+   * Get branches for a repository. Requires "git:read" capability.
+   * @param repoPath - Absolute path to the repository
+   */
+  getGitBranches(repoPath: string): Promise<Array<{ name: string; isCurrent: boolean }>>;
+
+  /**
+   * Get recent commits for a repository. Requires "git:read" capability.
+   * @param repoPath - Absolute path to the repository
+   * @param count - Number of commits to return (default 20)
+   */
+  getRecentCommits(repoPath: string, count?: number): Promise<Array<{ hash: string; message: string; author: string; date: string }>>;
+
+  /**
+   * Get git diff for a repository. Requires "git:read" capability.
+   * @param repoPath - Absolute path to the repository
+   * @param scope - Optional: "staged", "unstaged", or omit for combined
+   */
+  getGitDiff(repoPath: string, scope?: "staged" | "unstaged"): Promise<string>;
 
   // -- Tier 3: Write actions (capability-gated) --
 
