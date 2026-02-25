@@ -1,10 +1,10 @@
 ---
-id: "377-94b1"
+id: 377-94b1
 title: "Plugin API gap - add getTerminalState, onStateChange and git:read capability"
-status: pending
+status: complete
 priority: P2
-created: 2026-02-25T07:45:42.397Z
-updated: 2026-02-25T07:45:42.397Z
+created: "2026-02-25T07:45:42.397Z"
+updated: "2026-02-25T08:42:14.440Z"
 dependencies: []
 ---
 
@@ -32,4 +32,6 @@ Research (session 95ef6175) identified: getTerminalState() + onStateChange() wou
 - src-tauri/src/mcp_http/plugin_docs.rs
 
 ## Work Log
+
+### 2026-02-25T08:42:14.375Z - Added getTerminalState(), onStateChange(), git:read capability (getGitBranches, getRecentCommits, getGitDiff). Updated types.ts, pluginRegistry.ts, plugins.rs, docs/plugins.md, plugin_docs.rs. 9 new tests, 179 total passing.
 
