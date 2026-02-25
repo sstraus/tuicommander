@@ -373,6 +373,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           case "user-input":
             console.debug(`[ParsedEvent] ${props.id} user-input content="${(parsed as { content: string }).content.slice(0, 80)}"`);
+            // Refresh last relevant prompt from Rust (word-count filtering happens backend-side)
+            invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
+              if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
+            });
             break;
         }
 

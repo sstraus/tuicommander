@@ -562,6 +562,9 @@ pub struct AppState {
     /// Per-session input line buffers for reconstructing user input from PTY writes.
     /// Separate DashMap (like kitty_states) to avoid writer lock contention.
     pub(crate) input_buffers: DashMap<String, Mutex<crate::input_line_buffer::InputLineBuffer>>,
+    /// Last relevant user prompt per session (>= 10 words).
+    /// Updated on each qualifying user input line, read by the Activity Dashboard.
+    pub(crate) last_prompts: DashMap<String, String>,
     /// Incremental cache for Claude session transcript parsing.
     /// Loaded from disk on startup, persisted after each scan.
     pub(crate) claude_usage_cache: Mutex<crate::claude_usage::SessionStatsCache>,
@@ -931,6 +934,7 @@ mod tests {
             plugin_watchers: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
+            last_prompts: dashmap::DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
         }
     }

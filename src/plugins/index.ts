@@ -2,15 +2,15 @@ import { pluginRegistry } from "./pluginRegistry";
 import { pluginStore } from "../stores/pluginStore";
 import { loadUserPlugins, isPluginDisabled, syncDisabledList, registerBuiltInPlugin } from "./pluginLoader";
 import { planPlugin } from "./planPlugin";
-import { sessionPromptPlugin } from "./sessionPromptPlugin";
 import { initClaudeUsage, destroyClaudeUsage } from "../features/claudeUsage";
 import type { TuiPlugin } from "./types";
 
 /**
  * Built-in plugins shipped with TUICommander.
+ * Session prompts moved to native Rust (last_prompts in AppState, displayed in Activity Dashboard).
  * Claude Usage Dashboard was moved from plugin to native feature (src/features/claudeUsage.ts).
  */
-const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin, sessionPromptPlugin];
+const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin];
 
 /**
  * Register all built-in plugins, then discover and load user plugins.

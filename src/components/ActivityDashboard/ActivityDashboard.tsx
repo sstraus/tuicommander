@@ -34,6 +34,13 @@ function getTerminalStatus(
   return result;
 }
 
+/** Truncate a prompt to a single line for display */
+function truncatePrompt(prompt: string, maxLen = 80): string {
+  const oneLine = prompt.replace(/\n/g, " ").trim();
+  if (oneLine.length <= maxLen) return oneLine;
+  return oneLine.slice(0, maxLen - 1) + "\u2026";
+}
+
 export const ActivityDashboard: Component = () => {
   const [, setTick] = createSignal(0);
   const isOpen = () => activityDashboardStore.state.isOpen;
@@ -82,6 +89,7 @@ export const ActivityDashboard: Component = () => {
         agent: term.agentType || "shell",
         status,
         lastDataAt: term.lastDataAt,
+        lastPrompt: term.lastPrompt,
         isActive: terminalsStore.state.activeId === id,
       };
     }).filter(Boolean) as Array<{
@@ -90,6 +98,7 @@ export const ActivityDashboard: Component = () => {
       agent: string;
       status: { label: string; className: string };
       lastDataAt: number | null;
+      lastPrompt: string | null;
       isActive: boolean;
     }>;
   };
@@ -116,10 +125,20 @@ export const ActivityDashboard: Component = () => {
                   class={`${s.row} ${term.isActive ? s.activeRow : ""}`}
                   onClick={() => handleRowClick(term.id)}
                 >
-                  <span class={s.termName}>{term.name}</span>
-                  <span class={s.agent}>{term.agent}</span>
-                  <span class={`${s.status} ${term.status.className}`}>{term.status.label}</span>
-                  <span class={s.lastActivity}>{formatRelativeTime(term.lastDataAt)}</span>
+                  <div class={s.rowMain}>
+                    <span class={s.termName}>{term.name}</span>
+                    <span class={s.agent}>{term.agent}</span>
+                    <span class={`${s.status} ${term.status.className}`}>{term.status.label}</span>
+                    <span class={s.lastActivity}>{formatRelativeTime(term.lastDataAt)}</span>
+                  </div>
+                  <Show when={term.lastPrompt}>
+                    <div class={s.promptRow} title={term.lastPrompt!}>
+                      <svg class={s.promptIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                        <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h11A1.5 1.5 0 0 1 15 3.5v7A1.5 1.5 0 0 1 13.5 12H9.373l-2.62 1.81A.75.75 0 0 1 5.6 13.2V12H2.5A1.5 1.5 0 0 1 1 10.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5H6.35a.75.75 0 0 1 .75.75v.83l1.81-1.25a.75.75 0 0 1 .427-.133H13.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-11Z"/>
+                      </svg>
+                      <span class={s.promptText}>{truncatePrompt(term.lastPrompt!)}</span>
+                    </div>
+                  </Show>
                 </div>
               )}
             </For>

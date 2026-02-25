@@ -65,11 +65,9 @@
 }
 
 .row {
-  display: grid;
-  grid-template-columns: 1fr 80px 100px 80px;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
   padding: 8px 16px;
-  gap: 12px;
   cursor: pointer;
   border-left: 3px solid transparent;
 }
@@ -81,6 +79,13 @@
 .activeRow {
   border-left-color: var(--accent);
   background: var(--bg-highlight);
+}
+
+.rowMain {
+  display: grid;
+  grid-template-columns: 1fr 80px 100px 80px;
+  align-items: center;
+  gap: 12px;
 }
 
 .termName {
@@ -130,6 +135,31 @@
   color: var(--fg-muted);
   text-align: right;
   white-space: nowrap;
+}
+
+/* Last prompt sub-row */
+.promptRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-left: 2px;
+  min-width: 0;
+}
+
+.promptIcon {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+  opacity: 0.6;
+}
+
+.promptText {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
 }
 
 .footer {

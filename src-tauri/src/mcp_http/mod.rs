@@ -360,6 +360,7 @@ mod tests {
             plugin_watchers: DashMap::new(),
             kitty_states: DashMap::new(),
             input_buffers: DashMap::new(),
+            last_prompts: DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
         })
     }

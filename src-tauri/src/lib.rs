@@ -560,6 +560,7 @@ pub fn run() {
         plugin_watchers: DashMap::new(),
         kitty_states: DashMap::new(),
         input_buffers: DashMap::new(),
+        last_prompts: DashMap::new(),
         claude_usage_cache: parking_lot::Mutex::new(claude_usage::load_cache_from_disk()),
     });
 
@@ -685,6 +686,7 @@ pub fn run() {
             pty::pause_pty,
             pty::resume_pty,
             pty::get_kitty_flags,
+            pty::get_last_prompt,
             pty::close_pty,
             worktree::get_worktrees_dir,
             git::get_repo_info,

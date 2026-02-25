@@ -660,6 +660,11 @@ pub(crate) fn write_pty(
             match action {
                 InputAction::Line(content) => {
                     if !content.is_empty() {
+                        // Store as last relevant prompt if >= 10 words
+                        let word_count = content.split_whitespace().count();
+                        if word_count >= 10 {
+                            state.last_prompts.insert(session_id.clone(), content.clone());
+                        }
                         let _ = app.emit(
                             &format!("pty-parsed-{session_id}"),
                             &ParsedEvent::UserInput { content },
@@ -676,6 +681,15 @@ pub(crate) fn write_pty(
     } else {
         Err("Session not found".to_string())
     }
+}
+
+/// Get the last relevant user prompt (>= 10 words) for a PTY session.
+#[tauri::command]
+pub(crate) fn get_last_prompt(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Option<String> {
+    state.last_prompts.get(&session_id).map(|v| v.clone())
 }
 
 /// Resize a PTY session
