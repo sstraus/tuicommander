@@ -44,6 +44,11 @@ pub enum ParsedEvent {
     PlanFile {
         path: String,
     },
+    /// User submitted a line of input via the PTY (reconstructed from keystrokes)
+    #[serde(rename = "user-input")]
+    UserInput {
+        content: String,
+    },
 }
 
 /// OutputParser: detects structured events in PTY output text.

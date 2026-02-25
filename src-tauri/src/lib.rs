@@ -6,6 +6,7 @@ pub(crate) mod config;
 mod dictation;
 pub(crate) mod error_classification;
 pub(crate) mod fs;
+mod input_line_buffer;
 pub(crate) mod git;
 pub(crate) mod github;
 pub(crate) mod head_watcher;
@@ -14,6 +15,7 @@ pub(crate) mod mcp_http;
 mod menu;
 mod output_parser;
 pub(crate) mod plugin_credentials;
+pub(crate) mod plugin_exec;
 pub(crate) mod plugin_fs;
 pub(crate) mod plugin_http;
 pub(crate) mod plugins;
@@ -557,6 +559,7 @@ pub fn run() {
         app_handle: parking_lot::RwLock::new(None),
         plugin_watchers: DashMap::new(),
         kitty_states: DashMap::new(),
+        input_buffers: DashMap::new(),
         claude_usage_cache: parking_lot::Mutex::new(claude_usage::load_cache_from_disk()),
     });
 
@@ -796,6 +799,7 @@ pub fn run() {
             plugin_fs::plugin_watch_path,
             plugin_fs::plugin_unwatch,
             plugin_http::plugin_http_fetch,
+            plugin_exec::plugin_exec_cli,
             plugin_credentials::plugin_read_credential,
             registry::fetch_plugin_registry,
             claude_usage::get_claude_usage_api,

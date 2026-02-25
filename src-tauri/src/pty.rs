@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
+use crate::input_line_buffer::{InputAction, InputLineBuffer};
 use crate::output_parser::{extract_last_question_line, OutputParser, ParsedEvent};
 use crate::state::{
     AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
@@ -292,6 +293,7 @@ pub(crate) fn spawn_reader_thread(
         state.output_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
+        state.input_buffers.remove(&session_id);
     });
 }
 
@@ -378,6 +380,7 @@ pub(crate) fn spawn_headless_reader_thread(
         state.output_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
+        state.input_buffers.remove(&session_id);
     });
 }
 
@@ -611,6 +614,7 @@ pub(crate) fn list_worktrees(state: State<'_, Arc<AppState>>) -> Vec<serde_json:
 /// Write data to a PTY session
 #[tauri::command]
 pub(crate) fn write_pty(
+    app: AppHandle,
     state: State<'_, Arc<AppState>>,
     session_id: String,
     data: String,
@@ -625,6 +629,29 @@ pub(crate) fn write_pty(
             .writer
             .flush()
             .map_err(|e| format!("Failed to flush PTY: {e}"))?;
+
+        // Feed input through the line buffer to reconstruct user-typed lines
+        let input_entry = state
+            .input_buffers
+            .entry(session_id.clone())
+            .or_insert_with(|| parking_lot::Mutex::new(InputLineBuffer::new()));
+        let actions = input_entry.lock().feed(&data);
+        for action in actions {
+            match action {
+                InputAction::Line(content) => {
+                    if !content.is_empty() {
+                        let _ = app.emit(
+                            &format!("pty-parsed-{session_id}"),
+                            &ParsedEvent::UserInput { content },
+                        );
+                    }
+                }
+                InputAction::Interrupt => {
+                    // Ctrl+C — could emit if needed, but no content to show
+                }
+            }
+        }
+
         Ok(())
     } else {
         Err("Session not found".to_string())
@@ -705,6 +732,7 @@ pub(crate) fn close_pty(
         state.output_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
+        state.input_buffers.remove(&session_id);
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
         let mut session = session_mutex.into_inner();
 

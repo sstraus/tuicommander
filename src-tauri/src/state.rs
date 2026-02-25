@@ -559,6 +559,9 @@ pub struct AppState {
     /// Per-session kitty keyboard protocol state (session_id → state).
     /// Separate DashMap (not inside PtySession) to avoid writer contention.
     pub(crate) kitty_states: DashMap<String, Mutex<KittyKeyboardState>>,
+    /// Per-session input line buffers for reconstructing user input from PTY writes.
+    /// Separate DashMap (like kitty_states) to avoid writer lock contention.
+    pub(crate) input_buffers: DashMap<String, Mutex<crate::input_line_buffer::InputLineBuffer>>,
     /// Incremental cache for Claude session transcript parsing.
     /// Loaded from disk on startup, persisted after each scan.
     pub(crate) claude_usage_cache: Mutex<crate::claude_usage::SessionStatsCache>,
@@ -927,6 +930,7 @@ mod tests {
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
+            input_buffers: dashmap::DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
         }
     }

@@ -614,6 +614,66 @@ describe("PluginHost — Tier 3c readCredential capability gating", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Tier 3g: CLI execution capability gating
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — execCli capability gating", () => {
+  it("external plugin without exec:cli throws on execCli", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no capabilities
+    );
+    await expect(host!.execCli("mdkb", ["status"])).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with exec:cli can call execCli", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["exec:cli"],
+    );
+    // invoke is mocked → resolves, should not throw capability error
+    await expect(host!.execCli("mdkb", ["--format", "json", "status"], "/Users/me/project")).resolves.not.toThrow();
+  });
+
+  it("built-in plugin can call execCli without declaring capability", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    await expect(host!.execCli("mdkb", ["status"])).resolves.not.toThrow();
+  });
+
+  it("passes correct args to the Rust command", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["exec:cli"],
+    );
+    await host!.execCli("mdkb", ["--format", "json", "status"], "/Users/me/repo");
+    const { invoke } = await import("../../invoke");
+    expect(invoke).toHaveBeenCalledWith("plugin_exec_cli", {
+      binary: "mdkb",
+      args: ["--format", "json", "status"],
+      cwd: "/Users/me/repo",
+      pluginId: "ext",
+    });
+  });
+
+  it("passes null cwd when not provided", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["exec:cli"],
+    );
+    await host!.execCli("mdkb", ["status"]);
+    const { invoke } = await import("../../invoke");
+    expect(invoke).toHaveBeenCalledWith("plugin_exec_cli", expect.objectContaining({
+      cwd: null,
+    }));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Tier 3d: HTTP fetch capability gating
 // ---------------------------------------------------------------------------
 

@@ -184,7 +184,8 @@ export type PluginCapability =
   | "net:http"
   | "credentials:read"
   | "ui:panel"
-  | "ui:ticker";
+  | "ui:ticker"
+  | "exec:cli";
 
 /** Error thrown when a plugin calls a method without the required capability */
 export class PluginCapabilityError extends Error {
@@ -431,6 +432,18 @@ export interface PluginHost {
    */
   httpFetch(url: string, options?: HttpFetchOptions): Promise<HttpResponse>;
 
+  // -- Tier 3g: CLI execution (capability-gated) --
+
+  /**
+   * Execute a whitelisted CLI binary and return its stdout.
+   * Requires "exec:cli" capability.
+   * Only binaries in the server-side allowlist (e.g. "mdkb") can be executed.
+   * @param binary - Binary name (e.g. "mdkb")
+   * @param args - Command arguments (e.g. ["--format", "json", "status"])
+   * @param cwd - Optional working directory (must be absolute, within $HOME)
+   */
+  execCli(binary: string, args: string[], cwd?: string): Promise<string>;
+
   // -- Tier 4: Scoped Tauri invoke (whitelisted commands only) --
 
   /** Invoke a whitelisted Tauri command. See INVOKE_WHITELIST for allowed commands. */
@@ -449,7 +462,7 @@ export interface PluginHost {
  *   onunload — dispose all registrations
  */
 export interface TuiPlugin {
-  /** Unique plugin identifier (e.g. "plan", "wiz-stories") */
+  /** Unique plugin identifier (e.g. "plan") */
   id: string;
   /**
    * Called once when the plugin is registered.

@@ -28,7 +28,8 @@ type ParsedEvent =
   | { type: "progress"; state: number; value: number }
   | { type: "question"; prompt_text: string }
   | { type: "usage-limit"; percentage: number; limit_type: string }
-  | { type: "plan-file"; path: string };
+  | { type: "plan-file"; path: string }
+  | { type: "user-input"; content: string };
 
 export interface TerminalProps {
   id: string;
@@ -368,6 +369,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
               notificationsStore.playQuestion();
             }
             // Also handled by planPlugin via dispatchStructuredEvent below
+            break;
+          case "user-input":
+            console.debug(`[ParsedEvent] ${props.id} user-input content="${(parsed as { content: string }).content.slice(0, 80)}"`);
             break;
         }
 
