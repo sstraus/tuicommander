@@ -198,6 +198,17 @@ export async function initApp(deps: AppInitDeps) {
         repositoriesStore.setBranch(repo_path, branch, { name: branch });
       }
       repositoriesStore.setActiveBranch(repo_path, branch);
+
+      // Move terminals from the old branch to the new one when the old branch
+      // was the main checkout (worktreePath null). This covers the race where
+      // refreshAllBranchStats created the new branch entry before head-changed
+      // fired, so renameBranch couldn't be used.
+      if (oldBranch && oldBranchState && oldBranchState.worktreePath === null) {
+        for (const termId of oldBranchState.terminals) {
+          repositoriesStore.removeTerminalFromBranch(repo_path, oldBranch, termId);
+          repositoriesStore.addTerminalToBranch(repo_path, branch, termId);
+        }
+      }
     }
 
     // Invalidate caches so next poll fetches fresh data

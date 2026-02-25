@@ -504,6 +504,31 @@ describe("initApp", () => {
       expect(repositoriesStore.get("/repo")?.activeBranch).toBe("main");
     });
 
+    it("moves terminals when new branch already exists in store (race with refreshAllBranchStats)", async () => {
+      const { getCallback } = captureHeadChanged();
+      const deps = createMockDeps();
+      repositoriesStore.add({ path: "/repo", displayName: "repo" });
+      repositoriesStore.setBranch("/repo", "wip/global-config", { worktreePath: null });
+      repositoriesStore.setActiveBranch("/repo", "wip/global-config");
+      repositoriesStore.addTerminalToBranch("/repo", "wip/global-config", "term-1");
+      repositoriesStore.addTerminalToBranch("/repo", "wip/global-config", "term-2");
+
+      // Simulate refreshAllBranchStats creating the new branch before head-changed fires
+      repositoriesStore.setBranch("/repo", "wip/memory-system-improvements", { worktreePath: null });
+
+      await initApp(deps);
+
+      getCallback()!({ payload: { repo_path: "/repo", branch: "wip/memory-system-improvements" } });
+
+      // Terminals moved to new branch
+      expect(repositoriesStore.get("/repo")?.branches["wip/memory-system-improvements"]?.terminals).toContain("term-1");
+      expect(repositoriesStore.get("/repo")?.branches["wip/memory-system-improvements"]?.terminals).toContain("term-2");
+      // Old branch has no terminals
+      expect(repositoriesStore.get("/repo")?.branches["wip/global-config"]?.terminals).toEqual([]);
+      // Active branch updated
+      expect(repositoriesStore.get("/repo")?.activeBranch).toBe("wip/memory-system-improvements");
+    });
+
     it("does nothing when repo is not found", async () => {
       const { getCallback } = captureHeadChanged();
       const deps = createMockDeps();
