@@ -64,7 +64,7 @@ describe("settingsStore", () => {
         font_family: "JetBrains Mono",
         font_size: 14,
         theme: "tokyo-night",
-        worktree_dir: null,
+
         mcp_server_enabled: false,
         ide: "vscode",
         default_font_size: 12,
@@ -110,7 +110,7 @@ describe("settingsStore", () => {
         font_family: "JetBrains Mono",
         font_size: 14,
         theme: "tokyo-night",
-        worktree_dir: null,
+
         mcp_server_enabled: false,
         ide: "vscode",
         default_font_size: 12,
@@ -157,7 +157,7 @@ describe("settingsStore", () => {
         font_family: "Hack",
         font_size: 14,
         theme: "tokyo-night",
-        worktree_dir: null,
+
         mcp_server_enabled: false,
         ide: "vscode",
         default_font_size: 12,
@@ -177,7 +177,7 @@ describe("settingsStore", () => {
         font_family: "Comic Sans",
         font_size: 14,
         theme: "tokyo-night",
-        worktree_dir: null,
+
         mcp_server_enabled: false,
         ide: "vscode",
         default_font_size: 12,
@@ -208,7 +208,7 @@ describe("settingsStore", () => {
         font_family: "Hack",
         font_size: 14,
         theme: "tokyo-night",
-        worktree_dir: null,
+
         mcp_server_enabled: false,
         ide: "zed",
         default_font_size: 16,
@@ -227,13 +227,13 @@ describe("settingsStore", () => {
       localStorage.setItem("tui-commander-default-ide", "cursor");
       mockInvoke.mockResolvedValueOnce({
         shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
+        theme: "tokyo-night", mcp_server_enabled: false,
         ide: "vscode", default_font_size: 12,
       }); // load_config for migration
       mockInvoke.mockResolvedValueOnce(undefined); // save_config for migration
       mockInvoke.mockResolvedValueOnce({
         shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
+        theme: "tokyo-night", mcp_server_enabled: false,
         ide: "cursor", default_font_size: 12,
       }); // load_config after migration
 
@@ -247,7 +247,7 @@ describe("settingsStore", () => {
     it("falls back to defaults for invalid values from config", async () => {
       mockInvoke.mockResolvedValueOnce({
         shell: null, font_family: "Comic Sans", font_size: 14,
-        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
+        theme: "tokyo-night", mcp_server_enabled: false,
         ide: "invalid-ide", default_font_size: 12,
       });
 
@@ -289,7 +289,7 @@ describe("settingsStore", () => {
     it("sets custom shell and persists", async () => {
       mockInvoke.mockResolvedValueOnce({
         shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
+        theme: "tokyo-night", mcp_server_enabled: false,
         ide: "vscode", default_font_size: 12,
       });
       mockInvoke.mockResolvedValueOnce(undefined);
@@ -307,7 +307,7 @@ describe("settingsStore", () => {
     it("trims whitespace and sets null for empty string", async () => {
       mockInvoke.mockResolvedValueOnce({
         shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
+        theme: "tokyo-night", mcp_server_enabled: false,
         ide: "vscode", default_font_size: 12,
       });
       mockInvoke.mockResolvedValueOnce(undefined);
@@ -337,7 +337,7 @@ describe("settingsStore", () => {
     it("sets theme and persists", async () => {
       mockInvoke.mockResolvedValueOnce({
         shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
+        theme: "tokyo-night", mcp_server_enabled: false,
         ide: "vscode", default_font_size: 12,
       });
       mockInvoke.mockResolvedValueOnce(undefined);
@@ -370,7 +370,7 @@ describe("settingsStore", () => {
     it("sets split tab mode and persists", async () => {
       mockInvoke.mockResolvedValueOnce({
         shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
+        theme: "tokyo-night", mcp_server_enabled: false,
         ide: "vscode", default_font_size: 12, split_tab_mode: "separate",
       });
       mockInvoke.mockResolvedValueOnce(undefined);
@@ -440,7 +440,7 @@ describe("settingsStore", () => {
     it("sets autoShowPrPopover and persists", async () => {
       mockInvoke.mockResolvedValueOnce({
         shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
+        theme: "tokyo-night", mcp_server_enabled: false,
         ide: "vscode", default_font_size: 12, auto_show_pr_popover: true,
       });
       mockInvoke.mockResolvedValueOnce(undefined);
@@ -471,7 +471,7 @@ describe("settingsStore", () => {
     it("hydrates autoShowPrPopover from config", async () => {
       mockInvoke.mockResolvedValueOnce({
         shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", worktree_dir: null, mcp_server_enabled: false,
+        theme: "tokyo-night", mcp_server_enabled: false,
         ide: "vscode", default_font_size: 12, auto_show_pr_popover: false,
       });
       mockInvoke.mockResolvedValueOnce({ primary_agent: "claude" });

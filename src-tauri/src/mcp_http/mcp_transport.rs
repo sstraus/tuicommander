@@ -71,7 +71,7 @@ fn mcp_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "config",
-            "description": "Read or write app configuration.\n\nActions (pass as 'action' parameter):\n- get: Returns app config (shell, font, theme, worktree_dir, etc.). Password hash is stripped.\n- save: Persists configuration. Requires config object. Partial updates OK.",
+            "description": "Read or write app configuration.\n\nActions (pass as 'action' parameter):\n- get: Returns app config (shell, font, theme, etc.). Password hash is stripped.\n- save: Persists configuration. Requires config object. Partial updates OK.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: get, save" },
                 "config": { "type": "object", "description": "Config fields to save (action=save)" }

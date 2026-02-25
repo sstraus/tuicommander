@@ -153,7 +153,7 @@ fn tool_definitions() -> Vec<ToolDefinition> {
             name: "config".into(),
             description: "Read or write app configuration.\n\n\
                 Actions (pass as 'action' parameter):\n\
-                - get: Returns app config (shell, font, theme, worktree_dir, etc.). Password hash is stripped.\n\
+                - get: Returns app config (shell, font, theme, etc.). Password hash is stripped.\n\
                 - save: Persists configuration. Requires config object. Partial updates OK.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
