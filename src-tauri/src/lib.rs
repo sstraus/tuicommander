@@ -501,7 +501,7 @@ fn regenerate_session_token(state: State<'_, Arc<AppState>>) -> String {
     new_token
 }
 
-/// Register TUI Commander as an MCP server with Claude Code CLI.
+/// Register TUICommander as an MCP server with Claude Code CLI.
 /// Runs `claude mcp add --transport http --scope user tui-commander <url>`.
 #[tauri::command]
 async fn register_mcp_with_claude(state: State<'_, Arc<AppState>>) -> Result<String, String> {

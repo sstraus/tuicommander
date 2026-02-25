@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>TUI Commander uses the microphone for speech-to-text dictation into the terminal.</string>
+	<string>TUICommander uses the microphone for speech-to-text dictation into the terminal.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>TUI Commander runs a local HTTP server for MCP integration and remote terminal access.</string>
+	<string>TUICommander runs a local HTTP server for MCP integration and remote terminal access.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>

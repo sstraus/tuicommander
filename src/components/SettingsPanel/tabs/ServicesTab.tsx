@@ -296,7 +296,7 @@ export const ServicesTab: Component = () => {
                   </button>
                 </div>
                 <p class={s.hint}>
-                  {t("services.hint.mcpEndpoint", "Use this URL to register TUI Commander with any MCP-compatible AI client")}
+                  {t("services.hint.mcpEndpoint", "Use this URL to register TUICommander with any MCP-compatible AI client")}
                 </p>
               </div>
 
@@ -327,7 +327,7 @@ export const ServicesTab: Component = () => {
                   </p>
                 </Show>
                 <p class={s.hint}>
-                  {t("services.hint.registerWithClaude", "Adds TUI Commander as an MCP server in your Claude Code user settings")}
+                  {t("services.hint.registerWithClaude", "Adds TUICommander as an MCP server in your Claude Code user settings")}
                 </p>
               </div>
             </Show>

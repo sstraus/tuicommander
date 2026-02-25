@@ -52,7 +52,7 @@ pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
         // CC also checks TERM_PROGRAM_VERSION — missing or matching /^[0-2]\./
         // causes rejection.  Use a value that passes the gate.
         cmd.env("TERM_PROGRAM_VERSION", "3.0.0");
-        // Prevent nested-session detection when TUI Commander itself runs
+        // Prevent nested-session detection when TUICommander itself runs
         // inside a Claude Code session (CLAUDECODE env var would propagate).
         cmd.env_remove("CLAUDECODE");
         if let Ok(lang) = std::env::var("LANG") {
