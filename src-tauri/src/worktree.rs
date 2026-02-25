@@ -209,6 +209,28 @@ pub(crate) fn generate_worktree_name(existing: &[String]) -> String {
     format!("worktree-{}", seed % 10000)
 }
 
+/// Generate a hybrid branch name for the quick-clone flow.
+///
+/// Format: `{source_branch}--{random_name}` (e.g., `feat-auth--brave-neo-042`).
+/// The double-dash separator makes it easy to parse the source branch later.
+/// Checks collision against `existing` list and regenerates random part if needed.
+pub(crate) fn generate_clone_branch_name(source_branch: &str, existing: &[String]) -> String {
+    let sanitized = sanitize_name(source_branch);
+    for _ in 0..100 {
+        let random_part = generate_worktree_name(existing);
+        let name = format!("{sanitized}--{random_part}");
+        if !existing.contains(&name) {
+            return name;
+        }
+    }
+    // Fallback with timestamp
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    format!("{sanitized}--wt-{}", ts % 100000)
+}
+
 /// Create a worktree without a PTY session
 #[tauri::command]
 pub(crate) fn create_worktree(
@@ -638,6 +660,28 @@ mod tests {
         let app_dir = Path::new("/app/worktrees");
         let result = resolve_worktree_dir(repo, &WorktreeStorage::Sibling, app_dir);
         assert_eq!(result, PathBuf::from("/home/user/dev/my.project.name__wt"));
+    }
+
+    #[test]
+    fn generate_clone_branch_name_includes_source() {
+        let existing: Vec<String> = vec![];
+        let name = generate_clone_branch_name("feat/auth-flow", &existing);
+        assert!(
+            name.starts_with("feat-auth-flow--"),
+            "Name should start with sanitized source branch: {name}"
+        );
+        // Should contain a random part after the double-dash
+        let parts: Vec<&str> = name.splitn(2, "--").collect();
+        assert_eq!(parts.len(), 2, "Should have source--random format: {name}");
+        assert!(!parts[1].is_empty(), "Random part should not be empty");
+    }
+
+    #[test]
+    fn generate_clone_branch_name_avoids_collisions() {
+        // Pre-populate with one name and verify a different one is generated
+        let first = generate_clone_branch_name("main", &[]);
+        let second = generate_clone_branch_name("main", &[first.clone()]);
+        assert_ne!(first, second, "Should generate unique names");
     }
 
     #[test]
