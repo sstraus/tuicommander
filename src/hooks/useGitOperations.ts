@@ -164,9 +164,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
         });
       }
 
-      // Find the main branch to migrate orphaned terminals into
-      const mainBranchName = Object.values(currentRepo.branches).find(b => b.isMain)?.name;
-
       batch(() => {
         for (const branchName of toRemove) {
           repositoriesStore.removeBranch(repoPath, branchName);

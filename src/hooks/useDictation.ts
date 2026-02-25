@@ -51,6 +51,25 @@ export function useDictation(deps: DictationDeps) {
     deps.setStatusInfo("Dictation: transcribing…");
     const text = await deps.dictation.stopRecording();
     if (text && text.trim()) {
+      // If a text input or textarea has focus, insert there instead of the terminal
+      const el = document.activeElement;
+      if (el && (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) {
+        const start = el.selectionStart ?? el.value.length;
+        const end = el.selectionEnd ?? start;
+        const before = el.value.slice(0, start);
+        const after = el.value.slice(end);
+        el.value = before + text.trim() + after;
+        el.selectionStart = el.selectionEnd = start + text.trim().length;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        deps.setStatusInfo("Ready");
+        return;
+      }
+      if (el && el.getAttribute("contenteditable") === "true") {
+        document.execCommand("insertText", false, text.trim());
+        deps.setStatusInfo("Ready");
+        return;
+      }
+
       const active = terminalsStore.getActive();
       if (active?.sessionId) {
         try {

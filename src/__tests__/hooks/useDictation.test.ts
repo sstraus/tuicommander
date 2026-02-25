@@ -183,5 +183,66 @@ describe("useDictation", () => {
       expect(mockPty.write).not.toHaveBeenCalled();
       expect(mockSetStatusInfo).toHaveBeenCalledWith("Ready");
     });
+
+    it("inserts into focused textarea instead of terminal", async () => {
+      mockDictationStore.state.recording = true;
+
+      const textarea = document.createElement("textarea");
+      textarea.value = "existing ";
+      textarea.selectionStart = 9;
+      textarea.selectionEnd = 9;
+      document.body.appendChild(textarea);
+      textarea.focus();
+
+      try {
+        await dictation.handleDictationStop();
+
+        expect(textarea.value).toBe("existing hello world");
+        expect(mockPty.write).not.toHaveBeenCalled();
+        expect(mockSetStatusInfo).toHaveBeenCalledWith("Ready");
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    });
+
+    it("inserts into focused input instead of terminal", async () => {
+      mockDictationStore.state.recording = true;
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = "";
+      document.body.appendChild(input);
+      input.focus();
+
+      try {
+        await dictation.handleDictationStop();
+
+        expect(input.value).toBe("hello world");
+        expect(mockPty.write).not.toHaveBeenCalled();
+        expect(mockSetStatusInfo).toHaveBeenCalledWith("Ready");
+      } finally {
+        document.body.removeChild(input);
+      }
+    });
+
+    it("replaces selected text in focused textarea", async () => {
+      mockDictationStore.state.recording = true;
+
+      const textarea = document.createElement("textarea");
+      textarea.value = "replace THIS please";
+      textarea.selectionStart = 8;
+      textarea.selectionEnd = 12;
+      document.body.appendChild(textarea);
+      textarea.focus();
+
+      try {
+        await dictation.handleDictationStop();
+
+        expect(textarea.value).toBe("replace hello world please");
+        expect(mockPty.write).not.toHaveBeenCalled();
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    });
   });
 });

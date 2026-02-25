@@ -512,15 +512,15 @@ fn detect_default_branch(git_dir: &Path) -> Option<String> {
 
     // 2. Read origin/HEAD symref (e.g. "ref: refs/remotes/origin/main\n")
     let origin_head = git_dir.join("refs/remotes/origin/HEAD");
-    if let Ok(content) = fs::read_to_string(&origin_head) {
-        if let Some(target) = content.trim().strip_prefix("ref: refs/remotes/origin/") {
-            let branch = target.trim();
-            // Verify the branch exists locally before using it
-            if git_dir.join("refs/heads").join(branch).exists()
-                || packed_ref_exists(git_dir, &format!("refs/heads/{branch}"))
-            {
-                return Some(branch.to_string());
-            }
+    if let Ok(content) = fs::read_to_string(&origin_head)
+        && let Some(target) = content.trim().strip_prefix("ref: refs/remotes/origin/")
+    {
+        let branch = target.trim();
+        // Verify the branch exists locally before using it
+        if git_dir.join("refs/heads").join(branch).exists()
+            || packed_ref_exists(git_dir, &format!("refs/heads/{branch}"))
+        {
+            return Some(branch.to_string());
         }
     }
 
