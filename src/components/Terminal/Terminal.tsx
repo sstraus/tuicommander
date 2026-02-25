@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, onCleanup } from "solid-js";
+import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -140,7 +140,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let activityFlagged = false; // Avoids redundant store updates per data chunk
   let busyFlagged = false;
-  let hasResumedAgent = false; // Ensures agent resume command fires only once
+
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
 
   /** Fit terminal to container, guarded against undersized containers.
@@ -237,16 +237,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
       busyFlagged = false;
       appLogger.debug("terminal", `[ShellState] ${props.id} → "idle" (500ms timeout)`);
       terminalsStore.update(props.id, { shellState: "idle" });
-
-      // Auto-resume agent on first shell idle after restore
-      if (!hasResumedAgent) {
-        const pending = terminalsStore.get(props.id)?.pendingResumeCommand;
-        if (pending && sessionId) {
-          hasResumedAgent = true;
-          terminalsStore.update(props.id, { pendingResumeCommand: null });
-          pty.write(sessionId, pending + "\r").catch(() => {});
-        }
-      }
     }, 500);
   };
 
@@ -976,6 +966,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
     terminalsStore.update(props.id, { ref: refMethods });
   });
 
+  const handleResume = () => {
+    const cmd = terminalsStore.get(props.id)?.pendingResumeCommand;
+    if (cmd && sessionId) {
+      terminalsStore.update(props.id, { pendingResumeCommand: null });
+      pty.write(sessionId, cmd + "\r").catch(() => {});
+    }
+  };
+
+  const handleDismissResume = (e: MouseEvent) => {
+    e.stopPropagation();
+    terminalsStore.update(props.id, { pendingResumeCommand: null });
+    terminal?.focus();
+  };
+
   return (
     <div class={s.wrapper} data-terminal-id={props.id}>
       <TerminalSearch
@@ -986,6 +990,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
           terminal?.focus();
         }}
       />
+      <Show when={terminalsStore.get(props.id)?.pendingResumeCommand}>
+        <div class={s.resumeBanner} onClick={handleResume}>
+          <span>Agent session was active — click to resume</span>
+          <button class={s.resumeDismiss} onClick={handleDismissResume} title="Dismiss">&times;</button>
+        </div>
+      </Show>
       <div
         ref={containerRef}
         class={s.content}

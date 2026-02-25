@@ -14,3 +14,42 @@
 .content :global(.xterm) {
   height: 100%;
 }
+
+/* Resume banner — shown when a restored terminal had an active agent session */
+.resumeBanner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.resumeBanner:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.resumeDismiss {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-md);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.resumeDismiss:hover {
+  color: var(--error);
+}

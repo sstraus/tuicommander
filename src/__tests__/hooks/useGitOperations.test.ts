@@ -161,6 +161,28 @@ describe("useGitOperations", () => {
       expect(terminal?.sessionId).toBeNull();
     });
 
+    it("sets pendingResumeCommand on restored agent terminals", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature", {
+        worktreePath: "/repo/wt",
+        hadTerminals: true,
+        savedTerminals: [
+          { name: "Claude", cwd: "/repo/wt", fontSize: 14, agentType: "claude" },
+          { name: "Plain", cwd: "/repo/wt", fontSize: 14, agentType: null },
+        ],
+      });
+
+      await gitOps.handleBranchSelect("/repo", "feature");
+
+      const branch = repositoriesStore.get("/repo")?.branches["feature"];
+      const agentTerm = terminalsStore.get(branch!.terminals[0]);
+      const plainTerm = terminalsStore.get(branch!.terminals[1]);
+      // Agent terminal gets pendingResumeCommand for banner display
+      expect(agentTerm?.pendingResumeCommand).toBe("claude --continue");
+      // Plain terminal does not
+      expect(plainTerm?.pendingResumeCommand).toBeNull();
+    });
+
     it("does not restore savedTerminals when live terminals exist", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", {
