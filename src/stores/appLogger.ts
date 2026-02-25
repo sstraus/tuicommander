@@ -72,14 +72,17 @@ function createAppLogger() {
   // Track whether the Rust backend is reachable.
   // Entries pushed before backend is ready are queued and drained on first success.
   let backendReady = false;
+  let drainInFlight = false;
   const pendingQueue: Array<{ level: string; source: string; message: string; dataJson?: string }> = [];
+  const MAX_PENDING = 200;
 
   /** Fire-and-forget push to Rust backend. Queues if not ready yet. */
   function pushToRust(level: string, source: string, message: string, dataJson?: string): void {
     if (!backendReady) {
-      pendingQueue.push({ level, source, message, dataJson });
-      // Attempt to drain — if it succeeds, backendReady flips true
-      drainQueue();
+      if (pendingQueue.length < MAX_PENDING) {
+        pendingQueue.push({ level, source, message, dataJson });
+      }
+      if (!drainInFlight) drainQueue();
       return;
     }
     rpc("push_log", { level, source, message, dataJson: dataJson ?? null }).catch(() => {
@@ -87,9 +90,10 @@ function createAppLogger() {
     });
   }
 
-  /** Try to send queued entries to Rust. On first success, mark backend as ready. */
+  /** Try to send queued entries to Rust. On first success, mark backend as ready and drain rest. */
   function drainQueue(): void {
-    if (pendingQueue.length === 0) return;
+    if (pendingQueue.length === 0 || drainInFlight) return;
+    drainInFlight = true;
     const entry = pendingQueue[0];
     rpc("push_log", {
       level: entry.level,
@@ -100,18 +104,24 @@ function createAppLogger() {
       .then(() => {
         backendReady = true;
         pendingQueue.shift();
-        // Drain remaining entries
-        for (const queued of pendingQueue.splice(0)) {
+        // Drain remaining entries sequentially
+        const remaining = pendingQueue.splice(0);
+        for (const queued of remaining) {
           rpc("push_log", {
             level: queued.level,
             source: queued.source,
             message: queued.message,
             dataJson: queued.dataJson ?? null,
-          }).catch(() => {});
+          }).catch(() => {
+            // Best-effort mirror — local buffer already has the entry
+          });
         }
       })
       .catch(() => {
-        // Backend not ready yet — entries stay queued
+        // Backend not ready yet — entries stay queued, retry on next push
+      })
+      .finally(() => {
+        drainInFlight = false;
       });
   }
 

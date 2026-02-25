@@ -60,12 +60,12 @@ pub enum ParsedEvent {
 
 /// OutputParser: detects structured events in PTY output text.
 /// Designed to run in the Rust reader thread, eliminating JS regex overhead.
+/// Borrows pre-compiled patterns from lazy_static globals — zero per-instance allocation.
 pub struct OutputParser {
-    rate_limit_patterns: Vec<RateLimitPattern>,
-    api_error_patterns: Vec<ApiErrorPattern>,
+    rate_limit_patterns: &'static [RateLimitPattern],
+    api_error_patterns: &'static [ApiErrorPattern],
 }
 
-#[derive(Clone)]
 struct RateLimitPattern {
     name: &'static str,
     regex: regex::Regex,
@@ -73,7 +73,6 @@ struct RateLimitPattern {
     has_retry_capture: bool,
 }
 
-#[derive(Clone)]
 struct ApiErrorPattern {
     name: &'static str,
     regex: regex::Regex,
@@ -90,8 +89,8 @@ lazy_static::lazy_static! {
 impl OutputParser {
     pub fn new() -> Self {
         Self {
-            rate_limit_patterns: RATE_LIMIT_PATTERNS.clone(),
-            api_error_patterns: API_ERROR_PATTERNS.clone(),
+            rate_limit_patterns: &RATE_LIMIT_PATTERNS,
+            api_error_patterns: &API_ERROR_PATTERNS,
         }
     }
 
@@ -146,8 +145,10 @@ impl OutputParser {
     }
 
     fn parse_rate_limit(&self, text: &str) -> Option<ParsedEvent> {
-        for pattern in &self.rate_limit_patterns {
-            if let Some(m) = pattern.regex.find(text) {
+        for pattern in self.rate_limit_patterns {
+            // Use captures() uniformly — group 0 is the full match (subsumes find())
+            if let Some(caps) = pattern.regex.captures(text) {
+                let m: regex::Match<'_> = caps.get(0).unwrap();
                 // Guard: reject matches that appear inside source code or documentation.
                 // Real API errors appear on their own line (e.g. "Error: rate_limit_error"),
                 // not inside string literals, comments, regex patterns, or test assertions.
@@ -161,10 +162,8 @@ impl OutputParser {
                 }
 
                 let retry_after_ms = if pattern.has_retry_capture {
-                    pattern.regex.captures(text).and_then(|caps| {
-                        caps.get(1).and_then(|g| {
-                            g.as_str().parse::<u64>().ok().map(|s| s * 1000)
-                        })
+                    caps.get(1).and_then(|g| {
+                        g.as_str().parse::<u64>().ok().map(|s| s * 1000)
                     })
                 } else {
                     pattern.retry_after_ms
@@ -180,7 +179,7 @@ impl OutputParser {
     }
 
     fn parse_api_error(&self, text: &str) -> Option<ParsedEvent> {
-        for pattern in &self.api_error_patterns {
+        for pattern in self.api_error_patterns {
             if let Some(m) = pattern.regex.find(text) {
                 // Guard: reject matches inside source code or documentation.
                 let match_line = text[..m.start()]
@@ -230,8 +229,9 @@ fn line_is_source_code(line: &str) -> bool {
     {
         return true;
     }
-    // Indented code (4+ spaces or tab) with string delimiters around the match
-    if (trimmed.len() < line.len().saturating_sub(3)) && (trimmed.contains('"') || trimmed.contains('\'')) {
+    // Indented code (4+ leading spaces or tab) with string delimiters around the match
+    let leading_ws = line.len() - line.trim_start().len();
+    if leading_ws >= 4 && (trimmed.contains('"') || trimmed.contains('\'')) {
         return true;
     }
     // Markdown code fences or bullet points discussing patterns
@@ -316,10 +316,10 @@ fn build_api_error_patterns() -> Vec<ApiErrorPattern> {
         ae("google-api-server", r#""status"\s*:\s*"(?:INTERNAL|UNAVAILABLE)""#, "server"),
         // Google auth: {"error":{"status":"UNAUTHENTICATED"}} or API_KEY_INVALID
         ae("google-api-auth", r#""status"\s*:\s*"UNAUTHENTICATED""#, "auth"),
-        // OpenRouter: numeric code in JSON with provider_name metadata
-        ae("openrouter-server", r#""provider_name"\s*:"#, "server"),
-        // MiniMax: {"base_resp":{"status_code":1013,...}} — unique field name
-        ae("minimax-server", r#""base_resp"\s*:"#, "server"),
+        // OpenRouter: error JSON with provider_name metadata and error code
+        ae("openrouter-server", r#""error"\s*:\s*\{[^}]*"provider_name"\s*:"#, "server"),
+        // MiniMax: {"base_resp":{"status_code":1013,...}} — non-zero status_code indicates error
+        ae("minimax-server", r#""base_resp"\s*:\s*\{[^}]*"status_code"\s*:\s*[1-9]"#, "server"),
     ]
 }
 

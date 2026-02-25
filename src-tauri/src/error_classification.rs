@@ -20,15 +20,23 @@ pub(crate) fn classify_error(message: &str) -> &'static str {
     }
 
     // Server error patterns (5xx, API errors)
+    // Use word-boundary-aware checks for numeric codes to avoid matching "5000ms", "15001", etc.
     if lower.contains("internal server error")
         || lower.contains("api_error")
-        || lower.contains("500")
-        || lower.contains("502")
-        || lower.contains("503")
         || lower.contains("service unavailable")
         || lower.contains("overloaded")
     {
         return "server";
+    }
+    // HTTP status codes — require surrounding context (space, punctuation, or line boundary)
+    {
+        lazy_static::lazy_static! {
+            static ref HTTP_5XX: regex::Regex =
+                regex::Regex::new(r"(?i)\b50[023]\b").unwrap();
+        }
+        if HTTP_5XX.is_match(&lower) {
+            return "server";
+        }
     }
 
     // Network patterns

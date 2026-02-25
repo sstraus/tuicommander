@@ -10,7 +10,7 @@
 //! in the app config directory so restarts don't require a full rescan.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -120,7 +120,7 @@ pub struct CachedFileStats {
     pub model_usage: HashMap<String, ModelTokens>,
     pub daily_activity: HashMap<String, DayStats>,
     /// Unique session IDs seen in this file
-    pub session_ids: Vec<String>,
+    pub session_ids: HashSet<String>,
     pub first_timestamp: Option<String>,
     pub last_timestamp: Option<String>,
     /// Token usage bucketed by hour ("YYYY-MM-DDTHH" → HourlyTokens)
@@ -344,8 +344,7 @@ fn parse_jsonl_line(line: &str, stats: &mut CachedFileStats) -> LineInfo {
                     }
 
                     // Track session ID for counting unique sessions
-                    if let Some(sid) = obj.get("sessionId").and_then(|s| s.as_str()).filter(|sid| !stats.session_ids.contains(&sid.to_string())) {
-                        stats.session_ids.push(sid.to_string());
+                    if obj.get("sessionId").and_then(|s| s.as_str()).filter(|sid| stats.session_ids.insert(sid.to_string())).is_some() {
                         // Bump session count for the day
                         let date = &ts[..10.min(ts.len())];
                         if date.len() == 10 {
@@ -973,7 +972,8 @@ mod tests {
         let info = parse_jsonl_line(line, &mut stats);
         assert_eq!(info.timestamp, Some("2026-02-04T23:22:42.546Z".to_string()));
         assert!(info.assistant_tokens.is_none());
-        assert_eq!(stats.session_ids, vec!["abc-123"]);
+        assert!(stats.session_ids.contains("abc-123"));
+        assert_eq!(stats.session_ids.len(), 1);
         assert!(stats.daily_activity.contains_key("2026-02-04"));
         let day = stats.daily_activity.get("2026-02-04").unwrap();
         assert_eq!(day.session_count, 1);
@@ -1066,7 +1066,7 @@ mod tests {
         let mut file_stats = CachedFileStats::default();
         file_stats.file_size = 12345;
         file_stats.total_input_tokens = 1000;
-        file_stats.session_ids.push("s1".to_string());
+        file_stats.session_ids.insert("s1".to_string());
 
         let mut project = HashMap::new();
         project.insert("session1.jsonl".to_string(), file_stats);
@@ -1103,7 +1103,8 @@ mod tests {
         assert_eq!(stats.user_message_count, 1);
         assert_eq!(stats.assistant_message_count, 1);
         assert_eq!(stats.total_input_tokens, 100);
-        assert_eq!(stats.session_ids, vec!["s1"]);
+        assert!(stats.session_ids.contains("s1"));
+        assert_eq!(stats.session_ids.len(), 1);
 
         // Verify hourly token correlation: assistant tokens should be bucketed
         // into the hour of the following turn_duration timestamp
