@@ -39,6 +39,7 @@ export const ACTION_NAMES = [
   "find-in-terminal",
   "command-palette",
   "activity-dashboard",
+  "toggle-error-log",
   // Numbered tabs and branches
   ...Array.from({ length: 9 }, (_, i) => `switch-tab-${i + 1}`),
   ...Array.from({ length: 9 }, (_, i) => `switch-branch-${i + 1}`),
@@ -90,6 +91,7 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "find-in-terminal": "Cmd+F",
   "command-palette": "Cmd+Shift+P",
   "activity-dashboard": "Cmd+Shift+A",
+  "toggle-error-log": "Cmd+Shift+E",
   // Numbered tabs
   ...Object.fromEntries(
     Array.from({ length: 9 }, (_, i) => [`switch-tab-${i + 1}`, `Cmd+${i + 1}`]),

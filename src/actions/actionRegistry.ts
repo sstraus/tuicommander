@@ -59,6 +59,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
 
   "command-palette": { label: "Command palette", category: "Navigation" },
   "activity-dashboard": { label: "Activity dashboard", category: "Navigation" },
+  "toggle-error-log": { label: "Error log", category: "Navigation" },
 };
 
 /**
@@ -102,6 +103,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "toggle-sidebar": handlers.toggleSidebar,
     "command-palette": handlers.toggleCommandPalette,
     "activity-dashboard": handlers.toggleActivityDashboard,
+    "toggle-error-log": handlers.toggleErrorLog,
   };
 
   for (const [actionId, meta] of Object.entries(ACTION_META)) {

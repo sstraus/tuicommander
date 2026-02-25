@@ -400,7 +400,7 @@ describe("transport", () => {
 
       // Abnormal close
       wsInstance!.onclose!({ wasClean: false, code: 1006, reason: "" });
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("abnormally"));
+      expect(warnSpy).toHaveBeenCalledWith("[network]", expect.stringContaining("abnormally"), "");
       expect(onExit).toHaveBeenCalled();
 
       warnSpy.mockRestore();

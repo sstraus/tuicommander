@@ -574,6 +574,7 @@ describe("githubStore", () => {
         await vi.advanceTimersByTimeAsync(0);
 
         expect(consoleSpy).toHaveBeenCalledWith(
+          "[github]",
           expect.stringContaining("Failed to poll PR statuses"),
           expect.any(Error),
         );

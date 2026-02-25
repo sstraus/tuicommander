@@ -2,6 +2,7 @@ import { createSignal, batch } from "solid-js";
 import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
+import { appLogger } from "../stores/appLogger";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "../transport";
 import { findOrphanTerminals } from "../utils/terminalOrphans";
@@ -288,7 +289,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     try {
       await deps.repo.renameBranch(branch.repoPath, oldName, newName);
     } catch (err) {
-      console.error("Failed to rename branch:", err);
+      appLogger.error("git", "Failed to rename branch", err);
       deps.setStatusInfo(`Failed to rename branch: ${err}`);
       return;
     }
@@ -384,7 +385,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
       refreshAllBranchStats();
     } catch (err) {
-      console.error("Failed to add repository:", err);
+      appLogger.error("git", "Failed to add repository", err);
       deps.setStatusInfo(`Failed to add repo: ${err}`);
     }
   };
@@ -438,7 +439,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
       deps.setStatusInfo(`Created worktree ${options.branchName}`);
     } catch (err) {
-      console.error("Failed to create worktree:", err);
+      appLogger.error("git", "Failed to create worktree", err);
       deps.setStatusInfo(`Failed to create worktree: ${err}`);
     } finally {
       setCreatingWorktreeRepos((prev) => {
@@ -502,7 +503,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
         try {
           await deps.pty.write(terminal.sessionId, command + "\n");
         } catch (err) {
-          console.error("Failed to send run command:", err);
+          appLogger.error("terminal", "Failed to send run command", err);
         }
       }
     }, 100);

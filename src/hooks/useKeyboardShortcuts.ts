@@ -55,6 +55,7 @@ export interface ShortcutHandlers {
   findInTerminal: () => void;
   toggleCommandPalette: () => void;
   toggleActivityDashboard: () => void;
+  toggleErrorLog: () => void;
 }
 
 /**
@@ -127,6 +128,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "find-in-terminal": handlers.findInTerminal(); return true;
     case "command-palette": handlers.toggleCommandPalette(); return true;
     case "activity-dashboard": handlers.toggleActivityDashboard(); return true;
+    case "toggle-error-log": handlers.toggleErrorLog(); return true;
 
     // Tab navigation
     case "prev-tab": handlers.navigateTab("prev"); return true;

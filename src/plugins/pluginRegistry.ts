@@ -1,3 +1,4 @@
+import { appLogger } from "../stores/appLogger";
 import { activityStore } from "../stores/activityStore";
 import { statusBarTicker } from "../stores/statusBarTicker";
 import { repositoriesStore } from "../stores/repositories";
@@ -402,6 +403,18 @@ function createPluginRegistry() {
         });
       },
 
+      // -- Tier 3g: CLI execution --
+
+      async execCli(binary: string, args: string[], cwd?: string): Promise<string> {
+        requireCapability(pluginId, capabilities, "exec:cli");
+        return invoke<string>("plugin_exec_cli", {
+          binary,
+          args,
+          cwd: cwd ?? null,
+          pluginId,
+        });
+      },
+
       // -- Tier 4: Scoped Tauri invoke --
 
       async invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -444,7 +457,7 @@ function createPluginRegistry() {
       plugin.onload(host);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[pluginRegistry] plugin "${plugin.id}" threw during onload:`, err);
+      appLogger.error("plugin", `Plugin "${plugin.id}" onload failed: ${msg}`, err);
       pluginLogger.error(`onload failed: ${msg}`, err);
       pluginStore.updatePlugin(plugin.id, { loaded: false, error: msg });
       for (const d of disposables) {
@@ -475,7 +488,7 @@ function createPluginRegistry() {
       entry.plugin.onunload();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[pluginRegistry] plugin "${id}" threw during onunload:`, err);
+      appLogger.error("plugin", `Plugin "${id}" onunload failed: ${msg}`, err);
       pluginStore.getLogger(id).error(`onunload failed: ${msg}`, err);
     }
     entry.disposable.dispose();
@@ -504,7 +517,7 @@ function createPluginRegistry() {
             onMatch(match, sessionId);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            console.error("[pluginRegistry] watcher threw:", err);
+            appLogger.error("plugin", `Plugin "${pluginId}" output watcher threw: ${msg}`, err);
             pluginStore.getLogger(pluginId).error(`OutputWatcher threw: ${msg}`, err);
           }
         });
@@ -546,7 +559,7 @@ function createPluginRegistry() {
           handler(payload, sessionId);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          console.error(`[pluginRegistry] structured handler (plugin "${pluginId}", type "${type}") threw:`, err);
+          appLogger.error("plugin", `Plugin "${pluginId}" structured handler "${type}" threw: ${msg}`, err);
           pluginStore.getLogger(pluginId).error(`Structured handler "${type}" threw: ${msg}`, err);
         }
       });

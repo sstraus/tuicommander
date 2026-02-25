@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
+import { appLogger } from "./appLogger";
 import { repositoriesStore } from "./repositories";
 import { prNotificationsStore, type PrNotificationType } from "./prNotifications";
 import type { BranchPrStatus, CheckSummary, CheckDetail, GitHubStatus } from "../types";
@@ -190,9 +191,9 @@ function createGitHubStore() {
             const errStr = String(err);
             if (errStr.startsWith("rate-limit:")) {
               hitRateLimit = true;
-              console.warn(`[GitHub] Rate limited: ${errStr}`);
+              appLogger.warn("github", `Rate limited: ${errStr}`);
             } else {
-              console.error(`Failed to poll PR statuses for ${path}:`, err);
+              appLogger.error("github", `Failed to poll PR statuses for ${path}`, err);
             }
           }
         })
@@ -242,7 +243,7 @@ function createGitHubStore() {
     if (document.hidden) {
       clearScheduled();
     } else {
-      pollAll().catch((err) => console.error("[GitHub] Poll failed on visibility change:", err));
+      pollAll().catch((err) => appLogger.warn("github", "Poll failed on visibility change", err));
       scheduleNext();
     }
   }
@@ -251,7 +252,7 @@ function createGitHubStore() {
   function startPolling(): void {
     pollingActive = true;
     document.addEventListener("visibilitychange", onVisibilityChange);
-    pollAll().catch((err) => console.error("[GitHub] Initial poll failed:", err));
+    pollAll().catch((err) => appLogger.warn("github", "Initial poll failed", err));
     scheduleNext();
   }
 

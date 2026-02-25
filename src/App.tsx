@@ -29,8 +29,11 @@ import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { ActivityDashboard } from "./components/ActivityDashboard";
+import { ErrorLogPanel } from "./components/ErrorLogPanel";
 import { commandPaletteStore } from "./stores/commandPalette";
 import { activityDashboardStore } from "./stores/activityDashboard";
+import { errorLogStore } from "./stores/errorLog";
+import { appLogger } from "./stores/appLogger";
 import { getActionEntries } from "./actions/actionRegistry";
 import { promptLibraryStore } from "./stores/promptLibrary";
 import { terminalsStore } from "./stores/terminals";
@@ -219,7 +222,7 @@ const App: Component = () => {
           ]);
           const failures = results.filter((r) => r.status === "rejected");
           if (failures.length > 0) {
-            console.error("Store hydration failures:", failures);
+            appLogger.error("store", `${failures.length} store(s) failed to hydrate`, failures);
             throw new Error(`${failures.length} store(s) failed`);
           }
         },
@@ -241,8 +244,8 @@ const App: Component = () => {
         getCurrentWindow().onCloseRequested(async (event) => handler(event));
       },
     }).catch((err) => {
-      console.error("[App] Fatal initialization error:", err);
-      setStatusInfo("Error: App failed to initialize — check browser console");
+      appLogger.error("app", "Fatal initialization error", err);
+      setStatusInfo("Error: App failed to initialize — check error log");
       document.getElementById("splash")?.remove();
     });
 
@@ -300,11 +303,11 @@ const App: Component = () => {
 
     if (enabled && anyBusy) {
       invoke("block_sleep").catch((err) =>
-        console.error("Failed to block sleep:", err),
+        appLogger.warn("app", "Failed to block sleep", err),
       );
     } else {
       invoke("unblock_sleep").catch((err) =>
-        console.error("Failed to unblock sleep:", err),
+        appLogger.warn("app", "Failed to unblock sleep", err),
       );
     }
   });
@@ -622,7 +625,7 @@ const App: Component = () => {
       setTimeout(() => {
         terminalsStore.get(tabId)?.ref?.fit();
       }, 150);
-    }).then((fn) => { unlisten = fn; }).catch((err) => console.error("[Reattach] Failed to listen:", err));
+    }).then((fn) => { unlisten = fn; }).catch((err) => appLogger.error("terminal", "Failed to listen for reattach events", err));
 
     onCleanup(() => unlisten?.());
   });
@@ -693,6 +696,7 @@ const App: Component = () => {
     },
     toggleCommandPalette: () => commandPaletteStore.toggle(),
     toggleActivityDashboard: () => activityDashboardStore.toggle(),
+    toggleErrorLog: () => errorLogStore.toggle(),
   };
 
   // Action entries for the command palette: static registry + dynamic entries
@@ -829,6 +833,7 @@ const App: Component = () => {
         case "help-panel": setHelpPanelVisible((v) => !v); break;
         case "command-palette": commandPaletteStore.toggle(); break;
         case "activity-dashboard": activityDashboardStore.toggle(); break;
+        case "error-log": errorLogStore.toggle(); break;
         case "check-for-updates": updaterStore.checkForUpdate().catch((err) => console.warn("[Updater] Manual check failed:", err)); break;
         case "about": openSettings("about"); break;
 
@@ -843,7 +848,7 @@ const App: Component = () => {
           break;
         }
       }
-    }).then((fn) => { unlisten = fn; }).catch((err) => console.error("[Menu] Failed to register menu-action listener:", err));
+    }).then((fn) => { unlisten = fn; }).catch((err) => appLogger.error("app", "Failed to register menu-action listener", err));
 
     onCleanup(() => unlisten?.());
   });
@@ -875,7 +880,7 @@ const App: Component = () => {
         });
         registered = true;
       } catch (err) {
-        console.error("Failed to register push-to-talk shortcut:", err);
+        appLogger.error("dictation", "Failed to register push-to-talk shortcut", err);
       }
     };
 
@@ -886,7 +891,7 @@ const App: Component = () => {
     onCleanup(() => {
       if (registered) {
         unregisterShortcut(shortcut).catch((err) =>
-          console.error("Failed to unregister push-to-talk shortcut:", err),
+          appLogger.warn("dictation", "Failed to unregister push-to-talk shortcut", err),
         );
       }
     });
@@ -996,6 +1001,7 @@ const App: Component = () => {
           onToggleMarkdown={() => uiStore.toggleMarkdownPanel()}
           onToggleNotes={() => uiStore.toggleNotesPanel()}
           onToggleFileBrowser={() => uiStore.toggleFileBrowserPanel()}
+          onToggleErrorLog={() => errorLogStore.toggle()}
           onDictationStart={dictation.handleDictationStart}
           onDictationStop={dictation.handleDictationStop}
           currentRepoPath={gitOps.currentRepoPath()}
@@ -1028,6 +1034,9 @@ const App: Component = () => {
       {/* Activity dashboard */}
       <ActivityDashboard />
 
+      {/* Error log panel */}
+      <ErrorLogPanel />
+
       {/* Settings panel */}
       <SettingsPanel
         visible={settingsPanelVisible()}
@@ -1056,7 +1065,7 @@ const App: Component = () => {
               gitOps.setCurrentBranch(info.branch);
               gitOps.setRepoStatus(info.status === "not-git" ? "unknown" : info.status);
             }).catch((err) => {
-              console.error("Failed to refresh repo info:", err);
+              appLogger.error("git", "Failed to refresh repo info", err);
               gitOps.setRepoStatus("unknown");
             });
           }

@@ -1,4 +1,5 @@
 import { invoke } from "../invoke";
+import { appLogger } from "../stores/appLogger";
 import type { RepoInfo } from "../types";
 
 /** Changed file information for diff browser */
@@ -61,7 +62,7 @@ export function useRepository() {
     try {
       return await invoke<Record<string, string>>("get_worktree_paths", { repoPath });
     } catch (err) {
-      console.error("Failed to get worktree paths:", { repoPath, err });
+      appLogger.error("git", `Failed to get worktree paths for ${repoPath}`, err);
       return {};
     }
   }

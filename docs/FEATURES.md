@@ -212,6 +212,20 @@
 - Click any row to switch to that terminal and close the dashboard
 - Relative timestamps auto-refresh ("2s ago", "1m ago")
 
+### 3.12 Error Log Panel (`Cmd+Shift+E`)
+- Centralized log of all errors, warnings, and info messages across the app
+- Sources: App, Plugin, Git, Network, Terminal, GitHub, Dictation, Store, Config
+- Level filter tabs: All, Error, Warn, Info, Debug
+- Source filter dropdown to narrow by subsystem
+- Text search across all log messages
+- Each entry shows timestamp, level badge (color-coded), source tag, and message
+- Copy individual entries or all visible entries to clipboard
+- Clear button to flush the log
+- Status bar badge shows unseen error/warning count (red, resets when panel opens)
+- Global error capture: uncaught exceptions and unhandled promise rejections are automatically logged
+- Ring buffer of 1000 entries (oldest dropped when full)
+- Also accessible via Command Palette: "Error log"
+
 ---
 
 ## 4. Toolbar
@@ -636,6 +650,7 @@ All data persisted to platform config directory via Rust:
 | `Cmd+?` | Toggle help panel |
 | `Cmd+K` | Prompt library |
 | `Cmd+J` | Task queue |
+| `Cmd+Shift+E` | Error log |
 
 ### Git & Lazygit
 | Shortcut | Action |
@@ -731,7 +746,8 @@ All data persisted to platform config directory via Rust:
 - Built-in plugins (TypeScript, compiled with app) and external plugins (JS, loaded at runtime)
 - Hot-reload: file changes in plugin directories trigger automatic re-import
 - Per-plugin error logging with ring buffer (500 entries)
-- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`
+- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `exec:cli`
+- CLI execution API: sandboxed execution of whitelisted CLI binaries (`mdkb`) with timeout and size limits
 - Filesystem API: sandboxed read, list, tail-read, and watch operations restricted to `$HOME`
 - HTTP API: outbound requests scoped to manifest-declared URL patterns (SSRF prevention)
 - Credential API: cross-platform credential reading (macOS Keychain, Linux/Windows JSON file) with user consent

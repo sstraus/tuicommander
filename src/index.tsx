@@ -2,9 +2,24 @@
 import { lazy } from "solid-js";
 import { render, ErrorBoundary } from "solid-js/web";
 import App from "./App";
+import { appLogger } from "./stores/appLogger";
 import "./global.css";
 import "./styles.css";
 import "@xterm/xterm/css/xterm.css";
+
+// Global error handlers — capture uncaught errors and unhandled promise rejections
+window.addEventListener("error", (event) => {
+  appLogger.error("app", `Uncaught: ${event.message}`, {
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno,
+  });
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
+  appLogger.error("app", `Unhandled rejection: ${reason}`, event.reason);
+});
 
 const FloatingTerminal = lazy(() => import("./FloatingTerminal").then((m) => ({ default: m.FloatingTerminal })));
 

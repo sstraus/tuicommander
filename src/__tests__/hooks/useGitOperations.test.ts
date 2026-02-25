@@ -906,7 +906,7 @@ describe("useGitOperations", () => {
 
       await vi.advanceTimersByTimeAsync(200);
 
-      expect(errSpy).toHaveBeenCalledWith("Failed to send run command:", expect.any(Error));
+      expect(errSpy).toHaveBeenCalledWith("[terminal]", "Failed to send run command", expect.any(Error));
       errSpy.mockRestore();
       vi.useRealTimers();
     });

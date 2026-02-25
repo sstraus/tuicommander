@@ -1,6 +1,7 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
 import { setLocale } from "../i18n";
+import { appLogger } from "./appLogger";
 
 // Legacy storage keys for one-time migration
 const LEGACY_KEYS = {
@@ -286,7 +287,7 @@ function createSettingsStore() {
         setState("showAllBranches", config.show_all_branches ?? false);
         setState("disabledAgents", config.disabled_agents ?? []);
       } catch (err) {
-        console.error("Failed to hydrate settings:", err);
+        appLogger.error("config", "Failed to hydrate settings", err);
       }
     },
 

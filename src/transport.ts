@@ -5,6 +5,8 @@
  * In browser mode: uses fetch() for RPC, WebSocket for PTY streaming.
  */
 
+import { appLogger } from "./stores/appLogger";
+
 /** Detect whether we're running inside a Tauri webview */
 export function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in globalThis;
@@ -462,7 +464,7 @@ export async function subscribePty(
   // Re-wire onclose for the live session after successful open
   ws.onclose = (event: CloseEvent) => {
     if (!event.wasClean) {
-      console.warn(`WebSocket closed abnormally (code ${event.code}): ${event.reason || "unknown"}`);
+      appLogger.warn("network", `WebSocket closed abnormally (code ${event.code}): ${event.reason || "unknown"}`);
     }
     onExit();
   };

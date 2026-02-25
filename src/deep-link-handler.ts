@@ -1,5 +1,6 @@
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { isTauri } from "./transport";
+import { appLogger } from "./stores/appLogger";
 import { pluginStore } from "./stores/pluginStore";
 import { repositoriesStore } from "./stores/repositories";
 
@@ -52,7 +53,7 @@ async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): 
         // Open plugins tab so user can see the result
         callbacks.openSettings("plugins");
       } catch (err) {
-        console.error("[DeepLink] install-plugin failed:", err);
+        appLogger.error("plugin", "DeepLink: install-plugin failed", err);
         alert(`Plugin installation failed: ${err}`);
       }
       break;
@@ -95,6 +96,6 @@ export function initDeepLinkHandler(callbacks: DeepLinkCallbacks): void {
       );
     }
   }).catch((err) => {
-    console.error("[DeepLink] Failed to register handler:", err);
+    appLogger.error("app", "DeepLink: Failed to register handler", err);
   });
 }
