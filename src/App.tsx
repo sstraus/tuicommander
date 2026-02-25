@@ -985,8 +985,13 @@ const App: Component = () => {
           <PanelOrchestrator
             repoPath={gitOps.currentRepoPath() || null}
             onFileOpen={(repoPath, filePath) => {
-              const tabId = editorTabsStore.add(repoPath, filePath);
-              terminalLifecycle.handleTerminalSelect(tabId);
+              if (filePath.endsWith(".md") || filePath.endsWith(".mdx")) {
+                mdTabsStore.add(repoPath, filePath);
+                uiStore.setMarkdownPanelVisible(true);
+              } else {
+                const tabId = editorTabsStore.add(repoPath, filePath);
+                terminalLifecycle.handleTerminalSelect(tabId);
+              }
             }}
           />
         </TerminalArea>
