@@ -16,6 +16,7 @@
 - Session persistence across app restarts (lazy restore on branch click)
 - Foreground process detection (macOS: `libproc`, Windows: `CreateToolhelp32Snapshot`)
 - PTY environment: `TERM=xterm-256color`, `COLORTERM=truecolor`, `LANG=en_US.UTF-8`
+- Pause/resume PTY output (`pause_pty` / `resume_pty` Tauri commands) — suspends reader thread without killing the session
 
 ### 1.2 Tab Bar
 - Create: `Cmd+T`, `+` button (click = new tab, right-click = split options)
@@ -31,6 +32,7 @@
   - PTY session stays alive in Rust — floating window reconnects to the same session
   - Closing the floating window automatically returns the tab to the main window
   - Requires an active PTY session (disabled for tabs without a session)
+- Tab pinning: pinned tabs are visible across all branches (not scoped to branch key)
 
 ### 1.3 Split Panes
 - Vertical split: `Cmd+\` (side by side)
@@ -75,6 +77,11 @@
 - Terminal handles international keyboard input correctly
 - Rate-limit false positives reduced for non-ASCII input
 
+### 1.10 Kitty Keyboard Protocol
+- Supports Kitty keyboard protocol flag 1 (disambiguate escape codes)
+- Per-session flag tracking via `get_kitty_flags` Tauri command
+- Enables correct handling of `Shift+Enter` (multi-line input), `Ctrl+Backspace`, and modifier key combinations in agents that request the protocol (e.g. Claude Code)
+
 ---
 
 ## 2. Sidebar
@@ -110,6 +117,7 @@
 - Diff stats: `+N / -N` additions/deletions
 - Question indicator: `?` icon (orange, pulsing) when agent asks a question
 - Quick switcher badge: numbered index shown when `Cmd+Ctrl` held
+- Branch sorting: main/master/develop always first, then alphabetical; merged PR branches sorted last
 
 ### 2.4 Git Quick Actions
 - Bottom of sidebar when a repo is active
@@ -601,6 +609,7 @@ All data persisted to platform config directory via Rust:
 - Exposes terminal sessions, git operations, agent spawning
 - WebSocket streaming, Streamable HTTP transport
 - Used by Claude Code, Cursor, and other tools via MCP protocol
+- One-click MCP registration with Claude CLI (`claude mcp add` via `register_mcp_with_claude` command)
 
 ### 14.7 macOS Dock Badge
 - Badge count for attention-requiring notifications (questions, errors)
@@ -785,3 +794,4 @@ See `examples/plugins/` for reference implementations:
 - `ci-notifier` — Sound notifications and markdown panels
 - `repo-dashboard` — Read-only state and dynamic markdown
 - `report-watcher` — Generic report file watcher with markdown viewer
+- `claude-status` — Agent-scoped plugin (`agentTypes: ["claude"]`) tracking usage and rate limits

@@ -182,6 +182,12 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 |---------|------|---------|-------------|
 | `plugin_http_fetch` | `url, method?, headers?, body?, allowed_urls, plugin_id` | `HttpResponse` | Make HTTP request (validated against allowed_urls) |
 
+## Plugin CLI Execution (`plugin_exec.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `plugin_exec_cli` | `binary, args, cwd?, plugin_id` | `String` | Execute whitelisted CLI binary, return stdout. Allowed: `mdkb`. 30s timeout, 5 MB limit. |
+
 ## Plugin Credentials (`plugin_credentials.rs`)
 
 | Command | Args | Returns | Description |
