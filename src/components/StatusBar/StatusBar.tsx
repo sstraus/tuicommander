@@ -72,7 +72,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
       setCwdCopied(true);
       setTimeout(() => setCwdCopied(false), 1500);
     } catch (err) {
-      console.error("Failed to copy cwd:", err);
+      appLogger.error("app", "Failed to copy cwd", err);
     }
   };
 

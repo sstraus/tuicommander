@@ -1,5 +1,6 @@
 import { Component, createEffect, createSignal, Show, onMount } from "solid-js";
 import { MarkdownRenderer } from "../ui";
+import { appLogger } from "../../stores/appLogger";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { useRepository } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
@@ -148,7 +149,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     const path = fullPath();
     if (!path) return;
     navigator.clipboard.writeText(path).catch((err) =>
-      console.error("Failed to copy path:", err),
+      appLogger.error("app", "Failed to copy path", err),
     );
   };
 

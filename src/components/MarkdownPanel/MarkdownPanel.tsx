@@ -1,6 +1,7 @@
 import { Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { useRepository } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
+import { appLogger } from "../../stores/appLogger";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { getModifierSymbol } from "../../platform";
@@ -114,7 +115,7 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
       label: t("markdownPanel.copyPath", "Copy Path"),
       action: () => {
         navigator.clipboard.writeText(`${props.repoPath}/${entry.path}`).catch((err) =>
-          console.error("Failed to copy path:", err),
+          appLogger.error("app", "Failed to copy path", err),
         );
       },
     }];

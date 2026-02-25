@@ -1,5 +1,6 @@
 import { Component, For, Show, createSignal, createResource, createMemo, createEffect, onMount, onCleanup } from "solid-js";
 import { rpc } from "../../../transport";
+import { appLogger } from "../../../stores/appLogger";
 import QRCode from "qrcode";
 import { t } from "../../../i18n";
 import { cx } from "../../../utils";
@@ -129,7 +130,7 @@ export const ServicesTab: Component = () => {
       await rpc("save_config", { config });
       await refreshStatus();
     } catch (e) {
-      console.error("Failed to save MCP config:", e);
+      appLogger.error("config", "Failed to save MCP config", e);
     } finally {
       setSaving(false);
     }
@@ -142,7 +143,7 @@ export const ServicesTab: Component = () => {
       updater(config);
       await rpc("save_config", { config });
     } catch (e) {
-      console.error("Failed to save config:", e);
+      appLogger.error("config", "Failed to save config", e);
     }
   };
 
@@ -155,7 +156,7 @@ export const ServicesTab: Component = () => {
       setRaPassword("");
       setRaHasPassword(true);
     } catch (e) {
-      console.error("Failed to hash password:", e);
+      appLogger.error("config", "Failed to hash password", e);
     }
   };
 
@@ -177,7 +178,7 @@ export const ServicesTab: Component = () => {
       await rpc("regenerate_session_token");
       await refreshStatus();
     } catch (e) {
-      console.error("Failed to regenerate token:", e);
+      appLogger.error("config", "Failed to regenerate token", e);
     } finally {
       setRegenerating(false);
     }

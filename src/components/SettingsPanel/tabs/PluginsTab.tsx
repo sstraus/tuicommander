@@ -2,6 +2,7 @@ import { Component, For, Show, createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { pluginStore } from "../../../stores/pluginStore";
+import { appLogger } from "../../../stores/appLogger";
 import { registryStore, type RegistryEntry } from "../../../stores/registryStore";
 import { mdTabsStore } from "../../../stores/mdTabs";
 import { uiStore } from "../../../stores/ui";
@@ -83,7 +84,7 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
     try {
       await pluginStore.uninstall(props.plugin.id);
     } catch (err) {
-      console.error(`Failed to uninstall plugin "${props.plugin.id}":`, err);
+      appLogger.error("plugin", `Failed to uninstall plugin "${props.plugin.id}"`, err);
     } finally {
       setUninstalling(false);
     }
@@ -188,7 +189,7 @@ const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
     try {
       await pluginStore.installFromUrl(props.entry.downloadUrl);
     } catch (err) {
-      console.error(`Failed to install plugin "${props.entry.id}":`, err);
+      appLogger.error("plugin", `Failed to install plugin "${props.entry.id}"`, err);
       alert(`Installation failed: ${err}`);
     } finally {
       setInstalling(false);
@@ -261,7 +262,7 @@ export const PluginsTab: Component = () => {
     try {
       await pluginStore.installFromZip(selected as string);
     } catch (err) {
-      console.error("Failed to install plugin:", err);
+      appLogger.error("plugin", "Failed to install plugin", err);
       alert(`Installation failed: ${err}`);
     } finally {
       setInstalling(false);
@@ -276,7 +277,7 @@ export const PluginsTab: Component = () => {
           class={ps.docsLink}
           onClick={() => {
             if (isTauri()) {
-              openUrl(PLUGIN_DOCS_URL).catch((err) => console.error("Failed to open URL:", err));
+              openUrl(PLUGIN_DOCS_URL).catch((err) => appLogger.error("plugin", "Failed to open URL", err));
             } else {
               window.open(PLUGIN_DOCS_URL, "_blank");
             }

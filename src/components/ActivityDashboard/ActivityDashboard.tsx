@@ -2,6 +2,7 @@ import { Component, For, Show, createEffect, createSignal, onCleanup } from "sol
 import { activityDashboardStore } from "../../stores/activityDashboard";
 import { terminalsStore } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
+import { appLogger } from "../../stores/appLogger";
 import { formatRelativeTime } from "../../utils/time";
 import s from "./ActivityDashboard.module.css";
 
@@ -30,7 +31,7 @@ function getTerminalStatus(
     result = { label: "—", className: s.statusIdle };
     reason = `shellState=${shellState === null ? "null" : `"${shellState}"`} (fallthrough)`;
   }
-  console.debug(`[ActivityDash] ${termId} → "${result.label}" because ${reason}`);
+  appLogger.debug("app", `[ActivityDash] ${termId} → "${result.label}" because ${reason}`);
   return result;
 }
 

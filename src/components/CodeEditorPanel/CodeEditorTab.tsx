@@ -7,6 +7,7 @@ import type { Extension } from "@codemirror/state";
 import type { LanguageSupport } from "@codemirror/language";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { repositoriesStore } from "../../stores/repositories";
+import { appLogger } from "../../stores/appLogger";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { codeEditorTheme } from "./theme";
@@ -105,7 +106,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
       setSavedContent(diskContent);
       setDiskConflict(false);
     } catch (err) {
-      console.error("Failed to reload file:", err);
+      appLogger.error("app", "Failed to reload file", err);
     }
   };
 
@@ -190,7 +191,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
         repositoriesStore.bumpRevision(props.repoPath);
       }
     } catch (err) {
-      console.error("Failed to save file:", err);
+      appLogger.error("app", "Failed to save file", err);
     }
   };
 
@@ -268,7 +269,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
           action: () => {
             const fullPath = `${props.repoPath}/${props.filePath}`;
             navigator.clipboard.writeText(fullPath).catch((err) =>
-              console.error("Failed to copy path:", err),
+              appLogger.error("app", "Failed to copy path", err),
             );
           },
         }]}

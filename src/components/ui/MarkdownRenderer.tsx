@@ -3,6 +3,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { stripAnsi } from "../../utils/stripAnsi";
+import { appLogger } from "../../stores/appLogger";
 
 export interface MarkdownRendererProps {
   content: string;
@@ -43,7 +44,7 @@ export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
       }
       return DOMPurify.sanitize(stripEventHandlers(html));
     } catch (err) {
-      console.error("Markdown parsing error:", err);
+      appLogger.error("app", "Markdown parsing error", err);
       return `<pre>${cleaned}</pre>`;
     }
   });

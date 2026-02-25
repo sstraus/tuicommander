@@ -2,6 +2,7 @@ import { Component, For, Show, createSignal, onCleanup, createEffect, onMount } 
 import { invoke } from "../../invoke";
 import { isTauri } from "../../transport";
 import { settingsStore, IDE_NAMES, IDE_ICON_PATHS, IDE_CATEGORIES } from "../../stores/settings";
+import { appLogger } from "../../stores/appLogger";
 import type { IdeType } from "../../stores/settings";
 
 /** Code editors that can open individual files (as opposed to terminals, git clients, etc.) */
@@ -46,7 +47,7 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
       const installed = await invoke<string[]>("detect_installed_ides");
       setInstalledIdes(installed);
     } catch (err) {
-      console.error("Failed to detect installed IDEs:", err);
+      appLogger.error("app", "Failed to detect installed IDEs", err);
       setInstalledIdes(["terminal", "finder"]);
     }
   });
@@ -112,7 +113,7 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
       await repo.openInApp(target, ide);
       props.onOpenInIde?.(ide);
     } catch (err) {
-      console.error("Failed to open in IDE:", err);
+      appLogger.error("app", "Failed to open in IDE", err);
     }
   };
 
@@ -124,7 +125,7 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
       await repo.openInApp(target, currentIde());
       props.onOpenInIde?.(currentIde());
     } catch (err) {
-      console.error("Failed to open in IDE:", err);
+      appLogger.error("app", "Failed to open in IDE", err);
     }
   };
 

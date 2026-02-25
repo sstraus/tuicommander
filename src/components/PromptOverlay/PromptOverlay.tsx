@@ -1,6 +1,7 @@
 import { Component, For, Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { promptStore } from "../../stores/prompt";
 import { usePty } from "../../hooks/usePty";
+import { appLogger } from "../../stores/appLogger";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import s from "./PromptOverlay.module.css";
@@ -86,7 +87,7 @@ export const PromptOverlay: Component<PromptOverlayProps> = (props) => {
     try {
       await pty.write(sessionId, selection + "\n");
     } catch (err) {
-      console.error("Failed to send selection:", err);
+      appLogger.error("app", "Failed to send selection", err);
     }
   };
 

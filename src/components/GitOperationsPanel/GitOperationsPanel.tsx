@@ -2,6 +2,7 @@ import { Component, Show, For, createSignal, createEffect } from "solid-js";
 import { invoke } from "../../invoke";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
+import { appLogger } from "../../stores/appLogger";
 import { escapeShellArg, isValidBranchName, isValidPath } from "../../utils";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -160,7 +161,7 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
         .map((b) => b.name);
       setBranches(branchNames);
     } catch (err) {
-      console.error("Failed to fetch branches:", err);
+      appLogger.error("git", "Failed to fetch branches", err);
       setBranches([]);
     } finally {
       setLoadingBranches(false);

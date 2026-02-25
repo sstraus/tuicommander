@@ -1,5 +1,6 @@
 import { Component, For, Show } from "solid-js";
 import { settingsStore, IDE_NAMES } from "../../../stores/settings";
+import { appLogger } from "../../../stores/appLogger";
 import { repoDefaultsStore } from "../../../stores/repoDefaults";
 import { updaterStore } from "../../../stores/updater";
 import type { IdeType, UpdateChannel } from "../../../stores/settings";
@@ -124,7 +125,7 @@ export const GeneralTab: Component = () => {
       <div class={s.group}>
         <button
           class={s.testBtn}
-          onClick={() => { updaterStore.checkForUpdate().catch((err: unknown) => console.debug("Update check failed:", err)); }}
+          onClick={() => { updaterStore.checkForUpdate().catch((err: unknown) => appLogger.debug("app", "Update check failed", err)); }}
           disabled={updaterStore.state.checking || updaterStore.state.downloading}
         >
           {updaterStore.state.checking ? t("general.btn.checking", "Checking...") : t("general.btn.checkNow", "Check Now")}

@@ -1,5 +1,6 @@
 import { Component, For, Show, createSignal, onMount } from "solid-js";
 import { AGENTS, AGENT_DISPLAY, MCP_SUPPORT, type AgentType, type AgentRunConfig } from "../../../agents";
+import { appLogger } from "../../../stores/appLogger";
 import { agentConfigsStore } from "../../../stores/agentConfigs";
 import { useAgentDetection, type AgentAvailability } from "../../../hooks/useAgentDetection";
 import { invoke } from "../../../invoke";
@@ -132,7 +133,7 @@ const ClaudeUsageToggle: Component = () => {
       await setPluginEnabled("claude-usage", newState);
       setClaudeUsageEnabled(newState);
     } catch (err) {
-      console.error("Failed to toggle Claude Usage Dashboard:", err);
+      appLogger.error("config", "Failed to toggle Claude Usage Dashboard", err);
       setEnabled(!newState); // revert on failure
     }
   };
@@ -177,7 +178,7 @@ const AgentRow: Component<{
       const status = await invoke<McpStatus>("get_agent_mcp_status", { agentType: props.agentType });
       setMcpStatus(status);
     } catch (err) {
-      console.error(`Failed to get MCP status for ${props.agentType}:`, err);
+      appLogger.error("config", `Failed to get MCP status for ${props.agentType}`, err);
     }
   };
 
@@ -202,7 +203,7 @@ const AgentRow: Component<{
       }
       await loadMcpStatus();
     } catch (err) {
-      console.error(`MCP toggle failed for ${props.agentType}:`, err);
+      appLogger.error("config", `MCP toggle failed for ${props.agentType}`, err);
     } finally {
       setMcpLoading(false);
     }
@@ -215,7 +216,7 @@ const AgentRow: Component<{
         await invoke("open_in_app", { path: configPath, app: settingsStore.state.ide });
       }
     } catch (err) {
-      console.error(`Failed to open config for ${props.agentType}:`, err);
+      appLogger.error("config", `Failed to open config for ${props.agentType}`, err);
     }
   };
 

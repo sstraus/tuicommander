@@ -1,5 +1,6 @@
 import { Component, For, Show, createSignal, onMount } from "solid-js";
 import { dictationStore, WHISPER_LANGUAGES } from "../../stores/dictation";
+import { appLogger } from "../../stores/appLogger";
 import type { ModelInfo } from "../../stores/dictation";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -158,7 +159,7 @@ export const DictationSettings: Component = () => {
           dictationStore.saveCorrections(map as Record<string, string>);
         }
       } catch {
-        console.error("Failed to import corrections file");
+        appLogger.error("dictation", "Failed to import corrections file");
       }
     };
     input.click();

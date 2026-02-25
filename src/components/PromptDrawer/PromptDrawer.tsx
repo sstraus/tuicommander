@@ -2,6 +2,7 @@ import { Component, For, Show, createEffect, createSignal, onCleanup } from "sol
 import { promptLibraryStore, type SavedPrompt, type PromptCategory } from "../../stores/promptLibrary";
 import { terminalsStore } from "../../stores/terminals";
 import { usePty } from "../../hooks/usePty";
+import { appLogger } from "../../stores/appLogger";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import s from "./PromptDrawer.module.css";
@@ -156,7 +157,7 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
       promptLibraryStore.closeDrawer();
       props.onClose?.();
     } catch (err) {
-      console.error("Failed to inject prompt:", err);
+      appLogger.error("app", "Failed to inject prompt", err);
     }
   };
 

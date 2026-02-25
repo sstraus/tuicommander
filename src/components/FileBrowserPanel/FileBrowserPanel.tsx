@@ -1,5 +1,6 @@
 import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
+import { appLogger } from "../../stores/appLogger";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { getModifierSymbol } from "../../platform";
 import { globToRegex } from "../../utils";
@@ -154,7 +155,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       await fb.deletePath(props.repoPath, entry.path);
       refresh();
     } catch (err) {
-      console.error("Failed to delete:", err);
+      appLogger.error("app", "Failed to delete", err);
     }
   };
 
@@ -165,7 +166,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       await fb.addToGitignore(props.repoPath, pattern);
       refresh();
     } catch (err) {
-      console.error("Failed to add to .gitignore:", err);
+      appLogger.error("git", "Failed to add to .gitignore", err);
     }
   };
 
@@ -196,7 +197,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       }
       refresh();
     } catch (err) {
-      console.error(`Failed to ${clip.mode === "copy" ? "copy" : "move"}:`, err);
+      appLogger.error("app", `Failed to ${clip.mode === "copy" ? "copy" : "move"}`, err);
     }
   };
 
@@ -209,7 +210,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       await fb.renamePath(props.repoPath, entry.path, newPath);
       refresh();
     } catch (err) {
-      console.error("Failed to rename:", err);
+      appLogger.error("app", "Failed to rename", err);
     }
   };
 
@@ -218,7 +219,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     if (!repoPath) return;
     const fullPath = `${repoPath}/${entry.path}`;
     navigator.clipboard.writeText(fullPath).catch((err) =>
-      console.error("Failed to copy path:", err),
+      appLogger.error("app", "Failed to copy path", err),
     );
   };
 

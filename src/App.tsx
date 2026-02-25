@@ -251,7 +251,7 @@ const App: Component = () => {
 
     // Check for updates after hydration (non-blocking)
     if (settingsStore.state.autoUpdateEnabled) {
-      updaterStore.checkForUpdate().catch((err) => console.debug("[Updater] Auto-check failed:", err));
+      updaterStore.checkForUpdate().catch((err) => appLogger.debug("app", "Updater auto-check failed", err));
     }
 
     // Register tuic:// deep link handler
@@ -335,7 +335,7 @@ const App: Component = () => {
       const sessionIds = terminalsStore.getIds()
         .map((id) => terminalsStore.get(id)?.sessionId)
         .filter((sid): sid is string => sid != null);
-      await Promise.all(sessionIds.map((sid) => pty.close(sid).catch((err) => console.warn(`Failed to close PTY ${sid} on quit:`, err))));
+      await Promise.all(sessionIds.map((sid) => pty.close(sid).catch((err) => appLogger.warn("app", `Failed to close PTY ${sid} on quit`, err))));
     } catch { /* ignore */ }
 
     if (destroyTimer !== null) clearTimeout(destroyTimer);
@@ -750,7 +750,7 @@ const App: Component = () => {
       label: "Check for Updates",
       category: "Application",
       keybinding: "",
-      execute: () => updaterStore.checkForUpdate().catch((err) => console.warn("[Updater] Check failed:", err)),
+      execute: () => updaterStore.checkForUpdate().catch((err) => appLogger.warn("app", "Updater check failed", err)),
     });
     entries.push({
       id: "reset-panel-sizes",
@@ -834,7 +834,7 @@ const App: Component = () => {
         case "command-palette": commandPaletteStore.toggle(); break;
         case "activity-dashboard": activityDashboardStore.toggle(); break;
         case "error-log": errorLogStore.toggle(); break;
-        case "check-for-updates": updaterStore.checkForUpdate().catch((err) => console.warn("[Updater] Manual check failed:", err)); break;
+        case "check-for-updates": updaterStore.checkForUpdate().catch((err) => appLogger.warn("app", "Updater manual check failed", err)); break;
         case "about": openSettings("about"); break;
 
         default: {
@@ -885,7 +885,7 @@ const App: Component = () => {
     };
 
     setup().catch((err) =>
-      console.error("Failed to register push-to-talk shortcut:", err),
+      appLogger.error("app", "Failed to register push-to-talk shortcut", err),
     );
 
     onCleanup(() => {
