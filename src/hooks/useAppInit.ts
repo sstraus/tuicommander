@@ -154,6 +154,9 @@ export async function initApp(deps: AppInitDeps) {
     deps.setStatusInfo("Warning: 1 store(s) failed to load");
   }
 
+  // Recover log entries from Rust backend (survives webview reloads)
+  appLogger.hydrateFromRust().catch(() => {});
+
   // Remove splash screen now that stores are hydrated — prevents flash of empty
   // state (e.g. "Add Repository" button) before persisted repos have loaded.
   document.getElementById("splash")?.remove();
