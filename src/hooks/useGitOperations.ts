@@ -22,6 +22,7 @@ export interface GitOperationsDeps {
     generateWorktreeName: (existingNames: string[]) => Promise<string>;
     generateCloneBranchName: (sourceBranch: string, existingNames: string[]) => Promise<string>;
     listBaseRefOptions: (repoPath: string) => Promise<string[]>;
+    mergeAndArchiveWorktree: (repoPath: string, branchName: string, targetBranch: string, afterMerge: string) => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
     listLocalBranches: (repoPath: string) => Promise<string[]>;
   };
   pty: {
@@ -495,6 +496,46 @@ export function useGitOperations(deps: GitOperationsDeps) {
     }
   };
 
+  /** Merge a worktree branch into target, then archive/delete based on setting */
+  const handleMergeAndArchive = async (
+    repoPath: string,
+    branchName: string,
+    targetBranch: string,
+    afterMerge: string,
+  ) => {
+    try {
+      deps.setStatusInfo(`Merging ${branchName} into ${targetBranch}...`);
+
+      // Close terminals for this branch before merge
+      const repoState = repositoriesStore.get(repoPath);
+      const branch = repoState?.branches[branchName];
+      if (branch) {
+        for (const termId of branch.terminals) {
+          await deps.closeTerminal(termId, true);
+        }
+      }
+
+      const result = await deps.repo.mergeAndArchiveWorktree(repoPath, branchName, targetBranch, afterMerge);
+
+      if (result.action === "pending") {
+        // "ask" mode — the merge succeeded but user needs to decide
+        // For now, archive by default (the dialog would be handled upstream)
+        deps.setStatusInfo(`Merged ${branchName} into ${targetBranch}`);
+      } else {
+        deps.setStatusInfo(`Merged ${branchName} into ${targetBranch} (${result.action})`);
+      }
+
+      // Remove branch from sidebar
+      repositoriesStore.removeBranch(repoPath, branchName);
+
+      // Refresh to pick up updated branch stats
+      refreshAllBranchStats();
+    } catch (err) {
+      appLogger.error("git", "Failed to merge and archive worktree", err);
+      deps.setStatusInfo(`Failed to merge: ${err}`);
+    }
+  };
+
   const handleNewTab = async () => {
     const activeRepo = repositoriesStore.getActive();
     if (activeRepo && activeRepo.activeBranch) {
@@ -592,6 +633,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     handleAddWorktree,
     confirmCreateWorktree,
     handleCreateWorktreeFromBranch,
+    handleMergeAndArchive,
     worktreeDialogState,
     setWorktreeDialogState,
     creatingWorktreeRepos,

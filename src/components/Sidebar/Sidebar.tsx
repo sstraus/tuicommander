@@ -25,6 +25,7 @@ export interface SidebarProps {
   buildAgentMenuItems?: (repoPath: string, branchName: string) => ContextMenuItem[];
   onAddWorktree: (repoPath: string) => void;
   onCreateWorktreeFromBranch?: (repoPath: string, branchName: string) => void;
+  onMergeAndArchive?: (repoPath: string, branchName: string) => void;
   onAddRepo: () => void;
   onRepoSettings: (repoPath: string) => void;
   onRemoveRepo: (repoPath: string) => void;
@@ -173,6 +174,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         buildAgentMenuItems={props.buildAgentMenuItems ? (branch) => props.buildAgentMenuItems!(repo.path, branch) : undefined}
         onAddWorktree={() => props.onAddWorktree(repo.path)}
         onCreateWorktreeFromBranch={props.onCreateWorktreeFromBranch ? (branch) => props.onCreateWorktreeFromBranch!(repo.path, branch) : undefined}
+        onMergeAndArchive={props.onMergeAndArchive ? (branch) => props.onMergeAndArchive!(repo.path, branch) : undefined}
         onSettings={() => props.onRepoSettings(repo.path)}
         onRemove={() => props.onRemoveRepo(repo.path)}
         onToggle={() => repositoriesStore.toggleExpanded(repo.path)}

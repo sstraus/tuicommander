@@ -134,6 +134,28 @@ export function useRepository() {
     }
   }
 
+  /** Result of merge-and-archive operation */
+  interface MergeArchiveResult {
+    merged: boolean;
+    action: string;
+    archive_path: string | null;
+  }
+
+  /** Merge a worktree branch into target, then archive or delete */
+  async function mergeAndArchiveWorktree(
+    repoPath: string,
+    branchName: string,
+    targetBranch: string,
+    afterMerge: string,
+  ): Promise<MergeArchiveResult> {
+    return await invoke<MergeArchiveResult>("merge_and_archive_worktree", {
+      repoPath,
+      branchName,
+      targetBranch,
+      afterMerge,
+    });
+  }
+
   /** Recent commit entry */
   interface RecentCommit {
     hash: string;
@@ -177,6 +199,7 @@ export function useRepository() {
     generateWorktreeName,
     generateCloneBranchName,
     listBaseRefOptions,
+    mergeAndArchiveWorktree,
     listLocalBranches,
     getRecentCommits,
   };

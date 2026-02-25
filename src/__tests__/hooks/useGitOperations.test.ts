@@ -25,6 +25,7 @@ describe("useGitOperations", () => {
     generateWorktreeName: vi.fn().mockResolvedValue("bold-nexus-042"),
     generateCloneBranchName: vi.fn().mockResolvedValue("feat-auth--bold-nexus-042"),
     listBaseRefOptions: vi.fn().mockResolvedValue(["main"]),
+    mergeAndArchiveWorktree: vi.fn().mockResolvedValue({ merged: true, action: "archived", archive_path: null }),
     listLocalBranches: vi.fn().mockResolvedValue(["main"]),
   };
 

@@ -157,6 +157,7 @@ export const BranchItem: Component<{
   onRename: () => void;
   onShowPrDetail: () => void;
   onCreateWorktreeFromBranch?: () => void;
+  onMergeAndArchive?: () => void;
 }> = (props) => {
   const ctxMenu = createContextMenu();
 
@@ -198,6 +199,9 @@ export const BranchItem: Component<{
       items.push({ label: "Rename Branch", action: props.onRename, disabled: props.branch.isMain });
       if (!props.branch.isMain && !props.branch.worktreePath && props.onCreateWorktreeFromBranch) {
         items.push({ label: "Create Worktree", action: props.onCreateWorktreeFromBranch });
+      }
+      if (!props.branch.isMain && props.branch.worktreePath && props.onMergeAndArchive) {
+        items.push({ label: "Merge & Archive", action: props.onMergeAndArchive });
       }
       if (!props.branch.isMain && props.branch.worktreePath && props.canRemove) {
         items.push({ label: "Delete Worktree", action: props.onRemove, separator: true });
@@ -306,6 +310,7 @@ export const RepoSection: Component<{
   buildAgentMenuItems?: (branchName: string) => ContextMenuItem[];
   onAddWorktree: () => void;
   onCreateWorktreeFromBranch?: (branchName: string) => void;
+  onMergeAndArchive?: (branchName: string) => void;
   onSettings: () => void;
   onRemove: () => void;
   onToggle: () => void;
@@ -454,6 +459,7 @@ export const RepoSection: Component<{
                 onRename={() => props.onRenameBranch(branch.name)}
                 onShowPrDetail={() => props.onShowPrDetail(branch.name)}
                 onCreateWorktreeFromBranch={props.onCreateWorktreeFromBranch ? () => props.onCreateWorktreeFromBranch!(branch.name) : undefined}
+                onMergeAndArchive={props.onMergeAndArchive ? () => props.onMergeAndArchive!(branch.name) : undefined}
               />
             )}
           </For>
