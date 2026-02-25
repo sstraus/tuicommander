@@ -17,9 +17,11 @@ export interface GitOperationsDeps {
     getDiffStats: (path: string) => Promise<{ additions: number; deletions: number }>;
     getWorktreePaths: (repoPath: string) => Promise<Record<string, string>>;
     removeWorktree: (repoPath: string, branchName: string) => Promise<void>;
-    createWorktree: (baseRepo: string, branchName: string, createBranch?: boolean) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;
+    createWorktree: (baseRepo: string, branchName: string, createBranch?: boolean, baseRef?: string) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;
     renameBranch: (repoPath: string, oldName: string, newName: string) => Promise<void>;
     generateWorktreeName: (existingNames: string[]) => Promise<string>;
+    generateCloneBranchName: (sourceBranch: string, existingNames: string[]) => Promise<string>;
+    listBaseRefOptions: (repoPath: string) => Promise<string[]>;
     listLocalBranches: (repoPath: string) => Promise<string[]>;
   };
   pty: {
@@ -51,6 +53,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     existingBranches: string[];
     worktreeBranches: string[];
     worktreesDir: string;
+    baseRefs: string[];
   } | null>(null);
 
   const refreshAllBranchStats = async () => {
@@ -402,10 +405,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
     const worktreeBranches = repoState ? Object.keys(repoState.branches) : [];
 
     // Fetch data for the dialog in parallel
-    const [suggestedName, localBranches, worktreesDir] = await Promise.all([
+    const [suggestedName, localBranches, worktreesDir, baseRefs] = await Promise.all([
       deps.repo.generateWorktreeName(worktreeBranches),
       deps.repo.listLocalBranches(repoPath),
       deps.pty.getWorktreesDir(),
+      deps.repo.listBaseRefOptions(repoPath),
     ]);
 
     setWorktreeDialogState({
@@ -414,6 +418,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       existingBranches: localBranches,
       worktreeBranches,
       worktreesDir,
+      baseRefs,
     });
   };
 
@@ -429,7 +434,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
     try {
       deps.setStatusInfo(`Creating worktree ${options.branchName}...`);
-      const result = await deps.repo.createWorktree(repoPath, options.branchName, options.createBranch);
+      const result = await deps.repo.createWorktree(repoPath, options.branchName, options.createBranch, options.baseRef);
 
       repositoriesStore.setBranch(repoPath, result.branch, { worktreePath: result.path });
       repositoriesStore.setActiveBranch(repoPath, result.branch);
@@ -444,6 +449,42 @@ export function useGitOperations(deps: GitOperationsDeps) {
       deps.setStatusInfo(`Created worktree ${options.branchName}`);
     } catch (err) {
       appLogger.error("git", "Failed to create worktree", err);
+      deps.setStatusInfo(`Failed to create worktree: ${err}`);
+    } finally {
+      setCreatingWorktreeRepos((prev) => {
+        const next = new Set(prev);
+        next.delete(repoPath);
+        return next;
+      });
+    }
+  };
+
+  /** Quick-clone flow: right-click branch → instant worktree with hybrid name */
+  const handleCreateWorktreeFromBranch = async (repoPath: string, branchName: string) => {
+    if (creatingWorktreeRepos().has(repoPath)) return;
+    setCreatingWorktreeRepos((prev) => new Set([...prev, repoPath]));
+
+    try {
+      const repoState = repositoriesStore.get(repoPath);
+      const existingBranches = repoState ? Object.keys(repoState.branches) : [];
+      const cloneName = await deps.repo.generateCloneBranchName(branchName, existingBranches);
+
+      deps.setStatusInfo(`Creating worktree ${cloneName}...`);
+      const result = await deps.repo.createWorktree(repoPath, cloneName, true, branchName);
+
+      repositoriesStore.setBranch(repoPath, result.branch, { worktreePath: result.path });
+      repositoriesStore.setActiveBranch(repoPath, result.branch);
+
+      await handleAddTerminalToBranch(repoPath, result.branch);
+
+      try {
+        const stats = await deps.repo.getDiffStats(result.path);
+        repositoriesStore.updateBranchStats(repoPath, result.branch, stats.additions, stats.deletions);
+      } catch { /* ignore */ }
+
+      deps.setStatusInfo(`Created worktree ${cloneName}`);
+    } catch (err) {
+      appLogger.error("git", "Failed to create worktree from branch", err);
       deps.setStatusInfo(`Failed to create worktree: ${err}`);
     } finally {
       setCreatingWorktreeRepos((prev) => {
@@ -550,6 +591,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     handleAddRepo,
     handleAddWorktree,
     confirmCreateWorktree,
+    handleCreateWorktreeFromBranch,
     worktreeDialogState,
     setWorktreeDialogState,
     creatingWorktreeRepos,

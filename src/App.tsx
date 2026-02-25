@@ -928,6 +928,7 @@ const App: Component = () => {
             setRenameBranchDialogVisible(true);
           }}
           onAddWorktree={gitOps.handleAddWorktree}
+          onCreateWorktreeFromBranch={gitOps.handleCreateWorktreeFromBranch}
           creatingWorktreeRepos={gitOps.creatingWorktreeRepos()}
           onAddRepo={gitOps.handleAddRepo}
           onRepoSettings={(repoPath) => gitOps.handleRepoSettings(repoPath, (ctx) => {
@@ -1104,6 +1105,7 @@ const App: Component = () => {
         existingBranches={gitOps.worktreeDialogState()?.existingBranches ?? []}
         worktreeBranches={gitOps.worktreeDialogState()?.worktreeBranches ?? []}
         worktreesDir={gitOps.worktreeDialogState()?.worktreesDir ?? ""}
+        baseRefs={gitOps.worktreeDialogState()?.baseRefs}
         onGenerateName={gitOps.generateWorktreeName}
         onClose={() => gitOps.setWorktreeDialogState(null)}
         onCreate={gitOps.confirmCreateWorktree}

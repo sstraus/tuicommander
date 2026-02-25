@@ -23,6 +23,8 @@ describe("useGitOperations", () => {
     createWorktree: vi.fn(),
     renameBranch: vi.fn().mockResolvedValue(undefined),
     generateWorktreeName: vi.fn().mockResolvedValue("bold-nexus-042"),
+    generateCloneBranchName: vi.fn().mockResolvedValue("feat-auth--bold-nexus-042"),
+    listBaseRefOptions: vi.fn().mockResolvedValue(["main"]),
     listLocalBranches: vi.fn().mockResolvedValue(["main"]),
   };
 
@@ -612,7 +614,7 @@ describe("useGitOperations", () => {
       // Confirm creation
       await gitOps.confirmCreateWorktree({ branchName: "bold-nexus-042", createBranch: true, baseRef: "main" });
 
-      expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "bold-nexus-042", true);
+      expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "bold-nexus-042", true, "main");
       expect(mockSetStatusInfo).toHaveBeenCalledWith("Created worktree bold-nexus-042");
     });
 
@@ -632,7 +634,7 @@ describe("useGitOperations", () => {
       await gitOps.handleAddWorktree("/repo");
       await gitOps.confirmCreateWorktree({ branchName: "develop", createBranch: false, baseRef: "main" });
 
-      expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "develop", false);
+      expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "develop", false, "main");
       expect(mockSetStatusInfo).toHaveBeenCalledWith("Created worktree develop");
     });
 

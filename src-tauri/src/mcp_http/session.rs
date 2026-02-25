@@ -382,7 +382,7 @@ pub(super) async fn create_session_with_worktree(
         branch: Some(body.branch_name),
         create_branch: true,
     };
-    let worktree = match crate::worktree::create_worktree_internal(&state.worktrees_dir, &wt_config) {
+    let worktree = match crate::worktree::create_worktree_internal(&state.worktrees_dir, &wt_config, None) {
         Ok(wt) => wt,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
     };

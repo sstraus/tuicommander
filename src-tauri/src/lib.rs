@@ -722,6 +722,7 @@ pub fn run() {
             github::get_ci_checks,
             github::get_repo_pr_statuses,
             worktree::generate_worktree_name_cmd,
+            worktree::generate_clone_branch_name_cmd,
             worktree::list_local_branches,
             worktree::list_base_ref_options,
             clear_caches,

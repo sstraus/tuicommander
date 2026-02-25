@@ -66,10 +66,14 @@ pub(crate) fn sanitize_name(name: &str) -> String {
         .to_lowercase()
 }
 
-/// Create a git worktree for a task
+/// Create a git worktree for a task.
+///
+/// `base_ref` optionally specifies the starting commit/branch for new worktrees
+/// (e.g., "main" or "origin/develop"). When `None`, git uses HEAD.
 pub(crate) fn create_worktree_internal(
     worktrees_dir: &Path,
     config: &WorktreeConfig,
+    base_ref: Option<&str>,
 ) -> Result<WorktreeInfo, String> {
     let worktree_name = sanitize_name(&config.task_name);
     let worktree_path = worktrees_dir.join(&worktree_name);
@@ -105,6 +109,13 @@ pub(crate) fn create_worktree_internal(
         && !config.create_branch {
             cmd.arg(branch);
         }
+
+    // Append base_ref as start-point when creating a new branch
+    if config.create_branch {
+        if let Some(start_point) = base_ref {
+            cmd.arg(start_point);
+        }
+    }
 
     let output = cmd
         .output()
@@ -238,6 +249,7 @@ pub(crate) fn create_worktree(
     base_repo: String,
     branch_name: String,
     create_branch: Option<bool>,
+    base_ref: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let config = WorktreeConfig {
         task_name: branch_name.clone(),
@@ -246,7 +258,7 @@ pub(crate) fn create_worktree(
         create_branch: create_branch.unwrap_or(true),
     };
 
-    let worktree = create_worktree_internal(&state.worktrees_dir, &config)?;
+    let worktree = create_worktree_internal(&state.worktrees_dir, &config, base_ref.as_deref())?;
     state.invalidate_repo_caches(&config.base_repo);
 
     Ok(serde_json::json!({
@@ -375,6 +387,12 @@ pub(crate) fn get_worktree_paths(repo_path: String) -> Result<HashMap<String, St
 #[tauri::command]
 pub(crate) fn generate_worktree_name_cmd(existing_names: Vec<String>) -> String {
     generate_worktree_name(&existing_names)
+}
+
+/// Generate a hybrid clone branch name: `{sanitized_source}--{random_name}`
+#[tauri::command]
+pub(crate) fn generate_clone_branch_name_cmd(source_branch: String, existing_names: Vec<String>) -> String {
+    generate_clone_branch_name(&source_branch, &existing_names)
 }
 
 /// List local branch names for a repository (excludes HEAD and remote-only refs)
@@ -521,7 +539,7 @@ mod tests {
             create_branch: false,
         };
 
-        let result = create_worktree_internal(&worktrees_dir, &config);
+        let result = create_worktree_internal(&worktrees_dir, &config, None);
         assert!(result.is_ok(), "Failed to create worktree: {:?}", result);
 
         let worktree = result.unwrap();
@@ -541,7 +559,7 @@ mod tests {
             create_branch: true,
         };
 
-        let result = create_worktree_internal(&worktrees_dir, &config);
+        let result = create_worktree_internal(&worktrees_dir, &config, None);
         assert!(result.is_ok(), "Failed to create worktree with branch: {:?}", result);
 
         let worktree = result.unwrap();
@@ -561,10 +579,10 @@ mod tests {
         };
 
         // Create twice - should not fail
-        let result1 = create_worktree_internal(&worktrees_dir, &config);
+        let result1 = create_worktree_internal(&worktrees_dir, &config, None);
         assert!(result1.is_ok());
 
-        let result2 = create_worktree_internal(&worktrees_dir, &config);
+        let result2 = create_worktree_internal(&worktrees_dir, &config, None);
         assert!(result2.is_ok(), "Second create should succeed (idempotent)");
 
         // Both should return same path
@@ -583,7 +601,7 @@ mod tests {
             create_branch: false,
         };
 
-        let worktree = create_worktree_internal(&worktrees_dir, &config)
+        let worktree = create_worktree_internal(&worktrees_dir, &config, None)
             .expect("Failed to create worktree");
 
         assert!(worktree.path.exists(), "Worktree should exist before removal");
@@ -622,7 +640,7 @@ mod tests {
             create_branch: false,
         };
 
-        let result = create_worktree_internal(&worktrees_dir, &config);
+        let result = create_worktree_internal(&worktrees_dir, &config, None);
         assert!(result.is_ok());
 
         let worktree = result.unwrap();
