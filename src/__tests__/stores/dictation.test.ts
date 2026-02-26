@@ -270,7 +270,7 @@ describe("dictationStore", () => {
 
       await createRoot(async (dispose) => {
         await store.saveConfig({ enabled: true });
-        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to save"), expect.anything());
+        expect(consoleSpy).toHaveBeenCalledWith("[dictation]", expect.stringContaining("Failed to save"), expect.anything());
         consoleSpy.mockRestore();
         dispose();
       });

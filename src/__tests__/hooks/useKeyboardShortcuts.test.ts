@@ -60,8 +60,10 @@ function fireKeydown(key: string, opts: Partial<KeyboardEvent> = {}) {
 describe("useKeyboardShortcuts", () => {
   let handlers: ShortcutHandlers;
   let cleanup: (() => void) | undefined;
+  const originalPlatform = navigator.platform;
 
   beforeEach(() => {
+    Object.defineProperty(navigator, "platform", { value: "MacIntel", configurable: true });
     resetStores();
     handlers = createMockHandlers();
     cleanup = useKeyboardShortcuts(handlers);
@@ -69,6 +71,7 @@ describe("useKeyboardShortcuts", () => {
 
   afterEach(() => {
     cleanup?.();
+    Object.defineProperty(navigator, "platform", { value: originalPlatform, configurable: true });
   });
 
   describe("zoom shortcuts", () => {

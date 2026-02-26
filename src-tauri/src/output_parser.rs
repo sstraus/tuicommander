@@ -211,10 +211,10 @@ fn line_is_source_code(line: &str) -> bool {
         return true;
     }
     // r" preceded by whitespace/punctuation (not alphanumeric) — avoids matching "error", "server", etc.
-    if let Some(idx) = trimmed.find("r\"") {
-        if idx == 0 || !trimmed.as_bytes()[idx - 1].is_ascii_alphanumeric() {
-            return true;
-        }
+    if let Some(idx) = trimmed.find("r\"")
+        && (idx == 0 || !trimmed.as_bytes()[idx - 1].is_ascii_alphanumeric())
+    {
+        return true;
     }
     // Line comments (Rust, JS, Python, shell)
     if trimmed.starts_with("//") || trimmed.starts_with('#') {

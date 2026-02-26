@@ -142,6 +142,13 @@ describe("repoDefaultsStore", () => {
             copy_untracked_files: false,
             setup_script: "",
             run_script: "",
+            worktree_storage: "sibling",
+            prompt_on_create: true,
+            delete_branch_on_remove: true,
+            auto_archive_merged: false,
+            orphan_cleanup: "ask",
+            pr_merge_strategy: "merge",
+            after_merge: "archive",
           },
         });
         dispose();

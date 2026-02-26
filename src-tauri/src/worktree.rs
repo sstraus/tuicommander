@@ -13,10 +13,10 @@ fn find_worktree_path_for_branch(stdout: &str, branch_name: &str) -> Option<Path
     for line in stdout.lines() {
         if line.starts_with("worktree ") {
             current_path = Some(PathBuf::from(line.trim_start_matches("worktree ")));
-        } else if line.starts_with("branch refs/heads/") {
-            if line.trim_start_matches("branch refs/heads/") == branch_name {
-                return current_path;
-            }
+        } else if line.starts_with("branch refs/heads/")
+            && line.trim_start_matches("branch refs/heads/") == branch_name
+        {
+            return current_path;
         }
     }
     None

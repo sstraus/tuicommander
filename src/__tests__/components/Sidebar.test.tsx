@@ -264,7 +264,7 @@ describe("Sidebar", () => {
       expect(icons.length).toBe(2);
       // Main branch first (sorted), then feature
       const mainIcon = Array.from(icons).find((i) => i.classList.contains("branchIconMain"));
-      const featureIcon = Array.from(icons).find((i) => i.classList.contains("branchIconFeature"));
+      const featureIcon = Array.from(icons).find((i) => i.classList.contains("branchIconWorktree"));
       expect(mainIcon).toBeDefined();
       expect(mainIcon!.querySelector("svg")).not.toBeNull();
       expect(featureIcon).toBeDefined();

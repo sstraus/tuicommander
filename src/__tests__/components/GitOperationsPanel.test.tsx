@@ -398,7 +398,7 @@ describe("GitOperationsPanel", () => {
       ));
 
       await vi.waitFor(() => {
-        expect(errorSpy).toHaveBeenCalledWith("Failed to fetch branches:", expect.any(Error));
+        expect(errorSpy).toHaveBeenCalledWith("[git]", "Failed to fetch branches", expect.any(Error));
       });
 
       errorSpy.mockRestore();

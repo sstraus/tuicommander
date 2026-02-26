@@ -67,7 +67,7 @@ fn build_mcp_instructions(state: &Arc<AppState>) -> String {
     let sessions: Vec<_> = state.sessions.iter().map(|entry| {
         let id = entry.key().clone();
         let session = entry.value().lock();
-        (id, session.cwd.clone(), session.worktree.as_ref().map(|w| w.branch.clone()).flatten())
+        (id, session.cwd.clone(), session.worktree.as_ref().and_then(|w| w.branch.clone()))
     }).collect();
 
     if !sessions.is_empty() {

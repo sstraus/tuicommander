@@ -156,6 +156,7 @@ describe("CreateWorktreeDialog", () => {
     expect(handleCreate).toHaveBeenCalledWith({
       branchName: "develop",
       createBranch: false,
+      baseRef: "",
     });
   });
 
@@ -174,6 +175,7 @@ describe("CreateWorktreeDialog", () => {
     expect(handleCreate).toHaveBeenCalledWith({
       branchName: "feature/new-thing",
       createBranch: true,
+      baseRef: "",
     });
   });
 

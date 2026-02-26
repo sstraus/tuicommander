@@ -334,23 +334,23 @@ fn parse_jsonl_line(line: &str, stats: &mut CachedFileStats) -> LineInfo {
                 .and_then(|t| t.as_str())
                 .map(|s| s.to_string());
 
-            if subtype == Some("turn_duration") {
-                if let Some(ref ts) = timestamp {
-                    // Extract date part "2026-02-04" from ISO timestamp
+            if subtype == Some("turn_duration")
+                && let Some(ref ts) = timestamp
+            {
+                // Extract date part "2026-02-04" from ISO timestamp
+                let date = &ts[..10.min(ts.len())];
+                if date.len() == 10 {
+                    let day = stats.daily_activity.entry(date.to_string()).or_default();
+                    day.message_count += 1;
+                }
+
+                // Track session ID for counting unique sessions
+                if obj.get("sessionId").and_then(|s| s.as_str()).filter(|sid| stats.session_ids.insert(sid.to_string())).is_some() {
+                    // Bump session count for the day
                     let date = &ts[..10.min(ts.len())];
                     if date.len() == 10 {
                         let day = stats.daily_activity.entry(date.to_string()).or_default();
-                        day.message_count += 1;
-                    }
-
-                    // Track session ID for counting unique sessions
-                    if obj.get("sessionId").and_then(|s| s.as_str()).filter(|sid| stats.session_ids.insert(sid.to_string())).is_some() {
-                        // Bump session count for the day
-                        let date = &ts[..10.min(ts.len())];
-                        if date.len() == 10 {
-                            let day = stats.daily_activity.entry(date.to_string()).or_default();
-                            day.session_count += 1;
-                        }
+                        day.session_count += 1;
                     }
                 }
             }
@@ -465,21 +465,21 @@ fn parse_jsonl_file_from_offset(
     // Flush orphan pending tokens using the last known timestamp.
     // This happens when a session is still active: the final assistant
     // message(s) have no following turn_duration to provide a timestamp.
-    if let Some((input, output)) = pending_tokens {
-        if let Some(ref ts) = stats.last_timestamp {
-            if ts.len() >= 13 {
-                let hour_key = &ts[..13];
-                let hourly = stats.hourly_tokens.entry(hour_key.to_string()).or_default();
-                hourly.input_tokens += input;
-                hourly.output_tokens += output;
-                hourly.message_count += 1;
-            }
-            let date = &ts[..10.min(ts.len())];
-            if date.len() == 10 {
-                let day = stats.daily_activity.entry(date.to_string()).or_default();
-                day.input_tokens += input;
-                day.output_tokens += output;
-            }
+    if let Some((input, output)) = pending_tokens
+        && let Some(ref ts) = stats.last_timestamp
+    {
+        if ts.len() >= 13 {
+            let hour_key = &ts[..13];
+            let hourly = stats.hourly_tokens.entry(hour_key.to_string()).or_default();
+            hourly.input_tokens += input;
+            hourly.output_tokens += output;
+            hourly.message_count += 1;
+        }
+        let date = &ts[..10.min(ts.len())];
+        if date.len() == 10 {
+            let day = stats.daily_activity.entry(date.to_string()).or_default();
+            day.input_tokens += input;
+            day.output_tokens += output;
         }
     }
 

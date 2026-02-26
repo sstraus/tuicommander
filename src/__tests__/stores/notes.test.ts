@@ -152,7 +152,7 @@ describe("notesStore", () => {
       await createRoot(async (dispose) => {
         await store.hydrate();
         expect(store.state.notes).toEqual([]);
-        expect(consoleSpy).toHaveBeenCalledWith("Failed to hydrate notes:", expect.any(Error));
+        expect(consoleSpy).toHaveBeenCalledWith("[store]", "Failed to hydrate notes", expect.any(Error));
         dispose();
       });
       consoleSpy.mockRestore();

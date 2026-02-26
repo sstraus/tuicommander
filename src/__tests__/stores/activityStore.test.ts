@@ -266,7 +266,7 @@ describe("activityStore persistence", () => {
       mockInvoke.mockRejectedValueOnce(new Error("backend error"));
       await store.hydrate();
       expect(store.getActive()).toEqual([]);
-      expect(consoleSpy).toHaveBeenCalledWith("Failed to hydrate activity:", expect.any(Error));
+      expect(consoleSpy).toHaveBeenCalledWith("[store]", "Failed to hydrate activity", expect.any(Error));
       consoleSpy.mockRestore();
     });
 

@@ -523,8 +523,8 @@ describe("initApp", () => {
       // Terminals moved to new branch
       expect(repositoriesStore.get("/repo")?.branches["wip/memory-system-improvements"]?.terminals).toContain("term-1");
       expect(repositoriesStore.get("/repo")?.branches["wip/memory-system-improvements"]?.terminals).toContain("term-2");
-      // Old branch has no terminals
-      expect(repositoriesStore.get("/repo")?.branches["wip/global-config"]?.terminals).toEqual([]);
+      // Old branch entry removed after merge
+      expect(repositoriesStore.get("/repo")?.branches["wip/global-config"]).toBeUndefined();
       // Active branch updated
       expect(repositoriesStore.get("/repo")?.activeBranch).toBe("wip/memory-system-improvements");
     });

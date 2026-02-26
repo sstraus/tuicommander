@@ -94,7 +94,7 @@ describe("themes", () => {
     it("warns when applying unknown theme", () => {
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       applyAppTheme("nonexistent-theme");
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("nonexistent-theme"));
+      expect(warnSpy).toHaveBeenCalledWith("[app]", expect.stringContaining("nonexistent-theme"), "");
       warnSpy.mockRestore();
     });
 

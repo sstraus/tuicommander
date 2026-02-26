@@ -470,7 +470,7 @@ describe("repositoriesStore", () => {
       await createRoot(async (dispose) => {
         await store.hydrate(); // Should not throw
         expect(store.getPaths()).toEqual([]);
-        expect(errorSpy).toHaveBeenCalledWith("Failed to hydrate repositories:", expect.any(Error));
+        expect(errorSpy).toHaveBeenCalledWith("[store]", "Failed to hydrate repositories", expect.any(Error));
         errorSpy.mockRestore();
         dispose();
       });

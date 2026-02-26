@@ -256,7 +256,8 @@ describe("keybindingsStore", () => {
       expect(store.getActionForCombo("cmd+shift+d")).toBe("toggle-diff");
       // Verify the error was logged
       expect(debugSpy).toHaveBeenCalledWith(
-        "Failed to load keybindings overrides:",
+        "[config]",
+        "Failed to load keybindings overrides",
         expect.any(Error),
       );
       debugSpy.mockRestore();

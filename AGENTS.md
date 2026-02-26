@@ -159,6 +159,15 @@ When adding or changing `tuic://` schemes:
 | `src/actions/actionRegistry.ts` | ACTION_META → auto-populates HelpPanel + Command Palette |
 | `examples/plugins/` | Reference plugin implementations (6 examples) |
 
+## Test Integrity Rule
+
+**Tests are the specification. When a test fails after a code change, investigate BOTH sides before deciding which to fix.** Do not blindly update tests to match code — the test may be correct and the code wrong (TDD). For each failing test:
+
+1. Read the test to understand what behavior it specifies
+2. Read the source code to understand what changed
+3. Determine: was the code change intentional and correct, or did it introduce a regression?
+4. Only update the test if the code change is verified correct
+
 ## Testing Tracker
 
 **`to-test.md`** contains features awaiting manual testing when TUI is more usable.

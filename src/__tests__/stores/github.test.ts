@@ -630,18 +630,23 @@ describe("githubStore", () => {
       await createRoot(async (dispose) => {
         store.startPolling();
 
+        const pollCmds = ["get_repo_pr_statuses", "get_github_status"];
+        const pollCallCount = () =>
+          mockInvoke.mock.calls.filter((c: string[]) => pollCmds.includes(c[0])).length;
+
         await vi.advanceTimersByTimeAsync(0);
-        const after0 = mockInvoke.mock.calls.length; // 2 (initial poll: PR + remote)
+        const after0 = pollCallCount();
 
         await vi.advanceTimersByTimeAsync(30_000);
-        const after30 = mockInvoke.mock.calls.length; // 4 (one more poll at 30s)
+        const after30 = pollCallCount();
 
         await vi.advanceTimersByTimeAsync(30_000);
-        const after60 = mockInvoke.mock.calls.length; // 6 (one more poll at 60s)
+        const after60 = pollCallCount();
 
-        expect(after0).toBe(2);
-        expect(after30).toBe(4);
-        expect(after60).toBe(6);
+        // Each poll interval adds 2 calls (get_repo_pr_statuses + get_github_status).
+        // The interval stays constant at 30s (no backoff for per-repo errors).
+        expect(after30 - after0).toBe(2);
+        expect(after60 - after30).toBe(2);
 
         consoleSpy.mockRestore();
         store.stopPolling();
