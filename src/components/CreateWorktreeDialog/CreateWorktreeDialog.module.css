@@ -41,9 +41,82 @@
   white-space: nowrap;
 }
 
-.baseRefRow select {
+.dropdownWrapper {
   flex: 1;
   min-width: 0;
+  position: relative;
+}
+
+.dropdownTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-primary);
+  font-size: var(--font-md);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.dropdownTrigger:hover {
+  border-color: var(--fg-muted);
+}
+
+.dropdownTrigger:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.dropdownValue {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdownChevron {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.dropdownList {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popup);
+  z-index: 10;
+}
+
+.dropdownItem {
+  padding: 6px 10px;
+  font-size: var(--font-md);
+  font-family: var(--font-mono);
+  color: var(--fg-primary);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.dropdownItem:hover {
+  background: var(--bg-highlight);
+}
+
+.dropdownItemActive {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.dropdownItemActive:hover {
+  background: var(--accent-hover);
 }
 
 .branchList {

@@ -223,6 +223,5 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `get_local_ip` | -- | `Option<String>` | Get primary local IP |
 | `get_local_ips` | -- | `Vec<LocalIpEntry>` | List local network interfaces |
 | `regenerate_session_token` | -- | `String` | Regenerate MCP session token |
-| `register_mcp_with_claude` | -- | `String` | Register MCP with Claude agent |
 | `block_sleep` | -- | `()` | Prevent system sleep |
 | `unblock_sleep` | -- | `()` | Allow system sleep |

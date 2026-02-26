@@ -11,6 +11,8 @@ interface McpStatus {
   running: boolean;
   port: number | null;
   active_sessions: number;
+  /** Connected MCP protocol clients (reaped after 1h idle) */
+  mcp_clients: number;
   max_sessions: number;
   /** UUID token for QR-code auth — only present when server is running */
   session_token?: string;
@@ -43,8 +45,6 @@ export const ServicesTab: Component = () => {
   const [saving, setSaving] = createSignal(false);
   const [mcpPort, setMcpPort] = createSignal(3845);
   const [mcpUrlCopied, setMcpUrlCopied] = createSignal(false);
-  const [registering, setRegistering] = createSignal(false);
-  const [registerResult, setRegisterResult] = createSignal<string | null>(null);
 
   // Remote access form state
   const [raEnabled, setRaEnabled] = createSignal(false);
@@ -94,8 +94,9 @@ export const ServicesTab: Component = () => {
     try {
       const s = await rpc<McpStatus>("get_mcp_status");
       setStatus(s);
-    } catch {
-      // Ignore errors during refresh
+    } catch (e) {
+      // Transient poll failures are normal during app startup
+      appLogger.debug("config", "MCP status refresh failed", e);
     }
   };
 
@@ -110,8 +111,8 @@ export const ServicesTab: Component = () => {
       setTokenDuration(config.session_token_duration_secs ?? 86400);
       setIpv6Enabled(config.ipv6_enabled ?? false);
       setLanAuthBypass(config.lan_auth_bypass ?? false);
-    } catch {
-      // Ignore
+    } catch (e) {
+      appLogger.warn("config", "Failed to load remote access config, using defaults", e);
     }
   };
 
@@ -300,36 +301,6 @@ export const ServicesTab: Component = () => {
                 </p>
               </div>
 
-              <div class={s.group}>
-                <button
-                  class={s.testBtn}
-                  disabled={registering()}
-                  onClick={async () => {
-                    setRegistering(true);
-                    setRegisterResult(null);
-                    try {
-                      const url = await rpc<string>("register_mcp_with_claude");
-                      setRegisterResult(`Registered at ${url}`);
-                    } catch (e: unknown) {
-                      setRegisterResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
-                    } finally {
-                      setRegistering(false);
-                    }
-                  }}
-                >
-                  {registering()
-                    ? t("services.btn.registering", "Registering...")
-                    : t("services.btn.registerWithClaude", "Register with Claude Code")}
-                </button>
-                <Show when={registerResult()}>
-                  <p class={s.hint} style={{ color: registerResult()!.startsWith("Error") ? "var(--error, #e06c75)" : "var(--green, #98c379)" }}>
-                    {registerResult()}
-                  </p>
-                </Show>
-                <p class={s.hint}>
-                  {t("services.hint.registerWithClaude", "Adds TUICommander as an MCP server in your Claude Code user settings")}
-                </p>
-              </div>
             </Show>
           </>
         )}

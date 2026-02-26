@@ -87,7 +87,10 @@ inject_text(text)
     └── Return corrected text
     │
     ▼
-Frontend writes corrected text to active PTY
+Frontend inserts corrected text into focused input element
+    ├── textarea / input: set value + dispatch InputEvent
+    ├── contenteditable: execCommand("insertText")
+    └── fallback: write to active PTY
 ```
 
 ## Model Storage

@@ -1,4 +1,4 @@
-use crate::pty::{build_shell_command, resolve_shell, spawn_headless_reader_thread};
+use crate::pty::{build_shell_command, resolve_shell, spawn_headless_reader_thread, spawn_reader_thread};
 use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
 use crate::state::OUTPUT_RING_BUFFER_CAPACITY;
 use axum::extract::{ConnectInfo, State};
@@ -6,14 +6,85 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::Json;
 use parking_lot::Mutex;
-use portable_pty::{native_pty_system, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
 
-use super::types::*;
+/// Serialize a value to JSON, returning a structured error on failure instead of silent null.
+fn to_json_or_error<T: serde::Serialize>(value: T) -> serde_json::Value {
+    match serde_json::to_value(value) {
+        Ok(v) => v,
+        Err(e) => serde_json::json!({"error": format!("Serialization failed: {e}")}),
+    }
+}
+
+/// Build server instructions for the MCP initialize response.
+/// Tells the connecting agent what tools are available, which repos are managed,
+/// and what sessions are currently active so it can orient itself.
+fn build_mcp_instructions(state: &Arc<AppState>) -> String {
+    let mut out = String::with_capacity(2048);
+
+    out.push_str("# TUICommander MCP Server\n\n");
+    out.push_str("You are connected to TUICommander, a terminal session orchestrator. ");
+    out.push_str("You can manage PTY terminals, query git repos, spawn AI agents, and read/write app config.\n\n");
+
+    // Tools overview
+    out.push_str("## Tools\n\n");
+    out.push_str("All tools use an `action` parameter to select the operation.\n\n");
+    out.push_str("| Tool | Actions |\n|---|---|\n");
+    out.push_str("| `session` | list, create, input, output, resize, close, pause, resume |\n");
+    out.push_str("| `git` | info, diff, files, branches, github, prs |\n");
+    out.push_str("| `agent` | detect, spawn, stats, metrics |\n");
+    out.push_str("| `config` | get, save |\n");
+    out.push_str("| `plugin_dev_guide` | *(no action — returns plugin authoring reference)* |\n\n");
+
+    out.push_str("**Workflow:** Call `session action=list` first to discover active sessions. ");
+    out.push_str("Use `session action=output` to read terminal content and `session action=input` to type. ");
+    out.push_str("For git queries, pass the repo `path` (absolute).\n\n");
+
+    // Managed repositories
+    let repo_settings = crate::config::load_repo_settings();
+    if !repo_settings.repos.is_empty() {
+        out.push_str("## Managed Repositories\n\n");
+        out.push_str("| Name | Path |\n|---|---|\n");
+        let mut repos: Vec<_> = repo_settings.repos.iter().collect();
+        repos.sort_by_key(|(path, _)| path.to_string());
+        for (path, entry) in &repos {
+            let name = if entry.display_name.is_empty() {
+                path.rsplit('/').next().unwrap_or(path)
+            } else {
+                &entry.display_name
+            };
+            out.push_str(&format!("| {} | `{}` |\n", name, path));
+        }
+        out.push('\n');
+    }
+
+    // Active PTY sessions
+    let sessions: Vec<_> = state.sessions.iter().map(|entry| {
+        let id = entry.key().clone();
+        let session = entry.value().lock();
+        (id, session.cwd.clone(), session.worktree.as_ref().map(|w| w.branch.clone()).flatten())
+    }).collect();
+
+    if !sessions.is_empty() {
+        out.push_str("## Active Sessions\n\n");
+        out.push_str("| Session ID | CWD | Branch |\n|---|---|---|\n");
+        for (id, cwd, branch) in &sessions {
+            out.push_str(&format!("| `{}` | {} | {} |\n",
+                &id[..8.min(id.len())],
+                cwd.as_deref().unwrap_or("—"),
+                branch.as_deref().unwrap_or("—"),
+            ));
+        }
+        out.push('\n');
+    }
+
+    out
+}
 
 /// Validate a repo path for MCP tool calls, returning a JSON error value on failure.
 fn validate_mcp_repo_path(path: &str) -> Result<(), serde_json::Value> {
@@ -142,7 +213,7 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, arg
     match name {
         "session" => handle_session(state, args),
         "git" => handle_git(state, args),
-        "agent" => handle_agent(state, args),
+        "agent" => handle_agent(state, addr, args),
         "config" => handle_config(state, addr, args),
         "plugin_dev_guide" => {
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
@@ -285,6 +356,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 state.output_buffers.remove(session_id);
                 state.ws_clients.remove(session_id);
                 state.kitty_states.remove(session_id);
+                state.input_buffers.remove(session_id);
                 state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
 
                 let mut session = session_mutex.into_inner();
@@ -339,7 +411,7 @@ fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Va
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             let info = crate::git::get_repo_info_impl(&path);
-            serde_json::to_value(info).unwrap_or_default()
+            to_json_or_error(info)
         }
         "diff" => {
             let path = match require_path(args, "diff") {
@@ -359,7 +431,7 @@ fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Va
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             match crate::git::get_changed_files(path, None) {
-                Ok(files) => serde_json::to_value(files).unwrap_or_default(),
+                Ok(files) => to_json_or_error(files),
                 Err(e) => serde_json::json!({"error": e}),
             }
         }
@@ -370,7 +442,7 @@ fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Va
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             match crate::git::get_git_branches(path) {
-                Ok(branches) => serde_json::to_value(branches).unwrap_or_default(),
+                Ok(branches) => to_json_or_error(branches),
                 Err(e) => serde_json::json!({"error": e}),
             }
         }
@@ -381,7 +453,7 @@ fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Va
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             let status = crate::github::get_github_status_impl(&path);
-            serde_json::to_value(status).unwrap_or_default()
+            to_json_or_error(status)
         }
         "prs" => {
             let path = match require_path(args, "prs") {
@@ -393,7 +465,7 @@ fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Va
                 &path,
                 state,
             );
-            serde_json::to_value(statuses).unwrap_or_default()
+            to_json_or_error(statuses)
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'git'. Available: {}", other, GIT_ACTIONS
@@ -401,7 +473,7 @@ fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Va
     }
 }
 
-fn handle_agent(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value) -> serde_json::Value {
     let action = match require_action(args, "agent", AGENT_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
@@ -416,31 +488,109 @@ fn handle_agent(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::
             serde_json::json!(results)
         }
         "spawn" => {
+            // Agent spawning is restricted to localhost — matches the HTTP route guard in agent_routes.rs
+            if !addr.ip().is_loopback() {
+                return serde_json::json!({"error": "Agent spawning is restricted to localhost connections"});
+            }
             let prompt = match args["prompt"].as_str() {
                 Some(p) => p.to_string(),
                 None => return serde_json::json!({"error": "Action 'spawn' requires 'prompt'"}),
             };
-            let _body = SpawnAgentRequest {
-                rows: args["rows"].as_u64().map(|v| v as u16),
-                cols: args["cols"].as_u64().map(|v| v as u16),
-                cwd: args["cwd"].as_str().map(|s| s.to_string()),
-                prompt,
-                model: args["model"].as_str().map(|s| s.to_string()),
-                print_mode: args["print_mode"].as_bool(),
-                output_format: args["output_format"].as_str().map(|s| s.to_string()),
-                agent_type: args["agent_type"].as_str().map(|s| s.to_string()),
-                binary_path: args["binary_path"].as_str().map(|s| s.to_string()),
-                args: args.get("args").and_then(|a| serde_json::from_value(a.clone()).ok()),
+            if state.sessions.len() >= MAX_CONCURRENT_SESSIONS {
+                return serde_json::json!({"error": "Max concurrent sessions reached"});
+            }
+
+            // Resolve agent binary
+            let binary_path = if let Some(path) = args["binary_path"].as_str() {
+                let p = std::path::Path::new(path);
+                if !p.is_absolute() {
+                    return serde_json::json!({"error": "binary_path must be an absolute path"});
+                }
+                if !p.is_file() {
+                    return serde_json::json!({"error": "binary_path does not point to an existing file"});
+                }
+                path.to_string()
+            } else {
+                let agent_type = args["agent_type"].as_str().unwrap_or("claude");
+                let detection = crate::agent::detect_agent_binary(agent_type.to_string());
+                match detection.path {
+                    Some(p) => p,
+                    None => return serde_json::json!({"error": format!("Agent binary '{}' not found", agent_type)}),
+                }
             };
-            serde_json::json!({"error": "agent action='spawn' not yet implemented via MCP transport — use the bridge binary or REST API POST /sessions/agent"})
+
+            let rows = args["rows"].as_u64().unwrap_or(24) as u16;
+            let cols = args["cols"].as_u64().unwrap_or(80) as u16;
+            if let Err(msg) = super::validate_terminal_size(rows, cols) {
+                return serde_json::json!({"error": msg});
+            }
+
+            let session_id = Uuid::new_v4().to_string();
+            let pty_system = native_pty_system();
+            let pair = match pty_system.openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }) {
+                Ok(p) => p,
+                Err(e) => return serde_json::json!({"error": format!("Failed to open PTY: {}", e)}),
+            };
+
+            let mut cmd = CommandBuilder::new(&binary_path);
+            if let Some(raw_args) = args.get("args").and_then(|a| a.as_array()) {
+                for arg in raw_args {
+                    if let Some(s) = arg.as_str() { cmd.arg(s); }
+                }
+            } else {
+                if args["print_mode"].as_bool().unwrap_or(false) {
+                    cmd.arg("--print");
+                }
+                if let Some(format) = args["output_format"].as_str() {
+                    cmd.arg("--output-format");
+                    cmd.arg(format);
+                }
+                if let Some(model) = args["model"].as_str() {
+                    cmd.arg("--model");
+                    cmd.arg(model);
+                }
+                cmd.arg(&prompt);
+            }
+            if let Some(cwd) = args["cwd"].as_str() { cmd.cwd(cwd); }
+
+            let child = match pair.slave.spawn_command(cmd) {
+                Ok(c) => c,
+                Err(e) => return serde_json::json!({"error": format!("Failed to spawn agent: {}", e)}),
+            };
+            let writer = match pair.master.take_writer() {
+                Ok(w) => w,
+                Err(e) => return serde_json::json!({"error": format!("Failed to get PTY writer: {}", e)}),
+            };
+            let reader = match pair.master.try_clone_reader() {
+                Ok(r) => r,
+                Err(e) => return serde_json::json!({"error": format!("Failed to get PTY reader: {}", e)}),
+            };
+
+            let paused = Arc::new(AtomicBool::new(false));
+            state.sessions.insert(session_id.clone(), Mutex::new(PtySession {
+                writer, master: pair.master, _child: child, paused: paused.clone(), worktree: None,
+                cwd: args["cwd"].as_str().map(|s| s.to_string()),
+            }));
+            state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
+            state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
+            state.output_buffers.insert(session_id.clone(), Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)));
+
+            let app_handle = state.app_handle.read().clone();
+            if let Some(ref app) = app_handle {
+                spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state.clone());
+            } else {
+                spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
+            }
+
+            serde_json::json!({"session_id": session_id})
         }
         "stats" => {
             let stats = state.orchestrator_stats();
-            serde_json::to_value(stats).unwrap_or_default()
+            to_json_or_error(stats)
         }
         "metrics" => {
             let metrics = state.session_metrics_json();
-            serde_json::to_value(metrics).unwrap_or_default()
+            to_json_or_error(metrics)
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'agent'. Available: {}", other, AGENT_ACTIONS
@@ -456,7 +606,7 @@ fn handle_config(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
     match action {
         "get" => {
             let config = state.config.read().clone();
-            let mut json = serde_json::to_value(config).unwrap_or_default();
+            let mut json = to_json_or_error(config);
             if let Some(obj) = json.as_object_mut() {
                 obj.remove("remote_access_password_hash");
             }
@@ -508,7 +658,8 @@ pub(super) async fn mcp_post(
     match method {
         "initialize" => {
             let session_id = Uuid::new_v4().to_string();
-            state.mcp_sessions.insert(session_id.clone(), ());
+            state.mcp_sessions.insert(session_id.clone(), std::time::Instant::now());
+            let instructions = build_mcp_instructions(&state);
 
             let response = serde_json::json!({
                 "jsonrpc": "2.0",
@@ -519,7 +670,8 @@ pub(super) async fn mcp_post(
                     "serverInfo": {
                         "name": "tuicommander",
                         "version": env!("CARGO_PKG_VERSION")
-                    }
+                    },
+                    "instructions": instructions
                 }
             });
 
@@ -551,6 +703,21 @@ pub(super) async fn mcp_post(
         }
 
         "tools/call" => {
+            // Validate that the caller has an active MCP session (established via initialize)
+            let session_valid = headers
+                .get(MCP_SESSION_HEADER)
+                .and_then(|v| v.to_str().ok())
+                .map(|sid| state.mcp_sessions.contains_key(sid))
+                .unwrap_or(false);
+            if !session_valid {
+                let response = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": { "code": -32600, "message": "Valid mcp-session-id header required. Call initialize first." }
+                });
+                return Json(response).into_response();
+            }
+
             let params = body.get("params").cloned().unwrap_or(serde_json::Value::Null);
             let tool_name = params["name"].as_str().unwrap_or("").to_string();
             let args = params.get("arguments").cloned().unwrap_or(serde_json::json!({}));
@@ -596,6 +763,13 @@ pub(super) async fn mcp_post(
 /// GET /mcp — Not supported (we don't use server-initiated streaming)
 pub(super) async fn mcp_get() -> impl IntoResponse {
     StatusCode::METHOD_NOT_ALLOWED
+}
+
+/// GET /mcp/instructions — Returns dynamic server instructions for the bridge binary
+pub(super) async fn mcp_instructions_http(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    Json(serde_json::json!({"instructions": build_mcp_instructions(&state)}))
 }
 
 /// DELETE /mcp — End an MCP session

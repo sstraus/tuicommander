@@ -569,7 +569,7 @@ fn packed_ref_exists(git_dir: &Path, ref_name: &str) -> bool {
 
 /// Tauri command: get branches merged into the main branch (cached, 5s TTL)
 #[tauri::command]
-pub(crate) fn get_merged_branches(
+pub(crate) async fn get_merged_branches(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<Vec<String>, String> {
@@ -577,8 +577,14 @@ pub(crate) fn get_merged_branches(
         return Ok(cached);
     }
 
-    let result = get_merged_branches_impl(Path::new(&path))?;
-    AppState::set_cached(&state.merged_branches_cache, path, result.clone());
+    let state_arc = state.inner().clone();
+    let path_clone = path.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        get_merged_branches_impl(Path::new(&path_clone))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))??;
+    AppState::set_cached(&state_arc.merged_branches_cache, path, result.clone());
     Ok(result)
 }
 

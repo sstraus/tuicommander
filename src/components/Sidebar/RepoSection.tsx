@@ -4,6 +4,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 import { githubStore } from "../../stores/github";
 import { userActivityStore } from "../../stores/userActivity";
+import { appLogger } from "../../stores/appLogger";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
 import { PromptDialog } from "../PromptDialog";
@@ -15,7 +16,6 @@ import s from "./Sidebar.module.css";
 
 const BRANCH_ICON_CLASSES: Record<string, string> = {
   main: s.branchIconMain,
-  feature: s.branchIconFeature,
   worktree: s.branchIconWorktree,
   question: s.branchIconQuestion,
 };
@@ -33,40 +33,57 @@ const PR_BADGE_CLASSES: Record<string, string> = {
   "ci-pending": s.prCiPending,
 };
 
-/** Branch icon component — shows ? when any terminal in the branch awaits input */
-export const BranchIcon: Component<{ isMain: boolean; isShell?: boolean; isLinkedWorktree?: boolean; hasQuestion?: boolean }> = (props) => {
-  const iconType = () => {
+/** Branch icon component — shows ? when any terminal in the branch awaits input.
+ *
+ *  Icon/color logic:
+ *  - Main worktree + main branch → star, yellow (--warning)
+ *  - Main worktree + non-main branch (after switch) → branch icon, yellow (--warning)
+ *  - Linked worktree → worktree fork icon, green (--success)
+ *  - Shell (non-git dir) → terminal icon
+ *  - Question (awaiting input) → "?" with attention color (overrides all)
+ *  - Activity → accent color pulse (overrides base via CSS)
+ */
+export const BranchIcon: Component<{
+  isMainBranch: boolean;
+  isMainWorktree: boolean;
+  isShell?: boolean;
+  hasQuestion?: boolean;
+}> = (props) => {
+  /** Which icon shape to render */
+  const iconShape = () => {
     if (props.hasQuestion) return "question";
     if (props.isShell) return "shell";
-    if (props.isLinkedWorktree) return "worktree";
-    if (props.isMain) return "main";
-    return "feature";
+    if (props.isMainWorktree && props.isMainBranch) return "star";
+    if (props.isMainWorktree) return "branch";
+    return "worktree";
+  };
+
+  /** Which color class to apply (events override via CSS) */
+  const colorClass = () => {
+    if (props.hasQuestion) return "question";
+    if (props.isMainWorktree) return "main";
+    return "worktree";
   };
 
   return (
-    <span class={cx(s.branchIcon, BRANCH_ICON_CLASSES[iconType() === "shell" ? "feature" : iconType()])}>
+    <span class={cx(s.branchIcon, BRANCH_ICON_CLASSES[colorClass()])}>
       {(() => {
-        switch (iconType()) {
+        switch (iconShape()) {
           case "question": return "?";
           case "shell": return (
             <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1 3l5 5-5 5h2l5-5-5-5H1zm7 9h7v2H8v-2z"/></svg>
           );
-          case "worktree": return (
-            /* Worktree icon: folder with a small branch symbol inside */
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-              <path d="M1.5 2A1.5 1.5 0 0 1 3 .5h3.38a1.5 1.5 0 0 1 1.06.44l1.12 1.12H13A1.5 1.5 0 0 1 14.5 3.5v8a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 11.5V2Z" fill="none" stroke="currentColor" stroke-width="1.2"/>
-              <circle cx="10" cy="5.5" r="1" fill="currentColor"/>
-              <path d="M10 6.5v1.5a1.5 1.5 0 0 1-1.5 1.5H7" stroke="currentColor" stroke-width="1" fill="none" stroke-linecap="round"/>
-              <circle cx="5.5" cy="9.5" r="1" fill="currentColor"/>
-              <path d="M5.5 5v4.5" stroke="currentColor" stroke-width="1" fill="none" stroke-linecap="round"/>
-              <circle cx="5.5" cy="5" r="1" fill="currentColor"/>
-            </svg>
-          );
-          case "main": return (
+          case "star": return (
             <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M9.2 1.2v4.4L13 3.2a1.3 1.3 0 1 1 1.3 2.3L10.5 8l3.8 2.5a1.3 1.3 0 1 1-1.3 2.3L9.2 10.4v4.4a1.2 1.2 0 0 1-2.4 0v-4.4L3 13a1.3 1.3 0 1 1-1.3-2.3L5.5 8 1.7 5.5A1.3 1.3 0 0 1 3 3.2l3.8 2.4V1.2a1.2 1.2 0 0 1 2.4 0z"/></svg>
           );
+          case "worktree": return (
+            /* Linked worktree icon: split branch — vertical trunk with a fork */
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+              <path d="M5 1.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm0 10a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm6-4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM5 5v2.5a2 2 0 0 0 2 2h2.5M5 10.5V8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          );
           default: return (
-            /* Feature branch icon */
+            /* Branch icon (main worktree on non-main branch) */
             <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/></svg>
           );
         }
@@ -217,7 +234,11 @@ export const BranchItem: Component<{
   const handleCopyPath = async () => {
     const path = props.branch.worktreePath;
     if (path) {
-      await navigator.clipboard.writeText(path);
+      try {
+        await navigator.clipboard.writeText(path);
+      } catch (err) {
+        appLogger.warn("app", "Failed to copy path to clipboard", err);
+      }
     }
   };
 
@@ -243,14 +264,16 @@ export const BranchItem: Component<{
         items.push({ label: "Delete Worktree", action: props.onRemove, separator: true });
       }
     }
-    // "Switch Branch" submenu — only on main worktree row
-    if (props.branch.isMain && props.onSwitchBranch && props.switchBranchList && props.currentBranch) {
+    // "Switch Branch" submenu — only on main worktree row (worktreePath === repoPath)
+    const isMainWorktree = props.branch.worktreePath === props.repoPath;
+    if (isMainWorktree && props.onSwitchBranch && props.switchBranchList && props.currentBranch) {
+      const switchBranch = props.onSwitchBranch; // capture narrowed value before closure
       const current = props.currentBranch();
       const branchList = props.switchBranchList();
       if (branchList.length > 0) {
         const branchChildren: ContextMenuItem[] = branchList.map((name) => ({
           label: name === current ? `${name}  \u2713` : name,
-          action: () => { if (name !== current) props.onSwitchBranch!(name); },
+          action: () => { if (name !== current) switchBranch(name); },
           disabled: name === current,
         }));
         items.push({ label: t("sidebar.switchBranch", "Switch Branch"), action: () => {}, children: branchChildren, separator: true });
@@ -265,7 +288,12 @@ export const BranchItem: Component<{
       onClick={props.onSelect}
       onContextMenu={ctxMenu.open}
     >
-      <BranchIcon isMain={props.branch.isMain} isShell={props.branch.isShell} isLinkedWorktree={!!props.branch.worktreePath && props.branch.worktreePath !== props.repoPath} hasQuestion={hasQuestion()} />
+      <BranchIcon
+        isMainBranch={props.branch.isMain}
+        isMainWorktree={props.branch.worktreePath === props.repoPath}
+        isShell={props.branch.isShell}
+        hasQuestion={hasQuestion()}
+      />
       <div class={s.branchContent}>
         <span
           class={s.branchName}
@@ -278,33 +306,32 @@ export const BranchItem: Component<{
       <Show when={props.branch.isMerged && !props.branch.isMain}>
         <span class={s.mergedBadge} title="Branch is merged into main">Merged</span>
       </Show>
-      <Show when={activePrStatus(props.repoPath, props.branch.name)}>
-        {(() => {
-          const prData = () => activePrStatus(props.repoPath, props.branch.name)!;
-          const checks = () => githubStore.getCheckSummary(props.repoPath, props.branch.name);
-          const isTerminal = () => {
-            const st = prData().state?.toLowerCase();
-            return st === "closed" || st === "merged";
-          };
-          return (
-            <span
-              class={isTerminal() ? s.prBadgeDimmed : undefined}
-              onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}
-            >
-              <PrStateBadge
-                prNumber={prData().number}
-                state={prData().state}
-                isDraft={prData().is_draft}
-                mergeable={prData().mergeable}
-                reviewDecision={prData().review_decision}
-                ciPassed={checks()?.passed}
-                ciFailed={checks()?.failed}
-                ciPending={checks()?.pending}
-              />
-            </span>
-          );
-        })()}
-      </Show>
+      {(() => {
+        const pr = activePrStatus(props.repoPath, props.branch.name);
+        if (!pr) return null;
+        const checks = () => githubStore.getCheckSummary(props.repoPath, props.branch.name);
+        const isTerminal = () => {
+          const st = pr.state?.toLowerCase();
+          return st === "closed" || st === "merged";
+        };
+        return (
+          <span
+            class={isTerminal() ? s.prBadgeDimmed : undefined}
+            onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}
+          >
+            <PrStateBadge
+              prNumber={pr.number}
+              state={pr.state}
+              isDraft={pr.is_draft}
+              mergeable={pr.mergeable}
+              reviewDecision={pr.review_decision}
+              ciPassed={checks()?.passed}
+              ciFailed={checks()?.failed}
+              ciPending={checks()?.pending}
+            />
+          </span>
+        );
+      })()}
       <StatsBadge additions={props.branch.additions} deletions={props.branch.deletions} />
       <Show when={props.shortcutIndex !== undefined} fallback={
         <div class={s.branchActions}>
@@ -393,6 +420,7 @@ export const RepoSection: Component<{
       compareBranches(a, b, statuses.get(a.name), statuses.get(b.name)),
     );
   });
+  const canRemoveAny = createMemo(() => sortedBranches().length > 1);
 
   const repoMenuItems = (): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [
@@ -498,7 +526,7 @@ export const RepoSection: Component<{
                 branch={branch}
                 repoPath={props.repo.path}
                 isActive={repositoriesStore.state.activeRepoPath === props.repo.path && props.repo.activeBranch === branch.name}
-                canRemove={sortedBranches().length > 1}
+                canRemove={canRemoveAny()}
                 shortcutIndex={props.quickSwitcherActive ? props.branchShortcutStart + index() : undefined}
                 agentMenuItems={props.buildAgentMenuItems ? () => props.buildAgentMenuItems!(branch.name) : undefined}
                 onSelect={() => props.onBranchSelect(branch.name)}
@@ -508,9 +536,9 @@ export const RepoSection: Component<{
                 onShowPrDetail={() => props.onShowPrDetail(branch.name)}
                 onCreateWorktreeFromBranch={props.onCreateWorktreeFromBranch ? () => props.onCreateWorktreeFromBranch!(branch.name) : undefined}
                 onMergeAndArchive={props.onMergeAndArchive ? () => props.onMergeAndArchive!(branch.name) : undefined}
-                onSwitchBranch={branch.isMain ? (name) => props.onSwitchBranch(name) : undefined}
-                switchBranchList={branch.isMain ? props.switchBranchList : undefined}
-                currentBranch={branch.isMain ? props.currentBranch : undefined}
+                onSwitchBranch={branch.worktreePath === props.repo.path ? (name) => props.onSwitchBranch(name) : undefined}
+                switchBranchList={branch.worktreePath === props.repo.path ? props.switchBranchList : undefined}
+                currentBranch={branch.worktreePath === props.repo.path ? props.currentBranch : undefined}
               />
             )}
           </For>

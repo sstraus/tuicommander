@@ -230,13 +230,13 @@ export function useGitOperations(deps: GitOperationsDeps) {
     if (branchSelectInFlight) {
       await branchSelectInFlight;
     }
-    let resolve: () => void;
+    let resolve!: () => void;
     branchSelectInFlight = new Promise<void>((r) => { resolve = r; });
     try {
       await handleBranchSelectInner(repoPath, branchName);
     } finally {
       branchSelectInFlight = null;
-      resolve!();
+      resolve();
     }
   };
 
@@ -760,14 +760,34 @@ export function useGitOperations(deps: GitOperationsDeps) {
     setCurrentBranches(heads);
   };
 
-  // Refresh branch lists whenever branch stats are refreshed
-  const originalRefreshAllBranchStats = refreshAllBranchStats;
-  const wrappedRefreshAllBranchStats = async () => {
-    await originalRefreshAllBranchStats();
+  // Compose branch stats + branch list refresh into a single function
+  const refreshAllBranchStatsAndLists = async () => {
+    await refreshAllBranchStats();
     await refreshBranchLists();
   };
-  // Replace the reference used in the return
-  const refreshAllBranchStatsWithLists = wrappedRefreshAllBranchStats;
+
+  /** After a branch switch on the main worktree, migrate all stale branch entries
+   *  (same worktreePath as repoPath) into the new branch and remove them. */
+  const migrateMainWorktreeBranches = (repoPath: string, newBranch: string) => {
+    const repo = repositoriesStore.get(repoPath);
+    if (!repo) return;
+
+    // Ensure the target branch entry exists
+    repositoriesStore.setBranch(repoPath, newBranch, { worktreePath: repoPath });
+
+    // Find all branches on the main worktree that aren't the new branch
+    const stale = Object.values(repo.branches).filter(
+      (b) => b.worktreePath === repoPath && b.name !== newBranch,
+    );
+
+    batch(() => {
+      for (const branch of stale) {
+        repositoriesStore.mergeBranchState(repoPath, branch.name, newBranch);
+        repositoriesStore.removeBranch(repoPath, branch.name);
+      }
+      repositoriesStore.setActiveBranch(repoPath, newBranch);
+    });
+  };
 
   /** Handle branch switch request from sidebar. Checks terminal safety, then calls Rust. */
   const handleSwitchBranch = async (repoPath: string, branchName: string) => {
@@ -793,8 +813,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
       } else {
         deps.setStatusInfo(`Switched to ${result.new_branch}`);
       }
+      // Migrate all main-worktree branches into the new branch entry, then remove stale ones
+      migrateMainWorktreeBranches(repoPath, result.new_branch);
       // Refresh branch stats to pick up the new HEAD
-      await wrappedRefreshAllBranchStats();
+      await refreshAllBranchStatsAndLists();
     } catch (err) {
       const errMsg = String(err);
       if (errMsg === "dirty" || errMsg.includes("dirty")) {
@@ -804,7 +826,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
           try {
             const result = await deps.repo.switchBranch(repoPath, branchName, { stash: true });
             deps.setStatusInfo(`Switched to ${result.new_branch} (changes stashed)`);
-            await wrappedRefreshAllBranchStats();
+            migrateMainWorktreeBranches(repoPath, result.new_branch);
+            await refreshAllBranchStatsAndLists();
           } catch (stashErr) {
             deps.setStatusInfo(`Stash & switch failed: ${stashErr}`);
           }
@@ -824,7 +847,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     setRepoStatus,
     branchToRename,
     setBranchToRename,
-    refreshAllBranchStats: refreshAllBranchStatsWithLists,
+    refreshAllBranchStats: refreshAllBranchStatsAndLists,
     handleBranchSelect,
     handleAddTerminalToBranch,
     handleRemoveRepo,

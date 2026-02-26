@@ -77,10 +77,16 @@
   left: 100%;
   top: 0;
   min-width: 160px;
+  max-height: 400px;
+  overflow-y: auto;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-dropdown);
   padding: 4px;
   z-index: 1001;
+}
+
+.submenu .item {
+  white-space: nowrap;
 }

@@ -17,14 +17,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Input line buffer** — Rust-side virtual line editor (`input_line_buffer.rs`) reconstructs typed input from raw PTY keystroke data, supporting cursor movement, word operations, and Kitty protocol sequences
 - **mdkb Dashboard plugin** — External installable plugin for viewing mdkb knowledge base status, memories, and configuration
 - **API error detection** — Output parser detects API errors (5xx, auth failures) from agents (Claude Code, Aider, Codex CLI, Gemini CLI, Copilot) and provider-level JSON error formats (OpenAI, Anthropic, Google, OpenRouter, MiniMax). Triggers error notification sound and logs to centralized error panel
+- **Rust-backed log ring buffer** — Warn/error entries survive webview reloads via `push_log`/`get_logs` Tauri commands
+- **Switch Branch submenu** — Main worktree context menu with dirty-tree stash prompt and running-process guard
+- **Merged badge** — Branches merged into main show a "Merged" badge in the sidebar
+- **Info notification sound type** — Added "info" to per-event notification sounds
+- **Tab bar overflow menu** — Right-click scroll arrows to see clipped tabs; `+` button always stays visible
+- **Focus-aware dictation** — Transcribed text inserts into focused input element instead of always targeting terminal PTY
 
-### Documentation
-- FEATURES.md: documented tab pinning, branch sorting, Kitty keyboard protocol, PTY pause/resume, MCP registration with Claude CLI
+### Changed
+- Agent session restore now shows a clickable banner instead of auto-injecting the resume command
+- Migrated ~200 `console.error`/`console.warn` calls to centralized `appLogger` across terminal, hooks, stores, UI components, plugins, and utilities (waves 1-4)
+- Activity Dashboard shows last user prompt (>= 10 words) as sub-row with tooltip, now native Rust implementation
+- OSC 8 hyperlinks in terminal now open in system browser correctly
 
 ### Fixed
+- File path link underline no longer flickers on mouse hover (cached link provider)
+- Rate limit and usage limit badges no longer trigger redundantly on terminal resize
+- Terminal focus no longer silently switches to a terminal from another repo
+- Rapid branch switching no longer creates duplicate terminals (serialization lock)
+- HEAD-changed events during branch rename no longer lose terminal state
+- Push-to-talk race condition — fast key release no longer drops transcription
+- Claude usage timeline gaps — flush orphan tokens from active sessions
+- Merged branch detection hardened with file I/O probing and 5s TTL cache
 - **Activity Dashboard state inconsistencies** — `setActive()` no longer resets `shellState` to null; busy flag reconciliation on every PTY chunk prevents "—" status for working terminals; agent polling now covers all terminals (not just the active one)
 - **Rate-limit false positives** — Added `line_is_source_code()` guard so agents reading `output_parser.rs` no longer trigger their own rate-limit patterns
 - **False "awaiting input" indicator** — Silence-based question detector threshold raised from 5s to 10s; added `line_is_likely_not_a_prompt()` guard to filter code, markdown, and long lines
+
+### Removed
+- `showAllBranches` toggle (replaced by Switch Branch submenu)
+- `sessionPromptPlugin` built-in (replaced by native Rust last-prompt tracking)
+
+### Documentation
+- FEATURES.md: documented tab pinning, branch sorting, Kitty keyboard protocol, PTY pause/resume, MCP registration with Claude CLI
 
 ### Security
 - **Plugin exec binary resolution hardened** — Removed `which`/`where` PATH lookup; binary resolution now uses only hardcoded trusted directories with symlink canonicalization to prevent symlink attacks

@@ -448,14 +448,13 @@ fn handle_config(client: &HttpClient, args: &Value) -> Result<Value, String> {
     }
 }
 
-/// Minimal URL encoding for query parameter values
+/// URL-encode a query parameter value using reqwest's proper percent-encoding.
 fn urlencoded(s: &str) -> String {
-    s.replace('%', "%25")
-        .replace(' ', "%20")
-        .replace('#', "%23")
-        .replace('&', "%26")
-        .replace('?', "%3F")
-        .replace('=', "%3D")
+    // Build a dummy URL with the value as a query param, then extract the encoded value.
+    // This handles all special and non-ASCII characters correctly.
+    let url = reqwest::Url::parse_with_params("http://x", &[("v", s)]).unwrap();
+    // Extract everything after "?v=" — the properly encoded value
+    url.query().unwrap_or("").strip_prefix("v=").unwrap_or("").to_string()
 }
 
 // --- Main ---
@@ -550,19 +549,29 @@ fn main() {
 
         match request.method.as_str() {
             "initialize" => {
+                // Fetch dynamic instructions from the running server
+                let instructions = client.get("/mcp/instructions")
+                    .ok()
+                    .and_then(|v| v["instructions"].as_str().map(|s| s.to_string()));
+
+                let mut result = serde_json::json!({
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {
+                        "tools": {}
+                    },
+                    "serverInfo": {
+                        "name": "tuicommander",
+                        "version": env!("CARGO_PKG_VERSION")
+                    }
+                });
+                if let Some(inst) = instructions {
+                    result["instructions"] = serde_json::Value::String(inst);
+                }
+
                 send_response(&JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id,
-                    result: Some(serde_json::json!({
-                        "protocolVersion": "2025-03-26",
-                        "capabilities": {
-                            "tools": {}
-                        },
-                        "serverInfo": {
-                            "name": "tuicommander",
-                            "version": env!("CARGO_PKG_VERSION")
-                        }
-                    })),
+                    result: Some(result),
                     error: None,
                 });
             }
@@ -695,8 +704,11 @@ mod tests {
 
     #[test]
     fn test_urlencoded() {
-        assert_eq!(urlencoded("/tmp/my repo"), "/tmp/my%20repo");
+        // reqwest uses application/x-www-form-urlencoded (RFC 3986 compliant)
+        assert_eq!(urlencoded("/tmp/my repo"), "%2Ftmp%2Fmy+repo");
         assert_eq!(urlencoded("path?q=1"), "path%3Fq%3D1");
         assert_eq!(urlencoded("a&b"), "a%26b");
+        // Non-ASCII characters are properly encoded
+        assert_eq!(urlencoded("café"), "caf%C3%A9");
     }
 }

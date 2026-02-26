@@ -159,3 +159,11 @@ TUICommander detects rate limits, prompts, and status messages from AI agents:
 - **Progress indicators** — Shows progress bars for long-running operations
 
 When an agent asks a question, the tab indicator changes and a notification sound plays (if enabled).
+
+### Session Restore
+
+When you restart TUICommander and a terminal had an active agent session, a clickable banner appears: "Agent session was active — click to resume." Clicking the banner sends the agent's resume command. The banner is dismissible if you do not want to resume.
+
+### OSC 8 Hyperlinks
+
+Terminal output that uses the OSC 8 standard for hyperlinks (e.g., URLs emitted by `ls --hyperlink`) is supported. Clicking an OSC 8 hyperlink opens the URL in your system browser.

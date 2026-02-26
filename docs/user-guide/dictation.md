@@ -17,7 +17,7 @@ TUICommander includes local voice-to-text using Whisper AI. All processing happe
 1. **Hold** the dictation hotkey (default: `F5`) or the mic button in the status bar
 2. **Speak** your text
 3. **Release** the key/button
-4. Text is transcribed and typed into the active terminal
+4. Transcribed text is inserted into the focused input element (textarea, input, or contenteditable). If no text input has focus, the text falls back to the active terminal PTY. The focus target is captured at key-press time.
 
 The hotkey works globally — even when TUICommander is not focused.
 

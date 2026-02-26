@@ -36,15 +36,21 @@ fn validate_terminal_size(rows: u16, cols: u16) -> Result<(), String> {
 }
 
 /// Core path validation logic shared by HTTP and MCP handlers.
-/// Rejects empty paths, relative traversals, and non-absolute paths.
+/// Rejects empty paths, null bytes, relative traversals, and non-absolute paths.
 fn validate_path_string(path: &str) -> Result<(), String> {
     if path.is_empty() {
         return Err("path is required".to_string());
     }
-    if path.contains("..") {
+    if path.contains("..") || path.contains('\0') {
         return Err("Path traversal is not allowed".to_string());
     }
-    if !path.starts_with('/') && !path.contains(":\\") && !path.starts_with("\\\\") {
+    // Use Path::is_absolute() for the current platform, plus string matching
+    // for cross-platform Windows paths (C:\... or \\...) that won't parse as
+    // absolute on Unix.
+    let is_abs = std::path::Path::new(path).is_absolute()
+        || path.get(1..3) == Some(":\\")
+        || path.starts_with("\\\\");
+    if !is_abs {
         return Err("Path must be absolute".to_string());
     }
     Ok(())
@@ -187,8 +193,9 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/system/local-ips", get(git_routes::get_local_ips_http))
         // Plugins
         .route("/plugins/list", get(git_routes::list_user_plugins_http))
-        // MCP status
+        // MCP status + instructions
         .route("/mcp/status", get(config_routes::get_mcp_status_http))
+        .route("/mcp/instructions", get(mcp_transport::mcp_instructions_http))
         // Plugin docs (for MCP bridge)
         .route("/plugins/docs", get(plugin_dev_guide_handler))
         // Plugin data (for external HTTP clients)
@@ -281,6 +288,19 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     *state.server_shutdown.lock() = Some(shutdown_tx);
 
+    // Spawn MCP session reaper: evicts stale protocol sessions every 60s (1h TTL)
+    let reaper_state = state.clone();
+    let reaper_handle = tokio::spawn(async move {
+        const MCP_SESSION_TTL: std::time::Duration = std::time::Duration::from_secs(3600);
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            let now = std::time::Instant::now();
+            reaper_state.mcp_sessions.retain(|_id, created_at| {
+                now.duration_since(*created_at) < MCP_SESSION_TTL
+            });
+        }
+    });
+
     // Serve with ConnectInfo for auth middleware; graceful shutdown via channel
     let result = axum::serve(
         listener,
@@ -288,6 +308,8 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
     )
     .with_graceful_shutdown(async { shutdown_rx.await.ok(); })
     .await;
+
+    reaper_handle.abort();
 
     // Cleanup port file
     let _ = std::fs::remove_file(port_file_path());
@@ -674,7 +696,7 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_delete_session() {
         let state = test_state();
-        state.mcp_sessions.insert("test-sid".to_string(), ());
+        state.mcp_sessions.insert("test-sid".to_string(), std::time::Instant::now());
         let app = build_router(state.clone(), false, true);
         let mut req = Request::delete("/mcp")
             .header("mcp-session-id", "test-sid")
@@ -733,8 +755,40 @@ mod tests {
     // --- MCP tool call tests ---
     // Test tool calls through the SSE transport (tools/call via /messages endpoint)
 
-    /// Helper: send a tools/call MCP request via POST /mcp and return the parsed result content
+    /// Build a POST request to /mcp with an mcp-session-id header.
+    fn mcp_post_with_session(url: &str, body: &serde_json::Value, session_id: &str) -> Request<Body> {
+        let mut req = Request::post(url)
+            .header("content-type", "application/json")
+            .header("mcp-session-id", session_id)
+            .body(Body::from(serde_json::to_string(body).expect("serialize JSON body")))
+            .expect("build POST request");
+        req.extensions_mut().insert(ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 0))));
+        req
+    }
+
+    /// Initialize an MCP session and return the session ID.
+    async fn mcp_initialize(state: &Arc<AppState>) -> String {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        });
+        let app = build_router(state.clone(), false, true);
+        let resp = app.oneshot(mcp_post("/mcp", &body)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        resp.headers()
+            .get("mcp-session-id")
+            .expect("initialize must return mcp-session-id")
+            .to_str()
+            .unwrap()
+            .to_string()
+    }
+
+    /// Helper: send a tools/call MCP request via POST /mcp and return the parsed result content.
+    /// Automatically initializes a session first to pass session validation.
     async fn call_mcp_tool(state: &Arc<AppState>, tool_name: &str, args: serde_json::Value) -> serde_json::Value {
+        let session_id = mcp_initialize(state).await;
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 99,
@@ -746,7 +800,7 @@ mod tests {
         });
         let app = build_router(state.clone(), false, true);
         let resp = app
-            .oneshot(mcp_post("/mcp", &body))
+            .oneshot(mcp_post_with_session("/mcp", &body, &session_id))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -934,13 +988,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_agent_spawn_not_implemented_via_mcp() {
+    async fn test_agent_spawn_unknown_binary() {
         let state = test_state();
         let result = call_mcp_tool(&state, "agent", serde_json::json!({
             "action": "spawn",
-            "prompt": "test task"
+            "prompt": "test task",
+            "agent_type": "nonexistent-agent"
         })).await;
-        assert!(result["error"].as_str().unwrap().contains("not yet implemented"));
+        assert!(result["error"].as_str().unwrap().contains("not found"));
     }
 
     // --- Config meta-command tests ---
@@ -1070,6 +1125,7 @@ mod tests {
     #[tokio::test]
     async fn test_tool_call_is_error_flag() {
         let state = test_state();
+        let session_id = mcp_initialize(&state).await;
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 50,
@@ -1081,7 +1137,7 @@ mod tests {
         });
         let app = build_router(state, false, true);
         let resp = app
-            .oneshot(mcp_post("/mcp", &body))
+            .oneshot(mcp_post_with_session("/mcp", &body, &session_id))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -1093,6 +1149,7 @@ mod tests {
     #[tokio::test]
     async fn test_tool_call_success_flag() {
         let state = test_state();
+        let session_id = mcp_initialize(&state).await;
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 51,
@@ -1104,7 +1161,7 @@ mod tests {
         });
         let app = build_router(state, false, true);
         let resp = app
-            .oneshot(mcp_post("/mcp", &body))
+            .oneshot(mcp_post_with_session("/mcp", &body, &session_id))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -1132,6 +1189,31 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
         assert_eq!(json["error"]["code"], -32601, "Unknown method should return -32601");
         assert!(json["error"]["message"].as_str().unwrap().contains("Method not found"));
+    }
+
+    #[tokio::test]
+    async fn test_tools_call_requires_session() {
+        let state = test_state();
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 70,
+            "method": "tools/call",
+            "params": {
+                "name": "session",
+                "arguments": {"action": "list"}
+            }
+        });
+        let app = build_router(state, false, true);
+        // Send without mcp-session-id header — should be rejected
+        let resp = app
+            .oneshot(mcp_post("/mcp", &body))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let resp_body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
+        assert_eq!(json["error"]["code"], -32600, "Missing session should return -32600");
+        assert!(json["error"]["message"].as_str().unwrap().contains("mcp-session-id"));
     }
 
     // --- Auth validation tests ---

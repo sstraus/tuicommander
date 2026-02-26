@@ -854,7 +854,8 @@ Built-in plugins are TypeScript modules in `src/plugins/` compiled with the app.
 | Plugin | File | Section | Detects |
 |--------|------|---------|---------|
 | `plan` | `planPlugin.ts` | ACTIVE PLAN | `plan-file` structured events (repo-scoped) |
-| `session-prompt` | `sessionPromptPlugin.ts` | SESSION PROMPTS | `user-input` structured events |
+
+> **Note:** Session prompt tracking is now a native Rust feature (via `input_line_buffer.rs` and the Activity Dashboard). The former `sessionPromptPlugin` built-in has been removed.
 
 See `examples/plugins/report-watcher/` for a template showing how to extract terminal output into Activity Center items with a markdown viewer.
 

@@ -522,8 +522,8 @@ pub struct AppState {
     pub(crate) metrics: SessionMetrics,
     /// Ring buffers for MCP output access (one per session)
     pub output_buffers: DashMap<String, Mutex<OutputRingBuffer>>,
-    /// Active MCP Streamable HTTP sessions (session_id -> unit)
-    pub mcp_sessions: DashMap<String, ()>,
+    /// Active MCP Streamable HTTP sessions (session_id -> creation time for TTL reaping)
+    pub mcp_sessions: DashMap<String, Instant>,
     /// WebSocket clients per PTY session for streaming output
     pub ws_clients: DashMap<String, Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
     /// Cached AppConfig to avoid re-reading from disk on every request

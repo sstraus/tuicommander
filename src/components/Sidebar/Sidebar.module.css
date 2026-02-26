@@ -382,8 +382,8 @@
   color: var(--warning);
 }
 
-.branchIconFeature {
-  color: var(--fg-muted);
+.branchIconWorktree {
+  color: var(--success);
 }
 
 .hasActivity .branchIcon {

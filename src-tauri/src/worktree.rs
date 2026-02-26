@@ -6,6 +6,22 @@ use std::process::Command;
 use std::sync::Arc;
 use tauri::State;
 
+/// Parse `git worktree list --porcelain` output and return the worktree path
+/// for the given branch name, if any.
+fn find_worktree_path_for_branch(stdout: &str, branch_name: &str) -> Option<PathBuf> {
+    let mut current_path: Option<PathBuf> = None;
+    for line in stdout.lines() {
+        if line.starts_with("worktree ") {
+            current_path = Some(PathBuf::from(line.trim_start_matches("worktree ")));
+        } else if line.starts_with("branch refs/heads/") {
+            if line.trim_start_matches("branch refs/heads/") == branch_name {
+                return current_path;
+            }
+        }
+    }
+    None
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct WorktreeConfig {
     pub(crate) task_name: String,
@@ -293,25 +309,8 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str) -> R
     }
 
     let worktree_list = String::from_utf8_lossy(&output.stdout);
-    let mut worktree_path: Option<PathBuf> = None;
-    let mut current_path: Option<PathBuf> = None;
-
-    // Parse porcelain output to find worktree with matching branch
-    for line in worktree_list.lines() {
-        if line.starts_with("worktree ") {
-            current_path = Some(PathBuf::from(line.trim_start_matches("worktree ")));
-        } else if line.starts_with("branch refs/heads/") {
-            let branch = line.trim_start_matches("branch refs/heads/");
-            if branch == branch_name {
-                worktree_path = current_path;
-                break;
-            }
-        }
-    }
-
-    let worktree_path = worktree_path.ok_or_else(|| {
-        format!("No worktree found for branch '{branch_name}'")
-    })?;
+    let worktree_path = find_worktree_path_for_branch(&worktree_list, branch_name)
+        .ok_or_else(|| format!("No worktree found for branch '{branch_name}'"))?;
 
     // Remove the worktree
     let worktree = WorktreeInfo {
@@ -445,10 +444,10 @@ pub(crate) fn get_remote_default_branch(repo_path: &str) -> Result<String, Strin
 
     // Fallback: check if main or master branches exist locally
     let branches = list_local_branches(repo_path.to_string()).unwrap_or_default();
-    if branches.contains(&"main".to_string()) {
+    if branches.iter().any(|b| b == "main") {
         return Ok("main".to_string());
     }
-    if branches.contains(&"master".to_string()) {
+    if branches.iter().any(|b| b == "master") {
         return Ok("master".to_string());
     }
 
@@ -685,22 +684,8 @@ fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<String, Strin
         .map_err(|e| format!("Failed to list worktrees: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut worktree_path: Option<PathBuf> = None;
-    let mut current_path: Option<PathBuf> = None;
-
-    for line in stdout.lines() {
-        if line.starts_with("worktree ") {
-            current_path = Some(PathBuf::from(line.trim_start_matches("worktree ")));
-        } else if line.starts_with("branch refs/heads/") {
-            let branch = line.trim_start_matches("branch refs/heads/");
-            if branch == branch_name {
-                worktree_path = current_path.take();
-                break;
-            }
-        }
-    }
-
-    let wt_path = worktree_path.ok_or_else(|| format!("No worktree found for branch '{branch_name}'"))?;
+    let wt_path = find_worktree_path_for_branch(&stdout, branch_name)
+        .ok_or_else(|| format!("No worktree found for branch '{branch_name}'"))?;
     let parent_dir = wt_path.parent().ok_or("Worktree has no parent directory")?;
     let archive_dir = parent_dir.join("__archived");
     let sanitized = sanitize_name(branch_name);

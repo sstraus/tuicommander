@@ -33,6 +33,66 @@ function sanitizeForPath(name: string): string {
   return name.replace(/\//g, "-");
 }
 
+/** Custom styled dropdown replacing native <select> */
+const BaseRefDropdown: Component<{
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}> = (props) => {
+  const [open, setOpen] = createSignal(false);
+  let triggerRef: HTMLButtonElement | undefined;
+  let listRef: HTMLDivElement | undefined;
+
+  // Close on outside click
+  const handleDocClick = (e: MouseEvent) => {
+    if (!triggerRef?.contains(e.target as Node) && !listRef?.contains(e.target as Node)) {
+      setOpen(false);
+    }
+  };
+
+  createEffect(() => {
+    if (open()) {
+      document.addEventListener("mousedown", handleDocClick);
+    } else {
+      document.removeEventListener("mousedown", handleDocClick);
+    }
+    onCleanup(() => document.removeEventListener("mousedown", handleDocClick));
+  });
+
+  return (
+    <div class={s.baseRefRow}>
+      <label>{t("createWorktree.startFrom", "Start from")}</label>
+      <div class={s.dropdownWrapper}>
+        <button
+          ref={triggerRef}
+          type="button"
+          class={s.dropdownTrigger}
+          onClick={() => setOpen(!open())}
+        >
+          <span class={s.dropdownValue}>{props.value}</span>
+          <svg class={s.dropdownChevron} width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M4 6l4 4 4-4"/>
+          </svg>
+        </button>
+        <Show when={open()}>
+          <div ref={listRef} class={s.dropdownList}>
+            <For each={props.options}>
+              {(option) => (
+                <div
+                  class={`${s.dropdownItem} ${option === props.value ? s.dropdownItemActive : ""}`}
+                  onClick={() => { props.onChange(option); setOpen(false); }}
+                >
+                  {option}
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
+    </div>
+  );
+};
+
 export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props) => {
   const [branchName, setBranchName] = createSignal("");
   const [baseRef, setBaseRef] = createSignal("");
@@ -179,17 +239,11 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
             </div>
 
             <Show when={availableBaseRefs().length > 1 && !isExistingBranch()}>
-              <div class={s.baseRefRow}>
-                <label>{t("createWorktree.startFrom", "Start from")}</label>
-                <select
-                  value={baseRef()}
-                  onChange={(e) => setBaseRef(e.currentTarget.value)}
-                >
-                  <For each={availableBaseRefs()}>
-                    {(ref) => <option value={ref}>{ref}</option>}
-                  </For>
-                </select>
-              </div>
+              <BaseRefDropdown
+                value={baseRef()}
+                options={availableBaseRefs()}
+                onChange={setBaseRef}
+              />
             </Show>
 
             <div class={s.branchList}>

@@ -18,6 +18,7 @@ Classifies terminal error messages and calculates exponential backoff delays for
 | Category | Description | Examples |
 |----------|-------------|----------|
 | `"transient"` | Temporary, retry-safe | Network timeout, connection reset, rate limit |
+| `"server"` | API server-side error | 5xx responses, service unavailable, auth failures from providers |
 | `"permanent"` | Will not resolve with retry | Auth failure, not found, invalid input |
 | `"unknown"` | Unclassified | Default for unrecognized patterns |
 

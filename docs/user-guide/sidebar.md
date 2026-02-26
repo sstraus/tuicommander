@@ -21,6 +21,7 @@ Each repo shows a header with the repo name and action buttons:
 - **Click** the header to expand/collapse the branch list
 - **Click again** to toggle icon-only mode (shows repo initials — saves space)
 - **`⋯` button** — Opens a menu with: Repo Settings, Remove, Move to Group
+- **Right-click main worktree row** → **Switch Branch** submenu: shows all local branches with a checkmark on the current one. If the working tree is dirty, prompts to stash changes first. Blocks switching when a terminal has a running process.
 
 ### Removing Repositories
 
@@ -70,6 +71,7 @@ Each branch row can show:
 | **CI ring** | Proportional arc segments — green (passed), red (failed), yellow (pending) |
 | **PR badge** | Colored by state — green (open), purple (merged), red (closed), gray (draft). Click for detail popover. |
 | **Diff stats** | `+N / -N` additions and deletions |
+| **Merged badge** | Branches merged into main show a "Merged" badge |
 | **Question icon** | An agent in this branch's terminal is asking a question |
 
 ### Branch Actions

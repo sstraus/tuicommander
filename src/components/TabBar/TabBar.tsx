@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createEffect, onCleanup, onMount } from "solid-js";
+import { Component, For, Show, batch, createSignal, createEffect, onCleanup, onMount } from "solid-js";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
@@ -260,8 +260,10 @@ export const TabBar: Component<TabBarProps> = (props) => {
     const el = tabsRef;
     if (!el) return;
     const threshold = 2; // Avoid floating-point edge cases
-    setCanScrollLeft(el.scrollLeft > threshold);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - threshold);
+    batch(() => {
+      setCanScrollLeft(el.scrollLeft > threshold);
+      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - threshold);
+    });
   };
 
   const scrollBy = (delta: number) => {

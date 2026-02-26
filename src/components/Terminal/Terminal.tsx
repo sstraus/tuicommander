@@ -374,7 +374,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             // Also handled by planPlugin via dispatchStructuredEvent below
             break;
           case "user-input":
-            appLogger.debug("terminal", `[ParsedEvent] ${props.id} user-input content="${(parsed as { content: string }).content.slice(0, 80)}"`);
+            appLogger.debug("terminal", `[ParsedEvent] ${props.id} user-input content="${parsed.content.slice(0, 80)}"`);
             // Refresh last relevant prompt from Rust (word-count filtering happens backend-side)
             invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
               if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
@@ -382,9 +382,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           case "api-error": {
             const agent = terminalsStore.get(props.id)?.agentType;
-            const kind = (parsed as { error_kind: string }).error_kind;
-            const patternName = (parsed as { pattern_name: string }).pattern_name;
-            const matchedText = (parsed as { matched_text: string }).matched_text;
+            const { error_kind: kind, pattern_name: patternName, matched_text: matchedText } = parsed;
             appLogger.warn("terminal", `[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
             appLogger.error("terminal", `API error (${kind}): ${matchedText}`);
             if (terminalsStore.state.activeId !== props.id) {

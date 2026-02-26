@@ -10,12 +10,20 @@ use super::types::*;
 
 pub(super) async fn get_config(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let config = state.config.read().clone();
-    let mut json = serde_json::to_value(config).unwrap_or_default();
+    let mut json = match serde_json::to_value(config) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("Failed to serialize config: {e}")})),
+            ).into_response();
+        }
+    };
     // Strip sensitive fields from HTTP responses
     if let Some(obj) = json.as_object_mut() {
         obj.remove("remote_access_password_hash");
     }
-    Json(json)
+    Json(json).into_response()
 }
 
 pub(super) async fn put_config(
@@ -179,6 +187,7 @@ pub(super) async fn get_mcp_status_http(State(state): State<Arc<AppState>>) -> i
         "running": running,
         "port": port,
         "active_sessions": state.sessions.len(),
+        "mcp_clients": state.mcp_sessions.len(),
         "max_sessions": MAX_CONCURRENT_SESSIONS,
     }))
 }

@@ -182,8 +182,11 @@ function createAppLogger() {
     setRevision((r) => r + 1);
     setUnseenErrorCount(0);
 
-    // Clear Rust backend too
-    rpc("clear_logs").catch(() => {});
+    // Best-effort: clear Rust backend ring buffer. On failure, entries will
+    // re-appear on next webview reload via hydrateFromRust().
+    rpc("clear_logs").catch((e) => {
+      console.warn("[appLogger] Failed to clear Rust log buffer:", e);
+    });
   }
 
   function markSeen(): void {

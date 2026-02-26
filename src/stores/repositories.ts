@@ -121,7 +121,7 @@ function saveRepos(
 
 /** Generate a unique group ID */
 function generateGroupId(): string {
-  return `grp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `grp-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
 /** Create the repositories store */

@@ -138,6 +138,7 @@ pub(super) async fn close_session(
         state.output_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
+        state.input_buffers.remove(&session_id);
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
 
         let mut session = session_mutex.into_inner();
@@ -516,14 +517,20 @@ async fn handle_ws_session(socket: WebSocket, session_id: String, state: Arc<App
             Message::Text(text) => {
                 if let Some(session) = state_clone.sessions.get(&sid) {
                     let mut s = session.lock();
-                    let _ = s.writer.write_all(text.as_bytes());
+                    if let Err(e) = s.writer.write_all(text.as_bytes()) {
+                        eprintln!("[ws] PTY write failed for session {sid}: {e}");
+                        break;
+                    }
                     let _ = s.writer.flush();
                 }
             }
             Message::Binary(data) => {
                 if let Some(session) = state_clone.sessions.get(&sid) {
                     let mut s = session.lock();
-                    let _ = s.writer.write_all(&data);
+                    if let Err(e) = s.writer.write_all(&data) {
+                        eprintln!("[ws] PTY write failed for session {sid}: {e}");
+                        break;
+                    }
                     let _ = s.writer.flush();
                 }
             }

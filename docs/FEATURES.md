@@ -14,6 +14,7 @@
 - Each tab runs an independent pseudo-terminal with the user's shell
 - Terminals are never unmounted — hidden tabs stay alive with full scroll history
 - Session persistence across app restarts (lazy restore on branch click)
+- Agent session restore shows a clickable banner ("Agent session was active — click to resume") instead of auto-injecting the resume command; banner is dismissible
 - Foreground process detection (macOS: `libproc`, Windows: `CreateToolhelp32Snapshot`)
 - PTY environment: `TERM=xterm-256color`, `COLORTERM=truecolor`, `LANG=en_US.UTF-8`
 - Pause/resume PTY output (`pause_pty` / `resume_pty` Tauri commands) — suspends reader thread without killing the session
@@ -32,6 +33,7 @@
   - PTY session stays alive in Rust — floating window reconnects to the same session
   - Closing the floating window automatically returns the tab to the main window
   - Requires an active PTY session (disabled for tabs without a session)
+- Overflow menu on scroll arrows (right-click) shows clipped tabs; the `+` button always stays visible regardless of scroll position
 - Tab pinning: pinned tabs are visible across all branches (not scoped to branch key)
 
 ### 1.3 Split Panes
@@ -90,7 +92,7 @@
 - Add repository via `+` button or folder dialog
 - Click repo header to expand/collapse branch list
 - Click again to toggle icon-only mode (shows initials)
-- `⋯` button: Repo Settings, Show All Branches / Show Active Only, Move to Group, Park Repository, Remove
+- `⋯` button: Repo Settings, Switch Branch (via context menu on main worktree), Move to Group, Park Repository, Remove
 
 ### 2.2 Repository Groups
 - Named, colored groups for organizing repositories
@@ -102,11 +104,8 @@
 - Reorder groups: drag-and-drop
 - Color inheritance: repo color > group color > none
 
-### 2.2.1 Show All Branches
-- `⋯` → Show All Branches: lists every local git branch in the sidebar (not just worktrees)
-- Toggle label changes to "Show Active Only" when active — click to revert to worktree-only view
-- Per-repo state: each repository remembers its own setting independently
-- Global default (Settings → General → Git Integration): configures the initial state for newly added repositories
+### 2.2.1 Switch Branch
+Right-click the main worktree row → **Switch Branch** submenu to checkout a different branch. The submenu shows all local branches with a checkmark on the current one. If the working tree is dirty, prompts to stash changes first. Blocks switching when a terminal has a running process.
 
 ### 2.3 Branch Items
 - Click: switch to branch (shows its terminals, creates worktree if needed)
@@ -115,6 +114,7 @@
 - CI ring: proportional arc segments (green=passed, red=failed, yellow=pending)
 - PR badge: colored by state (green=open, purple=merged, red=closed, gray=draft) — click for detail popover
 - Diff stats: `+N / -N` additions/deletions
+- Merged badge: branches merged into main show a "Merged" badge
 - Question indicator: `?` icon (orange, pulsing) when agent asks a question
 - Quick switcher badge: numbered index shown when `Cmd+Ctrl` held
 - Branch sorting: main/master/develop always first, then alphabetical; merged PR branches sorted last
@@ -214,7 +214,7 @@
 
 ### 3.11 Activity Dashboard (`Cmd+Shift+A`)
 - Real-time view of all active terminal sessions in a compact list
-- Each row shows: terminal name, agent type, status, last activity time
+- Each row shows: terminal name, agent type, status, last activity time, and the last user prompt (>= 10 words) as an italic sub-row with tooltip
 - Status color codes: green=working, yellow=waiting, red=rate-limited, gray=idle
 - Rate limit indicators with countdown timers
 - Click any row to switch to that terminal and close the dashboard
@@ -231,7 +231,7 @@
 - Clear button to flush the log
 - Status bar badge shows unseen error/warning count (red, resets when panel opens)
 - Global error capture: uncaught exceptions and unhandled promise rejections are automatically logged
-- Ring buffer of 1000 entries (oldest dropped when full)
+- Ring buffer of 1000 entries (oldest dropped when full), Rust-backed — warn/error entries survive webview reloads via `push_log`/`get_logs` Tauri commands
 - Also accessible via Command Palette: "Error log"
 
 ---
@@ -358,7 +358,12 @@
   - File-size-based cache (only new bytes parsed on each scan)
   - Cache persisted to disk as JSON for fast restarts
 
-### 6.7 Agent Configuration (Settings > Agents)
+### 6.7 API Error Detection
+- Detects API errors (server errors, auth failures) from agent output and provider-level JSON error responses
+- Covers Claude Code, Aider, Codex CLI, Gemini CLI, Copilot, and raw API error JSON from providers (OpenAI, Anthropic, Google, OpenRouter, MiniMax)
+- Triggers error notification sound and logs to the Error Log Panel
+
+### 6.8 Agent Configuration (Settings > Agents)
 - **Agent list:** All supported agents with availability status and version detection
 - **Run configurations:** Named command templates per agent (binary, args, env vars)
 - **Default config:** One run config per agent marked as default for quick launching
@@ -464,7 +469,7 @@
 ### 9.3 Push-to-Talk
 - Default hotkey: `F5` (configurable, registered globally)
 - Mic button in status bar: hold to record, release to transcribe
-- Transcribed text injected into active terminal via PTY
+- Transcribed text inserts into the focused input element (textarea, input, contenteditable); falls back to active terminal PTY when no text input has focus. Focus target captured at key-press time.
 
 ### 9.4 Configuration
 - Enable/disable, hotkey, language (auto-detect or explicit), model download
@@ -506,7 +511,7 @@
 - Power management: prevent sleep when busy
 - Updates: auto-check, check now
 - Git integration: auto-show PR popover
-- Repository defaults: base branch, file handling, setup/run scripts
+- Repository defaults: base branch, file handling, setup/run scripts, worktree defaults (storage strategy, prompt on create, etc.)
 
 ### 11.2 Appearance
 - Terminal theme: multiple themes, color swatches
@@ -529,7 +534,7 @@
 
 ### 11.5 Notifications
 - Master toggle, volume (0-100%)
-- Per-event: question, error, completed, warning
+- Per-event: question, error, completed, warning, info
 - Test buttons per sound
 - Reset to defaults
 
@@ -541,7 +546,7 @@
 - Auto-populated from `actionRegistry.ts` (`ACTION_META` map) — new actions appear automatically
 
 ### 11.7 Agents
-- See **6.7 Agent Configuration** for full details
+- See **6.8 Agent Configuration** for full details
 - Claude Usage Dashboard enable/disable toggle (under Claude agent section)
 
 ---
@@ -613,7 +618,6 @@ All data persisted to platform config directory via Rust:
 - Exposes terminal sessions, git operations, agent spawning
 - WebSocket streaming, Streamable HTTP transport
 - Used by Claude Code, Cursor, and other tools via MCP protocol
-- One-click MCP registration with Claude CLI (`claude mcp add` via `register_mcp_with_claude` command)
 
 ### 14.7 macOS Dock Badge
 - Badge count for attention-requiring notifications (questions, errors)
