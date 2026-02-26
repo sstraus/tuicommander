@@ -218,6 +218,18 @@ createEffect(() => {
 
 **All business logic, data transformation, and parsing MUST be implemented in Rust (backend), NOT in the UI layer (TypeScript/SolidJS stores or components).** The frontend should only handle rendering and user interaction — never data reshaping or computation.
 
+## Debugging: App Log Access
+
+**When the HTTP server is running, read the app's ring buffer log via `GET /logs`.** This exposes the same log entries visible in the status bar error panel. Use query params to filter:
+
+- `GET /logs` — all entries
+- `GET /logs?limit=50` — last 50 entries
+- `GET /logs?level=error` — errors only
+- `GET /logs?source=terminal` — terminal-related logs only
+- Filters can be combined: `GET /logs?level=warn&source=git&limit=20`
+
+Use this **before asking Boss** to paste logs — check the ring buffer yourself first.
+
 ## Release & Tag Checklist
 
 When Boss asks to tag a release:
