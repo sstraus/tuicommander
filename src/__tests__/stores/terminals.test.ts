@@ -44,13 +44,13 @@ describe("terminalsStore", () => {
       });
     });
 
-    it("selects another terminal when active is removed", () => {
+    it("sets activeId to null when active terminal is removed (caller handles replacement)", () => {
       createRoot((dispose) => {
         const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-        const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+        store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
         store.setActive(id1);
         store.remove(id1);
-        expect(store.state.activeId).toBe(id2);
+        expect(store.state.activeId).toBeNull();
         dispose();
       });
     });

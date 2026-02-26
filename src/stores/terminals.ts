@@ -97,16 +97,15 @@ function createTerminalsStore() {
       setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, ...data });
     },
 
-    /** Remove a terminal */
+    /** Remove a terminal. Sets activeId to null when removing the active terminal —
+     *  the caller is responsible for selecting a same-branch replacement beforehand. */
     remove(id: string): void {
       appLogger.info("terminal", `TermStore.remove(${id})`, { remaining: Object.keys(state.terminals).filter(k => k !== id) });
       setState(
         produce((s) => {
           delete s.terminals[id];
-          // If we removed the active terminal, select another
           if (s.activeId === id) {
-            const remaining = Object.keys(s.terminals);
-            s.activeId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+            s.activeId = null;
           }
         })
       );

@@ -27,6 +27,9 @@ function resetStores() {
   terminalsStore.setLayout({ direction: "none", panes: [], ratio: 0.5, activePaneIndex: 0 });
 }
 
+/** Flush pending requestAnimationFrame callbacks (used by closeTerminal to defer focus) */
+const flushRAF = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
 describe("useTerminalLifecycle", () => {
   const mockPty = {
     canSpawn: vi.fn().mockResolvedValue(true),
@@ -645,10 +648,55 @@ describe("useTerminalLifecycle", () => {
       terminalsStore.setActive(id1);
 
       await lifecycle.closeTerminal(id1, true);
+      await flushRAF();
 
       const branch = repositoriesStore.get("/repo")?.branches["main"];
       expect(branch?.terminals).not.toContain(id1);
       expect(terminalsStore.state.activeId).toBe(id2);
+    });
+
+    it("sets activeId to null when closing last terminal on a branch (not cross-repo)", async () => {
+      // Set up two repos, each with terminals on their own branches
+      repositoriesStore.add({ path: "/repo-a", displayName: "Repo A" });
+      repositoriesStore.setBranch("/repo-a", "main", { worktreePath: "/repo-a" });
+      repositoriesStore.setActive("/repo-a");
+      repositoriesStore.setActiveBranch("/repo-a", "main");
+
+      repositoriesStore.add({ path: "/repo-b", displayName: "Repo B" });
+      repositoriesStore.setBranch("/repo-b", "develop", { worktreePath: "/repo-b" });
+
+      const termA = terminalsStore.add({ sessionId: null, fontSize: 14, name: "A1", cwd: "/repo-a", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo-a", "main", termA);
+      terminalsStore.setActive(termA);
+
+      const termB = terminalsStore.add({ sessionId: null, fontSize: 14, name: "B1", cwd: "/repo-b", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo-b", "develop", termB);
+
+      // Close repo A's only terminal — should NOT fall back to repo B's terminal
+      await lifecycle.closeTerminal(termA, true);
+
+      expect(terminalsStore.state.activeId).toBeNull();
+    });
+
+    it("does not activate cross-repo terminal when closing last branch terminal", async () => {
+      // Same repo, different branches
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo-feat" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main");
+
+      const termMain = terminalsStore.add({ sessionId: null, fontSize: 14, name: "Main", cwd: "/repo", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "main", termMain);
+      terminalsStore.setActive(termMain);
+
+      const termFeature = terminalsStore.add({ sessionId: null, fontSize: 14, name: "Feature", cwd: "/repo-feat", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "feature", termFeature);
+
+      // Close the only terminal on main — should NOT fall back to feature branch's terminal
+      await lifecycle.closeTerminal(termMain, true);
+
+      expect(terminalsStore.state.activeId).toBeNull();
     });
   });
 
@@ -715,6 +763,7 @@ describe("useTerminalLifecycle", () => {
 
       // Close the first pane (simulates tab X button)
       await lifecycle.closeTerminal(id1, true);
+      await flushRAF();
 
       // Split should be collapsed, survivor should be active
       expect(terminalsStore.state.layout.direction).toBe("none");
@@ -734,6 +783,7 @@ describe("useTerminalLifecycle", () => {
       terminalsStore.setActive(id2);
 
       await lifecycle.closeTerminal(id2, true);
+      await flushRAF();
 
       expect(terminalsStore.state.layout.direction).toBe("none");
       expect(terminalsStore.state.layout.panes).toEqual([id1]);
