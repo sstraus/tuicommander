@@ -283,6 +283,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         sessionId = null;
         props.onSessionExit?.(props.id);
         if (terminalsStore.state.activeId !== props.id) {
+          appLogger.info("terminal", `[Notify] ${props.id} completion — session exited (background tab)`);
           notificationsStore.playCompletion();
         }
       },
@@ -340,6 +341,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
               };
               rateLimitStore.addRateLimit(info);
               props.onRateLimit?.(props.id, targetSessionId, parsed.retry_after_ms);
+              appLogger.info("terminal", `[Notify] ${props.id} warning — rate-limit pattern=${parsed.pattern_name} matched="${parsed.matched_text}"`);
               notificationsStore.playWarning();
             }
             break;
@@ -348,6 +350,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} question prompt="${parsed.prompt_text}" → setAwaitingInput("question")`);
             terminalsStore.setAwaitingInput(props.id, "question");
             if (terminalsStore.state.activeId !== props.id) {
+              appLogger.info("terminal", `[Notify] ${props.id} question — prompt="${parsed.prompt_text}" (background tab)`);
               notificationsStore.playQuestion();
             }
             break;
@@ -365,6 +368,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} plan-file path="${parsed.path}"`);
             // Plan file detected — play a subtle info tone (not a question).
             if (terminalsStore.state.activeId !== props.id) {
+              appLogger.info("terminal", `[Notify] ${props.id} info — plan-file path="${parsed.path}" (background tab)`);
               notificationsStore.playInfo();
             }
             // Also handled by planPlugin via dispatchStructuredEvent below
@@ -384,6 +388,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             appLogger.warn("terminal", `[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
             appLogger.error("terminal", `API error (${kind}): ${matchedText}`);
             if (terminalsStore.state.activeId !== props.id) {
+              appLogger.info("terminal", `[Notify] ${props.id} error — api-error pattern=${patternName} kind=${kind} matched="${matchedText}" (background tab)`);
               notificationsStore.playError();
             }
             break;

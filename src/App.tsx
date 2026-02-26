@@ -558,6 +558,7 @@ const App: Component = () => {
         // Show meaningful output: prefer stderr (git progress goes there), fall back to stdout
         const output = (stderr.trim() || stdout.trim()).split("\n").pop()?.trim();
         setStatusInfo(output ? `git ${op}: ${output}` : `git ${op} completed`);
+        appLogger.info("app", `[Notify] completion — git ${op} succeeded`);
         notificationsStore.playCompletion();
       } else if (NEEDS_TERMINAL_PATTERNS.some((p) => p.test(stderr))) {
         // Auth or interactive prompt needed — cancel background task, run in terminal
@@ -567,11 +568,13 @@ const App: Component = () => {
         const errMsg = stderr.trim() || `git ${op} failed`;
         tasksStore.fail(taskId, errMsg);
         setStatusInfo(`git ${op} failed: ${errMsg}`);
+        appLogger.info("app", `[Notify] error — git ${op} failed: ${errMsg}`);
         notificationsStore.playError();
       }
     } catch (err) {
       tasksStore.fail(taskId, String(err));
       setStatusInfo(`git ${op} error: ${err}`);
+      appLogger.info("app", `[Notify] error — git ${op} exception: ${err}`);
       notificationsStore.playError();
     } finally {
       setRunningGitOps((prev) => {
@@ -952,6 +955,9 @@ const App: Component = () => {
           onOpenHelp={() => setHelpPanelVisible(true)}
           buildAgentMenuItems={buildSidebarAgentMenuItems}
           onRefreshBranchStats={gitOps.refreshAllBranchStats}
+          onSwitchBranch={gitOps.handleSwitchBranch}
+          switchBranchLists={gitOps.switchBranchLists()}
+          currentBranches={gitOps.currentBranches()}
           onBackgroundGit={handleBackgroundGit}
           runningGitOps={runningGitOps()}
         />
