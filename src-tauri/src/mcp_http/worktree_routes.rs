@@ -32,8 +32,18 @@ pub(super) async fn list_worktrees_http(
 
 pub(super) async fn get_worktrees_dir_http(
     State(state): State<Arc<AppState>>,
+    Query(q): Query<OptionalRepoQuery>,
 ) -> impl IntoResponse {
-    Json(serde_json::json!({"dir": state.worktrees_dir.to_string_lossy()}))
+    let dir = match q.repo_path {
+        Some(rp) => crate::worktree::resolve_worktree_dir_for_repo(
+            std::path::Path::new(&rp),
+            &state.worktrees_dir,
+        )
+        .to_string_lossy()
+        .to_string(),
+        None => state.worktrees_dir.to_string_lossy().to_string(),
+    };
+    Json(serde_json::json!({"dir": dir}))
 }
 
 pub(super) async fn get_worktree_paths_http(Query(q): Query<PathQuery>) -> Response {
@@ -54,7 +64,11 @@ pub(super) async fn create_worktree_http(
         branch: Some(body.branch_name),
         create_branch: body.create_branch.unwrap_or(true),
     };
-    match crate::worktree::create_worktree_internal(&state.worktrees_dir, &config, None) {
+    let worktrees_dir = crate::worktree::resolve_worktree_dir_for_repo(
+        std::path::Path::new(&config.base_repo),
+        &state.worktrees_dir,
+    );
+    match crate::worktree::create_worktree_internal(&worktrees_dir, &config, None) {
         Ok(wt) => (
             StatusCode::CREATED,
             Json(serde_json::json!({

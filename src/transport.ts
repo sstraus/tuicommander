@@ -215,12 +215,14 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
     // --- Worktrees ---
     case "list_worktrees":
       return { method: "GET", path: "/worktrees" };
-    case "get_worktrees_dir":
+    case "get_worktrees_dir": {
+      const rp = args?.repoPath as string | undefined;
       return {
         method: "GET",
-        path: "/worktrees/dir",
+        path: rp ? `/worktrees/dir?repo_path=${encodeURIComponent(rp)}` : "/worktrees/dir",
         transform: (data) => (data as { dir: string }).dir,
       };
+    }
     case "get_worktree_paths":
       return { method: "GET", path: `/worktrees/paths?path=${p("repoPath")}` };
     case "create_worktree":

@@ -30,7 +30,7 @@ export interface GitOperationsDeps {
   pty: {
     canSpawn: () => Promise<boolean>;
     write: (sessionId: string, data: string) => Promise<void>;
-    getWorktreesDir: () => Promise<string>;
+    getWorktreesDir: (repoPath?: string) => Promise<string>;
   };
   dialogs: {
     confirmRemoveRepo: (repoName: string) => Promise<boolean>;
@@ -540,7 +540,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     const [suggestedName, localBranches, worktreesDir, baseRefs] = await Promise.all([
       deps.repo.generateWorktreeName(worktreeBranches),
       deps.repo.listLocalBranches(repoPath),
-      deps.pty.getWorktreesDir(),
+      deps.pty.getWorktreesDir(repoPath),
       deps.repo.listBaseRefOptions(repoPath),
     ]);
 

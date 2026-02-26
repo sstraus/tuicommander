@@ -42,7 +42,6 @@ pub(crate) struct WorktreeResult {
 /// - `Sibling`: `{repo_parent}/{repo_name}__wt/`
 /// - `AppDir`: `{app_config_dir}/worktrees/{repo_name}/`
 /// - `InsideRepo`: `{repo_path}/.worktrees/`
-#[cfg(test)]
 pub(crate) fn resolve_worktree_dir(
     repo_path: &Path,
     strategy: &crate::config::WorktreeStorage,
@@ -67,6 +66,22 @@ pub(crate) fn resolve_worktree_dir(
         }
         WorktreeStorage::InsideRepo => repo_path.join(".worktrees"),
     }
+}
+
+/// Resolve the effective worktree directory for a repo by loading config from disk.
+/// Per-repo `worktree_storage` overrides the global default from repo-defaults.
+pub(crate) fn resolve_worktree_dir_for_repo(
+    repo_path: &Path,
+    app_worktrees_dir: &Path,
+) -> PathBuf {
+    let repo_path_str = repo_path.to_string_lossy();
+    let repo_settings = crate::config::load_repo_settings();
+    let strategy = repo_settings
+        .repos
+        .get(repo_path_str.as_ref())
+        .and_then(|entry| entry.worktree_storage.clone())
+        .unwrap_or_else(|| crate::config::load_repo_defaults().worktree_storage);
+    resolve_worktree_dir(repo_path, &strategy, app_worktrees_dir)
 }
 
 /// Sanitize task name for use as directory name
@@ -275,7 +290,11 @@ pub(crate) fn create_worktree(
         create_branch: create_branch.unwrap_or(true),
     };
 
-    let worktree = create_worktree_internal(&state.worktrees_dir, &config, base_ref.as_deref())?;
+    let worktrees_dir = resolve_worktree_dir_for_repo(
+        Path::new(&config.base_repo),
+        &state.worktrees_dir,
+    );
+    let worktree = create_worktree_internal(&worktrees_dir, &config, base_ref.as_deref())?;
     state.invalidate_repo_caches(&config.base_repo);
 
     Ok(serde_json::json!({
@@ -286,10 +305,16 @@ pub(crate) fn create_worktree(
     }))
 }
 
-/// Get worktrees directory path
+/// Get worktrees directory path.
+/// When `repo_path` is provided, resolves the effective storage strategy for the repo.
 #[tauri::command]
-pub(crate) fn get_worktrees_dir(state: State<'_, Arc<AppState>>) -> String {
-    state.worktrees_dir.to_string_lossy().to_string()
+pub(crate) fn get_worktrees_dir(state: State<'_, Arc<AppState>>, repo_path: Option<String>) -> String {
+    match repo_path {
+        Some(rp) => resolve_worktree_dir_for_repo(Path::new(&rp), &state.worktrees_dir)
+            .to_string_lossy()
+            .to_string(),
+        None => state.worktrees_dir.to_string_lossy().to_string(),
+    }
 }
 
 /// Core logic for removing a git worktree by branch name.
@@ -1106,6 +1131,39 @@ mod tests {
         assert!(
             !stdout.trim().is_empty(),
             "Branch should be preserved when delete_branch=false"
+        );
+    }
+
+    #[test]
+    fn resolve_worktree_dir_sibling_strategy() {
+        use crate::config::WorktreeStorage;
+        let repo = PathBuf::from("/home/user/dev/myrepo");
+        let app_dir = PathBuf::from("/home/user/.config/tuic/worktrees");
+        assert_eq!(
+            resolve_worktree_dir(&repo, &WorktreeStorage::Sibling, &app_dir),
+            PathBuf::from("/home/user/dev/myrepo__wt")
+        );
+    }
+
+    #[test]
+    fn resolve_worktree_dir_appdir_strategy() {
+        use crate::config::WorktreeStorage;
+        let repo = PathBuf::from("/home/user/dev/myrepo");
+        let app_dir = PathBuf::from("/home/user/.config/tuic/worktrees");
+        assert_eq!(
+            resolve_worktree_dir(&repo, &WorktreeStorage::AppDir, &app_dir),
+            PathBuf::from("/home/user/.config/tuic/worktrees/myrepo")
+        );
+    }
+
+    #[test]
+    fn resolve_worktree_dir_inside_repo_strategy() {
+        use crate::config::WorktreeStorage;
+        let repo = PathBuf::from("/home/user/dev/myrepo");
+        let app_dir = PathBuf::from("/home/user/.config/tuic/worktrees");
+        assert_eq!(
+            resolve_worktree_dir(&repo, &WorktreeStorage::InsideRepo, &app_dir),
+            PathBuf::from("/home/user/dev/myrepo/.worktrees")
         );
     }
 }

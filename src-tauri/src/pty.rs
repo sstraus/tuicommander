@@ -516,7 +516,11 @@ pub(crate) async fn create_pty_with_worktree(
     worktree_config: WorktreeConfig,
 ) -> Result<WorktreeResult, String> {
     // Create the worktree first
-    let worktree = create_worktree_internal(&state.worktrees_dir, &worktree_config, None)?;
+    let worktrees_dir = crate::worktree::resolve_worktree_dir_for_repo(
+        std::path::Path::new(&worktree_config.base_repo),
+        &state.worktrees_dir,
+    );
+    let worktree = create_worktree_internal(&worktrees_dir, &worktree_config, None)?;
     let worktree_path = worktree.path.clone();
 
     // Wrap PTY creation so we can clean up the worktree on failure

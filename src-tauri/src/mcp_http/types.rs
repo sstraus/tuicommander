@@ -44,6 +44,12 @@ pub(super) struct PathQuery {
     pub path: String,
 }
 
+#[derive(Deserialize, Default)]
+pub(super) struct OptionalRepoQuery {
+    #[serde(default)]
+    pub repo_path: Option<String>,
+}
+
 #[derive(Deserialize)]
 pub(super) struct CiChecksQuery {
     pub path: String,

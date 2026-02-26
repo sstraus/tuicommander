@@ -102,9 +102,9 @@ export function usePty() {
     return await rpc<unknown[]>("list_worktrees");
   }
 
-  /** Get worktrees directory path */
-  async function getWorktreesDir(): Promise<string> {
-    return await rpc<string>("get_worktrees_dir");
+  /** Get worktrees directory path (repo-aware when repoPath provided) */
+  async function getWorktreesDir(repoPath?: string): Promise<string> {
+    return await rpc<string>("get_worktrees_dir", { repoPath: repoPath ?? null });
   }
 
   /** Get PTY session metrics for observability */

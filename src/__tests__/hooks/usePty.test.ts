@@ -151,7 +151,7 @@ describe("usePty", () => {
       mockInvoke.mockResolvedValueOnce("/home/user/.worktrees");
       const result = await pty.getWorktreesDir();
       expect(result).toBe("/home/user/.worktrees");
-      expect(mockInvoke).toHaveBeenCalledWith("get_worktrees_dir");
+      expect(mockInvoke).toHaveBeenCalledWith("get_worktrees_dir", { repoPath: null });
     });
   });
 
