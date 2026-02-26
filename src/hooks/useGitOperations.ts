@@ -58,6 +58,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
     baseRefs: string[];
   } | null>(null);
 
+  /** Reentrancy guard: prevents concurrent handleBranchSelect calls from
+   *  duplicating terminals (e.g. rapid sidebar clicks, quick-switcher). */
+  let branchSelectInFlight: Promise<void> | null = null;
+
   /** Transition a repo from git to shell mode (e.g. .git was removed) */
   const transitionToShell = (repoPath: string, currentRepo: RepositoryState) => {
     batch(() => {
@@ -225,6 +229,23 @@ export function useGitOperations(deps: GitOperationsDeps) {
   };
 
   const handleBranchSelect = async (repoPath: string, branchName: string) => {
+    // Serialize: wait for any in-flight branch select to finish before starting ours.
+    // Without this, rapid sidebar clicks or quick-switcher can run two selects
+    // concurrently, causing duplicate terminal creation from savedTerminals.
+    if (branchSelectInFlight) {
+      await branchSelectInFlight;
+    }
+    let resolve: () => void;
+    branchSelectInFlight = new Promise<void>((r) => { resolve = r; });
+    try {
+      await handleBranchSelectInner(repoPath, branchName);
+    } finally {
+      branchSelectInFlight = null;
+      resolve!();
+    }
+  };
+
+  const handleBranchSelectInner = async (repoPath: string, branchName: string) => {
     // Log the state we're LEAVING — critical for diagnosing terminal disappearance
     const prevRepo = repositoriesStore.getActive();
     const prevBranchName = prevRepo?.activeBranch;

@@ -308,6 +308,64 @@ describe("repositoriesStore", () => {
     });
   });
 
+  describe("mergeBranchState()", () => {
+    it("moves terminals and flags from source to target", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo", displayName: "test" });
+        store.setBranch("/repo", "old-branch", { hadTerminals: true });
+        store.addTerminalToBranch("/repo", "old-branch", "term-1");
+        store.addTerminalToBranch("/repo", "old-branch", "term-2");
+        store.setBranch("/repo", "new-branch", { worktreePath: "/repo" });
+
+        store.mergeBranchState("/repo", "old-branch", "new-branch");
+
+        const oldB = store.get("/repo")!.branches["old-branch"];
+        const newB = store.get("/repo")!.branches["new-branch"];
+        expect(oldB.terminals).toEqual([]);
+        expect(newB.terminals).toContain("term-1");
+        expect(newB.terminals).toContain("term-2");
+        expect(newB.hadTerminals).toBe(true);
+        // Target keeps its worktreePath
+        expect(newB.worktreePath).toBe("/repo");
+        dispose();
+      });
+    });
+
+    it("transfers savedTerminals when target has none", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo", displayName: "test" });
+        store.setBranch("/repo", "old", {
+          savedTerminals: [{ name: "T", cwd: "/repo", fontSize: 14, agentType: null }],
+        });
+        store.setBranch("/repo", "new", {});
+
+        store.mergeBranchState("/repo", "old", "new");
+
+        expect(store.get("/repo")!.branches["old"].savedTerminals).toEqual([]);
+        expect(store.get("/repo")!.branches["new"].savedTerminals?.length).toBe(1);
+        dispose();
+      });
+    });
+
+    it("does not overwrite target savedTerminals", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo", displayName: "test" });
+        store.setBranch("/repo", "old", {
+          savedTerminals: [{ name: "Old", cwd: "/repo", fontSize: 14, agentType: null }],
+        });
+        store.setBranch("/repo", "new", {
+          savedTerminals: [{ name: "Existing", cwd: "/repo", fontSize: 14, agentType: null }],
+        });
+
+        store.mergeBranchState("/repo", "old", "new");
+
+        // Target keeps its own savedTerminals
+        expect(store.get("/repo")!.branches["new"].savedTerminals?.[0]?.name).toBe("Existing");
+        dispose();
+      });
+    });
+  });
+
   describe("getActive()", () => {
     it("returns active repo", () => {
       createRoot((dispose) => {

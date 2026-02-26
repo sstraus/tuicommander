@@ -426,6 +426,45 @@ function createRepositoriesStore() {
       save();
     },
 
+    /** Merge terminal state from one branch into another (for main checkout rename race).
+     *  Moves terminals, savedTerminals, hadTerminals, lastActiveTerminal from source
+     *  to target, keeping the target's worktreePath and other git-derived fields. */
+    mergeBranchState(repoPath: string, sourceName: string, targetName: string): void {
+      const repo = state.repositories[repoPath];
+      if (!repo || !repo.branches[sourceName] || !repo.branches[targetName]) return;
+
+      setState(
+        produce((s) => {
+          const r = s.repositories[repoPath];
+          if (!r) return;
+          const src = r.branches[sourceName];
+          const tgt = r.branches[targetName];
+          if (!src || !tgt) return;
+
+          // Transfer terminals
+          for (const termId of src.terminals) {
+            if (!tgt.terminals.includes(termId)) {
+              tgt.terminals.push(termId);
+            }
+          }
+          src.terminals = [];
+
+          // Transfer savedTerminals (only if target has none)
+          if (src.savedTerminals && src.savedTerminals.length > 0 && (!tgt.savedTerminals || tgt.savedTerminals.length === 0)) {
+            tgt.savedTerminals = src.savedTerminals;
+            src.savedTerminals = [];
+          }
+
+          // Carry over flags
+          if (src.hadTerminals) tgt.hadTerminals = true;
+          if (src.lastActiveTerminal && !tgt.lastActiveTerminal) {
+            tgt.lastActiveTerminal = src.lastActiveTerminal;
+          }
+        })
+      );
+      save();
+    },
+
     /** Get repository by path */
     get(path: string): RepositoryState | undefined {
       return state.repositories[path];

@@ -275,6 +275,27 @@ describe("useGitOperations", () => {
       await gitOps.handleBranchSelect("/repo", "main");
       expect(terminalsStore.state.activeId).toBe(m2);
     });
+
+    it("serializes concurrent calls — no duplicate terminals from savedTerminals", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature", {
+        worktreePath: "/repo/wt",
+        hadTerminals: true,
+        savedTerminals: [
+          { name: "Claude", cwd: "/repo/wt", fontSize: 14, agentType: "claude" },
+        ],
+      });
+
+      // Fire two selects concurrently — the second must wait for the first
+      const p1 = gitOps.handleBranchSelect("/repo", "feature");
+      const p2 = gitOps.handleBranchSelect("/repo", "feature");
+      await Promise.all([p1, p2]);
+
+      const branch = repositoriesStore.get("/repo")?.branches["feature"];
+      // Only ONE terminal should exist — the second call sees the restored
+      // terminal as a live validTerminal and does not duplicate.
+      expect(branch?.terminals.length).toBe(1);
+    });
   });
 
   describe("handleAddTerminalToBranch", () => {

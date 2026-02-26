@@ -188,27 +188,27 @@ export async function initApp(deps: AppInitDeps) {
     const oldBranch = repo.activeBranch;
     const oldBranchState = oldBranch ? repo.branches[oldBranch] : null;
 
-    // If the old branch was the main checkout (not a worktree), rename it
-    // so terminals, savedTerminals, and other state carry over seamlessly.
-    if (oldBranch && oldBranchState && oldBranchState.worktreePath === null && !repo.branches[branch]) {
-      repositoriesStore.renameBranch(repo_path, oldBranch, branch);
+    const isMainCheckout = oldBranch && oldBranchState && oldBranchState.worktreePath === null;
+
+    if (isMainCheckout) {
+      // Main checkout (not a worktree): rename the single branch entry so
+      // terminals, savedTerminals, hadTerminals etc. carry over seamlessly.
+      if (!repo.branches[branch]) {
+        // Happy path: new branch doesn't exist yet — simple rename.
+        repositoriesStore.renameBranch(repo_path, oldBranch, branch);
+      } else {
+        // Race: refreshAllBranchStats already created the new branch entry.
+        // Merge terminal state from old → new, then remove the old entry.
+        repositoriesStore.mergeBranchState(repo_path, oldBranch, branch);
+        repositoriesStore.removeBranch(repo_path, oldBranch);
+        repositoriesStore.setActiveBranch(repo_path, branch);
+      }
     } else {
-      // Worktree or branch already exists — just ensure it's in the store
+      // Worktree branch — just ensure target exists and activate it.
       if (!repo.branches[branch]) {
         repositoriesStore.setBranch(repo_path, branch, { name: branch });
       }
       repositoriesStore.setActiveBranch(repo_path, branch);
-
-      // Move terminals from the old branch to the new one when the old branch
-      // was the main checkout (worktreePath null). This covers the race where
-      // refreshAllBranchStats created the new branch entry before head-changed
-      // fired, so renameBranch couldn't be used.
-      if (oldBranch && oldBranchState && oldBranchState.worktreePath === null) {
-        for (const termId of oldBranchState.terminals) {
-          repositoriesStore.removeTerminalFromBranch(repo_path, oldBranch, termId);
-          repositoriesStore.addTerminalToBranch(repo_path, branch, termId);
-        }
-      }
     }
 
     // Invalidate caches so next poll fetches fresh data
