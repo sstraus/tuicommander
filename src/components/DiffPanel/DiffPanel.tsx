@@ -1,11 +1,11 @@
-import { Component, createEffect, createSignal, For, Show } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { useRepository, type ChangedFile } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore, type DiffStatus } from "../../stores/diffTabs";
 import { getModifierSymbol } from "../../platform";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { t } from "../../i18n";
-import { cx } from "../../utils";
+import { cx, globToRegex } from "../../utils";
 import p from "../shared/panel.module.css";
 import s from "./DiffPanel.module.css";
 
@@ -28,7 +28,16 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
   const [error, setError] = createSignal<string | null>(null);
   const [scope, setScope] = createSignal<string | undefined>(undefined);
   const [commits, setCommits] = createSignal<RecentCommit[]>([]);
+  const [searchQuery, setSearchQuery] = createSignal("");
   const repo = useRepository();
+
+  /** Files filtered by search query (supports glob wildcards) */
+  const filteredFiles = createMemo(() => {
+    const q = searchQuery().trim();
+    if (!q) return files();
+    const re = globToRegex(q);
+    return files().filter((f) => re.test(f.path));
+  });
 
   // Load recent commits when panel becomes visible or repo changes
   createEffect(() => {
@@ -114,7 +123,9 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
         <div class={p.headerLeft}>
           <span class={p.title}>{t("diffPanel.title", "Changes")}</span>
           <Show when={!loading() && files().length > 0}>
-            <span class={p.fileCountBadge}>{files().length}</span>
+            <span class={p.fileCountBadge}>
+              {searchQuery() ? `${filteredFiles().length}/${files().length}` : files().length}
+            </span>
           </Show>
         </div>
         <button class={p.close} onClick={props.onClose} title={`${t("diffPanel.close", "Close")} (${getModifierSymbol()}D)`}>
@@ -136,6 +147,20 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
         </select>
       </div>
 
+      {/* Search filter */}
+      <div class={p.search}>
+        <input
+          type="text"
+          class={p.searchInput}
+          placeholder={t("diffPanel.filter", "Filter... (*, ** wildcards)")}
+          value={searchQuery()}
+          onInput={(e) => setSearchQuery(e.currentTarget.value)}
+        />
+        <Show when={searchQuery()}>
+          <button class={p.searchClear} onClick={() => setSearchQuery("")}>&times;</button>
+        </Show>
+      </div>
+
       <div class={p.content}>
         <Show when={loading()}>
           <div class={s.empty}>{t("diffPanel.loading", "Loading changes...")}</div>
@@ -155,9 +180,13 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
           </div>
         </Show>
 
-        <Show when={!loading() && !error() && files().length > 0}>
+        <Show when={!loading() && !error() && files().length > 0 && filteredFiles().length === 0}>
+          <div class={s.empty}>{t("diffPanel.noMatch", "No matching files")}</div>
+        </Show>
+
+        <Show when={!loading() && !error() && filteredFiles().length > 0}>
           <div class={p.fileList}>
-            <For each={files()}>
+            <For each={filteredFiles()}>
               {(file) => {
                 const statusDisplay = getStatusDisplay(file.status);
                 return (

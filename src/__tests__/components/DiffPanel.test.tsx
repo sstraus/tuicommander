@@ -97,4 +97,13 @@ describe("DiffPanel", () => {
     const content = container.querySelector(".content");
     expect(content).not.toBeNull();
   });
+
+  it("renders search input for file filtering", () => {
+    const { container } = render(() => (
+      <DiffPanel visible={true} repoPath="/test/repo" onClose={() => {}} />
+    ));
+    const searchInput = container.querySelector("input[type='text']") as HTMLInputElement;
+    expect(searchInput).not.toBeNull();
+    expect(searchInput.placeholder).toContain("Filter");
+  });
 });
