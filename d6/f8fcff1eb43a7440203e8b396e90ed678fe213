@@ -1,0 +1,44 @@
+src/hooks/useGitOperations.ts
+  8a656fd355ef3531 61-64,232-248
+src/__tests__/stores/repositories.test.ts
+  8a656fd355ef3531 311-368
+src/__tests__/hooks/useGitOperations.test.ts
+  8a656fd355ef3531 278-298
+src/hooks/useAppInit.ts
+  8a656fd355ef3531 191-205,207
+src/stores/repositories.ts
+  8a656fd355ef3531 429-467
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "d6f8fcff1eb43a7440203e8b396e90ed678fe213",
+  "prompts": {
+    "2ebb7be744ca2a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d97c5139-305e-495e-b249-8c8d0ce03059",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 141,
+      "overriden_lines": 0
+    },
+    "8a656fd355ef3531": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0fa5823a-23b9-4586-9202-ba1c9bfe1ace",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 113,
+      "total_deletions": 16,
+      "accepted_lines": 155,
+      "overriden_lines": 0
+    }
+  }
+}
