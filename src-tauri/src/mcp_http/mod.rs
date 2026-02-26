@@ -3,6 +3,7 @@ mod auth;
 mod config_routes;
 mod fs_routes;
 mod git_routes;
+mod log_routes;
 mod github_routes;
 mod mcp_transport;
 mod plugin_docs;
@@ -154,6 +155,8 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/config/repo-settings/has-custom", get(config_routes::check_has_custom_settings_http))
         .route("/config/repositories", get(config_routes::get_repositories).put(config_routes::put_repositories))
         .route("/config/prompt-library", get(config_routes::get_prompt_library).put(config_routes::put_prompt_library))
+        // Logs
+        .route("/logs", get(log_routes::get_logs).post(log_routes::push_log).delete(log_routes::clear_logs))
         // Worktrees
         .route("/worktrees", get(worktree_routes::list_worktrees_http).post(worktree_routes::create_worktree_http))
         .route("/worktrees/dir", get(worktree_routes::get_worktrees_dir_http))

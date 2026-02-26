@@ -263,6 +263,32 @@ GET /repo/ci?path=/path/to/repo
 
 Returns detailed CI check list.
 
+## Log Endpoints
+
+### Get Logs
+
+```
+GET /logs?limit=50&level=error&source=terminal
+```
+
+Retrieve log entries from the ring buffer (1000 entries max). All query params optional:
+- `limit` — max entries to return (0 = all, default: 0)
+- `level` — filter by level: `debug`, `info`, `warn`, `error`
+- `source` — filter by source: `app`, `plugin`, `git`, `network`, `terminal`, `github`, `dictation`, `store`, `config`
+
+### Push Log
+
+```
+POST /logs
+{ "level": "warn", "source": "git", "message": "...", "data_json": "{...}" }
+```
+
+### Clear Logs
+
+```
+DELETE /logs
+```
+
 ## Configuration Endpoints
 
 ### App Config
