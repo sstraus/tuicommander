@@ -1,0 +1,105 @@
+docs/backend/dictation.md
+  3f286127a046b141 90-93
+docs/backend/error-classification.md
+  3f286127a046b141 21
+docs/user-guide/sidebar.md
+  3f286127a046b141 24,74
+CHANGELOG.md
+  3f286127a046b141 20-31,34-41,46-48
+src/components/TabBar/TabBar.tsx
+  3f286127a046b141 1,263,265-266
+src/components/Sidebar/Sidebar.module.css
+  8e7c6b830afecf61 385-386
+src/utils/openUrl.ts
+  3f286127a046b141 5-9,11-20
+docs/plugins.md
+  3f286127a046b141 857-858
+src-tauri/src/bin/tui_mcp_bridge.rs
+  88159a1d6e1e88f6 552-557,566-570,574
+src-tauri/src/mcp_http/mod.rs
+  3f286127a046b141 39,44,47-53,758-789,791,803,1128,1140,1152,1164,1194-1218
+  88159a1d6e1e88f6 196,198
+src-tauri/src/git.rs
+  3f286127a046b141 572,580-587
+src/components/CreateWorktreeDialog/CreateWorktreeDialog.module.css
+  8e7c6b830afecf61 44,47-119
+src/components/SettingsPanel/tabs/ServicesTab.tsx
+  3f286127a046b141 97-99,114-115
+src/components/CreateWorktreeDialog/CreateWorktreeDialog.tsx
+  8e7c6b830afecf61 36-95,242,244-245
+src/stores/appLogger.ts
+  3f286127a046b141 185-188
+src-tauri/src/mcp_http/mcp_transport.rs
+  3f286127a046b141 16-23,216,414,434,445,456,468,476,491-494,589,593,609,706-720
+  88159a1d6e1e88f6 24-87,662,673-674,768-774
+src/components/ContextMenu/ContextMenu.module.css
+  8e7c6b830afecf61 80-81,89-91
+src/components/Sidebar/RepoSection.tsx
+  3f286127a046b141 7,237,239-241,270,276,310-311,314,323-327,423,529
+  8e7c6b830afecf61 36,38-45,47-50,52-53,56-65,69,71,76-78,80,82,86,267-269,292-294,539-541
+src-tauri/src/worktree.rs
+  3f286127a046b141 9-24,312,447,450,687
+src/components/Terminal/Terminal.tsx
+  3f286127a046b141 377,385
+src-tauri/src/mcp_http/config_routes.rs
+  3f286127a046b141 13-21,26
+src/stores/repositories.ts
+  3f286127a046b141 124
+docs/FEATURES.md
+  3f286127a046b141 17,36,95,107-108,117,217,234,361-366,472,514,537,549
+src/hooks/useGitOperations.ts
+  8e7c6b830afecf61 769-790,816-817,829
+  3f286127a046b141 233,763-765,819,830,850
+docs/user-guide/terminals.md
+  3f286127a046b141 162-169
+docs/user-guide/dictation.md
+  3f286127a046b141 20
+src-tauri/src/mcp_http/session.rs
+  3f286127a046b141 520-523,530-533
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "f1285f16dfab19357ccf997a8fa8c0517d95bebf",
+  "prompts": {
+    "3f286127a046b141": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e84667c-f247-4e48-8bdd-8a0c22ac6f4a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 305,
+      "total_deletions": 141,
+      "accepted_lines": 273,
+      "overriden_lines": 0
+    },
+    "88159a1d6e1e88f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "008f27c3-5a10-41ba-948d-71172c873a35",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 97,
+      "total_deletions": 12,
+      "accepted_lines": 89,
+      "overriden_lines": 0
+    },
+    "8e7c6b830afecf61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7c4bf475-bc71-43a4-8403-5979a4dee84b",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 252,
+      "total_deletions": 75,
+      "accepted_lines": 217,
+      "overriden_lines": 0
+    }
+  }
+}
