@@ -607,6 +607,86 @@ describe("useGitOperations", () => {
 
       expect(mockRepo.generateWorktreeName).toHaveBeenCalledWith(["main", "feature-1"]);
     });
+
+    it("skips dialog and creates worktree instantly when promptOnCreate is false", async () => {
+      const noPromptGitOps = useGitOperations({
+        repo: mockRepo,
+        pty: mockPty,
+        dialogs: mockDialogs,
+        closeTerminal: mockCloseTerminal,
+        createNewTerminal: mockCreateNewTerminal,
+        setStatusInfo: mockSetStatusInfo,
+        getDefaultFontSize: () => 14,
+        getMaxTabNameLength: () => 25,
+        getPromptOnCreate: () => false,
+      });
+
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      mockRepo.generateWorktreeName.mockResolvedValue("bold-nexus-042");
+      mockRepo.listLocalBranches.mockResolvedValue(["main"]);
+      mockRepo.createWorktree.mockResolvedValue({
+        name: "bold-nexus-042",
+        path: "/repo/.worktrees/bold-nexus-042",
+        branch: "bold-nexus-042",
+        base_repo: "/repo",
+      });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+
+      await noPromptGitOps.handleAddWorktree("/repo");
+
+      // Dialog should NOT be open
+      expect(noPromptGitOps.worktreeDialogState()).toBeNull();
+      // Worktree should be created directly with the auto-generated name
+      expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "bold-nexus-042", true, "main");
+      expect(mockSetStatusInfo).toHaveBeenCalledWith("Created worktree bold-nexus-042");
+    });
+
+    it("shows dialog when promptOnCreate is true (default)", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      mockRepo.generateWorktreeName.mockResolvedValue("bold-nexus-042");
+      mockRepo.listLocalBranches.mockResolvedValue(["main"]);
+
+      await gitOps.handleAddWorktree("/repo");
+
+      // Dialog should be open
+      expect(gitOps.worktreeDialogState()).not.toBeNull();
+      // Worktree should NOT be created yet
+      expect(mockRepo.createWorktree).not.toHaveBeenCalled();
+    });
+
+    it("uses first baseRef as default when skipping dialog", async () => {
+      const noPromptGitOps = useGitOperations({
+        repo: mockRepo,
+        pty: mockPty,
+        dialogs: mockDialogs,
+        closeTerminal: mockCloseTerminal,
+        createNewTerminal: mockCreateNewTerminal,
+        setStatusInfo: mockSetStatusInfo,
+        getDefaultFontSize: () => 14,
+        getMaxTabNameLength: () => 25,
+        getPromptOnCreate: () => false,
+      });
+
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      mockRepo.generateWorktreeName.mockResolvedValue("cool-ripley-007");
+      mockRepo.listLocalBranches.mockResolvedValue(["main", "develop"]);
+      mockRepo.listBaseRefOptions.mockResolvedValue(["develop", "main"]);
+      mockRepo.createWorktree.mockResolvedValue({
+        name: "cool-ripley-007",
+        path: "/repo/.worktrees/cool-ripley-007",
+        branch: "cool-ripley-007",
+        base_repo: "/repo",
+      });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+
+      await noPromptGitOps.handleAddWorktree("/repo");
+
+      // Should use first baseRef option as the base
+      expect(mockRepo.createWorktree).toHaveBeenCalledWith("/repo", "cool-ripley-007", true, "develop");
+    });
   });
 
   describe("confirmCreateWorktree", () => {

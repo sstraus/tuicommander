@@ -162,6 +162,10 @@ const App: Component = () => {
     setStatusInfo,
     getDefaultFontSize,
     getMaxTabNameLength,
+    getPromptOnCreate: (repoPath: string) => {
+      const effective = repoSettingsStore.getEffective(repoPath);
+      return effective?.promptOnCreate ?? repoDefaultsStore.state.promptOnCreate;
+    },
   });
 
   const lazygit = useAppLazygit({

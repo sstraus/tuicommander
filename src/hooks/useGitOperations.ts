@@ -42,6 +42,10 @@ export interface GitOperationsDeps {
   setStatusInfo: (msg: string) => void;
   getDefaultFontSize: () => number;
   getMaxTabNameLength: () => number;
+  /** Returns the effective promptOnCreate setting for the given repo.
+   *  When false, handleAddWorktree skips the dialog and creates instantly.
+   *  Defaults to true (show dialog) when not provided. */
+  getPromptOnCreate?: (repoPath: string) => boolean;
 }
 
 /** Git and repository operations extracted from App.tsx */
@@ -539,6 +543,26 @@ export function useGitOperations(deps: GitOperationsDeps) {
       deps.pty.getWorktreesDir(),
       deps.repo.listBaseRefOptions(repoPath),
     ]);
+
+    const promptOnCreate = deps.getPromptOnCreate?.(repoPath) ?? true;
+
+    if (!promptOnCreate) {
+      // Skip dialog: create worktree instantly with auto-generated name
+      setWorktreeDialogState({
+        repoPath,
+        suggestedName,
+        existingBranches: localBranches,
+        worktreeBranches,
+        worktreesDir,
+        baseRefs,
+      });
+      await confirmCreateWorktree({
+        branchName: suggestedName,
+        createBranch: true,
+        baseRef: baseRefs[0] ?? "HEAD",
+      });
+      return;
+    }
 
     setWorktreeDialogState({
       repoPath,
