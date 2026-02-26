@@ -61,7 +61,7 @@ export const BranchIcon: Component<{
   /** Which color class to apply (events override via CSS) */
   const colorClass = () => {
     if (props.hasQuestion) return "question";
-    if (props.isMainWorktree) return "main";
+    if (props.isMainBranch) return "main";
     return "worktree";
   };
 
