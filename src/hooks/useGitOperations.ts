@@ -7,6 +7,7 @@ import { isTauri } from "../transport";
 import { findOrphanTerminals } from "../utils/terminalOrphans";
 import { filterValidTerminals } from "../utils/terminalFilter";
 import { AGENTS } from "../agents";
+import { repoSettingsStore } from "../stores/repoSettings";
 import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
 
 /** Dependencies injected into useGitOperations */
@@ -15,7 +16,7 @@ export interface GitOperationsDeps {
     getInfo: (path: string) => Promise<{ path: string; name: string; initials: string; branch: string; status: "clean" | "dirty" | "conflict" | "merge" | "not-git" | "unknown"; is_git_repo: boolean }>;
     getDiffStats: (path: string) => Promise<{ additions: number; deletions: number }>;
     getWorktreePaths: (repoPath: string) => Promise<Record<string, string>>;
-    removeWorktree: (repoPath: string, branchName: string) => Promise<void>;
+    removeWorktree: (repoPath: string, branchName: string, deleteBranch: boolean) => Promise<void>;
     createWorktree: (baseRepo: string, branchName: string, createBranch?: boolean, baseRef?: string) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;
     renameBranch: (repoPath: string, oldName: string, newName: string) => Promise<void>;
     generateWorktreeName: (existingNames: string[]) => Promise<string>;
@@ -399,8 +400,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
       await deps.closeTerminal(termId, true);
     }
 
+    const deleteBranch = repoSettingsStore.getEffective(repoPath)?.deleteBranchOnRemove ?? true;
+
     try {
-      await deps.repo.removeWorktree(repoPath, branchName);
+      await deps.repo.removeWorktree(repoPath, branchName, deleteBranch);
       deps.setStatusInfo(`Removed ${branchName}`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);

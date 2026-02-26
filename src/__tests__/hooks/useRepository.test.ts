@@ -72,12 +72,23 @@ describe("useRepository", () => {
   });
 
   describe("removeWorktree()", () => {
-    it("calls invoke with repo path and branch name", async () => {
+    it("calls invoke with repo path, branch name, and deleteBranch", async () => {
       mockInvoke.mockResolvedValueOnce(undefined);
-      await repo.removeWorktree("/repos/my-repo", "feature-x");
+      await repo.removeWorktree("/repos/my-repo", "feature-x", true);
       expect(mockInvoke).toHaveBeenCalledWith("remove_worktree", {
         repoPath: "/repos/my-repo",
         branchName: "feature-x",
+        deleteBranch: true,
+      });
+    });
+
+    it("passes deleteBranch=false when requested", async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+      await repo.removeWorktree("/repos/my-repo", "feature-x", false);
+      expect(mockInvoke).toHaveBeenCalledWith("remove_worktree", {
+        repoPath: "/repos/my-repo",
+        branchName: "feature-x",
+        deleteBranch: false,
       });
     });
   });

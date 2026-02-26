@@ -232,7 +232,7 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
     case "remove_worktree":
       return {
         method: "DELETE",
-        path: `/worktrees/${p("branchName")}?repoPath=${p("repoPath")}`,
+        path: `/worktrees/${p("branchName")}?repoPath=${p("repoPath")}&deleteBranch=${args.deleteBranch ?? true}`,
       };
     case "generate_worktree_name_cmd":
       return {

@@ -49,7 +49,7 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
 | `create_worktree` | `base_repo, branch_name` | `JSON` | Create git worktree |
-| `remove_worktree` | `repo_path, branch_name` | `()` | Remove worktree |
+| `remove_worktree` | `repo_path, branch_name, delete_branch?` | `()` | Remove worktree; `delete_branch` (default true) controls whether the local branch is also deleted |
 | `get_worktree_paths` | `repo_path` | `HashMap<String,String>` | Worktree paths for repo |
 | `get_worktrees_dir` | -- | `String` | Worktrees base directory |
 | `generate_worktree_name_cmd` | `existing_names` | `String` | Generate unique name |

@@ -557,11 +557,12 @@ Returns a unique worktree name.
 ### Remove Worktree
 
 ```
-DELETE /worktrees/:branch
-Content-Type: application/json
-
-{ "repo_path": "/path" }
+DELETE /worktrees/:branch?repoPath=/path&deleteBranch=true
 ```
+
+Query parameters:
+- `repoPath` (required) -- base repository path
+- `deleteBranch` (optional, default `true`) -- when `true`, also deletes the local git branch
 
 ## Tauri-Only Commands (No HTTP Route)
 

@@ -293,7 +293,10 @@ pub(crate) fn get_worktrees_dir(state: State<'_, Arc<AppState>>) -> String {
 }
 
 /// Core logic for removing a git worktree by branch name.
-pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str) -> Result<(), String> {
+///
+/// When `delete_branch` is true, also deletes the local branch after removing
+/// the worktree directory. When false, the branch is preserved.
+pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, delete_branch: bool) -> Result<(), String> {
     let base_repo = PathBuf::from(repo_path);
 
     // List worktrees to find the path for this branch
@@ -322,29 +325,33 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str) -> R
 
     remove_worktree_internal(&worktree)?;
 
-    // Also delete the local branch (non-fatal: branch may still be useful)
-    match Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&worktree.base_repo)
-        .args(["branch", "-d", branch_name])
-        .output()
-    {
-        Ok(output) if !output.status.success() => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("Warning: git branch -d {branch_name} exited with {}: {stderr}", output.status);
+    // Delete the local branch when requested (non-fatal: branch may still be useful)
+    if delete_branch {
+        match Command::new(crate::agent::resolve_cli("git"))
+            .current_dir(&worktree.base_repo)
+            .args(["branch", "-d", branch_name])
+            .output()
+        {
+            Ok(output) if !output.status.success() => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                eprintln!("Warning: git branch -d {branch_name} exited with {}: {stderr}", output.status);
+            }
+            Err(e) => {
+                eprintln!("Warning: git branch -d {branch_name} failed to spawn: {e}");
+            }
+            _ => {}
         }
-        Err(e) => {
-            eprintln!("Warning: git branch -d {branch_name} failed to spawn: {e}");
-        }
-        _ => {}
     }
 
     Ok(())
 }
 
 /// Remove a git worktree by branch name (Tauri command with cache invalidation)
+///
+/// `delete_branch` defaults to `true` when omitted (preserving existing behavior).
 #[tauri::command]
-pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String, branch_name: String) -> Result<(), String> {
-    remove_worktree_by_branch(&repo_path, &branch_name)?;
+pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String, branch_name: String, delete_branch: Option<bool>) -> Result<(), String> {
+    remove_worktree_by_branch(&repo_path, &branch_name, delete_branch.unwrap_or(true))?;
     state.invalidate_repo_caches(&repo_path);
     Ok(())
 }
@@ -651,7 +658,7 @@ pub(crate) fn merge_and_archive_worktree(
             })
         }
         "delete" => {
-            remove_worktree_by_branch(&repo_path, &branch_name)?;
+            remove_worktree_by_branch(&repo_path, &branch_name, true)?;
             state.invalidate_repo_caches(&repo_path);
             Ok(MergeArchiveResult {
                 merged: true,
@@ -1032,5 +1039,73 @@ mod tests {
         // Archive destination should exist (only if worktree dir wasn't deleted by git)
         // Note: git worktree remove --force may delete the dir, in which case archive_dest won't exist
         // but the operation should still succeed
+    }
+
+    #[test]
+    fn remove_worktree_by_branch_deletes_branch_when_true() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+        let worktrees_dir = repo.path().join("worktrees");
+        let git = crate::agent::resolve_cli("git");
+
+        // Create a worktree with a new branch
+        let config = WorktreeConfig {
+            task_name: "feat-delete-branch".to_string(),
+            base_repo: repo_path.clone(),
+            branch: Some("feat-delete-branch".to_string()),
+            create_branch: true,
+        };
+        create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Failed to create worktree");
+
+        // Remove with delete_branch=true
+        remove_worktree_by_branch(&repo_path, "feat-delete-branch", true)
+            .expect("Failed to remove worktree");
+
+        // Branch should be gone
+        let output = Command::new(&git)
+            .current_dir(repo.path())
+            .args(["branch", "--list", "feat-delete-branch"])
+            .output()
+            .expect("Failed to list branches");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.trim().is_empty(),
+            "Branch should be deleted when delete_branch=true, but found: {stdout}"
+        );
+    }
+
+    #[test]
+    fn remove_worktree_by_branch_keeps_branch_when_false() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+        let worktrees_dir = repo.path().join("worktrees");
+        let git = crate::agent::resolve_cli("git");
+
+        // Create a worktree with a new branch
+        let config = WorktreeConfig {
+            task_name: "feat-keep-branch".to_string(),
+            base_repo: repo_path.clone(),
+            branch: Some("feat-keep-branch".to_string()),
+            create_branch: true,
+        };
+        create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Failed to create worktree");
+
+        // Remove with delete_branch=false
+        remove_worktree_by_branch(&repo_path, "feat-keep-branch", false)
+            .expect("Failed to remove worktree");
+
+        // Branch should still exist
+        let output = Command::new(&git)
+            .current_dir(repo.path())
+            .args(["branch", "--list", "feat-keep-branch"])
+            .output()
+            .expect("Failed to list branches");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            !stdout.trim().is_empty(),
+            "Branch should be preserved when delete_branch=false"
+        );
     }
 }

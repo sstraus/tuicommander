@@ -73,7 +73,7 @@ pub(super) async fn remove_worktree_http(
     Query(q): Query<RemoveWorktreeQuery>,
 ) -> Response {
     if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
-    match crate::worktree::remove_worktree_by_branch(&q.repo_path, &branch) {
+    match crate::worktree::remove_worktree_by_branch(&q.repo_path, &branch, q.delete_branch.unwrap_or(true)) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }

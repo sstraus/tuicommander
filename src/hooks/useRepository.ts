@@ -43,8 +43,8 @@ export function useRepository() {
   }
 
   /** Remove a worktree by branch name */
-  async function removeWorktree(repoPath: string, branchName: string): Promise<void> {
-    await invoke("remove_worktree", { repoPath, branchName });
+  async function removeWorktree(repoPath: string, branchName: string, deleteBranch: boolean): Promise<void> {
+    await invoke("remove_worktree", { repoPath, branchName, deleteBranch });
   }
 
   /** Create a new worktree with a branch */

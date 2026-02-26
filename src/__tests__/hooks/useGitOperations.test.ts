@@ -3,6 +3,7 @@ import "../mocks/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
+import { repoSettingsStore } from "../../stores/repoSettings";
 import { useGitOperations } from "../../hooks/useGitOperations";
 
 function resetStores() {
@@ -11,6 +12,9 @@ function resetStores() {
   }
   for (const path of repositoriesStore.getPaths()) {
     repositoriesStore.remove(path);
+  }
+  for (const s of repoSettingsStore.getAll()) {
+    repoSettingsStore.remove(s.path);
   }
 }
 
@@ -348,15 +352,27 @@ describe("useGitOperations", () => {
   });
 
   describe("handleRemoveBranch", () => {
-    it("removes worktree branch after confirmation", async () => {
+    it("removes worktree branch after confirmation, passing deleteBranchOnRemove setting", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt" });
-
+      // Default deleteBranchOnRemove is true (from repoDefaults)
       await gitOps.handleRemoveBranch("/repo", "feature");
 
       expect(mockDialogs.confirmRemoveWorktree).toHaveBeenCalledWith("feature");
-      expect(mockRepo.removeWorktree).toHaveBeenCalledWith("/repo", "feature");
+      expect(mockRepo.removeWorktree).toHaveBeenCalledWith("/repo", "feature", true);
       expect(repositoriesStore.get("/repo")?.branches["feature"]).toBeUndefined();
+    });
+
+    it("passes deleteBranch=false when repo setting overrides default", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt" });
+      // Set per-repo setting to override default deleteBranchOnRemove=true
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { deleteBranchOnRemove: false });
+
+      await gitOps.handleRemoveBranch("/repo", "feature");
+
+      expect(mockRepo.removeWorktree).toHaveBeenCalledWith("/repo", "feature", false);
     });
 
     it("rejects removal of non-worktree branch", async () => {
@@ -500,7 +516,7 @@ describe("useGitOperations", () => {
     it("cleans up UI even when backend removal fails", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt" });
-      mockRepo.removeWorktree.mockRejectedValue(new Error("git error"));
+      mockRepo.removeWorktree.mockRejectedValueOnce(new Error("git error"));
 
       await gitOps.handleRemoveBranch("/repo", "feature");
 

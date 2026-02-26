@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - OSC 8 hyperlinks in terminal now open in system browser correctly
 
 ### Fixed
+- Worktree removal now respects the `deleteBranchOnRemove` setting instead of always deleting the local branch
 - File path link underline no longer flickers on mouse hover (cached link provider)
 - Rate limit and usage limit badges no longer trigger redundantly on terminal resize
 - Terminal focus no longer silently switches to a terminal from another repo

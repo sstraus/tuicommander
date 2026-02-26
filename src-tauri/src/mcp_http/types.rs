@@ -80,6 +80,9 @@ pub(super) struct CreateWorktreeRequest {
 pub(super) struct RemoveWorktreeQuery {
     #[serde(rename = "repoPath")]
     pub repo_path: String,
+    /// When true, also delete the local branch. Defaults to true.
+    #[serde(rename = "deleteBranch", default)]
+    pub delete_branch: Option<bool>,
 }
 
 #[derive(Deserialize)]
