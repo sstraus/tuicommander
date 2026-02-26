@@ -188,7 +188,8 @@ export async function initApp(deps: AppInitDeps) {
     const oldBranch = repo.activeBranch;
     const oldBranchState = oldBranch ? repo.branches[oldBranch] : null;
 
-    const isMainCheckout = oldBranch && oldBranchState && oldBranchState.worktreePath === null;
+    const isMainCheckout = oldBranch && oldBranchState &&
+      (oldBranchState.worktreePath === null || oldBranchState.worktreePath === repo_path);
 
     if (isMainCheckout) {
       // Main checkout (not a worktree): rename the single branch entry so

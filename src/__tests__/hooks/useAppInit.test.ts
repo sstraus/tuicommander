@@ -529,6 +529,29 @@ describe("initApp", () => {
       expect(repositoriesStore.get("/repo")?.activeBranch).toBe("wip/memory-system-improvements");
     });
 
+    it("renames branch entry when old branch is main worktree (worktreePath === repoPath)", async () => {
+      const { getCallback } = captureHeadChanged();
+      const deps = createMockDeps();
+      repositoriesStore.add({ path: "/repo", displayName: "repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setActiveBranch("/repo", "main");
+      repositoriesStore.addTerminalToBranch("/repo", "main", "term-1");
+
+      await initApp(deps);
+
+      getCallback()!({ payload: { repo_path: "/repo", branch: "feat/incremental-reindex" } });
+
+      // Old branch gone — renamed, not duplicated
+      expect(repositoriesStore.get("/repo")?.branches["main"]).toBeUndefined();
+      // New branch exists with terminals carried over
+      expect(repositoriesStore.get("/repo")?.branches["feat/incremental-reindex"]).toBeDefined();
+      expect(repositoriesStore.get("/repo")?.branches["feat/incremental-reindex"]?.terminals).toContain("term-1");
+      // Active branch updated
+      expect(repositoriesStore.get("/repo")?.activeBranch).toBe("feat/incremental-reindex");
+      // Should NOT create a phantom entry — only one branch in sidebar
+      expect(Object.keys(repositoriesStore.get("/repo")?.branches ?? {})).toEqual(["feat/incremental-reindex"]);
+    });
+
     it("does nothing when repo is not found", async () => {
       const { getCallback } = captureHeadChanged();
       const deps = createMockDeps();
