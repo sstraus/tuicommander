@@ -45,6 +45,9 @@ export const TabBar: Component<TabBarProps> = (props) => {
 
   // Context menu for new tab + button
   const newTabMenu = createContextMenu();
+
+  // Context menu for overflow tabs (right-click on scroll arrows)
+  const overflowMenu = createContextMenu();
   const layout = () => terminalsStore.state.layout;
   const isSplitActive = () => layout().direction !== "none";
   const isUnifiedMode = () => settingsStore.state.splitTabMode === "unified" && layout().direction !== "none";
@@ -287,15 +290,62 @@ export const TabBar: Component<TabBarProps> = (props) => {
     });
   });
 
+  /** Collect tab IDs and names that are clipped in the given direction */
+  const getOverflowItems = (direction: "left" | "right"): ContextMenuItem[] => {
+    const el = tabsRef;
+    if (!el) return [];
+    const containerRect = el.getBoundingClientRect();
+    const items: ContextMenuItem[] = [];
+
+    const tabEls = el.querySelectorAll(`.${s.tab}`) as NodeListOf<HTMLElement>;
+    for (const tabEl of tabEls) {
+      const rect = tabEl.getBoundingClientRect();
+      const clipped = direction === "left"
+        ? rect.left < containerRect.left - 1
+        : rect.right > containerRect.right + 1;
+      if (!clipped) continue;
+
+      const nameEl = tabEl.querySelector(`.${s.tabName}`) as HTMLElement | null;
+      const label = nameEl?.textContent ?? "Tab";
+
+      // Determine which tab this DOM element represents by finding its click handler
+      // We read the data from the element title or text content
+      items.push({
+        label,
+        action: () => {
+          tabEl.click();
+          tabEl.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+        },
+      });
+    }
+
+    return items;
+  };
+
+  const [overflowItems, setOverflowItems] = createSignal<ContextMenuItem[]>([]);
+
+  const openOverflowMenu = (e: MouseEvent, direction: "left" | "right") => {
+    e.preventDefault();
+    e.stopPropagation();
+    const items = getOverflowItems(direction);
+    if (items.length === 0) return;
+    setOverflowItems(items);
+    const btn = e.currentTarget as HTMLElement;
+    const rect = btn.getBoundingClientRect();
+    overflowMenu.openAt(rect.left, rect.bottom + 4);
+  };
+
   const chevronLeft = <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M11.354 1.646a.5.5 0 010 .708L5.707 8l5.647 5.646a.5.5 0 01-.708.708l-6-6a.5.5 0 010-.708l6-6a.5.5 0 01.708 0z"/></svg>;
   const chevronRight = <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 01.708 0l6 6a.5.5 0 010 .708l-6 6a.5.5 0 01-.708-.708L10.293 8 4.646 2.354a.5.5 0 010-.708z"/></svg>;
 
   return (
     <div class={s.tabBarWrapper}>
+      <div class={s.scrollRegion}>
       {/* Left scroll arrow */}
       <button
         class={cx(s.scrollArrow, s.scrollArrowLeft, canScrollLeft() && s.visible)}
         onClick={() => scrollBy(-200)}
+        onContextMenu={(e) => openOverflowMenu(e, "left")}
         title="Scroll tabs left"
       >{chevronLeft}</button>
 
@@ -548,11 +598,6 @@ export const TabBar: Component<TabBarProps> = (props) => {
         }}
       </For>
 
-      {/* New Tab button: click = new tab, right-click = split menu */}
-      <button class={s.newBtn} onClick={() => props.onNewTab()} onContextMenu={openNewTabMenu} title={`${t("tabBar.newTab", "New Tab")} (${mod}T)`} style={{ position: "relative" }}>
-        +
-        <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{mod}T</span>
-      </button>
       </div>{/* end .tabs */}
 
       {/* Right fade gradient */}
@@ -562,8 +607,16 @@ export const TabBar: Component<TabBarProps> = (props) => {
       <button
         class={cx(s.scrollArrow, s.scrollArrowRight, canScrollRight() && s.visible)}
         onClick={() => scrollBy(200)}
+        onContextMenu={(e) => openOverflowMenu(e, "right")}
         title="Scroll tabs right"
       >{chevronRight}</button>
+      </div>{/* end .scrollRegion */}
+
+      {/* New Tab button: outside scroll region so arrows don't overlap it */}
+      <button class={s.newBtn} onClick={() => props.onNewTab()} onContextMenu={openNewTabMenu} title={`${t("tabBar.newTab", "New Tab")} (${mod}T)`} style={{ position: "relative" }}>
+        +
+        <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{mod}T</span>
+      </button>
 
       <ContextMenu
         items={getTabContextMenuItems()}
@@ -578,6 +631,13 @@ export const TabBar: Component<TabBarProps> = (props) => {
         y={newTabMenu.position().y}
         visible={newTabMenu.visible()}
         onClose={newTabMenu.close}
+      />
+      <ContextMenu
+        items={overflowItems()}
+        x={overflowMenu.position().x}
+        y={overflowMenu.position().y}
+        visible={overflowMenu.visible()}
+        onClose={overflowMenu.close}
       />
     </div>
   );

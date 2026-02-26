@@ -1,5 +1,13 @@
-/* TabBar wrapper — contains scroll arrows, gradients, and the scrollable tab list */
+/* TabBar wrapper — flex row with scroll region + new-tab button */
 .tabBarWrapper {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  min-width: 0;
+}
+
+/* Scroll region — contains arrows, fades, and the scrollable tab list */
+.scrollRegion {
   display: flex;
   flex: 1;
   align-items: stretch;
@@ -184,6 +192,7 @@
 .newBtn {
   width: 28px;
   min-width: 28px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -193,7 +202,6 @@
   font-size: var(--font-xl);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
-  margin-left: auto;
   align-self: stretch;
 }
 
