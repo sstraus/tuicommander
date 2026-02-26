@@ -288,9 +288,6 @@ pub(crate) struct AppConfig {
     /// Skip authentication for private/LAN IP addresses (RFC1918 + IPv6 ULA)
     #[serde(default)]
     pub(crate) lan_auth_bypass: bool,
-    /// Show all local branches in the sidebar by default (not just worktrees + active branch)
-    #[serde(default)]
-    pub(crate) show_all_branches: bool,
     /// Agent types disabled by the user (won't appear in sidebar "Add Agent" menu)
     #[serde(default)]
     pub(crate) disabled_agents: Vec<String>,
@@ -352,7 +349,6 @@ impl Default for AppConfig {
             session_token_duration_secs: default_session_token_duration_secs(),
             ipv6_enabled: false,
             lan_auth_bypass: false,
-            show_all_branches: false,
             disabled_agents: Vec::new(),
         }
     }
@@ -833,7 +829,6 @@ mod tests {
             session_token_duration_secs: 3600,
             ipv6_enabled: true,
             lan_auth_bypass: true,
-            show_all_branches: true,
             disabled_agents: vec!["codex".to_string()],
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
@@ -859,7 +854,6 @@ mod tests {
         assert_eq!(loaded.session_token_duration_secs, 3600);
         assert!(loaded.ipv6_enabled);
         assert!(loaded.lan_auth_bypass);
-        assert!(loaded.show_all_branches);
     }
 
     #[test]

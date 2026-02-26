@@ -475,6 +475,114 @@ pub(crate) fn list_base_ref_options(repo_path: String) -> Result<Vec<String>, St
     Ok(refs)
 }
 
+/// Result of switching the main worktree to a different branch.
+#[derive(Clone, Serialize)]
+pub(crate) struct SwitchBranchResult {
+    pub(crate) success: bool,
+    /// True if changes were auto-stashed before checkout
+    pub(crate) stashed: bool,
+    pub(crate) previous_branch: String,
+    pub(crate) new_branch: String,
+}
+
+/// Switch the main worktree to a different branch.
+///
+/// Runs `git checkout` directly (no PTY involvement) so it's safe even when
+/// terminals have editors or processes running — the caller is responsible
+/// for checking terminal busy-state before invoking this.
+///
+/// When `stash` is true, performs `git stash push` before checkout and
+/// does NOT auto-pop (the user can pop manually).
+/// When `force` is true, passes `--force` to discard uncommitted changes.
+#[tauri::command]
+pub(crate) fn switch_branch(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+    branch_name: String,
+    force: bool,
+    stash: bool,
+) -> Result<SwitchBranchResult, String> {
+    let git = crate::agent::resolve_cli("git");
+    let base_repo = PathBuf::from(&repo_path);
+
+    // Read current branch before switching
+    let previous_branch = crate::git::read_branch_from_head(&base_repo)
+        .unwrap_or_default();
+
+    if previous_branch == branch_name {
+        return Ok(SwitchBranchResult {
+            success: true,
+            stashed: false,
+            previous_branch: previous_branch.clone(),
+            new_branch: previous_branch,
+        });
+    }
+
+    // Check for uncommitted changes (unless force or stash)
+    if !force && !stash {
+        let status = Command::new(&git)
+            .current_dir(&base_repo)
+            .args(["status", "--porcelain"])
+            .output()
+            .map_err(|e| format!("Failed to check status: {e}"))?;
+
+        if status.status.success() {
+            let stdout = String::from_utf8_lossy(&status.stdout);
+            if !stdout.trim().is_empty() {
+                return Err("dirty".to_string());
+            }
+        }
+    }
+
+    // Stash if requested
+    let did_stash = if stash {
+        let stash_msg = format!("auto-stash before switching to {branch_name}");
+        let stash_out = Command::new(&git)
+            .current_dir(&base_repo)
+            .args(["stash", "push", "-m", &stash_msg])
+            .output()
+            .map_err(|e| format!("Failed to stash: {e}"))?;
+
+        if !stash_out.status.success() {
+            let stderr = String::from_utf8_lossy(&stash_out.stderr);
+            return Err(format!("Stash failed: {stderr}"));
+        }
+
+        // "No local changes to save" means nothing was stashed
+        let stdout = String::from_utf8_lossy(&stash_out.stdout);
+        !stdout.contains("No local changes to save")
+    } else {
+        false
+    };
+
+    // Checkout
+    let mut args = vec!["checkout"];
+    if force {
+        args.push("--force");
+    }
+    args.push(&branch_name);
+
+    let checkout = Command::new(&git)
+        .current_dir(&base_repo)
+        .args(&args)
+        .output()
+        .map_err(|e| format!("Failed to checkout {branch_name}: {e}"))?;
+
+    if !checkout.status.success() {
+        let stderr = String::from_utf8_lossy(&checkout.stderr);
+        return Err(format!("Checkout failed: {stderr}"));
+    }
+
+    state.invalidate_repo_caches(&repo_path);
+
+    Ok(SwitchBranchResult {
+        success: true,
+        stashed: did_stash,
+        previous_branch,
+        new_branch: branch_name,
+    })
+}
+
 /// Result of a merge-and-archive operation
 #[derive(Clone, Serialize)]
 pub(crate) struct MergeArchiveResult {

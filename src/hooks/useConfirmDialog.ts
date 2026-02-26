@@ -93,11 +93,23 @@ export function useConfirmDialog() {
     });
   }
 
+  /** Confirm stashing changes before switching branch */
+  async function confirmStashAndSwitch(branchName: string): Promise<boolean> {
+    return await confirm({
+      title: "Uncommitted changes",
+      message: `Working tree has uncommitted changes.\nStash them and switch to ${branchName}?`,
+      okLabel: "Stash & Switch",
+      cancelLabel: "Cancel",
+      kind: "warning",
+    });
+  }
+
   return {
     confirm,
     confirmRemoveWorktree,
     confirmCloseTerminal,
     confirmRemoveRepo,
+    confirmStashAndSwitch,
     /** Reactive state for rendering the dialog — null when hidden */
     dialogState,
     /** Handler for confirm button / Enter key */

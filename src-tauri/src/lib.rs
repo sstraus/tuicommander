@@ -435,12 +435,13 @@ fn read_file(path: String, file: String) -> Result<String, String> {
 #[tauri::command]
 async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
     // Collect config and session count synchronously first (fast, no I/O)
-    let (remote_enabled, mcp_enabled, active_sessions, session_token) = {
+    let (remote_enabled, mcp_enabled, active_sessions, mcp_protocol_sessions, session_token) = {
         let cfg = state.config.read();
         (
             cfg.remote_access_enabled,
             cfg.mcp_server_enabled,
             state.sessions.len(),
+            state.mcp_sessions.len(),
             state.session_token.read().clone(),
         )
     };
@@ -486,6 +487,7 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
         "running": running,
         "port": port,
         "active_sessions": active_sessions,
+        "mcp_clients": mcp_protocol_sessions,
         "max_sessions": MAX_CONCURRENT_SESSIONS,
         // session_token is the primary auth credential — included in the QR code URL.
         // Only exposed via this Tauri command (local IPC), never via the HTTP API.
@@ -502,30 +504,6 @@ fn regenerate_session_token(state: State<'_, Arc<AppState>>) -> String {
     let new_token = uuid::Uuid::new_v4().to_string();
     *state.session_token.write() = new_token.clone();
     new_token
-}
-
-/// Register TUICommander as an MCP server with Claude Code CLI.
-/// Runs `claude mcp add --transport http --scope user tui-commander <url>`.
-#[tauri::command]
-async fn register_mcp_with_claude(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    let port = state.config.read().mcp_port;
-    let url = format!("http://127.0.0.1:{}/mcp", port);
-
-    let detection = crate::agent::detect_agent_binary("claude".to_string());
-    let claude_bin = detection.path
-        .ok_or_else(|| "Claude Code CLI not found on this system".to_string())?;
-
-    let output = tokio::process::Command::new(&claude_bin)
-        .args(["mcp", "add", "--transport", "http", "--scope", "user", "tui-commander", &url])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run claude: {}", e))?;
-
-    if output.status.success() {
-        Ok(url)
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -732,12 +710,12 @@ pub fn run() {
             worktree::merge_and_archive_worktree,
             worktree::list_local_branches,
             worktree::list_base_ref_options,
+            worktree::switch_branch,
             clear_caches,
             get_local_ip,
             get_local_ips,
             get_mcp_status,
             regenerate_session_token,
-            register_mcp_with_claude,
             dictation::commands::get_dictation_status,
             dictation::commands::get_model_info,
             dictation::commands::download_whisper_model,

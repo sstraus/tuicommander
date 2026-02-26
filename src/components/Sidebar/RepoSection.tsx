@@ -16,6 +16,7 @@ import s from "./Sidebar.module.css";
 const BRANCH_ICON_CLASSES: Record<string, string> = {
   main: s.branchIconMain,
   feature: s.branchIconFeature,
+  worktree: s.branchIconWorktree,
   question: s.branchIconQuestion,
 };
 
@@ -33,15 +34,46 @@ const PR_BADGE_CLASSES: Record<string, string> = {
 };
 
 /** Branch icon component — shows ? when any terminal in the branch awaits input */
-export const BranchIcon: Component<{ isMain: boolean; isShell?: boolean; hasQuestion?: boolean }> = (props) => (
-  <span class={cx(s.branchIcon, BRANCH_ICON_CLASSES[props.hasQuestion ? "question" : props.isShell ? "feature" : props.isMain ? "main" : "feature"])}>
-    {props.hasQuestion ? "?" : props.isShell
-      ? <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1 3l5 5-5 5h2l5-5-5-5H1zm7 9h7v2H8v-2z"/></svg>
-      : props.isMain
-      ? <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M9.2 1.2v4.4L13 3.2a1.3 1.3 0 1 1 1.3 2.3L10.5 8l3.8 2.5a1.3 1.3 0 1 1-1.3 2.3L9.2 10.4v4.4a1.2 1.2 0 0 1-2.4 0v-4.4L3 13a1.3 1.3 0 1 1-1.3-2.3L5.5 8 1.7 5.5A1.3 1.3 0 0 1 3 3.2l3.8 2.4V1.2a1.2 1.2 0 0 1 2.4 0z"/></svg>
-      : <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/></svg>}
-  </span>
-);
+export const BranchIcon: Component<{ isMain: boolean; isShell?: boolean; isLinkedWorktree?: boolean; hasQuestion?: boolean }> = (props) => {
+  const iconType = () => {
+    if (props.hasQuestion) return "question";
+    if (props.isShell) return "shell";
+    if (props.isLinkedWorktree) return "worktree";
+    if (props.isMain) return "main";
+    return "feature";
+  };
+
+  return (
+    <span class={cx(s.branchIcon, BRANCH_ICON_CLASSES[iconType() === "shell" ? "feature" : iconType()])}>
+      {(() => {
+        switch (iconType()) {
+          case "question": return "?";
+          case "shell": return (
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1 3l5 5-5 5h2l5-5-5-5H1zm7 9h7v2H8v-2z"/></svg>
+          );
+          case "worktree": return (
+            /* Worktree icon: folder with a small branch symbol inside */
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+              <path d="M1.5 2A1.5 1.5 0 0 1 3 .5h3.38a1.5 1.5 0 0 1 1.06.44l1.12 1.12H13A1.5 1.5 0 0 1 14.5 3.5v8a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 11.5V2Z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+              <circle cx="10" cy="5.5" r="1" fill="currentColor"/>
+              <path d="M10 6.5v1.5a1.5 1.5 0 0 1-1.5 1.5H7" stroke="currentColor" stroke-width="1" fill="none" stroke-linecap="round"/>
+              <circle cx="5.5" cy="9.5" r="1" fill="currentColor"/>
+              <path d="M5.5 5v4.5" stroke="currentColor" stroke-width="1" fill="none" stroke-linecap="round"/>
+              <circle cx="5.5" cy="5" r="1" fill="currentColor"/>
+            </svg>
+          );
+          case "main": return (
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M9.2 1.2v4.4L13 3.2a1.3 1.3 0 1 1 1.3 2.3L10.5 8l3.8 2.5a1.3 1.3 0 1 1-1.3 2.3L9.2 10.4v4.4a1.2 1.2 0 0 1-2.4 0v-4.4L3 13a1.3 1.3 0 1 1-1.3-2.3L5.5 8 1.7 5.5A1.3 1.3 0 0 1 3 3.2l3.8 2.4V1.2a1.2 1.2 0 0 1 2.4 0z"/></svg>
+          );
+          default: return (
+            /* Feature branch icon */
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/></svg>
+          );
+        }
+      })()}
+    </span>
+  );
+};
 
 /** Stats badge component - shows additions/deletions */
 export const StatsBadge: Component<{ additions: number; deletions: number }> = (props) => (
@@ -158,6 +190,9 @@ export const BranchItem: Component<{
   onShowPrDetail: () => void;
   onCreateWorktreeFromBranch?: () => void;
   onMergeAndArchive?: () => void;
+  onSwitchBranch?: (branchName: string) => void;
+  switchBranchList?: () => string[];
+  currentBranch?: () => string;
 }> = (props) => {
   const ctxMenu = createContextMenu();
 
@@ -208,6 +243,19 @@ export const BranchItem: Component<{
         items.push({ label: "Delete Worktree", action: props.onRemove, separator: true });
       }
     }
+    // "Switch Branch" submenu — only on main worktree row
+    if (props.branch.isMain && props.onSwitchBranch && props.switchBranchList && props.currentBranch) {
+      const current = props.currentBranch();
+      const branchList = props.switchBranchList();
+      if (branchList.length > 0) {
+        const branchChildren: ContextMenuItem[] = branchList.map((name) => ({
+          label: name === current ? `${name}  \u2713` : name,
+          action: () => { if (name !== current) props.onSwitchBranch!(name); },
+          disabled: name === current,
+        }));
+        items.push({ label: t("sidebar.switchBranch", "Switch Branch"), action: () => {}, children: branchChildren, separator: true });
+      }
+    }
     return items;
   };
 
@@ -217,7 +265,7 @@ export const BranchItem: Component<{
       onClick={props.onSelect}
       onContextMenu={ctxMenu.open}
     >
-      <BranchIcon isMain={props.branch.isMain} isShell={props.branch.isShell} hasQuestion={hasQuestion()} />
+      <BranchIcon isMain={props.branch.isMain} isShell={props.branch.isShell} isLinkedWorktree={!!props.branch.worktreePath && props.branch.worktreePath !== props.repoPath} hasQuestion={hasQuestion()} />
       <div class={s.branchContent}>
         <span
           class={s.branchName}
@@ -319,7 +367,9 @@ export const RepoSection: Component<{
   onRemove: () => void;
   onToggle: () => void;
   onToggleCollapsed: () => void;
-  onToggleShowAllBranches: () => void;
+  onSwitchBranch: (branchName: string) => void;
+  switchBranchList: () => string[];
+  currentBranch: () => string;
   onDragStart: (e: DragEvent) => void;
   onDragOver: (e: DragEvent) => void;
   onDrop: (e: DragEvent) => void;
@@ -371,12 +421,6 @@ export const RepoSection: Component<{
     });
     items.push({ label: "Move to Group", action: () => {}, children });
 
-    if (props.repo.isGitRepo !== false) {
-      items.push({
-        label: props.repo.showAllBranches ? "Show Active Only" : "Show All Branches",
-        action: () => props.onToggleShowAllBranches(),
-      });
-    }
     items.push({ label: "Park Repository", action: () => repositoriesStore.setPark(props.repo.path, true) });
     items.push({ label: "Remove Repository", action: () => props.onRemove() });
     return items;
@@ -464,6 +508,9 @@ export const RepoSection: Component<{
                 onShowPrDetail={() => props.onShowPrDetail(branch.name)}
                 onCreateWorktreeFromBranch={props.onCreateWorktreeFromBranch ? () => props.onCreateWorktreeFromBranch!(branch.name) : undefined}
                 onMergeAndArchive={props.onMergeAndArchive ? () => props.onMergeAndArchive!(branch.name) : undefined}
+                onSwitchBranch={branch.isMain ? (name) => props.onSwitchBranch(name) : undefined}
+                switchBranchList={branch.isMain ? props.switchBranchList : undefined}
+                currentBranch={branch.isMain ? props.currentBranch : undefined}
               />
             )}
           </For>

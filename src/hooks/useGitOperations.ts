@@ -1,7 +1,6 @@
 import { createSignal, batch } from "solid-js";
 import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore, type RepositoryState } from "../stores/repositories";
-import { settingsStore } from "../stores/settings";
 import { appLogger } from "../stores/appLogger";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "../transport";
@@ -25,6 +24,7 @@ export interface GitOperationsDeps {
     mergeAndArchiveWorktree: (repoPath: string, branchName: string, targetBranch: string, afterMerge: string) => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
     listLocalBranches: (repoPath: string) => Promise<string[]>;
     getMergedBranches: (repoPath: string) => Promise<string[]>;
+    switchBranch: (repoPath: string, branchName: string, opts?: { force?: boolean; stash?: boolean }) => Promise<{ success: boolean; stashed: boolean; previous_branch: string; new_branch: string }>;
   };
   pty: {
     canSpawn: () => Promise<boolean>;
@@ -34,6 +34,7 @@ export interface GitOperationsDeps {
   dialogs: {
     confirmRemoveRepo: (repoName: string) => Promise<boolean>;
     confirmRemoveWorktree: (branchName: string) => Promise<boolean>;
+    confirmStashAndSwitch?: (branchName: string) => Promise<boolean>;
   };
   closeTerminal: (id: string, skipConfirm?: boolean) => Promise<void>;
   createNewTerminal: () => Promise<string | undefined>;
@@ -110,10 +111,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
         return;
       }
 
-      const showAllBranches = repositoriesStore.get(repoPath)?.showAllBranches ?? false;
-      const [worktreePaths, localBranches, mergedBranches] = await Promise.all([
+      const [worktreePaths, mergedBranches] = await Promise.all([
         deps.repo.getWorktreePaths(repoPath),
-        showAllBranches ? deps.repo.listLocalBranches(repoPath) : Promise.resolve([] as string[]),
         deps.repo.getMergedBranches(repoPath),
       ]);
       const mergedSet = new Set(mergedBranches);
@@ -141,11 +140,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
       // Compute the target set of branches to keep, then apply all
       // mutations in a single batch to prevent intermediate renders
       // (which caused the sidebar to flash/jump during refresh).
-      const localSet = new Set(localBranches);
       const storeIds = new Set(terminalsStore.getIds());
       const toRemove: string[] = [];
       for (const branchName of Object.keys(currentRepo.branches)) {
-        if (!(branchName in worktreePaths) && !localSet.has(branchName)) {
+        if (!(branchName in worktreePaths)) {
           // Never remove the active branch — it has the user's terminal focus
           if (branchName === currentRepo.activeBranch) {
             appLogger.warn("terminal", `refreshAllBranchStats: keeping "${branchName}" — is activeBranch of ${repoPath}`);
@@ -168,7 +166,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
         appLogger.info("terminal", `refreshAllBranchStats removing branches from ${repoPath}`, {
           toRemove,
           worktreePathKeys: Object.keys(worktreePaths),
-          localBranches: [...localSet],
           existingBranches: Object.keys(currentRepo.branches),
         });
       }
@@ -179,14 +176,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
         }
         for (const [branchName, wtPath] of Object.entries(worktreePaths)) {
           repositoriesStore.setBranch(repoPath, branchName, { worktreePath: wtPath, isMerged: mergedSet.has(branchName) });
-        }
-        if (showAllBranches) {
-          const updatedRepo = repositoriesStore.get(repoPath);
-          for (const branchName of localBranches) {
-            if (!(branchName in worktreePaths) && !updatedRepo?.branches[branchName]) {
-              repositoriesStore.setBranch(repoPath, branchName, { worktreePath: null, isMerged: mergedSet.has(branchName) });
-            }
-          }
         }
       });
 
@@ -210,6 +199,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
     if (!canSpawn) {
       deps.setStatusInfo("Max sessions reached (50)");
       return;
+    }
+
+    // Switch to this branch if it's not already active
+    const activeRepo = repositoriesStore.getActive();
+    if (activeRepo?.path !== repoPath || activeRepo?.activeBranch !== branchName) {
+      await handleBranchSelect(repoPath, branchName);
     }
 
     const branch = repositoriesStore.get(repoPath)?.branches[branchName];
@@ -495,7 +490,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
         path: info.path,
         displayName: info.name,
         initials: info.initials,
-        showAllBranches: settingsStore.state.showAllBranches,
         isGitRepo: info.is_git_repo,
       });
 
@@ -740,6 +734,87 @@ export function useGitOperations(deps: GitOperationsDeps) {
     openSettingsPanel({ kind: "repo", repoPath });
   };
 
+  // --- Branch switching ---
+
+  const [switchBranchLists, setSwitchBranchLists] = createSignal<Record<string, string[]>>({});
+  const [currentBranches, setCurrentBranches] = createSignal<Record<string, string>>({});
+
+  /** Refresh the local branch list and current branch for all git repos (for context menu). */
+  const refreshBranchLists = async () => {
+    const repos = repositoriesStore.getOrderedRepos().filter(r => r.isGitRepo !== false);
+    const results: Record<string, string[]> = {};
+    const heads: Record<string, string> = {};
+    await Promise.all(repos.map(async (r) => {
+      try {
+        const [branches, info] = await Promise.all([
+          deps.repo.listLocalBranches(r.path),
+          deps.repo.getInfo(r.path),
+        ]);
+        results[r.path] = branches;
+        heads[r.path] = info.branch;
+      } catch {
+        // skip repos that error
+      }
+    }));
+    setSwitchBranchLists(results);
+    setCurrentBranches(heads);
+  };
+
+  // Refresh branch lists whenever branch stats are refreshed
+  const originalRefreshAllBranchStats = refreshAllBranchStats;
+  const wrappedRefreshAllBranchStats = async () => {
+    await originalRefreshAllBranchStats();
+    await refreshBranchLists();
+  };
+  // Replace the reference used in the return
+  const refreshAllBranchStatsWithLists = wrappedRefreshAllBranchStats;
+
+  /** Handle branch switch request from sidebar. Checks terminal safety, then calls Rust. */
+  const handleSwitchBranch = async (repoPath: string, branchName: string) => {
+    const repo = repositoriesStore.get(repoPath);
+    if (!repo) return;
+
+    // Pre-flight: check for busy terminals on the main worktree
+    const mainWorktreeBranches = Object.values(repo.branches).filter(b => b.worktreePath === repoPath);
+    for (const branch of mainWorktreeBranches) {
+      for (const termId of branch.terminals) {
+        const term = terminalsStore.get(termId);
+        if (term?.shellState === "busy") {
+          deps.setStatusInfo(`Cannot switch branch: terminal "${term.name || termId}" has a running process`);
+          return;
+        }
+      }
+    }
+
+    try {
+      const result = await deps.repo.switchBranch(repoPath, branchName);
+      if (result.stashed) {
+        deps.setStatusInfo(`Switched to ${result.new_branch} (changes stashed)`);
+      } else {
+        deps.setStatusInfo(`Switched to ${result.new_branch}`);
+      }
+      // Refresh branch stats to pick up the new HEAD
+      await wrappedRefreshAllBranchStats();
+    } catch (err) {
+      const errMsg = String(err);
+      if (errMsg === "dirty" || errMsg.includes("dirty")) {
+        // Dirty working tree — ask user to stash
+        const confirmed = await deps.dialogs.confirmStashAndSwitch?.(branchName);
+        if (confirmed) {
+          try {
+            const result = await deps.repo.switchBranch(repoPath, branchName, { stash: true });
+            deps.setStatusInfo(`Switched to ${result.new_branch} (changes stashed)`);
+            await wrappedRefreshAllBranchStats();
+          } catch (stashErr) {
+            deps.setStatusInfo(`Stash & switch failed: ${stashErr}`);
+          }
+        }
+      } else {
+        deps.setStatusInfo(`Branch switch failed: ${errMsg}`);
+      }
+    }
+  };
+
   return {
     currentRepoPath,
     setCurrentRepoPath,
@@ -749,7 +824,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     setRepoStatus,
     branchToRename,
     setBranchToRename,
-    refreshAllBranchStats,
+    refreshAllBranchStats: refreshAllBranchStatsWithLists,
     handleBranchSelect,
     handleAddTerminalToBranch,
     handleRemoveRepo,
@@ -771,5 +846,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
     executeRunCommand,
     generateWorktreeName,
     handleRepoSettings,
+    handleSwitchBranch,
+    switchBranchLists,
+    currentBranches,
+    refreshBranchLists,
   };
 }

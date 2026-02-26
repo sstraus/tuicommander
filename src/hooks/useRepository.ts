@@ -173,6 +173,30 @@ export function useRepository() {
     }
   }
 
+  /** Result of branch switch operation */
+  interface SwitchBranchResult {
+    success: boolean;
+    stashed: boolean;
+    previous_branch: string;
+    new_branch: string;
+  }
+
+  /** Switch the main worktree to a different branch via git checkout.
+   *  Runs in Rust (no PTY involvement) — safe even with editors open.
+   *  Returns "dirty" error string when working tree has uncommitted changes. */
+  async function switchBranch(
+    repoPath: string,
+    branchName: string,
+    opts?: { force?: boolean; stash?: boolean },
+  ): Promise<SwitchBranchResult> {
+    return await invoke<SwitchBranchResult>("switch_branch", {
+      repoPath,
+      branchName,
+      force: opts?.force ?? false,
+      stash: opts?.stash ?? false,
+    });
+  }
+
   /** List local branch names for a repository */
   async function listLocalBranches(repoPath: string): Promise<string[]> {
     try {
@@ -212,6 +236,7 @@ export function useRepository() {
     mergeAndArchiveWorktree,
     getMergedBranches,
     listLocalBranches,
+    switchBranch,
     getRecentCommits,
   };
 }

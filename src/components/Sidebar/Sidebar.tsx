@@ -34,6 +34,9 @@ export interface SidebarProps {
   onBackgroundGit?: (repoPath: string, op: string, args: string[]) => void;
   runningGitOps?: Set<string>;
   onRefreshBranchStats?: () => Promise<void>;
+  onSwitchBranch?: (repoPath: string, branchName: string) => void;
+  switchBranchLists?: Record<string, string[]>;
+  currentBranches?: Record<string, string>;
 }
 
 const DRAG_CLASSES: Record<string, string> = {
@@ -179,10 +182,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         onRemove={() => props.onRemoveRepo(repo.path)}
         onToggle={() => repositoriesStore.toggleExpanded(repo.path)}
         onToggleCollapsed={() => repositoriesStore.toggleCollapsed(repo.path)}
-        onToggleShowAllBranches={async () => {
-          repositoriesStore.toggleShowAllBranches(repo.path);
-          await props.onRefreshBranchStats?.();
-        }}
+        onSwitchBranch={(branch) => props.onSwitchBranch?.(repo.path, branch)}
+        switchBranchList={() => props.switchBranchLists?.[repo.path] ?? []}
+        currentBranch={() => props.currentBranches?.[repo.path] ?? ""}
         onDragStart={(e) => drag.handleRepoDragStart(e, repo.path)}
         onDragOver={(e) => drag.handleRepoDragOver(e, repo.path)}
         onDrop={(e) => drag.handleRepoDrop(e, repo.path)}

@@ -28,7 +28,6 @@ interface RustAppConfig {
   language: string;
   update_channel: string;
   session_token_duration_secs: number;
-  show_all_branches: boolean;
   disabled_agents: string[];
 }
 
@@ -224,7 +223,6 @@ interface SettingsStoreState {
   autoUpdateEnabled: boolean;
   language: string;
   updateChannel: UpdateChannel;
-  showAllBranches: boolean;
   disabledAgents: string[];
 }
 
@@ -245,7 +243,6 @@ function createSettingsStore() {
     autoUpdateEnabled: true,
     language: "en",
     updateChannel: "stable" as UpdateChannel,
-    showAllBranches: false,
     disabledAgents: [],
   });
 
@@ -283,7 +280,6 @@ function createSettingsStore() {
         setLocale(config.language || "en");
         const channel = config.update_channel;
         setState("updateChannel", (channel === "beta" || channel === "nightly") ? channel : "stable");
-        setState("showAllBranches", config.show_all_branches ?? false);
         setState("disabledAgents", config.disabled_agents ?? []);
       } catch (err) {
         appLogger.error("config", "Failed to hydrate settings", err);
@@ -499,20 +495,6 @@ function createSettingsStore() {
       } catch (err) {
         appLogger.error("config", "Failed to persist maxTabNameLength", err);
         setState("maxTabNameLength", prev);
-      }
-    },
-
-    /** Set show-all-branches default */
-    async setShowAllBranches(enabled: boolean): Promise<void> {
-      const prevValue = state.showAllBranches;
-      setState("showAllBranches", enabled);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.show_all_branches = enabled;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist showAllBranches", err);
-        setState("showAllBranches", prevValue);
       }
     },
 
