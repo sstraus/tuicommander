@@ -242,7 +242,7 @@ fn debounce_loop(
         let first = match rx.recv() {
             Ok(Ok(event)) => event,
             Ok(Err(e)) => {
-                eprintln!("[plugin_fs] Watcher error: {e}");
+                crate::app_logger::log_via_handle(app, "warn", "plugin", &format!("[plugin_fs] Watcher error: {e}"));
                 continue;
             }
             Err(_) => break, // Channel closed — watcher was dropped
@@ -260,7 +260,7 @@ fn debounce_loop(
             }
             match rx.recv_timeout(remaining) {
                 Ok(Ok(event)) => classify_event(&event, &mut events_by_path),
-                Ok(Err(e)) => eprintln!("[plugin_fs] Watcher error: {e}"),
+                Ok(Err(e)) => crate::app_logger::log_via_handle(app, "warn", "plugin", &format!("[plugin_fs] Watcher error: {e}")),
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
             }

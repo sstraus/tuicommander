@@ -648,10 +648,10 @@ pub fn run() {
                 let handle = app.handle().clone();
                 for repo_path in repos.keys() {
                     if let Err(e) = head_watcher::start_watching(repo_path, &handle) {
-                        eprintln!("[HeadWatcher] Failed to watch {repo_path}: {e}");
+                        app_logger::log_via_state(app_state, "error", "app", &format!("[HeadWatcher] Failed to watch {repo_path}: {e}"));
                     }
                     if let Err(e) = repo_watcher::start_watching(repo_path, &handle) {
-                        eprintln!("[RepoWatcher] Failed to watch {repo_path}: {e}");
+                        app_logger::log_via_state(app_state, "error", "app", &format!("[RepoWatcher] Failed to watch {repo_path}: {e}"));
                     }
                 }
             }

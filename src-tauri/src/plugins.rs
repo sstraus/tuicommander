@@ -514,7 +514,7 @@ fn install_zip_inner(
     // Emit plugin-changed event for hot reload
     let _ = app_handle.emit("plugin-changed", vec![manifest.id.clone()]);
 
-    eprintln!("[plugins] Installed plugin \"{}\" v{}", manifest.id, manifest.version);
+    crate::app_logger::log_via_handle(app_handle, "info", "plugin", &format!("Installed plugin \"{}\" v{}", manifest.id, manifest.version));
     Ok(manifest)
 }
 
@@ -571,7 +571,7 @@ pub fn uninstall_plugin(id: String, app_handle: AppHandle) -> Result<(), String>
         .map_err(|e| format!("Failed to remove plugin directory: {e}"))?;
 
     let _ = app_handle.emit("plugin-changed", vec![id.clone()]);
-    eprintln!("[plugins] Uninstalled plugin \"{id}\"");
+    crate::app_logger::log_via_handle(&app_handle, "info", "plugin", &format!("Uninstalled plugin \"{id}\""));
     Ok(())
 }
 
@@ -584,7 +584,7 @@ pub fn uninstall_plugin(id: String, app_handle: AppHandle) -> Result<(), String>
 pub fn start_plugin_watcher(app_handle: &AppHandle) {
     let dir = plugins_dir();
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("[plugins] Failed to create plugins dir: {e}");
+        crate::app_logger::log_via_handle(app_handle, "error", "plugin", &format!("[plugins] Failed to create plugins dir: {e}"));
         return;
     }
 
@@ -598,7 +598,7 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
         let mut debouncer = match new_debouncer(Duration::from_millis(500), tx) {
             Ok(d) => d,
             Err(e) => {
-                eprintln!("[plugins] Failed to create watcher: {e}");
+                crate::app_logger::log_via_handle(&handle, "error", "plugin", &format!("[plugins] Failed to create watcher: {e}"));
                 return;
             }
         };
@@ -607,11 +607,11 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
             .watcher()
             .watch(&dir, notify::RecursiveMode::Recursive)
         {
-            eprintln!("[plugins] Failed to watch plugins dir: {e}");
+            crate::app_logger::log_via_handle(&handle, "error", "plugin", &format!("[plugins] Failed to watch plugins dir: {e}"));
             return;
         }
 
-        eprintln!("[plugins] Watching {dir:?} for changes");
+        crate::app_logger::log_via_handle(&handle, "info", "plugin", &format!("[plugins] Watching {dir:?} for changes"));
 
         loop {
             match rx.recv() {
@@ -633,12 +633,12 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
                     }
 
                     if !changed_ids.is_empty() {
-                        eprintln!("[plugins] Change detected in: {changed_ids:?}");
+                        crate::app_logger::log_via_handle(&handle, "info", "plugin", &format!("[plugins] Change detected in: {changed_ids:?}"));
                         let _ = handle.emit("plugin-changed", changed_ids);
                     }
                 }
                 Ok(Err(errs)) => {
-                    eprintln!("[plugins] Watcher errors: {errs:?}");
+                    crate::app_logger::log_via_handle(&handle, "warn", "plugin", &format!("[plugins] Watcher errors: {errs:?}"));
                 }
                 Err(_) => break, // Channel closed
             }

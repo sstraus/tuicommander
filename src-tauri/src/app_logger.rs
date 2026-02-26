@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::AppState;
 
@@ -167,6 +167,33 @@ pub(crate) fn get_logs(
 pub(crate) fn clear_logs(state: State<'_, Arc<AppState>>) {
     let mut buf = state.log_buffer.lock();
     buf.clear();
+}
+
+/// Push a log entry from internal Rust code using an AppHandle.
+///
+/// Use this in contexts where you have an `AppHandle` but not a `State<>` extractor
+/// (e.g. watcher callbacks, plugin lifecycle hooks). Falls back silently if state
+/// is not yet initialised.
+pub(crate) fn log_via_handle(
+    handle: &tauri::AppHandle,
+    level: &str,
+    source: &str,
+    message: &str,
+) {
+    let state = handle.state::<Arc<AppState>>();
+    let mut buf = state.log_buffer.lock();
+    buf.push(level.to_string(), source.to_string(), message.to_string(), None);
+}
+
+/// Push a log entry from internal Rust code using an AppState reference directly.
+pub(crate) fn log_via_state(
+    state: &Arc<AppState>,
+    level: &str,
+    source: &str,
+    message: &str,
+) {
+    let mut buf = state.log_buffer.lock();
+    buf.push(level.to_string(), source.to_string(), message.to_string(), None);
 }
 
 // ---------------------------------------------------------------------------

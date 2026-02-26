@@ -70,7 +70,7 @@ pub(crate) fn start_watching(repo_path: &str, app_handle: &AppHandle) -> Result<
             let events = match events {
                 Ok(evts) => evts,
                 Err(e) => {
-                    eprintln!("[repo_watcher] watcher error for {repo_path_owned}: {e}");
+                    crate::app_logger::log_via_handle(&handle, "warn", "app", &format!("[repo_watcher] watcher error for {repo_path_owned}: {e}"));
                     return;
                 }
             };
