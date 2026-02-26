@@ -1,0 +1,61 @@
+src/__tests__/components/GitOperationsPanel.test.tsx
+  3f286127a046b141 401
+src/__tests__/stores/keybindings.test.ts
+  3f286127a046b141 259-260
+src/__tests__/components/Sidebar.test.tsx
+  3f286127a046b141 267
+src-tauri/src/mcp_http/mcp_transport.rs
+  3f286127a046b141 70
+src-tauri/src/output_parser.rs
+  3f286127a046b141 215,217
+src/__tests__/components/CreateWorktreeDialog.test.tsx
+  3f286127a046b141 159,178
+src/__tests__/stores/repositories.test.ts
+  3f286127a046b141 473
+src/__tests__/hooks/useKeyboardShortcuts.test.ts
+  3f286127a046b141 63,66,74
+src/__tests__/stores/dictation.test.ts
+  3f286127a046b141 273
+src/__tests__/components/StatusBar.test.tsx
+  3f286127a046b141 304
+src-tauri/src/claude_usage.rs
+  3f286127a046b141 338,344-346,469,482
+src/__tests__/stores/repoDefaults.test.ts
+  3f286127a046b141 145-151
+src/__tests__/stores/activityStore.test.ts
+  3f286127a046b141 269
+src/__tests__/stores/notes.test.ts
+  3f286127a046b141 155
+src/__tests__/hooks/useAgentDetection.test.ts
+  3f286127a046b141 14,23,38
+src/__tests__/themes.test.ts
+  3f286127a046b141 97
+src/__tests__/hooks/useAppInit.test.ts
+  3f286127a046b141 526-527
+AGENTS.md
+  3f286127a046b141 162-170
+src/__tests__/stores/github.test.ts
+  3f286127a046b141 633-636,638,641,644,646-649
+src-tauri/src/worktree.rs
+  3f286127a046b141 17,19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "d9677a5ea5ebca482c75512d036806212af571ba",
+  "prompts": {
+    "3f286127a046b141": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e84667c-f247-4e48-8bdd-8a0c22ac6f4a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 9,
+      "total_deletions": 0,
+      "accepted_lines": 58,
+      "overriden_lines": 0
+    }
+  }
+}
