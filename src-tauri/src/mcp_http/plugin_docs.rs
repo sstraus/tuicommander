@@ -450,6 +450,61 @@ esbuild src/main.ts --bundle --format=esm --outfile=main.js --external:nothing
 
 Crash safety: all boundaries are try/catch wrapped. A broken plugin produces a console error and is skipped. The app always continues.
 
+## Worktree Management via MCP
+
+Models MUST use the MCP HTTP API to create worktrees — never raw `git worktree add` directly.
+Using the API ensures user settings (storage strategy, path conventions) are respected.
+
+### Creating a worktree
+
+```
+POST /worktrees
+Content-Type: application/json
+
+{
+  "base_repo": "/path/to/repo",   // required: absolute path to the main repo
+  "branch_name": "my-feature",    // required: branch name only — you choose this
+  "base_ref": "main"              // optional: start point (commit/branch). Defaults to HEAD
+}
+```
+
+**Model responsibility:** Provide only the `branch_name`. The storage path, directory naming,
+and worktree location are determined entirely by user configuration. Do not attempt to compute
+or specify the worktree path — the API handles it.
+
+**Response (201 Created):**
+```json
+{
+  "name": "my-feature",
+  "path": "/path/to/worktrees/my-feature",
+  "branch": "my-feature",
+  "base_repo": "/path/to/repo"
+}
+```
+
+### Listing worktrees
+
+```
+GET /worktrees
+```
+
+Returns active worktree sessions (worktrees with open PTY sessions).
+
+### Removing a worktree
+
+```
+DELETE /worktrees/{branch}?repoPath=/path/to/repo&deleteBranch=true
+```
+
+### Getting the configured worktree directory
+
+```
+GET /worktrees/dir?repo_path=/path/to/repo
+```
+
+Returns the directory where worktrees for this repo will be created (based on user config).
+Useful for informational purposes — do not use this to construct paths yourself.
+
 ## Troubleshooting
 
 | Error | Fix |

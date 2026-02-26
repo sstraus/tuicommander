@@ -58,26 +58,31 @@ pub(super) async fn create_worktree_http(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CreateWorktreeRequest>,
 ) -> impl IntoResponse {
+    // Model provides only branch_name and optionally base_ref (start point).
+    // Storage path and strategy come entirely from user config via resolve_worktree_dir_for_repo.
     let config = crate::worktree::WorktreeConfig {
         task_name: body.branch_name.clone(),
-        base_repo: body.base_repo,
+        base_repo: body.base_repo.clone(),
         branch: Some(body.branch_name),
-        create_branch: body.create_branch.unwrap_or(true),
+        create_branch: true, // Always create a new branch — model must not control this
     };
     let worktrees_dir = crate::worktree::resolve_worktree_dir_for_repo(
         std::path::Path::new(&config.base_repo),
         &state.worktrees_dir,
     );
-    match crate::worktree::create_worktree_internal(&worktrees_dir, &config, None) {
-        Ok(wt) => (
-            StatusCode::CREATED,
-            Json(serde_json::json!({
-                "name": wt.name,
-                "path": wt.path.to_string_lossy(),
-                "branch": wt.branch,
-                "base_repo": wt.base_repo.to_string_lossy(),
-            })),
-        ),
+    match crate::worktree::create_worktree_internal(&worktrees_dir, &config, body.base_ref.as_deref()) {
+        Ok(wt) => {
+            state.invalidate_repo_caches(&body.base_repo);
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({
+                    "name": wt.name,
+                    "path": wt.path.to_string_lossy(),
+                    "branch": wt.branch,
+                    "base_repo": wt.base_repo.to_string_lossy(),
+                })),
+            )
+        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
     }
 }
