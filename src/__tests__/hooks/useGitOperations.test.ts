@@ -498,6 +498,46 @@ describe("useGitOperations", () => {
       expect(newBranch?.deletions).toBe(1);
     });
 
+    it("removes stale activeBranch when HEAD moved to different branch", async () => {
+      // Scenario: repo persisted with activeBranch="main", user switched to
+      // "feature/acme" externally. Backend returns only "feature/acme" as worktree.
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setActiveBranch("/repo", "main");
+
+      // Backend now says HEAD is on feature/acme (main worktree checked out on different branch)
+      mockRepo.getWorktreePaths.mockResolvedValue({ "feature/acme": "/repo" });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 1, deletions: 0 });
+
+      await gitOps.refreshAllBranchStats();
+
+      const repo = repositoriesStore.get("/repo");
+      // "main" should be gone — it's not a worktree
+      expect(repo?.branches["main"]).toBeUndefined();
+      // "feature/acme" should exist
+      expect(repo?.branches["feature/acme"]).toBeDefined();
+      // activeBranch should have been updated
+      expect(repo?.activeBranch).toBe("feature/acme");
+    });
+
+    it("migrates terminals from stale activeBranch to new worktree branch", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setActiveBranch("/repo", "main");
+      const tid = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T1", cwd: "/repo", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "main", tid);
+
+      mockRepo.getWorktreePaths.mockResolvedValue({ "feature/acme": "/repo" });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+
+      await gitOps.refreshAllBranchStats();
+
+      const repo = repositoriesStore.get("/repo");
+      expect(repo?.branches["main"]).toBeUndefined();
+      expect(repo?.branches["feature/acme"]?.terminals).toContain(tid);
+      expect(repo?.activeBranch).toBe("feature/acme");
+    });
+
     it("ignores diff stats errors for individual branches", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });

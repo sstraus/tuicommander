@@ -147,11 +147,29 @@ export function useGitOperations(deps: GitOperationsDeps) {
       // (which caused the sidebar to flash/jump during refresh).
       const storeIds = new Set(terminalsStore.getIds());
       const toRemove: string[] = [];
+
+      // If activeBranch is no longer a worktree, find its replacement:
+      // the worktree branch that occupies the same path (HEAD moved).
+      let activeBranchReplacement: string | null = null;
+      const active = currentRepo.activeBranch;
+      if (active && !(active in worktreePaths)) {
+        const activePath = currentRepo.branches[active]?.worktreePath;
+        if (activePath) {
+          for (const [wtBranch, wtPath] of Object.entries(worktreePaths)) {
+            if (wtPath === activePath) {
+              activeBranchReplacement = wtBranch;
+              break;
+            }
+          }
+        }
+      }
+
       for (const branchName of Object.keys(currentRepo.branches)) {
         if (!(branchName in worktreePaths)) {
-          // Never remove the active branch — it has the user's terminal focus
-          if (branchName === currentRepo.activeBranch) {
-            appLogger.warn("terminal", `refreshAllBranchStats: keeping "${branchName}" — is activeBranch of ${repoPath}`);
+          // If this is the stale activeBranch and we found a replacement, allow removal
+          if (branchName === active && activeBranchReplacement) {
+            appLogger.info("terminal", `refreshAllBranchStats: activeBranch "${branchName}" replaced by "${activeBranchReplacement}"`);
+            toRemove.push(branchName);
             continue;
           }
           // Never remove a branch that still has live terminals in the store
@@ -176,11 +194,17 @@ export function useGitOperations(deps: GitOperationsDeps) {
       }
 
       batch(() => {
-        for (const branchName of toRemove) {
-          repositoriesStore.removeBranch(repoPath, branchName);
-        }
+        // Create new worktree branches first so mergeBranchState has a target
         for (const [branchName, wtPath] of Object.entries(worktreePaths)) {
           repositoriesStore.setBranch(repoPath, branchName, { worktreePath: wtPath, isMerged: mergedSet.has(branchName) });
+        }
+        // Migrate terminal state from stale activeBranch to its replacement
+        if (active && activeBranchReplacement && toRemove.includes(active)) {
+          repositoriesStore.mergeBranchState(repoPath, active, activeBranchReplacement);
+          repositoriesStore.setActiveBranch(repoPath, activeBranchReplacement);
+        }
+        for (const branchName of toRemove) {
+          repositoriesStore.removeBranch(repoPath, branchName);
         }
       });
 
