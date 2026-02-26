@@ -1,0 +1,29 @@
+src-tauri/src/lib.rs
+  9bbf419b83e848f4 142-147,282
+src/hooks/useRepository.ts
+  9bbf419b83e848f4 107-111,130
+src/components/MarkdownPanel/MarkdownPanel.tsx
+  9bbf419b83e848f4 5-6,8-23,35-36,39-42,69-84,94-134,203,218-225
+src/__tests__/components/MarkdownPanel.test.tsx
+  9bbf419b83e848f4 1-2,4-7,12,20-22,53-90,92-95,98-105,156-360
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "5f612986a8f958d457ad1d20512895a85d4014cf",
+  "prompts": {
+    "9bbf419b83e848f4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "75072cbd-2efd-440b-8140-3a3a09071862",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Roberto Serafin <roberto.serafin@lansweeper.com>",
+      "messages": [],
+      "total_additions": 381,
+      "total_deletions": 10,
+      "accepted_lines": 377,
+      "overriden_lines": 0
+    }
+  }
+}
