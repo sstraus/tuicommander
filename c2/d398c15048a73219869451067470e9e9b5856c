@@ -1,0 +1,69 @@
+src-tauri/src/lib.rs
+  88159a1d6e1e88f6 438,444,490
+  1befa816f7043d53 713
+src/__tests__/components/Sidebar.test.tsx
+  1befa816f7043d53 422,426,451,453,509,512-513
+src-tauri/src/worktree.rs
+  1befa816f7043d53 478-585
+src/components/Sidebar/RepoSection.tsx
+  8e7c6b830afecf61 19,37-51,53-65,67-69,71,73,75-76,193-195,246-258,268,511-513
+  1befa816f7043d53 370-372
+src/hooks/useGitOperations.ts
+  1befa816f7043d53 27,37,204-209,737-817,827,849-852
+src/components/Sidebar/Sidebar.tsx
+  1befa816f7043d53 37-39,185-187
+src/stores/repositories.ts
+  1befa816f7043d53 178-179
+src/__tests__/hooks/useGitOperations.test.ts
+  1befa816f7043d53 31
+src/hooks/useRepository.ts
+  1befa816f7043d53 176-199,239
+src/hooks/useConfirmDialog.ts
+  1befa816f7043d53 96-106,112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "c2d398c15048a73219869451067470e9e9b5856c",
+  "prompts": {
+    "1befa816f7043d53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f32af94b-d5da-4cf4-8b73-547f31bf9600",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 259,
+      "overriden_lines": 0
+    },
+    "88159a1d6e1e88f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "008f27c3-5a10-41ba-948d-71172c873a35",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    },
+    "8e7c6b830afecf61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7c4bf475-bc71-43a4-8403-5979a4dee84b",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 1,
+      "accepted_lines": 60,
+      "overriden_lines": 0
+    }
+  }
+}
