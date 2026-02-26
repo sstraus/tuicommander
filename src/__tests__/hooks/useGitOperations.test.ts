@@ -505,7 +505,7 @@ describe("useGitOperations", () => {
       await gitOps.handleRemoveBranch("/repo", "feature");
 
       expect(repositoriesStore.get("/repo")?.branches["feature"]).toBeUndefined();
-      expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("git cleanup may be needed"));
+      expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("worktree removal failed"));
     });
 
     it("closes branch terminals before removing", async () => {

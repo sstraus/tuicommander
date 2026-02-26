@@ -403,8 +403,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
       await deps.repo.removeWorktree(repoPath, branchName);
       deps.setStatusInfo(`Removed ${branchName}`);
     } catch (err) {
-      appLogger.warn("git", "Backend worktree removal failed (cleaning up UI anyway)", err);
-      deps.setStatusInfo(`Removed ${branchName} (git cleanup may be needed)`);
+      const reason = err instanceof Error ? err.message : String(err);
+      appLogger.error("git", `Failed to remove worktree for ${branchName}: ${reason}`);
+      deps.setStatusInfo(`Removed ${branchName} from UI (worktree removal failed)`);
     }
 
     repositoriesStore.removeBranch(repoPath, branchName);
