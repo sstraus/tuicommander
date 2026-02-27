@@ -1,0 +1,65 @@
+src/components/SettingsPanel/tabs/AgentsTab.tsx
+  618b1252172f44b5 16
+src-tauri/src/mcp_http/plugin_docs.rs
+  618b1252172f44b5 37
+src/agents.ts
+  618b1252172f44b5 202,231
+docs/plugins.md
+  c12f3445dc144e17 1042
+README.md
+  618b1252172f44b5 53
+src-tauri/src/agent_mcp.rs
+  618b1252172f44b5 86,443
+src/__tests__/hooks/useAgentDetection.test.ts
+  618b1252172f44b5 38
+docs/FEATURES.md
+  618b1252172f44b5 311-312
+docs/user-guide/ai-agents.md
+  618b1252172f44b5 14-15,17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "35182b3f7fd5726385c7c721e9bce38050423ef0",
+  "prompts": {
+    "2c2d6b4b1d0cf46c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "18e0fda2-67b0-4c1a-839c-3e6a4744c84c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 36,
+      "overriden_lines": 0
+    },
+    "618b1252172f44b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bc65e7b9-9f59-4361-b9ca-78409bce5cf7",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 15,
+      "total_deletions": 82,
+      "accepted_lines": 13,
+      "overriden_lines": 0
+    },
+    "c12f3445dc144e17": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "883abde1-becd-48c2-8e16-a98bcb4f84e2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 38,
+      "overriden_lines": 0
+    }
+  }
+}
