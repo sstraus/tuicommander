@@ -157,7 +157,9 @@ impl OutputParser {
                     .map(|nl| &text[nl + 1..])
                     .unwrap_or(text);
                 let match_line = match_line.lines().next().unwrap_or(match_line);
-                if line_is_source_code(match_line) {
+                if line_is_source_code(match_line)
+                    || line_is_diff_or_code_context(match_line, match_line.trim())
+                {
                     continue;
                 }
 
@@ -187,7 +189,9 @@ impl OutputParser {
                     .map(|nl| &text[nl + 1..])
                     .unwrap_or(text);
                 let match_line = match_line.lines().next().unwrap_or(match_line);
-                if line_is_source_code(match_line) {
+                if line_is_source_code(match_line)
+                    || line_is_diff_or_code_context(match_line, match_line.trim())
+                {
                     continue;
                 }
                 return Some(ParsedEvent::ApiError {
@@ -547,37 +551,35 @@ pub(crate) fn extract_last_question_line(text: &str) -> Option<String> {
 /// rather than a genuine interactive prompt. Applied to ALL question regex matches
 /// to prevent false positives from diff hunks containing question-like patterns.
 fn line_is_diff_or_code_context(raw_line: &str, clean_trimmed: &str) -> bool {
-    // Diff line with line-number prefix: "462 -" or "75 +-" or "465 //"
-    // Pattern: starts with digits, then whitespace, then diff marker or code
-    if clean_trimmed.len() > 3 {
-        let bytes = clean_trimmed.as_bytes();
-        if bytes[0].is_ascii_digit() {
-            // Find where digits end
-            if let Some(pos) = clean_trimmed.find(|c: char| !c.is_ascii_digit()) {
-                let rest = clean_trimmed[pos..].trim_start();
-                // Diff markers after line number: +, -, //, or continuation of code
-                if rest.starts_with('+')
-                    || rest.starts_with('-')
-                    || rest.starts_with("//")
-                {
-                    return true;
-                }
+    // Line-number prefix from code listings: "462 -...", "75 +-...", "465 //...", "1226    assert!(..."
+    // Distinguished from HTTP status codes ("429 Too Many Requests") by requiring either:
+    //   - diff markers (+, -, //) after the number, OR
+    //   - 2+ spaces after the number (code listing indentation)
+    if clean_trimmed.len() > 3 && clean_trimmed.as_bytes()[0].is_ascii_digit() {
+        if let Some(pos) = clean_trimmed.find(|c: char| !c.is_ascii_digit()) {
+            let after_digits = &clean_trimmed[pos..];
+            let rest = after_digits.trim_start();
+            // Diff markers after line number
+            if rest.starts_with('+') || rest.starts_with('-') || rest.starts_with("//") {
+                return true;
+            }
+            // 2+ whitespace chars after digits = code listing with padded line numbers
+            if after_digits.len() >= 2
+                && after_digits.as_bytes()[0] == b' '
+                && (after_digits.as_bytes()[1] == b' ' || after_digits.as_bytes()[1] == b'\t')
+            {
+                return true;
             }
         }
     }
 
-    // Unified diff lines: start with + or - followed by content (but not bare +/-)
-    // Be careful not to match real prompts that happen to start with these chars
-    if (raw_line.starts_with('+') || raw_line.starts_with('-'))
-        && raw_line.len() > 1
-        && !raw_line.starts_with("+ ")  // preserve "+ " which could be a list item prompt
-    {
-        let after = &raw_line[1..];
-        // Diff lines typically have code, whitespace, or markers after +/-
-        if after.starts_with(' ')
-            || after.starts_with('-')
-            || after.starts_with('+')
-            || after.starts_with('\t')
+    // Unified diff lines: start with + or - followed by content
+    // Real diff lines: "+  code", "- old line", "++ file", "-- file"
+    if raw_line.len() > 1 {
+        let first = raw_line.as_bytes()[0];
+        let second = raw_line.as_bytes()[1];
+        if (first == b'+' || first == b'-')
+            && (second == b' ' || second == b'\t' || second == first)
         {
             return true;
         }
@@ -1641,6 +1643,22 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         // Claude Code diff summary block — NOT a real question
         assert!(!has_question(&parser.parse(
             "⏺⎿ Added16lines,removed2lines     459          // Claude Code: \"Would you like to proceed?\" / \"Do you want to...\""
+        )));
+    }
+
+    #[test]
+    fn test_no_rate_limit_in_diff_output() {
+        let parser = OutputParser::new();
+        // Diff lines showing test assertions that mention RESOURCE_EXHAUSTED — NOT real errors
+        assert!(!has_rate_limit(&parser.parse(
+            "+        assert!(has_rate_limit(&parser.parse(\"RESOURCE_EXHAUSTED\")));"
+        )));
+        assert!(!has_rate_limit(&parser.parse(
+            "-        assert!(has_rate_limit(&parser.parse(\"RESOURCE_EXHAUSTED\")));"
+        )));
+        // Diff line with line number prefix
+        assert!(!has_rate_limit(&parser.parse(
+            "1226         assert!(has_rate_limit(&parser.parse(\"RESOURCE_EXHAUSTED\")));"
         )));
     }
 

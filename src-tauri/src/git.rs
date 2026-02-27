@@ -461,9 +461,11 @@ const NULL_DEVICE: &str = "/dev/null";
 #[cfg(windows)]
 const NULL_DEVICE: &str = "NUL";
 
-/// Get diff for a single file
+/// Get diff for a single file.
+/// When `untracked` is `Some(true)`, skip the `ls-files` probe and go directly
+/// to `--no-index` diff (the frontend already knows the file status).
 #[tauri::command]
-pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>) -> Result<String, String> {
+pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>, untracked: Option<bool>) -> Result<String, String> {
     let repo_path = PathBuf::from(&path);
 
     // For untracked files, use --no-index to generate a diff against the null device
@@ -479,15 +481,20 @@ pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>) -
             return Err("Access denied: file is outside repository".to_string());
         }
 
-        let is_untracked = match Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(&repo_path)
-            .args(["ls-files", "--error-unmatch", &file])
-            .output()
-        {
-            Ok(o) => !o.status.success(),
-            Err(e) => {
-                eprintln!("[git] ls-files spawn failed for {file}: {e}");
-                false
+        // If the frontend told us it's untracked, skip the subprocess probe.
+        let is_untracked = if untracked == Some(true) {
+            true
+        } else {
+            match Command::new(crate::agent::resolve_cli("git"))
+                .current_dir(&repo_path)
+                .args(["ls-files", "--error-unmatch", &file])
+                .output()
+            {
+                Ok(o) => !o.status.success(),
+                Err(e) => {
+                    eprintln!("[git] ls-files spawn failed for {file}: {e}");
+                    false
+                }
             }
         };
 
@@ -1197,6 +1204,7 @@ mod tests {
         let result = get_file_diff(
             repo_path.to_string_lossy().to_string(),
             "../../etc/passwd".to_string(),
+            None,
             None,
         );
         let err = result.unwrap_err();
