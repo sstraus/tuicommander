@@ -319,10 +319,10 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
               if (e.button === 0) props.onDictationStart();
             }}
             onMouseUp={(e) => {
-              if (e.button === 0 && dictationStore.state.recording) props.onDictationStop();
+              if (e.button === 0) props.onDictationStop();
             }}
             onMouseLeave={() => {
-              if (dictationStore.state.recording) props.onDictationStop();
+              if (dictationStore.state.recording || dictationStore.state.loading) props.onDictationStop();
             }}
             title={`${t("statusBar.voiceDictation", "Voice Dictation")} (${dictationStore.state.hotkey})`}
             style={{ position: "relative" }}

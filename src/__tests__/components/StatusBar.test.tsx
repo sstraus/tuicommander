@@ -359,9 +359,34 @@ describe("StatusBar", () => {
     expect(onDictationStop).toHaveBeenCalled();
   });
 
+  it("calls onDictationStop on mouseUp even when recording is false (start in-flight)", () => {
+    mockDictationState.enabled = true;
+    mockDictationState.recording = false; // start hasn't resolved yet
+    const onDictationStop = vi.fn();
+    const { container } = render(() => (
+      <StatusBar {...defaultProps} onDictationStop={onDictationStop} />
+    ));
+    const micBtn = findToggleByTitle(container, "Voice Dictation")!;
+    fireEvent.mouseUp(micBtn, { button: 0 });
+    expect(onDictationStop).toHaveBeenCalled();
+  });
+
   it("calls onDictationStop on mouseLeave when recording", () => {
     mockDictationState.enabled = true;
     mockDictationState.recording = true;
+    const onDictationStop = vi.fn();
+    const { container } = render(() => (
+      <StatusBar {...defaultProps} onDictationStop={onDictationStop} />
+    ));
+    const micBtn = findToggleByTitle(container, "Voice Dictation")!;
+    fireEvent.mouseLeave(micBtn);
+    expect(onDictationStop).toHaveBeenCalled();
+  });
+
+  it("calls onDictationStop on mouseLeave when loading (start in-flight)", () => {
+    mockDictationState.enabled = true;
+    mockDictationState.recording = false;
+    mockDictationState.loading = true;
     const onDictationStop = vi.fn();
     const { container } = render(() => (
       <StatusBar {...defaultProps} onDictationStop={onDictationStop} />
