@@ -175,6 +175,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Opens in main tab area when clicking a file in file browser
 - Syntax highlighting auto-detected from extension (disabled for files > 500 KB)
 - Line numbers, bracket matching, active line highlight, Tab-to-indent
+- Find/Replace: `Cmd+F` (find), `Cmd+G` / `Cmd+Shift+G` (next/prev), `Cmd+H` (replace), selection match highlighting
 - Save: `Cmd+S` (when editor tab is focused)
 - Read-only toggle: padlock icon in editor header
 - Unsaved changes: dot indicator in tab bar and header
@@ -444,12 +445,20 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Individual dismiss or dismiss all
 - Click to open PR detail popover
 
-### 8.5 Polling
+### 8.5 Auto-Delete Branch on PR Close
+- Per-repo setting: Off (default) / Ask / Auto
+- Triggered when GitHub polling detects PR merged or closed transition
+- If branch has a linked worktree, removes worktree first then deletes branch
+- Safety: never deletes default/main branch; dirty worktrees always escalate to ask mode
+- Uses safe `git branch -d` (refuses unmerged branches)
+- Deduplication prevents double-firing on the same PR
+
+### 8.6 Polling
 - Active window: every 30 seconds
 - Hidden window: every 2 minutes
 - API budget: ~2 calls/min/repo
 
-### 8.6 Token Resolution
+### 8.7 Token Resolution
 - `gh_token` crate with empty-string bug workaround
 - Fallback to `gh auth token` CLI
 
@@ -694,6 +703,10 @@ All data persisted to platform config directory via Rust:
 ### Code Editor (when focused)
 | Shortcut | Action |
 |----------|--------|
+| `Cmd+F` | Find |
+| `Cmd+G` | Find next |
+| `Cmd+Shift+G` | Find previous |
+| `Cmd+H` | Find and replace |
 | `Cmd+S` | Save file |
 
 ### Ideas Panel (when textarea focused)

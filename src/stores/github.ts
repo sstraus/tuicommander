@@ -44,6 +44,9 @@ function createGitHubStore() {
   /** Pending per-repo immediate polls (debounced to 2s to coalesce rapid git events) */
   const pendingRepoPollTimers = new Map<string, number>();
 
+  /** Callback fired when a PR reaches a terminal state (merged/closed) */
+  let prTerminalCallback: ((repoPath: string, branch: string, prNumber: number, type: "merged" | "closed") => void) | null = null;
+
   /** Detect significant PR state transitions and emit notifications */
   function detectTransitions(repoPath: string, oldPr: BranchPrStatus, newPr: BranchPrStatus): void {
     const oldState = oldPr.state?.toUpperCase();
@@ -88,6 +91,11 @@ function createGitHubStore() {
         title: newPr.title,
         type,
       });
+
+      // Fire terminal state callback for auto-delete logic
+      if ((type === "merged" || type === "closed") && prTerminalCallback) {
+        prTerminalCallback(repoPath, newPr.branch, newPr.number, type);
+      }
     }
   }
 
@@ -385,6 +393,10 @@ function createGitHubStore() {
     pollRepo,
     startPolling,
     stopPolling,
+    /** Register a callback for PR terminal state transitions (merged/closed) */
+    setOnPrTerminal(cb: ((repoPath: string, branch: string, prNumber: number, type: "merged" | "closed") => void) | null): void {
+      prTerminalCallback = cb;
+    },
   };
 }
 

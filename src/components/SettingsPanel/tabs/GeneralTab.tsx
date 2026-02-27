@@ -4,7 +4,7 @@ import { appLogger } from "../../../stores/appLogger";
 import { repoDefaultsStore } from "../../../stores/repoDefaults";
 import { updaterStore } from "../../../stores/updater";
 import type { IdeType, UpdateChannel } from "../../../stores/settings";
-import type { WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge } from "../../../stores/repoDefaults";
+import type { WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge, AutoDeleteOnPrClose } from "../../../stores/repoDefaults";
 import { t } from "../../../i18n";
 import s from "../Settings.module.css";
 
@@ -312,6 +312,34 @@ export const GeneralTab: Component = () => {
           <option value="ask">{t("general.afterMerge.ask", "Ask each time")}</option>
         </select>
         <p class={s.hint}>{t("general.hint.afterMerge", "What to do with the worktree after merging its branch")}</p>
+      </div>
+
+      <div class={s.group}>
+        <label>{t("general.label.autoFetchInterval", "Auto-Fetch Interval")}</label>
+        <select
+          value={String(repoDefaultsStore.state.autoFetchIntervalMinutes)}
+          onChange={(e) => repoDefaultsStore.setAutoFetchIntervalMinutes(Number(e.currentTarget.value))}
+        >
+          <option value="0">{t("general.autoFetch.disabled", "Disabled")}</option>
+          <option value="5">{t("general.autoFetch.5min", "5 minutes")}</option>
+          <option value="15">{t("general.autoFetch.15min", "15 minutes")}</option>
+          <option value="30">{t("general.autoFetch.30min", "30 minutes")}</option>
+          <option value="60">{t("general.autoFetch.60min", "60 minutes")}</option>
+        </select>
+        <p class={s.hint}>{t("general.hint.autoFetchInterval", "Periodically fetch from remote to detect upstream changes")}</p>
+      </div>
+
+      <div class={s.group}>
+        <label>{t("general.label.autoDeleteOnPrClose", "Auto-Delete on PR Close")}</label>
+        <select
+          value={repoDefaultsStore.state.autoDeleteOnPrClose}
+          onChange={(e) => repoDefaultsStore.setAutoDeleteOnPrClose(e.currentTarget.value as AutoDeleteOnPrClose)}
+        >
+          <option value="off">{t("general.autoDelete.off", "Off")}</option>
+          <option value="ask">{t("general.autoDelete.ask", "Ask before deleting")}</option>
+          <option value="auto">{t("general.autoDelete.auto", "Auto-delete silently")}</option>
+        </select>
+        <p class={s.hint}>{t("general.hint.autoDeleteOnPrClose", "Delete local branch when its PR is merged or closed on GitHub")}</p>
       </div>
 
     </div>

@@ -708,6 +708,8 @@ pub fn run() {
             agent::detect_lazygit_binary,
             agent::spawn_agent,
             worktree::remove_worktree,
+            worktree::check_worktree_dirty,
+            worktree::delete_local_branch,
             agent::detect_installed_ides,
             worktree::create_worktree,
             git::rename_branch,

@@ -381,6 +381,99 @@ pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String
     Ok(())
 }
 
+/// Check whether a branch's working directory has uncommitted changes.
+///
+/// If the branch has a linked worktree, runs `git status --porcelain` in that directory.
+/// If no worktree exists (bare local ref), returns `false` — there's nothing to be dirty.
+#[tauri::command]
+pub(crate) fn check_worktree_dirty(repo_path: String, branch_name: String) -> Result<bool, String> {
+    let base_repo = PathBuf::from(&repo_path);
+
+    let output = Command::new(crate::agent::resolve_cli("git"))
+        .current_dir(&base_repo)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .map_err(|e| format!("Failed to list worktrees: {e}"))?;
+
+    if !output.status.success() {
+        return Ok(false);
+    }
+
+    let worktree_list = String::from_utf8_lossy(&output.stdout);
+    let wt_path = match find_worktree_path_for_branch(&worktree_list, &branch_name) {
+        Some(p) => p,
+        None => return Ok(false), // No worktree = not dirty
+    };
+
+    let status = Command::new(crate::agent::resolve_cli("git"))
+        .current_dir(&wt_path)
+        .args(["status", "--porcelain"])
+        .output()
+        .map_err(|e| format!("Failed to check status: {e}"))?;
+
+    if !status.status.success() {
+        return Ok(false);
+    }
+
+    let stdout = String::from_utf8_lossy(&status.stdout);
+    Ok(!stdout.trim().is_empty())
+}
+
+/// Delete a local branch, removing its worktree first if one exists.
+///
+/// Safety: refuses to delete the repository's default branch.
+/// Uses `git branch -d` (safe delete) which fails if the branch has unmerged commits.
+pub(crate) fn delete_local_branch_impl(repo_path: &str, branch_name: &str) -> Result<(), String> {
+    // Refuse to delete the default branch
+    let default_branch = get_remote_default_branch(repo_path).unwrap_or_else(|_| "main".to_string());
+    if branch_name == default_branch {
+        return Err(format!("Refusing to delete default branch '{branch_name}'"));
+    }
+
+    let base_repo = PathBuf::from(repo_path);
+
+    // Check if branch has a linked worktree
+    let output = Command::new(crate::agent::resolve_cli("git"))
+        .current_dir(&base_repo)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .map_err(|e| format!("Failed to list worktrees: {e}"))?;
+
+    let has_worktree = if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        find_worktree_path_for_branch(&stdout, branch_name).is_some()
+    } else {
+        false
+    };
+
+    if has_worktree {
+        // Remove worktree + branch in one go
+        remove_worktree_by_branch(repo_path, branch_name, true)?;
+    } else {
+        // Just delete the branch ref
+        let result = Command::new(crate::agent::resolve_cli("git"))
+            .current_dir(&base_repo)
+            .args(["branch", "-d", branch_name])
+            .output()
+            .map_err(|e| format!("git branch -d failed to spawn: {e}"))?;
+
+        if !result.status.success() {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            return Err(format!("git branch -d {branch_name} failed: {stderr}"));
+        }
+    }
+
+    Ok(())
+}
+
+/// Tauri command: delete a local branch (and its worktree if linked).
+#[tauri::command]
+pub(crate) fn delete_local_branch(state: State<'_, Arc<AppState>>, repo_path: String, branch_name: String) -> Result<(), String> {
+    delete_local_branch_impl(&repo_path, &branch_name)?;
+    state.invalidate_repo_caches(&repo_path);
+    Ok(())
+}
+
 /// Get worktree paths for a repo: maps branch name -> worktree directory
 #[tauri::command]
 pub(crate) fn get_worktree_paths(repo_path: String) -> Result<HashMap<String, String>, String> {
@@ -1364,5 +1457,128 @@ branch refs/heads/feat
 ";
         let orphans = super::parse_orphan_worktrees(porcelain);
         assert!(orphans.is_empty());
+    }
+
+    #[test]
+    fn delete_local_branch_removes_bare_branch() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+
+        // Create a branch from current HEAD
+        Command::new(crate::agent::resolve_cli("git"))
+            .current_dir(repo.path())
+            .args(["branch", "feat-to-delete"])
+            .output()
+            .expect("Failed to create branch");
+
+        // Verify it exists
+        let branches = list_local_branches(repo_path.clone()).unwrap();
+        assert!(branches.contains(&"feat-to-delete".to_string()));
+
+        // Delete it
+        let result = delete_local_branch_impl(&repo_path, "feat-to-delete");
+        assert!(result.is_ok(), "delete_local_branch_impl failed: {:?}", result);
+
+        // Verify it's gone
+        let branches = list_local_branches(repo_path).unwrap();
+        assert!(!branches.contains(&"feat-to-delete".to_string()));
+    }
+
+    #[test]
+    fn delete_local_branch_refuses_default_branch() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+
+        let default_branch = get_remote_default_branch(&repo_path).unwrap();
+        let result = delete_local_branch_impl(&repo_path, &default_branch);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Refusing to delete default branch"));
+    }
+
+    #[test]
+    fn delete_local_branch_with_worktree() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        // Create a worktree with a new branch
+        let config = WorktreeConfig {
+            task_name: "wt-to-delete".to_string(),
+            base_repo: repo_path.clone(),
+            branch: None,
+            create_branch: false,
+        };
+        let wt = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Failed to create worktree");
+
+        // Verify worktree exists
+        assert!(wt.path.exists());
+
+        // Delete via delete_local_branch_impl
+        let result = delete_local_branch_impl(&repo_path, &wt.name);
+        assert!(result.is_ok(), "delete_local_branch_impl failed: {:?}", result);
+
+        // Worktree directory should be removed
+        assert!(!wt.path.exists(), "Worktree directory should be gone");
+    }
+
+    #[test]
+    fn check_worktree_dirty_clean_worktree() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        let config = WorktreeConfig {
+            task_name: "clean-wt".to_string(),
+            base_repo: repo_path.clone(),
+            branch: None,
+            create_branch: false,
+        };
+        let wt = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Failed to create worktree");
+
+        let dirty = check_worktree_dirty(repo_path, wt.name);
+        assert!(dirty.is_ok());
+        assert!(!dirty.unwrap(), "Clean worktree should not be dirty");
+    }
+
+    #[test]
+    fn check_worktree_dirty_with_uncommitted_changes() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        let config = WorktreeConfig {
+            task_name: "dirty-wt".to_string(),
+            base_repo: repo_path.clone(),
+            branch: None,
+            create_branch: false,
+        };
+        let wt = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Failed to create worktree");
+
+        // Add an uncommitted file in the worktree
+        fs::write(wt.path.join("dirty.txt"), "uncommitted").expect("Failed to write dirty file");
+
+        let dirty = check_worktree_dirty(repo_path, wt.name);
+        assert!(dirty.is_ok());
+        assert!(dirty.unwrap(), "Worktree with uncommitted changes should be dirty");
+    }
+
+    #[test]
+    fn check_worktree_dirty_no_worktree() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+
+        // Create a branch without a worktree
+        Command::new(crate::agent::resolve_cli("git"))
+            .current_dir(repo.path())
+            .args(["branch", "bare-branch"])
+            .output()
+            .expect("Failed to create branch");
+
+        let dirty = check_worktree_dirty(repo_path, "bare-branch".to_string());
+        assert!(dirty.is_ok());
+        assert!(!dirty.unwrap(), "Branch without worktree should not be dirty");
     }
 }

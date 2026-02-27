@@ -455,6 +455,42 @@ describe("githubStore", () => {
         dispose();
       });
     });
+
+    it("fires prTerminal callback on merged transition", () => {
+      createRoot((dispose) => {
+        const cb = vi.fn();
+        store.setOnPrTerminal(cb);
+        transition({ state: "OPEN" }, { state: "MERGED" });
+        expect(cb).toHaveBeenCalledWith("/repo1", "feature/x", 42, "merged");
+        store.setOnPrTerminal(null);
+        dispose();
+      });
+    });
+
+    it("fires prTerminal callback on closed transition", () => {
+      createRoot((dispose) => {
+        const cb = vi.fn();
+        store.setOnPrTerminal(cb);
+        transition({ state: "OPEN" }, { state: "CLOSED" });
+        expect(cb).toHaveBeenCalledWith("/repo1", "feature/x", 42, "closed");
+        store.setOnPrTerminal(null);
+        dispose();
+      });
+    });
+
+    it("does NOT fire prTerminal callback on non-terminal transitions", () => {
+      createRoot((dispose) => {
+        const cb = vi.fn();
+        store.setOnPrTerminal(cb);
+        transition(
+          { state: "OPEN", mergeable: "MERGEABLE" },
+          { state: "OPEN", mergeable: "CONFLICTING" },
+        );
+        expect(cb).not.toHaveBeenCalled();
+        store.setOnPrTerminal(null);
+        dispose();
+      });
+    });
   });
 
   describe("polling", () => {

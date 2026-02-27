@@ -1,6 +1,6 @@
 import { Component, For, Show } from "solid-js";
 import type { RepoSettings } from "../../../stores/repoSettings";
-import type { RepoDefaults, WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge } from "../../../stores/repoDefaults";
+import type { RepoDefaults, WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge, AutoDeleteOnPrClose } from "../../../stores/repoDefaults";
 import { PRESET_COLORS } from "./AppearanceTab";
 import { isMacOS } from "../../../platform";
 import { t } from "../../../i18n";
@@ -275,6 +275,22 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
           <option value="delete">{t("repoWorktree.afterMerge.delete", "Delete worktree")}</option>
           <option value="ask">{t("repoWorktree.afterMerge.ask", "Ask each time")}</option>
         </select>
+      </div>
+
+      <div class={s.group}>
+        <label>{t("repoWorktree.label.autoDeleteOnPrClose", "Auto-Delete on PR Close")}</label>
+        <select
+          value={props.settings.autoDeleteOnPrClose ?? INHERIT}
+          onChange={(e) => props.onUpdate("autoDeleteOnPrClose", e.currentTarget.value === INHERIT ? null : e.currentTarget.value as AutoDeleteOnPrClose)}
+        >
+          <option value={INHERIT}>
+            {t("repoWorktree.autoDelete.useDefault", "Use global default ({default})", { default: props.defaults.autoDeleteOnPrClose })}
+          </option>
+          <option value="off">{t("repoWorktree.autoDelete.off", "Off")}</option>
+          <option value="ask">{t("repoWorktree.autoDelete.ask", "Ask before deleting")}</option>
+          <option value="auto">{t("repoWorktree.autoDelete.auto", "Auto-delete silently")}</option>
+        </select>
+        <p class={s.hint}>{t("repoWorktree.hint.autoDelete", "Delete local branch when its PR is merged or closed")}</p>
       </div>
 
       <Show when={isMacOS()}>

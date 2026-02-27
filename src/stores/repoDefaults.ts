@@ -14,6 +14,9 @@ export type MergeStrategy = "merge" | "squash" | "rebase";
 /** Post-merge worktree behavior — mirrors Rust WorktreeAfterMerge enum */
 export type WorktreeAfterMerge = "archive" | "delete" | "ask";
 
+/** Auto-delete local branch when PR is merged/closed — mirrors Rust AutoDeleteOnPrClose enum */
+export type AutoDeleteOnPrClose = "off" | "ask" | "auto";
+
 /** Global defaults applied to all repos unless overridden per-repo */
 export interface RepoDefaults {
   baseBranch: string;
@@ -29,6 +32,7 @@ export interface RepoDefaults {
   prMergeStrategy: MergeStrategy;
   afterMerge: WorktreeAfterMerge;
   autoFetchIntervalMinutes: number;
+  autoDeleteOnPrClose: AutoDeleteOnPrClose;
 }
 
 const INITIAL_DEFAULTS: RepoDefaults = {
@@ -45,6 +49,7 @@ const INITIAL_DEFAULTS: RepoDefaults = {
   prMergeStrategy: "merge",
   afterMerge: "archive",
   autoFetchIntervalMinutes: 0,
+  autoDeleteOnPrClose: "off",
 };
 
 function createRepoDefaultsStore() {
@@ -66,6 +71,7 @@ function createRepoDefaultsStore() {
         pr_merge_strategy: state.prMergeStrategy,
         after_merge: state.afterMerge,
         auto_fetch_interval_minutes: state.autoFetchIntervalMinutes,
+        auto_delete_on_pr_close: state.autoDeleteOnPrClose,
       },
     }).catch((err) => appLogger.error("config", "Failed to save repo defaults", err));
   }
@@ -89,6 +95,7 @@ function createRepoDefaultsStore() {
           pr_merge_strategy?: MergeStrategy;
           after_merge?: WorktreeAfterMerge;
           auto_fetch_interval_minutes?: number;
+          auto_delete_on_pr_close?: AutoDeleteOnPrClose;
         } | null>("load_repo_defaults");
         if (loaded) {
           setState({
@@ -105,6 +112,7 @@ function createRepoDefaultsStore() {
             prMergeStrategy: loaded.pr_merge_strategy ?? INITIAL_DEFAULTS.prMergeStrategy,
             afterMerge: loaded.after_merge ?? INITIAL_DEFAULTS.afterMerge,
             autoFetchIntervalMinutes: loaded.auto_fetch_interval_minutes ?? INITIAL_DEFAULTS.autoFetchIntervalMinutes,
+            autoDeleteOnPrClose: loaded.auto_delete_on_pr_close ?? INITIAL_DEFAULTS.autoDeleteOnPrClose,
           });
         }
       } catch (err) {
@@ -174,6 +182,11 @@ function createRepoDefaultsStore() {
 
     setAutoFetchIntervalMinutes(value: number): void {
       setState("autoFetchIntervalMinutes", value);
+      save();
+    },
+
+    setAutoDeleteOnPrClose(value: AutoDeleteOnPrClose): void {
+      setState("autoDeleteOnPrClose", value);
       save();
     },
   };

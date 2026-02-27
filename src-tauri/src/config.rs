@@ -219,6 +219,16 @@ pub(crate) enum WorktreeAfterMerge {
     Ask,
 }
 
+/// Auto-delete local branch when PR is merged/closed
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum AutoDeleteOnPrClose {
+    #[default]
+    Off,
+    Ask,
+    Auto,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct AppConfig {
     pub(crate) shell: Option<String>,
@@ -506,6 +516,9 @@ pub(crate) struct RepoSettingsEntry {
     /// Auto-fetch interval in minutes (0 or None = disabled)
     #[serde(default)]
     pub(crate) auto_fetch_interval_minutes: Option<u32>,
+    /// Auto-delete local branch when PR is merged/closed
+    #[serde(default)]
+    pub(crate) auto_delete_on_pr_close: Option<AutoDeleteOnPrClose>,
 }
 
 impl RepoSettingsEntry {
@@ -525,6 +538,7 @@ impl RepoSettingsEntry {
             || self.pr_merge_strategy.is_some()
             || self.after_merge.is_some()
             || self.auto_fetch_interval_minutes.is_some()
+            || self.auto_delete_on_pr_close.is_some()
     }
 }
 
@@ -559,6 +573,9 @@ pub(crate) struct RepoDefaultsConfig {
     /// Auto-fetch interval in minutes (0 = disabled)
     #[serde(default)]
     pub(crate) auto_fetch_interval_minutes: u32,
+    /// Auto-delete local branch when PR is merged/closed
+    #[serde(default)]
+    pub(crate) auto_delete_on_pr_close: AutoDeleteOnPrClose,
 }
 
 impl Default for RepoDefaultsConfig {
@@ -577,6 +594,7 @@ impl Default for RepoDefaultsConfig {
             pr_merge_strategy: MergeStrategy::default(),
             after_merge: WorktreeAfterMerge::default(),
             auto_fetch_interval_minutes: 0,
+            auto_delete_on_pr_close: AutoDeleteOnPrClose::default(),
         }
     }
 }
@@ -961,6 +979,8 @@ mod tests {
                 orphan_cleanup: None,
                 pr_merge_strategy: None,
                 after_merge: None,
+                auto_fetch_interval_minutes: None,
+                auto_delete_on_pr_close: None,
             },
         );
         let loaded: RepoSettingsMap =
@@ -1210,6 +1230,9 @@ mod tests {
         assert_eq!(serde_json::to_string(&MergeStrategy::Squash).unwrap(), r#""squash""#);
         assert_eq!(serde_json::to_string(&WorktreeAfterMerge::Archive).unwrap(), r#""archive""#);
         assert_eq!(serde_json::to_string(&WorktreeAfterMerge::Delete).unwrap(), r#""delete""#);
+        assert_eq!(serde_json::to_string(&AutoDeleteOnPrClose::Off).unwrap(), r#""off""#);
+        assert_eq!(serde_json::to_string(&AutoDeleteOnPrClose::Ask).unwrap(), r#""ask""#);
+        assert_eq!(serde_json::to_string(&AutoDeleteOnPrClose::Auto).unwrap(), r#""auto""#);
     }
 
     #[test]
@@ -1220,6 +1243,9 @@ mod tests {
         assert_eq!(serde_json::from_str::<OrphanCleanup>(r#""ask""#).unwrap(), OrphanCleanup::Ask);
         assert_eq!(serde_json::from_str::<MergeStrategy>(r#""rebase""#).unwrap(), MergeStrategy::Rebase);
         assert_eq!(serde_json::from_str::<WorktreeAfterMerge>(r#""ask""#).unwrap(), WorktreeAfterMerge::Ask);
+        assert_eq!(serde_json::from_str::<AutoDeleteOnPrClose>(r#""off""#).unwrap(), AutoDeleteOnPrClose::Off);
+        assert_eq!(serde_json::from_str::<AutoDeleteOnPrClose>(r#""ask""#).unwrap(), AutoDeleteOnPrClose::Ask);
+        assert_eq!(serde_json::from_str::<AutoDeleteOnPrClose>(r#""auto""#).unwrap(), AutoDeleteOnPrClose::Auto);
     }
 
     #[test]
@@ -1233,6 +1259,7 @@ mod tests {
             orphan_cleanup: OrphanCleanup::On,
             pr_merge_strategy: MergeStrategy::Squash,
             after_merge: WorktreeAfterMerge::Delete,
+            auto_delete_on_pr_close: AutoDeleteOnPrClose::Auto,
             ..RepoDefaultsConfig::default()
         };
         let loaded: RepoDefaultsConfig = round_trip_in_dir(dir.path(), "repo-defaults.json", &cfg);
@@ -1243,6 +1270,7 @@ mod tests {
         assert_eq!(loaded.orphan_cleanup, OrphanCleanup::On);
         assert_eq!(loaded.pr_merge_strategy, MergeStrategy::Squash);
         assert_eq!(loaded.after_merge, WorktreeAfterMerge::Delete);
+        assert_eq!(loaded.auto_delete_on_pr_close, AutoDeleteOnPrClose::Auto);
     }
 
     #[test]
@@ -1257,6 +1285,7 @@ mod tests {
         assert_eq!(loaded.orphan_cleanup, OrphanCleanup::Ask);
         assert_eq!(loaded.pr_merge_strategy, MergeStrategy::Merge);
         assert_eq!(loaded.after_merge, WorktreeAfterMerge::Archive);
+        assert_eq!(loaded.auto_delete_on_pr_close, AutoDeleteOnPrClose::Off);
     }
 
     #[test]
@@ -1274,6 +1303,7 @@ mod tests {
                 orphan_cleanup: Some(OrphanCleanup::Off),
                 pr_merge_strategy: Some(MergeStrategy::Rebase),
                 after_merge: Some(WorktreeAfterMerge::Ask),
+                auto_delete_on_pr_close: Some(AutoDeleteOnPrClose::Ask),
                 ..RepoSettingsEntry::default()
             },
         );
@@ -1286,6 +1316,7 @@ mod tests {
         assert_eq!(entry.orphan_cleanup, Some(OrphanCleanup::Off));
         assert_eq!(entry.pr_merge_strategy, Some(MergeStrategy::Rebase));
         assert_eq!(entry.after_merge, Some(WorktreeAfterMerge::Ask));
+        assert_eq!(entry.auto_delete_on_pr_close, Some(AutoDeleteOnPrClose::Ask));
     }
 
     #[test]

@@ -111,6 +111,22 @@ Polling starts automatically when a repository with a GitHub remote is active.
 | CHANGES_REQUESTED | Changes requested |
 | REVIEW_REQUIRED | Review required |
 
+## Auto-Delete Branch on PR Close
+
+When a PR is merged or closed on GitHub, TUICommander can automatically clean up the corresponding local branch. Configure per-repo in **Settings > Repository Settings** or set a global default in **Settings > General > Repository Defaults**.
+
+| Mode | Behavior |
+|------|----------|
+| **Off** (default) | No action taken |
+| **Ask** | Shows a confirmation dialog before deleting |
+| **Auto** | Deletes silently; falls back to Ask if worktree has uncommitted changes |
+
+**Safety guarantees:**
+- The default/main branch is never deleted
+- If a branch has a linked worktree, the worktree is removed first
+- Uses safe `git branch -d` — refuses to delete branches with unmerged commits
+- Dirty worktrees (uncommitted changes) always escalate to Ask mode, even when set to Auto
+
 ## Troubleshooting
 
 **No PR data showing:**

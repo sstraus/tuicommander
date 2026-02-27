@@ -150,6 +150,7 @@ describe("repoDefaultsStore", () => {
             pr_merge_strategy: "merge",
             after_merge: "archive",
             auto_fetch_interval_minutes: 0,
+            auto_delete_on_pr_close: "off",
           },
         });
         dispose();

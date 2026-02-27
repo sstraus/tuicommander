@@ -2,7 +2,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "../invoke";
 import { appLogger } from "./appLogger";
 import { repoDefaultsStore } from "./repoDefaults";
-import type { WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge } from "./repoDefaults";
+import type { WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge, AutoDeleteOnPrClose } from "./repoDefaults";
 
 /** Per-repository settings — overridable fields are nullable (null = inherit from global defaults) */
 export interface RepoSettings {
@@ -37,6 +37,8 @@ export interface RepoSettings {
   afterMerge: WorktreeAfterMerge | null;
   /** Auto-fetch interval in minutes (null = inherit, 0 = disabled) */
   autoFetchIntervalMinutes: number | null;
+  /** Auto-delete local branch on PR merge/close (null = inherit, off/ask/auto) */
+  autoDeleteOnPrClose: AutoDeleteOnPrClose | null;
 }
 
 /** Fully resolved settings with no nulls — use getEffective() to obtain */
@@ -58,6 +60,7 @@ export interface EffectiveRepoSettings {
   prMergeStrategy: MergeStrategy;
   afterMerge: WorktreeAfterMerge;
   autoFetchIntervalMinutes: number;
+  autoDeleteOnPrClose: AutoDeleteOnPrClose;
 }
 
 /** Fields that can be overridden per-repo (all others are repo-specific) */
@@ -67,6 +70,7 @@ const OVERRIDABLE_NULL_DEFAULTS: Pick<
   | "terminalMetaHotkeys" | "worktreeStorage" | "promptOnCreate" | "deleteBranchOnRemove"
   | "autoArchiveMerged" | "orphanCleanup" | "prMergeStrategy" | "afterMerge"
   | "autoFetchIntervalMinutes"
+  | "autoDeleteOnPrClose"
 > = {
   baseBranch: null,
   copyIgnoredFiles: null,
@@ -82,6 +86,7 @@ const OVERRIDABLE_NULL_DEFAULTS: Pick<
   prMergeStrategy: null,
   afterMerge: null,
   autoFetchIntervalMinutes: null,
+  autoDeleteOnPrClose: null,
 };
 
 /** Repository settings store state */
@@ -95,7 +100,7 @@ const LEGACY_STORAGE_KEY = "tui-commander-repo-settings";
 /** Persist settings to Rust backend (fire-and-forget) */
 function saveSettings(settings: Record<string, RepoSettings>): void {
   invoke("save_repo_settings", { config: { repos: settings } }).catch((err) =>
-    appLogger.debug("config", "Failed to save repo settings", err),
+    appLogger.error("config", "Failed to save repo settings", err),
   );
 }
 
@@ -177,6 +182,7 @@ function createRepoSettingsStore() {
         prMergeStrategy: settings.prMergeStrategy ?? defaults.prMergeStrategy,
         afterMerge: settings.afterMerge ?? defaults.afterMerge,
         autoFetchIntervalMinutes: settings.autoFetchIntervalMinutes ?? defaults.autoFetchIntervalMinutes,
+        autoDeleteOnPrClose: settings.autoDeleteOnPrClose ?? defaults.autoDeleteOnPrClose,
       };
     },
 

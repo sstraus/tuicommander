@@ -8,12 +8,16 @@ const {
   mockSetCopyUntrackedFiles,
   mockSetSetupScript,
   mockSetRunScript,
+  mockSetAutoFetchIntervalMinutes,
+  mockSetAutoDeleteOnPrClose,
 } = vi.hoisted(() => ({
   mockSetBaseBranch: vi.fn(),
   mockSetCopyIgnoredFiles: vi.fn(),
   mockSetCopyUntrackedFiles: vi.fn(),
   mockSetSetupScript: vi.fn(),
   mockSetRunScript: vi.fn(),
+  mockSetAutoFetchIntervalMinutes: vi.fn(),
+  mockSetAutoDeleteOnPrClose: vi.fn(),
 }));
 
 vi.mock("../../../stores/settings", () => ({
@@ -66,12 +70,30 @@ vi.mock("../../../stores/repoDefaults", () => ({
       copyUntrackedFiles: false,
       setupScript: "",
       runScript: "",
+      worktreeStorage: "sibling",
+      promptOnCreate: true,
+      deleteBranchOnRemove: true,
+      autoArchiveMerged: false,
+      orphanCleanup: "ask",
+      prMergeStrategy: "merge",
+      afterMerge: "archive",
+      autoFetchIntervalMinutes: 0,
+      autoDeleteOnPrClose: "off",
     },
     setBaseBranch: mockSetBaseBranch,
     setCopyIgnoredFiles: mockSetCopyIgnoredFiles,
     setCopyUntrackedFiles: mockSetCopyUntrackedFiles,
     setSetupScript: mockSetSetupScript,
     setRunScript: mockSetRunScript,
+    setWorktreeStorage: vi.fn(),
+    setPromptOnCreate: vi.fn(),
+    setDeleteBranchOnRemove: vi.fn(),
+    setAutoArchiveMerged: vi.fn(),
+    setOrphanCleanup: vi.fn(),
+    setPrMergeStrategy: vi.fn(),
+    setAfterMerge: vi.fn(),
+    setAutoFetchIntervalMinutes: mockSetAutoFetchIntervalMinutes,
+    setAutoDeleteOnPrClose: mockSetAutoDeleteOnPrClose,
   },
 }));
 
@@ -144,5 +166,45 @@ describe("GeneralTab — Repository Defaults section", () => {
     const textareas = container.querySelectorAll("textarea");
     fireEvent.input(textareas[0], { target: { value: "npm install" } });
     expect(mockSetSetupScript).toHaveBeenCalledWith("npm install");
+  });
+
+  it("renders auto-fetch interval dropdown with Disabled selected", () => {
+    const { container } = render(() => <GeneralTab />);
+    const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
+    const fetchSelect = selects.find(s =>
+      Array.from(s.options).some(o => o.text === "Disabled")
+    );
+    expect(fetchSelect).toBeDefined();
+    expect(fetchSelect!.value).toBe("0");
+  });
+
+  it("calls setAutoFetchIntervalMinutes when auto-fetch dropdown changes", () => {
+    const { container } = render(() => <GeneralTab />);
+    const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
+    const fetchSelect = selects.find(s =>
+      Array.from(s.options).some(o => o.text === "Disabled")
+    )!;
+    fireEvent.change(fetchSelect, { target: { value: "15" } });
+    expect(mockSetAutoFetchIntervalMinutes).toHaveBeenCalledWith(15);
+  });
+
+  it("renders auto-delete on PR close dropdown with Off selected", () => {
+    const { container } = render(() => <GeneralTab />);
+    const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
+    const deleteSelect = selects.find(s =>
+      Array.from(s.options).some(o => o.text === "Ask before deleting")
+    );
+    expect(deleteSelect).toBeDefined();
+    expect(deleteSelect!.value).toBe("off");
+  });
+
+  it("calls setAutoDeleteOnPrClose when auto-delete dropdown changes", () => {
+    const { container } = render(() => <GeneralTab />);
+    const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
+    const deleteSelect = selects.find(s =>
+      Array.from(s.options).some(o => o.text === "Ask before deleting")
+    )!;
+    fireEvent.change(deleteSelect, { target: { value: "ask" } });
+    expect(mockSetAutoDeleteOnPrClose).toHaveBeenCalledWith("ask");
   });
 });

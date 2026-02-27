@@ -97,6 +97,7 @@ describe("SettingsPanel — repo context", () => {
       prMergeStrategy: null,
       afterMerge: null,
       autoFetchIntervalMinutes: null,
+      autoDeleteOnPrClose: null,
     };
     vi.mocked(repoSettingsStore.getOrCreate).mockReturnValue(mockSettings);
   });
