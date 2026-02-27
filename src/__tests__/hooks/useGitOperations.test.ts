@@ -30,6 +30,7 @@ describe("useGitOperations", () => {
     generateCloneBranchName: vi.fn().mockResolvedValue("feat-auth--bold-nexus-042"),
     listBaseRefOptions: vi.fn().mockResolvedValue(["main"]),
     mergeAndArchiveWorktree: vi.fn().mockResolvedValue({ merged: true, action: "archived", archive_path: null }),
+    finalizeMergedWorktree: vi.fn().mockResolvedValue({ merged: true, action: "archived", archive_path: null }),
     listLocalBranches: vi.fn().mockResolvedValue(["main"]),
     getMergedBranches: vi.fn().mockResolvedValue(["main"]),
     switchBranch: vi.fn().mockResolvedValue({ success: true, stashed: false, previous_branch: "main", new_branch: "feature" }),
@@ -493,6 +494,81 @@ describe("useGitOperations", () => {
       expect(newBranch?.terminals.length).toBe(2);
       const oldBranch = repositoriesStore.get("/repo")?.branches["old-branch"];
       expect(oldBranch?.terminals.length).toBe(0);
+    });
+  });
+
+  describe("handleMergeAndArchive", () => {
+    it("removes branch from sidebar when action is archive", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
+      repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "feature/x");
+      mockRepo.mergeAndArchiveWorktree.mockResolvedValue({ merged: true, action: "archived", archive_path: "/archived/feature-x" });
+
+      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "archive");
+
+      expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeUndefined();
+      expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("archived"));
+    });
+
+    it("sets mergePendingCtx when action is pending (ask mode)", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
+      repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
+      mockRepo.mergeAndArchiveWorktree.mockResolvedValue({ merged: true, action: "pending", archive_path: null });
+
+      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "ask");
+
+      // Branch stays in sidebar — user must choose
+      expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeDefined();
+      // Dialog context is populated
+      expect(gitOps.mergePendingCtx()).toEqual({ repoPath: "/repo", branchName: "feature/x" });
+    });
+
+    it("archives worktree and removes branch when user chooses archive in pending dialog", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
+      repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
+      mockRepo.mergeAndArchiveWorktree.mockResolvedValue({ merged: true, action: "pending", archive_path: null });
+      mockRepo.finalizeMergedWorktree.mockResolvedValue({ merged: true, action: "archived", archive_path: "/archived/feature-x" });
+
+      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "ask");
+      await gitOps.handleMergePendingChoice("archive");
+
+      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/x", "archive");
+      expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeUndefined();
+      expect(gitOps.mergePendingCtx()).toBeNull();
+    });
+
+    it("deletes worktree and removes branch when user chooses delete in pending dialog", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
+      repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
+      mockRepo.mergeAndArchiveWorktree.mockResolvedValue({ merged: true, action: "pending", archive_path: null });
+      mockRepo.finalizeMergedWorktree.mockResolvedValue({ merged: true, action: "deleted", archive_path: null });
+
+      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "ask");
+      await gitOps.handleMergePendingChoice("delete");
+
+      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/x", "delete");
+      expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeUndefined();
+      expect(gitOps.mergePendingCtx()).toBeNull();
+    });
+
+    it("keeps worktree in sidebar when user cancels the pending dialog", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
+      repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
+      mockRepo.mergeAndArchiveWorktree.mockResolvedValue({ merged: true, action: "pending", archive_path: null });
+
+      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "ask");
+      await gitOps.handleMergePendingChoice("cancel");
+
+      expect(mockRepo.finalizeMergedWorktree).not.toHaveBeenCalled();
+      // Branch stays — worktree is kept as-is
+      expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeDefined();
+      expect(gitOps.mergePendingCtx()).toBeNull();
     });
   });
 
@@ -1045,6 +1121,26 @@ describe("useGitOperations", () => {
       errSpy.mockRestore();
 
       expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("Failed to add repo"));
+    });
+
+    it("creates exactly one terminal (no double-spawn from branch auto-spawn)", async () => {
+      vi.mocked(open).mockResolvedValue("/fresh-repo");
+      mockRepo.getInfo.mockResolvedValue({
+        path: "/fresh-repo",
+        name: "fresh-repo",
+        initials: "FR",
+        branch: "main",
+        status: "clean",
+      });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+      mockRepo.getWorktreePaths.mockResolvedValue({ main: "/fresh-repo" });
+
+      await gitOps.handleAddRepo();
+
+      const branch = repositoriesStore.get("/fresh-repo")?.branches["main"];
+      // Must create exactly 1 terminal — not 2 from double-spawn chain
+      expect(branch?.terminals.length).toBe(1);
+      expect(terminalsStore.state.activeId).toBe(branch?.terminals[0]);
     });
 
     it("closes orphan terminals when adding repo", async () => {

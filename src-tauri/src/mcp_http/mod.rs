@@ -162,6 +162,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/worktrees/dir", get(worktree_routes::get_worktrees_dir_http))
         .route("/worktrees/paths", get(worktree_routes::get_worktree_paths_http))
         .route("/worktrees/generate-name", post(worktree_routes::generate_worktree_name_http))
+        .route("/worktrees/finalize", post(worktree_routes::finalize_merged_worktree_http))
         .route("/worktrees/{branch}", delete(worktree_routes::remove_worktree_http))
         // File operations
         .route("/repo/file", get(git_routes::read_file_http))

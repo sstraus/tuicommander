@@ -1,0 +1,28 @@
+/* Three-button action row for MergePostActionDialog */
+.actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+}
+
+.actions button {
+  flex: 1;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.deleteBtn {
+  background: var(--error);
+  color: #fff;
+}
+
+.deleteBtn:hover {
+  opacity: 0.85;
+}

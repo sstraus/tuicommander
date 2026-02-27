@@ -111,3 +111,26 @@ pub(super) async fn list_local_branches_http(Query(q): Query<PathQuery>) -> Resp
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }
 }
+
+pub(super) async fn finalize_merged_worktree_http(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<FinalizeMergeRequest>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
+    let repo_path = body.repo_path.clone();
+    let base_repo = std::path::PathBuf::from(&repo_path);
+    let result = match body.action.as_str() {
+        "archive" => crate::worktree::archive_worktree(&base_repo, &body.branch_name)
+            .map(|ap| serde_json::json!({"merged": true, "action": "archived", "archive_path": ap})),
+        "delete" => crate::worktree::remove_worktree_by_branch(&repo_path, &body.branch_name, true)
+            .map(|_| serde_json::json!({"merged": true, "action": "deleted", "archive_path": null})),
+        other => Err(format!("Unknown action '{other}': expected 'archive' or 'delete'")),
+    };
+    match result {
+        Ok(json) => {
+            state.invalidate_repo_caches(&repo_path);
+            (StatusCode::OK, Json(json)).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+    }
+}

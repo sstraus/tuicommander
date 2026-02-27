@@ -156,6 +156,19 @@ export function useRepository() {
     });
   }
 
+  /** Finalize a pending merge by archiving or deleting the worktree */
+  async function finalizeMergedWorktree(
+    repoPath: string,
+    branchName: string,
+    action: "archive" | "delete",
+  ): Promise<MergeArchiveResult> {
+    return await invoke<MergeArchiveResult>("finalize_merged_worktree", {
+      repoPath,
+      branchName,
+      action,
+    });
+  }
+
   /** Recent commit entry */
   interface RecentCommit {
     hash: string;
@@ -234,6 +247,7 @@ export function useRepository() {
     generateCloneBranchName,
     listBaseRefOptions,
     mergeAndArchiveWorktree,
+    finalizeMergedWorktree,
     getMergedBranches,
     listLocalBranches,
     switchBranch,

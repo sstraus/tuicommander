@@ -25,6 +25,7 @@ import { RenameBranchDialog } from "./components/RenameBranchDialog";
 import { CreateWorktreeDialog } from "./components/CreateWorktreeDialog";
 import { PromptDialog } from "./components/PromptDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { MergePostActionDialog } from "./components/MergePostActionDialog";
 import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
 import { CommandPalette } from "./components/CommandPalette";
@@ -38,6 +39,7 @@ import { getActionEntries } from "./actions/actionRegistry";
 import { promptLibraryStore } from "./stores/promptLibrary";
 import { terminalsStore } from "./stores/terminals";
 import { repositoriesStore } from "./stores/repositories";
+import { pluginStore } from "./stores/pluginStore";
 import { mdTabsStore } from "./stores/mdTabs";
 import { diffTabsStore } from "./stores/diffTabs";
 import { uiStore } from "./stores/ui";
@@ -767,6 +769,19 @@ const App: Component = () => {
       execute: () => splitPanes.resetLayout(),
     });
 
+    // Dynamic: one entry per non-built-in plugin for enable/disable toggle
+    for (const plugin of pluginStore.state.plugins) {
+      if (plugin.builtIn) continue;
+      const name = plugin.manifest?.name ?? plugin.id;
+      entries.push({
+        id: `toggle-plugin:${plugin.id}`,
+        label: `${plugin.enabled ? "Disable" : "Enable"} plugin: ${name}`,
+        category: "Plugins",
+        keybinding: "",
+        execute: () => pluginStore.setEnabled(plugin.id, !plugin.enabled),
+      });
+    }
+
     return entries;
   });
 
@@ -1170,6 +1185,16 @@ const App: Component = () => {
         onClose={dialogs.handleClose}
         onConfirm={dialogs.handleConfirm}
       />
+
+      {/* Post-merge dialog — shown when afterMerge=ask and user must choose archive/delete/cancel */}
+      <Show when={gitOps.mergePendingCtx() !== null}>
+        <MergePostActionDialog
+          branchName={gitOps.mergePendingCtx()!.branchName}
+          onArchive={() => gitOps.handleMergePendingChoice("archive")}
+          onDelete={() => gitOps.handleMergePendingChoice("delete")}
+          onCancel={() => gitOps.handleMergePendingChoice("cancel")}
+        />
+      </Show>
 
       {/* Lazygit floating window (Story 051) */}
       <Show when={lazygit.lazygitFloating() && lazygit.lazygitPaneVisible() && lazygit.lazygitTermId()}>

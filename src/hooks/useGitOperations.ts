@@ -23,6 +23,7 @@ export interface GitOperationsDeps {
     generateCloneBranchName: (sourceBranch: string, existingNames: string[]) => Promise<string>;
     listBaseRefOptions: (repoPath: string) => Promise<string[]>;
     mergeAndArchiveWorktree: (repoPath: string, branchName: string, targetBranch: string, afterMerge: string) => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
+    finalizeMergedWorktree: (repoPath: string, branchName: string, action: "archive" | "delete") => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
     listLocalBranches: (repoPath: string) => Promise<string[]>;
     getMergedBranches: (repoPath: string) => Promise<string[]>;
     switchBranch: (repoPath: string, branchName: string, opts?: { force?: boolean; stash?: boolean }) => Promise<{ success: boolean; stashed: boolean; previous_branch: string; new_branch: string }>;
@@ -62,6 +63,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
     worktreeBranches: string[];
     worktreesDir: string;
     baseRefs: string[];
+  } | null>(null);
+
+  /** Pending merge context — set when afterMerge=ask; cleared once the user picks archive/delete/cancel */
+  const [mergePendingCtx, setMergePendingCtx] = createSignal<{
+    repoPath: string;
+    branchName: string;
   } | null>(null);
 
   /** Reentrancy guard: prevents concurrent handleBranchSelect calls from
@@ -230,10 +237,14 @@ export function useGitOperations(deps: GitOperationsDeps) {
       return;
     }
 
-    // Switch to this branch if it's not already active
+    // Ensure this repo+branch is active without going through handleBranchSelect
+    // (which has auto-spawn logic that would create a duplicate terminal).
     const activeRepo = repositoriesStore.getActive();
     if (activeRepo?.path !== repoPath || activeRepo?.activeBranch !== branchName) {
-      await handleBranchSelect(repoPath, branchName);
+      repositoriesStore.setActive(repoPath);
+      repositoriesStore.setActiveBranch(repoPath, branchName);
+      setCurrentRepoPath(repoPath);
+      setCurrentBranch(branchName);
     }
 
     const branch = repositoriesStore.get(repoPath)?.branches[branchName];
@@ -693,12 +704,14 @@ export function useGitOperations(deps: GitOperationsDeps) {
       const result = await deps.repo.mergeAndArchiveWorktree(repoPath, branchName, targetBranch, afterMerge);
 
       if (result.action === "pending") {
-        // "ask" mode — the merge succeeded but user needs to decide
-        // For now, archive by default (the dialog would be handled upstream)
-        deps.setStatusInfo(`Merged ${branchName} into ${targetBranch}`);
-      } else {
-        deps.setStatusInfo(`Merged ${branchName} into ${targetBranch} (${result.action})`);
+        // "ask" mode — merge succeeded, user must choose what to do with the worktree
+        deps.setStatusInfo(`Merged ${branchName} into ${targetBranch} — choose what to do with the worktree`);
+        setMergePendingCtx({ repoPath, branchName });
+        // Branch stays in sidebar until the user decides (archive/delete/cancel)
+        return;
       }
+
+      deps.setStatusInfo(`Merged ${branchName} into ${targetBranch} (${result.action})`);
 
       // Remove branch from sidebar
       repositoriesStore.removeBranch(repoPath, branchName);
@@ -708,6 +721,23 @@ export function useGitOperations(deps: GitOperationsDeps) {
     } catch (err) {
       appLogger.error("git", "Failed to merge and archive worktree", err);
       deps.setStatusInfo(`Failed to merge: ${err}`);
+    }
+  };
+
+  /** Handle the user's choice in the post-merge dialog (archive, delete, or cancel). */
+  const handleMergePendingChoice = async (choice: "archive" | "delete" | "cancel") => {
+    const ctx = mergePendingCtx();
+    setMergePendingCtx(null);
+    if (!ctx || choice === "cancel") return;
+
+    try {
+      await deps.repo.finalizeMergedWorktree(ctx.repoPath, ctx.branchName, choice);
+      deps.setStatusInfo(`Worktree ${choice === "archive" ? "archived" : "deleted"}`);
+      repositoriesStore.removeBranch(ctx.repoPath, ctx.branchName);
+      refreshAllBranchStats();
+    } catch (err) {
+      appLogger.error("git", `Failed to ${choice} worktree after merge`, err);
+      deps.setStatusInfo(`Failed to ${choice} worktree: ${err}`);
     }
   };
 
@@ -950,6 +980,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
     confirmCreateWorktree,
     handleCreateWorktreeFromBranch,
     handleMergeAndArchive,
+    mergePendingCtx,
+    handleMergePendingChoice,
     worktreeDialogState,
     setWorktreeDialogState,
     creatingWorktreeRepos,

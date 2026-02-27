@@ -242,6 +242,12 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
         path: "/worktrees/generate-name",
         body: { existing_names: args.existingNames },
       };
+    case "finalize_merged_worktree":
+      return {
+        method: "POST",
+        path: "/worktrees/finalize",
+        body: { repoPath: args.repoPath, branchName: args.branchName, action: args.action },
+      };
 
     case "list_local_branches":
       return { method: "GET", path: `/repo/local-branches?path=${p("repoPath")}` };

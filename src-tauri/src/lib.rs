@@ -708,6 +708,7 @@ pub fn run() {
             worktree::generate_worktree_name_cmd,
             worktree::generate_clone_branch_name_cmd,
             worktree::merge_and_archive_worktree,
+            worktree::finalize_merged_worktree,
             worktree::list_local_branches,
             worktree::list_base_ref_options,
             worktree::switch_branch,

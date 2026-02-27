@@ -204,6 +204,16 @@ pub(super) struct FsGitignoreRequest {
     pub pattern: String,
 }
 
+#[derive(Deserialize)]
+pub(super) struct FinalizeMergeRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "branchName")]
+    pub branch_name: String,
+    /// "archive" or "delete"
+    pub action: String,
+}
+
 // --- Recent commits query ---
 
 #[derive(Deserialize)]

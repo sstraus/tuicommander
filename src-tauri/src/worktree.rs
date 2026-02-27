@@ -625,6 +625,41 @@ pub(crate) struct MergeArchiveResult {
     pub(crate) archive_path: Option<String>,
 }
 
+/// Complete a pending merge by archiving or deleting the worktree.
+///
+/// Called after `merge_and_archive_worktree` returns `action: "pending"` (ask mode).
+/// The merge has already succeeded; this only handles the worktree cleanup.
+#[tauri::command]
+pub(crate) fn finalize_merged_worktree(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+    branch_name: String,
+    action: String,
+) -> Result<MergeArchiveResult, String> {
+    let base_repo = std::path::PathBuf::from(&repo_path);
+    match action.as_str() {
+        "archive" => {
+            let archive_path = archive_worktree(&base_repo, &branch_name)?;
+            state.invalidate_repo_caches(&repo_path);
+            Ok(MergeArchiveResult {
+                merged: true,
+                action: "archived".to_string(),
+                archive_path: Some(archive_path),
+            })
+        }
+        "delete" => {
+            remove_worktree_by_branch(&repo_path, &branch_name, true)?;
+            state.invalidate_repo_caches(&repo_path);
+            Ok(MergeArchiveResult {
+                merged: true,
+                action: "deleted".to_string(),
+                archive_path: None,
+            })
+        }
+        _ => Err(format!("Unknown action '{action}': expected 'archive' or 'delete'")),
+    }
+}
+
 /// Merge a worktree branch into a target branch, then archive or delete the worktree.
 ///
 /// Steps:
@@ -705,7 +740,7 @@ pub(crate) fn merge_and_archive_worktree(
 
 /// Archive a worktree: move its directory to `{worktrees_dir}/__archived/{branch_name}/`
 /// and run `git worktree remove`.
-fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<String, String> {
+pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<String, String> {
     let git = crate::agent::resolve_cli("git");
 
     // Find worktree path for this branch
