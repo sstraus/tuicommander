@@ -130,27 +130,24 @@ pub(crate) fn create_worktree_internal(
     let wt_path_str = worktree_path.to_string_lossy().to_string();
     let mut args: Vec<String> = vec!["worktree".into(), "add".into()];
 
-    if config.create_branch {
-        if let Some(ref branch) = config.branch {
+    if config.create_branch
+        && let Some(ref branch) = config.branch {
             args.push("-b".into());
             args.push(branch.clone());
         }
-    }
 
     args.push(wt_path_str);
 
-    if let Some(ref branch) = config.branch {
-        if !config.create_branch {
+    if let Some(ref branch) = config.branch
+        && !config.create_branch {
             args.push(branch.clone());
         }
-    }
 
     // Append base_ref as start-point when creating a new branch
-    if config.create_branch {
-        if let Some(start_point) = base_ref {
+    if config.create_branch
+        && let Some(start_point) = base_ref {
             args.push(start_point.to_string());
         }
-    }
 
     let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     match git_cmd(&base_repo_path).args(&args_str).run() {
@@ -181,7 +178,7 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
     // First, run git worktree remove
     let wt_path_str = worktree.path.to_string_lossy().to_string();
     match git_cmd(&worktree.base_repo)
-        .args(&["worktree", "remove", "--force", &wt_path_str])
+        .args(["worktree", "remove", "--force", &wt_path_str])
         .run()
     {
         Ok(_) => {}
@@ -200,7 +197,7 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
     }
 
     // Prune worktrees (non-fatal: stale entries are harmless)
-    if let Err(e) = git_cmd(&worktree.base_repo).args(&["worktree", "prune"]).run() {
+    if let Err(e) = git_cmd(&worktree.base_repo).args(["worktree", "prune"]).run() {
         eprintln!("Warning: git worktree prune failed: {e}");
     }
 
@@ -319,7 +316,7 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, dele
 
     // List worktrees to find the path for this branch
     let out = git_cmd(&base_repo)
-        .args(&["worktree", "list", "--porcelain"])
+        .args(["worktree", "list", "--porcelain"])
         .run()
         .map_err(|e| format!("git worktree list failed: {e}"))?;
 
@@ -337,14 +334,13 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, dele
     remove_worktree_internal(&worktree)?;
 
     // Delete the local branch when requested (non-fatal: branch may still be useful)
-    if delete_branch {
-        if let Err(e) = git_cmd(&worktree.base_repo)
-            .args(&["branch", "-d", branch_name])
+    if delete_branch
+        && let Err(e) = git_cmd(&worktree.base_repo)
+            .args(["branch", "-d", branch_name])
             .run()
         {
             eprintln!("Warning: git branch -d {branch_name}: {e}");
         }
-    }
 
     Ok(())
 }
@@ -368,7 +364,7 @@ pub(crate) fn check_worktree_dirty(repo_path: String, branch_name: String) -> Re
     let base_repo = PathBuf::from(&repo_path);
 
     let wt_list = git_cmd(&base_repo)
-        .args(&["worktree", "list", "--porcelain"])
+        .args(["worktree", "list", "--porcelain"])
         .run()
         .map_err(|e| format!("Failed to list worktrees: {e}"))?
         .stdout;
@@ -379,7 +375,7 @@ pub(crate) fn check_worktree_dirty(repo_path: String, branch_name: String) -> Re
     };
 
     let status_out = git_cmd(&wt_path)
-        .args(&["status", "--porcelain"])
+        .args(["status", "--porcelain"])
         .run()
         .map_err(|e| format!("Failed to check worktree status: {e}"))?;
     Ok(!status_out.stdout.trim().is_empty())
@@ -400,7 +396,7 @@ pub(crate) fn delete_local_branch_impl(repo_path: &str, branch_name: &str) -> Re
 
     // Check if branch has a linked worktree
     let has_worktree = git_cmd(&base_repo)
-        .args(&["worktree", "list", "--porcelain"])
+        .args(["worktree", "list", "--porcelain"])
         .run_silent()
         .map(|o| find_worktree_path_for_branch(&o.stdout, branch_name).is_some())
         .unwrap_or(false);
@@ -411,7 +407,7 @@ pub(crate) fn delete_local_branch_impl(repo_path: &str, branch_name: &str) -> Re
     } else {
         // Just delete the branch ref
         git_cmd(&base_repo)
-            .args(&["branch", "-d", branch_name])
+            .args(["branch", "-d", branch_name])
             .run()
             .map_err(|e| format!("git branch -d {branch_name} failed: {e}"))?;
     }
@@ -433,7 +429,7 @@ pub(crate) fn get_worktree_paths(repo_path: String) -> Result<HashMap<String, St
     let base_repo = PathBuf::from(&repo_path);
 
     let out = git_cmd(&base_repo)
-        .args(&["worktree", "list", "--porcelain"])
+        .args(["worktree", "list", "--porcelain"])
         .run()
         .map_err(|e| format!("git worktree list failed: {e}"))?;
 
@@ -501,7 +497,7 @@ pub(crate) fn detect_orphan_worktrees(repo_path: String) -> Result<Vec<String>, 
     let base_repo = PathBuf::from(&repo_path);
 
     let out = git_cmd(&base_repo)
-        .args(&["worktree", "list", "--porcelain"])
+        .args(["worktree", "list", "--porcelain"])
         .run()
         .map_err(|e| format!("git worktree list failed: {e}"))?;
 
@@ -547,7 +543,7 @@ pub(crate) fn generate_clone_branch_name_cmd(source_branch: String, existing_nam
 #[tauri::command]
 pub(crate) fn list_local_branches(repo_path: String) -> Result<Vec<String>, String> {
     let out = git_cmd(Path::new(&repo_path))
-        .args(&["branch", "--format=%(refname:short)"])
+        .args(["branch", "--format=%(refname:short)"])
         .run()
         .map_err(|e| format!("git branch failed: {e}"))?;
 
@@ -567,7 +563,7 @@ pub(crate) fn list_local_branches(repo_path: String) -> Result<Vec<String>, Stri
 pub(crate) fn get_remote_default_branch(repo_path: &str) -> Result<String, String> {
     // Try symbolic-ref first (cheapest, no network)
     if let Some(out) = git_cmd(Path::new(repo_path))
-        .args(&["symbolic-ref", "refs/remotes/origin/HEAD"])
+        .args(["symbolic-ref", "refs/remotes/origin/HEAD"])
         .run_silent()
     {
         let trimmed = out.stdout.trim().to_string();
@@ -656,7 +652,7 @@ pub(crate) fn switch_branch(
     // Check for uncommitted changes (unless force or stash)
     if !force && !stash {
         let status_out = git_cmd(&base_repo)
-            .args(&["status", "--porcelain"])
+            .args(["status", "--porcelain"])
             .run()
             .map_err(|e| format!("Failed to check working tree status: {e}"))?;
         if !status_out.stdout.trim().is_empty() {
@@ -668,7 +664,7 @@ pub(crate) fn switch_branch(
     let did_stash = if stash {
         let stash_msg = format!("auto-stash before switching to {branch_name}");
         let stash_out = git_cmd(&base_repo)
-            .args(&["stash", "push", "-m", &stash_msg])
+            .args(["stash", "push", "-m", &stash_msg])
             .run()
             .map_err(|e| format!("Stash failed: {e}"))?;
 
@@ -712,7 +708,7 @@ pub(crate) fn checkout_remote_branch(
     let remote_ref = format!("origin/{branch_name}");
 
     git_cmd(&base_repo)
-        .args(&["checkout", "-b", &branch_name, &remote_ref])
+        .args(["checkout", "-b", &branch_name, &remote_ref])
         .run()
         .map_err(|e| format!("Checkout failed: {e}"))?;
 
@@ -784,17 +780,17 @@ pub(crate) fn merge_and_archive_worktree(
 
     // 1. Ensure we're on the target branch in the base repo
     git_cmd(&base_repo)
-        .args(&["checkout", &target_branch])
+        .args(["checkout", &target_branch])
         .run()
         .map_err(|e| format!("Failed to checkout {target_branch}: {e}"))?;
 
     // 2. Merge the source branch
     if let Err(e) = git_cmd(&base_repo)
-        .args(&["merge", &branch_name, "--no-edit"])
+        .args(["merge", &branch_name, "--no-edit"])
         .run()
     {
         // Abort the merge to leave a clean state
-        let _ = git_cmd(&base_repo).args(&["merge", "--abort"]).run();
+        let _ = git_cmd(&base_repo).args(["merge", "--abort"]).run();
         return Err(format!("Merge failed (conflicts?): {e}"));
     }
 
@@ -835,7 +831,7 @@ pub(crate) fn merge_and_archive_worktree(
 pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<String, String> {
     // Find worktree path for this branch
     let wt_list_out = git_cmd(base_repo)
-        .args(&["worktree", "list", "--porcelain"])
+        .args(["worktree", "list", "--porcelain"])
         .run()
         .map_err(|e| format!("Failed to list worktrees: {e}"))?;
 
@@ -853,7 +849,7 @@ pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<St
     // Remove git worktree link first (so git doesn't track it)
     let wt_path_str = wt_path.to_string_lossy().to_string();
     if let Err(e) = git_cmd(base_repo)
-        .args(&["worktree", "remove", "--force", &wt_path_str])
+        .args(["worktree", "remove", "--force", &wt_path_str])
         .run()
     {
         eprintln!("[worktree] archive: failed to remove worktree link: {e}");
@@ -870,7 +866,7 @@ pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<St
     }
 
     // Prune stale worktree entries
-    let _ = git_cmd(base_repo).args(&["worktree", "prune"]).run();
+    let _ = git_cmd(base_repo).args(["worktree", "prune"]).run();
 
     Ok(archive_dest.to_string_lossy().to_string())
 }
@@ -886,13 +882,13 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let repo_path = temp_dir.path();
 
-        git_cmd(repo_path).args(&["init"]).run().expect("Failed to init git repo");
-        git_cmd(repo_path).args(&["config", "user.email", "test@test.com"]).run().expect("Failed to config git");
-        git_cmd(repo_path).args(&["config", "user.name", "Test"]).run().expect("Failed to config git");
+        git_cmd(repo_path).args(["init"]).run().expect("Failed to init git repo");
+        git_cmd(repo_path).args(["config", "user.email", "test@test.com"]).run().expect("Failed to config git");
+        git_cmd(repo_path).args(["config", "user.name", "Test"]).run().expect("Failed to config git");
 
         fs::write(repo_path.join("README.md"), "# Test").expect("Failed to write file");
-        git_cmd(repo_path).args(&["add", "."]).run().expect("Failed to git add");
-        git_cmd(repo_path).args(&["commit", "-m", "Initial commit"]).run().expect("Failed to git commit");
+        git_cmd(repo_path).args(["add", "."]).run().expect("Failed to git add");
+        git_cmd(repo_path).args(["commit", "-m", "Initial commit"]).run().expect("Failed to git commit");
 
         temp_dir
     }
@@ -1104,7 +1100,7 @@ mod tests {
         let repo_path = repo.path().to_string_lossy().to_string();
 
         // Create a second branch
-        git_cmd(repo.path()).args(&["branch", "feature-x"]).run().expect("Failed to create branch");
+        git_cmd(repo.path()).args(["branch", "feature-x"]).run().expect("Failed to create branch");
 
         let refs = list_base_ref_options(repo_path).unwrap();
         assert!(refs.len() >= 2, "Expected at least 2 refs, got: {refs:?}");
@@ -1140,14 +1136,14 @@ mod tests {
 
         // Make a commit on the feature branch so merge has something to do
         fs::write(wt.path.join("feature.txt"), "feature work").expect("write feature");
-        git_cmd(&wt.path).args(&["add", "."]).run().expect("git add");
-        git_cmd(&wt.path).args(&["commit", "-m", "feat: add feature"]).run().expect("git commit");
+        git_cmd(&wt.path).args(["add", "."]).run().expect("git add");
+        git_cmd(&wt.path).args(["commit", "-m", "feat: add feature"]).run().expect("git commit");
 
         // Archive the worktree
         let result = archive_worktree(repo.path(), "feat-archive-test");
         assert!(result.is_ok(), "Archive should succeed: {:?}", result);
 
-        let archive_path = PathBuf::from(result.unwrap());
+        let _archive_path = PathBuf::from(result.unwrap());
         // The worktree should no longer exist at original location
         assert!(!wt.path.exists(), "Original worktree path should be gone");
         // Archive destination should exist (only if worktree dir wasn't deleted by git)
@@ -1177,7 +1173,7 @@ mod tests {
 
         // Branch should be gone
         let out = git_cmd(repo.path())
-            .args(&["branch", "--list", "feat-delete-branch"])
+            .args(["branch", "--list", "feat-delete-branch"])
             .run()
             .expect("Failed to list branches");
         assert!(
@@ -1209,7 +1205,7 @@ mod tests {
 
         // Branch should still exist
         let out = git_cmd(repo.path())
-            .args(&["branch", "--list", "feat-keep-branch"])
+            .args(["branch", "--list", "feat-keep-branch"])
             .run()
             .expect("Failed to list branches");
         assert!(
@@ -1310,7 +1306,7 @@ branch refs/heads/feat
         let repo_path = repo.path().to_string_lossy().to_string();
 
         // Create a branch from current HEAD
-        git_cmd(repo.path()).args(&["branch", "feat-to-delete"]).run().expect("Failed to create branch");
+        git_cmd(repo.path()).args(["branch", "feat-to-delete"]).run().expect("Failed to create branch");
 
         // Verify it exists
         let branches = list_local_branches(repo_path.clone()).unwrap();
@@ -1412,7 +1408,7 @@ branch refs/heads/feat
         let repo_path = repo.path().to_string_lossy().to_string();
 
         // Create a branch without a worktree
-        git_cmd(repo.path()).args(&["branch", "bare-branch"]).run().expect("Failed to create branch");
+        git_cmd(repo.path()).args(["branch", "bare-branch"]).run().expect("Failed to create branch");
 
         let dirty = check_worktree_dirty(repo_path, "bare-branch".to_string());
         assert!(dirty.is_ok());

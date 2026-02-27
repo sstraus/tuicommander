@@ -368,7 +368,7 @@ mod tests {
         // Create blocking client on a separate OS thread because
         // reqwest::blocking::Client::new() creates an internal tokio runtime
         // which panics when constructed inside an existing async context (#[tokio::test]).
-        let http_client = std::thread::spawn(|| reqwest::blocking::Client::new())
+        let http_client = std::thread::spawn(reqwest::blocking::Client::new)
             .join()
             .expect("blocking client construction thread panicked");
         Arc::new(AppState {

@@ -919,7 +919,7 @@ pub(crate) fn get_github_status_impl(path: &str) -> GitHubStatus {
     // Get ahead/behind counts
     let rev_range = format!("origin/{current_branch}...HEAD");
     let (ahead, behind) = crate::git_cli::git_cmd(&repo_path)
-        .args(&["rev-list", "--left-right", "--count", &rev_range])
+        .args(["rev-list", "--left-right", "--count", &rev_range])
         .run_silent()
         .and_then(|o| {
             let parts: Vec<&str> = o.stdout.split_whitespace().collect();
@@ -2164,7 +2164,7 @@ mod tests {
         let reset = now + 30;
         let wait = rate_limit_wait_secs(Some(reset), None);
         // Should be approximately 31 (30 + 1 safety margin)
-        assert!(wait >= 30 && wait <= 32, "Expected ~31, got {wait}");
+        assert!((30..=32).contains(&wait), "Expected ~31, got {wait}");
     }
 
     #[test]

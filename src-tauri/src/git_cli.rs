@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn test_run_success() {
         let (_dir, path) = setup_test_repo();
-        let out = git_cmd(&path).args(&["status", "--porcelain"]).run();
+        let out = git_cmd(&path).args(["status", "--porcelain"]).run();
         assert!(out.is_ok());
     }
 
@@ -189,7 +189,7 @@ mod tests {
     fn test_run_non_zero_exit() {
         let (_dir, path) = setup_test_repo();
         // Asking for log in a repo with no commits → non-zero exit
-        let result = git_cmd(&path).args(&["log", "--oneline"]).run();
+        let result = git_cmd(&path).args(["log", "--oneline"]).run();
         assert!(result.is_err());
         let err = result.unwrap_err();
         match &err {
@@ -223,14 +223,14 @@ mod tests {
     fn test_run_silent_returns_none_on_error() {
         let (_dir, path) = setup_test_repo();
         // log in empty repo → non-zero → None
-        let result = git_cmd(&path).args(&["log", "--oneline"]).run_silent();
+        let result = git_cmd(&path).args(["log", "--oneline"]).run_silent();
         assert!(result.is_none());
     }
 
     #[test]
     fn test_run_silent_returns_some_on_success() {
         let (_dir, path) = setup_test_repo();
-        let result = git_cmd(&path).args(&["status", "--porcelain"]).run_silent();
+        let result = git_cmd(&path).args(["status", "--porcelain"]).run_silent();
         assert!(result.is_some());
     }
 
@@ -238,7 +238,7 @@ mod tests {
     fn test_run_raw_returns_output_on_failure() {
         let (_dir, path) = setup_test_repo();
         // log in empty repo → non-zero but raw still returns Ok(Output)
-        let result = git_cmd(&path).args(&["log", "--oneline"]).run_raw();
+        let result = git_cmd(&path).args(["log", "--oneline"]).run_raw();
         assert!(result.is_ok());
         let output = result.unwrap();
         assert!(!output.status.success());
@@ -284,7 +284,7 @@ mod tests {
         // GIT_AUTHOR_NAME env var should be visible in the subprocess
         let out = git_cmd(&path)
             .env("GIT_AUTHOR_NAME", "TestBot")
-            .args(&["status", "--porcelain"])
+            .args(["status", "--porcelain"])
             .run();
         assert!(out.is_ok());
     }

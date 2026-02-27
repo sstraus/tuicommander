@@ -566,8 +566,8 @@ fn line_is_diff_or_code_context(raw_line: &str, clean_trimmed: &str) -> bool {
     // Distinguished from HTTP status codes ("429 Too Many Requests") by requiring either:
     //   - diff markers (+, -, //) after the number, OR
     //   - 2+ spaces after the number (code listing indentation)
-    if clean_trimmed.len() > 3 && clean_trimmed.as_bytes()[0].is_ascii_digit() {
-        if let Some(pos) = clean_trimmed.find(|c: char| !c.is_ascii_digit()) {
+    if clean_trimmed.len() > 3 && clean_trimmed.as_bytes()[0].is_ascii_digit()
+        && let Some(pos) = clean_trimmed.find(|c: char| !c.is_ascii_digit()) {
             let after_digits = &clean_trimmed[pos..];
             let rest = after_digits.trim_start();
             // Diff markers after line number
@@ -582,7 +582,6 @@ fn line_is_diff_or_code_context(raw_line: &str, clean_trimmed: &str) -> bool {
                 return true;
             }
         }
-    }
 
     // Unified diff lines: start with + or - followed by content
     // Real diff lines: "+  code", "- old line", "++ file", "-- file"
@@ -607,11 +606,10 @@ fn line_is_diff_or_code_context(raw_line: &str, clean_trimmed: &str) -> bool {
         && clean_trimmed.chars().any(|c| c.is_ascii_digit())
     {
         // Extra check: the digit must be adjacent to "lines" (no space)
-        if let Some(pos) = clean_trimmed.find("lines") {
-            if pos > 0 && clean_trimmed.as_bytes()[pos - 1].is_ascii_digit() {
+        if let Some(pos) = clean_trimmed.find("lines")
+            && pos > 0 && clean_trimmed.as_bytes()[pos - 1].is_ascii_digit() {
                 return true;
             }
-        }
     }
 
     // Lines containing "//" as code comments (but not URLs like http://)

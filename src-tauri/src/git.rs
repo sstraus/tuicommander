@@ -135,7 +135,7 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
 
     // Get status
     let status = git_cmd(&repo_path)
-        .args(&["status", "--porcelain"])
+        .args(["status", "--porcelain"])
         .run_silent()
         .map(|o| {
             if o.stdout.is_empty() {
@@ -195,7 +195,7 @@ pub(crate) fn rename_branch_impl(path: &str, old_name: &str, new_name: &str) -> 
     }
 
     // Execute git branch -m oldname newname
-    match git_cmd(&repo_path).args(&["branch", "-m", old_name, new_name]).run() {
+    match git_cmd(&repo_path).args(["branch", "-m", old_name, new_name]).run() {
         Ok(_) => Ok(()),
         Err(crate::git_cli::GitError::NonZeroExit { stderr, .. }) => {
             if stderr.contains("not found") || stderr.contains("does not exist") {
@@ -233,7 +233,7 @@ pub(crate) fn get_recent_commits(path: String, count: Option<u32>) -> Result<Vec
     let n = count.unwrap_or(5).min(20).to_string();
 
     let out = git_cmd(&repo_path)
-        .args(&["log", "--format=%H%x00%h%x00%s", "-n", &n])
+        .args(["log", "--format=%H%x00%h%x00%s", "-n", &n])
         .run()
         .map_err(|e| format!("git log failed: {e}"))?;
 
@@ -375,7 +375,7 @@ pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<V
     // For working tree scope, also include untracked files
     if scope.is_none() {
         let untracked_out = git_cmd(&repo_path)
-            .args(&["ls-files", "--others", "--exclude-standard"])
+            .args(["ls-files", "--others", "--exclude-standard"])
             .run_silent();
 
         if let Some(ref out) = untracked_out {
@@ -443,7 +443,7 @@ pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>, u
             true
         } else {
             match git_cmd(&repo_path)
-                .args(&["ls-files", "--error-unmatch", &file])
+                .args(["ls-files", "--error-unmatch", &file])
                 .run()
             {
                 Ok(_) => false,
@@ -457,7 +457,7 @@ pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>, u
         if is_untracked {
             let full_path_str = full_path.to_string_lossy();
             let raw = git_cmd(&repo_path)
-                .args(&["diff", "--color=never", "--no-index", "--", NULL_DEVICE, &full_path_str])
+                .args(["diff", "--color=never", "--no-index", "--", NULL_DEVICE, &full_path_str])
                 .run_raw()
                 .map_err(|e| format!("Failed to diff untracked file: {e}"))?;
             // --no-index exits with 1 when files differ (expected vs null device),
@@ -589,7 +589,7 @@ pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, 
     };
 
     let out = git_cmd(repo_path)
-        .args(&["branch", "--merged", &main_branch, "--format=%(refname:short)"])
+        .args(["branch", "--merged", &main_branch, "--format=%(refname:short)"])
         .run()
         .map_err(|e| format!("git branch --merged failed: {e}"))?;
 
@@ -634,7 +634,7 @@ pub(crate) fn get_git_branches(path: String) -> Result<Vec<serde_json::Value>, S
     let repo_path = PathBuf::from(&path);
 
     let out = git_cmd(&repo_path)
-        .args(&["branch", "-a", "--format=%(refname:short) %(HEAD)"])
+        .args(["branch", "-a", "--format=%(refname:short) %(HEAD)"])
         .run()
         .map_err(|e| format!("git branch failed: {e}"))?;
 
@@ -1025,7 +1025,7 @@ mod tests {
 
         // Subprocess approach (ground truth)
         let git_branch = git_cmd(&repo_root)
-            .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
             .run_silent()
             .and_then(|o| {
                 let b = o.stdout.trim().to_string();
@@ -1046,7 +1046,7 @@ mod tests {
 
         // Subprocess approach (ground truth)
         let git_url = git_cmd(&repo_root)
-            .args(&["remote", "get-url", "origin"])
+            .args(["remote", "get-url", "origin"])
             .run_silent()
             .map(|o| o.stdout.trim().to_string());
 
@@ -1077,11 +1077,10 @@ mod tests {
         assert!(has_main, "at least one main branch candidate should be in the merged list, got: {merged:?}");
 
         // On main, the current branch must be in the list; on a feature branch it may not be
-        if let Some(current) = read_branch_from_head(&repo_root) {
-            if is_main_branch(&current) {
+        if let Some(current) = read_branch_from_head(&repo_root)
+            && is_main_branch(&current) {
                 assert!(merged.contains(&current), "main branch '{current}' should be in its own merged list");
             }
-        }
         // Detached HEAD: the merged list is still non-empty (at minimum the main branch itself)
     }
 

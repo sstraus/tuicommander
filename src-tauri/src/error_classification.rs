@@ -146,16 +146,16 @@ mod tests {
         // With base=1000, multiplier=2: delay doubles each retry (before jitter)
         // Jitter adds up to +/-5%, so we check within that range
         let d0 = calculate_backoff_delay(0, 1000.0, 30000.0, 2.0);
-        assert!(d0 >= 950.0 && d0 <= 1050.0, "retry 0: got {d0}");
+        assert!((950.0..=1050.0).contains(&d0), "retry 0: got {d0}");
 
         let d1 = calculate_backoff_delay(1, 1000.0, 30000.0, 2.0);
-        assert!(d1 >= 1900.0 && d1 <= 2100.0, "retry 1: got {d1}");
+        assert!((1900.0..=2100.0).contains(&d1), "retry 1: got {d1}");
 
         let d2 = calculate_backoff_delay(2, 1000.0, 30000.0, 2.0);
-        assert!(d2 >= 3800.0 && d2 <= 4200.0, "retry 2: got {d2}");
+        assert!((3800.0..=4200.0).contains(&d2), "retry 2: got {d2}");
 
         let d3 = calculate_backoff_delay(3, 1000.0, 30000.0, 2.0);
-        assert!(d3 >= 7600.0 && d3 <= 8400.0, "retry 3: got {d3}");
+        assert!((7600.0..=8400.0).contains(&d3), "retry 3: got {d3}");
     }
 
     #[test]
@@ -169,13 +169,13 @@ mod tests {
     fn backoff_delay_custom_config() {
         // base=500, multiplier=3, max=10000
         let d0 = calculate_backoff_delay(0, 500.0, 10000.0, 3.0);
-        assert!(d0 >= 475.0 && d0 <= 525.0, "retry 0: got {d0}");
+        assert!((475.0..=525.0).contains(&d0), "retry 0: got {d0}");
 
         let d1 = calculate_backoff_delay(1, 500.0, 10000.0, 3.0);
-        assert!(d1 >= 1425.0 && d1 <= 1575.0, "retry 1: got {d1}");
+        assert!((1425.0..=1575.0).contains(&d1), "retry 1: got {d1}");
 
         let d2 = calculate_backoff_delay(2, 500.0, 10000.0, 3.0);
-        assert!(d2 >= 4275.0 && d2 <= 4725.0, "retry 2: got {d2}");
+        assert!((4275.0..=4725.0).contains(&d2), "retry 2: got {d2}");
 
         // 500 * 3^3 = 13500, capped at 10000
         let d3 = calculate_backoff_delay(3, 500.0, 10000.0, 3.0);
@@ -191,6 +191,6 @@ mod tests {
     #[test]
     fn backoff_delay_zero_retry() {
         let delay = calculate_backoff_delay(0, 1000.0, 30000.0, 2.0);
-        assert!(delay >= 950.0 && delay <= 1050.0, "retry 0 direct: got {delay}");
+        assert!((950.0..=1050.0).contains(&delay), "retry 0 direct: got {delay}");
     }
 }

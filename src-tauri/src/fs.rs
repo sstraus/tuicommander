@@ -610,9 +610,9 @@ mod tests {
         let repo_path = dir.path();
 
         // Initialize a git repo
-        crate::git_cli::git_cmd(repo_path).args(&["init"]).run().unwrap();
-        crate::git_cli::git_cmd(repo_path).args(&["config", "user.email", "test@test.com"]).run().unwrap();
-        crate::git_cli::git_cmd(repo_path).args(&["config", "user.name", "Test"]).run().unwrap();
+        crate::git_cli::git_cmd(repo_path).args(["init"]).run().unwrap();
+        crate::git_cli::git_cmd(repo_path).args(["config", "user.email", "test@test.com"]).run().unwrap();
+        crate::git_cli::git_cmd(repo_path).args(["config", "user.name", "Test"]).run().unwrap();
 
         // Create some files and directories
         fs::write(repo_path.join("README.md"), "# Test").unwrap();
@@ -621,8 +621,8 @@ mod tests {
         fs::write(repo_path.join("src/lib.rs"), "pub fn hello() {}").unwrap();
 
         // Commit everything
-        crate::git_cli::git_cmd(repo_path).args(&["add", "-A"]).run().unwrap();
-        crate::git_cli::git_cmd(repo_path).args(&["commit", "-m", "init"]).run().unwrap();
+        crate::git_cli::git_cmd(repo_path).args(["add", "-A"]).run().unwrap();
+        crate::git_cli::git_cmd(repo_path).args(["commit", "-m", "init"]).run().unwrap();
 
         dir
     }

@@ -155,7 +155,7 @@ pub(super) async fn checkout_remote_branch_http(
     let repo = std::path::PathBuf::from(&body.repo_path);
     let remote_ref = format!("origin/{}", body.branch_name);
     match crate::git_cli::git_cmd(&repo)
-        .args(&["checkout", "-b", &body.branch_name, &remote_ref])
+        .args(["checkout", "-b", &body.branch_name, &remote_ref])
         .run()
     {
         Ok(_) => {
