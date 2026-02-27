@@ -17,6 +17,7 @@ vi.mock("../../stores/github", () => ({
     getBranchPrData: mockGetBranchPrData,
     getCheckSummary: mockGetCheckSummary,
     getCheckDetails: mockGetCheckDetails,
+    loadCheckDetails: vi.fn(() => Promise.resolve()),
   },
 }));
 

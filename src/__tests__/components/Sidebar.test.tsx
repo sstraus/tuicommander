@@ -66,6 +66,7 @@ vi.mock("../../stores/repoSettings", () => ({
 vi.mock("../../stores/terminals", () => ({
   terminalsStore: {
     get: mockTerminalsGet,
+    isBusy: vi.fn(() => false),
   },
 }));
 
@@ -73,6 +74,7 @@ vi.mock("../../stores/github", () => ({
   githubStore: {
     getCheckSummary: mockGetCheckSummary,
     getPrStatus: mockGetPrStatus,
+    getRemoteOnlyPrs: vi.fn(() => []),
   },
 }));
 
