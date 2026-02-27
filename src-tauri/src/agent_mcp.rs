@@ -83,7 +83,7 @@ fn get_mcp_config_spec(agent_type: &str) -> Option<McpConfigSpec> {
             key_path: vec!["mcpServers"],
         }),
         // Agents that don't support MCP config files
-        "aider" | "jules" | "warp" | "ona" | "opencode" | "codex" => None,
+        "aider" | "warp" | "opencode" | "codex" | "droid" => None,
         _ => None,
     }
 }
@@ -440,7 +440,7 @@ mod tests {
             assert!(get_mcp_config_spec(agent).is_some(), "{agent} should be supported");
         }
         // Verify unsupported agents don't
-        for agent in &["aider", "jules", "warp", "ona", "opencode", "codex"] {
+        for agent in &["aider", "warp", "opencode", "codex", "droid"] {
             assert!(get_mcp_config_spec(agent).is_none(), "{agent} should not be supported");
         }
     }

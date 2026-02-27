@@ -308,11 +308,9 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 | OpenCode | `opencode` | `opencode -c` |
 | Aider | `aider` | `aider --restore-chat-history` |
 | Codex CLI | `codex` | `codex resume --last` |
-| Amp | `amp` | — |
-| Jules | `jules` | — |
-| Cursor Agent | `cursor-agent` | — |
+| Amp | `amp` | `amp threads continue` |
+| Cursor Agent | `cursor-agent` | `cursor-agent resume` |
 | Warp Oz | `oz` | — |
-| ONA (Gitpod) | `gitpod` | — |
 | Droid (Factory) | `droid` | — |
 
 ### 6.2 Agent Detection

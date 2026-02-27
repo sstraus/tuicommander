@@ -25,10 +25,8 @@ const AGENT_BINARIES: Record<AgentType, string> = {
   aider: "aider",
   codex: "codex",
   amp: "amp",
-  jules: "jules",
   cursor: "cursor-agent",
   warp: "oz",
-  ona: "gitpod",
   droid: "droid",
   git: "git",
 };

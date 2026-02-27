@@ -13,7 +13,7 @@ import s from "../Settings.module.css";
 import a from "./AgentsTab.module.css";
 
 // All agent types in display order
-const AGENT_TYPES: AgentType[] = ["claude", "cursor", "gemini", "amp", "codex", "aider", "opencode", "jules", "warp", "ona"];
+const AGENT_TYPES: AgentType[] = ["claude", "cursor", "gemini", "amp", "codex", "aider", "opencode", "warp", "droid"];
 
 interface McpStatus {
   supported: boolean;

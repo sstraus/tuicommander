@@ -695,10 +695,8 @@ TUICommander polls the foreground process of each terminal's PTY every 3 seconds
 | `aider` | `"aider"` |
 | `codex` | `"codex"` |
 | `amp` | `"amp"` |
-| `jules` | `"jules"` |
 | `cursor-agent` | `"cursor"` |
 | `oz` | `"warp"` |
-| `gitpod` | `"ona"` |
 | `droid` | `"droid"` |
 | `git` | `"git"` |
 | (anything else) | `null` (plain shell) |
@@ -1041,6 +1039,7 @@ See `examples/plugins/` for complete working examples:
 | `ci-notifier` | 1+3 | `ui:sound`, `ui:markdown` | Sound notifications, markdown panels |
 | `repo-dashboard` | 1+2 | none | Read-only state, dynamic markdown |
 | `claude-status` | 1 | none | **Agent-scoped** (`agentTypes: ["claude"]`), structured events |
+| `telegram-notifier` | 1+3 | `net:http`, `ui:panel`, `ui:ticker` | Telegram push notifications, per-event toggles, settings panel |
 
 ## Distributable Plugins
 

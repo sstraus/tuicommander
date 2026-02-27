@@ -1,5 +1,5 @@
 /** Supported agent types */
-export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "jules" | "cursor" | "warp" | "ona" | "droid" | "git";
+export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "cursor" | "warp" | "droid" | "git";
 
 /** Agent configuration */
 export interface AgentConfig {
@@ -199,7 +199,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Amp",
     binary: "amp",
     description: "Sourcegraph's AI coding agent",
-    resumeCommand: null,
+    resumeCommand: "amp threads continue",
     spawnArgs: (prompt) => {
       return [prompt];
     },
@@ -223,38 +223,12 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
       ],
     },
   },
-  jules: {
-    type: "jules",
-    name: "Jules",
-    binary: "jules",
-    description: "Google's async cloud coding agent",
-    resumeCommand: null,
-    spawnArgs: (prompt) => {
-      return [prompt];
-    },
-    outputFormat: "text",
-    detectPatterns: {
-      rateLimit: [
-        /RESOURCE_EXHAUSTED/i,
-        /429/,
-      ],
-      completion: [],
-      error: [
-        /error:/i,
-        /failed:/i,
-      ],
-      prompt: [
-        /\/remote/,
-        /\/new/,
-      ],
-    },
-  },
   cursor: {
     type: "cursor",
     name: "Cursor Agent",
     binary: "cursor-agent",
     description: "Cursor's standalone coding agent CLI",
-    resumeCommand: null,
+    resumeCommand: "cursor-agent resume",
     spawnArgs: (prompt) => {
       return [prompt];
     },
@@ -283,29 +257,6 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     resumeCommand: null,
     spawnArgs: (prompt) => {
       return ["agent", "run", prompt];
-    },
-    outputFormat: "text",
-    detectPatterns: {
-      rateLimit: [
-        /rate.?limit/i,
-        /429/,
-      ],
-      completion: [],
-      error: [
-        /error:/i,
-        /failed:/i,
-      ],
-      prompt: [],
-    },
-  },
-  ona: {
-    type: "ona",
-    name: "ONA",
-    binary: "gitpod",
-    description: "ONA (formerly Gitpod) cloud environment agent",
-    resumeCommand: null,
-    spawnArgs: (prompt) => {
-      return [prompt];
     },
     outputFormat: "text",
     detectPatterns: {
@@ -391,10 +342,8 @@ export const MCP_SUPPORT: Record<AgentType, boolean> = {
   aider: false,
   codex: false,
   amp: true,
-  jules: false,
   cursor: true,
   warp: false,
-  ona: false,
   droid: false,
   git: false,
 };
@@ -407,10 +356,8 @@ export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string }> =
   aider: { icon: "A", color: "#9333ea" },
   codex: { icon: "X", color: "#ef4444" },
   amp: { icon: "A", color: "#ff5543" },
-  jules: { icon: "J", color: "#4285f4" },
   cursor: { icon: "C", color: "#000000" },
   warp: { icon: "W", color: "#01a4ff" },
-  ona: { icon: "O", color: "#ffe400" },
   droid: { icon: "D", color: "#f97316" },
   git: { icon: "G", color: "#f05032" },
 };

@@ -11,11 +11,10 @@ TUICommander detects, monitors, and manages AI coding agents running in your ter
 | Aider | `aider` | `aider --restore-chat-history` |
 | Gemini CLI | `gemini` | `gemini --resume` |
 | OpenCode | `opencode` | `opencode -c` |
-| Amp | `amp` | — |
-| Jules | `jules` | — |
-| Cursor Agent | `cursor-agent` | — |
+| Amp | `amp` | `amp threads continue` |
+| Cursor Agent | `cursor-agent` | `cursor-agent resume` |
 | Warp Oz | `oz` | — |
-| ONA (Gitpod) | `gitpod` | — |
+| Droid (Factory) | `droid` | — |
 
 ## Agent Detection
 

@@ -50,7 +50,7 @@ The more agents you run, the harder it gets to keep track.
 
 ### Agent awareness — not just terminals
 
-TUICommander auto-detects **11 AI coding agents** (Claude Code, Codex CLI, Aider, Gemini CLI, Amp, Jules, Cursor Agent, OpenCode, Warp Oz, ONA, Droid) and understands what they're doing:
+TUICommander auto-detects **9 AI coding agents** (Claude Code, Codex CLI, Aider, Gemini CLI, Amp, Cursor Agent, OpenCode, Warp Oz, Droid) and understands what they're doing:
 
 - **Rate limit detection** — Provider-specific patterns (Claude "overloaded", Gemini "429", OpenAI "too many requests"). Status bar shows countdown timers per session.
 - **Question detection** — Recognizes Y/N prompts, numbered options, inquirer-style menus. Tab shows `?` icon, notification sound fires, overlay appears with keyboard navigation.

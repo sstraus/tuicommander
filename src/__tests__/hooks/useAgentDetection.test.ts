@@ -11,7 +11,7 @@ describe("useAgentDetection", () => {
 
   /** Helper: build a batch detection response */
   function batchResponse(available: Record<string, string | null> = {}) {
-    const allBinaries = ["claude", "gemini", "opencode", "aider", "codex", "amp", "jules", "cursor-agent", "oz", "gitpod", "droid", "git"];
+    const allBinaries = ["claude", "gemini", "opencode", "aider", "codex", "amp", "cursor-agent", "oz", "droid", "git"];
     const result: Record<string, { path: string | null; version: string | null }> = {};
     for (const bin of allBinaries) {
       result[bin] = { path: available[bin] ?? null, version: null };
@@ -35,7 +35,7 @@ describe("useAgentDetection", () => {
         });
 
         const map = detections();
-        expect(map.size).toBe(12);
+        expect(map.size).toBe(10);
         expect(map.get("claude")?.available).toBe(true);
         expect(map.get("gemini")?.available).toBe(false);
         expect(map.get("opencode")?.available).toBe(true);
