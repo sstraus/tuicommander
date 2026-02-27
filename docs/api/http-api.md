@@ -198,6 +198,17 @@ GET /repo/local-branches?path=/path/to/repo
 
 Returns local branch list.
 
+### Checkout Remote Branch
+
+```
+POST /repo/checkout-remote
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "branchName": "feat-remote" }
+```
+
+Creates a local tracking branch from `origin/<branchName>`.
+
 ### Rename Branch
 
 ```

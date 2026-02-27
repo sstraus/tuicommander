@@ -614,6 +614,33 @@ pub(crate) fn switch_branch(
     })
 }
 
+/// Create a local branch tracking a remote branch and switch to it.
+/// Equivalent to `git checkout -b <branch> origin/<branch>`.
+#[tauri::command]
+pub(crate) fn checkout_remote_branch(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+    branch_name: String,
+) -> Result<(), String> {
+    let git = crate::agent::resolve_cli("git");
+    let base_repo = PathBuf::from(&repo_path);
+    let remote_ref = format!("origin/{branch_name}");
+
+    let checkout = Command::new(&git)
+        .current_dir(&base_repo)
+        .args(["checkout", "-b", &branch_name, &remote_ref])
+        .output()
+        .map_err(|e| format!("Failed to checkout {branch_name}: {e}"))?;
+
+    if !checkout.status.success() {
+        let stderr = String::from_utf8_lossy(&checkout.stderr);
+        return Err(format!("Checkout failed: {stderr}"));
+    }
+
+    state.invalidate_repo_caches(&repo_path);
+    Ok(())
+}
+
 /// Result of a merge-and-archive operation
 #[derive(Clone, Serialize)]
 pub(crate) struct MergeArchiveResult {

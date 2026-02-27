@@ -34,6 +34,7 @@ export interface SidebarProps {
   onBackgroundGit?: (repoPath: string, op: string, args: string[]) => void;
   runningGitOps?: Set<string>;
   onRefreshBranchStats?: () => Promise<void>;
+  onCheckoutRemoteBranch?: (repoPath: string, branchName: string) => void;
   onSwitchBranch?: (repoPath: string, branchName: string) => void;
   switchBranchLists?: Record<string, string[]>;
   currentBranches?: Record<string, string>;
@@ -178,6 +179,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         onAddWorktree={() => props.onAddWorktree(repo.path)}
         onCreateWorktreeFromBranch={props.onCreateWorktreeFromBranch ? (branch) => props.onCreateWorktreeFromBranch!(repo.path, branch) : undefined}
         onMergeAndArchive={props.onMergeAndArchive ? (branch) => props.onMergeAndArchive!(repo.path, branch) : undefined}
+        onCheckoutRemoteBranch={props.onCheckoutRemoteBranch ? (branch) => props.onCheckoutRemoteBranch!(repo.path, branch) : undefined}
         onSettings={() => props.onRepoSettings(repo.path)}
         onRemove={() => props.onRemoveRepo(repo.path)}
         onToggle={() => repositoriesStore.toggleExpanded(repo.path)}

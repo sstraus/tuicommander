@@ -987,6 +987,7 @@ const App: Component = () => {
           onOpenHelp={() => setHelpPanelVisible(true)}
           buildAgentMenuItems={buildSidebarAgentMenuItems}
           onRefreshBranchStats={gitOps.refreshAllBranchStats}
+          onCheckoutRemoteBranch={gitOps.handleCheckoutRemoteBranch}
           onSwitchBranch={gitOps.handleSwitchBranch}
           switchBranchLists={gitOps.switchBranchLists()}
           currentBranches={gitOps.currentBranches()}

@@ -386,6 +386,11 @@
   color: var(--success);
 }
 
+.shellBusy .branchIcon {
+  color: var(--accent);
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
 .hasActivity .branchIcon {
   color: var(--accent);
   animation: pulse-opacity 1.5s ease-in-out infinite;
@@ -738,4 +743,145 @@
   align-items: center;
   justify-content: center;
   pointer-events: none;
+}
+
+/* ── Remote-only PR badge button ── */
+/* Always visible (overrides the opacity:0 of repoActions on non-hover) */
+.repoActions:has(.remoteOnlyBadgeBtn) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.remoteOnlyBadgeBtn {
+  min-width: 20px;
+  width: auto;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+}
+
+.remoteOnlyBadgeBtn:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+/* ── Remote-only PR popover ── */
+.remoteOnlyOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.remoteOnlyPopover {
+  position: fixed;
+  left: var(--sidebar-width, 240px);
+  top: 0;
+  bottom: 0;
+  width: 320px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  z-index: 201;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
+}
+
+.remoteOnlyHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.remoteOnlyClose {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--font-md);
+}
+
+.remoteOnlyClose:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+}
+
+.remoteOnlyList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.remoteOnlyRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  flex-wrap: wrap;
+}
+
+.remoteOnlyRow:hover {
+  background: var(--bg-tertiary);
+}
+
+.remoteOnlyNum {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.remoteOnlyBranch {
+  flex: 1;
+  font-size: var(--font-sm);
+  color: var(--fg-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.remoteOnlyActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.remoteOnlyCheckout,
+.remoteOnlyWorktree {
+  padding: 2px 8px;
+  font-size: var(--font-xs);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.remoteOnlyCheckout:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-color: var(--accent);
+}
+
+.remoteOnlyWorktree:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
 }

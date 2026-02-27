@@ -210,6 +210,11 @@ export function useRepository() {
     });
   }
 
+  /** Check out a remote-only branch as a new local branch tracking origin. */
+  async function checkoutRemoteBranch(repoPath: string, branchName: string): Promise<void> {
+    await invoke("checkout_remote_branch", { repoPath, branchName });
+  }
+
   /** List local branch names for a repository */
   async function listLocalBranches(repoPath: string): Promise<string[]> {
     try {
@@ -249,6 +254,7 @@ export function useRepository() {
     mergeAndArchiveWorktree,
     finalizeMergedWorktree,
     getMergedBranches,
+    checkoutRemoteBranch,
     listLocalBranches,
     switchBranch,
     getRecentCommits,

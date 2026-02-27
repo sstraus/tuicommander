@@ -54,6 +54,7 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `get_worktrees_dir` | -- | `String` | Worktrees base directory |
 | `generate_worktree_name_cmd` | `existing_names` | `String` | Generate unique name |
 | `list_local_branches` | `path` | `Vec<String>` | List local branches |
+| `checkout_remote_branch` | `repo_path, branch_name` | `()` | Check out a remote-only branch as a new local tracking branch |
 
 ## Configuration (`config.rs`)
 

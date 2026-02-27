@@ -214,6 +214,14 @@ pub(super) struct FinalizeMergeRequest {
     pub action: String,
 }
 
+#[derive(Deserialize)]
+pub(super) struct CheckoutRemoteRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "branchName")]
+    pub branch_name: String,
+}
+
 // --- Recent commits query ---
 
 #[derive(Deserialize)]

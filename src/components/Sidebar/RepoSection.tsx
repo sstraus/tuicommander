@@ -12,6 +12,7 @@ import { getModifierSymbol } from "../../platform";
 import { compareBranches } from "../../utils/branchSort";
 import { cx } from "../../utils";
 import { t } from "../../i18n";
+import type { BranchPrStatus } from "../../types";
 import s from "./Sidebar.module.css";
 
 const BRANCH_ICON_CLASSES: Record<string, string> = {
@@ -336,6 +337,64 @@ export const BranchItem: Component<{
   );
 };
 
+/** Popover listing open PRs on remote-only branches (no local branch/worktree) */
+const RemoteOnlyPrPopover: Component<{
+  prs: BranchPrStatus[];
+  onClose: () => void;
+  onShowPrDetail: (branch: string) => void;
+  onCheckout: (branchName: string) => void;
+  onCreateWorktree?: (branchName: string) => void;
+}> = (props) => {
+  return (
+    <>
+      <div class={s.remoteOnlyOverlay} onClick={props.onClose} />
+      <div class={s.remoteOnlyPopover}>
+        <div class={s.remoteOnlyHeader}>
+          <span>{t("sidebar.remoteOnlyPrs", "Remote-only PRs")}</span>
+          <button class={s.remoteOnlyClose} onClick={props.onClose}>&times;</button>
+        </div>
+        <div class={s.remoteOnlyList}>
+          <For each={props.prs}>
+            {(pr) => (
+              <div class={s.remoteOnlyRow} onClick={() => props.onShowPrDetail(pr.branch)}>
+                <span class={s.remoteOnlyNum}>#{pr.number}</span>
+                <span class={s.remoteOnlyBranch}>{pr.branch}</span>
+                <PrStateBadge
+                  prNumber={pr.number}
+                  state={pr.state}
+                  isDraft={pr.is_draft}
+                  mergeable={pr.mergeable}
+                  reviewDecision={pr.review_decision}
+                  ciFailed={pr.checks?.failed}
+                  ciPending={pr.checks?.pending}
+                />
+                <div class={s.remoteOnlyActions}>
+                  <button
+                    class={s.remoteOnlyCheckout}
+                    onClick={(e) => { e.stopPropagation(); props.onCheckout(pr.branch); }}
+                    title={t("sidebar.checkoutBranch", "Check out this branch locally")}
+                  >
+                    {t("sidebar.checkout", "Checkout")}
+                  </button>
+                  <Show when={props.onCreateWorktree}>
+                    <button
+                      class={s.remoteOnlyWorktree}
+                      onClick={(e) => { e.stopPropagation(); props.onCreateWorktree!(pr.branch); }}
+                      title={t("sidebar.createWorktreeFromBranch", "Create worktree from this branch")}
+                    >
+                      {t("sidebar.worktree", "Worktree")}
+                    </button>
+                  </Show>
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
+      </div>
+    </>
+  );
+};
+
 /** Repository section component */
 export const RepoSection: Component<{
   repo: RepositoryState;
@@ -358,6 +417,7 @@ export const RepoSection: Component<{
   onRemove: () => void;
   onToggle: () => void;
   onToggleCollapsed: () => void;
+  onCheckoutRemoteBranch?: (branchName: string) => void;
   onSwitchBranch: (branchName: string) => void;
   switchBranchList: () => string[];
   currentBranch: () => string;
@@ -368,6 +428,7 @@ export const RepoSection: Component<{
 }> = (props) => {
   const repoMenu = createContextMenu();
   const [groupPromptVisible, setGroupPromptVisible] = createSignal(false);
+  const [remoteOnlyPopoverVisible, setRemoteOnlyPopoverVisible] = createSignal(false);
 
   const branches = createMemo(() => Object.values(props.repo.branches));
   // Pre-compute PR statuses once per poll cycle; avoids calling getPrStatus inside sort comparator
@@ -385,6 +446,11 @@ export const RepoSection: Component<{
     );
   });
   const canRemoveAny = createMemo(() => sortedBranches().length > 1);
+
+  const localBranchNames = createMemo(() => new Set(Object.keys(props.repo.branches)));
+  const remoteOnlyPrs = createMemo(() =>
+    githubStore.getRemoteOnlyPrs(props.repo.path, localBranchNames()),
+  );
 
   const repoMenuItems = (): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [
@@ -456,6 +522,15 @@ export const RepoSection: Component<{
         <Show when={!props.repo.collapsed}>
           <span class={s.repoName} style={props.nameColor ? { color: props.nameColor } : undefined}>{props.repo.displayName}</span>
           <div class={s.repoActions}>
+            <Show when={remoteOnlyPrs().length > 0}>
+              <button
+                class={cx(s.repoActionBtn, s.remoteOnlyBadgeBtn)}
+                onClick={(e) => { e.stopPropagation(); setRemoteOnlyPopoverVisible((v) => !v); }}
+                title={t("sidebar.remoteOnlyPrsTitle", "Open PRs on remote-only branches")}
+              >
+                {remoteOnlyPrs().length}
+              </button>
+            </Show>
               <button
                 class={s.repoActionBtn}
                 onClick={handleMenuToggle}
@@ -531,6 +606,21 @@ export const RepoSection: Component<{
           }
         }}
       />
+      <Show when={remoteOnlyPopoverVisible() && remoteOnlyPrs().length > 0}>
+        <RemoteOnlyPrPopover
+          prs={remoteOnlyPrs()}
+          onClose={() => setRemoteOnlyPopoverVisible(false)}
+          onShowPrDetail={(branch) => {
+            setRemoteOnlyPopoverVisible(false);
+            props.onShowPrDetail(branch);
+          }}
+          onCheckout={(branch) => {
+            setRemoteOnlyPopoverVisible(false);
+            props.onCheckoutRemoteBranch?.(branch);
+          }}
+          onCreateWorktree={props.onCreateWorktreeFromBranch}
+        />
+      </Show>
     </div>
   );
 };

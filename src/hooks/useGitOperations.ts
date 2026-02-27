@@ -26,6 +26,7 @@ export interface GitOperationsDeps {
     finalizeMergedWorktree: (repoPath: string, branchName: string, action: "archive" | "delete") => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
     listLocalBranches: (repoPath: string) => Promise<string[]>;
     getMergedBranches: (repoPath: string) => Promise<string[]>;
+    checkoutRemoteBranch: (repoPath: string, branchName: string) => Promise<void>;
     switchBranch: (repoPath: string, branchName: string, opts?: { force?: boolean; stash?: boolean }) => Promise<{ success: boolean; stashed: boolean; previous_branch: string; new_branch: string }>;
   };
   pty: {
@@ -959,6 +960,16 @@ export function useGitOperations(deps: GitOperationsDeps) {
     }
   };
 
+  const handleCheckoutRemoteBranch = async (repoPath: string, branchName: string) => {
+    try {
+      await deps.repo.checkoutRemoteBranch(repoPath, branchName);
+      deps.setStatusInfo(`Checked out ${branchName}`);
+      await refreshAllBranchStatsAndLists();
+    } catch (err) {
+      deps.setStatusInfo(`Checkout failed: ${err}`);
+    }
+  };
+
   return {
     currentRepoPath,
     setCurrentRepoPath,
@@ -992,6 +1003,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     executeRunCommand,
     generateWorktreeName,
     handleRepoSettings,
+    handleCheckoutRemoteBranch,
     handleSwitchBranch,
     switchBranchLists,
     currentBranches,

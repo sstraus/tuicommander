@@ -33,6 +33,7 @@ describe("useGitOperations", () => {
     finalizeMergedWorktree: vi.fn().mockResolvedValue({ merged: true, action: "archived", archive_path: null }),
     listLocalBranches: vi.fn().mockResolvedValue(["main"]),
     getMergedBranches: vi.fn().mockResolvedValue(["main"]),
+    checkoutRemoteBranch: vi.fn().mockResolvedValue(undefined),
     switchBranch: vi.fn().mockResolvedValue({ success: true, stashed: false, previous_branch: "main", new_branch: "feature" }),
   };
 
@@ -1223,6 +1224,30 @@ describe("useGitOperations", () => {
       await browserGitOps.handleAddRepo();
 
       expect(mockRepo.getInfo).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("handleCheckoutRemoteBranch", () => {
+    it("calls repo.checkoutRemoteBranch and refreshes branch lists", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      mockRepo.listLocalBranches.mockResolvedValue(["main", "feat-remote"]);
+      mockRepo.checkoutRemoteBranch.mockResolvedValue(undefined);
+
+      await gitOps.handleCheckoutRemoteBranch("/repo", "feat-remote");
+
+      expect(mockRepo.checkoutRemoteBranch).toHaveBeenCalledWith("/repo", "feat-remote");
+      expect(mockSetStatusInfo).toHaveBeenCalledWith("Checked out feat-remote");
+    });
+
+    it("reports error when checkout fails", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      mockRepo.checkoutRemoteBranch.mockRejectedValue(new Error("branch already exists"));
+
+      await gitOps.handleCheckoutRemoteBranch("/repo", "feat-remote");
+
+      expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("Checkout failed"));
     });
   });
 

@@ -158,6 +158,15 @@ function createGitHubStore() {
     return pr.check_details;
   }
 
+  /** Get open PRs whose branch has no matching local branch/worktree */
+  function getRemoteOnlyPrs(repoPath: string, localBranches: Set<string>): BranchPrStatus[] {
+    const repo = state.repos[repoPath];
+    if (!repo) return [];
+    return Object.values(repo.branches).filter(
+      (pr) => pr.state?.toUpperCase() === "OPEN" && !localBranches.has(pr.branch),
+    );
+  }
+
   /** Get full branch PR data */
   function getBranchPrData(repoPath: string, branch: string): BranchPrStatus | null {
     const repo = state.repos[repoPath];
@@ -369,6 +378,7 @@ function createGitHubStore() {
     getPrStatus,
     getCheckDetails,
     getBranchPrData,
+    getRemoteOnlyPrs,
     getRemoteStatus,
     setRemoteStatus,
     loadCheckDetails,

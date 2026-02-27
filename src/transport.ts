@@ -255,6 +255,13 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
         body: { repoPath: args.repoPath, branchName: args.branchName, action: args.action },
       };
 
+    case "checkout_remote_branch":
+      return {
+        method: "POST",
+        path: "/repo/checkout-remote",
+        body: { repoPath: args.repoPath, branchName: args.branchName },
+      };
+
     case "list_local_branches":
       return { method: "GET", path: `/repo/local-branches?path=${p("repoPath")}` };
 

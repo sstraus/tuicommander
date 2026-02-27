@@ -768,4 +768,60 @@ describe("githubStore", () => {
       });
     });
   });
+
+  describe("getRemoteOnlyPrs()", () => {
+    it("returns open PRs whose branch is not in the provided local branches set", () => {
+      createRoot((dispose) => {
+        store.updateRepoData("/repo1", [
+          makePrStatus({ branch: "local-branch", state: "OPEN" }),
+          makePrStatus({ branch: "remote-only-a", state: "OPEN", number: 1 }),
+          makePrStatus({ branch: "remote-only-b", state: "OPEN", number: 2 }),
+        ]);
+
+        const result = store.getRemoteOnlyPrs("/repo1", new Set(["local-branch"]));
+
+        expect(result).toHaveLength(2);
+        expect(result.map((p) => p.branch)).toEqual(expect.arrayContaining(["remote-only-a", "remote-only-b"]));
+        dispose();
+      });
+    });
+
+    it("excludes merged and closed PRs", () => {
+      createRoot((dispose) => {
+        store.updateRepoData("/repo1", [
+          makePrStatus({ branch: "merged-remote", state: "MERGED", number: 1 }),
+          makePrStatus({ branch: "closed-remote", state: "CLOSED", number: 2 }),
+          makePrStatus({ branch: "open-remote", state: "OPEN", number: 3 }),
+        ]);
+
+        const result = store.getRemoteOnlyPrs("/repo1", new Set([]));
+
+        expect(result).toHaveLength(1);
+        expect(result[0].branch).toBe("open-remote");
+        dispose();
+      });
+    });
+
+    it("returns empty array when all PRs have local branches", () => {
+      createRoot((dispose) => {
+        store.updateRepoData("/repo1", [
+          makePrStatus({ branch: "branch-a", state: "OPEN" }),
+          makePrStatus({ branch: "branch-b", state: "OPEN", number: 2 }),
+        ]);
+
+        const result = store.getRemoteOnlyPrs("/repo1", new Set(["branch-a", "branch-b"]));
+
+        expect(result).toHaveLength(0);
+        dispose();
+      });
+    });
+
+    it("returns empty array for unknown repo", () => {
+      createRoot((dispose) => {
+        const result = store.getRemoteOnlyPrs("/unknown-repo", new Set([]));
+        expect(result).toHaveLength(0);
+        dispose();
+      });
+    });
+  });
 });
