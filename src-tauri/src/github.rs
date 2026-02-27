@@ -8,7 +8,7 @@ use std::time::Instant;
 use tauri::State;
 
 use crate::error_classification::calculate_backoff_delay;
-use crate::state::{AppState, GITHUB_CACHE_TTL};
+use crate::state::{AppState, GIT_CACHE_TTL, GITHUB_CACHE_TTL};
 
 /// Run `gh auth token` CLI to get the current token from gh's secure storage.
 /// This works even when env vars are empty/unset, because gh reads from the
@@ -757,7 +757,7 @@ pub(crate) fn get_repo_pr_statuses_impl(
     let variables = serde_json::json!({
         "owner": owner,
         "repo": repo,
-        "first": 50,
+        "first": 20,
     });
 
     match graphql_with_retry(state, BATCH_PR_QUERY, variables) {
@@ -786,6 +786,110 @@ pub(crate) async fn get_repo_pr_statuses(
         let statuses = get_repo_pr_statuses_impl(&path, &state)?;
         AppState::set_cached(&state.github_status_cache, path.clone(), statuses.clone());
         Ok(statuses)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Build a single aliased GraphQL query that fetches PRs for multiple repos in one HTTP call.
+/// Each repo gets an alias `r{i}` to avoid field name collisions.
+/// Returns (query_string, Vec<(alias, repo_path)>) for result extraction.
+fn build_multi_repo_pr_query(
+    repos: &[(String, String, String)], // Vec<(path, owner, name)>
+    include_merged: bool,
+) -> (String, Vec<(String, String)>) {
+    let states = if include_merged { "[OPEN, MERGED]" } else { "[OPEN]" };
+    let node_fields = r#"number title state url headRefName baseRefName isDraft
+        additions deletions mergeable mergeStateStatus reviewDecision
+        createdAt updatedAt
+        author { login }
+        labels(first: 10) { nodes { name color } }
+        commits(last: 1) {
+          totalCount
+          nodes {
+            commit {
+              statusCheckRollup {
+                contexts {
+                  checkRunCountsByState { state count }
+                  statusContextCountsByState { state count }
+                }
+              }
+            }
+          }
+        }"#;
+
+    let mut aliases: Vec<(String, String)> = Vec::new();
+    let mut parts = vec!["query BatchRepoPRs {".to_string()];
+
+    for (i, (path, owner, name)) in repos.iter().enumerate() {
+        let alias = format!("r{i}");
+        parts.push(format!(
+            "  {alias}: repository(owner: \"{owner}\", name: \"{name}\") {{\n    pullRequests(first: 20, states: {states}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {node_fields} }}\n    }}\n  }}"
+        ));
+        aliases.push((alias, path.clone()));
+    }
+    parts.push("  rateLimit { cost remaining resetAt }".to_string());
+    parts.push("}".to_string());
+
+    (parts.join("\n"), aliases)
+}
+
+/// Fetch PR statuses for all repos in a single batched GraphQL call.
+/// On failure (network, auth, complexity), returns Err so the caller can fall back to per-repo calls.
+fn get_all_pr_statuses_impl(
+    paths: &[String],
+    include_merged: bool,
+    state: &AppState,
+) -> Result<std::collections::HashMap<String, Vec<BranchPrStatus>>, String> {
+    if state.github_token.read().is_none() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    // Resolve (path, owner, repo) for each path that has a GitHub remote
+    let repos: Vec<(String, String, String)> = paths
+        .iter()
+        .filter_map(|path| {
+            let repo_path = PathBuf::from(path);
+            let url = get_github_remote_url(&repo_path)?;
+            let (owner, name) = parse_remote_url(&url)?;
+            Some((path.clone(), owner, name))
+        })
+        .collect();
+
+    if repos.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let (query, aliases) = build_multi_repo_pr_query(&repos, include_merged);
+
+    let response = graphql_with_retry(state, &query, serde_json::Value::Null)?;
+
+    let mut results = std::collections::HashMap::new();
+    for (alias, path) in &aliases {
+        let nodes = match response["data"][alias]["pullRequests"]["nodes"].as_array() {
+            Some(arr) => arr,
+            None => continue,
+        };
+        let statuses: Vec<BranchPrStatus> = nodes.iter().filter_map(parse_pr_node).collect();
+        // Update the per-repo cache so get_repo_pr_statuses hits cache on next individual call
+        AppState::set_cached(&state.github_status_cache, path.clone(), statuses.clone());
+        results.insert(path.clone(), statuses);
+    }
+    Ok(results)
+}
+
+/// Fetch PR statuses for all repos in a single batched GraphQL call.
+/// On failure, the frontend should retry with per-repo individual calls.
+/// `include_merged` is true for the startup poll to detect offline transitions.
+#[tauri::command]
+pub(crate) async fn get_all_pr_statuses(
+    state: State<'_, Arc<AppState>>,
+    paths: Vec<String>,
+    include_merged: bool,
+) -> Result<std::collections::HashMap<String, Vec<BranchPrStatus>>, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        get_all_pr_statuses_impl(&paths, include_merged, &state)
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))?
@@ -840,12 +944,23 @@ pub(crate) fn get_github_status_impl(path: &str) -> GitHubStatus {
     }
 }
 
-/// Tauri command wrapper — runs on a blocking thread to avoid freezing the UI.
+/// Tauri command wrapper — cached with GIT_CACHE_TTL to avoid spawning git subprocesses every poll.
 #[tauri::command]
-pub(crate) async fn get_github_status(path: String) -> Result<GitHubStatus, String> {
-    tokio::task::spawn_blocking(move || get_github_status_impl(&path))
-        .await
-        .map_err(|e| format!("Task failed: {e}"))
+pub(crate) async fn get_github_status(
+    path: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<GitHubStatus, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        if let Some(cached) = AppState::get_cached(&state.git_status_cache, &path, GIT_CACHE_TTL) {
+            return cached;
+        }
+        let status = get_github_status_impl(&path);
+        AppState::set_cached(&state.git_status_cache, path, status.clone());
+        status
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))
 }
 
 const PR_CHECKS_QUERY: &str = r#"

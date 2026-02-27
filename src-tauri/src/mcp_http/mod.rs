@@ -376,6 +376,7 @@ mod tests {
             repo_info_cache: DashMap::new(),
             merged_branches_cache: DashMap::new(),
             github_status_cache: DashMap::new(),
+            git_status_cache: DashMap::new(),
             head_watchers: DashMap::new(),
             repo_watchers: DashMap::new(),
             http_client: std::mem::ManuallyDrop::new(http_client),

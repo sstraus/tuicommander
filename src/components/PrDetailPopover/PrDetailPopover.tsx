@@ -71,6 +71,11 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown);
+    // Lazy-load CI check details when popover opens
+    const pr = prData();
+    if (pr) {
+      githubStore.loadCheckDetails(props.repoPath, props.branch, pr.number).catch(() => {});
+    }
   });
 
   onCleanup(() => {

@@ -458,8 +458,11 @@ describe("githubStore", () => {
   });
 
   describe("polling", () => {
-    it("polls repos on startPolling", async () => {
-      mockInvoke.mockResolvedValue([makePrStatus()]);
+    it("polls repos on startPolling using batched get_all_pr_statuses", async () => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [makePrStatus()] });
+        return Promise.resolve(null);
+      });
 
       await createRoot(async (dispose) => {
         store.startPolling();
@@ -467,15 +470,21 @@ describe("githubStore", () => {
         // Flush the initial poll microtask
         await vi.advanceTimersByTimeAsync(0);
 
-        expect(mockInvoke).toHaveBeenCalledWith("get_repo_pr_statuses", { path: "/repo1" });
+        expect(mockInvoke).toHaveBeenCalledWith("get_all_pr_statuses", {
+          paths: ["/repo1"],
+          includeMerged: true,
+        });
         store.stopPolling();
         dispose();
       });
     });
 
-    it("polls multiple repos", async () => {
+    it("includes all repo paths in batched poll", async () => {
       mockGetPaths.mockReturnValue(["/repo1", "/repo2"]);
-      mockInvoke.mockResolvedValue([]);
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [], "/repo2": [] });
+        return Promise.resolve(null);
+      });
 
       // Need fresh import with new mock
       vi.resetModules();
@@ -490,15 +499,75 @@ describe("githubStore", () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
+        expect(mockInvoke).toHaveBeenCalledWith("get_all_pr_statuses", {
+          paths: ["/repo1", "/repo2"],
+          includeMerged: true,
+        });
+        store.stopPolling();
+        dispose();
+      });
+    });
+
+    it("uses includeMerged=true on startup poll and false on subsequent", async () => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [] });
+        return Promise.resolve(null);
+      });
+
+      await createRoot(async (dispose) => {
+        store.startPolling();
+        await vi.advanceTimersByTimeAsync(0); // startup poll
+
+        // First call is startup: includeMerged = true
+        const startupCall = mockInvoke.mock.calls.find((c: unknown[]) => c[0] === "get_all_pr_statuses");
+        expect(startupCall?.[1]).toMatchObject({ includeMerged: true });
+
+        mockInvoke.mockClear();
+
+        // Advance past the 30s interval for a subsequent poll
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        const subsequentCall = mockInvoke.mock.calls.find((c: unknown[]) => c[0] === "get_all_pr_statuses");
+        expect(subsequentCall?.[1]).toMatchObject({ includeMerged: false });
+
+        store.stopPolling();
+        dispose();
+      });
+    });
+
+    it("falls back to per-repo calls when batch fails", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_all_pr_statuses") return Promise.reject(new Error("batch failed"));
+        if (cmd === "get_repo_pr_statuses") return Promise.reject(new Error("network error"));
+        return Promise.resolve(null);
+      });
+
+      await createRoot(async (dispose) => {
+        store.startPolling();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Fallback per-repo call should have been made
         expect(mockInvoke).toHaveBeenCalledWith("get_repo_pr_statuses", { path: "/repo1" });
-        expect(mockInvoke).toHaveBeenCalledWith("get_repo_pr_statuses", { path: "/repo2" });
+        // Per-repo failure should be logged as error
+        expect(consoleSpy).toHaveBeenCalledWith(
+          "[github]",
+          expect.stringContaining("Failed to poll PR statuses"),
+          expect.any(Error),
+        );
+        consoleSpy.mockRestore();
+        warnSpy.mockRestore();
         store.stopPolling();
         dispose();
       });
     });
 
     it("stopPolling prevents further polls", async () => {
-      mockInvoke.mockResolvedValue([]);
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [] });
+        return Promise.resolve(null);
+      });
 
       await createRoot(async (dispose) => {
         store.startPolling();
@@ -516,7 +585,10 @@ describe("githubStore", () => {
     });
 
     it("pauses polling when document becomes hidden", async () => {
-      mockInvoke.mockResolvedValue([makePrStatus()]);
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [makePrStatus()] });
+        return Promise.resolve(null);
+      });
 
       await createRoot(async (dispose) => {
         store.startPolling();
@@ -539,7 +611,10 @@ describe("githubStore", () => {
     });
 
     it("resumes polling with immediate poll when document becomes visible", async () => {
-      mockInvoke.mockResolvedValue([makePrStatus()]);
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [makePrStatus()] });
+        return Promise.resolve(null);
+      });
 
       await createRoot(async (dispose) => {
         store.startPolling();
@@ -565,28 +640,9 @@ describe("githubStore", () => {
       });
     });
 
-    it("handles per-repo poll failure gracefully", async () => {
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-      mockInvoke.mockRejectedValueOnce(new Error("network error"));
-
-      await createRoot(async (dispose) => {
-        store.startPolling();
-        await vi.advanceTimersByTimeAsync(0);
-
-        expect(consoleSpy).toHaveBeenCalledWith(
-          "[github]",
-          expect.stringContaining("Failed to poll PR statuses"),
-          expect.any(Error),
-        );
-        consoleSpy.mockRestore();
-        store.stopPolling();
-        dispose();
-      });
-    });
-
     it("skips polling when no repos are configured", async () => {
       mockGetPaths.mockReturnValue([]);
-      mockInvoke.mockResolvedValue([]);
+      mockInvoke.mockResolvedValue(null);
 
       await createRoot(async (dispose) => {
         store.startPolling();
@@ -600,9 +656,12 @@ describe("githubStore", () => {
       });
     });
 
-    it("updates store state from successful poll response", async () => {
+    it("updates store state from successful batch poll response", async () => {
       const prStatus = makePrStatus({ branch: "main", state: "OPEN", number: 7 });
-      mockInvoke.mockResolvedValue([prStatus]);
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [prStatus] });
+        return Promise.resolve(null);
+      });
 
       await createRoot(async (dispose) => {
         store.startPolling();
@@ -619,20 +678,20 @@ describe("githubStore", () => {
       });
     });
 
-    it("continues polling at base interval even when per-repo errors occur", async () => {
-      // Per-repo errors are caught inside pollAll() — they do NOT trigger backoff.
-      // The outer catch (backoff logic) is only reachable if Promise.all itself throws,
-      // which can't happen when each path's error is caught individually.
+    it("continues polling at base interval even when errors occur", async () => {
+      // Errors are caught inside pollAll() — they do NOT trigger backoff.
       mockInvoke.mockRejectedValue(new Error("network error"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-      // BASE = 30s — should stay at this interval regardless of per-repo errors
+      // BASE = 30s — should stay at this interval regardless of errors
       await createRoot(async (dispose) => {
         store.startPolling();
 
-        const pollCmds = ["get_repo_pr_statuses", "get_github_status"];
+        // Count calls to polling commands (batch attempt + fallback + remote status)
+        const pollCmds = ["get_all_pr_statuses", "get_repo_pr_statuses", "get_github_status"];
         const pollCallCount = () =>
-          mockInvoke.mock.calls.filter((c: string[]) => pollCmds.includes(c[0])).length;
+          mockInvoke.mock.calls.filter((c: unknown[]) => pollCmds.includes(c[0] as string)).length;
 
         await vi.advanceTimersByTimeAsync(0);
         const after0 = pollCallCount();
@@ -643,12 +702,67 @@ describe("githubStore", () => {
         await vi.advanceTimersByTimeAsync(30_000);
         const after60 = pollCallCount();
 
-        // Each poll interval adds 2 calls (get_repo_pr_statuses + get_github_status).
-        // The interval stays constant at 30s (no backoff for per-repo errors).
-        expect(after30 - after0).toBe(2);
-        expect(after60 - after30).toBe(2);
+        // Each poll interval adds the same number of calls (constant interval = no backoff).
+        expect(after30 - after0).toBe(after60 - after30);
 
         consoleSpy.mockRestore();
+        warnSpy.mockRestore();
+        store.stopPolling();
+        dispose();
+      });
+    });
+
+    it("persists PR state to localStorage after successful poll", async () => {
+      const prStatus = makePrStatus({ branch: "feat/x", state: "OPEN" });
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [prStatus] });
+        return Promise.resolve(null);
+      });
+
+      await createRoot(async (dispose) => {
+        store.startPolling();
+        await vi.advanceTimersByTimeAsync(0);
+
+        const raw = localStorage.getItem("github:pr_state");
+        expect(raw).not.toBeNull();
+        const saved = JSON.parse(raw!);
+        expect(saved["/repo1"]).toBeDefined();
+        expect(saved["/repo1"].branches["feat/x"]).toBeDefined();
+
+        store.stopPolling();
+        dispose();
+      });
+    });
+
+    it("loads persisted PR state on startPolling for offline transition detection", async () => {
+      // Persist an OPEN PR before starting
+      const persistedPr = makePrStatus({ branch: "feat/y", state: "OPEN", number: 99 });
+      localStorage.setItem(
+        "github:pr_state",
+        JSON.stringify({ "/repo1": { branches: { "feat/y": persistedPr }, remoteStatus: null, lastPolled: 0 } }),
+      );
+
+      // New poll returns the same PR as MERGED → should emit 'merged' notification
+      const mergedPr = makePrStatus({ branch: "feat/y", state: "MERGED", number: 99 });
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [mergedPr] });
+        return Promise.resolve(null);
+      });
+
+      let notifStore: typeof import("../../stores/prNotifications").prNotificationsStore;
+      notifStore = (await import("../../stores/prNotifications")).prNotificationsStore;
+      notifStore.clearAll();
+
+      await createRoot(async (dispose) => {
+        store.startPolling();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Should have detected the OPEN → MERGED transition
+        const active = notifStore.getActive();
+        expect(active).toHaveLength(1);
+        expect(active[0].type).toBe("merged");
+        expect(active[0].branch).toBe("feat/y");
+
         store.stopPolling();
         dispose();
       });

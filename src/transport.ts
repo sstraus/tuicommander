@@ -192,6 +192,12 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
       return { method: "GET", path: `/repo/github?path=${p("path")}` };
     case "get_repo_pr_statuses":
       return { method: "GET", path: `/repo/prs?path=${p("path")}` };
+    case "get_all_pr_statuses":
+      return {
+        method: "POST",
+        path: "/repo/prs/batch",
+        body: { paths: args.paths, include_merged: args.includeMerged },
+      };
     case "get_git_branches":
       return { method: "GET", path: `/repo/branches?path=${p("path")}` };
     case "get_merged_branches":

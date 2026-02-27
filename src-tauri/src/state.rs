@@ -534,6 +534,8 @@ pub struct AppState {
     pub(crate) merged_branches_cache: DashMap<String, (Vec<String>, Instant)>,
     /// TTL cache for get_repo_pr_statuses results, keyed by repo path
     pub(crate) github_status_cache: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
+    /// TTL cache for get_github_status results (ahead/behind), keyed by repo path
+    pub(crate) git_status_cache: DashMap<String, (crate::github::GitHubStatus, Instant)>,
     /// File watchers for .git/HEAD per repo (keyed by repo path)
     pub(crate) head_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
     /// File watchers for .git/ directory per repo (keyed by repo path)
@@ -606,6 +608,7 @@ impl AppState {
         self.repo_info_cache.clear();
         self.merged_branches_cache.clear();
         self.github_status_cache.clear();
+        self.git_status_cache.clear();
     }
 
     /// Invalidate caches for a specific repo path.
@@ -613,6 +616,7 @@ impl AppState {
         self.repo_info_cache.remove(path);
         self.merged_branches_cache.remove(path);
         self.github_status_cache.remove(path);
+        self.git_status_cache.remove(path);
     }
 
     /// Build orchestrator stats snapshot from current state.
@@ -931,6 +935,7 @@ mod tests {
             repo_info_cache: dashmap::DashMap::new(),
             merged_branches_cache: dashmap::DashMap::new(),
             github_status_cache: dashmap::DashMap::new(),
+            git_status_cache: dashmap::DashMap::new(),
             head_watchers: dashmap::DashMap::new(),
             repo_watchers: dashmap::DashMap::new(),
             http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),

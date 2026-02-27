@@ -49,8 +49,13 @@ vi.mock("../../hooks/useRepository", () => ({
 vi.mock("../../stores/github", () => ({
   githubStore: {
     getBranchPrData: mockGetBranchPrData,
+    // getPrStatus is used by mergedPrGrace utility — share the same mock so tests
+    // that set mockGetBranchPrData automatically drive both the StatusBar PR badge
+    // (via activePrStatus → getPrStatus) and PrDetailPopover (via getBranchPrData)
+    getPrStatus: mockGetBranchPrData,
     getCheckSummary: vi.fn(() => null),
     getCheckDetails: vi.fn(() => []),
+    loadCheckDetails: vi.fn().mockResolvedValue(undefined),
   },
 }));
 

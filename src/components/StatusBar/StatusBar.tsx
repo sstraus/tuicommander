@@ -5,14 +5,13 @@ import { AGENT_DISPLAY } from "../../agents";
 import { AgentIcon } from "../ui/AgentIcon";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { useGitHub } from "../../hooks/useGitHub";
-import { githubStore } from "../../stores/github";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { statusBarTicker } from "../../stores/statusBarTicker";
 import { TickerArea } from "./TickerArea";
 import { formatWaitTime } from "../../rate-limit";
 import { dictationStore } from "../../stores/dictation";
 import { notesStore } from "../../stores/notes";
-import { userActivityStore } from "../../stores/userActivity";
+import { activePrStatus } from "../../utils/mergedPrGrace";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { t } from "../../i18n";
 import { appLogger } from "../../stores/appLogger";
@@ -116,18 +115,12 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 
   const notesBadgeCount = () => notesStore.filteredCount(props.currentRepoPath ?? null);
 
-  // Get PR data with lifecycle rules:
-  // - CLOSED: never show
-  // - MERGED: show until 5 min of accumulated user activity, then hide
-  // - OPEN: show as-is
-  const [mergedActivityMs, setMergedActivityMs] = createSignal(0);
+  // PR data with lifecycle rules (CLOSED: hidden, MERGED: grace period, OPEN: shown).
+  // Re-evaluates every second so the merged grace period ticks down.
   const [prTick, setPrTick] = createSignal(0);
-  let lastMergedPrKey = "";
 
   onMount(() => {
-    const prTimer = setInterval(() => {
-      setPrTick((t) => t + 1);
-    }, 1000);
+    const prTimer = setInterval(() => setPrTick((t) => t + 1), 1000);
     onCleanup(() => clearInterval(prTimer));
   });
 
@@ -136,36 +129,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
     const repoPath = props.currentRepoPath;
     const branch = github.status()?.current_branch;
     if (!repoPath || !branch) return null;
-
-    const pr = githubStore.getBranchPrData(repoPath, branch);
-    if (!pr) return null;
-
-    const state = pr.state?.toUpperCase();
-
-    // CLOSED: never show
-    if (state === "CLOSED") return null;
-
-    // MERGED: activity-based grace period
-    if (state === "MERGED") {
-      // Reset accumulator when PR/branch changes
-      const prKey = `${repoPath}:${branch}:${pr.number}`;
-      if (prKey !== lastMergedPrKey) {
-        lastMergedPrKey = prKey;
-        setMergedActivityMs(0);
-      }
-
-      // Accumulate: if user was active within the last 2s, add 1s
-      const lastActivity = userActivityStore.lastActivityAt();
-      if (lastActivity > 0 && Date.now() - lastActivity < 2000) {
-        setMergedActivityMs((prev) => prev + 1000);
-      }
-
-      // After 5 min accumulated activity, hide
-      if (mergedActivityMs() >= 300_000) return null;
-    }
-
-    // OPEN or MERGED within grace: show as-is
-    return pr;
+    return activePrStatus(repoPath, branch);
   });
 
   const handleCiBadgeClick = () => {
