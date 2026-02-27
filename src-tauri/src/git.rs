@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use tauri::State;
 
+use crate::git_cli::git_cmd;
 use crate::state::{AppState, GIT_CACHE_TTL};
 
 // --- File-based git helpers (no subprocess) ---
@@ -134,23 +134,16 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
         .unwrap_or_else(|| "unknown".to_string());
 
     // Get status
-    let status = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(["status", "--porcelain"])
-        .output()
-        .ok()
+    let status = git_cmd(&repo_path)
+        .args(&["status", "--porcelain"])
+        .run_silent()
         .map(|o| {
-            if o.status.success() {
-                let output = String::from_utf8_lossy(&o.stdout);
-                if output.is_empty() {
-                    "clean".to_string()
-                } else if output.contains("UU") || output.contains("AA") || output.contains("DD") {
-                    "conflict".to_string()
-                } else {
-                    "dirty".to_string()
-                }
+            if o.stdout.is_empty() {
+                "clean".to_string()
+            } else if o.stdout.contains("UU") || o.stdout.contains("AA") || o.stdout.contains("DD") {
+                "conflict".to_string()
             } else {
-                "unknown".to_string()
+                "dirty".to_string()
             }
         })
         .unwrap_or_else(|| "unknown".to_string());
@@ -202,24 +195,19 @@ pub(crate) fn rename_branch_impl(path: &str, old_name: &str, new_name: &str) -> 
     }
 
     // Execute git branch -m oldname newname
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(["branch", "-m", old_name, new_name])
-        .output()
-        .map_err(|e| format!("Failed to execute git branch: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("not found") || stderr.contains("does not exist") {
-            return Err(format!("Branch '{old_name}' does not exist"));
+    match git_cmd(&repo_path).args(&["branch", "-m", old_name, new_name]).run() {
+        Ok(_) => Ok(()),
+        Err(crate::git_cli::GitError::NonZeroExit { stderr, .. }) => {
+            if stderr.contains("not found") || stderr.contains("does not exist") {
+                Err(format!("Branch '{old_name}' does not exist"))
+            } else if stderr.contains("already exists") {
+                Err(format!("Branch '{new_name}' already exists"))
+            } else {
+                Err(format!("git branch rename failed: {stderr}"))
+            }
         }
-        if stderr.contains("already exists") {
-            return Err(format!("Branch '{new_name}' already exists"));
-        }
-        return Err(format!("git branch rename failed: {stderr}"));
+        Err(e) => Err(e.to_string()),
     }
-
-    Ok(())
 }
 
 /// Rename a git branch (Tauri command with cache invalidation)
@@ -244,19 +232,12 @@ pub(crate) fn get_recent_commits(path: String, count: Option<u32>) -> Result<Vec
     let repo_path = PathBuf::from(&path);
     let n = count.unwrap_or(5).min(20).to_string();
 
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(["log", "--format=%H%x00%h%x00%s", "-n", &n])
-        .output()
-        .map_err(|e| format!("Failed to execute git log: {e}"))?;
+    let out = git_cmd(&repo_path)
+        .args(&["log", "--format=%H%x00%h%x00%s", "-n", &n])
+        .run()
+        .map_err(|e| format!("git log failed: {e}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git log failed: {stderr}"));
-    }
-
-    let text = String::from_utf8_lossy(&output.stdout);
-    let commits = text
+    let commits = out.stdout
         .lines()
         .filter_map(|line| {
             let parts: Vec<&str> = line.splitn(3, '\0').collect();
@@ -294,18 +275,13 @@ pub(crate) fn get_git_diff(path: String, scope: Option<String>) -> Result<String
     let mut args = diff_base_args(&scope);
     args.push("--color=never".into());
 
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(&args)
-        .output()
-        .map_err(|e| format!("Failed to execute git diff: {e}"))?;
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let out = git_cmd(&repo_path)
+        .args(&args_str)
+        .run()
+        .map_err(|e| format!("git diff failed: {e}"))?;
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("git diff failed: {stderr}"))
-    }
+    Ok(out.stdout)
 }
 
 /// Get diff stats (additions/deletions) for a repository
@@ -316,32 +292,26 @@ pub(crate) fn get_diff_stats(path: String, scope: Option<String>) -> DiffStats {
     let mut args = diff_base_args(&scope);
     args.push("--shortstat".into());
 
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(&args)
-        .output();
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    if let Some(out) = git_cmd(&repo_path).args(&args_str).run_silent() {
+        // Parse: "1 file changed, 10 insertions(+), 5 deletions(-)"
+        let mut additions = 0;
+        let mut deletions = 0;
 
-    if let Ok(output) = output
-        && output.status.success() {
-            let stat_line = String::from_utf8_lossy(&output.stdout);
-            // Parse: "1 file changed, 10 insertions(+), 5 deletions(-)"
-            let mut additions = 0;
-            let mut deletions = 0;
-
-            for part in stat_line.split(',') {
-                let part = part.trim();
-                if part.contains("insertion") {
-                    if let Some(num) = part.split_whitespace().next() {
-                        additions = num.parse().unwrap_or(0);
-                    }
-                } else if part.contains("deletion")
-                    && let Some(num) = part.split_whitespace().next() {
-                        deletions = num.parse().unwrap_or(0);
-                    }
-            }
-
-            return DiffStats { additions, deletions };
+        for part in out.stdout.split(',') {
+            let part = part.trim();
+            if part.contains("insertion") {
+                if let Some(num) = part.split_whitespace().next() {
+                    additions = num.parse().unwrap_or(0);
+                }
+            } else if part.contains("deletion")
+                && let Some(num) = part.split_whitespace().next() {
+                    deletions = num.parse().unwrap_or(0);
+                }
         }
+
+        return DiffStats { additions, deletions };
+    }
 
     DiffStats { additions: 0, deletions: 0 }
 }
@@ -355,34 +325,24 @@ pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<V
     let mut status_args = diff_base_args(&scope);
     status_args.push("--name-status".into());
 
-    let status_output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(&status_args)
-        .output()
-        .map_err(|e| format!("Failed to execute git diff --name-status: {e}"))?;
-
-    if !status_output.status.success() {
-        let stderr = String::from_utf8_lossy(&status_output.stderr);
-        return Err(format!("git diff --name-status failed: {stderr}"));
-    }
+    let status_args_str: Vec<&str> = status_args.iter().map(|s| s.as_str()).collect();
+    let status_out = git_cmd(&repo_path)
+        .args(&status_args_str)
+        .run()
+        .map_err(|e| format!("git diff --name-status failed: {e}"))?;
 
     // Get per-file stats (additions/deletions)
     let mut stats_args = diff_base_args(&scope);
     stats_args.push("--numstat".into());
 
-    let stats_output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(&stats_args)
-        .output()
-        .map_err(|e| format!("Failed to execute git diff --numstat: {e}"))?;
-
-    if !stats_output.status.success() {
-        let stderr = String::from_utf8_lossy(&stats_output.stderr);
-        return Err(format!("git diff --numstat failed: {stderr}"));
-    }
+    let stats_args_str: Vec<&str> = stats_args.iter().map(|s| s.as_str()).collect();
+    let stats_out = git_cmd(&repo_path)
+        .args(&stats_args_str)
+        .run()
+        .map_err(|e| format!("git diff --numstat failed: {e}"))?;
 
     // Parse status output into map: filepath -> status
-    let status_text = String::from_utf8_lossy(&status_output.stdout);
+    let status_text = &status_out.stdout;
     let mut status_map: HashMap<String, String> = HashMap::new();
     for line in status_text.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -394,7 +354,7 @@ pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<V
     }
 
     // Parse stats output and combine with status
-    let stats_text = String::from_utf8_lossy(&stats_output.stdout);
+    let stats_text = &stats_out.stdout;
     let mut files = Vec::new();
     for line in stats_text.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -414,15 +374,12 @@ pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<V
 
     // For working tree scope, also include untracked files
     if scope.is_none() {
-        let untracked_output = Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(&repo_path)
-            .args(["ls-files", "--others", "--exclude-standard"])
-            .output()
-            .map_err(|e| format!("Failed to list untracked files: {e}"))?;
+        let untracked_out = git_cmd(&repo_path)
+            .args(&["ls-files", "--others", "--exclude-standard"])
+            .run_silent();
 
-        if untracked_output.status.success() {
-            let untracked_text = String::from_utf8_lossy(&untracked_output.stdout);
-            for line in untracked_text.lines() {
+        if let Some(ref out) = untracked_out {
+            for line in out.stdout.lines() {
                 let file_path = line.trim();
                 if file_path.is_empty() {
                     continue;
@@ -485,54 +442,41 @@ pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>, u
         let is_untracked = if untracked == Some(true) {
             true
         } else {
-            match Command::new(crate::agent::resolve_cli("git"))
-                .current_dir(&repo_path)
-                .args(["ls-files", "--error-unmatch", &file])
-                .output()
-            {
-                Ok(o) => !o.status.success(),
-                Err(e) => {
-                    eprintln!("[git] ls-files spawn failed for {file}: {e}");
-                    false
-                }
-            }
+            git_cmd(&repo_path)
+                .args(&["ls-files", "--error-unmatch", &file])
+                .run()
+                .is_err()
         };
 
         if is_untracked {
-            let output = Command::new(crate::agent::resolve_cli("git"))
-                .current_dir(&repo_path)
-                .args(["diff", "--color=never", "--no-index", "--", NULL_DEVICE])
-                .arg(&full_path)
-                .output()
+            let full_path_str = full_path.to_string_lossy();
+            let raw = git_cmd(&repo_path)
+                .args(&["diff", "--color=never", "--no-index", "--", NULL_DEVICE, &full_path_str])
+                .run_raw()
                 .map_err(|e| format!("Failed to diff untracked file: {e}"))?;
             // --no-index exits with 1 when files differ (expected vs null device),
             // but exit code > 1 indicates an actual error.
-            let code = output.status.code().unwrap_or(-1);
+            let code = raw.status.code().unwrap_or(-1);
             if code > 1 {
-                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stderr = String::from_utf8_lossy(&raw.stderr);
                 return Err(format!("git diff --no-index failed (exit {code}): {stderr}"));
             }
-            return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+            return Ok(String::from_utf8_lossy(&raw.stdout).to_string());
         }
     }
 
     let mut args = diff_base_args(&scope);
     args.push("--color=never".into());
     args.push("--".into());
+    args.push(file.clone());
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(&args)
-        .arg(&file)
-        .output()
-        .map_err(|e| format!("Failed to execute git diff for file: {e}"))?;
+    let out = git_cmd(&repo_path)
+        .args(&args_str)
+        .run()
+        .map_err(|e| format!("git diff failed for file {file}: {e}"))?;
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("git diff failed for file {file}: {stderr}"))
-    }
+    Ok(out.stdout)
 }
 
 /// Generate 2-character initials from a repository name
@@ -638,19 +582,12 @@ pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, 
         None => return Ok(vec![]),  // No default branch — graceful no-op
     };
 
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(repo_path)
-        .args(["branch", "--merged", &main_branch, "--format=%(refname:short)"])
-        .output()
-        .map_err(|e| format!("Failed to run git branch --merged: {e}"))?;
+    let out = git_cmd(repo_path)
+        .args(&["branch", "--merged", &main_branch, "--format=%(refname:short)"])
+        .run()
+        .map_err(|e| format!("git branch --merged failed: {e}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git branch --merged failed: {stderr}"));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(stdout.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    Ok(out.stdout.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
 }
 
 /// Check whether a ref exists in .git/packed-refs (for repos that have been gc'd).
@@ -690,19 +627,12 @@ pub(crate) async fn get_merged_branches(
 pub(crate) fn get_git_branches(path: String) -> Result<Vec<serde_json::Value>, String> {
     let repo_path = PathBuf::from(&path);
 
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(["branch", "-a", "--format=%(refname:short) %(HEAD)"])
-        .output()
-        .map_err(|e| format!("Failed to execute git branch: {e}"))?;
+    let out = git_cmd(&repo_path)
+        .args(&["branch", "-a", "--format=%(refname:short) %(HEAD)"])
+        .run()
+        .map_err(|e| format!("git branch failed: {e}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git branch failed: {stderr}"));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut branches: Vec<serde_json::Value> = stdout
+    let mut branches: Vec<serde_json::Value> = out.stdout
         .lines()
         .filter(|line| !line.is_empty())
         .map(|line| {
@@ -800,23 +730,21 @@ pub(crate) async fn run_git_command(
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path_clone);
 
-        let mut cmd = Command::new(crate::agent::resolve_cli("git"));
-        cmd.current_dir(&repo_path).args(&args);
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let mut builder = git_cmd(&repo_path).args(&args_str);
 
         // Enable GUI-based SSH authentication so passphrase-protected keys work
         // without a TTY. SSH_ASKPASS_REQUIRE=prefer tells SSH to use the askpass
         // program even when stdin looks like it could be a terminal.
         if let Some(ref askpass_path) = askpass {
-            cmd.env("SSH_ASKPASS", askpass_path);
-            cmd.env("SSH_ASKPASS_REQUIRE", "prefer");
-            cmd.env("DISPLAY", ":0"); // Required on Linux for SSH_ASKPASS
+            let askpass_str = askpass_path.to_string_lossy();
+            builder = builder
+                .env("SSH_ASKPASS", &askpass_str)
+                .env("SSH_ASKPASS_REQUIRE", "prefer")
+                .env("DISPLAY", ":0"); // Required on Linux for SSH_ASKPASS
         }
-        // Prevent git itself from trying to prompt on a non-existent terminal
-        cmd.env("GIT_TERMINAL_PROMPT", "0");
 
-        let output = cmd.output();
-
-        match output {
+        match builder.run_raw() {
             Ok(o) => {
                 let success = o.status.success();
                 let result = GitCommandResult {
@@ -1090,18 +1018,12 @@ mod tests {
         let file_branch = read_branch_from_head(&repo_root);
 
         // Subprocess approach (ground truth)
-        let git_branch = Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(&repo_root)
-            .args(["rev-parse", "--abbrev-ref", "HEAD"])
-            .output()
-            .ok()
+        let git_branch = git_cmd(&repo_root)
+            .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .run_silent()
             .and_then(|o| {
-                if o.status.success() {
-                    let b = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                    if b == "HEAD" { None } else { Some(b) }
-                } else {
-                    None
-                }
+                let b = o.stdout.trim().to_string();
+                if b == "HEAD" { None } else { Some(b) }
             });
 
         assert_eq!(file_branch, git_branch,
@@ -1117,18 +1039,10 @@ mod tests {
         let file_url = read_remote_url(&repo_root);
 
         // Subprocess approach (ground truth)
-        let git_url = Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(&repo_root)
-            .args(["remote", "get-url", "origin"])
-            .output()
-            .ok()
-            .and_then(|o| {
-                if o.status.success() {
-                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-                } else {
-                    None
-                }
-            });
+        let git_url = git_cmd(&repo_root)
+            .args(&["remote", "get-url", "origin"])
+            .run_silent()
+            .map(|o| o.stdout.trim().to_string());
 
         assert_eq!(file_url, git_url,
             "read_remote_url() must match `git remote get-url origin`");
