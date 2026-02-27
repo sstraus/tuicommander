@@ -334,6 +334,12 @@ function createRepositoriesStore() {
       setState("repositories", repoPath, "branches", branchName, "terminals", (t) =>
         t.filter((id) => id !== terminalId)
       );
+      // When last terminal is removed, clear stale savedTerminals so the periodic
+      // snapshot doesn't resurrect closed tabs on next branch click.
+      const updated = state.repositories[repoPath]?.branches[branchName];
+      if (updated && updated.terminals.length === 0 && updated.savedTerminals && updated.savedTerminals.length > 0) {
+        setState("repositories", repoPath, "branches", branchName, "savedTerminals", []);
+      }
       save();
     },
 

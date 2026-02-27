@@ -209,6 +209,29 @@ describe("repositoriesStore", () => {
         dispose();
       });
     });
+
+    it("removeTerminalFromBranch clears savedTerminals when last terminal removed", () => {
+      createRoot((dispose) => {
+        store.add({ path: "/repo", displayName: "test" });
+        store.setBranch("/repo", "main", {
+          savedTerminals: [
+            { name: "T1", cwd: "/repo", fontSize: 14, agentType: null },
+            { name: "T2", cwd: "/repo", fontSize: 14, agentType: null },
+          ],
+        });
+        store.addTerminalToBranch("/repo", "main", "term-1");
+        store.addTerminalToBranch("/repo", "main", "term-2");
+
+        // Remove first — savedTerminals should persist (still have one terminal)
+        store.removeTerminalFromBranch("/repo", "main", "term-1");
+        expect(store.get("/repo")!.branches["main"].savedTerminals).toHaveLength(2);
+
+        // Remove last — savedTerminals should be cleared
+        store.removeTerminalFromBranch("/repo", "main", "term-2");
+        expect(store.get("/repo")!.branches["main"].savedTerminals).toHaveLength(0);
+        dispose();
+      });
+    });
   });
 
   describe("getRepoPathForTerminal()", () => {
