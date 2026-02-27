@@ -9,10 +9,17 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  opacity: 1;
+  transition: opacity 150ms ease, display 150ms allow-discrete;
+
+  @starting-style {
+    opacity: 0;
+  }
 }
 
 .hidden {
   display: none;
+  opacity: 0;
 }
 
 .list {
