@@ -90,6 +90,7 @@ Per-repository fields:
 | `copy_untracked_files` | `bool` | `false` | Copy untracked files to worktree |
 | `setup_script` | `String` | `""` | Script to run after worktree creation |
 | `run_script` | `String` | `""` | Default run command |
+| `auto_fetch_interval_minutes` | `u32` | `0` | Auto-fetch interval in minutes (0 = disabled) |
 
 **Commands:** `load_repo_settings()`, `save_repo_settings(config)`, `check_has_custom_settings(path)`
 

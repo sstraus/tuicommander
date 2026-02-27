@@ -73,6 +73,7 @@ import { agentConfigsStore } from "./stores/agentConfigs";
 import { AGENTS } from "./agents";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { initApp } from "./hooks/useAppInit";
+import { startAutoFetch } from "./hooks/useAutoFetch";
 import { applyAppTheme } from "./themes";
 import { hotkeyToTauriShortcut, isValidHotkey } from "./utils";
 import {
@@ -243,6 +244,7 @@ const App: Component = () => {
         },
         startPolling: githubStore.startPolling,
         stopPolling: githubStore.stopPolling,
+        startAutoFetch,
         startPrNotificationTimer: prNotificationsStore.startFocusTimer,
         loadFontFromConfig: settingsStore.loadFontFromConfig,
         refreshDictationConfig: () => dictationStore.refreshConfig().then(() => {

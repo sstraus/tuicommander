@@ -92,6 +92,31 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
         <p class={s.hint}>{t("repoWorktree.hint.sidebarColor", "Color-code this repo in the sidebar")}</p>
       </div>
 
+      <div class={s.group}>
+        <label>{t("repoWorktree.label.autoFetchInterval", "Auto-Fetch Interval")}</label>
+        <select
+          value={props.settings.autoFetchIntervalMinutes != null ? String(props.settings.autoFetchIntervalMinutes) : INHERIT}
+          onChange={(e) => {
+            const v = e.currentTarget.value;
+            props.onUpdate("autoFetchIntervalMinutes", v === INHERIT ? null : Number(v));
+          }}
+        >
+          <option value={INHERIT}>
+            {t("repoWorktree.autoFetch.useDefault", "Use global default ({default})", {
+              default: props.defaults.autoFetchIntervalMinutes === 0
+                ? t("repoWorktree.autoFetch.disabled", "Disabled")
+                : `${props.defaults.autoFetchIntervalMinutes} min`,
+            })}
+          </option>
+          <option value="0">{t("repoWorktree.autoFetch.disabled", "Disabled")}</option>
+          <option value="5">5 min</option>
+          <option value="15">15 min</option>
+          <option value="30">30 min</option>
+          <option value="60">60 min</option>
+        </select>
+        <p class={s.hint}>{t("repoWorktree.hint.autoFetch", "Periodically fetch from remote to keep branch stats fresh")}</p>
+      </div>
+
       <h3>{t("repoWorktree.heading.worktreeConfiguration", "Worktree Configuration")}</h3>
 
       <div class={s.group}>

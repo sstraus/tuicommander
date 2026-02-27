@@ -28,6 +28,7 @@ export interface AppInitDeps {
     hydrate: () => Promise<void>;
     startPolling: () => void;
     stopPolling: () => void;
+    startAutoFetch: () => void;
     startPrNotificationTimer: () => void;
     loadFontFromConfig: () => void;
     refreshDictationConfig: () => Promise<void>;
@@ -372,6 +373,9 @@ export async function initApp(deps: AppInitDeps) {
 
   // Start batch PR/CI polling for all repos
   deps.stores.startPolling();
+
+  // Start per-repo auto-fetch timers
+  deps.stores.startAutoFetch();
 
   // Start PR notification focus timer (auto-dismiss after 5 min focused)
   deps.stores.startPrNotificationTimer();

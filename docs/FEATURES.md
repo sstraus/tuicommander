@@ -392,18 +392,25 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - External worktree detection: monitors `.git/worktrees/` for changes from CLI or other tools
 - Remove via sidebar `×` button or context menu (with confirmation)
 
-### 7.3 HEAD File Watcher
+### 7.3 Auto-Fetch
+- Per-repo configurable interval (5/15/30/60 minutes, default: disabled)
+- Background `git fetch --all` via non-interactive subprocess
+- Bumps revision counter to refresh branch stats and ahead/behind counts
+- Errors logged to appLogger, never blocking
+- Master-tick architecture: single 1-minute timer checks all repos
+
+### 7.4 HEAD File Watcher
 - Watches `.git/HEAD` for branch changes via file system events
 - Triggers UI refresh without polling
 - When a terminal runs `git checkout -b new-branch` in the main working directory (not a worktree), the sidebar renames the existing branch entry in-place (preserving all terminal state) instead of creating a duplicate
 
-### 7.4 Lazygit Integration
+### 7.5 Lazygit Integration
 - In terminal: `Cmd+G`
 - Split pane: `Cmd+Shift+L`
 - Dedicated tab naming to avoid OSC title pollution
 - Binary detection via `resolve_cli()`
 
-### 7.5 Diff
+### 7.6 Diff
 - Working tree diff and per-commit diff (last 5 commits)
 - Per-file diff in dedicated tab
 - Diff stats: additions/deletions per branch

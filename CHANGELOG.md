@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Info notification sound type** — Added "info" to per-event notification sounds
 - **Tab bar overflow menu** — Right-click scroll arrows to see clipped tabs; `+` button always stays visible
 - **Focus-aware dictation** — Transcribed text inserts into focused input element instead of always targeting terminal PTY
+- **Auto-fetch interval** — Per-repo setting to periodically `git fetch --all` in the background (5/15/30/60 min), keeping branch stats and ahead/behind counts fresh without manual intervention
+- **LLM intent declaration** — Agents emit `[[intent: <action>]]` tokens that the output parser captures and displays in the Activity Dashboard, showing real-time work intent alongside user prompts
 
 ### Changed
 - Agent session restore now shows a clickable banner instead of auto-injecting the resume command
