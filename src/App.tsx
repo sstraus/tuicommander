@@ -796,7 +796,12 @@ const App: Component = () => {
         label: `${plugin.enabled ? "Disable" : "Enable"} plugin: ${name}`,
         category: "Plugins",
         keybinding: "",
-        execute: () => pluginStore.setEnabled(plugin.id, !plugin.enabled),
+        execute: () => {
+          const fresh = pluginStore.getPlugin(plugin.id);
+          if (!fresh) return;
+          pluginStore.setEnabled(plugin.id, !fresh.enabled)
+            .catch((err) => appLogger.error("plugin", `Failed to toggle plugin ${name}`, err));
+        },
       });
     }
 
