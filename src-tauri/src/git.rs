@@ -411,13 +411,81 @@ pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<V
         }
     }
 
+    // For working tree scope, also include untracked files
+    if scope.is_none() {
+        let untracked_output = Command::new(crate::agent::resolve_cli("git"))
+            .current_dir(&repo_path)
+            .args(["ls-files", "--others", "--exclude-standard"])
+            .output()
+            .map_err(|e| format!("Failed to list untracked files: {e}"))?;
+
+        if untracked_output.status.success() {
+            let untracked_text = String::from_utf8_lossy(&untracked_output.stdout);
+            for line in untracked_text.lines() {
+                let file_path = line.trim();
+                if file_path.is_empty() {
+                    continue;
+                }
+                // Count lines in the new file for the additions stat
+                let full_path = repo_path.join(file_path);
+                let additions = std::fs::read_to_string(&full_path)
+                    .map(|c| c.lines().count() as u32)
+                    .unwrap_or(0);
+                files.push(ChangedFile {
+                    path: file_path.to_string(),
+                    status: "?".to_string(),
+                    additions,
+                    deletions: 0,
+                });
+            }
+        }
+    }
+
     Ok(files)
 }
+
+/// Null device path — `/dev/null` on Unix, `NUL` on Windows
+#[cfg(not(windows))]
+const NULL_DEVICE: &str = "/dev/null";
+#[cfg(windows)]
+const NULL_DEVICE: &str = "NUL";
 
 /// Get diff for a single file
 #[tauri::command]
 pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>) -> Result<String, String> {
     let repo_path = PathBuf::from(&path);
+
+    // For untracked files, use --no-index to generate a diff against the null device
+    if scope.is_none() {
+        let full_path = repo_path.join(&file);
+
+        // Security: prevent path traversal (e.g. "../../etc/passwd")
+        let canonical_repo = repo_path.canonicalize()
+            .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
+        let canonical_file = full_path.canonicalize()
+            .map_err(|e| format!("Failed to resolve file path: {e}"))?;
+        if !canonical_file.starts_with(&canonical_repo) {
+            return Err("Access denied: file is outside repository".to_string());
+        }
+
+        let is_untracked = Command::new(crate::agent::resolve_cli("git"))
+            .current_dir(&repo_path)
+            .args(["ls-files", "--error-unmatch", &file])
+            .output()
+            .map(|o| !o.status.success())
+            .unwrap_or(false);
+
+        if is_untracked {
+            let output = Command::new(crate::agent::resolve_cli("git"))
+                .current_dir(&repo_path)
+                .args(["diff", "--color=never", "--no-index", "--", NULL_DEVICE])
+                .arg(&full_path)
+                .output()
+                .map_err(|e| format!("Failed to diff untracked file: {e}"))?;
+            // --no-index exits with 1 when files differ (which they always will vs null device)
+            return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+        }
+    }
 
     let mut args = diff_base_args(&scope);
     args.push("--color=never".into());
@@ -1098,5 +1166,29 @@ mod tests {
         // temp_dir has no .git — resolve_git_dir returns None, so we
         // test detect_default_branch with a fake path that has no refs
         assert!(detect_default_branch(&tmp).is_none());
+    }
+
+    #[test]
+    fn get_file_diff_rejects_path_traversal() {
+        // Use this repo's own path as a valid git repo
+        let repo_path = std::env::current_dir().unwrap();
+        let result = get_file_diff(
+            repo_path.to_string_lossy().to_string(),
+            "../../etc/passwd".to_string(),
+            None,
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("outside repository") || err.contains("Failed to resolve"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn null_device_constant_is_correct() {
+        #[cfg(not(windows))]
+        assert_eq!(NULL_DEVICE, "/dev/null");
+        #[cfg(windows)]
+        assert_eq!(NULL_DEVICE, "NUL");
     }
 }
