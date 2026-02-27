@@ -1,10 +1,10 @@
 ---
-id: "392-f764"
-title: "Wire up worktree storage strategy setting (sibling __wt, appdir, inside-repo)"
-status: pending
+id: 392-f764
+title: Wire up worktree storage strategy setting (sibling __wt, appdir, inside-repo)
+status: complete
 priority: P1
-created: 2026-02-26T12:47:28.105Z
-updated: 2026-02-26T12:47:28.105Z
+created: "2026-02-26T12:47:28.105Z"
+updated: "2026-02-26T15:11:12.649Z"
 dependencies: []
 ---
 
@@ -32,4 +32,6 @@ resolve_worktree_dir exists but is behind #[cfg(test)] and never called in produ
 - src-tauri/src/config.rs
 
 ## Work Log
+
+### 2026-02-26T15:11:11.685Z - Completed: wired resolve_worktree_dir_for_repo into all 4 creation paths (Tauri create_worktree, PTY create_pty_with_worktree, MCP create_worktree_http, MCP get_worktrees_dir_http). Added OptionalRepoQuery type. Frontend usePty/useGitOperations/transport updated. 3 Rust unit tests for resolve strategies. All 2114 TS + 7 Rust tests pass.
 
