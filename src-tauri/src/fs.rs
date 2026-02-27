@@ -272,6 +272,140 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
     Ok(entries)
 }
 
+/// Recursively search files in a repository matching a glob-like query.
+/// Returns up to `limit` results (default 200) to avoid blowing up on huge repos.
+/// Respects .gitignore by checking `git check-ignore`.
+#[tauri::command]
+pub fn search_files(
+    repo_path: String,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<DirEntry>, String> {
+    let repo = PathBuf::from(&repo_path);
+    let canonical_repo = repo
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
+
+    let max_results = limit.unwrap_or(200);
+    let pattern = build_search_pattern(&query);
+
+    // Get all git statuses for the whole repo
+    let git_statuses = parse_git_status(&repo_path, ".");
+
+    let mut results = Vec::new();
+    walk_directory(&canonical_repo, &canonical_repo, &pattern, &git_statuses, &mut results, max_results);
+
+    // Detect gitignored paths
+    let all_relative_paths: Vec<String> = results.iter().map(|e| e.path.clone()).collect();
+    let ignored_set = get_ignored_paths(&repo_path, &all_relative_paths);
+    for entry in &mut results {
+        entry.is_ignored = ignored_set.contains(&entry.path);
+    }
+
+    // Sort by path for predictable results
+    results.sort_by(|a, b| a.path.to_lowercase().cmp(&b.path.to_lowercase()));
+
+    Ok(results)
+}
+
+/// Build a case-insensitive regex from a user search query.
+/// Supports `*` (any within name) and `**` (any including path separators).
+fn build_search_pattern(query: &str) -> regex::Regex {
+    let mut regex_str = String::from("(?i)");
+    let mut chars = query.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '*' if chars.peek() == Some(&'*') => {
+                chars.next(); // consume second *
+                regex_str.push_str(".*");
+            }
+            '*' => regex_str.push_str("[^/]*"),
+            '?' => regex_str.push('.'),
+            '.' | '(' | ')' | '[' | ']' | '{' | '}' | '+' | '^' | '$' | '|' | '\\' => {
+                regex_str.push('\\');
+                regex_str.push(c);
+            }
+            _ => regex_str.push(c),
+        }
+    }
+    regex::Regex::new(&regex_str).unwrap_or_else(|_| {
+        // Fallback: treat the whole query as a literal substring
+        regex::Regex::new(&format!("(?i){}", regex::escape(query))).unwrap()
+    })
+}
+
+/// Recursively walk a directory, collecting entries that match the pattern.
+fn walk_directory(
+    root: &PathBuf,
+    dir: &PathBuf,
+    pattern: &regex::Regex,
+    git_statuses: &std::collections::HashMap<String, String>,
+    results: &mut Vec<DirEntry>,
+    max_results: usize,
+) {
+    if results.len() >= max_results {
+        return;
+    }
+
+    let read_dir = match std::fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(_) => return,
+    };
+
+    for entry in read_dir {
+        if results.len() >= max_results {
+            return;
+        }
+
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        // Skip hidden/special directories
+        if name == ".git" || name == "node_modules" || name == ".DS_Store" {
+            continue;
+        }
+
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+
+        let canonical_entry = match entry.path().canonicalize() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        let relative = match canonical_entry.strip_prefix(root) {
+            Ok(p) => p.to_string_lossy().replace('\\', "/"),
+            Err(_) => continue,
+        };
+
+        let is_dir = metadata.is_dir();
+
+        if is_dir {
+            // Recurse into subdirectories
+            walk_directory(root, &canonical_entry, pattern, git_statuses, results, max_results);
+        } else {
+            // Check if file name or path matches the search pattern
+            if pattern.is_match(&name) || pattern.is_match(&relative) {
+                let git_status = git_statuses.get(&relative).cloned().unwrap_or_default();
+                results.push(DirEntry {
+                    name,
+                    path: relative,
+                    is_dir: false,
+                    size: metadata.len(),
+                    git_status,
+                    is_ignored: false,
+                });
+            }
+        }
+    }
+}
+
 /// Read a file's content within a repository.
 /// Re-uses the existing `read_file_impl` from lib.rs.
 #[tauri::command]

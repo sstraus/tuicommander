@@ -186,6 +186,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/agents/ides", get(agent_routes::detect_installed_ides_http))
         // File browser
         .route("/fs/list", get(fs_routes::list_directory_http))
+        .route("/fs/search", get(fs_routes::search_files_http))
         .route("/fs/read", get(fs_routes::fs_read_file_http))
         .route("/fs/write", post(fs_routes::write_file_http))
         .route("/fs/mkdir", post(fs_routes::create_directory_http))

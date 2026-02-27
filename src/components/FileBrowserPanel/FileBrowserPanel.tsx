@@ -1,9 +1,8 @@
-import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js";
+import { Component, createEffect, createSignal, For, Show, onCleanup } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { getModifierSymbol } from "../../platform";
-import { globToRegex } from "../../utils";
 import { replaceBasename } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { PromptDialog } from "../PromptDialog";
@@ -96,13 +95,40 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     setCurrentSubdir(".");
   });
 
-  /** Entries filtered by search query (supports glob wildcards) */
-  const filteredEntries = createMemo(() => {
+  // Search results from recursive Rust search (when query is active)
+  const [searchResults, setSearchResults] = createSignal<DirEntry[]>([]);
+  const [searching, setSearching] = createSignal(false);
+
+  // Debounced recursive search — fires when searchQuery changes
+  createEffect(() => {
     const q = searchQuery().trim();
-    if (!q) return entries();
-    const re = globToRegex(q);
-    return entries().filter((e) => re.test(e.name) || re.test(e.path));
+    const repoPath = props.repoPath;
+
+    if (!q || !repoPath) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const results = await fb.searchFiles(repoPath, q);
+        setSearchResults(results);
+        setSelectedIndex(0);
+      } catch (err) {
+        appLogger.error("app", "File search failed", err);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 200);
+
+    onCleanup(() => clearTimeout(timer));
   });
+
+  /** Visible entries: search results when query active, directory listing otherwise */
+  const filteredEntries = () => searchQuery().trim() ? searchResults() : entries();
 
   const refresh = () => setRefreshTrigger((n) => n + 1);
 
@@ -294,27 +320,33 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       const panel = document.getElementById("file-browser-panel");
       if (!panel?.contains(document.activeElement) && document.activeElement !== panel) return;
 
+      // Let the search input handle its own keyboard events
+      const isInputFocused = document.activeElement instanceof HTMLInputElement;
+
       const isMeta = e.metaKey || e.ctrlKey;
       const list = filteredEntries();
 
       // Copy/Cut/Paste shortcuts (work even with empty list for paste)
-      if (isMeta && e.key === "c" && list.length > 0) {
+      if (!isInputFocused && isMeta && e.key === "c" && list.length > 0) {
         e.preventDefault();
         const selected = list[selectedIndex()];
         if (selected && !selected.is_dir) handleCopy(selected);
         return;
       }
-      if (isMeta && e.key === "x" && list.length > 0) {
+      if (!isInputFocused && isMeta && e.key === "x" && list.length > 0) {
         e.preventDefault();
         const selected = list[selectedIndex()];
         if (selected && !selected.is_dir) handleCut(selected);
         return;
       }
-      if (isMeta && e.key === "v") {
+      if (!isInputFocused && isMeta && e.key === "v") {
         e.preventDefault();
         handlePaste();
         return;
       }
+
+      // Don't capture navigation keys when typing in the search input
+      if (isInputFocused) return;
 
       if (list.length === 0) return;
 
@@ -370,7 +402,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         <input
           type="text"
           class={p.searchInput}
-          placeholder={t("fileBrowser.filter", "Filter... (*, ** wildcards)")}
+          placeholder={t("fileBrowser.search", "Search files… (*, ** wildcards)")}
           value={searchQuery()}
           onInput={(e) => {
             setSearchQuery(e.currentTarget.value);
@@ -405,15 +437,15 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       </Show>
 
       <div class={p.content}>
-        <Show when={loading()}>
-          <div class={s.empty}>{t("fileBrowser.loading", "Loading...")}</div>
+        <Show when={loading() || searching()}>
+          <div class={s.empty}>{searching() ? t("fileBrowser.searching", "Searching…") : t("fileBrowser.loading", "Loading...")}</div>
         </Show>
 
         <Show when={error()}>
           <div class={cx(s.empty, s.error)}>{t("fileBrowser.error", "Error:")} {error()}</div>
         </Show>
 
-        <Show when={!loading() && !error() && filteredEntries().length === 0}>
+        <Show when={!loading() && !searching() && !error() && filteredEntries().length === 0}>
           <div class={s.empty}>
             {!props.repoPath
               ? t("fileBrowser.noRepo", "No repository selected")
@@ -423,9 +455,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
           </div>
         </Show>
 
-        <Show when={!loading() && !error() && filteredEntries().length > 0}>
-          {/* Go up entry when in a subdirectory */}
-          <Show when={currentSubdir() !== "." && currentSubdir() !== ""}>
+        <Show when={!loading() && !searching() && !error() && filteredEntries().length > 0}>
+          {/* Go up entry when in a subdirectory and not searching */}
+          <Show when={!searchQuery().trim() && currentSubdir() !== "." && currentSubdir() !== ""}>
             <div class={cx(s.entry, s.entryUp)} onClick={navigateUp}>
               <span class={s.entryIcon}>..</span>
               <span class={s.entryName}>{t("fileBrowser.parent", "(parent)")}</span>
@@ -433,31 +465,34 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
           </Show>
 
           <For each={filteredEntries()}>
-            {(entry, index) => (
-              <div
-                class={cx(
-                  s.entry,
-                  entry.is_dir && s.entryDir,
-                  selectedIndex() === index() && s.entrySelected,
-                  entry.is_ignored && s.entryIgnored,
-                  clipboard()?.mode === "cut" && clipboard()?.entry.path === entry.path && s.entryCut,
-                )}
-                onClick={() => {
-                  setSelectedIndex(index());
-                  handleEntryClick(entry);
-                }}
-                onContextMenu={(e) => handleContextMenu(e, entry)}
-              >
-                <span class={s.entryIcon}>{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
-                <span class={s.entryName} title={entry.path}>{entry.name}</span>
-                <Show when={entry.git_status}>
-                  <span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />
-                </Show>
-                <Show when={!entry.is_dir && entry.size > 0}>
-                  <span class={s.entrySize}>{formatSize(entry.size)}</span>
-                </Show>
-              </div>
-            )}
+            {(entry, index) => {
+              const isSearch = !!searchQuery().trim();
+              return (
+                <div
+                  class={cx(
+                    s.entry,
+                    entry.is_dir && s.entryDir,
+                    selectedIndex() === index() && s.entrySelected,
+                    entry.is_ignored && s.entryIgnored,
+                    clipboard()?.mode === "cut" && clipboard()?.entry.path === entry.path && s.entryCut,
+                  )}
+                  onClick={() => {
+                    setSelectedIndex(index());
+                    handleEntryClick(entry);
+                  }}
+                  onContextMenu={(e) => handleContextMenu(e, entry)}
+                >
+                  <span class={s.entryIcon}>{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
+                  <span class={s.entryName} title={entry.path}>{isSearch ? entry.path : entry.name}</span>
+                  <Show when={entry.git_status}>
+                    <span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />
+                  </Show>
+                  <Show when={!entry.is_dir && entry.size > 0}>
+                    <span class={s.entrySize}>{formatSize(entry.size)}</span>
+                  </Show>
+                </div>
+              );
+            }}
           </For>
         </Show>
       </div>

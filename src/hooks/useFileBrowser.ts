@@ -7,6 +7,10 @@ export function useFileBrowser() {
     return await invoke<DirEntry[]>("list_directory", { repoPath, subdir });
   }
 
+  async function searchFiles(repoPath: string, query: string, limit?: number): Promise<DirEntry[]> {
+    return await invoke<DirEntry[]>("search_files", { repoPath, query, limit: limit ?? 200 });
+  }
+
   async function readFile(repoPath: string, file: string): Promise<string> {
     return await invoke<string>("fs_read_file", { repoPath, file });
   }
@@ -37,6 +41,7 @@ export function useFileBrowser() {
 
   return {
     listDirectory,
+    searchFiles,
     readFile,
     writeFile,
     createDirectory,

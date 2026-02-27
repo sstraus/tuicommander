@@ -772,6 +772,7 @@ pub fn run() {
             sleep_prevention::unblock_sleep,
             fs::resolve_terminal_path,
             fs::list_directory,
+            fs::search_files,
             fs::fs_read_file,
             fs::write_file,
             fs::create_directory,
