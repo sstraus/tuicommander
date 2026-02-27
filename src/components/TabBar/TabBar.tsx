@@ -615,9 +615,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
       </div>{/* end .scrollRegion */}
 
       {/* New Tab button: outside scroll region so arrows don't overlap it */}
-      <button class={s.newBtn} onClick={() => props.onNewTab()} onContextMenu={openNewTabMenu} title={`${t("tabBar.newTab", "New Tab")} (${mod}T)`} style={{ position: "relative" }}>
+      <button class={s.newBtn} onClick={() => props.onNewTab()} onContextMenu={openNewTabMenu} title={`${t("tabBar.newTab", "New Tab")} (${mod}T)`}>
         +
-        <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{mod}T</span>
       </button>
 
       <ContextMenu

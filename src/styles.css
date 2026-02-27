@@ -744,43 +744,6 @@
   filter: brightness(1.1);
 }
 
-/* ============================================================================
-   Hotkey Hints (Story 064)
-   ============================================================================ */
-
-.hotkey-hint {
-  display: none;
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 3px 7px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-family: var(--font-mono);
-  font-size: var(--font-xs);
-  color: var(--fg-muted);
-  white-space: nowrap;
-  z-index: 50;
-  pointer-events: none;
-}
-
-*:hover > .hotkey-hint {
-  display: block;
-}
-
-/* During quick switcher mode, hints are always visible and more prominent */
-.hotkey-hint.quick-switcher-active {
-  display: block;
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border-color: var(--accent);
-  font-size: var(--font-sm);
-  font-weight: 600;
-  padding: 2px 6px;
-}
-
 
 /* ============================================================================
    Lazygit Split Pane (Story 047)

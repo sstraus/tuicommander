@@ -60,7 +60,6 @@ function getLastItemAcrossStores(): LastItemSource | null {
 export interface ToolbarProps {
   repoPath?: string;
   runCommand?: string;
-  quickSwitcherActive?: boolean;
   onBranchClick?: () => void;
   onRun?: (shiftKey: boolean) => void;
 }
@@ -187,10 +186,8 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
           class={s.sidebarToggle}
           onClick={() => uiStore.toggleSidebar()}
           title={uiStore.state.sidebarVisible ? `${t("toolbar.hideSidebar", "Hide Sidebar")} (${getModifierSymbol()}[)` : `${t("toolbar.showSidebar", "Show Sidebar")} (${getModifierSymbol()}[)`}
-          style={{ position: "relative" }}
         >
           ◧
-          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}[</span>
         </button>
       </div>
 

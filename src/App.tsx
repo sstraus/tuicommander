@@ -949,7 +949,6 @@ const App: Component = () => {
       <Toolbar
         repoPath={gitOps.currentRepoPath()}
         runCommand={gitOps.activeRunCommand()}
-        quickSwitcherActive={quickSwitcherVisible()}
         onBranchClick={() => {
           const activeRepo = repositoriesStore.getActive();
           if (activeRepo?.activeBranch) {
@@ -1061,7 +1060,6 @@ const App: Component = () => {
           fontSize={terminalLifecycle.activeFontSize()}
           defaultFontSize={getDefaultFontSize()}
           statusInfo={statusInfo()}
-          quickSwitcherActive={quickSwitcherVisible()}
           onToggleDiff={() => uiStore.toggleDiffPanel()}
           onToggleMarkdown={() => uiStore.toggleMarkdownPanel()}
           onToggleNotes={() => uiStore.toggleNotesPanel()}

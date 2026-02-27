@@ -22,7 +22,6 @@ export interface StatusBarProps {
   fontSize: number;
   defaultFontSize: number;
   statusInfo: string;
-  quickSwitcherActive?: boolean;
   onToggleDiff: () => void;
   onToggleMarkdown: () => void;
   onToggleNotes?: () => void;
@@ -247,7 +246,6 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           <button class="toggle-btn" onClick={() => props.onToggleErrorLog?.()} title={`Error Log (${getModifierSymbol()}${"\u21e7"}E)`} style={{ position: "relative" }}>
             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
             <span class={s.toggleBadge} style={{ background: "var(--error)", color: "#000" }}>{appLogger.unseenErrorCount()}</span>
-            <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}{"\u21e7"}E</span>
           </button>
         </Show>
         <button class="toggle-btn" onClick={() => props.onToggleNotes?.()} title={`${t("statusBar.toggleNotes", "Toggle Ideas Panel")} (${getModifierSymbol()}N)`} style={{ position: "relative" }}>
@@ -255,19 +253,15 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           <Show when={notesBadgeCount() > 0}>
             <span class={s.toggleBadge}>{notesBadgeCount()}</span>
           </Show>
-          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}N</span>
         </button>
         <button class="toggle-btn" onClick={() => props.onToggleFileBrowser?.()} title={`${t("statusBar.fileBrowser", "File Browser")} (${getModifierSymbol()}E)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}E</span>
         </button>
         <button class="toggle-btn" onClick={props.onToggleMarkdown} title={`${t("statusBar.markdown", "Markdown")} (${getModifierSymbol()}M)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 208 128" width="16" height="10" fill="currentColor"><rect x="5" y="5" width="198" height="118" rx="12" fill="none" stroke="currentColor" stroke-width="12"/><path d="M30 98V30h20l20 25 20-25h20v68h-20V59L70 84 50 59v39H30zm125 0l-30-33h20V30h20v35h20l-30 33z"/></svg>
-          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}M</span>
         </button>
         <button class="toggle-btn" onClick={props.onToggleDiff} title={`${t("statusBar.diff", "Diff")} (${getModifierSymbol()}D)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 7H7v2H5v2h2v2h2v-2h2V9H9V7zm7 2h4v2h-4V9zm0 4h4v2h-4v-2zM5 19h14v2H5v-2zM5 3h14v2H5V3z"/></svg>
-          <span class={`hotkey-hint ${props.quickSwitcherActive ? "quick-switcher-active" : ""}`}>{getModifierSymbol()}D</span>
         </button>
 
         {/* Mic button - hold to talk (rightmost) */}
@@ -295,7 +289,6 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
               <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
               <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
             </svg>
-            <span class="hotkey-hint">{dictationStore.state.hotkey}</span>
           </button>
         </Show>
       </div>
