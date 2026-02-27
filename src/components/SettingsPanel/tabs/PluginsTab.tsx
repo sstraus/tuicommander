@@ -5,7 +5,6 @@ import { pluginStore } from "../../../stores/pluginStore";
 import { appLogger } from "../../../stores/appLogger";
 import { registryStore, type RegistryEntry } from "../../../stores/registryStore";
 import { mdTabsStore } from "../../../stores/mdTabs";
-import { uiStore } from "../../../stores/ui";
 import { invoke } from "../../../invoke";
 import { isTauri } from "../../../transport";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
@@ -65,7 +64,6 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
     const path = await invoke<string | null>("get_plugin_readme_path", { id: props.plugin.id });
     if (!path) return;
     mdTabsStore.add("", path);
-    uiStore.setMarkdownPanelVisible(true);
   };
 
   const handleToggle = async () => {

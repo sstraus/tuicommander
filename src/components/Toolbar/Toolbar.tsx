@@ -146,7 +146,6 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const openActivityItem = (item: ActivityItem) => {
     if (item.contentUri) {
       mdTabsStore.addVirtual(item.title, item.contentUri);
-      uiStore.setMarkdownPanelVisible(true);
     } else if (item.onClick) {
       item.onClick();
     }

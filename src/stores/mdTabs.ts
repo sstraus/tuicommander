@@ -1,5 +1,6 @@
 import { createTabManager, makeBranchKey, type BaseTab } from "./tabManager";
 import { repositoriesStore } from "./repositories";
+import { uiStore } from "./ui";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -76,12 +77,15 @@ function createMdTabsStore() {
       ) as FileTab | undefined;
       if (existing) {
         base.setActive(existing.id);
+        uiStore.setMarkdownPanelVisible(true);
         return existing.id;
       }
 
       const id = base._nextId("md");
       const fileName = filePath.split("/").pop() || filePath;
-      return base._addTab({ type: "file", id, repoPath, filePath, fileName, branchKey: currentBranchKey() } as FileTab);
+      const tabId = base._addTab({ type: "file", id, repoPath, filePath, fileName, branchKey: currentBranchKey() } as FileTab);
+      uiStore.setMarkdownPanelVisible(true);
+      return tabId;
     },
 
     /** Add a virtual markdown tab (or return existing if same contentUri already open) */
@@ -91,11 +95,14 @@ function createMdTabsStore() {
       ) as VirtualTab | undefined;
       if (existing) {
         base.setActive(existing.id);
+        uiStore.setMarkdownPanelVisible(true);
         return existing.id;
       }
 
       const id = base._nextId("md");
-      return base._addTab({ type: "virtual", id, title, contentUri, pinned: true } as VirtualTab);
+      const tabId = base._addTab({ type: "virtual", id, title, contentUri, pinned: true } as VirtualTab);
+      uiStore.setMarkdownPanelVisible(true);
+      return tabId;
     },
 
     /**
@@ -108,11 +115,14 @@ function createMdTabsStore() {
       ) as PluginPanelTab | undefined;
       if (existing) {
         base.setActive(existing.id);
+        uiStore.setMarkdownPanelVisible(true);
         return existing.id;
       }
 
       const id = base._nextId("md");
-      return base._addTab({ type: "plugin-panel", id, title, pluginId, html, pinned: true } as PluginPanelTab);
+      const tabId = base._addTab({ type: "plugin-panel", id, title, pluginId, html, pinned: true } as PluginPanelTab);
+      uiStore.setMarkdownPanelVisible(true);
+      return tabId;
     },
 
     /** Update the HTML content of an existing plugin panel tab */
@@ -130,11 +140,14 @@ function createMdTabsStore() {
       ) as ClaudeUsageTab | undefined;
       if (existing) {
         base.setActive(existing.id);
+        uiStore.setMarkdownPanelVisible(true);
         return existing.id;
       }
 
       const id = base._nextId("md");
-      return base._addTab({ type: "claude-usage", id, title: "Claude Usage", pinned: true } as ClaudeUsageTab);
+      const tabId = base._addTab({ type: "claude-usage", id, title: "Claude Usage", pinned: true } as ClaudeUsageTab);
+      uiStore.setMarkdownPanelVisible(true);
+      return tabId;
     },
 
     /** Clear all file-based markdown tabs for a repository (virtual tabs are unaffected) */
