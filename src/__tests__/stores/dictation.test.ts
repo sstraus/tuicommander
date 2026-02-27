@@ -234,12 +234,12 @@ describe("dictationStore", () => {
       });
     });
 
-    it("clears loading on failure", async () => {
+    it("clears loading on failure and rethrows", async () => {
       mockInvoke.mockRejectedValueOnce(new Error("mic busy"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       await createRoot(async (dispose) => {
-        await store.startRecording();
+        await expect(store.startRecording()).rejects.toThrow("mic busy");
         expect(store.state.loading).toBe(false);
         expect(store.state.recording).toBe(false);
         consoleSpy.mockRestore();

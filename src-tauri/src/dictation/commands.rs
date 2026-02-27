@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
 
+use crate::app_logger;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DictationStatus {
     pub model_status: String, // "not_downloaded", "ready", "error"
@@ -20,6 +22,17 @@ pub struct ModelInfo {
     pub size_hint_mb: u64,
     pub downloaded: bool,
     pub actual_size_mb: u64,
+}
+
+/// Result returned by stop_dictation_and_transcribe with metadata for user feedback.
+#[derive(Debug, Clone, Serialize)]
+pub struct TranscribeResponse {
+    /// The transcribed (and corrected) text, empty if skipped.
+    pub text: String,
+    /// Human-readable reason when text is empty (None on success).
+    pub skip_reason: Option<String>,
+    /// Duration of captured audio in seconds.
+    pub duration_s: f64,
 }
 
 /// Resolve the configured model from persisted config.
@@ -117,6 +130,7 @@ pub fn delete_whisper_model(
 
 #[tauri::command]
 pub fn start_dictation(
+    app: AppHandle,
     dictation: State<'_, DictationState>,
 ) -> Result<(), String> {
     // Prevent concurrent recordings
@@ -141,25 +155,32 @@ pub fn start_dictation(
         if !model::model_exists(whisper_model) {
             return Err("Model not downloaded".to_string());
         }
+        app_logger::log_via_handle(&app, "info", "dictation", &format!("Loading model: {}", whisper_model.display_name()));
         let t = transcribe::WhisperTranscriber::load(&model::model_path(whisper_model))?;
         *transcriber_lock = Some(t);
         *active_model_lock = Some(whisper_model.name().to_string());
+        app_logger::log_via_handle(&app, "info", "dictation", "Model loaded");
     }
     drop(active_model_lock);
     drop(transcriber_lock);
 
     // Start audio capture
-    let capture = audio::AudioCapture::start()?;
+    let capture = audio::AudioCapture::start().map_err(|e| {
+        app_logger::log_via_handle(&app, "error", "dictation", &format!("Audio capture failed: {e}"));
+        e
+    })?;
     *dictation.audio.lock() = Some(capture);
     dictation.recording.store(true, Ordering::Relaxed);
+    app_logger::log_via_handle(&app, "info", "dictation", "Recording started");
 
     Ok(())
 }
 
 #[tauri::command]
 pub fn stop_dictation_and_transcribe(
+    app: AppHandle,
     dictation: State<'_, DictationState>,
-) -> Result<String, String> {
+) -> Result<TranscribeResponse, String> {
     if !dictation.recording.load(Ordering::Relaxed) {
         return Err("Not recording".to_string());
     }
@@ -174,7 +195,8 @@ pub fn stop_dictation_and_transcribe(
         .take()
         .ok_or("No audio capture active")?;
     let audio_data = capture.stop();
-    eprintln!("[dictation] Captured {} samples ({:.1}s)", audio_data.len(), audio_data.len() as f64 / 16000.0);
+    let duration_s = audio_data.len() as f64 / 16000.0;
+    app_logger::log_via_handle(&app, "info", "dictation", &format!("Captured {:.1}s of audio ({} samples)", duration_s, audio_data.len()));
 
     // Transcribe
     let transcriber_lock = dictation.transcriber.lock();
@@ -185,20 +207,40 @@ pub fn stop_dictation_and_transcribe(
     // Pass configured language (None = auto-detect if "auto")
     let config = get_dictation_config();
     let lang = if config.language == "auto" { None } else { Some(config.language.as_str()) };
-    eprintln!("[dictation] Language config: {:?}, using: {:?}", config.language, lang);
-    let raw_text = transcriber.transcribe(&audio_data, lang)?;
-    eprintln!("[dictation] Transcribed text: {:?}", raw_text);
+    let result = transcriber.transcribe(&audio_data, lang).map_err(|e| {
+        dictation.processing.store(false, Ordering::Relaxed);
+        app_logger::log_via_handle(&app, "error", "dictation", &format!("Transcription failed: {e}"));
+        e
+    })?;
+
+    if let Some(reason) = &result.skip_reason {
+        app_logger::log_via_handle(&app, "warn", "dictation", &format!("Skipped: {reason}"));
+        dictation.processing.store(false, Ordering::Relaxed);
+        return Ok(TranscribeResponse {
+            text: String::new(),
+            skip_reason: Some(reason.clone()),
+            duration_s,
+        });
+    }
+
+    app_logger::log_via_handle(&app, "info", "dictation", &format!("Transcribed: {:?}", result.text));
 
     // Apply corrections
-    let corrected = dictation.corrections.lock().correct(&raw_text);
+    let corrected = dictation.corrections.lock().correct(&result.text);
 
     // Replace newlines with spaces to prevent accidental command execution
     let final_text = corrected.replace('\n', " ");
-    eprintln!("[dictation] Final text to inject: {:?}", final_text);
+    if final_text != result.text {
+        app_logger::log_via_handle(&app, "info", "dictation", &format!("After corrections: {:?}", final_text));
+    }
 
     dictation.processing.store(false, Ordering::Relaxed);
 
-    Ok(final_text)
+    Ok(TranscribeResponse {
+        text: final_text,
+        skip_reason: None,
+        duration_s,
+    })
 }
 
 #[tauri::command]

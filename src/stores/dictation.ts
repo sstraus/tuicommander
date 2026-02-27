@@ -28,6 +28,13 @@ interface DictationStatus {
   processing: boolean;
 }
 
+/** Transcription response from Rust backend */
+interface TranscribeResponse {
+  text: string;
+  skip_reason: string | null;
+  duration_s: number;
+}
+
 /** Audio device from Rust backend */
 interface AudioDevice {
   name: string;
@@ -245,18 +252,19 @@ function createDictationStore() {
         setState("recording", true);
       } catch (err) {
         appLogger.error("dictation", "Failed to start recording", err);
+        throw err;
       } finally {
         setState("loading", false);
       }
     },
 
-    /** Stop recording and get transcribed text */
-    async stopRecording(): Promise<string | null> {
+    /** Stop recording and get transcription result */
+    async stopRecording(): Promise<TranscribeResponse | null> {
       try {
-        const text = await invoke<string>("stop_dictation_and_transcribe");
+        const response = await invoke<TranscribeResponse>("stop_dictation_and_transcribe");
         setState("recording", false);
         setState("processing", false);
-        return text;
+        return response;
       } catch (err) {
         appLogger.error("dictation", "Failed to stop recording", err);
         setState("recording", false);

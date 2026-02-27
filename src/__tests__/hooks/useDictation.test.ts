@@ -9,6 +9,16 @@ function resetStores() {
   }
 }
 
+/** Helper to create a successful TranscribeResponse */
+function transcribeOk(text: string) {
+  return { text, skip_reason: null, duration_s: 1.5 };
+}
+
+/** Helper to create a skipped TranscribeResponse */
+function transcribeSkipped(reason: string) {
+  return { text: "", skip_reason: reason, duration_s: 0.3 };
+}
+
 describe("useDictation", () => {
   const mockPty = {
     write: vi.fn().mockResolvedValue(undefined),
@@ -24,7 +34,7 @@ describe("useDictation", () => {
     },
     refreshStatus: vi.fn().mockResolvedValue(undefined),
     startRecording: vi.fn().mockResolvedValue(undefined),
-    stopRecording: vi.fn().mockResolvedValue("hello world"),
+    stopRecording: vi.fn().mockResolvedValue(transcribeOk("hello world")),
   };
 
   const mockSetStatusInfo = vi.fn();
@@ -49,6 +59,9 @@ describe("useDictation", () => {
     mockDictationStore.startRecording.mockImplementation(async () => {
       mockDictationStore.state.recording = true;
     });
+
+    // Default: stopRecording returns success
+    mockDictationStore.stopRecording.mockResolvedValue(transcribeOk("hello world"));
 
     dictation = useDictation({
       pty: mockPty,
@@ -130,6 +143,18 @@ describe("useDictation", () => {
 
       expect(mockSetStatusInfo).toHaveBeenCalledWith("Dictation: failed to start recording");
     });
+
+    it("blocks when Rust reports still processing after refresh", async () => {
+      // refreshStatus updates state to show Rust is still processing
+      mockDictationStore.refreshStatus.mockImplementationOnce(async () => {
+        mockDictationStore.state.processing = true;
+      });
+
+      await dictation.handleDictationStart();
+
+      expect(mockDictationStore.startRecording).not.toHaveBeenCalled();
+      expect(mockSetStatusInfo).toHaveBeenCalledWith("Dictation: previous session still active");
+    });
   });
 
   describe("handleDictationStop", () => {
@@ -169,24 +194,38 @@ describe("useDictation", () => {
       expect(mockSetStatusInfo).toHaveBeenCalledWith("Dictation: no active terminal");
     });
 
-    it("resets status when transcription is empty", async () => {
-      mockDictationStore.stopRecording.mockResolvedValueOnce("   ");
+    it("shows skip reason when transcription is skipped", async () => {
+      mockDictationStore.stopRecording.mockResolvedValueOnce(
+        transcribeSkipped("too short (0.3s, need 0.5s)"),
+      );
 
       await dictation.handleDictationStart();
       await dictation.handleDictationStop();
 
       expect(mockPty.write).not.toHaveBeenCalled();
-      expect(mockSetStatusInfo).toHaveBeenCalledWith("Ready");
+      expect(mockSetStatusInfo).toHaveBeenCalledWith("Dictation: too short (0.3s, need 0.5s)");
     });
 
-    it("resets status when transcription is null", async () => {
+    it("shows no-text message when text is empty without skip_reason", async () => {
+      mockDictationStore.stopRecording.mockResolvedValueOnce(
+        transcribeOk("   "),
+      );
+
+      await dictation.handleDictationStart();
+      await dictation.handleDictationStop();
+
+      expect(mockPty.write).not.toHaveBeenCalled();
+      expect(mockSetStatusInfo).toHaveBeenCalledWith("Dictation: no text recognized");
+    });
+
+    it("shows failure message when stopRecording returns null", async () => {
       mockDictationStore.stopRecording.mockResolvedValueOnce(null);
 
       await dictation.handleDictationStart();
       await dictation.handleDictationStop();
 
       expect(mockPty.write).not.toHaveBeenCalled();
-      expect(mockSetStatusInfo).toHaveBeenCalledWith("Ready");
+      expect(mockSetStatusInfo).toHaveBeenCalledWith("Dictation: transcription failed");
     });
 
     it("inserts into focused textarea instead of terminal", async () => {

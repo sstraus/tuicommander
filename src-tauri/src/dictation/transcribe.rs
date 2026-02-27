@@ -1,5 +1,15 @@
+use serde::Serialize;
 use std::path::Path;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+
+/// Result of a transcription attempt with metadata for user feedback.
+#[derive(Debug, Clone, Serialize)]
+pub struct TranscribeResult {
+    /// The transcribed text (empty if skipped/filtered).
+    pub text: String,
+    /// Human-readable reason when text is empty (None when transcription succeeded).
+    pub skip_reason: Option<String>,
+}
 
 /// Whisper model wrapper for transcription.
 pub struct WhisperTranscriber {
@@ -20,26 +30,32 @@ impl WhisperTranscriber {
     }
 
     /// Transcribe audio samples (16kHz mono f32 PCM) to text.
-    /// Returns the transcribed text or an error.
-    pub fn transcribe(&self, audio: &[f32], language: Option<&str>) -> Result<String, String> {
+    pub fn transcribe(&self, audio: &[f32], language: Option<&str>) -> Result<TranscribeResult, String> {
         if audio.is_empty() {
-            eprintln!("[dictation] Skipping: empty audio");
-            return Ok(String::new());
+            return Ok(TranscribeResult {
+                text: String::new(),
+                skip_reason: Some("no audio captured".to_string()),
+            });
         }
+
+        let duration_s = audio.len() as f64 / 16000.0;
 
         // Minimum 0.5s of audio (8000 samples at 16kHz)
         if audio.len() < 8000 {
-            eprintln!("[dictation] Skipping: too short ({} samples, need 8000)", audio.len());
-            return Ok(String::new());
+            return Ok(TranscribeResult {
+                text: String::new(),
+                skip_reason: Some(format!("too short ({duration_s:.1}s, need 0.5s)")),
+            });
         }
 
         // Reject silent/near-silent audio to prevent hallucinations.
         // Whisper hallucinates phrases like "Thank you" on silence.
         let rms = (audio.iter().map(|s| s * s).sum::<f32>() / audio.len() as f32).sqrt();
-        eprintln!("[dictation] Audio: {} samples ({:.1}s), RMS={:.6}", audio.len(), audio.len() as f64 / 16000.0, rms);
         if rms < 0.001 {
-            eprintln!("[dictation] Skipping: below RMS threshold (0.001)");
-            return Ok(String::new());
+            return Ok(TranscribeResult {
+                text: String::new(),
+                skip_reason: Some(format!("no speech detected (RMS {rms:.6} < 0.001)")),
+            });
         }
 
         let mut state = self
@@ -67,27 +83,29 @@ impl WhisperTranscriber {
             .map_err(|e| format!("Transcription failed: {e}"))?;
 
         let n_segments = state.full_n_segments();
-        eprintln!("[dictation] Whisper returned {} segments", n_segments);
         let mut text = String::new();
 
         for i in 0..n_segments {
             if let Some(segment) = state.get_segment(i)
                 && let Ok(s) = segment.to_str() {
-                    eprintln!("[dictation] Segment {}: {:?}", i, s);
                     text.push_str(s);
                 }
         }
 
         let result = text.trim().to_string();
-        eprintln!("[dictation] Raw result: {:?}", result);
 
         // Filter known hallucination phrases that Whisper produces on near-silence
         if is_hallucination(&result) {
-            eprintln!("[dictation] Filtered as hallucination: {:?}", result);
-            return Ok(String::new());
+            return Ok(TranscribeResult {
+                text: String::new(),
+                skip_reason: Some(format!("filtered hallucination: \"{result}\"")),
+            });
         }
 
-        Ok(result)
+        Ok(TranscribeResult {
+            text: result,
+            skip_reason: None,
+        })
     }
 }
 

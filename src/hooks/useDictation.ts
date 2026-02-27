@@ -1,5 +1,12 @@
 import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
+/** Transcription result from the Rust backend */
+interface TranscribeResponse {
+  text: string;
+  skip_reason: string | null;
+  duration_s: number;
+}
+
 /** Dependencies injected into useDictation */
 export interface DictationDeps {
   pty: {
@@ -15,7 +22,7 @@ export interface DictationDeps {
     };
     refreshStatus: () => Promise<void>;
     startRecording: () => Promise<void>;
-    stopRecording: () => Promise<string | null>;
+    stopRecording: () => Promise<TranscribeResponse | null>;
   };
   setStatusInfo: (msg: string) => void;
   openSettings: (tab?: string) => void;
@@ -41,7 +48,16 @@ export function useDictation(deps: DictationDeps) {
     focusTarget = document.activeElement;
 
     startPromise = (async () => {
+      // Sync state from Rust before proceeding — the store may be stale
+      // (e.g. Rust still processing previous transcription)
       await deps.dictation.refreshStatus();
+
+      // Re-check guards after refresh — Rust state is now authoritative
+      if (deps.dictation.state.recording || deps.dictation.state.processing) {
+        deps.setStatusInfo("Dictation: previous session still active");
+        return false;
+      }
+
       if (deps.dictation.state.modelStatus === "not_downloaded") {
         deps.setStatusInfo("Dictation: model not downloaded — open Settings > Dictation");
         deps.openSettings("dictation");
@@ -76,44 +92,59 @@ export function useDictation(deps: DictationDeps) {
 
     if (!deps.dictation.state.recording) return;
     deps.setStatusInfo("Dictation: transcribing…");
-    const text = await deps.dictation.stopRecording();
-    if (text && text.trim()) {
-      // Use the focus target captured at key-press time
-      const el = focusTarget;
-      focusTarget = null;
-      if (el && (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) {
-        const start = el.selectionStart ?? el.value.length;
-        const end = el.selectionEnd ?? start;
-        const before = el.value.slice(0, start);
-        const after = el.value.slice(end);
-        el.value = before + text.trim() + after;
-        el.selectionStart = el.selectionEnd = start + text.trim().length;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-        deps.setStatusInfo("Ready");
-        return;
-      }
-      if (el && el.getAttribute("contenteditable") === "true") {
-        document.execCommand("insertText", false, text.trim());
-        deps.setStatusInfo("Ready");
-        return;
-      }
+    const response = await deps.dictation.stopRecording();
 
-      const active = terminalsStore.getActive();
-      if (active?.sessionId) {
-        try {
-          await deps.pty.write(active.sessionId, text.trim());
-          deps.setStatusInfo("Ready");
-          requestAnimationFrame(() => active.ref?.focus());
-        } catch (err) {
-          appLogger.error("dictation", "Failed to write to terminal", err);
-          deps.setStatusInfo("Dictation: failed to write to terminal");
-        }
-      } else {
-        deps.setStatusInfo("Dictation: no active terminal");
+    if (!response) {
+      focusTarget = null;
+      deps.setStatusInfo("Dictation: transcription failed");
+      return;
+    }
+
+    if (response.skip_reason) {
+      focusTarget = null;
+      deps.setStatusInfo(`Dictation: ${response.skip_reason}`);
+      return;
+    }
+
+    const text = response.text.trim();
+    if (!text) {
+      focusTarget = null;
+      deps.setStatusInfo("Dictation: no text recognized");
+      return;
+    }
+
+    // Use the focus target captured at key-press time
+    const el = focusTarget;
+    focusTarget = null;
+    if (el && (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) {
+      const start = el.selectionStart ?? el.value.length;
+      const end = el.selectionEnd ?? start;
+      const before = el.value.slice(0, start);
+      const after = el.value.slice(end);
+      el.value = before + text + after;
+      el.selectionStart = el.selectionEnd = start + text.length;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      deps.setStatusInfo("Ready");
+      return;
+    }
+    if (el && el.getAttribute("contenteditable") === "true") {
+      document.execCommand("insertText", false, text);
+      deps.setStatusInfo("Ready");
+      return;
+    }
+
+    const active = terminalsStore.getActive();
+    if (active?.sessionId) {
+      try {
+        await deps.pty.write(active.sessionId, text);
+        deps.setStatusInfo("Ready");
+        requestAnimationFrame(() => active.ref?.focus());
+      } catch (err) {
+        appLogger.error("dictation", "Failed to write to terminal", err);
+        deps.setStatusInfo("Dictation: failed to write to terminal");
       }
     } else {
-      focusTarget = null;
-      deps.setStatusInfo("Ready");
+      deps.setStatusInfo("Dictation: no active terminal");
     }
   };
 
