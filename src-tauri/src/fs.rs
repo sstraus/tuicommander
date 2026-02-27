@@ -1,6 +1,5 @@
 use serde::Serialize;
 use std::path::PathBuf;
-use std::process::Command;
 
 /// A directory entry returned by `list_directory`.
 #[derive(Debug, Clone, Serialize)]
@@ -72,24 +71,21 @@ fn validate_path_for_creation(repo_path: &str, relative: &str) -> Result<(PathBu
 pub(crate) fn parse_git_status(repo_path: &str, subdir: &str) -> std::collections::HashMap<String, String> {
     let mut statuses = std::collections::HashMap::new();
 
-    let git = crate::cli::resolve_cli("git");
     let mut args = vec!["status", "--porcelain", "-z"];
     if !subdir.is_empty() && subdir != "." {
         args.push("--");
         args.push(subdir);
     }
 
-    let output = Command::new(git)
-        .current_dir(repo_path)
+    let out = match crate::git_cli::git_cmd(std::path::Path::new(repo_path))
         .args(&args)
-        .output();
-
-    let output = match output {
-        Ok(o) if o.status.success() => o,
-        _ => return statuses,
+        .run_silent()
+    {
+        Some(o) => o,
+        None => return statuses,
     };
 
-    let text = String::from_utf8_lossy(&output.stdout);
+    let text = &out.stdout;
     // Porcelain -z format: entries separated by NUL, each entry is "XY path"
     // Renames have an additional NUL-separated original path after the entry.
     let entries: Vec<&str> = text.split('\0').collect();
@@ -136,18 +132,17 @@ pub(crate) fn get_ignored_paths(repo_path: &str, paths: &[String]) -> std::colle
         return ignored;
     }
 
-    let git = crate::cli::resolve_cli("git");
-    let mut cmd = Command::new(git);
-    cmd.current_dir(repo_path)
-        .arg("check-ignore")
-        .arg("--no-index");
+    let mut args: Vec<&str> = vec!["check-ignore", "--no-index"];
     for p in paths {
-        cmd.arg(p);
+        args.push(p);
     }
 
-    if let Ok(output) = cmd.output() {
-        // git check-ignore outputs one ignored path per line (exit code 0 = some ignored, 1 = none)
-        let text = String::from_utf8_lossy(&output.stdout);
+    // git check-ignore exits 0 = some ignored, 1 = none ignored
+    if let Ok(raw) = crate::git_cli::git_cmd(std::path::Path::new(repo_path))
+        .args(&args)
+        .run_raw()
+    {
+        let text = String::from_utf8_lossy(&raw.stdout);
         for line in text.lines() {
             let trimmed = line.trim();
             if !trimmed.is_empty() {
@@ -615,21 +610,9 @@ mod tests {
         let repo_path = dir.path();
 
         // Initialize a git repo
-        Command::new("git")
-            .current_dir(repo_path)
-            .args(["init"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .current_dir(repo_path)
-            .args(["config", "user.email", "test@test.com"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .current_dir(repo_path)
-            .args(["config", "user.name", "Test"])
-            .output()
-            .unwrap();
+        crate::git_cli::git_cmd(repo_path).args(&["init"]).run().unwrap();
+        crate::git_cli::git_cmd(repo_path).args(&["config", "user.email", "test@test.com"]).run().unwrap();
+        crate::git_cli::git_cmd(repo_path).args(&["config", "user.name", "Test"]).run().unwrap();
 
         // Create some files and directories
         fs::write(repo_path.join("README.md"), "# Test").unwrap();
@@ -638,16 +621,8 @@ mod tests {
         fs::write(repo_path.join("src/lib.rs"), "pub fn hello() {}").unwrap();
 
         // Commit everything
-        Command::new("git")
-            .current_dir(repo_path)
-            .args(["add", "-A"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .current_dir(repo_path)
-            .args(["commit", "-m", "init"])
-            .output()
-            .unwrap();
+        crate::git_cli::git_cmd(repo_path).args(&["add", "-A"]).run().unwrap();
+        crate::git_cli::git_cmd(repo_path).args(&["commit", "-m", "init"]).run().unwrap();
 
         dir
     }

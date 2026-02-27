@@ -917,22 +917,19 @@ pub(crate) fn get_github_status_impl(path: &str) -> GitHubStatus {
     }
 
     // Get ahead/behind counts
-    let (ahead, behind) = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(["rev-list", "--left-right", "--count", &format!("origin/{current_branch}...HEAD")])
-        .output()
-        .ok()
+    let rev_range = format!("origin/{current_branch}...HEAD");
+    let (ahead, behind) = crate::git_cli::git_cmd(&repo_path)
+        .args(&["rev-list", "--left-right", "--count", &rev_range])
+        .run_silent()
         .and_then(|o| {
-            if o.status.success() {
-                let output = String::from_utf8_lossy(&o.stdout);
-                let parts: Vec<&str> = output.split_whitespace().collect();
-                if parts.len() == 2 {
-                    let behind = parts[0].parse::<i32>().unwrap_or(0);
-                    let ahead = parts[1].parse::<i32>().unwrap_or(0);
-                    return Some((ahead, behind));
-                }
+            let parts: Vec<&str> = o.stdout.split_whitespace().collect();
+            if parts.len() == 2 {
+                let behind = parts[0].parse::<i32>().unwrap_or(0);
+                let ahead = parts[1].parse::<i32>().unwrap_or(0);
+                Some((ahead, behind))
+            } else {
+                None
             }
-            None
         })
         .unwrap_or((0, 0));
 

@@ -152,23 +152,19 @@ pub(super) async fn checkout_remote_branch_http(
     Json(body): Json<super::types::CheckoutRemoteRequest>,
 ) -> Response {
     if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
-    let git = crate::agent::resolve_cli("git");
     let repo = std::path::PathBuf::from(&body.repo_path);
     let remote_ref = format!("origin/{}", body.branch_name);
-    let result = std::process::Command::new(&git)
-        .current_dir(&repo)
-        .args(["checkout", "-b", &body.branch_name, &remote_ref])
-        .output();
-    match result {
-        Ok(out) if out.status.success() => {
+    match crate::git_cli::git_cmd(&repo)
+        .args(&["checkout", "-b", &body.branch_name, &remote_ref])
+        .run()
+    {
+        Ok(_) => {
             state.invalidate_repo_caches(&body.repo_path);
             (StatusCode::OK, Json(serde_json::json!(null))).into_response()
         }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": stderr}))).into_response()
+        Err(e) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response(),
     }
 }
 

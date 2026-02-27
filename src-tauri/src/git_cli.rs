@@ -56,6 +56,7 @@ impl From<GitError> for String {
 
 /// Successful output from a git subprocess.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) struct GitOutput {
     pub stdout: String,
     pub stderr: String,
@@ -79,6 +80,7 @@ pub(crate) struct GitCmd {
 
 impl GitCmd {
     /// Add a single argument.
+    #[allow(dead_code)]
     pub fn arg(mut self, arg: &str) -> Self {
         self.cmd.arg(arg);
         self
