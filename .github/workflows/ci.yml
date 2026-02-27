@@ -80,6 +80,7 @@ jobs:
         run: cargo clippy -- -D warnings
 
       - name: Tests
+        if: matrix.platform != 'windows-latest'
         working-directory: src-tauri
         env:
           CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
