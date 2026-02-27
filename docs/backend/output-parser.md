@@ -61,6 +61,26 @@ ParsedEvent::Progress {
 }
 ```
 
+### Question
+
+Agent is waiting for user input (question, confirmation, menu choice):
+
+```rust
+ParsedEvent::Question {
+    prompt_text: String,  // The detected prompt line
+}
+```
+
+Detected via multiple patterns:
+- **Hardcoded prompts**: "Would you like to proceed?", "Do you want to...?", "Is this plan/approach okay"
+- **Numbered menus**: Lines with `❯`, `›` (Ink), `>`, or `)` before `1.` followed by option text
+- **Y/N prompts**: `[Y/n]`, `[y/N]`, `(yes/no)`
+- **Inquirer-style**: Lines starting with `? ` (standard inquirer prefix)
+- **Ink navigation footer**: "Enter to select" (Ink SelectInput menus)
+- **Generic questions**: Any line ending with `?` that passes false-positive filters (rejects code comments, markdown, indented code, backtick fragments, bold markers, long prose >120 chars)
+
+Additionally, `extract_last_question_line()` provides silence-based detection: if the last non-empty line ends with `?` and isn't code/prose, the session may be waiting for input.
+
 ### ApiError
 
 API errors from agents and providers (5xx server errors, auth failures):
@@ -83,6 +103,7 @@ Frontend plays an error notification sound and logs via `appLogger.error()`.
 
 The parser uses regex patterns to detect:
 - Rate limit messages from Claude, Aider, OpenCode, Gemini, Codex
+- Questions and interactive prompts (hardcoded, Y/N, inquirer, Ink menus, generic `?` lines)
 - API errors from agents and API providers (5xx, auth failures)
 - GitHub/GitLab PR URLs in `gh pr create` output
 - OSC 9;4 terminal progress sequences
