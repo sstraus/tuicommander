@@ -1,0 +1,85 @@
+src/stores/repoSettings.ts
+  618b1252172f44b5 5,40-41,63,73,89,185
+src/components/SettingsPanel/tabs/RepoWorktreeTab.tsx
+  618b1252172f44b5 3,280-295
+src/components/SettingsPanel/tabs/GeneralTab.tsx
+  bc0057a72a80f732 7,317-344
+src/hooks/useAutoDeleteBranch.ts
+  bc0057a72a80f732 1-105
+src/stores/github.ts
+  bc0057a72a80f732 47-49,94-98,396-399
+docs/user-guide/github-integration.md
+  bc0057a72a80f732 114-129
+src/__tests__/stores/github.test.ts
+  bc0057a72a80f732 458-493
+src-tauri/src/lib.rs
+  bc0057a72a80f732 711-712
+src/stores/repoDefaults.ts
+  618b1252172f44b5 17-19,35,52,74,98,115,187-191
+src/App.tsx
+  bc0057a72a80f732 77,209-211
+CHANGELOG.md
+  bc0057a72a80f732 10
+docs/backend/config.md
+  bc0057a72a80f732 94
+stories/420-e0ea-in_progress-P2-auto-delete-local-branch-when-its-remote-pr-is-mer.md
+  bc0057a72a80f732 19-27,30-55
+docs/api/tauri-commands.md
+  bc0057a72a80f732 53-54
+src-tauri/src/worktree.rs
+  bc0057a72a80f732 384-476,1461-1583
+src-tauri/src/config.rs
+  618b1252172f44b5 222,224-231,519-521,541,576-578,597
+docs/FEATURES.md
+  bc0057a72a80f732 448-456,461
+src/__tests__/components/SettingsPanel/GeneralTab.test.tsx
+  bc0057a72a80f732 11-12,19-20,73-81,88-96,170-209
+src/__tests__/hooks/useAutoDeleteBranch.test.ts
+  bc0057a72a80f732 1-250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "3db79725daf1b83f474b0fc1ed34248da233f5ed",
+  "prompts": {
+    "618b1252172f44b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bc65e7b9-9f59-4361-b9ca-78409bce5cf7",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 55,
+      "total_deletions": 2,
+      "accepted_lines": 54,
+      "overriden_lines": 1
+    },
+    "bc0057a72a80f732": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4e9276f0-d812-4023-953f-9b620a883383",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 793,
+      "total_deletions": 23,
+      "accepted_lines": 781,
+      "overriden_lines": 0
+    },
+    "c12f3445dc144e17": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "883abde1-becd-48c2-8e16-a98bcb4f84e2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}
