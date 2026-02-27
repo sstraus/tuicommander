@@ -367,26 +367,22 @@ pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String
 pub(crate) fn check_worktree_dirty(repo_path: String, branch_name: String) -> Result<bool, String> {
     let base_repo = PathBuf::from(&repo_path);
 
-    let wt_list = match git_cmd(&base_repo)
+    let wt_list = git_cmd(&base_repo)
         .args(&["worktree", "list", "--porcelain"])
-        .run_silent()
-    {
-        Some(o) => o.stdout,
-        None => return Ok(false),
-    };
+        .run()
+        .map_err(|e| format!("Failed to list worktrees: {e}"))?
+        .stdout;
 
     let wt_path = match find_worktree_path_for_branch(&wt_list, &branch_name) {
         Some(p) => p,
         None => return Ok(false), // No worktree = not dirty
     };
 
-    match git_cmd(&wt_path)
+    let status_out = git_cmd(&wt_path)
         .args(&["status", "--porcelain"])
-        .run_silent()
-    {
-        Some(o) => Ok(!o.stdout.trim().is_empty()),
-        None => Ok(false),
-    }
+        .run()
+        .map_err(|e| format!("Failed to check worktree status: {e}"))?;
+    Ok(!status_out.stdout.trim().is_empty())
 }
 
 /// Delete a local branch, removing its worktree first if one exists.
@@ -659,13 +655,12 @@ pub(crate) fn switch_branch(
 
     // Check for uncommitted changes (unless force or stash)
     if !force && !stash {
-        if let Some(out) = git_cmd(&base_repo)
+        let status_out = git_cmd(&base_repo)
             .args(&["status", "--porcelain"])
-            .run_silent()
-        {
-            if !out.stdout.trim().is_empty() {
-                return Err("dirty".to_string());
-            }
+            .run()
+            .map_err(|e| format!("Failed to check working tree status: {e}"))?;
+        if !status_out.stdout.trim().is_empty() {
+            return Err("dirty".to_string());
         }
     }
 
@@ -857,9 +852,12 @@ pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<St
 
     // Remove git worktree link first (so git doesn't track it)
     let wt_path_str = wt_path.to_string_lossy().to_string();
-    let _ = git_cmd(base_repo)
+    if let Err(e) = git_cmd(base_repo)
         .args(&["worktree", "remove", "--force", &wt_path_str])
-        .run();
+        .run()
+    {
+        eprintln!("[worktree] archive: failed to remove worktree link: {e}");
+    }
 
     // Move the directory if it still exists (worktree remove may have deleted it)
     if wt_path.exists() {

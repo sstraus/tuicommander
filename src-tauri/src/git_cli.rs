@@ -4,6 +4,7 @@
 //! It wraps `Command::new(resolve_cli("git"))`, captures output, and
 //! returns typed results with consistent error handling.
 
+use std::ffi::OsStr;
 use std::fmt;
 use std::path::Path;
 use std::process::Command;
@@ -56,10 +57,8 @@ impl From<GitError> for String {
 
 /// Successful output from a git subprocess.
 #[derive(Debug)]
-#[allow(dead_code)]
 pub(crate) struct GitOutput {
     pub stdout: String,
-    pub stderr: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -79,15 +78,12 @@ pub(crate) struct GitCmd {
 }
 
 impl GitCmd {
-    /// Add a single argument.
-    #[allow(dead_code)]
-    pub fn arg(mut self, arg: &str) -> Self {
-        self.cmd.arg(arg);
-        self
-    }
-
     /// Add multiple arguments.
-    pub fn args(mut self, args: &[&str]) -> Self {
+    pub fn args<I, S>(mut self, args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
         self.cmd.args(args);
         self
     }
@@ -100,27 +96,34 @@ impl GitCmd {
 
     /// Run the git command, requiring success (non-zero exit → `Err`).
     ///
-    /// Returns the trimmed stdout on success.
+    /// Returns `GitOutput` containing raw (untrimmed) stdout on success.
     pub fn run(mut self) -> Result<GitOutput, GitError> {
         let output = self.cmd.output().map_err(GitError::SpawnFailed)?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-
         if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             return Err(GitError::NonZeroExit {
                 code: output.status.code(),
                 stderr,
             });
         }
 
-        Ok(GitOutput { stdout, stderr })
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        Ok(GitOutput { stdout })
     }
 
-    /// Run the git command, returning `None` on any error (spawn failure or
-    /// non-zero exit). Use this for optional/non-fatal calls.
+    /// Run the git command, returning `None` on non-zero exit.
+    /// Spawn failures are logged to stderr (they indicate a broken git
+    /// installation, not normal git behavior).
     pub fn run_silent(self) -> Option<GitOutput> {
-        self.run().ok()
+        match self.run() {
+            Ok(o) => Some(o),
+            Err(GitError::SpawnFailed(e)) => {
+                eprintln!("[git_cli] spawn failed: {e}");
+                None
+            }
+            Err(GitError::NonZeroExit { .. }) => None,
+        }
     }
 
     /// Run the git command, returning the full `Output` struct regardless

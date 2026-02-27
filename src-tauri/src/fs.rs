@@ -132,7 +132,7 @@ pub(crate) fn get_ignored_paths(repo_path: &str, paths: &[String]) -> std::colle
         return ignored;
     }
 
-    let mut args: Vec<&str> = vec!["check-ignore", "--no-index"];
+    let mut args: Vec<&str> = vec!["check-ignore", "--no-index", "--"];
     for p in paths {
         args.push(p);
     }

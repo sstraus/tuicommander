@@ -442,10 +442,16 @@ pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>, u
         let is_untracked = if untracked == Some(true) {
             true
         } else {
-            git_cmd(&repo_path)
+            match git_cmd(&repo_path)
                 .args(&["ls-files", "--error-unmatch", &file])
                 .run()
-                .is_err()
+            {
+                Ok(_) => false,
+                Err(crate::git_cli::GitError::NonZeroExit { .. }) => true,
+                Err(crate::git_cli::GitError::SpawnFailed(e)) => {
+                    return Err(format!("Failed to check file tracking status: {e}"));
+                }
+            }
         };
 
         if is_untracked {
