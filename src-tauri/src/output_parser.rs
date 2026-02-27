@@ -477,6 +477,12 @@ fn parse_question(clean: &str) -> Option<ParsedEvent> {
         let trimmed = line.trim();
         if trimmed.is_empty() { continue; }
 
+        // Skip lines that look like diff output, code, or documentation —
+        // they may contain question-like patterns as content, not real prompts.
+        if line_is_diff_or_code_context(line, trimmed) {
+            continue;
+        }
+
         if QUESTION_RE.is_match(trimmed) {
             return Some(ParsedEvent::Question {
                 prompt_text: trimmed.to_string(),
@@ -535,6 +541,84 @@ pub(crate) fn extract_last_question_line(text: &str) -> Option<String> {
         return None;
     }
     Some(trimmed.to_string())
+}
+
+/// Returns true if a line looks like diff output, code context, or documentation
+/// rather than a genuine interactive prompt. Applied to ALL question regex matches
+/// to prevent false positives from diff hunks containing question-like patterns.
+fn line_is_diff_or_code_context(raw_line: &str, clean_trimmed: &str) -> bool {
+    // Diff line with line-number prefix: "462 -" or "75 +-" or "465 //"
+    // Pattern: starts with digits, then whitespace, then diff marker or code
+    if clean_trimmed.len() > 3 {
+        let bytes = clean_trimmed.as_bytes();
+        if bytes[0].is_ascii_digit() {
+            // Find where digits end
+            if let Some(pos) = clean_trimmed.find(|c: char| !c.is_ascii_digit()) {
+                let rest = clean_trimmed[pos..].trim_start();
+                // Diff markers after line number: +, -, //, or continuation of code
+                if rest.starts_with('+')
+                    || rest.starts_with('-')
+                    || rest.starts_with("//")
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Unified diff lines: start with + or - followed by content (but not bare +/-)
+    // Be careful not to match real prompts that happen to start with these chars
+    if (raw_line.starts_with('+') || raw_line.starts_with('-'))
+        && raw_line.len() > 1
+        && !raw_line.starts_with("+ ")  // preserve "+ " which could be a list item prompt
+    {
+        let after = &raw_line[1..];
+        // Diff lines typically have code, whitespace, or markers after +/-
+        if after.starts_with(' ')
+            || after.starts_with('-')
+            || after.starts_with('+')
+            || after.starts_with('\t')
+        {
+            return true;
+        }
+    }
+
+    // Claude Code diff summary blocks: "⏺⎿ Added16lines..."
+    if clean_trimmed.contains("⏺⎿") {
+        return true;
+    }
+    // Diff summary: "Added16lines" or "removed2lines" (no space between number and "lines")
+    // Pattern: keyword followed immediately by digits then "lines" — unique to diff summaries
+    if (clean_trimmed.contains("Added") || clean_trimmed.contains("removed"))
+        && clean_trimmed.contains("lines")
+        && clean_trimmed.chars().any(|c| c.is_ascii_digit())
+    {
+        // Extra check: the digit must be adjacent to "lines" (no space)
+        if let Some(pos) = clean_trimmed.find("lines") {
+            if pos > 0 && clean_trimmed.as_bytes()[pos - 1].is_ascii_digit() {
+                return true;
+            }
+        }
+    }
+
+    // Lines containing "//" as code comments (but not URLs like http://)
+    if clean_trimmed.starts_with("//")
+        || clean_trimmed.contains(" //")
+    {
+        return true;
+    }
+
+    // Lines with markdown bold/italic containing question-pattern keywords
+    // (e.g., "**Hardcoded prompts**: ...")
+    if clean_trimmed.contains("**") && (
+        clean_trimmed.contains("prompts")
+        || clean_trimmed.contains("patterns")
+        || clean_trimmed.contains("detection")
+    ) {
+        return true;
+    }
+
+    false
 }
 
 /// Returns true if a `?`-ending line is likely agent prose, code, or documentation
@@ -1507,5 +1591,71 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(!has_api_error(&parser.parse("        ae(\"claude-api-error\", \"type\":\"api_error\", \"server\"),")));
         assert!(!has_api_error(&parser.parse("// detect \"type\":\"api_error\" in JSON")));
         assert!(!has_api_error(&parser.parse("# Handle authentication_error from Claude")));
+    }
+
+    // --- Diff output false-positive prevention tests ---
+
+    fn has_question(events: &[ParsedEvent]) -> bool {
+        events.iter().any(|e| matches!(e, ParsedEvent::Question { .. }))
+    }
+
+    #[test]
+    fn test_no_question_diff_line_with_menu_pattern() {
+        let parser = OutputParser::new();
+        // Diff line from output_parser.rs containing ") 1." pattern — NOT a real menu
+        assert!(!has_question(&parser.parse(
+            "462 -        // Numbered menu choices: ❯ 1. or ) 1. followed by option text"
+        )));
+    }
+
+    #[test]
+    fn test_no_question_diff_line_with_yn_pattern() {
+        let parser = OutputParser::new();
+        // Diff line from docs containing [Y/n] pattern — NOT a real Y/N prompt
+        assert!(!has_question(&parser.parse(
+            "465 //GenericY/Nprompts:[Y/n],[y/N],(yes/no)"
+        )));
+    }
+
+    #[test]
+    fn test_no_question_diff_line_with_hardcoded_prompts() {
+        let parser = OutputParser::new();
+        // Markdown doc line in diff containing question patterns — NOT a real question
+        assert!(!has_question(&parser.parse(
+            r#"75 +- **Hardcoded prompts**: "Would you like to proceed?", "Do you want to...?", "Is this plan/a"#
+        )));
+    }
+
+    #[test]
+    fn test_no_question_diff_line_with_yn_doc() {
+        let parser = OutputParser::new();
+        // Markdown doc line in diff listing Y/N patterns — NOT a real prompt
+        assert!(!has_question(&parser.parse(
+            "77 +- **Y/N prompts**: `[Y/n]`, `[y/N]`, `(yes/no)`"
+        )));
+    }
+
+    #[test]
+    fn test_no_question_diff_hunk_with_code_changes() {
+        let parser = OutputParser::new();
+        // Claude Code diff summary block — NOT a real question
+        assert!(!has_question(&parser.parse(
+            "⏺⎿ Added16lines,removed2lines     459          // Claude Code: \"Would you like to proceed?\" / \"Do you want to...\""
+        )));
+    }
+
+    #[test]
+    fn test_no_question_unified_diff_plus_minus_lines() {
+        let parser = OutputParser::new();
+        // Unified diff lines with + or - prefix containing question patterns
+        assert!(!has_question(&parser.parse(
+            "+        if QUESTION_RE.is_match(trimmed) {"
+        )));
+        assert!(!has_question(&parser.parse(
+            "-        // Numbered menu choices: ❯ 1. or ) 1. followed by option text"
+        )));
+        assert!(!has_question(&parser.parse(
+            "+- **Y/N prompts**: `[Y/n]`, `[y/N]`, `(yes/no)`"
+        )));
     }
 }
