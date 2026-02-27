@@ -1,8 +1,20 @@
 # Git Operations
 
-**Module:** `src-tauri/src/git.rs`
+**Modules:** `src-tauri/src/git.rs`, `src-tauri/src/git_cli.rs`
 
-All git operations are performed by shelling out to the `git` CLI. This module handles repository info, diffs, branches, and utility functions.
+All git operations are performed by shelling out to the `git` CLI via the unified `git_cli` module. The `git_cli::git_cmd(path)` builder provides consistent error handling, binary resolution, and credential prompt suppression across all callsites.
+
+## Subprocess Helper (`git_cli.rs`)
+
+Every git subprocess invocation goes through `git_cmd(cwd: &Path) -> GitCmd`. The builder provides three execution modes:
+
+| Method | Use Case |
+|--------|----------|
+| `run()` | Strict — returns `Err(GitError)` on non-zero exit |
+| `run_silent()` | Optional — returns `None` on any error |
+| `run_raw()` | Full control — returns raw `Output` regardless of exit code |
+
+`GitError` implements `Into<String>` for seamless use in Tauri command returns.
 
 ## Tauri Commands
 
