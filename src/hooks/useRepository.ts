@@ -78,9 +78,9 @@ export function useRepository() {
   }
 
   /** Get diff for a single file */
-  async function getFileDiff(path: string, file: string, scope?: string): Promise<string> {
+  async function getFileDiff(path: string, file: string, scope?: string, untracked?: boolean): Promise<string> {
     try {
-      return await invoke<string>("get_file_diff", { path, file, scope });
+      return await invoke<string>("get_file_diff", { path, file, scope, untracked: untracked || undefined });
     } catch (err) {
       appLogger.error("git", "Failed to get file diff", err);
       return "";

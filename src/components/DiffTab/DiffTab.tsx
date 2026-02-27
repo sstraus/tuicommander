@@ -9,6 +9,7 @@ export interface DiffTabProps {
   repoPath: string;
   filePath: string;
   scope?: string;
+  untracked?: boolean;
   onClose?: () => void;
 }
 
@@ -35,7 +36,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 
     (async () => {
       try {
-        const diffContent = await repo.getFileDiff(repoPath, filePath, scope);
+        const diffContent = await repo.getFileDiff(repoPath, filePath, scope, props.untracked);
         setDiff(diffContent);
       } catch (err) {
         setError(String(err));

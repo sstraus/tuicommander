@@ -168,6 +168,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                     repoPath={diffTab.repoPath}
                     filePath={diffTab.filePath}
                     scope={diffTab.scope}
+                    untracked={diffTab.untracked}
                     onClose={() => props.onCloseTab(id)}
                   />
                 )}

@@ -183,11 +183,12 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
       return { method: "GET", path: `/repo/diff-stats?path=${p("path")}` };
     case "get_changed_files":
       return { method: "GET", path: `/repo/files?path=${p("path")}` };
-    case "get_file_diff":
-      return {
-        method: "GET",
-        path: `/repo/file-diff?path=${p("path")}&file=${p("file")}`,
-      };
+    case "get_file_diff": {
+      let diffUrl = `/repo/file-diff?path=${p("path")}&file=${p("file")}`;
+      if (args?.scope) diffUrl += `&scope=${encodeURIComponent(String(args.scope))}`;
+      if (args?.untracked) diffUrl += `&untracked=true`;
+      return { method: "GET", path: diffUrl };
+    }
     case "get_github_status":
       return { method: "GET", path: `/repo/github?path=${p("path")}` };
     case "get_repo_pr_statuses":

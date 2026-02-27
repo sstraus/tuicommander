@@ -101,6 +101,8 @@ pub(super) struct GenerateWorktreeNameRequest {
 pub(super) struct FileQuery {
     pub path: String,
     pub file: String,
+    pub scope: Option<String>,
+    pub untracked: Option<bool>,
 }
 
 #[derive(Deserialize)]

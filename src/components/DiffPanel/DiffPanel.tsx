@@ -86,7 +86,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
 
   const handleFileClick = (file: ChangedFile) => {
     if (!props.repoPath) return;
-    diffTabsStore.add(props.repoPath, file.path, file.status as DiffStatus, scope());
+    diffTabsStore.add(props.repoPath, file.path, file.status as DiffStatus, scope(), file.status === "?" || undefined);
   };
 
   const getStatusDisplay = (status: string): { label: string; className: string } => {
@@ -99,6 +99,8 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
         return { label: "D", className: p.statusDeleted };
       case "R":
         return { label: "R", className: p.statusRenamed };
+      case "?":
+        return { label: "?", className: p.statusAdded };
       default:
         return { label: status, className: p.statusUnknown };
     }

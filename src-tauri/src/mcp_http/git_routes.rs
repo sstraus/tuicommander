@@ -58,7 +58,9 @@ pub(super) async fn get_file_diff_http(Query(q): Query<FileQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
     let path = q.path;
     let file = q.file;
-    match tokio::task::spawn_blocking(move || crate::git::get_file_diff(path, file, None)).await {
+    let scope = q.scope;
+    let untracked = q.untracked;
+    match tokio::task::spawn_blocking(move || crate::git::get_file_diff(path, file, scope, untracked)).await {
         Ok(Ok(diff)) => (StatusCode::OK, Json(serde_json::json!(diff))).into_response(),
         Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),

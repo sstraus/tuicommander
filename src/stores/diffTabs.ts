@@ -10,6 +10,7 @@ export interface DiffTabData extends BaseTab {
   fileName: string; // Display name (basename of filePath)
   status: DiffStatus;
   scope?: string; // "working" (default) or "committed" (HEAD~1)
+  untracked?: boolean; // True for "?" status files — skips redundant ls-files probe
 }
 
 /** Get the branch key for the currently active repo+branch */
@@ -37,7 +38,7 @@ function createDiffTabsStore() {
     setPinned: base.setPinned,
 
     /** Add a new diff tab (or return existing if same file+scope already open) */
-    add(repoPath: string, filePath: string, status: DiffStatus, scope?: string): string {
+    add(repoPath: string, filePath: string, status: DiffStatus, scope?: string, untracked?: boolean): string {
       const existing = Object.values(base.state.tabs).find(
         (tab) => tab.repoPath === repoPath && tab.filePath === filePath && tab.scope === scope,
       );
@@ -48,7 +49,7 @@ function createDiffTabsStore() {
 
       const id = base._nextId("diff");
       const fileName = filePath.split("/").pop() || filePath;
-      return base._addTab({ id, repoPath, filePath, fileName, status, scope, branchKey: currentBranchKey() });
+      return base._addTab({ id, repoPath, filePath, fileName, status, scope, untracked, branchKey: currentBranchKey() });
     },
 
     /** Clear all diff tabs for a repository */
