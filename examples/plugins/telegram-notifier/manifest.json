@@ -1,0 +1,11 @@
+{
+  "id": "telegram-notifier",
+  "name": "Telegram Notifier",
+  "version": "1.0.0",
+  "minAppVersion": "0.3.0",
+  "main": "main.js",
+  "description": "Forwards terminal notifications to Telegram with per-event toggles and sound control.",
+  "author": "TUICommander",
+  "capabilities": ["net:http", "ui:panel", "ui:ticker"],
+  "allowedUrls": ["https://api.telegram.org/*"]
+}
