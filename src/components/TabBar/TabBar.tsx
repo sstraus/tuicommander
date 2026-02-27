@@ -361,7 +361,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
           const terminal = () => terminalsStore.get(id);
           const isActive = () => terminalsStore.state.activeId === id;
           const hasActivity = () => !isActive() && terminal()?.activity;
-          const isIdle = () => !isActive() && terminal()?.shellState === "idle";
+          const isBusy = () => !isActive() && terminalsStore.isBusy(id);
+          const isIdle = () => !isActive() && !isBusy() && terminal()?.shellState === "idle";
           const awaitingInput = () => terminal()?.awaitingInput;
           const isDragging = () => draggingId() === id;
           const isDragOver = () => dragOverId() === id && draggingId() !== id;
@@ -401,6 +402,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   awaitingInput() && s.awaitingInput,
                   awaitingInput() && AWAITING_CLASSES[awaitingInput()!],
                   hasActivity() && s.hasActivity,
+                  isBusy() && s.shellBusy,
                   isIdle() && s.shellIdle,
                   isDragging() && s.dragging,
                   isDragOver() && dragOverSide() === "left" && s.dragOverLeft,

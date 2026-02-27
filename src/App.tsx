@@ -313,12 +313,11 @@ const App: Component = () => {
     }
   });
 
-  // Prevent system sleep while any terminal is busy (Story 258)
+  // Prevent system sleep while any terminal is busy (debounced — Story 258/405)
   createEffect(() => {
     if (!isTauri()) return;
     const enabled = settingsStore.state.preventSleepWhenBusy;
-    const terminals = terminalsStore.state.terminals;
-    const anyBusy = Object.values(terminals).some((t) => t.shellState === "busy");
+    const anyBusy = terminalsStore.isAnyBusy();
 
     if (enabled && anyBusy) {
       invoke("block_sleep").catch((err) =>
@@ -328,6 +327,16 @@ const App: Component = () => {
       invoke("unblock_sleep").catch((err) =>
         appLogger.warn("app", "Failed to unblock sleep", err),
       );
+    }
+  });
+
+  // Completion notification: play sound when a terminal was busy for >=5s then goes idle
+  const BUSY_COMPLETION_THRESHOLD_MS = 5000;
+  terminalsStore.onBusyToIdle((id, durationMs) => {
+    if (durationMs >= BUSY_COMPLETION_THRESHOLD_MS) {
+      appLogger.info("terminal", `[Notify] ${id} completion — busy for ${Math.round(durationMs / 1000)}s then idle`);
+      terminalsStore.update(id, { activity: true });
+      notificationsStore.playCompletion();
     }
   });
 

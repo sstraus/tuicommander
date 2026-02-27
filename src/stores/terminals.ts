@@ -71,7 +71,12 @@ interface TerminalsStoreState {
   layout: TabLayout;
   /** Tabs currently detached to floating windows: tabId → window label */
   detachedWindows: Record<string, string>;
+  /** Debounced busy state per terminal — stays true for BUSY_HOLD_MS after idle */
+  debouncedBusy: Record<string, boolean>;
 }
+
+/** Debounce hold time: how long isBusy() stays true after shellState goes idle */
+const BUSY_HOLD_MS = 2000;
 
 /** Create the terminals store */
 function createTerminalsStore() {
@@ -81,7 +86,52 @@ function createTerminalsStore() {
     counter: 0,
     layout: { ...DEFAULT_LAYOUT },
     detachedWindows: {},
+    debouncedBusy: {},
   });
+
+  // Debounced busy tracking: timers + timestamps are plain JS, the boolean state
+  // lives in the SolidJS store (state.debouncedBusy) for reactivity.
+  const busySinceMap = new Map<string, number>();
+  const busyDurationMap = new Map<string, number>();
+  const cooldownTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const busyToIdleCallbacks: Array<(id: string, durationMs: number) => void> = [];
+
+  /** Handle shellState transition for debounced busy tracking */
+  function handleShellStateChange(id: string, prev: ShellState, next: ShellState): void {
+    if (next === "busy" && prev !== "busy") {
+      // Entering busy: clear any cooldown, mark busy, record start time
+      const timer = cooldownTimers.get(id);
+      if (timer != null) {
+        clearTimeout(timer);
+        cooldownTimers.delete(id);
+      }
+      setState("debouncedBusy", id, true);
+      busySinceMap.set(id, Date.now());
+      busyDurationMap.delete(id);
+    } else if (next !== "busy" && prev === "busy") {
+      // Leaving busy: freeze duration, start cooldown
+      const since = busySinceMap.get(id);
+      const duration = since != null ? Date.now() - since : 0;
+      busyDurationMap.set(id, duration);
+
+      const timer = setTimeout(() => {
+        cooldownTimers.delete(id);
+        setState("debouncedBusy", id, false);
+        for (const cb of busyToIdleCallbacks) cb(id, duration);
+      }, BUSY_HOLD_MS);
+      cooldownTimers.set(id, timer);
+    }
+  }
+
+  /** Clean up debounced busy state for a removed terminal */
+  function cleanupBusyState(id: string): void {
+    const timer = cooldownTimers.get(id);
+    if (timer != null) clearTimeout(timer);
+    cooldownTimers.delete(id);
+    setState(produce((s) => { delete s.debouncedBusy[id]; }));
+    busySinceMap.delete(id);
+    busyDurationMap.delete(id);
+  }
 
   const actions = {
     /** Add a new terminal */
@@ -101,6 +151,7 @@ function createTerminalsStore() {
      *  the caller is responsible for selecting a same-branch replacement beforehand. */
     remove(id: string): void {
       appLogger.info("terminal", `TermStore.remove(${id})`, { remaining: Object.keys(state.terminals).filter(k => k !== id) });
+      cleanupBusyState(id);
       setState(
         produce((s) => {
           delete s.terminals[id];
@@ -122,6 +173,11 @@ function createTerminalsStore() {
 
     /** Update terminal data */
     update(id: string, data: Partial<TerminalState>): void {
+      if ("shellState" in data) {
+        const prev = state.terminals[id]?.shellState ?? null;
+        const next = data.shellState ?? null;
+        if (prev !== next) handleShellStateChange(id, prev, next);
+      }
       setState("terminals", id, (prev) => ({ ...prev, ...data }));
     },
 
@@ -192,6 +248,32 @@ function createTerminalsStore() {
     /** Get terminal count */
     getCount(): number {
       return Object.keys(state.terminals).length;
+    },
+
+    /** Debounced busy: true while shellState is "busy" and for 2s after it transitions to idle */
+    isBusy(id: string): boolean {
+      return state.debouncedBusy[id] ?? false;
+    },
+
+    /** True if any terminal has a debounced busy state */
+    isAnyBusy(): boolean {
+      return Object.values(state.debouncedBusy).some(Boolean);
+    },
+
+    /** Duration in ms of the current (or last) busy cycle. 0 if never busy. */
+    getBusyDuration(id: string): number {
+      // If currently busy (no frozen duration yet), compute live
+      const since = busySinceMap.get(id);
+      const frozen = busyDurationMap.get(id);
+      if (frozen != null) return frozen;
+      if (since != null) return Date.now() - since;
+      return 0;
+    },
+
+    /** Register a callback fired when a terminal transitions from debounced-busy to idle.
+     *  Callback receives (terminalId, busyDurationMs). */
+    onBusyToIdle(callback: (id: string, durationMs: number) => void): void {
+      busyToIdleCallbacks.push(callback);
     },
 
     /** Set the complete layout state */

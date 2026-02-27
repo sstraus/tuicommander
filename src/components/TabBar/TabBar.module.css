@@ -227,6 +227,13 @@
   animation: pulse-opacity 1.5s ease-in-out 3;
 }
 
+.tab.shellBusy .tabIcon {
+  color: var(--accent);
+  opacity: 1;
+  font-size: 8px;
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
 .tab.shellIdle .tabIcon {
   color: var(--success);
   opacity: 1;

@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { Component, For, Show, createMemo, createSignal } from "solid-js";
 import type { RepositoryState, BranchState } from "../../stores/repositories";
 import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
@@ -170,22 +170,9 @@ export const BranchItem: Component<{
   const hasQuestion = () =>
     props.branch.terminals.some((id) => terminalsStore.get(id)?.awaitingInput != null);
 
-  // Visual busy indicator with 2s hold to prevent jittery animation restarts.
-  // shellState flips busy→idle on a 500ms timer, so without this hold the CSS
-  // animation would restart every time a brief output gap occurs.
-  const rawBusy = () =>
-    props.branch.terminals.some((id) => terminalsStore.get(id)?.shellState === "busy");
-  const [hasBusy, setHasBusy] = createSignal(false);
-  let busyCooldown: ReturnType<typeof setTimeout> | undefined;
-  createEffect(() => {
-    if (rawBusy()) {
-      clearTimeout(busyCooldown);
-      setHasBusy(true);
-    } else if (hasBusy()) {
-      busyCooldown = setTimeout(() => setHasBusy(false), 2000);
-    }
-  });
-  onCleanup(() => clearTimeout(busyCooldown));
+  // Debounced busy — centralized in terminalsStore with 2s hold
+  const hasBusy = () =>
+    props.branch.terminals.some((id) => terminalsStore.isBusy(id));
 
   const handleDoubleClick = (e: MouseEvent) => {
     e.stopPropagation();

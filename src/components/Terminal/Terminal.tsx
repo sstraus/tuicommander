@@ -349,10 +349,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
           case "question":
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} question prompt="${parsed.prompt_text}" → setAwaitingInput("question")`);
             terminalsStore.setAwaitingInput(props.id, "question");
-            if (terminalsStore.state.activeId !== props.id) {
-              appLogger.info("terminal", `[Notify] ${props.id} question — prompt="${parsed.prompt_text}" (background tab)`);
-              notificationsStore.playQuestion();
-            }
+            appLogger.info("terminal", `[Notify] ${props.id} question — prompt="${parsed.prompt_text}"`);
+            notificationsStore.playQuestion();
             break;
           case "usage-limit": {
             const current = terminalsStore.get(props.id)?.usageLimit;
@@ -385,10 +383,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
             const { error_kind: kind, pattern_name: patternName, matched_text: matchedText } = parsed;
             appLogger.warn("terminal", `[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
             appLogger.error("terminal", `API error (${kind}): ${matchedText}`);
-            if (terminalsStore.state.activeId !== props.id) {
-              appLogger.info("terminal", `[Notify] ${props.id} error — api-error pattern=${patternName} kind=${kind} matched="${matchedText}" (background tab)`);
-              notificationsStore.playError();
-            }
+            appLogger.info("terminal", `[Notify] ${props.id} error — api-error pattern=${patternName} kind=${kind} matched="${matchedText}"`);
+            notificationsStore.playError();
             break;
           }
         }
