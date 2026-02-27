@@ -459,15 +459,18 @@ fn parse_question(clean: &str) -> Option<ParsedEvent> {
         // Claude Code: "Would you like to proceed?" / "Do you want to..."
         static ref QUESTION_RE: regex::Regex =
             regex::Regex::new(r"(?i)(Would you like to proceed|Do you want to\b[^?]*\?|Is this (plan|approach) okay)").unwrap();
-        // Numbered menu choices: ❯ 1. or ) 1. followed by option text
+        // Numbered menu choices: ❯ (U+276F), › (U+203A), >, or ) before "1." followed by option text
         static ref MENU_RE: regex::Regex =
-            regex::Regex::new(r"[❯\)]\s*1\.\s+\S").unwrap();
+            regex::Regex::new(r"[❯›>\)]\s*1\.\s+\S").unwrap();
         // Generic Y/N prompts: [Y/n], [y/N], (yes/no)
         static ref YN_RE: regex::Regex =
             regex::Regex::new(r"\[([Yy]/[Nn]|[Nn]/[Yy])\]|\(yes/no\)").unwrap();
         // "? " prefix (inquirer-style prompts used by many CLI tools)
         static ref INQUIRER_RE: regex::Regex =
             regex::Regex::new(r"^\?\s+.+\??\s*$").unwrap();
+        // Ink SelectInput navigation footer: "Enter to select · ↑/↓ to navigate"
+        static ref INK_FOOTER_RE: regex::Regex =
+            regex::Regex::new(r"Enter to select").unwrap();
     }
 
     for line in clean.lines() {
@@ -490,6 +493,17 @@ fn parse_question(clean: &str) -> Option<ParsedEvent> {
             });
         }
         if INQUIRER_RE.is_match(trimmed) {
+            return Some(ParsedEvent::Question {
+                prompt_text: trimmed.to_string(),
+            });
+        }
+        if INK_FOOTER_RE.is_match(trimmed) {
+            return Some(ParsedEvent::Question {
+                prompt_text: trimmed.to_string(),
+            });
+        }
+        // Generic question: line ends with ? and doesn't look like code/prose
+        if trimmed.ends_with('?') && !line_is_likely_not_a_prompt(line, trimmed) {
             return Some(ParsedEvent::Question {
                 prompt_text: trimmed.to_string(),
             });
@@ -962,6 +976,129 @@ mod tests {
         assert!(!check("Continue?"));
         assert!(!check("Apply changes?"));
         assert!(!check("Do you want to proceed?"));
+    }
+
+    // --- Ink SelectInput / broadened question detection tests ---
+
+    #[test]
+    fn test_question_ink_single_angle_bracket_cursor() {
+        // Ink SelectInput uses › (U+203A) as cursor indicator
+        let parser = OutputParser::new();
+        let events = parser.parse("› 1. Create a new story");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "› cursor should trigger question detection");
+    }
+
+    #[test]
+    fn test_question_ascii_greater_than_cursor() {
+        // Some CLIs use plain > as cursor indicator
+        let parser = OutputParser::new();
+        let events = parser.parse("> 1. Yes, proceed with changes");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "> cursor should trigger question detection");
+    }
+
+    #[test]
+    fn test_question_ink_navigation_footer() {
+        // Ink renders a navigation footer below selection menus
+        let parser = OutputParser::new();
+        let events = parser.parse("Enter to select · ↑/↓ to navigate · Esc to cancel");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "Ink navigation footer should trigger question detection");
+    }
+
+    #[test]
+    fn test_question_ink_navigation_footer_partial() {
+        // Some Ink variants only show "Enter to select"
+        let parser = OutputParser::new();
+        let events = parser.parse("Enter to select · ↑↓ to navigate");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "Partial Ink navigation footer should trigger question detection");
+    }
+
+    #[test]
+    fn test_question_generic_question_mark_line() {
+        // Generic question lines ending with ? should now be detected
+        let parser = OutputParser::new();
+        let events = parser.parse("What should we do with this story?");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "Generic question ending with ? should trigger detection");
+    }
+
+    #[test]
+    fn test_question_generic_not_prose() {
+        // Lines that look like prose/code should NOT trigger the generic ? match
+        let parser = OutputParser::new();
+        // Code comment
+        assert!(!parser.parse("// should we handle this case?")
+            .iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "code comment should not trigger question detection");
+        // Markdown list item
+        assert!(!parser.parse("- What about this edge case?")
+            .iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "markdown list should not trigger question detection");
+        // Indented code
+        assert!(!parser.parse("    if condition.valid?")
+            .iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "indented code should not trigger question detection");
+        // Backtick-wrapped code
+        assert!(!parser.parse("Have you tried `foo.bar()?` instead?")
+            .iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "backtick code should not trigger question detection");
+        // Long prose line
+        let long = format!("{}?", "a".repeat(121));
+        assert!(!parser.parse(&long)
+            .iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "long prose should not trigger question detection");
+    }
+
+    #[test]
+    fn test_question_ink_full_menu_block() {
+        // A realistic Ink SelectInput output block
+        let parser = OutputParser::new();
+        let block = "\
+What should we do with this story?
+
+  1. Create a new story
+› 2. Update existing story
+  3. Skip it
+  4. Other
+
+Enter to select · ↑/↓ to navigate · Esc to cancel";
+        let events = parser.parse(block);
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "Full Ink menu block should trigger question detection");
+    }
+
+    #[test]
+    fn test_no_question_blockquote_with_question() {
+        let parser = OutputParser::new();
+        assert!(!parser.parse("> Do you agree with this approach?")
+            .iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+    }
+
+    #[test]
+    fn test_no_question_bold_markdown() {
+        let parser = OutputParser::new();
+        assert!(!parser.parse("**Should we refactor this?**")
+            .iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+    }
+
+    #[test]
+    fn test_no_question_shell_prompt_with_greater_than() {
+        // Shell prompts like "> command" should NOT trigger menu detection
+        let parser = OutputParser::new();
+        assert!(!parser.parse("> git status")
+            .iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+    }
+
+    #[test]
+    fn test_no_question_enter_in_prose() {
+        // Prose mentioning "Enter to select" in a different context should still match,
+        // but "Press Enter to continue" should NOT
+        let parser = OutputParser::new();
+        assert!(!parser.parse("Press Enter to continue installing")
+            .iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     // --- Plan file detection tests ---
