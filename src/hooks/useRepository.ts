@@ -5,7 +5,7 @@ import type { RepoInfo } from "../types";
 /** Changed file information for diff browser */
 export interface ChangedFile {
   path: string;
-  status: string; // "M" | "A" | "D" | "R"
+  status: string; // "M" | "A" | "D" | "R" | "?"
   additions: number;
   deletions: number;
 }

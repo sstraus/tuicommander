@@ -1,7 +1,7 @@
 import { createTabManager, makeBranchKey, type BaseTab } from "./tabManager";
 import { repositoriesStore } from "./repositories";
 
-export type DiffStatus = "M" | "A" | "D" | "R";
+export type DiffStatus = "M" | "A" | "D" | "R" | "?";
 
 /** Diff tab data */
 export interface DiffTabData extends BaseTab {
