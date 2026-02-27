@@ -9,6 +9,7 @@ pub(crate) mod error_classification;
 pub(crate) mod fs;
 mod input_line_buffer;
 pub(crate) mod git;
+pub(crate) mod git_cli;
 pub(crate) mod github;
 pub(crate) mod head_watcher;
 pub(crate) mod repo_watcher;
