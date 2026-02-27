@@ -712,6 +712,29 @@ export function useGitOperations(deps: GitOperationsDeps) {
   };
 
   const handleNewTab = async () => {
+    // Prefer the active terminal's CWD as source of truth — the store's activeBranch
+    // may be stale if HEAD changed externally and head-changed hasn't been processed yet.
+    const activeTerminal = terminalsStore.state.activeId
+      ? terminalsStore.get(terminalsStore.state.activeId)
+      : null;
+    const activeCwd = activeTerminal?.cwd ?? null;
+
+    if (activeCwd) {
+      // Find the branch whose worktreePath matches the active terminal's CWD
+      for (const repoPath of repositoriesStore.getPaths()) {
+        const repo = repositoriesStore.get(repoPath);
+        if (!repo) continue;
+        const match = Object.values(repo.branches).find(
+          (b) => b.worktreePath && b.worktreePath === activeCwd,
+        );
+        if (match) {
+          await handleAddTerminalToBranch(repoPath, match.name);
+          return;
+        }
+      }
+    }
+
+    // Fall back to store's active branch (no active terminal or no CWD match)
     const activeRepo = repositoriesStore.getActive();
     if (activeRepo && activeRepo.activeBranch) {
       await handleAddTerminalToBranch(activeRepo.path, activeRepo.activeBranch);

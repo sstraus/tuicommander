@@ -450,6 +450,50 @@ describe("useGitOperations", () => {
 
       expect(mockCreateNewTerminal).toHaveBeenCalled();
     });
+
+    it("uses active terminal CWD to find correct branch when store activeBranch is stale", async () => {
+      // Setup: repo has main + feature/acme (linked worktree), store says main is active (stale)
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "feature/acme", { worktreePath: "/repo/.worktrees/acme" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main"); // stale — HEAD actually moved to feature/acme
+
+      // Active terminal is in the feature/acme worktree directory
+      const existingTid = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T1", cwd: "/repo/.worktrees/acme", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "feature/acme", existingTid);
+      terminalsStore.setActive(existingTid);
+
+      await gitOps.handleNewTab();
+
+      // New terminal must go to feature/acme (the CWD-matched branch), not main (stale activeBranch)
+      const featureBranch = repositoriesStore.get("/repo")?.branches["feature/acme"];
+      expect(featureBranch?.terminals.length).toBe(2); // existing + new
+      const mainBranch = repositoriesStore.get("/repo")?.branches["main"];
+      expect(mainBranch?.terminals.length).toBe(0);
+    });
+
+    it("uses active terminal CWD for main worktree when HEAD changed externally", async () => {
+      // Setup: repo with one branch, store activeBranch="old-branch" but terminal CWD is repo root
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "old-branch", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "new-branch", { worktreePath: "/repo" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "old-branch"); // stale
+
+      // Active terminal is at repo root (HEAD moved to new-branch externally)
+      const existingTid = terminalsStore.add({ sessionId: "s2", fontSize: 14, name: "T1", cwd: "/repo", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "new-branch", existingTid);
+      terminalsStore.setActive(existingTid);
+
+      await gitOps.handleNewTab();
+
+      // New terminal goes to new-branch (matched by CWD), not old-branch
+      const newBranch = repositoriesStore.get("/repo")?.branches["new-branch"];
+      expect(newBranch?.terminals.length).toBe(2);
+      const oldBranch = repositoriesStore.get("/repo")?.branches["old-branch"];
+      expect(oldBranch?.terminals.length).toBe(0);
+    });
   });
 
   describe("refreshAllBranchStats", () => {
