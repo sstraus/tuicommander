@@ -230,6 +230,17 @@ pub(super) struct RemoveOrphanRequest {
     pub worktree_path: String,
 }
 
+#[derive(Deserialize)]
+pub(super) struct MergePrRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "prNumber")]
+    pub pr_number: i64,
+    /// "merge", "squash", or "rebase"
+    #[serde(rename = "mergeMethod")]
+    pub merge_method: String,
+}
+
 // --- Recent commits query ---
 
 #[derive(Deserialize)]

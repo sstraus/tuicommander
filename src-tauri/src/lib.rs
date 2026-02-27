@@ -707,6 +707,7 @@ pub fn run() {
             github::get_ci_checks,
             github::get_repo_pr_statuses,
             github::get_all_pr_statuses,
+            github::merge_pr_via_github,
             worktree::generate_worktree_name_cmd,
             worktree::generate_clone_branch_name_cmd,
             worktree::merge_and_archive_worktree,

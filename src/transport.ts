@@ -272,6 +272,13 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
         body: { repoPath: args.repoPath, worktreePath: args.worktreePath },
       };
 
+    case "merge_pr_via_github":
+      return {
+        method: "POST",
+        path: "/repo/merge-pr",
+        body: { repoPath: args.repoPath, prNumber: args.prNumber, mergeMethod: args.mergeMethod },
+      };
+
     case "list_local_branches":
       return { method: "GET", path: `/repo/local-branches?path=${p("repoPath")}` };
 

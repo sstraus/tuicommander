@@ -1065,6 +1065,72 @@ pub(crate) fn get_ci_checks_impl(
     }
 }
 
+/// Merge a PR via GitHub REST API using the specified merge method.
+///
+/// Calls PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge.
+/// Returns the SHA of the merge commit on success.
+pub(crate) fn merge_pr_github_impl(
+    repo_path: &str,
+    pr_number: i64,
+    merge_method: &str,
+    state: &AppState,
+) -> Result<String, String> {
+    let token = state
+        .github_token
+        .read()
+        .clone()
+        .ok_or_else(|| "No GitHub token available".to_string())?;
+
+    let remote_url = get_github_remote_url(std::path::Path::new(repo_path))
+        .ok_or_else(|| "No GitHub remote URL found for this repository".to_string())?;
+
+    let (owner, repo) = parse_remote_url(&remote_url)
+        .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
+
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/merge");
+    let body = serde_json::json!({ "merge_method": merge_method });
+
+    let response = state
+        .http_client
+        .put(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "tuicommander")
+        .header("Accept", "application/vnd.github+json")
+        .json(&body)
+        .send()
+        .map_err(|e| format!("GitHub API request failed: {e}"))?;
+
+    let status = response.status();
+    let json: serde_json::Value = response
+        .json()
+        .map_err(|e| format!("Failed to parse GitHub API response: {e}"))?;
+
+    if status.is_success() {
+        let sha = json["sha"].as_str().unwrap_or("").to_string();
+        Ok(sha)
+    } else {
+        let msg = json["message"].as_str().unwrap_or("Unknown error");
+        Err(format!("GitHub merge failed ({status}): {msg}"))
+    }
+}
+
+/// Merge a PR via GitHub REST API (Tauri command).
+/// Supports merge_method: "merge", "squash", "rebase".
+#[tauri::command]
+pub(crate) async fn merge_pr_via_github(
+    repo_path: String,
+    pr_number: i64,
+    merge_method: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        merge_pr_github_impl(&repo_path, pr_number, &merge_method, &state)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
 /// Get CI check details for a PR via GitHub GraphQL API (Story 060).
 /// Runs on a blocking thread to avoid freezing the UI on focus.
 #[tauri::command]

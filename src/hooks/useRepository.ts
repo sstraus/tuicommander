@@ -230,6 +230,11 @@ export function useRepository() {
     await invoke("remove_orphan_worktree", { repoPath, worktreePath });
   }
 
+  /** Merge a PR via GitHub REST API. merge_method: "merge" | "squash" | "rebase" */
+  async function mergePrViaGithub(repoPath: string, prNumber: number, mergeMethod: string): Promise<string> {
+    return await invoke<string>("merge_pr_via_github", { repoPath, prNumber, mergeMethod });
+  }
+
   /** List local branch names for a repository */
   async function listLocalBranches(repoPath: string): Promise<string[]> {
     try {
@@ -272,6 +277,7 @@ export function useRepository() {
     checkoutRemoteBranch,
     detectOrphanWorktrees,
     removeOrphanWorktree,
+    mergePrViaGithub,
     listLocalBranches,
     switchBranch,
     getRecentCommits,

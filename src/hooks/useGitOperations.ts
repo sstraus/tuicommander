@@ -8,6 +8,7 @@ import { findOrphanTerminals } from "../utils/terminalOrphans";
 import { filterValidTerminals } from "../utils/terminalFilter";
 import { AGENTS } from "../agents";
 import { repoSettingsStore } from "../stores/repoSettings";
+import { githubStore } from "../stores/github";
 import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
 
 /** Dependencies injected into useGitOperations */
@@ -29,6 +30,7 @@ export interface GitOperationsDeps {
     checkoutRemoteBranch: (repoPath: string, branchName: string) => Promise<void>;
     detectOrphanWorktrees: (repoPath: string) => Promise<string[]>;
     removeOrphanWorktree: (repoPath: string, worktreePath: string) => Promise<void>;
+    mergePrViaGithub: (repoPath: string, prNumber: number, mergeMethod: string) => Promise<string>;
     switchBranch: (repoPath: string, branchName: string, opts?: { force?: boolean; stash?: boolean }) => Promise<{ success: boolean; stashed: boolean; previous_branch: string; new_branch: string }>;
   };
   pty: {
@@ -757,7 +759,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
     }
   };
 
-  /** Merge a worktree branch into target, then archive/delete based on setting */
+  /** Merge a worktree branch into target, then archive/delete based on setting.
+   *  When the branch has an open PR, uses GitHub API with the configured merge strategy.
+   *  Falls back to local git merge if no PR is found or GitHub API fails. */
   const handleMergeAndArchive = async (
     repoPath: string,
     branchName: string,
@@ -776,27 +780,64 @@ export function useGitOperations(deps: GitOperationsDeps) {
         }
       }
 
-      const result = await deps.repo.mergeAndArchiveWorktree(repoPath, branchName, targetBranch, afterMerge);
-
-      if (result.action === "pending") {
-        // "ask" mode — merge succeeded, user must choose what to do with the worktree
-        deps.setStatusInfo(`Merged ${branchName} into ${targetBranch} — choose what to do with the worktree`);
-        setMergePendingCtx({ repoPath, branchName });
-        // Branch stays in sidebar until the user decides (archive/delete/cancel)
+      // Use GitHub API when a PR exists for this branch
+      const pr = githubStore.getPrStatus(repoPath, branchName);
+      if (pr && pr.state === "OPEN") {
+        const strategy = repoSettingsStore.getEffective(repoPath)?.prMergeStrategy ?? "merge";
+        try {
+          await deps.repo.mergePrViaGithub(repoPath, pr.number, strategy);
+        } catch (githubErr) {
+          // GitHub API merge failed — fall back to local git merge
+          appLogger.warn("git", `GitHub API merge failed, falling back to local git merge: ${githubErr}`);
+          await mergeLocalAndFinalize(repoPath, branchName, targetBranch, afterMerge);
+          return;
+        }
+        // GitHub merge succeeded — finalize the worktree locally
+        if (afterMerge === "ask") {
+          deps.setStatusInfo(`Merged ${branchName} via GitHub — choose what to do with the worktree`);
+          setMergePendingCtx({ repoPath, branchName });
+          return;
+        }
+        const action = afterMerge as "archive" | "delete";
+        await deps.repo.finalizeMergedWorktree(repoPath, branchName, action);
+        deps.setStatusInfo(`Merged ${branchName} via GitHub (${action === "archive" ? "archived" : "deleted"})`);
+        repositoriesStore.removeBranch(repoPath, branchName);
+        refreshAllBranchStats();
         return;
       }
 
-      deps.setStatusInfo(`Merged ${branchName} into ${targetBranch} (${result.action})`);
-
-      // Remove branch from sidebar
-      repositoriesStore.removeBranch(repoPath, branchName);
-
-      // Refresh to pick up updated branch stats
-      refreshAllBranchStats();
+      // No open PR — local git merge
+      await mergeLocalAndFinalize(repoPath, branchName, targetBranch, afterMerge);
     } catch (err) {
       appLogger.error("git", "Failed to merge and archive worktree", err);
       deps.setStatusInfo(`Failed to merge: ${err}`);
     }
+  };
+
+  /** Local git merge path: checkout target, merge, then archive/delete/ask. */
+  const mergeLocalAndFinalize = async (
+    repoPath: string,
+    branchName: string,
+    targetBranch: string,
+    afterMerge: string,
+  ) => {
+    const result = await deps.repo.mergeAndArchiveWorktree(repoPath, branchName, targetBranch, afterMerge);
+
+    if (result.action === "pending") {
+      // "ask" mode — merge succeeded, user must choose what to do with the worktree
+      deps.setStatusInfo(`Merged ${branchName} into ${targetBranch} — choose what to do with the worktree`);
+      setMergePendingCtx({ repoPath, branchName });
+      // Branch stays in sidebar until the user decides (archive/delete/cancel)
+      return;
+    }
+
+    deps.setStatusInfo(`Merged ${branchName} into ${targetBranch} (${result.action})`);
+
+    // Remove branch from sidebar
+    repositoriesStore.removeBranch(repoPath, branchName);
+
+    // Refresh to pick up updated branch stats
+    refreshAllBranchStats();
   };
 
   /** Handle the user's choice in the post-merge dialog (archive, delete, or cancel). */

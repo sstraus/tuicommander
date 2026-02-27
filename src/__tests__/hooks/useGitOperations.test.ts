@@ -4,6 +4,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
+import { githubStore } from "../../stores/github";
+import type { BranchPrStatus } from "../../types";
 import { useGitOperations } from "../../hooks/useGitOperations";
 
 function resetStores() {
@@ -36,6 +38,7 @@ describe("useGitOperations", () => {
     checkoutRemoteBranch: vi.fn().mockResolvedValue(undefined),
     detectOrphanWorktrees: vi.fn().mockResolvedValue([]),
     removeOrphanWorktree: vi.fn().mockResolvedValue(undefined),
+    mergePrViaGithub: vi.fn().mockResolvedValue("abc123sha"),
     switchBranch: vi.fn().mockResolvedValue({ success: true, stashed: false, previous_branch: "main", new_branch: "feature" }),
   };
 
@@ -572,6 +575,82 @@ describe("useGitOperations", () => {
       // Branch stays — worktree is kept as-is
       expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeDefined();
       expect(gitOps.mergePendingCtx()).toBeNull();
+    });
+  });
+
+  describe("handleMergeAndArchive - GitHub API path", () => {
+    const testPr: BranchPrStatus = {
+      branch: "feature/x",
+      number: 99,
+      title: "Add feature X",
+      state: "OPEN",
+      url: "https://github.com/owner/repo/pull/99",
+      additions: 10,
+      deletions: 5,
+      checks: { passed: 1, failed: 0, pending: 0, total: 1 },
+      check_details: [],
+      author: "user",
+      commits: 2,
+      mergeable: "MERGEABLE",
+      merge_state_status: "CLEAN",
+      review_decision: "APPROVED",
+      labels: [],
+      is_draft: false,
+      base_ref_name: "main",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+      merge_state_label: null,
+      review_state_label: null,
+    };
+
+    beforeEach(() => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
+      repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
+      githubStore.updateRepoData("/repo", [testPr]);
+    });
+
+    afterEach(() => {
+      githubStore.updateRepoData("/repo", []); // clear PR data
+    });
+
+    it("uses GitHub API merge when an open PR exists for the branch", async () => {
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { prMergeStrategy: "squash" });
+
+      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "archive");
+
+      expect(mockRepo.mergePrViaGithub).toHaveBeenCalledWith("/repo", 99, "squash");
+      expect(mockRepo.mergeAndArchiveWorktree).not.toHaveBeenCalled();
+      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/x", "archive");
+    });
+
+    it("falls back to local git merge when GitHub API fails", async () => {
+      mockRepo.mergePrViaGithub.mockRejectedValueOnce(new Error("no token"));
+      mockRepo.mergeAndArchiveWorktree.mockResolvedValue({ merged: true, action: "archived", archive_path: null });
+
+      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "archive");
+
+      expect(mockRepo.mergePrViaGithub).toHaveBeenCalled();
+      expect(mockRepo.mergeAndArchiveWorktree).toHaveBeenCalledWith("/repo", "feature/x", "main", "archive");
+    });
+
+    it("sets mergePendingCtx when afterMerge=ask with GitHub PR merge", async () => {
+      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "ask");
+
+      expect(mockRepo.mergePrViaGithub).toHaveBeenCalled();
+      expect(gitOps.mergePendingCtx()).toEqual({ repoPath: "/repo", branchName: "feature/x" });
+      expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeDefined();
+    });
+
+    it("uses local git merge when no PR exists for the branch", async () => {
+      githubStore.updateRepoData("/repo", []); // no PR
+      mockRepo.mergeAndArchiveWorktree.mockResolvedValue({ merged: true, action: "archived", archive_path: null });
+
+      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "archive");
+
+      expect(mockRepo.mergePrViaGithub).not.toHaveBeenCalled();
+      expect(mockRepo.mergeAndArchiveWorktree).toHaveBeenCalled();
     });
   });
 
