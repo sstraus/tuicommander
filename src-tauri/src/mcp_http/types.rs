@@ -168,6 +168,11 @@ pub(super) struct FsSearchQuery {
 }
 
 #[derive(Deserialize)]
+pub(super) struct FsExternalFileQuery {
+    pub path: String,
+}
+
+#[derive(Deserialize)]
 pub(super) struct FsWriteFileRequest {
     #[serde(rename = "repoPath")]
     pub repo_path: String,

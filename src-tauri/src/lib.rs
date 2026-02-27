@@ -430,6 +430,18 @@ fn read_file(path: String, file: String) -> Result<String, String> {
     read_file_impl(path, file)
 }
 
+/// Read a file by absolute path (read-only, no repo constraint).
+/// Used for viewing files outside the active repository.
+#[tauri::command]
+fn read_external_file(path: String) -> Result<String, String> {
+    let p = std::path::Path::new(&path);
+    if !p.is_absolute() {
+        return Err("read_external_file requires an absolute path".to_string());
+    }
+    std::fs::read_to_string(p)
+        .map_err(|e| format!("Failed to read file: {e}"))
+}
+
 /// Get MCP server status (running, port, active sessions).
 /// Async to avoid blocking the Tauri IPC thread during the TCP self-test.
 #[tauri::command]
@@ -679,6 +691,7 @@ pub fn run() {
             git::get_recent_commits,
             list_markdown_files,
             read_file,
+            read_external_file,
             github::get_github_status,
             pty::get_orchestrator_stats,
             pty::get_session_metrics,

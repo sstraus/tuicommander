@@ -521,11 +521,17 @@ const App: Component = () => {
     const repoPath = repositoriesStore.state.activeRepoPath;
     if (!repoPath) return;
 
-    if (absolutePath.endsWith(".md") || absolutePath.endsWith(".mdx")) {
-      mdTabsStore.add(repoPath, absolutePath);
+    // Convert to relative path when inside the repo, keep absolute otherwise
+    const repoPrefix = repoPath.endsWith("/") ? repoPath : repoPath + "/";
+    const filePath = absolutePath.startsWith(repoPrefix)
+      ? absolutePath.slice(repoPrefix.length)
+      : absolutePath;
+
+    if (filePath.endsWith(".md") || filePath.endsWith(".mdx")) {
+      mdTabsStore.add(repoPath, filePath);
       uiStore.setMarkdownPanelVisible(true);
     } else {
-      const tabId = editorTabsStore.add(repoPath, absolutePath);
+      const tabId = editorTabsStore.add(repoPath, filePath);
       terminalLifecycle.handleTerminalSelect(tabId);
     }
   };

@@ -30,6 +30,13 @@ pub(super) async fn fs_read_file_http(Query(q): Query<FsFileQuery>) -> Response 
     }
 }
 
+pub(super) async fn read_external_file_http(Query(q): Query<FsExternalFileQuery>) -> Response {
+    match crate::read_external_file(q.path) {
+        Ok(content) => (StatusCode::OK, Json(serde_json::json!(content))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+    }
+}
+
 pub(super) async fn write_file_http(Json(body): Json<FsWriteFileRequest>) -> Response {
     if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
     match crate::fs::write_file(body.repo_path, body.file, body.content) {

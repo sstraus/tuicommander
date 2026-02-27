@@ -325,6 +325,8 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
       return { method: "GET", path: `/fs/list?repoPath=${p("repoPath")}&subdir=${p("subdir")}` };
     case "fs_read_file":
       return { method: "GET", path: `/fs/read?repoPath=${p("repoPath")}&file=${p("file")}` };
+    case "read_external_file":
+      return { method: "GET", path: `/fs/read-external?path=${p("path")}` };
     case "write_file":
       return {
         method: "POST",

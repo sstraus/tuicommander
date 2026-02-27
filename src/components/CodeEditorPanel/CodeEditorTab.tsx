@@ -9,6 +9,7 @@ import { editorTabsStore } from "../../stores/editorTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
+import { invoke } from "../../invoke";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { codeEditorTheme } from "./theme";
 import { detectLanguage } from "./languageDetection";
@@ -38,6 +39,17 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   const contextMenu = createContextMenu();
   const fb = useFileBrowser();
 
+  /** True when the file path is absolute (outside the repository) */
+  const isExternal = () => props.filePath.startsWith("/");
+
+  /** Read file content — uses the right command depending on internal vs external */
+  const readContent = async (): Promise<string> => {
+    if (isExternal()) {
+      return invoke<string>("read_external_file", { path: props.filePath });
+    }
+    return fb.readFile(props.repoPath, props.filePath);
+  };
+
   const isDirty = () => code() !== savedContent();
 
   // Sync dirty state to tab store for the tab bar indicator
@@ -54,9 +66,10 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
         setLoading(true);
         setError(null);
+        if (isExternal()) setIsReadOnly(true);
 
         try {
-          const content = await fb.readFile(repoPath, filePath);
+          const content = await readContent();
           setCode(content);
           setSavedContent(content);
         } catch (err) {
@@ -70,38 +83,44 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
     ),
   );
 
+  /** Check disk content and reload or show conflict banner */
+  const checkDiskContent = async () => {
+    if (!savedContent()) return;
+    try {
+      const diskContent = await readContent();
+      if (diskContent === savedContent()) return;
+
+      if (isDirty()) {
+        setDiskConflict(true);
+      } else {
+        setCode(diskContent);
+        setSavedContent(diskContent);
+      }
+    } catch {
+      // File may have been deleted — ignore
+    }
+  };
+
   // Re-check file content on git changes (revision signal)
   createEffect(() => {
     const repoPath = props.repoPath;
-    if (!repoPath) return;
+    if (!repoPath || isExternal()) return;
     const rev = repositoriesStore.getRevision(repoPath);
-    // Skip the initial load (rev 0 or first render when savedContent is empty)
     if (rev === 0 || !savedContent()) return;
+    checkDiskContent();
+  });
 
-    (async () => {
-      try {
-        const diskContent = await fb.readFile(repoPath, props.filePath);
-        // File hasn't changed from what we last saved/loaded
-        if (diskContent === savedContent()) return;
-
-        if (isDirty()) {
-          // Editor has unsaved changes AND file changed on disk — conflict
-          setDiskConflict(true);
-        } else {
-          // Editor is clean — silently reload
-          setCode(diskContent);
-          setSavedContent(diskContent);
-        }
-      } catch {
-        // File may have been deleted — ignore
-      }
-    })();
+  // Poll for file changes (agent edits, external tools)
+  createEffect(() => {
+    if (!props.filePath) return;
+    const timer = setInterval(checkDiskContent, 2000);
+    onCleanup(() => clearInterval(timer));
   });
 
   /** Reload content from disk, discarding local changes */
   const handleReloadFromDisk = async () => {
     try {
-      const diskContent = await fb.readFile(props.repoPath, props.filePath);
+      const diskContent = await readContent();
       setCode(diskContent);
       setSavedContent(diskContent);
       setDiskConflict(false);
@@ -224,8 +243,8 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
         </Show>
         <button
           class={e.btn}
-          onClick={() => setIsReadOnly((v) => !v)}
-          title={isReadOnly() ? t("codeEditor.unlock", "Unlock editing") : t("codeEditor.lock", "Lock (read-only)")}
+          onClick={() => { if (!isExternal()) setIsReadOnly((v) => !v); }}
+          title={isExternal() ? t("codeEditor.external", "External file (read-only)") : isReadOnly() ? t("codeEditor.unlock", "Unlock editing") : t("codeEditor.lock", "Lock (read-only)")}
         >
           {isReadOnly()
             ? <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a3 3 0 0 0-3 3v3H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-1V4a3 3 0 0 0-3-3zm1.5 6H6.5V4a1.5 1.5 0 0 1 3 0v3z"/></svg>
@@ -267,7 +286,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
         items={[{
           label: t("codeEditor.copyPath", "Copy Path"),
           action: () => {
-            const fullPath = `${props.repoPath}/${props.filePath}`;
+            const fullPath = isExternal() ? props.filePath : `${props.repoPath}/${props.filePath}`;
             navigator.clipboard.writeText(fullPath).catch((err) =>
               appLogger.error("app", "Failed to copy path", err),
             );

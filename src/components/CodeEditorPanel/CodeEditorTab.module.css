@@ -13,6 +13,9 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  /* Override global user-select:none so CodeMirror text selection & copy work */
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .empty {
