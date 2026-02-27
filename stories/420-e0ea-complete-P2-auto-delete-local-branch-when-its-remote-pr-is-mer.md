@@ -1,10 +1,10 @@
 ---
 id: 420-e0ea
 title: Auto-delete local branch when its remote PR is merged or closed on GitHub
-status: in_progress
+status: complete
 priority: P2
 created: "2026-02-27T08:28:54.915Z"
-updated: "2026-02-27T11:54:38.132Z"
+updated: "2026-02-27T12:48:03.288Z"
 dependencies: []
 ---
 
@@ -25,6 +25,10 @@ When a PR is merged or closed on GitHub, the remote branch is usually deleted au
 - [x] Setting visible in Settings > repo settings section
 - [x] Setting visible in Settings > global defaults section
 - [x] Handle edge case: branch has uncommitted changes — always ask, never auto-delete
+
+## QA
+
+Covered by 29 automated tests (6 Rust, 13 TS hook, 7 TS store, 3 TS settings). Manual: set a repo to ask/auto, merge a PR on GitHub, verify branch deletion.
 
 ## Work Log
 
