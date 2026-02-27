@@ -28,6 +28,7 @@ export interface RepoDefaults {
   orphanCleanup: OrphanCleanup;
   prMergeStrategy: MergeStrategy;
   afterMerge: WorktreeAfterMerge;
+  autoFetchIntervalMinutes: number;
 }
 
 const INITIAL_DEFAULTS: RepoDefaults = {
@@ -43,6 +44,7 @@ const INITIAL_DEFAULTS: RepoDefaults = {
   orphanCleanup: "ask",
   prMergeStrategy: "merge",
   afterMerge: "archive",
+  autoFetchIntervalMinutes: 0,
 };
 
 function createRepoDefaultsStore() {
@@ -63,6 +65,7 @@ function createRepoDefaultsStore() {
         orphan_cleanup: state.orphanCleanup,
         pr_merge_strategy: state.prMergeStrategy,
         after_merge: state.afterMerge,
+        auto_fetch_interval_minutes: state.autoFetchIntervalMinutes,
       },
     }).catch((err) => appLogger.error("config", "Failed to save repo defaults", err));
   }
@@ -85,6 +88,7 @@ function createRepoDefaultsStore() {
           orphan_cleanup?: OrphanCleanup;
           pr_merge_strategy?: MergeStrategy;
           after_merge?: WorktreeAfterMerge;
+          auto_fetch_interval_minutes?: number;
         } | null>("load_repo_defaults");
         if (loaded) {
           setState({
@@ -100,6 +104,7 @@ function createRepoDefaultsStore() {
             orphanCleanup: loaded.orphan_cleanup ?? INITIAL_DEFAULTS.orphanCleanup,
             prMergeStrategy: loaded.pr_merge_strategy ?? INITIAL_DEFAULTS.prMergeStrategy,
             afterMerge: loaded.after_merge ?? INITIAL_DEFAULTS.afterMerge,
+            autoFetchIntervalMinutes: loaded.auto_fetch_interval_minutes ?? INITIAL_DEFAULTS.autoFetchIntervalMinutes,
           });
         }
       } catch (err) {
@@ -164,6 +169,11 @@ function createRepoDefaultsStore() {
 
     setAfterMerge(value: WorktreeAfterMerge): void {
       setState("afterMerge", value);
+      save();
+    },
+
+    setAutoFetchIntervalMinutes(value: number): void {
+      setState("autoFetchIntervalMinutes", value);
       save();
     },
   };

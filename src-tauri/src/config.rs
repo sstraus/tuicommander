@@ -503,6 +503,9 @@ pub(crate) struct RepoSettingsEntry {
     pub(crate) pr_merge_strategy: Option<MergeStrategy>,
     #[serde(default)]
     pub(crate) after_merge: Option<WorktreeAfterMerge>,
+    /// Auto-fetch interval in minutes (0 or None = disabled)
+    #[serde(default)]
+    pub(crate) auto_fetch_interval_minutes: Option<u32>,
 }
 
 impl RepoSettingsEntry {
@@ -521,6 +524,7 @@ impl RepoSettingsEntry {
             || self.orphan_cleanup.is_some()
             || self.pr_merge_strategy.is_some()
             || self.after_merge.is_some()
+            || self.auto_fetch_interval_minutes.is_some()
     }
 }
 
@@ -552,6 +556,9 @@ pub(crate) struct RepoDefaultsConfig {
     pub(crate) pr_merge_strategy: MergeStrategy,
     #[serde(default)]
     pub(crate) after_merge: WorktreeAfterMerge,
+    /// Auto-fetch interval in minutes (0 = disabled)
+    #[serde(default)]
+    pub(crate) auto_fetch_interval_minutes: u32,
 }
 
 impl Default for RepoDefaultsConfig {
@@ -569,6 +576,7 @@ impl Default for RepoDefaultsConfig {
             orphan_cleanup: OrphanCleanup::default(),
             pr_merge_strategy: MergeStrategy::default(),
             after_merge: WorktreeAfterMerge::default(),
+            auto_fetch_interval_minutes: 0,
         }
     }
 }

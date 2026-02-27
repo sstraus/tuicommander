@@ -35,6 +35,8 @@ export interface RepoSettings {
   prMergeStrategy: MergeStrategy | null;
   /** null = inherit from repoDefaultsStore */
   afterMerge: WorktreeAfterMerge | null;
+  /** Auto-fetch interval in minutes (null = inherit, 0 = disabled) */
+  autoFetchIntervalMinutes: number | null;
 }
 
 /** Fully resolved settings with no nulls — use getEffective() to obtain */
@@ -55,6 +57,7 @@ export interface EffectiveRepoSettings {
   orphanCleanup: OrphanCleanup;
   prMergeStrategy: MergeStrategy;
   afterMerge: WorktreeAfterMerge;
+  autoFetchIntervalMinutes: number;
 }
 
 /** Fields that can be overridden per-repo (all others are repo-specific) */
@@ -63,6 +66,7 @@ const OVERRIDABLE_NULL_DEFAULTS: Pick<
   | "baseBranch" | "copyIgnoredFiles" | "copyUntrackedFiles" | "setupScript" | "runScript"
   | "terminalMetaHotkeys" | "worktreeStorage" | "promptOnCreate" | "deleteBranchOnRemove"
   | "autoArchiveMerged" | "orphanCleanup" | "prMergeStrategy" | "afterMerge"
+  | "autoFetchIntervalMinutes"
 > = {
   baseBranch: null,
   copyIgnoredFiles: null,
@@ -77,6 +81,7 @@ const OVERRIDABLE_NULL_DEFAULTS: Pick<
   orphanCleanup: null,
   prMergeStrategy: null,
   afterMerge: null,
+  autoFetchIntervalMinutes: null,
 };
 
 /** Repository settings store state */
@@ -171,6 +176,7 @@ function createRepoSettingsStore() {
         orphanCleanup: settings.orphanCleanup ?? defaults.orphanCleanup,
         prMergeStrategy: settings.prMergeStrategy ?? defaults.prMergeStrategy,
         afterMerge: settings.afterMerge ?? defaults.afterMerge,
+        autoFetchIntervalMinutes: settings.autoFetchIntervalMinutes ?? defaults.autoFetchIntervalMinutes,
       };
     },
 

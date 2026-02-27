@@ -96,6 +96,7 @@ describe("SettingsPanel — repo context", () => {
       orphanCleanup: null,
       prMergeStrategy: null,
       afterMerge: null,
+      autoFetchIntervalMinutes: null,
     };
     vi.mocked(repoSettingsStore.getOrCreate).mockReturnValue(mockSettings);
   });
