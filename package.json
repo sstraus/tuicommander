@@ -24,6 +24,7 @@
     "@codemirror/lang-rust": "^6.0.2",
     "@codemirror/language": "^6.12.1",
     "@codemirror/language-data": "^6.5.2",
+    "@codemirror/search": "^6.6.0",
     "@codemirror/state": "^6.5.4",
     "@codemirror/view": "^6.39.15",
     "@lezer/highlight": "^1.2.3",
@@ -43,6 +44,7 @@
     "dompurify": "^3.3.1",
     "marked": "^17.0.2",
     "qrcode": "^1.5.4",
+    "rollup": "^4.59.0",
     "solid-codemirror": "^2.3.1",
     "solid-js": "^1.9.11",
     "vite-plugin-solid": "^2.11.10"

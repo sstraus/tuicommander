@@ -3,6 +3,7 @@ import { createCodeMirror, createEditorControlledValue, createEditorReadonly } f
 import { lineNumbers, drawSelection, highlightActiveLine, highlightActiveLineGutter, keymap } from "@codemirror/view";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, indentOnInput } from "@codemirror/language";
+import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import type { Extension } from "@codemirror/state";
 import type { LanguageSupport } from "@codemirror/language";
 import { editorTabsStore } from "../../stores/editorTabs";
@@ -29,13 +30,18 @@ const LARGE_FILE_BYTES = 500 * 1024;
 
 export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   const [langSupport, setLangSupport] = createSignal<LanguageSupport | null>(null);
+  /** Signal for external content pushes (disk load/reload) — drives createEditorControlledValue */
   const [code, setCode] = createSignal("");
+  /** Mutable ref tracking live editor value without triggering reactivity on every keystroke */
+  let currentCode = "";
   const [savedContent, setSavedContent] = createSignal("");
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [isReadOnly, setIsReadOnly] = createSignal(false);
   /** True when the file changed on disk while editor has unsaved changes */
   const [diskConflict, setDiskConflict] = createSignal(false);
+  /** Reactive dirty flag — only transitions on save/load, not every keystroke */
+  const [dirty, setDirty] = createSignal(false);
   const contextMenu = createContextMenu();
   const fb = useFileBrowser();
 
@@ -50,11 +56,9 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
     return fb.readFile(props.repoPath, props.filePath);
   };
 
-  const isDirty = () => code() !== savedContent();
-
   // Sync dirty state to tab store for the tab bar indicator
   createEffect(() => {
-    editorTabsStore.setDirty(props.id, isDirty());
+    editorTabsStore.setDirty(props.id, dirty());
   });
 
   // Load file content
@@ -70,12 +74,16 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
         try {
           const content = await readContent();
+          currentCode = content;
           setCode(content);
           setSavedContent(content);
+          setDirty(false);
         } catch (err) {
           setError(String(err));
+          currentCode = "";
           setCode("");
           setSavedContent("");
+          setDirty(false);
         } finally {
           setLoading(false);
         }
@@ -90,14 +98,16 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
       const diskContent = await readContent();
       if (diskContent === savedContent()) return;
 
-      if (isDirty()) {
+      if (currentCode !== savedContent()) {
         setDiskConflict(true);
       } else {
+        currentCode = diskContent;
         setCode(diskContent);
         setSavedContent(diskContent);
+        setDirty(false);
       }
-    } catch {
-      // File may have been deleted — ignore
+    } catch (err) {
+      appLogger.debug("app", `checkDiskContent failed (file may be deleted): ${props.filePath}`, err);
     }
   };
 
@@ -107,13 +117,17 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
     if (!repoPath || isExternal()) return;
     const rev = repositoriesStore.getRevision(repoPath);
     if (rev === 0 || !savedContent()) return;
-    checkDiskContent();
+    void checkDiskContent();
   });
 
-  // Poll for file changes (agent edits, external tools)
+  // Poll for file changes (agent edits, external tools).
+  // 5s interval, skip while tab is hidden to avoid competing with terminal I/O.
   createEffect(() => {
     if (!props.filePath) return;
-    const timer = setInterval(checkDiskContent, 2000);
+    const timer = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      void checkDiskContent();
+    }, 5000);
     onCleanup(() => clearInterval(timer));
   });
 
@@ -121,8 +135,10 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   const handleReloadFromDisk = async () => {
     try {
       const diskContent = await readContent();
+      currentCode = diskContent;
       setCode(diskContent);
       setSavedContent(diskContent);
+      setDirty(false);
       setDiskConflict(false);
     } catch (err) {
       appLogger.error("app", "Failed to reload file", err);
@@ -136,7 +152,9 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
   const { ref, editorView, createExtension } = createCodeMirror({
     onValueChange: (value) => {
-      setCode(value);
+      currentCode = value;
+      const nowDirty = value !== savedContent();
+      if (nowDirty !== dirty()) setDirty(nowDirty);
     },
   });
 
@@ -154,7 +172,9 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   createExtension(highlightActiveLineGutter());
   createExtension(bracketMatching());
   createExtension(indentOnInput());
-  createExtension(keymap.of([...defaultKeymap, indentWithTab]));
+  createExtension(keymap.of([...defaultKeymap, ...searchKeymap, indentWithTab]));
+  createExtension(search());
+  createExtension(highlightSelectionMatches());
 
   // Reactive language extension
   createExtension((): Extension => langSupport() ?? []);
@@ -189,7 +209,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
           return;
         }
         // Skip syntax highlighting for large files
-        if (code().length > LARGE_FILE_BYTES) {
+        if (currentCode.length > LARGE_FILE_BYTES) {
           setLangSupport(null);
           return;
         }
@@ -201,10 +221,11 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
   // Save handler
   const handleSave = async () => {
-    if (!isDirty() || isReadOnly()) return;
+    if (!dirty() || isReadOnly()) return;
     try {
-      await fb.writeFile(props.repoPath, props.filePath, code());
-      setSavedContent(code());
+      await fb.writeFile(props.repoPath, props.filePath, currentCode);
+      setSavedContent(currentCode);
+      setDirty(false);
       // Notify revision-subscribed panels (e.g. MarkdownTab) that a file changed on disk
       if (props.repoPath) {
         repositoriesStore.bumpRevision(props.repoPath);
@@ -224,7 +245,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
         if (!container?.contains(document.activeElement)) return;
 
         e.preventDefault();
-        handleSave();
+        void handleSave();
       }
     };
 
@@ -238,7 +259,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
         <span class={e.filename} title={props.filePath}>
           {props.filePath}
         </span>
-        <Show when={isDirty()}>
+        <Show when={dirty()}>
           <span class={e.dirtyDot} title={t("codeEditor.unsaved", "Unsaved changes")} />
         </Show>
         <button
@@ -251,7 +272,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
             : <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a3 3 0 0 1 3 3v1h.5a1.5 1.5 0 0 1 1.5 1.5V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6.5A1.5 1.5 0 0 1 4.5 5H5V4a3 3 0 0 1 3-3zm1.5 4V4a1.5 1.5 0 0 0-3 0v1h3z"/></svg>
           }
         </button>
-        <Show when={isDirty() && !isReadOnly()}>
+        <Show when={dirty() && !isReadOnly()}>
           <button class={e.btn} onClick={handleSave} title={`${t("codeEditor.save", "Save")} (${"\u2318"}S)`}>
             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M13.354 1.146a.5.5 0 0 1 .146.354v12a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 2.5 13.5v-11A1.5 1.5 0 0 1 4 1h8.5a.5.5 0 0 1 .354.146L13.354 1.146zM4 2.5a.5.5 0 0 0-.5.5v10.5a.5.5 0 0 0 .5.5h1V10a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4h1a.5.5 0 0 0 .5-.5V2.207L11.793 2H11v2.5A1.5 1.5 0 0 1 9.5 6h-3A1.5 1.5 0 0 1 5 4.5V2H4zm2 0v2.5a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5V2H6zm0 8v4h4v-4H6z"/></svg>
           </button>
