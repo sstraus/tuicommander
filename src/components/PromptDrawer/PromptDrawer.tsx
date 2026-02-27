@@ -5,6 +5,7 @@ import { usePty } from "../../hooks/usePty";
 import { appLogger } from "../../stores/appLogger";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
+import { KeyComboCapture } from "../shared/KeyComboCapture";
 import s from "./PromptDrawer.module.css";
 
 export interface PromptDrawerProps {
@@ -427,11 +428,10 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
 
         <div class={s.editorField}>
           <label>{t("promptDrawer.shortcutLabel", "Keyboard Shortcut")}</label>
-          <input
-            type="text"
+          <KeyComboCapture
             value={shortcut()}
-            onInput={(e) => setShortcut(e.currentTarget.value)}
-            placeholder={t("promptDrawer.shortcutPlaceholder", "e.g., Ctrl+1")}
+            onChange={setShortcut}
+            placeholder={t("promptDrawer.shortcutPlaceholder", "Click to set shortcut")}
           />
         </div>
 

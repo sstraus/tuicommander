@@ -4,6 +4,7 @@ import { appLogger } from "../../stores/appLogger";
 import type { ModelInfo } from "../../stores/dictation";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
+import { KeyComboCapture } from "../shared/KeyComboCapture";
 import s from "./Settings.module.css";
 import d from "./DictationSettings.module.css";
 
@@ -106,34 +107,6 @@ export const DictationSettings: Component = () => {
     dictationStore.saveCorrections(updated);
   };
 
-  const handleHotkeyCapture = (e: KeyboardEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const key = e.key;
-
-    // Ignore bare modifier presses — wait for a real key
-    if (["Meta", "Control", "Alt", "Shift"].includes(key)) return;
-
-    const parts: string[] = [];
-    if (e.metaKey) parts.push("Cmd");
-    if (e.ctrlKey) parts.push("Ctrl");
-    if (e.altKey) parts.push("Alt");
-    if (e.shiftKey) parts.push("Shift");
-
-    // Normalize key name for Tauri global-shortcut compatibility
-    if (key === " ") {
-      parts.push("Space");
-    } else if (key.length === 1) {
-      parts.push(key.toUpperCase());
-    } else {
-      parts.push(key);
-    }
-
-    dictationStore.setHotkey(parts.join("+"));
-    dictationStore.setCapturingHotkey(false);
-  };
-
   const handleExportCorrections = () => {
     const json = JSON.stringify(dictationStore.state.corrections, null, 2);
     const blob = new Blob([json], { type: "application/json" });
@@ -201,27 +174,12 @@ export const DictationSettings: Component = () => {
       <div class={s.group}>
         <label>{t("dictation.hotkeyLabel", "Hotkey")}</label>
         <div class={d.hotkeyRow}>
-          <Show
-            when={dictationStore.state.capturingHotkey}
-            fallback={
-              <button
-                class={d.hotkeyDisplay}
-                onClick={() => dictationStore.setCapturingHotkey(true)}
-                title={t("dictation.hotkeyChangeTitle", "Click to change hotkey")}
-              >
-                {dictationStore.state.hotkey}
-              </button>
-            }
-          >
-            <input
-              class={d.hotkeyInput}
-              placeholder={t("dictation.hotkeyPlaceholder", "Press a key combination...")}
-              onKeyDown={handleHotkeyCapture}
-              onBlur={() => dictationStore.setCapturingHotkey(false)}
-              ref={(el) => requestAnimationFrame(() => el.focus())}
-              readonly
-            />
-          </Show>
+          <KeyComboCapture
+            value={dictationStore.state.hotkey}
+            onChange={(combo) => dictationStore.setHotkey(combo)}
+            placeholder={t("dictation.hotkeyPlaceholder", "Press a key combination...")}
+            onCapturingChange={(capturing) => dictationStore.setCapturingHotkey(capturing)}
+          />
         </div>
         <p class={s.hint}>
           {t("dictation.hotkeyHint", "Press to start/stop recording. Works globally.")}

@@ -1,0 +1,39 @@
+.root {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.display {
+  padding: 6px 16px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-base);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.display:hover {
+  border-color: var(--accent);
+  background: var(--bg-highlight);
+}
+
+.input {
+  padding: 6px 12px;
+  background: var(--bg-primary);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-base);
+  outline: none;
+  width: 200px;
+}
+
+.collision {
+  font-size: var(--font-sm);
+  color: var(--warning, #fbbf24);
+}
