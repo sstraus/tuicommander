@@ -1,0 +1,48 @@
+docs/backend/config.md
+  618b1252172f44b5 93
+docs/FEATURES.md
+  618b1252172f44b5 395-402,407,413
+src/__tests__/hooks/useAppInit.test.ts
+  618b1252172f44b5 35,152,337
+src/components/SettingsPanel/tabs/RepoWorktreeTab.tsx
+  618b1252172f44b5 95-119
+CHANGELOG.md
+  618b1252172f44b5 26-27
+src/App.tsx
+  618b1252172f44b5 76,247
+src/hooks/useAppInit.ts
+  618b1252172f44b5 31,377-379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "71391180b84fa578f4897dffd1d2c1b42ae91824",
+  "prompts": {
+    "618b1252172f44b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bc65e7b9-9f59-4361-b9ca-78409bce5cf7",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 47,
+      "total_deletions": 3,
+      "accepted_lines": 47,
+      "overriden_lines": 0
+    },
+    "c12f3445dc144e17": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "883abde1-becd-48c2-8e16-a98bcb4f84e2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}
