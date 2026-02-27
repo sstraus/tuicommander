@@ -116,7 +116,13 @@ export function useDictation(deps: DictationDeps) {
     // Use the focus target captured at key-press time
     const el = focusTarget;
     focusTarget = null;
-    if (el && (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) {
+
+    // xterm.js uses a hidden textarea (.xterm-helper-textarea) for keyboard input.
+    // Writing directly to it via .value doesn't reach the PTY — route to the
+    // terminal fallback below instead.
+    const isXtermTextarea = el instanceof HTMLTextAreaElement && el.closest(".xterm");
+
+    if (!isXtermTextarea && el && (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) {
       const start = el.selectionStart ?? el.value.length;
       const end = el.selectionEnd ?? start;
       const before = el.value.slice(0, start);
