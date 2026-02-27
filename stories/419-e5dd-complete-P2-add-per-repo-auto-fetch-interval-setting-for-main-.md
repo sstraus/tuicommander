@@ -1,10 +1,10 @@
 ---
-id: "419-e5dd"
-title: "Add per-repo auto-fetch interval setting for main branch"
-status: pending
+id: 419-e5dd
+title: Add per-repo auto-fetch interval setting for main branch
+status: complete
 priority: P2
-created: 2026-02-27T08:25:45.959Z
-updated: 2026-02-27T08:25:45.959Z
+created: "2026-02-27T08:25:45.959Z"
+updated: "2026-02-27T11:54:22.190Z"
 dependencies: []
 ---
 
@@ -24,5 +24,11 @@ There is no way to configure automatic git fetch on the base branch at a regular
 - [ ] Setting persisted per-repo via existing config system
 - [ ] Timer cleaned up on repo removal or app exit
 
+## QA
+
+None — covered by tests
+
 ## Work Log
+
+### 2026-02-27T11:54:17.535Z - Completed: Added autoFetchIntervalMinutes to Rust RepoSettingsEntry + RepoDefaultsConfig, TypeScript RepoSettings + EffectiveRepoSettings + RepoDefaults stores, OVERRIDABLE_NULL_DEFAULTS. Created useAutoFetch hook with master-tick pattern (1min tick, checks interval per-repo). Settings UI dropdown in RepoWorktreeTab (Disabled/5/15/30/60 min). Wired into initApp lifecycle. 9 TDD tests. Updated config.md, FEATURES.md, CHANGELOG.md. All 2199 tests pass.
 
