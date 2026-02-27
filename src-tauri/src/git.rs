@@ -468,12 +468,17 @@ pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>) -
             return Err("Access denied: file is outside repository".to_string());
         }
 
-        let is_untracked = Command::new(crate::agent::resolve_cli("git"))
+        let is_untracked = match Command::new(crate::agent::resolve_cli("git"))
             .current_dir(&repo_path)
             .args(["ls-files", "--error-unmatch", &file])
             .output()
-            .map(|o| !o.status.success())
-            .unwrap_or(false);
+        {
+            Ok(o) => !o.status.success(),
+            Err(e) => {
+                eprintln!("[git] ls-files spawn failed for {file}: {e}");
+                false
+            }
+        };
 
         if is_untracked {
             let output = Command::new(crate::agent::resolve_cli("git"))
@@ -482,7 +487,13 @@ pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>) -
                 .arg(&full_path)
                 .output()
                 .map_err(|e| format!("Failed to diff untracked file: {e}"))?;
-            // --no-index exits with 1 when files differ (which they always will vs null device)
+            // --no-index exits with 1 when files differ (expected vs null device),
+            // but exit code > 1 indicates an actual error.
+            let code = output.status.code().unwrap_or(-1);
+            if code > 1 {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("git diff --no-index failed (exit {code}): {stderr}"));
+            }
             return Ok(String::from_utf8_lossy(&output.stdout).to_string());
         }
     }
