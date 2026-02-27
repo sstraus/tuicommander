@@ -229,7 +229,7 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
       return {
         method: "POST",
         path: "/worktrees",
-        body: { base_repo: args.baseRepo, branch_name: args.branchName, create_branch: args.createBranch },
+        body: { base_repo: args.baseRepo, branch_name: args.branchName, base_ref: args.baseRef },
       };
     case "remove_worktree":
       return {
