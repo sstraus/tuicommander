@@ -74,6 +74,7 @@ export function validateManifest(manifest: PluginManifest): string | null {
   if (!manifest.version) return "manifest: version is required";
   if (!manifest.main) return "manifest: main is required";
 
+  if (!manifest.min_app_version) return "manifest: min_app_version is required";
   if (compareSemver(manifest.min_app_version, APP_VERSION) > 0) {
     return `plugin "${manifest.id}" requires app version ${manifest.min_app_version}, current is ${APP_VERSION}`;
   }

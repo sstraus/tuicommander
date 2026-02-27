@@ -348,7 +348,9 @@ const App: Component = () => {
 
   // Initialize plugin system
   onMount(() => {
-    initPlugins();
+    initPlugins().catch((err) =>
+      appLogger.error("plugin", "Plugin initialization failed", err instanceof Error ? { stack: err.stack } : err),
+    );
   });
 
   // Clear dock badge when window gains focus

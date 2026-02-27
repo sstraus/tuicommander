@@ -18,7 +18,8 @@ window.addEventListener("error", (event) => {
 
 window.addEventListener("unhandledrejection", (event) => {
   const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
-  appLogger.error("app", `Unhandled rejection: ${reason}`, event.reason);
+  const stack = event.reason instanceof Error ? event.reason.stack : undefined;
+  appLogger.error("app", `Unhandled rejection: ${reason}`, stack ? { stack } : undefined);
 });
 
 const FloatingTerminal = lazy(() => import("./FloatingTerminal").then((m) => ({ default: m.FloatingTerminal })));
