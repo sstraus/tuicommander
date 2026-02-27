@@ -1,8 +1,8 @@
+use crate::git_cli::git_cmd;
 use crate::state::{AppState, WorktreeInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use tauri::State;
 
@@ -126,37 +126,38 @@ pub(crate) fn create_worktree_internal(
         .map_err(|e| format!("Failed to create worktrees directory: {e}"))?;
 
     // Build git worktree add command
-    let mut cmd = Command::new(crate::agent::resolve_cli("git"));
-    cmd.current_dir(&config.base_repo);
-    cmd.arg("worktree").arg("add");
+    let base_repo_path = PathBuf::from(&config.base_repo);
+    let wt_path_str = worktree_path.to_string_lossy().to_string();
+    let mut args: Vec<String> = vec!["worktree".into(), "add".into()];
 
-    if config.create_branch
-        && let Some(ref branch) = config.branch {
-            cmd.arg("-b").arg(branch);
+    if config.create_branch {
+        if let Some(ref branch) = config.branch {
+            args.push("-b".into());
+            args.push(branch.clone());
         }
-
-    cmd.arg(&worktree_path);
-
-    if let Some(ref branch) = config.branch
-        && !config.create_branch {
-            cmd.arg(branch);
-        }
-
-    // Append base_ref as start-point when creating a new branch
-    if config.create_branch
-        && let Some(start_point) = base_ref
-    {
-        cmd.arg(start_point);
     }
 
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to execute git worktree: {e}"))?;
+    args.push(wt_path_str);
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // Check if it's just a "already exists" error
-        if stderr.contains("already exists") || stderr.contains("already checked out") {
+    if let Some(ref branch) = config.branch {
+        if !config.create_branch {
+            args.push(branch.clone());
+        }
+    }
+
+    // Append base_ref as start-point when creating a new branch
+    if config.create_branch {
+        if let Some(start_point) = base_ref {
+            args.push(start_point.to_string());
+        }
+    }
+
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    match git_cmd(&base_repo_path).args(&args_str).run() {
+        Ok(_) => {}
+        Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
+            if stderr.contains("already exists") || stderr.contains("already checked out") =>
+        {
             return Ok(WorktreeInfo {
                 name: worktree_name,
                 path: worktree_path,
@@ -164,7 +165,7 @@ pub(crate) fn create_worktree_internal(
                 base_repo: PathBuf::from(&config.base_repo),
             });
         }
-        return Err(format!("Git worktree failed: {stderr}"));
+        Err(e) => return Err(format!("Git worktree failed: {e}")),
     }
 
     Ok(WorktreeInfo {
@@ -178,21 +179,18 @@ pub(crate) fn create_worktree_internal(
 /// Remove a git worktree
 pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), String> {
     // First, run git worktree remove
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&worktree.base_repo)
-        .arg("worktree")
-        .arg("remove")
-        .arg("--force")
-        .arg(&worktree.path)
-        .output()
-        .map_err(|e| format!("Failed to execute git worktree remove: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // If worktree doesn't exist, that's fine
-        if !stderr.contains("not a working tree") && !stderr.contains("No such file") {
-            return Err(format!("Git worktree remove failed: {stderr}"));
+    let wt_path_str = worktree.path.to_string_lossy().to_string();
+    match git_cmd(&worktree.base_repo)
+        .args(&["worktree", "remove", "--force", &wt_path_str])
+        .run()
+    {
+        Ok(_) => {}
+        Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
+            if stderr.contains("not a working tree") || stderr.contains("No such file") =>
+        {
+            // Worktree doesn't exist — that's fine
         }
+        Err(e) => return Err(format!("Git worktree remove failed: {e}")),
     }
 
     // Cleanup the directory if it still exists
@@ -202,12 +200,7 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
     }
 
     // Prune worktrees (non-fatal: stale entries are harmless)
-    if let Err(e) = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&worktree.base_repo)
-        .arg("worktree")
-        .arg("prune")
-        .output()
-    {
+    if let Err(e) = git_cmd(&worktree.base_repo).args(&["worktree", "prune"]).run() {
         eprintln!("Warning: git worktree prune failed: {e}");
     }
 
@@ -325,19 +318,12 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, dele
     let base_repo = PathBuf::from(repo_path);
 
     // List worktrees to find the path for this branch
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&base_repo)
-        .args(["worktree", "list", "--porcelain"])
-        .output()
-        .map_err(|e| format!("Failed to list worktrees: {e}"))?;
+    let out = git_cmd(&base_repo)
+        .args(&["worktree", "list", "--porcelain"])
+        .run()
+        .map_err(|e| format!("git worktree list failed: {e}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git worktree list failed: {stderr}"));
-    }
-
-    let worktree_list = String::from_utf8_lossy(&output.stdout);
-    let worktree_path = find_worktree_path_for_branch(&worktree_list, branch_name)
+    let worktree_path = find_worktree_path_for_branch(&out.stdout, branch_name)
         .ok_or_else(|| format!("No worktree found for branch '{branch_name}'"))?;
 
     // Remove the worktree
@@ -352,19 +338,11 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, dele
 
     // Delete the local branch when requested (non-fatal: branch may still be useful)
     if delete_branch {
-        match Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(&worktree.base_repo)
-            .args(["branch", "-d", branch_name])
-            .output()
+        if let Err(e) = git_cmd(&worktree.base_repo)
+            .args(&["branch", "-d", branch_name])
+            .run()
         {
-            Ok(output) if !output.status.success() => {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                eprintln!("Warning: git branch -d {branch_name} exited with {}: {stderr}", output.status);
-            }
-            Err(e) => {
-                eprintln!("Warning: git branch -d {branch_name} failed to spawn: {e}");
-            }
-            _ => {}
+            eprintln!("Warning: git branch -d {branch_name}: {e}");
         }
     }
 
@@ -389,34 +367,26 @@ pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String
 pub(crate) fn check_worktree_dirty(repo_path: String, branch_name: String) -> Result<bool, String> {
     let base_repo = PathBuf::from(&repo_path);
 
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&base_repo)
-        .args(["worktree", "list", "--porcelain"])
-        .output()
-        .map_err(|e| format!("Failed to list worktrees: {e}"))?;
+    let wt_list = match git_cmd(&base_repo)
+        .args(&["worktree", "list", "--porcelain"])
+        .run_silent()
+    {
+        Some(o) => o.stdout,
+        None => return Ok(false),
+    };
 
-    if !output.status.success() {
-        return Ok(false);
-    }
-
-    let worktree_list = String::from_utf8_lossy(&output.stdout);
-    let wt_path = match find_worktree_path_for_branch(&worktree_list, &branch_name) {
+    let wt_path = match find_worktree_path_for_branch(&wt_list, &branch_name) {
         Some(p) => p,
         None => return Ok(false), // No worktree = not dirty
     };
 
-    let status = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&wt_path)
-        .args(["status", "--porcelain"])
-        .output()
-        .map_err(|e| format!("Failed to check status: {e}"))?;
-
-    if !status.status.success() {
-        return Ok(false);
+    match git_cmd(&wt_path)
+        .args(&["status", "--porcelain"])
+        .run_silent()
+    {
+        Some(o) => Ok(!o.stdout.trim().is_empty()),
+        None => Ok(false),
     }
-
-    let stdout = String::from_utf8_lossy(&status.stdout);
-    Ok(!stdout.trim().is_empty())
 }
 
 /// Delete a local branch, removing its worktree first if one exists.
@@ -433,34 +403,21 @@ pub(crate) fn delete_local_branch_impl(repo_path: &str, branch_name: &str) -> Re
     let base_repo = PathBuf::from(repo_path);
 
     // Check if branch has a linked worktree
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&base_repo)
-        .args(["worktree", "list", "--porcelain"])
-        .output()
-        .map_err(|e| format!("Failed to list worktrees: {e}"))?;
-
-    let has_worktree = if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        find_worktree_path_for_branch(&stdout, branch_name).is_some()
-    } else {
-        false
-    };
+    let has_worktree = git_cmd(&base_repo)
+        .args(&["worktree", "list", "--porcelain"])
+        .run_silent()
+        .map(|o| find_worktree_path_for_branch(&o.stdout, branch_name).is_some())
+        .unwrap_or(false);
 
     if has_worktree {
         // Remove worktree + branch in one go
         remove_worktree_by_branch(repo_path, branch_name, true)?;
     } else {
         // Just delete the branch ref
-        let result = Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(&base_repo)
-            .args(["branch", "-d", branch_name])
-            .output()
-            .map_err(|e| format!("git branch -d failed to spawn: {e}"))?;
-
-        if !result.status.success() {
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            return Err(format!("git branch -d {branch_name} failed: {stderr}"));
-        }
+        git_cmd(&base_repo)
+            .args(&["branch", "-d", branch_name])
+            .run()
+            .map_err(|e| format!("git branch -d {branch_name} failed: {e}"))?;
     }
 
     Ok(())
@@ -479,22 +436,15 @@ pub(crate) fn delete_local_branch(state: State<'_, Arc<AppState>>, repo_path: St
 pub(crate) fn get_worktree_paths(repo_path: String) -> Result<HashMap<String, String>, String> {
     let base_repo = PathBuf::from(&repo_path);
 
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&base_repo)
-        .args(["worktree", "list", "--porcelain"])
-        .output()
-        .map_err(|e| format!("Failed to list worktrees: {e}"))?;
+    let out = git_cmd(&base_repo)
+        .args(&["worktree", "list", "--porcelain"])
+        .run()
+        .map_err(|e| format!("git worktree list failed: {e}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git worktree list failed: {stderr}"));
-    }
-
-    let worktree_list = String::from_utf8_lossy(&output.stdout);
     let mut result = HashMap::new();
     let mut current_path: Option<String> = None;
 
-    for line in worktree_list.lines() {
+    for line in out.stdout.lines() {
         if line.starts_with("worktree ") {
             current_path = Some(line.trim_start_matches("worktree ").to_string());
         } else if line.starts_with("branch refs/heads/") {
@@ -554,19 +504,12 @@ fn parse_orphan_worktrees(porcelain: &str) -> Vec<String> {
 pub(crate) fn detect_orphan_worktrees(repo_path: String) -> Result<Vec<String>, String> {
     let base_repo = PathBuf::from(&repo_path);
 
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&base_repo)
-        .args(["worktree", "list", "--porcelain"])
-        .output()
-        .map_err(|e| format!("Failed to list worktrees: {e}"))?;
+    let out = git_cmd(&base_repo)
+        .args(&["worktree", "list", "--porcelain"])
+        .run()
+        .map_err(|e| format!("git worktree list failed: {e}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git worktree list failed: {stderr}"));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(parse_orphan_worktrees(&stdout))
+    Ok(parse_orphan_worktrees(&out.stdout))
 }
 
 /// Remove an orphan worktree by its filesystem path (detached HEAD — no branch to look up).
@@ -607,19 +550,12 @@ pub(crate) fn generate_clone_branch_name_cmd(source_branch: String, existing_nam
 /// List local branch names for a repository (excludes HEAD and remote-only refs)
 #[tauri::command]
 pub(crate) fn list_local_branches(repo_path: String) -> Result<Vec<String>, String> {
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(&repo_path)
-        .args(["branch", "--format=%(refname:short)"])
-        .output()
-        .map_err(|e| format!("Failed to list branches: {e}"))?;
+    let out = git_cmd(Path::new(&repo_path))
+        .args(&["branch", "--format=%(refname:short)"])
+        .run()
+        .map_err(|e| format!("git branch failed: {e}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git branch failed: {stderr}"));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let branches: Vec<String> = stdout
+    let branches: Vec<String> = out.stdout
         .lines()
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty())
@@ -634,15 +570,11 @@ pub(crate) fn list_local_branches(repo_path: String) -> Result<Vec<String>, Stri
 /// to checking if `main` or `master` exist as local branches.
 pub(crate) fn get_remote_default_branch(repo_path: &str) -> Result<String, String> {
     // Try symbolic-ref first (cheapest, no network)
-    let output = Command::new(crate::agent::resolve_cli("git"))
-        .current_dir(repo_path)
-        .args(["symbolic-ref", "refs/remotes/origin/HEAD"])
-        .output()
-        .map_err(|e| format!("Failed to run git symbolic-ref: {e}"))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let trimmed = stdout.trim();
+    if let Some(out) = git_cmd(Path::new(repo_path))
+        .args(&["symbolic-ref", "refs/remotes/origin/HEAD"])
+        .run_silent()
+    {
+        let trimmed = out.stdout.trim().to_string();
         // Output is like "refs/remotes/origin/main"
         if let Some(branch) = trimmed.strip_prefix("refs/remotes/origin/")
             && !branch.is_empty()
@@ -710,7 +642,6 @@ pub(crate) fn switch_branch(
     force: bool,
     stash: bool,
 ) -> Result<SwitchBranchResult, String> {
-    let git = crate::agent::resolve_cli("git");
     let base_repo = PathBuf::from(&repo_path);
 
     // Read current branch before switching
@@ -728,15 +659,11 @@ pub(crate) fn switch_branch(
 
     // Check for uncommitted changes (unless force or stash)
     if !force && !stash {
-        let status = Command::new(&git)
-            .current_dir(&base_repo)
-            .args(["status", "--porcelain"])
-            .output()
-            .map_err(|e| format!("Failed to check status: {e}"))?;
-
-        if status.status.success() {
-            let stdout = String::from_utf8_lossy(&status.stdout);
-            if !stdout.trim().is_empty() {
+        if let Some(out) = git_cmd(&base_repo)
+            .args(&["status", "--porcelain"])
+            .run_silent()
+        {
+            if !out.stdout.trim().is_empty() {
                 return Err("dirty".to_string());
             }
         }
@@ -745,20 +672,13 @@ pub(crate) fn switch_branch(
     // Stash if requested
     let did_stash = if stash {
         let stash_msg = format!("auto-stash before switching to {branch_name}");
-        let stash_out = Command::new(&git)
-            .current_dir(&base_repo)
-            .args(["stash", "push", "-m", &stash_msg])
-            .output()
-            .map_err(|e| format!("Failed to stash: {e}"))?;
-
-        if !stash_out.status.success() {
-            let stderr = String::from_utf8_lossy(&stash_out.stderr);
-            return Err(format!("Stash failed: {stderr}"));
-        }
+        let stash_out = git_cmd(&base_repo)
+            .args(&["stash", "push", "-m", &stash_msg])
+            .run()
+            .map_err(|e| format!("Stash failed: {e}"))?;
 
         // "No local changes to save" means nothing was stashed
-        let stdout = String::from_utf8_lossy(&stash_out.stdout);
-        !stdout.contains("No local changes to save")
+        !stash_out.stdout.contains("No local changes to save")
     } else {
         false
     };
@@ -770,16 +690,10 @@ pub(crate) fn switch_branch(
     }
     args.push(&branch_name);
 
-    let checkout = Command::new(&git)
-        .current_dir(&base_repo)
+    git_cmd(&base_repo)
         .args(&args)
-        .output()
-        .map_err(|e| format!("Failed to checkout {branch_name}: {e}"))?;
-
-    if !checkout.status.success() {
-        let stderr = String::from_utf8_lossy(&checkout.stderr);
-        return Err(format!("Checkout failed: {stderr}"));
-    }
+        .run()
+        .map_err(|e| format!("Checkout failed: {e}"))?;
 
     state.invalidate_repo_caches(&repo_path);
 
@@ -799,20 +713,13 @@ pub(crate) fn checkout_remote_branch(
     repo_path: String,
     branch_name: String,
 ) -> Result<(), String> {
-    let git = crate::agent::resolve_cli("git");
     let base_repo = PathBuf::from(&repo_path);
     let remote_ref = format!("origin/{branch_name}");
 
-    let checkout = Command::new(&git)
-        .current_dir(&base_repo)
-        .args(["checkout", "-b", &branch_name, &remote_ref])
-        .output()
-        .map_err(|e| format!("Failed to checkout {branch_name}: {e}"))?;
-
-    if !checkout.status.success() {
-        let stderr = String::from_utf8_lossy(&checkout.stderr);
-        return Err(format!("Checkout failed: {stderr}"));
-    }
+    git_cmd(&base_repo)
+        .args(&["checkout", "-b", &branch_name, &remote_ref])
+        .run()
+        .map_err(|e| format!("Checkout failed: {e}"))?;
 
     state.invalidate_repo_caches(&repo_path);
     Ok(())
@@ -878,36 +785,22 @@ pub(crate) fn merge_and_archive_worktree(
     target_branch: String,
     after_merge: String,
 ) -> Result<MergeArchiveResult, String> {
-    let git = crate::agent::resolve_cli("git");
     let base_repo = PathBuf::from(&repo_path);
 
     // 1. Ensure we're on the target branch in the base repo
-    let checkout = Command::new(&git)
-        .current_dir(&base_repo)
-        .args(["checkout", &target_branch])
-        .output()
+    git_cmd(&base_repo)
+        .args(&["checkout", &target_branch])
+        .run()
         .map_err(|e| format!("Failed to checkout {target_branch}: {e}"))?;
 
-    if !checkout.status.success() {
-        let stderr = String::from_utf8_lossy(&checkout.stderr);
-        return Err(format!("Failed to checkout {target_branch}: {stderr}"));
-    }
-
     // 2. Merge the source branch
-    let merge = Command::new(&git)
-        .current_dir(&base_repo)
-        .args(["merge", &branch_name, "--no-edit"])
-        .output()
-        .map_err(|e| format!("Failed to merge {branch_name}: {e}"))?;
-
-    if !merge.status.success() {
-        let stderr = String::from_utf8_lossy(&merge.stderr);
+    if let Err(e) = git_cmd(&base_repo)
+        .args(&["merge", &branch_name, "--no-edit"])
+        .run()
+    {
         // Abort the merge to leave a clean state
-        let _ = Command::new(&git)
-            .current_dir(&base_repo)
-            .args(["merge", "--abort"])
-            .output();
-        return Err(format!("Merge failed (conflicts?): {stderr}"));
+        let _ = git_cmd(&base_repo).args(&["merge", "--abort"]).run();
+        return Err(format!("Merge failed (conflicts?): {e}"));
     }
 
     // 3. Handle the worktree based on after_merge setting
@@ -945,17 +838,13 @@ pub(crate) fn merge_and_archive_worktree(
 /// Archive a worktree: move its directory to `{worktrees_dir}/__archived/{branch_name}/`
 /// and run `git worktree remove`.
 pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<String, String> {
-    let git = crate::agent::resolve_cli("git");
-
     // Find worktree path for this branch
-    let output = Command::new(&git)
-        .current_dir(base_repo)
-        .args(["worktree", "list", "--porcelain"])
-        .output()
+    let wt_list_out = git_cmd(base_repo)
+        .args(&["worktree", "list", "--porcelain"])
+        .run()
         .map_err(|e| format!("Failed to list worktrees: {e}"))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let wt_path = find_worktree_path_for_branch(&stdout, branch_name)
+    let wt_path = find_worktree_path_for_branch(&wt_list_out.stdout, branch_name)
         .ok_or_else(|| format!("No worktree found for branch '{branch_name}'"))?;
     let parent_dir = wt_path.parent().ok_or("Worktree has no parent directory")?;
     let archive_dir = parent_dir.join("__archived");
@@ -967,10 +856,10 @@ pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<St
         .map_err(|e| format!("Failed to create archive directory: {e}"))?;
 
     // Remove git worktree link first (so git doesn't track it)
-    let _ = Command::new(&git)
-        .current_dir(base_repo)
-        .args(["worktree", "remove", "--force", &wt_path.to_string_lossy()])
-        .output();
+    let wt_path_str = wt_path.to_string_lossy().to_string();
+    let _ = git_cmd(base_repo)
+        .args(&["worktree", "remove", "--force", &wt_path_str])
+        .run();
 
     // Move the directory if it still exists (worktree remove may have deleted it)
     if wt_path.exists() {
@@ -983,10 +872,7 @@ pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<St
     }
 
     // Prune stale worktree entries
-    let _ = Command::new(&git)
-        .current_dir(base_repo)
-        .args(["worktree", "prune"])
-        .output();
+    let _ = git_cmd(base_repo).args(&["worktree", "prune"]).run();
 
     Ok(archive_dest.to_string_lossy().to_string())
 }
@@ -1002,35 +888,13 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let repo_path = temp_dir.path();
 
-        Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(repo_path)
-            .args(["init"])
-            .output()
-            .expect("Failed to init git repo");
-
-        Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(repo_path)
-            .args(["config", "user.email", "test@test.com"])
-            .output()
-            .expect("Failed to config git");
-
-        Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(repo_path)
-            .args(["config", "user.name", "Test"])
-            .output()
-            .expect("Failed to config git");
+        git_cmd(repo_path).args(&["init"]).run().expect("Failed to init git repo");
+        git_cmd(repo_path).args(&["config", "user.email", "test@test.com"]).run().expect("Failed to config git");
+        git_cmd(repo_path).args(&["config", "user.name", "Test"]).run().expect("Failed to config git");
 
         fs::write(repo_path.join("README.md"), "# Test").expect("Failed to write file");
-        Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(repo_path)
-            .args(["add", "."])
-            .output()
-            .expect("Failed to git add");
-        Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(repo_path)
-            .args(["commit", "-m", "Initial commit"])
-            .output()
-            .expect("Failed to git commit");
+        git_cmd(repo_path).args(&["add", "."]).run().expect("Failed to git add");
+        git_cmd(repo_path).args(&["commit", "-m", "Initial commit"]).run().expect("Failed to git commit");
 
         temp_dir
     }
@@ -1242,11 +1106,7 @@ mod tests {
         let repo_path = repo.path().to_string_lossy().to_string();
 
         // Create a second branch
-        Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(repo.path())
-            .args(["branch", "feature-x"])
-            .output()
-            .expect("Failed to create branch");
+        git_cmd(repo.path()).args(&["branch", "feature-x"]).run().expect("Failed to create branch");
 
         let refs = list_base_ref_options(repo_path).unwrap();
         assert!(refs.len() >= 2, "Expected at least 2 refs, got: {refs:?}");
@@ -1282,16 +1142,8 @@ mod tests {
 
         // Make a commit on the feature branch so merge has something to do
         fs::write(wt.path.join("feature.txt"), "feature work").expect("write feature");
-        Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(&wt.path)
-            .args(["add", "."])
-            .output()
-            .expect("git add");
-        Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(&wt.path)
-            .args(["commit", "-m", "feat: add feature"])
-            .output()
-            .expect("git commit");
+        git_cmd(&wt.path).args(&["add", "."]).run().expect("git add");
+        git_cmd(&wt.path).args(&["commit", "-m", "feat: add feature"]).run().expect("git commit");
 
         // Archive the worktree
         let result = archive_worktree(repo.path(), "feat-archive-test");
@@ -1310,7 +1162,6 @@ mod tests {
         let repo = setup_test_repo();
         let repo_path = repo.path().to_string_lossy().to_string();
         let worktrees_dir = repo.path().join("worktrees");
-        let git = crate::agent::resolve_cli("git");
 
         // Create a worktree with a new branch
         let config = WorktreeConfig {
@@ -1327,15 +1178,14 @@ mod tests {
             .expect("Failed to remove worktree");
 
         // Branch should be gone
-        let output = Command::new(&git)
-            .current_dir(repo.path())
-            .args(["branch", "--list", "feat-delete-branch"])
-            .output()
+        let out = git_cmd(repo.path())
+            .args(&["branch", "--list", "feat-delete-branch"])
+            .run()
             .expect("Failed to list branches");
-        let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            stdout.trim().is_empty(),
-            "Branch should be deleted when delete_branch=true, but found: {stdout}"
+            out.stdout.trim().is_empty(),
+            "Branch should be deleted when delete_branch=true, but found: {}",
+            out.stdout
         );
     }
 
@@ -1344,7 +1194,6 @@ mod tests {
         let repo = setup_test_repo();
         let repo_path = repo.path().to_string_lossy().to_string();
         let worktrees_dir = repo.path().join("worktrees");
-        let git = crate::agent::resolve_cli("git");
 
         // Create a worktree with a new branch
         let config = WorktreeConfig {
@@ -1361,14 +1210,12 @@ mod tests {
             .expect("Failed to remove worktree");
 
         // Branch should still exist
-        let output = Command::new(&git)
-            .current_dir(repo.path())
-            .args(["branch", "--list", "feat-keep-branch"])
-            .output()
+        let out = git_cmd(repo.path())
+            .args(&["branch", "--list", "feat-keep-branch"])
+            .run()
             .expect("Failed to list branches");
-        let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            !stdout.trim().is_empty(),
+            !out.stdout.trim().is_empty(),
             "Branch should be preserved when delete_branch=false"
         );
     }
@@ -1465,11 +1312,7 @@ branch refs/heads/feat
         let repo_path = repo.path().to_string_lossy().to_string();
 
         // Create a branch from current HEAD
-        Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(repo.path())
-            .args(["branch", "feat-to-delete"])
-            .output()
-            .expect("Failed to create branch");
+        git_cmd(repo.path()).args(&["branch", "feat-to-delete"]).run().expect("Failed to create branch");
 
         // Verify it exists
         let branches = list_local_branches(repo_path.clone()).unwrap();
@@ -1571,11 +1414,7 @@ branch refs/heads/feat
         let repo_path = repo.path().to_string_lossy().to_string();
 
         // Create a branch without a worktree
-        Command::new(crate::agent::resolve_cli("git"))
-            .current_dir(repo.path())
-            .args(["branch", "bare-branch"])
-            .output()
-            .expect("Failed to create branch");
+        git_cmd(repo.path()).args(&["branch", "bare-branch"]).run().expect("Failed to create branch");
 
         let dirty = check_worktree_dirty(repo_path, "bare-branch".to_string());
         assert!(dirty.is_ok());
