@@ -1,6 +1,7 @@
 use serde::Serialize;
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -426,10 +427,20 @@ pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<V
                 if file_path.is_empty() {
                     continue;
                 }
-                // Count lines in the new file for the additions stat
+                // Count lines by streaming (avoids loading large files into memory).
+                // Stops on first UTF-8 error (binary file) and returns 0.
                 let full_path = repo_path.join(file_path);
-                let additions = std::fs::read_to_string(&full_path)
-                    .map(|c| c.lines().count() as u32)
+                let additions = File::open(&full_path)
+                    .map(|f| {
+                        let mut count = 0u32;
+                        for line in BufReader::new(f).lines() {
+                            match line {
+                                Ok(_) => count += 1,
+                                Err(_) => return 0, // binary / invalid UTF-8
+                            }
+                        }
+                        count
+                    })
                     .unwrap_or(0);
                 files.push(ChangedFile {
                     path: file_path.to_string(),
