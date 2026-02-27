@@ -104,12 +104,25 @@ export function useConfirmDialog() {
     });
   }
 
+  /** Confirm removing orphaned worktrees (detached-HEAD, branch deleted) */
+  async function confirmOrphanCleanup(paths: string[]): Promise<boolean> {
+    const list = paths.map((p) => `  • ${p}`).join("\n");
+    return await confirm({
+      title: "Orphaned worktrees found",
+      message: `${paths.length} worktree(s) have no branch and will be removed:\n${list}`,
+      okLabel: "Remove",
+      cancelLabel: "Keep",
+      kind: "warning",
+    });
+  }
+
   return {
     confirm,
     confirmRemoveWorktree,
     confirmCloseTerminal,
     confirmRemoveRepo,
     confirmStashAndSwitch,
+    confirmOrphanCleanup,
     /** Reactive state for rendering the dialog — null when hidden */
     dialogState,
     /** Handler for confirm button / Enter key */

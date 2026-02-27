@@ -167,7 +167,7 @@ const App: Component = () => {
   const gitOps = useGitOperations({
     repo,
     pty,
-    dialogs: { ...dialogs, promptRepoPath },
+    dialogs: { ...dialogs, promptRepoPath, confirmOrphanCleanup: dialogs.confirmOrphanCleanup },
     closeTerminal: terminalLifecycle.closeTerminal,
     createNewTerminal: terminalLifecycle.createNewTerminal,
     setStatusInfo,

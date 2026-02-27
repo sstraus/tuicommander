@@ -262,6 +262,16 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
         body: { repoPath: args.repoPath, branchName: args.branchName },
       };
 
+    case "detect_orphan_worktrees":
+      return { method: "GET", path: `/repo/orphan-worktrees?repoPath=${p("repoPath")}` };
+
+    case "remove_orphan_worktree":
+      return {
+        method: "POST",
+        path: "/repo/remove-orphan",
+        body: { repoPath: args.repoPath, worktreePath: args.worktreePath },
+      };
+
     case "list_local_branches":
       return { method: "GET", path: `/repo/local-branches?path=${p("repoPath")}` };
 

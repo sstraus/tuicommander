@@ -222,6 +222,14 @@ pub(super) struct CheckoutRemoteRequest {
     pub branch_name: String,
 }
 
+#[derive(Deserialize)]
+pub(super) struct RemoveOrphanRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "worktreePath")]
+    pub worktree_path: String,
+}
+
 // --- Recent commits query ---
 
 #[derive(Deserialize)]

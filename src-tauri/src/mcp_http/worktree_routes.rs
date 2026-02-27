@@ -98,6 +98,41 @@ pub(super) async fn remove_worktree_http(
     }
 }
 
+pub(super) async fn detect_orphan_worktrees_http(Query(q): Query<OptionalRepoQuery>) -> Response {
+    let repo_path = match q.repo_path {
+        Some(p) => p,
+        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "repoPath required"}))).into_response(),
+    };
+    if let Err(e) = validate_repo_path(&repo_path) { return e.into_response(); }
+    match crate::worktree::detect_orphan_worktrees(repo_path) {
+        Ok(paths) => (StatusCode::OK, Json(serde_json::json!(paths))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+    }
+}
+
+pub(super) async fn remove_orphan_worktree_http(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<super::types::RemoveOrphanRequest>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
+    let worktree = crate::state::WorktreeInfo {
+        name: std::path::Path::new(&body.worktree_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| body.worktree_path.clone()),
+        path: std::path::PathBuf::from(&body.worktree_path),
+        branch: None,
+        base_repo: std::path::PathBuf::from(&body.repo_path),
+    };
+    match crate::worktree::remove_worktree_internal(&worktree) {
+        Ok(()) => {
+            state.invalidate_repo_caches(&body.repo_path);
+            (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+    }
+}
+
 pub(super) async fn generate_worktree_name_http(
     Json(body): Json<GenerateWorktreeNameRequest>,
 ) -> impl IntoResponse {

@@ -27,6 +27,8 @@ export interface GitOperationsDeps {
     listLocalBranches: (repoPath: string) => Promise<string[]>;
     getMergedBranches: (repoPath: string) => Promise<string[]>;
     checkoutRemoteBranch: (repoPath: string, branchName: string) => Promise<void>;
+    detectOrphanWorktrees: (repoPath: string) => Promise<string[]>;
+    removeOrphanWorktree: (repoPath: string, worktreePath: string) => Promise<void>;
     switchBranch: (repoPath: string, branchName: string, opts?: { force?: boolean; stash?: boolean }) => Promise<{ success: boolean; stashed: boolean; previous_branch: string; new_branch: string }>;
   };
   pty: {
@@ -38,6 +40,7 @@ export interface GitOperationsDeps {
     confirmRemoveRepo: (repoName: string) => Promise<boolean>;
     confirmRemoveWorktree: (branchName: string) => Promise<boolean>;
     confirmStashAndSwitch?: (branchName: string) => Promise<boolean>;
+    confirmOrphanCleanup?: (paths: string[]) => Promise<boolean>;
     /** Browser mode only: show an in-app text-input dialog to enter a repo path */
     promptRepoPath?: () => Promise<string | null>;
   };
@@ -230,7 +233,50 @@ export function useGitOperations(deps: GitOperationsDeps) {
           // Ignore stats errors for individual branches
         }
       }));
+
+      // Orphan worktree cleanup: detached-HEAD linked worktrees whose branch was deleted
+      await handleOrphanCleanup(repoPath);
     }));
+  };
+
+  /** Detect orphaned linked worktrees and act based on the orphanCleanup setting. */
+  const handleOrphanCleanup = async (repoPath: string) => {
+    const orphanCleanup = repoSettingsStore.getEffective(repoPath)?.orphanCleanup ?? "ask";
+    if (orphanCleanup === "off") return;
+
+    let orphanPaths: string[];
+    try {
+      orphanPaths = await deps.repo.detectOrphanWorktrees(repoPath);
+    } catch {
+      return; // Detection failure is non-fatal
+    }
+    if (orphanPaths.length === 0) return;
+
+    if (orphanCleanup === "on") {
+      // Auto-remove silently
+      for (const wtPath of orphanPaths) {
+        try {
+          await deps.repo.removeOrphanWorktree(repoPath, wtPath);
+        } catch (err) {
+          appLogger.warn("git", `Failed to auto-remove orphan worktree ${wtPath}`, err);
+        }
+      }
+      deps.setStatusInfo(`Removed ${orphanPaths.length} orphaned worktree(s)`);
+      return;
+    }
+
+    // orphanCleanup === "ask"
+    const confirmed = await deps.dialogs.confirmOrphanCleanup?.(orphanPaths);
+    if (!confirmed) return;
+
+    for (const wtPath of orphanPaths) {
+      try {
+        await deps.repo.removeOrphanWorktree(repoPath, wtPath);
+      } catch (err) {
+        appLogger.warn("git", `Failed to remove orphan worktree ${wtPath}`, err);
+      }
+    }
+    deps.setStatusInfo(`Removed ${orphanPaths.length} orphaned worktree(s)`);
   };
 
   const handleAddTerminalToBranch = async (repoPath: string, branchName: string) => {

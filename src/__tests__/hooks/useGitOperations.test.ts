@@ -34,6 +34,8 @@ describe("useGitOperations", () => {
     listLocalBranches: vi.fn().mockResolvedValue(["main"]),
     getMergedBranches: vi.fn().mockResolvedValue(["main"]),
     checkoutRemoteBranch: vi.fn().mockResolvedValue(undefined),
+    detectOrphanWorktrees: vi.fn().mockResolvedValue([]),
+    removeOrphanWorktree: vi.fn().mockResolvedValue(undefined),
     switchBranch: vi.fn().mockResolvedValue({ success: true, stashed: false, previous_branch: "main", new_branch: "feature" }),
   };
 
@@ -1248,6 +1250,89 @@ describe("useGitOperations", () => {
       await gitOps.handleCheckoutRemoteBranch("/repo", "feat-remote");
 
       expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("Checkout failed"));
+    });
+  });
+
+  describe("orphan worktree cleanup", () => {
+    beforeEach(() => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      mockRepo.getWorktreePaths.mockResolvedValue({ main: "/repo" });
+      mockRepo.getMergedBranches.mockResolvedValue([]);
+    });
+
+    it("auto-removes orphans silently when orphanCleanup=on", async () => {
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { orphanCleanup: "on" });
+      mockRepo.detectOrphanWorktrees.mockResolvedValue(["/wt/detached-1"]);
+
+      await gitOps.refreshAllBranchStats();
+
+      expect(mockRepo.removeOrphanWorktree).toHaveBeenCalledWith("/repo", "/wt/detached-1");
+      expect(mockSetStatusInfo).toHaveBeenCalledWith("Removed 1 orphaned worktree(s)");
+    });
+
+    it("asks user before removing when orphanCleanup=ask and user confirms", async () => {
+      const confirmOrphanCleanup = vi.fn().mockResolvedValue(true);
+      const askGitOps = useGitOperations({
+        repo: mockRepo,
+        pty: mockPty,
+        dialogs: { ...mockDialogs, confirmOrphanCleanup },
+        closeTerminal: mockCloseTerminal,
+        createNewTerminal: mockCreateNewTerminal,
+        setStatusInfo: mockSetStatusInfo,
+        getDefaultFontSize: () => 14,
+        getMaxTabNameLength: () => 25,
+      });
+      // orphanCleanup defaults to "ask" when no per-repo override
+      mockRepo.detectOrphanWorktrees.mockResolvedValue(["/wt/detached-1"]);
+
+      await askGitOps.refreshAllBranchStats();
+
+      expect(confirmOrphanCleanup).toHaveBeenCalledWith(["/wt/detached-1"]);
+      expect(mockRepo.removeOrphanWorktree).toHaveBeenCalledWith("/repo", "/wt/detached-1");
+    });
+
+    it("skips removal when orphanCleanup=ask and user cancels", async () => {
+      const confirmOrphanCleanup = vi.fn().mockResolvedValue(false);
+      const askGitOps = useGitOperations({
+        repo: mockRepo,
+        pty: mockPty,
+        dialogs: { ...mockDialogs, confirmOrphanCleanup },
+        closeTerminal: mockCloseTerminal,
+        createNewTerminal: mockCreateNewTerminal,
+        setStatusInfo: mockSetStatusInfo,
+        getDefaultFontSize: () => 14,
+        getMaxTabNameLength: () => 25,
+      });
+      mockRepo.detectOrphanWorktrees.mockResolvedValue(["/wt/detached-1"]);
+
+      await askGitOps.refreshAllBranchStats();
+
+      expect(confirmOrphanCleanup).toHaveBeenCalled();
+      expect(mockRepo.removeOrphanWorktree).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when orphanCleanup=off", async () => {
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { orphanCleanup: "off" });
+      mockRepo.detectOrphanWorktrees.mockResolvedValue(["/wt/detached-1"]);
+
+      await gitOps.refreshAllBranchStats();
+
+      expect(mockRepo.detectOrphanWorktrees).not.toHaveBeenCalled();
+      expect(mockRepo.removeOrphanWorktree).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when no orphans found", async () => {
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { orphanCleanup: "on" });
+      mockRepo.detectOrphanWorktrees.mockResolvedValue([]);
+
+      await gitOps.refreshAllBranchStats();
+
+      expect(mockRepo.removeOrphanWorktree).not.toHaveBeenCalled();
+      expect(mockSetStatusInfo).not.toHaveBeenCalledWith(expect.stringContaining("orphaned"));
     });
   });
 

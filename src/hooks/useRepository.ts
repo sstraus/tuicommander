@@ -215,6 +215,21 @@ export function useRepository() {
     await invoke("checkout_remote_branch", { repoPath, branchName });
   }
 
+  /** Detect linked worktrees in detached HEAD state (branch was deleted). */
+  async function detectOrphanWorktrees(repoPath: string): Promise<string[]> {
+    try {
+      return await invoke<string[]>("detect_orphan_worktrees", { repoPath });
+    } catch (err) {
+      appLogger.error("git", "Failed to detect orphan worktrees", err);
+      return [];
+    }
+  }
+
+  /** Remove a detached-HEAD worktree by path (no branch to look up). */
+  async function removeOrphanWorktree(repoPath: string, worktreePath: string): Promise<void> {
+    await invoke("remove_orphan_worktree", { repoPath, worktreePath });
+  }
+
   /** List local branch names for a repository */
   async function listLocalBranches(repoPath: string): Promise<string[]> {
     try {
@@ -255,6 +270,8 @@ export function useRepository() {
     finalizeMergedWorktree,
     getMergedBranches,
     checkoutRemoteBranch,
+    detectOrphanWorktrees,
+    removeOrphanWorktree,
     listLocalBranches,
     switchBranch,
     getRecentCommits,

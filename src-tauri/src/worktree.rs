@@ -415,6 +415,90 @@ pub(crate) fn get_worktree_paths(repo_path: String) -> Result<HashMap<String, St
     Ok(result)
 }
 
+/// Parse `git worktree list --porcelain` output and return paths of linked worktrees that are in
+/// detached HEAD state (i.e. their branch has been deleted). The main worktree (first entry) is
+/// always skipped — it can't be removed without removing the repo itself.
+fn parse_orphan_worktrees(porcelain: &str) -> Vec<String> {
+    let mut orphans = Vec::new();
+    let mut is_first = true;
+
+    for block in porcelain.split("\n\n") {
+        let block = block.trim();
+        if block.is_empty() {
+            continue;
+        }
+
+        let mut path: Option<String> = None;
+        let mut has_branch = false;
+        let mut is_detached = false;
+
+        for line in block.lines() {
+            if line.starts_with("worktree ") {
+                path = Some(line.trim_start_matches("worktree ").to_string());
+            } else if line.starts_with("branch refs/heads/") {
+                has_branch = true;
+            } else if line == "detached" {
+                is_detached = true;
+            }
+        }
+
+        if is_first {
+            is_first = false;
+            continue;
+        }
+
+        if is_detached && !has_branch {
+            orphans.extend(path);
+        }
+    }
+
+    orphans
+}
+
+/// Detect orphan worktrees: linked worktrees present on the filesystem but in detached HEAD
+/// state (i.e. their branch has been deleted). Returns a list of worktree directory paths.
+#[tauri::command]
+pub(crate) fn detect_orphan_worktrees(repo_path: String) -> Result<Vec<String>, String> {
+    let base_repo = PathBuf::from(&repo_path);
+
+    let output = Command::new(crate::agent::resolve_cli("git"))
+        .current_dir(&base_repo)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .map_err(|e| format!("Failed to list worktrees: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git worktree list failed: {stderr}"));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_orphan_worktrees(&stdout))
+}
+
+/// Remove an orphan worktree by its filesystem path (detached HEAD — no branch to look up).
+#[tauri::command]
+pub(crate) fn remove_orphan_worktree(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+    worktree_path: String,
+) -> Result<(), String> {
+    let base_repo = PathBuf::from(&repo_path);
+    let path = PathBuf::from(&worktree_path);
+    let worktree = WorktreeInfo {
+        name: path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| worktree_path.clone()),
+        path,
+        branch: None,
+        base_repo,
+    };
+    remove_worktree_internal(&worktree)?;
+    state.invalidate_repo_caches(&repo_path);
+    Ok(())
+}
+
 /// Generate a worktree name (Story 063)
 #[tauri::command]
 pub(crate) fn generate_worktree_name_cmd(existing_names: Vec<String>) -> String {
@@ -1227,5 +1311,58 @@ mod tests {
             resolve_worktree_dir(&repo, &WorktreeStorage::InsideRepo, &app_dir),
             PathBuf::from("/home/user/dev/myrepo/.worktrees")
         );
+    }
+
+    #[test]
+    fn parse_orphan_worktrees_detects_detached_linked_worktrees() {
+        let porcelain = "\
+worktree /repo/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /wt/feat-auth
+HEAD def456
+branch refs/heads/feat-auth
+
+worktree /wt/orphan
+HEAD deadbeef
+detached
+
+";
+        let orphans = super::parse_orphan_worktrees(porcelain);
+        assert_eq!(orphans, vec!["/wt/orphan"]);
+    }
+
+    #[test]
+    fn parse_orphan_worktrees_ignores_main_worktree_even_if_detached() {
+        let porcelain = "\
+worktree /repo/main
+HEAD abc123
+detached
+
+worktree /wt/also-detached
+HEAD deadbeef
+detached
+
+";
+        // Main worktree (first) is always skipped; only the second shows up
+        let orphans = super::parse_orphan_worktrees(porcelain);
+        assert_eq!(orphans, vec!["/wt/also-detached"]);
+    }
+
+    #[test]
+    fn parse_orphan_worktrees_returns_empty_when_all_have_branches() {
+        let porcelain = "\
+worktree /repo/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /wt/feat
+HEAD def456
+branch refs/heads/feat
+
+";
+        let orphans = super::parse_orphan_worktrees(porcelain);
+        assert!(orphans.is_empty());
     }
 }

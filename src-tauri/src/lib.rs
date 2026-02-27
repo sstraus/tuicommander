@@ -715,6 +715,8 @@ pub fn run() {
             worktree::list_base_ref_options,
             worktree::switch_branch,
             worktree::checkout_remote_branch,
+            worktree::detect_orphan_worktrees,
+            worktree::remove_orphan_worktree,
             clear_caches,
             get_local_ip,
             get_local_ips,
