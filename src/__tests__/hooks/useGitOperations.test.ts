@@ -1336,6 +1336,47 @@ describe("useGitOperations", () => {
     });
   });
 
+  describe("auto-archive merged worktrees", () => {
+    beforeEach(() => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      mockRepo.getWorktreePaths.mockResolvedValue({ main: "/repo", "feature/x": "/repo/.worktrees/feature-x" });
+      mockRepo.getMergedBranches.mockResolvedValue(["feature/x"]);
+    });
+
+    it("archives merged linked worktrees when autoArchiveMerged=true", async () => {
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+
+      await gitOps.refreshAllBranchStats();
+
+      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/x", "archive");
+      expect(mockSetStatusInfo).toHaveBeenCalledWith("Auto-archived 1 merged worktree(s)");
+    });
+
+    it("does nothing when autoArchiveMerged=false", async () => {
+      // Default is false — no setting override needed
+      mockRepo.getMergedBranches.mockResolvedValue(["feature/x"]);
+
+      await gitOps.refreshAllBranchStats();
+
+      expect(mockRepo.finalizeMergedWorktree).not.toHaveBeenCalled();
+      expect(mockSetStatusInfo).not.toHaveBeenCalledWith(expect.stringContaining("Auto-archived"));
+    });
+
+    it("skips the main worktree even when it reports as merged", async () => {
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+      // main branch worktreePath === repoPath → must be skipped
+      mockRepo.getWorktreePaths.mockResolvedValue({ main: "/repo" });
+      mockRepo.getMergedBranches.mockResolvedValue(["main"]);
+
+      await gitOps.refreshAllBranchStats();
+
+      expect(mockRepo.finalizeMergedWorktree).not.toHaveBeenCalled();
+    });
+  });
+
   describe("executeRunCommand (error path)", () => {
     it("handles write failure gracefully", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });

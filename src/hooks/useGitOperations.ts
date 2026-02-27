@@ -234,6 +234,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
         }
       }));
 
+      // Auto-archive merged worktrees when autoArchiveMerged=true
+      await handleAutoArchiveMerged(repoPath, updatedRepo.branches);
+
       // Orphan worktree cleanup: detached-HEAD linked worktrees whose branch was deleted
       await handleOrphanCleanup(repoPath);
     }));
@@ -277,6 +280,29 @@ export function useGitOperations(deps: GitOperationsDeps) {
       }
     }
     deps.setStatusInfo(`Removed ${orphanPaths.length} orphaned worktree(s)`);
+  };
+
+  /** Archive all merged linked worktrees when the autoArchiveMerged setting is enabled. */
+  const handleAutoArchiveMerged = async (repoPath: string, branches: RepositoryState["branches"]) => {
+    if (!repoSettingsStore.getEffective(repoPath)?.autoArchiveMerged) return;
+
+    const mergedLinkedBranches = Object.values(branches).filter(
+      (b) => b.isMerged && b.worktreePath !== null && b.worktreePath !== repoPath,
+    );
+    if (mergedLinkedBranches.length === 0) return;
+
+    let archived = 0;
+    for (const branch of mergedLinkedBranches) {
+      try {
+        await deps.repo.finalizeMergedWorktree(repoPath, branch.name, "archive");
+        archived++;
+      } catch (err) {
+        appLogger.warn("git", `Failed to auto-archive merged worktree for "${branch.name}"`, err);
+      }
+    }
+    if (archived > 0) {
+      deps.setStatusInfo(`Auto-archived ${archived} merged worktree(s)`);
+    }
   };
 
   const handleAddTerminalToBranch = async (repoPath: string, branchName: string) => {

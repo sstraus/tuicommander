@@ -1,10 +1,10 @@
 ---
-id: "398-2971"
-title: "Implement auto-archive merged worktrees"
-status: pending
+id: 398-2971
+title: Implement auto-archive merged worktrees
+status: complete
 priority: P3
-created: 2026-02-26T12:47:28.110Z
-updated: 2026-02-26T12:47:28.110Z
+created: "2026-02-26T12:47:28.110Z"
+updated: "2026-02-27T07:22:15.987Z"
 dependencies: []
 ---
 
@@ -27,4 +27,6 @@ auto_archive_merged setting is stored but refreshAllBranchStats never acts on is
 - src-tauri/src/worktree.rs
 
 ## Work Log
+
+### 2026-02-27T07:22:13.791Z - Completed: handleAutoArchiveMerged in useGitOperations.ts — reads autoArchiveMerged from repoSettingsStore.getEffective, filters branches where isMerged=true and worktreePath not null/not repoPath, calls finalizeMergedWorktree for each, sets status info. 3 tests covering: archives when enabled, skips when disabled, skips main worktree.
 
