@@ -190,6 +190,9 @@ export const BranchItem: Component<{
   const handleDoubleClick = (e: MouseEvent) => {
     e.stopPropagation();
     if (props.branch.isMain || props.branch.isShell) {
+      // Saved terminals will be restored by handleBranchSelect (fired from the
+      // click event that precedes dblclick). Don't add a duplicate terminal.
+      if (props.branch.savedTerminals?.length) return;
       props.onAddTerminal();
       return;
     }
