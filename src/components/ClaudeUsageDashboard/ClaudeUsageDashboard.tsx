@@ -61,6 +61,7 @@ interface SessionStats {
   daily_activity: Record<string, DayStats>;
   per_project: Record<string, ProjectStats>;
   per_project_daily: Record<string, Record<string, DayStats>>;
+  active_hours: number;
 }
 
 interface ProjectEntry {
@@ -681,6 +682,22 @@ export const ClaudeUsageDashboard: Component = () => {
                   <span class={s.insightLabel}>Cache Read</span>
                   <span class={s.insightValue}>
                     {formatTokens(stats().total_cache_read_tokens)}
+                  </span>
+                </div>
+                <div class={s.insightCard}>
+                  <span class={s.insightLabel}>Tokens/Hour</span>
+                  <span class={s.insightValue}>
+                    {stats().active_hours > 0
+                      ? formatTokens(
+                          Math.round(
+                            (stats().total_input_tokens + stats().total_output_tokens) /
+                              stats().active_hours,
+                          ),
+                        )
+                      : "—"}
+                  </span>
+                  <span class={s.insightSub}>
+                    {stats().active_hours} active hours
                   </span>
                 </div>
               </div>

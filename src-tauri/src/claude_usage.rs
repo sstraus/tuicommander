@@ -144,6 +144,9 @@ pub struct SessionStats {
     /// Per-project daily breakdown: project_slug → date → DayStats.
     /// Used by the heatmap tooltip to show top projects per day.
     pub per_project_daily: HashMap<String, HashMap<String, DayStats>>,
+    /// Number of distinct hours with activity (for tokens-per-hour calculation).
+    #[serde(default)]
+    pub active_hours: u32,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -799,6 +802,7 @@ pub async fn get_claude_session_stats(
 
     // Aggregate stats from cache
     let mut result = SessionStats::default();
+    let mut all_active_hours: HashSet<String> = HashSet::new();
 
     for (slug, dir_path) in &filtered {
         if let Some(project_files) = cache.get(slug.as_str()) {
@@ -849,6 +853,11 @@ pub async fn get_claude_session_stats(
                     proj_daily.message_count += day.message_count;
                 }
 
+                // Collect unique hourly buckets with activity
+                for hour_key in file_stats.hourly_tokens.keys() {
+                    all_active_hours.insert(hour_key.clone());
+                }
+
                 // Collect unique sessions
                 for sid in &file_stats.session_ids {
                     project_sessions.insert(sid.clone());
@@ -869,6 +878,8 @@ pub async fn get_claude_session_stats(
         .values()
         .map(|p| p.session_count)
         .sum();
+
+    result.active_hours = all_active_hours.len() as u32;
 
     Ok(result)
 }
