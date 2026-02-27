@@ -73,6 +73,8 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
     setToggling(true);
     try {
       await pluginStore.setEnabled(props.plugin.id, !props.plugin.enabled);
+    } catch (err) {
+      appLogger.error("plugin", `Failed to toggle plugin "${props.plugin.id}"`, err);
     } finally {
       setToggling(false);
     }
