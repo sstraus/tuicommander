@@ -8,6 +8,8 @@ import { mdTabsStore } from "../../../stores/mdTabs";
 import { uiStore } from "../../../stores/ui";
 import { invoke } from "../../../invoke";
 import { isTauri } from "../../../transport";
+import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
+import { ConfirmDialog } from "../../ConfirmDialog";
 import type { PluginState } from "../../../stores/pluginStore";
 import type { LogEntry } from "../../../plugins/pluginLogger";
 import s from "../Settings.module.css";
@@ -50,6 +52,7 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
   const [toggling, setToggling] = createSignal(false);
   const [uninstalling, setUninstalling] = createSignal(false);
   const [hasReadme, setHasReadme] = createSignal<boolean | null>(null);
+  const dialogs = useConfirmDialog();
 
   // Check if README.md exists for external plugins (lazy, on first render)
   if (!props.plugin.builtIn && isTauri()) {
@@ -77,9 +80,13 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
 
   const handleUninstall = async () => {
     if (props.plugin.builtIn || uninstalling()) return;
-    if (!confirm(`Uninstall "${props.plugin.manifest?.name ?? props.plugin.id}"? This will remove all plugin files including data.`)) {
-      return;
-    }
+    const confirmed = await dialogs.confirm({
+      title: "Uninstall plugin?",
+      message: `Uninstall "${props.plugin.manifest?.name ?? props.plugin.id}"?\nThis will remove all plugin files including data.`,
+      okLabel: "Uninstall",
+      kind: "warning",
+    });
+    if (!confirmed) return;
     setUninstalling(true);
     try {
       await pluginStore.uninstall(props.plugin.id);
@@ -167,6 +174,16 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
       <Show when={showLogs()}>
         <PluginLogViewer plugin={props.plugin} />
       </Show>
+      <ConfirmDialog
+        visible={dialogs.dialogState() !== null}
+        title={dialogs.dialogState()?.title ?? ""}
+        message={dialogs.dialogState()?.message ?? ""}
+        confirmLabel={dialogs.dialogState()?.confirmLabel}
+        cancelLabel={dialogs.dialogState()?.cancelLabel}
+        kind={dialogs.dialogState()?.kind}
+        onClose={dialogs.handleClose}
+        onConfirm={dialogs.handleConfirm}
+      />
     </div>
   );
 };
@@ -174,6 +191,7 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
 /** Single row in the Browse registry view */
 const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
   const [installing, setInstalling] = createSignal(false);
+  const [installError, setInstallError] = createSignal<string | null>(null);
 
   const installed = () => pluginStore.getPlugin(props.entry.id);
   const isInstalled = () => !!installed();
@@ -186,11 +204,13 @@ const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
   const handleInstall = async () => {
     if (installing()) return;
     setInstalling(true);
+    setInstallError(null);
     try {
       await pluginStore.installFromUrl(props.entry.downloadUrl);
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       appLogger.error("plugin", `Failed to install plugin "${props.entry.id}"`, err);
-      alert(`Installation failed: ${err}`);
+      setInstallError(msg);
     } finally {
       setInstalling(false);
     }
@@ -215,6 +235,9 @@ const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
           </Show>
           <Show when={props.entry.author}>
             <p class={ps.pluginCapabilities}>by {props.entry.author}</p>
+          </Show>
+          <Show when={installError()}>
+            <p class={ps.pluginError}>Installation failed: {installError()}</p>
           </Show>
         </div>
 
@@ -241,6 +264,7 @@ const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
 export const PluginsTab: Component = () => {
   const plugins = () => pluginStore.getAll();
   const [installing, setInstalling] = createSignal(false);
+  const [fileInstallError, setFileInstallError] = createSignal<string | null>(null);
   const [activeSubTab, setActiveSubTab] = createSignal<"installed" | "browse">("installed");
 
   // Fetch registry when Browse tab is first shown
@@ -259,11 +283,13 @@ export const PluginsTab: Component = () => {
     if (!selected) return;
 
     setInstalling(true);
+    setFileInstallError(null);
     try {
       await pluginStore.installFromZip(selected as string);
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       appLogger.error("plugin", "Failed to install plugin", err);
-      alert(`Installation failed: ${err}`);
+      setFileInstallError(msg);
     } finally {
       setInstalling(false);
     }
@@ -329,6 +355,9 @@ export const PluginsTab: Component = () => {
             >
               {installing() ? "Installing..." : "Install from file..."}
             </button>
+            <Show when={fileInstallError()}>
+              <p class={ps.pluginError}>Installation failed: {fileInstallError()}</p>
+            </Show>
           </div>
         </Show>
       </Show>

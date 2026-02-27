@@ -6,6 +6,8 @@ import { appLogger } from "../../stores/appLogger";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { KeyComboCapture } from "../shared/KeyComboCapture";
+import { useConfirmDialog } from "../../hooks/useConfirmDialog";
+import { ConfirmDialog } from "../ConfirmDialog";
 import s from "./PromptDrawer.module.css";
 
 export interface PromptDrawerProps {
@@ -27,6 +29,7 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
   const [variableValues, setVariableValues] = createSignal<Record<string, string>>({});
   const [showVariableDialog, setShowVariableDialog] = createSignal(false);
   const [pendingPrompt, setPendingPrompt] = createSignal<SavedPrompt | null>(null);
+  const dialogs = useConfirmDialog();
 
   const pty = usePty();
 
@@ -185,13 +188,20 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
   };
 
   /** Delete prompt */
-  const deletePrompt = (prompt: SavedPrompt) => {
-    if (confirm(`Delete prompt "${prompt.name}"?`)) {
+  const deletePrompt = async (prompt: SavedPrompt) => {
+    const confirmed = await dialogs.confirm({
+      title: "Delete prompt?",
+      message: `Delete "${prompt.name}"?`,
+      okLabel: "Delete",
+      kind: "warning",
+    });
+    if (confirmed) {
       promptLibraryStore.deletePrompt(prompt.id);
     }
   };
 
   return (
+    <>
     <Show when={isOpen()}>
       <div class={s.overlay} onClick={() => promptLibraryStore.closeDrawer()}>
         <div class={s.drawer} onClick={(e) => e.stopPropagation()}>
@@ -360,6 +370,17 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
         />
       </Show>
     </Show>
+    <ConfirmDialog
+      visible={dialogs.dialogState() !== null}
+      title={dialogs.dialogState()?.title ?? ""}
+      message={dialogs.dialogState()?.message ?? ""}
+      confirmLabel={dialogs.dialogState()?.confirmLabel}
+      cancelLabel={dialogs.dialogState()?.cancelLabel}
+      kind={dialogs.dialogState()?.kind}
+      onClose={dialogs.handleClose}
+      onConfirm={dialogs.handleConfirm}
+    />
+    </>
   );
 };
 
@@ -375,12 +396,14 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
   const [description, setDescription] = createSignal(props.prompt?.description || "");
   const [content, setContent] = createSignal(props.prompt?.content || "");
   const [shortcut, setShortcut] = createSignal(props.prompt?.shortcut || "");
+  const [validationError, setValidationError] = createSignal<string | null>(null);
 
   const handleSave = () => {
     if (!name().trim() || !content().trim()) {
-      alert("Name and content are required");
+      setValidationError(t("promptDrawer.validationError", "Name and content are required"));
       return;
     }
+    setValidationError(null);
 
     props.onSave({
       name: name().trim(),
@@ -395,12 +418,16 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
       <div class={s.editor} onClick={(e) => e.stopPropagation()}>
         <h4>{props.prompt ? t("promptDrawer.editPrompt", "Edit Prompt") : t("promptDrawer.newPromptTitle", "New Prompt")}</h4>
 
+        <Show when={validationError()}>
+          <p class={s.validationError}>{validationError()}</p>
+        </Show>
+
         <div class={s.editorField}>
           <label>{t("promptDrawer.nameLabel", "Name *")}</label>
           <input
             type="text"
             value={name()}
-            onInput={(e) => setName(e.currentTarget.value)}
+            onInput={(e) => { setName(e.currentTarget.value); setValidationError(null); }}
             placeholder={t("promptDrawer.namePlaceholder", "My Prompt")}
             autofocus
           />

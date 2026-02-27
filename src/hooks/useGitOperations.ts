@@ -37,6 +37,8 @@ export interface GitOperationsDeps {
     confirmRemoveRepo: (repoName: string) => Promise<boolean>;
     confirmRemoveWorktree: (branchName: string) => Promise<boolean>;
     confirmStashAndSwitch?: (branchName: string) => Promise<boolean>;
+    /** Browser mode only: show an in-app text-input dialog to enter a repo path */
+    promptRepoPath?: () => Promise<string | null>;
   };
   closeTerminal: (id: string, skipConfirm?: boolean) => Promise<void>;
   createNewTerminal: () => Promise<string | undefined>;
@@ -502,8 +504,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
       if (!selected) return;
       path = typeof selected === "string" ? selected : selected[0];
     } else {
-      // Browser mode: no native file picker — prompt for path
-      const input = window.prompt("Enter the absolute path to the repository:");
+      // Browser mode: no native file picker — use in-app text input dialog
+      const input = await deps.dialogs.promptRepoPath?.();
       if (!input?.trim()) return;
       path = input.trim();
     }

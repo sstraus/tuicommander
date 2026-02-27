@@ -374,3 +374,12 @@
   background: var(--bg-tertiary);
   color: var(--fg-primary);
 }
+
+.validationError {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  font-size: var(--font-md);
+  color: var(--error);
+  background: rgba(var(--error-rgb, 220, 53, 69), 0.1);
+  border-radius: var(--radius-md);
+}

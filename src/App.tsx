@@ -137,6 +137,15 @@ const App: Component = () => {
   // Terminal rename prompt state
   const [termRenamePromptVisible, setTermRenamePromptVisible] = createSignal(false);
   const [termRenameDefault, setTermRenameDefault] = createSignal("");
+  const [repoPathPromptVisible, setRepoPathPromptVisible] = createSignal(false);
+  let repoPathPromptResolve: ((value: string | null) => void) | null = null;
+
+  /** Show an in-app text-input dialog for repo path (browser mode only) */
+  const promptRepoPath = (): Promise<string | null> =>
+    new Promise((resolve) => {
+      repoPathPromptResolve = resolve;
+      setRepoPathPromptVisible(true);
+    });
 
   // Context menu state
   const contextMenu = createContextMenu();
@@ -158,7 +167,7 @@ const App: Component = () => {
   const gitOps = useGitOperations({
     repo,
     pty,
-    dialogs,
+    dialogs: { ...dialogs, promptRepoPath },
     closeTerminal: terminalLifecycle.closeTerminal,
     createNewTerminal: terminalLifecycle.createNewTerminal,
     setStatusInfo,
@@ -261,7 +270,11 @@ const App: Component = () => {
     }
 
     // Register tuic:// deep link handler
-    initDeepLinkHandler({ openSettings });
+    initDeepLinkHandler({
+      openSettings,
+      confirm: (title, message) => dialogs.confirm({ title, message, kind: "warning" }),
+      onInstallError: (msg) => appLogger.error("plugin", msg),
+    });
   });
 
 
@@ -1171,6 +1184,24 @@ const App: Component = () => {
           if (activeId && newName !== termRenameDefault()) {
             terminalsStore.update(activeId, { name: newName, nameIsCustom: true });
           }
+        }}
+      />
+
+      {/* Add repository: path prompt (browser mode only) */}
+      <PromptDialog
+        visible={repoPathPromptVisible()}
+        title="Add Repository"
+        placeholder="Enter absolute path to repository"
+        confirmLabel="Add"
+        onClose={() => {
+          setRepoPathPromptVisible(false);
+          repoPathPromptResolve?.(null);
+          repoPathPromptResolve = null;
+        }}
+        onConfirm={(path) => {
+          setRepoPathPromptVisible(false);
+          repoPathPromptResolve?.(path);
+          repoPathPromptResolve = null;
         }}
       />
 

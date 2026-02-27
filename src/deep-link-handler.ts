@@ -7,6 +7,10 @@ import { repositoriesStore } from "./stores/repositories";
 /** Callbacks provided by App.tsx to control UI navigation */
 export interface DeepLinkCallbacks {
   openSettings: (tab?: string) => void;
+  /** Show an in-app confirmation dialog — replaces native browser confirm() */
+  confirm: (title: string, message: string) => Promise<boolean>;
+  /** Show an in-app error notification — replaces native browser alert() */
+  onInstallError: (message: string) => void;
 }
 
 /** Parse a tuic:// URL into a command and parameters */
@@ -45,7 +49,10 @@ async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): 
         return;
       }
       // Confirmation dialog before downloading
-      const proceed = confirm(`Install plugin from:\n${url}\n\nThis will download and install a plugin.`);
+      const proceed = await callbacks.confirm(
+        "Install plugin?",
+        `Install plugin from:\n${url}\n\nThis will download and install a plugin.`,
+      );
       if (!proceed) return;
 
       try {
@@ -54,7 +61,7 @@ async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): 
         callbacks.openSettings("plugins");
       } catch (err) {
         appLogger.error("plugin", "DeepLink: install-plugin failed", err);
-        alert(`Plugin installation failed: ${err}`);
+        callbacks.onInstallError(`Plugin installation failed: ${err}`);
       }
       break;
     }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import "../mocks/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 import { terminalsStore } from "../../stores/terminals";
@@ -1161,6 +1161,68 @@ describe("useGitOperations", () => {
       await gitOps.handleAddRepo();
 
       expect(mockCloseTerminal).toHaveBeenCalledWith(orphanId, true);
+    });
+  });
+
+  describe("handleAddRepo (browser mode)", () => {
+    let originalTauriInternals: unknown;
+
+    beforeEach(() => {
+      // Simulate browser mode by removing Tauri internals
+      originalTauriInternals = (globalThis as Record<string, unknown>).__TAURI_INTERNALS__;
+      delete (globalThis as Record<string, unknown>).__TAURI_INTERNALS__;
+      vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+      // Restore Tauri internals
+      (globalThis as Record<string, unknown>).__TAURI_INTERNALS__ = originalTauriInternals;
+    });
+
+    it("uses promptRepoPath callback instead of window.prompt in browser mode", async () => {
+      const promptRepoPath = vi.fn().mockResolvedValue("/browser-repo");
+      const browserGitOps = useGitOperations({
+        repo: mockRepo,
+        pty: mockPty,
+        dialogs: { ...mockDialogs, promptRepoPath },
+        closeTerminal: mockCloseTerminal,
+        createNewTerminal: mockCreateNewTerminal,
+        setStatusInfo: mockSetStatusInfo,
+        getDefaultFontSize: () => 14,
+        getMaxTabNameLength: () => 25,
+      });
+      mockRepo.getInfo.mockResolvedValue({
+        path: "/browser-repo",
+        name: "browser-repo",
+        initials: "BR",
+        branch: "main",
+        status: "clean",
+      });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+      mockRepo.getWorktreePaths.mockResolvedValue({ main: "/browser-repo" });
+
+      await browserGitOps.handleAddRepo();
+
+      expect(promptRepoPath).toHaveBeenCalledOnce();
+      expect(repositoriesStore.get("/browser-repo")).toBeDefined();
+    });
+
+    it("does nothing when promptRepoPath returns null in browser mode", async () => {
+      const promptRepoPath = vi.fn().mockResolvedValue(null);
+      const browserGitOps = useGitOperations({
+        repo: mockRepo,
+        pty: mockPty,
+        dialogs: { ...mockDialogs, promptRepoPath },
+        closeTerminal: mockCloseTerminal,
+        createNewTerminal: mockCreateNewTerminal,
+        setStatusInfo: mockSetStatusInfo,
+        getDefaultFontSize: () => 14,
+        getMaxTabNameLength: () => 25,
+      });
+
+      await browserGitOps.handleAddRepo();
+
+      expect(mockRepo.getInfo).not.toHaveBeenCalled();
     });
   });
 
