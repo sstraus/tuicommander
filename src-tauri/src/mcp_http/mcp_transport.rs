@@ -83,6 +83,12 @@ fn build_mcp_instructions(state: &Arc<AppState>) -> String {
         out.push('\n');
     }
 
+    // Intent declaration protocol
+    out.push_str("## Intent Declaration\n");
+    out.push_str("At the start of each distinct work phase, emit on its own line:\n");
+    out.push_str("[[intent: <action, present tense, <60 chars>]]\n");
+    out.push_str("Examples: `Reading auth module for token flow` · `Writing parser unit tests` · `Debugging login redirect`\n");
+
     out
 }
 

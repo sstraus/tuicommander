@@ -99,6 +99,27 @@ Detects errors from two tiers:
 
 Frontend plays an error notification sound and logs via `appLogger.error()`.
 
+### Intent
+
+Agent-declared intent — what the LLM is currently working on:
+
+```rust
+ParsedEvent::Intent {
+    text: String,  // Short action description
+}
+```
+
+Detected when the agent emits `[[intent: <text>]]` or `⟦intent: <text>⟧` on its own line. Agents receive this instruction automatically via MCP init. To use manually without MCP, add to CLAUDE.md or equivalent:
+
+```
+## Intent Declaration
+At the start of each distinct work phase, emit on its own line:
+[[intent: <action, present tense, <60 chars>]]
+Examples: `Reading auth module for token flow` · `Writing parser unit tests` · `Debugging login redirect`
+```
+
+The activity dashboard shows intent (crosshair icon) when available, falling back to user prompt (speech bubble) otherwise.
+
 ## Pattern Detection
 
 The parser uses regex patterns to detect:

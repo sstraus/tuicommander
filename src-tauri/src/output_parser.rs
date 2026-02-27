@@ -56,6 +56,12 @@ pub enum ParsedEvent {
         matched_text: String,
         error_kind: String, // "server", "auth", "unknown"
     },
+    /// Agent-declared intent: what the LLM is currently working on.
+    /// Emitted via `[[intent: <text>]]` token in agent output.
+    #[serde(rename = "intent")]
+    Intent {
+        text: String,
+    },
 }
 
 /// OutputParser: detects structured events in PTY output text.
@@ -138,6 +144,11 @@ impl OutputParser {
 
         // Plan file detection
         if let Some(evt) = parse_plan_file(&clean) {
+            events.push(evt);
+        }
+
+        // Intent declaration: [[intent: <text>]] or ⟦intent: <text>⟧
+        if let Some(evt) = parse_intent(&clean) {
             events.push(evt);
         }
 
@@ -687,6 +698,27 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
         }
     }
     None
+}
+
+/// Detect agent-declared intent tokens: `[[intent: <text>]]` or `⟦intent: <text>⟧`
+/// Agents are instructed (via MCP) to emit this token when starting a new action,
+/// so the activity board can show what the agent is currently doing.
+fn parse_intent(clean: &str) -> Option<ParsedEvent> {
+    // Fast path: must contain "intent:"
+    if !clean.contains("intent:") {
+        return None;
+    }
+    lazy_static::lazy_static! {
+        // [[intent: <text>]] — ASCII double brackets
+        // ⟦intent: <text>⟧ — Unicode mathematical brackets (U+27E6 / U+27E7)
+        static ref INTENT_RE: regex::Regex =
+            regex::Regex::new(r"(?:\[\[|\x{27E6})intent:\s*(.+?)\s*(?:\]\]|\x{27E7})").unwrap();
+    }
+    INTENT_RE.captures(clean).map(|caps| {
+        ParsedEvent::Intent {
+            text: caps[1].trim().to_string(),
+        }
+    })
 }
 
 #[cfg(test)]
@@ -1675,5 +1707,63 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(!has_question(&parser.parse(
             "+- **Y/N prompts**: `[Y/n]`, `[y/N]`, `(yes/no)`"
         )));
+    }
+
+    // --- Intent detection tests ---
+
+    fn get_intent(events: &[ParsedEvent]) -> Option<String> {
+        events.iter().find_map(|e| match e {
+            ParsedEvent::Intent { text } => Some(text.clone()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn test_intent_basic() {
+        let parser = OutputParser::new();
+        let events = parser.parse("[[intent: Refactoring the auth module]]");
+        assert_eq!(get_intent(&events), Some("Refactoring the auth module".to_string()));
+    }
+
+    #[test]
+    fn test_intent_unicode_brackets() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{27E6}intent: Writing unit tests\u{27E7}");
+        assert_eq!(get_intent(&events), Some("Writing unit tests".to_string()));
+    }
+
+    #[test]
+    fn test_intent_in_multiline_output() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Some output\n[[intent: Debugging login flow]]\nMore output");
+        assert_eq!(get_intent(&events), Some("Debugging login flow".to_string()));
+    }
+
+    #[test]
+    fn test_intent_with_ansi() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\x1b[33m[[intent: Reviewing PR changes]]\x1b[0m");
+        assert_eq!(get_intent(&events), Some("Reviewing PR changes".to_string()));
+    }
+
+    #[test]
+    fn test_no_intent_normal_output() {
+        let parser = OutputParser::new();
+        assert!(get_intent(&parser.parse("Building project... done")).is_none());
+        assert!(get_intent(&parser.parse("The intent is to refactor")).is_none());
+    }
+
+    #[test]
+    fn test_no_intent_single_brackets() {
+        let parser = OutputParser::new();
+        // Single brackets should NOT match — too common in normal output
+        assert!(get_intent(&parser.parse("[intent: something]")).is_none());
+    }
+
+    #[test]
+    fn test_intent_trims_whitespace() {
+        let parser = OutputParser::new();
+        let events = parser.parse("[[intent:   Fix the flaky test   ]]");
+        assert_eq!(get_intent(&events), Some("Fix the flaky test".to_string()));
     }
 }

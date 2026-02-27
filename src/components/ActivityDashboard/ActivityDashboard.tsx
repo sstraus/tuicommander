@@ -91,6 +91,7 @@ export const ActivityDashboard: Component = () => {
         status,
         lastDataAt: term.lastDataAt,
         lastPrompt: term.lastPrompt,
+        agentIntent: term.agentIntent,
         isActive: terminalsStore.state.activeId === id,
       };
     }).filter(Boolean) as Array<{
@@ -100,6 +101,7 @@ export const ActivityDashboard: Component = () => {
       status: { label: string; className: string };
       lastDataAt: number | null;
       lastPrompt: string | null;
+      agentIntent: string | null;
       isActive: boolean;
     }>;
   };
@@ -132,7 +134,16 @@ export const ActivityDashboard: Component = () => {
                     <span class={`${s.status} ${term.status.className}`}>{term.status.label}</span>
                     <span class={s.lastActivity}>{formatRelativeTime(term.lastDataAt)}</span>
                   </div>
-                  <Show when={term.lastPrompt}>
+                  <Show when={term.agentIntent}>
+                    <div class={s.promptRow} title={term.agentIntent!}>
+                      {/* Target/crosshair icon for agent-declared intent */}
+                      <svg class={s.promptIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                        <path d="M8 1a.75.75 0 0 1 .75.75v1.82a4.505 4.505 0 0 1 3.68 3.68h1.82a.75.75 0 0 1 0 1.5h-1.82a4.505 4.505 0 0 1-3.68 3.68v1.82a.75.75 0 0 1-1.5 0v-1.82a4.505 4.505 0 0 1-3.68-3.68H1.75a.75.75 0 0 1 0-1.5h1.82A4.505 4.505 0 0 1 7.25 3.57V1.75A.75.75 0 0 1 8 1ZM5.5 8a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z"/>
+                      </svg>
+                      <span class={s.promptText}>{truncatePrompt(term.agentIntent!)}</span>
+                    </div>
+                  </Show>
+                  <Show when={term.lastPrompt && !term.agentIntent}>
                     <div class={s.promptRow} title={term.lastPrompt!}>
                       <svg class={s.promptIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
                         <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h11A1.5 1.5 0 0 1 15 3.5v7A1.5 1.5 0 0 1 13.5 12H9.373l-2.62 1.81A.75.75 0 0 1 5.6 13.2V12H2.5A1.5 1.5 0 0 1 1 10.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5H6.35a.75.75 0 0 1 .75.75v.83l1.81-1.25a.75.75 0 0 1 .427-.133H13.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-11Z"/>

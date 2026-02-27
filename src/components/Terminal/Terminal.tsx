@@ -31,7 +31,8 @@ type ParsedEvent =
   | { type: "usage-limit"; percentage: number; limit_type: string }
   | { type: "plan-file"; path: string }
   | { type: "user-input"; content: string }
-  | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string };
+  | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string }
+  | { type: "intent"; text: string };
 
 export interface TerminalProps {
   id: string;
@@ -387,6 +388,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
             notificationsStore.playError();
             break;
           }
+          case "intent":
+            appLogger.debug("terminal", `[ParsedEvent] ${props.id} intent text="${parsed.text}"`);
+            terminalsStore.setAgentIntent(props.id, parsed.text);
+            break;
         }
 
         // Also dispatch to plugin structured event handlers
