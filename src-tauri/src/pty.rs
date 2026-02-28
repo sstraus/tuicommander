@@ -261,13 +261,12 @@ pub(crate) fn spawn_reader_thread(
                             };
                             let emit_event = resolved.as_ref().unwrap_or(event);
                             // Broadcast to SSE/WebSocket consumers (skip Intent — internal only)
-                            if !matches!(event, ParsedEvent::Intent { .. }) {
-                                if let Ok(json) = serde_json::to_value(emit_event) {
-                                    let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
-                                        session_id: session_id.clone(),
-                                        parsed: json,
-                                    });
-                                }
+                            if !matches!(event, ParsedEvent::Intent { .. })
+                                && let Ok(json) = serde_json::to_value(emit_event) {
+                                let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
+                                    session_id: session_id.clone(),
+                                    parsed: json,
+                                });
                             }
                             // Tauri IPC for desktop backward compat
                             let _ = app.emit(

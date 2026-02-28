@@ -43,10 +43,9 @@ pub(super) async fn sse_events(
             match rx.recv().await {
                 Ok(event) => {
                     let event_name = event_type_name(&event);
-                    if let Some(ref types) = allowed_types {
-                        if !types.iter().any(|t| t == event_name) {
-                            continue;
-                        }
+                    if let Some(ref types) = allowed_types
+                        && !types.iter().any(|t| t == event_name) {
+                        continue;
                     }
                     let id = state.event_counter.fetch_add(1, Ordering::Relaxed);
                     let payload = match serde_json::to_string(&event_payload(&event)) {

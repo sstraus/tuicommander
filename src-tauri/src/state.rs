@@ -48,6 +48,7 @@ pub enum AppEvent {
         session_id: String,
     },
     #[serde(rename = "plugin-changed")]
+    #[allow(dead_code)] // reserved for future plugin hot-reload notifications
     PluginChanged {
         plugin_ids: Vec<String>,
     },
@@ -60,7 +61,7 @@ pub enum AppEvent {
 /// Per-session state accumulated from broadcast events.
 /// Updated by a background task that subscribes to the event bus.
 /// Read by `GET /sessions` to enrich the response for REST-polling clients.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub(crate) struct SessionState {
     /// True when a Question parsed event is pending (no subsequent user-input or pty-exit)
     pub awaiting_input: bool,
@@ -87,21 +88,6 @@ pub(crate) struct SessionState {
     pub last_error: Option<String>,
 }
 
-impl Default for SessionState {
-    fn default() -> Self {
-        Self {
-            awaiting_input: false,
-            question_text: None,
-            rate_limited: false,
-            retry_after_ms: None,
-            usage_limit_pct: None,
-            is_busy: false,
-            last_activity_ms: 0,
-            agent_type: None,
-            last_error: None,
-        }
-    }
-}
 
 /// TTL for git operations (local disk): 5 seconds
 pub(crate) const GIT_CACHE_TTL: Duration = Duration::from_secs(5);
