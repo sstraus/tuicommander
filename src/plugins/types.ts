@@ -200,6 +200,8 @@ export type PluginCapability =
   | "fs:read"
   | "fs:list"
   | "fs:watch"
+  | "fs:write"
+  | "fs:rename"
   | "net:http"
   | "credentials:read"
   | "ui:panel"
@@ -255,6 +257,8 @@ export interface OpenPanelOptions {
   title: string;
   /** HTML content rendered inside the sandboxed iframe */
   html: string;
+  /** Callback for messages received from the iframe via postMessage */
+  onMessage?: (data: unknown) => void;
 }
 
 /** Handle returned by openPanel() for updating or closing the panel */
@@ -265,6 +269,8 @@ export interface PanelHandle {
   update(html: string): void;
   /** Close the panel tab */
   close(): void;
+  /** Send a message to the iframe via postMessage */
+  send(data: unknown): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -406,6 +412,16 @@ export interface PluginHost {
 
   /** List filenames in a directory, optionally filtered by glob. Requires "fs:list". */
   listDirectory(path: string, pattern?: string): Promise<string[]>;
+
+  /** Write content to a file. Path must be absolute and within $HOME. Requires "fs:write". */
+  writeFile(absolutePath: string, content: string): Promise<void>;
+
+  /**
+   * Rename/move a file. Both paths must be absolute and within $HOME. Requires "fs:rename".
+   * @param from - Absolute source path
+   * @param to - Absolute destination path
+   */
+  renamePath(from: string, to: string): Promise<void>;
 
   /**
    * Watch a path for filesystem changes. Requires "fs:watch".

@@ -428,6 +428,25 @@ interface FsChangeEvent {
 }
 ```
 
+#### host.writeFile(absolutePath, content) -> Promise<void>
+
+Write content to a file within `$HOME`. Creates parent directories if needed. Refuses to overwrite directories. Max 10 MB. **Requires `"fs:write"` capability.**
+
+```typescript
+await host.writeFile("/Users/me/project/stories/new-story.md", "---\nstatus: pending\n---\n# New Story");
+```
+
+#### host.renamePath(from, to) -> Promise<void>
+
+Rename or move a file within `$HOME`. Both paths must be absolute. Source must exist. Creates parent directories for destination if needed. **Requires `"fs:rename"` capability.**
+
+```typescript
+await host.renamePath(
+  "/Users/me/project/stories/old-name.md",
+  "/Users/me/project/stories/new-name.md",
+);
+```
+
 ### Tier 3c: Status Bar Ticker (capability-gated)
 
 The status bar has a shared ticker area that rotates messages from multiple plugins. Messages are grouped by priority tier:
@@ -492,16 +511,42 @@ const panel = host.openPanel({
   id: "my-dashboard",
   title: "Dashboard",
   html: "<html><body><h1>Hello</h1></body></html>",
+  onMessage(data) {
+    // Receive structured messages from the iframe
+    console.log("Got message from iframe:", data);
+    // Send response back
+    panel.send({ type: "response", ok: true });
+  },
 });
 
 // Update content later
 panel.update("<html><body><h1>Updated</h1></body></html>");
 
+// Send a message to the iframe at any time
+panel.send({ type: "refresh", items: [...] });
+
 // Close the panel
 panel.close();
 ```
 
-**Security:** The iframe uses `sandbox="allow-scripts"` without `allow-same-origin`, blocking access to Tauri IPC and the parent page DOM.
+**Inside the iframe:**
+```html
+<script>
+  // Send message to host
+  window.parent.postMessage({ type: "save", config: { ... } }, "*");
+
+  // Receive messages from host
+  window.addEventListener("message", (e) => {
+    if (e.data?.type === "response") {
+      console.log("Host says:", e.data.ok);
+    }
+  });
+</script>
+```
+
+**CSS Theme Injection:** CSS custom properties from the app's `:root` (e.g. `--bg-primary`, `--fg-primary`, `--border`, `--accent`, `--error`, `--warning`) are automatically injected into the iframe. Use `var(--bg-primary)` in your CSS to match the app theme.
+
+**Security:** The iframe uses `sandbox="allow-scripts"` without `allow-same-origin`, blocking access to Tauri IPC and the parent page DOM. The `close-panel` message type is handled as a system message; all other messages are routed to the `onMessage` callback.
 
 ### Tier 3e: Credential Access (capability-gated)
 
@@ -653,6 +698,8 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `fs:read` | `host.readFile()`, `host.readFileTail()` | Can read files within `$HOME` (10 MB limit) |
 | `fs:list` | `host.listDirectory()` | Can list directory contents within `$HOME` |
 | `fs:watch` | `host.watchPath()` | Can watch filesystem paths within `$HOME` for changes |
+| `fs:write` | `host.writeFile()` | Can write files within `$HOME` (10 MB limit) |
+| `fs:rename` | `host.renamePath()` | Can rename/move files within `$HOME` |
 | `exec:cli` | `host.execCli()` | Can execute whitelisted CLI binaries (see below) |
 | `git:read` | `host.getGitBranches()`, `host.getRecentCommits()`, `host.getGitDiff()` | Read-only access to git repository state |
 

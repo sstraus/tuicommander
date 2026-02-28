@@ -51,6 +51,11 @@ function createPluginRegistry() {
   // Active plugin → its aggregated Disposable (wraps all sub-registrations)
   const plugins = new Map<string, { plugin: TuiPlugin; disposable: Disposable; agentTypes: readonly string[] }>();
 
+  // Panel message bridge: tabId → onMessage callback from plugin
+  const panelMessageHandlers = new Map<string, (data: unknown) => void>();
+  // Panel message bridge: tabId → send function (set by PluginPanel component)
+  const panelSendChannels = new Map<string, (data: unknown) => void>();
+
   // Global watcher list — all watchers from all plugins, tagged with pluginId
   const outputWatchers: Array<{ pluginId: string; watcher: OutputWatcher }> = [];
 
@@ -332,6 +337,16 @@ function createPluginRegistry() {
         return invoke<string[]>("plugin_list_directory", { path, pattern: pattern ?? null, pluginId });
       },
 
+      async writeFile(absolutePath: string, content: string): Promise<void> {
+        requireCapability(pluginId, capabilities, "fs:write");
+        await invoke("plugin_write_file", { path: absolutePath, content, pluginId });
+      },
+
+      async renamePath(from: string, to: string): Promise<void> {
+        requireCapability(pluginId, capabilities, "fs:rename");
+        await invoke("plugin_rename_path", { from, to, pluginId });
+      },
+
       async watchPath(
         path: string,
         callback: (events: FsChangeEvent[]) => void,
@@ -411,13 +426,23 @@ function createPluginRegistry() {
         if (!uiStore.state.markdownPanelVisible) {
           uiStore.toggleMarkdownPanel();
         }
+        // Register message handler for this panel
+        if (options.onMessage) {
+          panelMessageHandlers.set(tabId, options.onMessage);
+        }
         return {
           tabId,
           update(html: string) {
             mdTabsStore.updatePluginPanel(tabId, html);
           },
           close() {
+            panelMessageHandlers.delete(tabId);
+            panelSendChannels.delete(tabId);
             mdTabsStore.remove(tabId);
+          },
+          send(data: unknown) {
+            const sender = panelSendChannels.get(tabId);
+            if (sender) sender(data);
           },
         };
       },
@@ -664,9 +689,42 @@ function createPluginRegistry() {
     }
     lineBuffers.clear();
     stateChangeListeners.length = 0;
+    panelMessageHandlers.clear();
+    panelSendChannels.clear();
   }
 
-  return { register, unregister, processRawOutput, dispatchLine, dispatchStructuredEvent, notifyStateChange, removeSession, clear };
+  // -------------------------------------------------------------------------
+  // Panel message bridge (used by PluginPanel component)
+  // -------------------------------------------------------------------------
+
+  /** Route a message from an iframe to the registered onMessage handler */
+  function handlePanelMessage(tabId: string, data: unknown): void {
+    const handler = panelMessageHandlers.get(tabId);
+    if (handler) {
+      try {
+        handler(data);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        appLogger.error("plugin", `Panel message handler for tab "${tabId}" threw: ${msg}`, err);
+      }
+    }
+  }
+
+  /** Register a send channel for a panel (called by PluginPanel component on mount) */
+  function registerPanelSendChannel(tabId: string, sender: (data: unknown) => void): void {
+    panelSendChannels.set(tabId, sender);
+  }
+
+  /** Unregister a send channel (called by PluginPanel component on cleanup) */
+  function unregisterPanelSendChannel(tabId: string): void {
+    panelSendChannels.delete(tabId);
+  }
+
+  return {
+    register, unregister, processRawOutput, dispatchLine, dispatchStructuredEvent,
+    notifyStateChange, removeSession, clear,
+    handlePanelMessage, registerPanelSendChannel, unregisterPanelSendChannel,
+  };
 }
 
 export const pluginRegistry = createPluginRegistry();

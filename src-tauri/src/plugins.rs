@@ -58,6 +58,8 @@ const KNOWN_CAPABILITIES: &[&str] = &[
     "fs:read",
     "fs:list",
     "fs:watch",
+    "fs:write",
+    "fs:rename",
     "net:http",
     "credentials:read",
     "ui:panel",

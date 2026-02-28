@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Plugin filesystem write/rename** — New `fs:write` and `fs:rename` capabilities allow plugins to write and rename files within `$HOME` with path-traversal validation
+- **Plugin panel message bridge** — `openPanel()` accepts `onMessage` callback for structured iframe→host messaging; `PanelHandle.send()` delivers host→iframe messages. Replaces fragile global `window.addEventListener("message")` pattern
+- **Plugin panel CSS theme injection** — CSS custom properties (`--bg-*`, `--fg-*`, `--border*`, etc.) are automatically injected into plugin panel iframes, so plugins inherit the app theme without manual color copying
 - **Auto-delete branch on PR close** — Per-repo setting (off/ask/auto) to automatically delete local branches when their GitHub PR is merged or closed. Handles worktree cleanup, dirty-state escalation, and main-branch protection
 - **Worktree system overhaul** — Configurable storage strategies (sibling, app dir, inside-repo), three creation flows (dialog with base ref, instant, right-click quick-clone), hybrid branch naming (`{source}--{random}`), merge & archive workflow, external worktree detection via `.git/worktrees/` monitoring, per-repo worktree settings with global defaults
 - **Centralized error log panel** — Ring-buffer logger captures all errors, warnings, and info from app, plugins, git, network, and terminal subsystems. Filterable overlay panel with level tabs, source dropdown, and text search. Status bar badge shows unseen error count. Keyboard shortcut: `Cmd+Shift+E` ([solution doc](docs/solutions/integration-issues/centralized-error-logging.md))

@@ -559,6 +559,7 @@ pub fn run() {
         log_buffer: parking_lot::Mutex::new(app_logger::LogRingBuffer::new(app_logger::LOG_RING_CAPACITY)),
         event_bus: tokio::sync::broadcast::channel(256).0,
         event_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        session_states: dashmap::DashMap::new(),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled
@@ -809,6 +810,8 @@ pub fn run() {
             plugin_fs::plugin_read_file,
             plugin_fs::plugin_list_directory,
             plugin_fs::plugin_read_file_tail,
+            plugin_fs::plugin_write_file,
+            plugin_fs::plugin_rename_path,
             plugin_fs::plugin_watch_path,
             plugin_fs::plugin_unwatch,
             plugin_http::plugin_http_fetch,

@@ -859,6 +859,150 @@ describe("PluginHost — Tier 4 scoped invoke", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Tier 3b: fs:write and fs:rename capability gating
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — fs:write capability gating", () => {
+  it("external plugin without fs:write throws on writeFile", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [],
+    );
+    await expect(host!.writeFile("/home/user/test.txt", "content")).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with fs:write can call writeFile", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["fs:write"],
+    );
+    await expect(host!.writeFile("/home/user/test.txt", "content")).resolves.toBeUndefined();
+  });
+
+  it("passes correct args to the Rust command", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["fs:write"],
+    );
+    await host!.writeFile("/home/user/test.txt", "hello");
+    const { invoke } = await import("../../invoke");
+    expect(invoke).toHaveBeenCalledWith("plugin_write_file", {
+      path: "/home/user/test.txt",
+      content: "hello",
+      pluginId: "ext",
+    });
+  });
+
+  it("built-in plugin can call writeFile without declaring capability", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    await expect(host!.writeFile("/home/user/test.txt", "content")).resolves.toBeUndefined();
+  });
+});
+
+describe("PluginHost — fs:rename capability gating", () => {
+  it("external plugin without fs:rename throws on renamePath", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [],
+    );
+    await expect(host!.renamePath("/home/user/a.txt", "/home/user/b.txt")).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with fs:rename can call renamePath", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["fs:rename"],
+    );
+    await expect(host!.renamePath("/home/user/a.txt", "/home/user/b.txt")).resolves.toBeUndefined();
+  });
+
+  it("passes correct args to the Rust command", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["fs:rename"],
+    );
+    await host!.renamePath("/home/user/a.txt", "/home/user/b.txt");
+    const { invoke } = await import("../../invoke");
+    expect(invoke).toHaveBeenCalledWith("plugin_rename_path", {
+      from: "/home/user/a.txt",
+      to: "/home/user/b.txt",
+      pluginId: "ext",
+    });
+  });
+
+  it("built-in plugin can call renamePath without declaring capability", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    await expect(host!.renamePath("/home/user/a.txt", "/home/user/b.txt")).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Panel message bridge
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — panel message bridge", () => {
+  it("onMessage callback receives messages via handlePanelMessage", () => {
+    const onMessage = vi.fn();
+    let handle: ReturnType<PluginHost["openPanel"]> | null = null;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      handle = host.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>", onMessage });
+    }));
+    pluginRegistry.handlePanelMessage(handle!.tabId, { type: "custom", value: 42 });
+    expect(onMessage).toHaveBeenCalledOnce();
+    expect(onMessage).toHaveBeenCalledWith({ type: "custom", value: 42 });
+  });
+
+  it("handlePanelMessage is a no-op when no onMessage registered", () => {
+    let handle: ReturnType<PluginHost["openPanel"]> | null = null;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      handle = host.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>" });
+    }));
+    // Should not throw
+    expect(() => pluginRegistry.handlePanelMessage(handle!.tabId, { type: "any" })).not.toThrow();
+  });
+
+  it("close() cleans up message handlers", () => {
+    const onMessage = vi.fn();
+    let handle: ReturnType<PluginHost["openPanel"]> | null = null;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      handle = host.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>", onMessage });
+    }));
+    handle!.close();
+    pluginRegistry.handlePanelMessage(handle!.tabId, { type: "after-close" });
+    expect(onMessage).not.toHaveBeenCalled();
+  });
+
+  it("send() calls registered send channel", () => {
+    let handle: ReturnType<PluginHost["openPanel"]> | null = null;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      handle = host.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>" });
+    }));
+    const sender = vi.fn();
+    pluginRegistry.registerPanelSendChannel(handle!.tabId, sender);
+    handle!.send({ type: "response", ok: true });
+    expect(sender).toHaveBeenCalledOnce();
+    expect(sender).toHaveBeenCalledWith({ type: "response", ok: true });
+  });
+
+  it("send() is a no-op when no send channel registered", () => {
+    let handle: ReturnType<PluginHost["openPanel"]> | null = null;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      handle = host.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>" });
+    }));
+    // No registerPanelSendChannel called — should not throw
+    expect(() => handle!.send({ type: "msg" })).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // register() with capabilities parameter
 // ---------------------------------------------------------------------------
 

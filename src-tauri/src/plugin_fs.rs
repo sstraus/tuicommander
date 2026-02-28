@@ -298,6 +298,97 @@ fn classify_event(event: &Event, map: &mut std::collections::HashMap<PathBuf, St
 }
 
 // ---------------------------------------------------------------------------
+// Write & Rename (capability-gated: fs:write, fs:rename)
+// ---------------------------------------------------------------------------
+
+/// Maximum content size writable via plugin_write_file (10 MB).
+const MAX_WRITE_SIZE: usize = 10 * 1024 * 1024;
+
+/// Write content to a file within $HOME.
+/// Creates parent directories if needed. Refuses to overwrite directories.
+#[tauri::command]
+pub async fn plugin_write_file(
+    path: String,
+    content: String,
+    _plugin_id: String,
+) -> Result<(), String> {
+    if content.len() > MAX_WRITE_SIZE {
+        return Err(format!(
+            "Content exceeds maximum size ({} bytes > {} bytes)",
+            content.len(),
+            MAX_WRITE_SIZE
+        ));
+    }
+
+    let file_path = PathBuf::from(&path);
+    if !file_path.is_absolute() {
+        return Err("Path must be absolute".into());
+    }
+
+    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+
+    if file_path.exists() {
+        let canonical = file_path
+            .canonicalize()
+            .map_err(|e| format!("Failed to resolve path: {e}"))?;
+        if !canonical.starts_with(&home) {
+            return Err("Path must be within the user's home directory".into());
+        }
+        if canonical.is_dir() {
+            return Err("Cannot overwrite a directory".into());
+        }
+    } else {
+        let parent = file_path.parent().ok_or("Cannot determine parent directory")?;
+        if !parent.exists() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create parent directories: {e}"))?;
+        }
+        let canonical_parent = parent
+            .canonicalize()
+            .map_err(|e| format!("Failed to resolve parent path: {e}"))?;
+        if !canonical_parent.starts_with(&home) {
+            return Err("Path must be within the user's home directory".into());
+        }
+    }
+
+    std::fs::write(&file_path, &content)
+        .map_err(|e| format!("Failed to write file: {e}"))
+}
+
+/// Rename/move a file within $HOME.
+/// Both source and destination must be within $HOME. Source must exist.
+#[tauri::command]
+pub async fn plugin_rename_path(
+    from: String,
+    to: String,
+    _plugin_id: String,
+) -> Result<(), String> {
+    let from_path = validate_within_home(&from)?;
+
+    let to_path = PathBuf::from(&to);
+    if !to_path.is_absolute() {
+        return Err("Destination path must be absolute".into());
+    }
+
+    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+
+    let to_parent = to_path.parent().ok_or("Cannot determine destination parent directory")?;
+    if !to_parent.exists() {
+        std::fs::create_dir_all(to_parent)
+            .map_err(|e| format!("Failed to create destination parent directories: {e}"))?;
+    }
+    let canonical_parent = to_parent
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve destination parent: {e}"))?;
+    if !canonical_parent.starts_with(&home) {
+        return Err("Destination must be within the user's home directory".into());
+    }
+
+    std::fs::rename(&from_path, &to_path)
+        .map_err(|e| format!("Failed to rename: {e}"))
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -469,5 +560,147 @@ mod tests {
         classify_event(&create, &mut map);
         classify_event(&modify, &mut map);
         assert_eq!(map.get(Path::new("/test/file.txt")).unwrap(), "modify");
+    }
+
+    // -- plugin_write_file tests --
+
+    #[test]
+    fn write_file_creates_new_file() {
+        let home = dirs::home_dir().unwrap();
+        let test_file = home.join(".tuic-test-write-new.txt");
+        let _ = std::fs::remove_file(&test_file);
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(plugin_write_file(
+            test_file.to_string_lossy().to_string(),
+            "hello write".to_string(),
+            "test".to_string(),
+        ));
+        let content = std::fs::read_to_string(&test_file).unwrap_or_default();
+        let _ = std::fs::remove_file(&test_file);
+
+        assert!(result.is_ok(), "write failed: {:?}", result);
+        assert_eq!(content, "hello write");
+    }
+
+    #[test]
+    fn write_file_overwrites_existing() {
+        let home = dirs::home_dir().unwrap();
+        let test_file = home.join(".tuic-test-write-overwrite.txt");
+        let _ = std::fs::write(&test_file, "old content");
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(plugin_write_file(
+            test_file.to_string_lossy().to_string(),
+            "new content".to_string(),
+            "test".to_string(),
+        ));
+        let content = std::fs::read_to_string(&test_file).unwrap_or_default();
+        let _ = std::fs::remove_file(&test_file);
+
+        assert!(result.is_ok());
+        assert_eq!(content, "new content");
+    }
+
+    #[test]
+    fn write_file_rejects_relative_path() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(plugin_write_file(
+            "relative/file.txt".to_string(),
+            "content".to_string(),
+            "test".to_string(),
+        ));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("absolute"));
+    }
+
+    #[test]
+    fn write_file_rejects_outside_home() {
+        let home = dirs::home_dir().unwrap();
+        if !Path::new("/tmp").starts_with(&home) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let result = rt.block_on(plugin_write_file(
+                "/tmp/.tuic-test-write-outside.txt".to_string(),
+                "content".to_string(),
+                "test".to_string(),
+            ));
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("home directory"));
+        }
+    }
+
+    #[test]
+    fn write_file_rejects_directory_overwrite() {
+        let home = dirs::home_dir().unwrap();
+        let test_dir = home.join(".tuic-test-write-dir");
+        let _ = std::fs::create_dir_all(&test_dir);
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(plugin_write_file(
+            test_dir.to_string_lossy().to_string(),
+            "content".to_string(),
+            "test".to_string(),
+        ));
+        let _ = std::fs::remove_dir(&test_dir);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("directory"));
+    }
+
+    // -- plugin_rename_path tests --
+
+    #[test]
+    fn rename_moves_file() {
+        let home = dirs::home_dir().unwrap();
+        let from = home.join(".tuic-test-rename-from.txt");
+        let to = home.join(".tuic-test-rename-to.txt");
+        let _ = std::fs::write(&from, "rename me");
+        let _ = std::fs::remove_file(&to);
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(plugin_rename_path(
+            from.to_string_lossy().to_string(),
+            to.to_string_lossy().to_string(),
+            "test".to_string(),
+        ));
+        let content = std::fs::read_to_string(&to).unwrap_or_default();
+        let from_exists = from.exists();
+        let _ = std::fs::remove_file(&to);
+
+        assert!(result.is_ok(), "rename failed: {:?}", result);
+        assert_eq!(content, "rename me");
+        assert!(!from_exists);
+    }
+
+    #[test]
+    fn rename_rejects_source_outside_home() {
+        let home = dirs::home_dir().unwrap();
+        if !Path::new("/tmp").starts_with(&home) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let result = rt.block_on(plugin_rename_path(
+                "/tmp/.tuic-test-rename.txt".to_string(),
+                home.join(".tuic-test-rename-dest.txt").to_string_lossy().to_string(),
+                "test".to_string(),
+            ));
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn rename_rejects_relative_destination() {
+        let home = dirs::home_dir().unwrap();
+        let from = home.join(".tuic-test-rename-rel.txt");
+        let _ = std::fs::write(&from, "test");
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(plugin_rename_path(
+            from.to_string_lossy().to_string(),
+            "relative/dest.txt".to_string(),
+            "test".to_string(),
+        ));
+        let _ = std::fs::remove_file(&from);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("absolute"));
     }
 }

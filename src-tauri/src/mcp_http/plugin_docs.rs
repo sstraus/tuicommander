@@ -32,7 +32,7 @@ Constraints:
 - `id` must match directory name exactly, non-empty
 - `main` must be a filename only (no path separators or `..`)
 - `minAppVersion` must be <= current app version (current: 0.3.x)
-- `capabilities`: subset of `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `exec:cli`, `git:read`
+- `capabilities`: subset of `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`, `git:read`
 - `allowedUrls`: URL patterns for `net:http` (supports `*` wildcard for path prefix matching)
 - `agentTypes`: optional array of agent type strings. When set, output watchers and structured event handlers only fire for terminals running a matching agent. Omit or use `[]` for universal plugins. Valid values: `claude`, `gemini`, `opencode`, `aider`, `codex`, `amp`, `cursor`, `warp`, `droid`, `git`.
 - Module default export must have `id`, `onload(host)`, `onunload()`
@@ -178,13 +178,15 @@ host.getGitDiff(repoPath, scope?)       // unified diff string (scope: "staged" 
 | `host.openMarkdownPanel(title: string, contentUri: string): void` | `ui:markdown` |
 | `host.openMarkdownFile(absolutePath: string): void` | `ui:markdown` |
 | `await host.playNotificationSound(): Promise<void>` | `ui:sound` |
-| `host.openPanel({ id, title, html }): PanelHandle` | `ui:panel` |
+| `host.openPanel({ id, title, html, onMessage? }): PanelHandle` | `ui:panel` |
 | `host.setTicker({ id, text, label?, icon?, priority?, ttlMs?, onClick? }): void` | `ui:ticker` |
 | `host.clearTicker(id: string): void` | `ui:ticker` |
 | `await host.readCredential(serviceName: string): Promise<string \| null>` | `credentials:read` |
+| `await host.writeFile(absolutePath: string, content: string): Promise<void>` | `fs:write` |
+| `await host.renamePath(from: string, to: string): Promise<void>` | `fs:rename` |
 | `await host.httpFetch(url: string, options?): Promise<HttpResponse>` | `net:http` |
 
-PanelHandle: `{ tabId, update(html), close() }` — HTML rendered in sandboxed iframe.
+PanelHandle: `{ tabId, update(html), close(), send(data) }` — HTML rendered in sandboxed iframe with automatic CSS theme variable injection. Use `onMessage` callback in options to receive messages from iframe, `send()` to post messages back.
 HttpResponse: `{ status: number, headers: Record<string, string>, body: string }` — non-2xx is NOT an error.
 
 **setTicker notes:** Shared ticker area rotates messages from all plugins. Priority tiers: <10 = popover only, 10-99 = auto-rotate (5s), >=100 = urgent pin. `label` is shown as source prefix (e.g. "Usage · 5h: 42%"). Counter badge (1/3 ▸) shown when multiple tickers active. Click badge to cycle, right-click for popover. Legacy aliases: `postTickerMessage`/`removeTickerMessage`.
@@ -212,6 +214,12 @@ const watcher = await host.watchPath(  // requires "fs:watch"
   { recursive: true, debounceMs: 500 },
 );
 watcher.dispose();  // stop watching
+
+// Write a file (max 10 MB, creates parent dirs)
+await host.writeFile("/Users/me/project/stories/new-file.md", content);  // requires "fs:write"
+
+// Rename/move a file
+await host.renamePath("/Users/me/project/old.md", "/Users/me/project/new.md");  // requires "fs:rename"
 ```
 
 FsChangeEvent: `{ type: "create" | "modify" | "delete", path: string }`

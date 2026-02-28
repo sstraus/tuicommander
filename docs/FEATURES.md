@@ -781,12 +781,12 @@ All data persisted to platform config directory via Rust:
 - Built-in plugins (TypeScript, compiled with app) and external plugins (JS, loaded at runtime)
 - Hot-reload: file changes in plugin directories trigger automatic re-import
 - Per-plugin error logging with ring buffer (500 entries)
-- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `exec:cli`
+- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`
 - CLI execution API: sandboxed execution of whitelisted CLI binaries (`mdkb`) with timeout and size limits
-- Filesystem API: sandboxed read, list, tail-read, and watch operations restricted to `$HOME`
+- Filesystem API: sandboxed read, write, rename, list, tail-read, and watch operations restricted to `$HOME`
 - HTTP API: outbound requests scoped to manifest-declared URL patterns (SSRF prevention)
 - Credential API: cross-platform credential reading (macOS Keychain, Linux/Windows JSON file) with user consent
-- Panel API: rich HTML panels in sandboxed iframes (`sandbox="allow-scripts"`)
+- Panel API: rich HTML panels in sandboxed iframes (`sandbox="allow-scripts"`) with structured message bridge (`onMessage`/`send`) and automatic CSS theme variable injection
 - Shared ticker system: `setTicker`/`clearTicker` API with source labels, priority tiers (low <10, normal 10-99, urgent >=100), counter badge, click-to-cycle, right-click popover
 - Agent-scoped plugins: `agentTypes` manifest field restricts output watchers and structured events to terminals running specific agents (e.g. `["claude"]`)
 
