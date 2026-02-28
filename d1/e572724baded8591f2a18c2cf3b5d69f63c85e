@@ -1,0 +1,29 @@
+docs/FEATURES.md
+  4edf3f37670677e5 488-496
+SPEC.md
+  4edf3f37670677e5 348-351
+docs/backend/dictation.md
+  4edf3f37670677e5 5,12,16-17,26-27,30-36,65-68,74,77,81-96,103-108,111-137,139-152
+CHANGELOG.md
+  4edf3f37670677e5 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "d1e572724baded8591f2a18c2cf3b5d69f63c85e",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "unknown"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 96,
+      "total_deletions": 25,
+      "accepted_lines": 96,
+      "overriden_lines": 0
+    }
+  }
+}
