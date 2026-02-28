@@ -260,3 +260,14 @@ Features to test when TUICommander is more usable.
 - [ ] After merge "archive" mode: directory moved to `__archived/`
 - [ ] After merge "delete" mode: worktree and branch removed entirely
 - [ ] CreateWorktreeDialog base ref dropdown: default branch first, all local branches listed
+
+## OSC 7 Terminal CWD Tracking
+- [ ] cd into a worktree directory — toolbar should switch to worktree branch
+- [ ] cd back to main repo — toolbar should switch back to main
+- [ ] Agent creates worktree and cd's into it — tab reassigns automatically
+- [ ] Background terminal cd's into worktree — switching to it shows correct branch
+- [ ] Rapid cd's (build script) — no UI flicker, final state correct
+- [ ] App restart — terminal in worktree reconnects to correct branch
+- [ ] Shell without OSC 7 (vanilla bash) — no regression, behaves as before
+- [ ] Test with zsh (default macOS) — OSC 7 emitted by default
+- [ ] Test with fish — OSC 7 emitted natively

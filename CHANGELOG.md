@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- **Terminal CWD tracking via OSC 7** — Terminals detect working directory changes via OSC 7 escape sequences. When a terminal cd's into a known worktree, the tab automatically reassigns to that worktree's branch. Supports restart recovery via Rust-side cwd persistence.
+
 ## [0.6.0] - 2026-02-28
 
 ### Added

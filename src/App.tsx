@@ -1065,6 +1065,7 @@ const App: Component = () => {
           lazygitCmd={gitOps.currentRepoPath() ? lazygit.buildLazygitCmd(gitOps.currentRepoPath()!) : null}
           onLazygitFloat={() => lazygit.setLazygitFloating(true)}
           onLazygitClose={lazygit.closeLazygitPane}
+          onCwdChange={gitOps.handleTerminalCwdChange}
         >
           {/* Side panels (right panes inside #terminal-container) */}
           <PanelOrchestrator

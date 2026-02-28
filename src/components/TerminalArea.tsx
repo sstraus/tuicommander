@@ -26,6 +26,7 @@ export interface TerminalAreaProps {
   lazygitCmd: string | null;
   onLazygitFloat: () => void;
   onLazygitClose: () => void;
+  onCwdChange?: (id: string, cwd: string) => void;
   children?: JSX.Element;
 }
 
@@ -105,6 +106,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                   onSessionCreated={() => {}}
                   onOpenFilePath={props.onOpenFilePath}
                   metaHotkeys={terminalMetaHotkeys(id)}
+                  onCwdChange={props.onCwdChange}
                 />
               </div>
             );

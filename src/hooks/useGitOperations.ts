@@ -1088,6 +1088,90 @@ export function useGitOperations(deps: GitOperationsDeps) {
     }
   };
 
+  // --- OSC 7 CWD tracking: reassign terminal to matching worktree branch ---
+
+  const cwdDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** Find the repo + branch whose worktreePath best matches the given cwd (longest prefix). */
+  const findBranchForCwd = (cwd: string): { repoPath: string; branchName: string } | null => {
+    let best: { repoPath: string; branchName: string } | null = null;
+    let bestLen = 0;
+    for (const repoPath of repositoriesStore.getPaths()) {
+      const repo = repositoriesStore.state.repositories[repoPath];
+      if (!repo) continue;
+      for (const [branchName, branch] of Object.entries(repo.branches)) {
+        // For main branches without a worktreePath, the repo path itself is the match
+        const wt = branch.worktreePath ?? (branch.isMain ? repoPath : null);
+        if (!wt) continue;
+        if ((cwd === wt || cwd.startsWith(wt + "/")) && wt.length > bestLen) {
+          best = { repoPath, branchName };
+          bestLen = wt.length;
+        }
+      }
+    }
+    return best;
+  };
+
+  /** Called from Terminal.tsx OSC 7 handler when a terminal's cwd changes. */
+  const handleTerminalCwdChange = (terminalId: string, newCwd: string) => {
+    // Debounce reassignment per terminal (300ms) — cwd store update is immediate in Terminal.tsx
+    clearTimeout(cwdDebounceTimers.get(terminalId));
+    cwdDebounceTimers.set(
+      terminalId,
+      setTimeout(async () => {
+        cwdDebounceTimers.delete(terminalId);
+
+        const currentRepoPathForTerm = repositoriesStore.getRepoPathForTerminal(terminalId);
+        // Find which branch the terminal currently belongs to
+        let currentBranchName: string | null = null;
+        if (currentRepoPathForTerm) {
+          const repo = repositoriesStore.state.repositories[currentRepoPathForTerm];
+          if (repo) {
+            for (const [bName, branch] of Object.entries(repo.branches)) {
+              if (branch.terminals.includes(terminalId)) {
+                currentBranchName = bName;
+                break;
+              }
+            }
+          }
+        }
+
+        let target = findBranchForCwd(newCwd);
+
+        // If no match, the worktree may have just been created — refresh and retry
+        if (!target && currentRepoPathForTerm) {
+          await refreshAllBranchStats();
+          target = findBranchForCwd(newCwd);
+        }
+
+        if (!target) return; // Unknown path — no reassignment
+        // Same branch? Nothing to do
+        if (target.repoPath === currentRepoPathForTerm && target.branchName === currentBranchName) return;
+
+        appLogger.info("terminal", `[CwdChange] ${terminalId} → ${target.repoPath}:${target.branchName} (cwd=${newCwd})`);
+
+        batch(() => {
+          // Remove from old branch
+          if (currentRepoPathForTerm && currentBranchName) {
+            repositoriesStore.removeTerminalFromBranch(currentRepoPathForTerm, currentBranchName, terminalId);
+          }
+          // Add to new branch
+          repositoriesStore.addTerminalToBranch(target!.repoPath, target!.branchName, terminalId);
+
+          // If this is the active terminal, switch the active branch
+          if (terminalsStore.state.activeId === terminalId) {
+            repositoriesStore.setActiveBranch(target!.repoPath, target!.branchName);
+            setCurrentBranch(target!.branchName);
+            if (target!.repoPath !== currentRepoPathForTerm) {
+              repositoriesStore.setActive(target!.repoPath);
+              setCurrentRepoPath(target!.repoPath);
+            }
+          }
+        });
+      }, 300),
+    );
+  };
+
   return {
     currentRepoPath,
     setCurrentRepoPath,
@@ -1123,6 +1207,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     handleRepoSettings,
     handleCheckoutRemoteBranch,
     handleSwitchBranch,
+    handleTerminalCwdChange,
     switchBranchLists,
     currentBranches,
     refreshBranchLists,
