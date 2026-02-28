@@ -69,9 +69,7 @@ function createRateLimitStore() {
 
     /** Clear all rate limits */
     clearAll(): void {
-      setState(produce((s) => {
-        for (const id of Object.keys(s.rateLimits)) delete s.rateLimits[id];
-      }));
+      setState("rateLimits", {});
     },
   };
 

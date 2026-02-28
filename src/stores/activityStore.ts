@@ -16,15 +16,20 @@ function toPersistedItems(items: ActivityItem[]): PersistedActivityItem[] {
   return items.map(({ onClick: _, ...rest }) => rest);
 }
 
-/** Persist activity items to Rust backend (debounced, fire-and-forget) */
+/** Fire-and-forget persist to Rust backend */
+function persistActivityNow(items: ActivityItem[]): void {
+  invoke("save_activity", { items: toPersistedItems(items) }).catch((err) =>
+    appLogger.error("store", "Failed to save activity", err),
+  );
+}
+
+/** Debounced persist (coalesces rapid mutations) */
 let saveActivityTimer: ReturnType<typeof setTimeout> | null = null;
 function saveActivity(items: ActivityItem[]): void {
   if (saveActivityTimer) clearTimeout(saveActivityTimer);
   saveActivityTimer = setTimeout(() => {
     saveActivityTimer = null;
-    invoke("save_activity", { items: toPersistedItems(items) }).catch((err) =>
-      appLogger.error("store", "Failed to save activity", err),
-    );
+    persistActivityNow(items);
   }, 300);
 }
 
@@ -183,9 +188,7 @@ function createActivityStore() {
     if (saveActivityTimer) {
       clearTimeout(saveActivityTimer);
       saveActivityTimer = null;
-      invoke("save_activity", { items: toPersistedItems(state.items) }).catch((err) =>
-        appLogger.error("store", "Failed to flush activity save", err),
-      );
+      persistActivityNow(state.items);
     }
   }
 
@@ -195,6 +198,7 @@ function createActivityStore() {
       saveActivityTimer = null;
     }
     setState({ items: [], sections: [] });
+    persistActivityNow([]);
   }
 
   return {

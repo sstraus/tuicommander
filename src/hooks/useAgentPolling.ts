@@ -2,10 +2,16 @@ import { createEffect, onCleanup } from "solid-js";
 import { invoke } from "../invoke";
 import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
-import type { AgentType } from "../agents";
+import { type AgentType, AGENT_TYPES } from "../agents";
 
 /** Polling interval for foreground process detection (ms) */
 const POLL_INTERVAL_MS = 3000;
+
+/** Validate a string from the backend is a known AgentType */
+function toAgentType(value: string | null): AgentType | null {
+  if (value === null) return null;
+  return (AGENT_TYPES as readonly string[]).includes(value) ? (value as AgentType) : null;
+}
 
 /**
  * Polls ALL terminals with active PTY sessions to detect which agent (if any)
@@ -31,7 +37,7 @@ export function useAgentPolling(): void {
           const result = await invoke<string | null>("get_session_foreground_process", {
             sessionId,
           });
-          return { termId, agentType: result as AgentType | null };
+          return { termId, agentType: toAgentType(result) };
         }),
       );
       for (const r of results) {
@@ -39,7 +45,6 @@ export function useAgentPolling(): void {
           appLogger.debug("app", "[AgentPoll] session poll rejected", r.reason);
           continue;
         }
-        if (r.status !== "fulfilled") continue;
         const { termId, agentType } = r.value;
         const current = terminalsStore.get(termId);
         if (current && current.agentType !== agentType) {
@@ -49,8 +54,8 @@ export function useAgentPolling(): void {
       }
     };
 
-    // Poll immediately, then every POLL_INTERVAL_MS
-    pollAll().catch((err) => appLogger.debug("app", "[AgentPoll] initial poll failed", err));
+    // Don't poll immediately on effect re-run — the 3s interval is acceptable latency
+    // and avoids burst polling when many terminals are added during session restore.
     const timer = setInterval(() => {
       pollAll().catch((err) => appLogger.debug("app", "[AgentPoll] poll failed", err));
     }, POLL_INTERVAL_MS);

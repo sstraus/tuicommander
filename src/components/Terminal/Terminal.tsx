@@ -237,10 +237,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
         terminalsStore.clearAwaitingInput(props.id);
       }
     }
-    lastOutputTime = Date.now();
+    lastOutputTime = now;
     if (!idleTimer) {
       idleTimer = setTimeout(function checkIdle() {
         const elapsed = Date.now() - lastOutputTime;
+        // 490ms accounts for timer imprecision (setTimeout can fire slightly early)
         if (elapsed >= 490) {
           idleTimer = undefined;
           busyFlagged = false;
@@ -921,6 +922,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
               unlistenResize = unlisten;
             }
           });
+        }).catch((err) => {
+          appLogger.warn("terminal", "Failed to register Tauri resize listener", err);
         });
       }
 

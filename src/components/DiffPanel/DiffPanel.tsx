@@ -2,6 +2,7 @@ import { Component, createEffect, createMemo, createSignal, For, Show } from "so
 import { useRepository, type ChangedFile } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore, type DiffStatus } from "../../stores/diffTabs";
+import { appLogger } from "../../stores/appLogger";
 import { getModifierSymbol } from "../../platform";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { t } from "../../i18n";
@@ -48,7 +49,10 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     const repoPath = props.repoPath;
     void repositoriesStore.getRevision(repoPath);
 
-    repo.getRecentCommits(repoPath, 5).then(setCommits).catch(() => setCommits([]));
+    repo.getRecentCommits(repoPath, 5).then(setCommits).catch((err) => {
+      appLogger.warn("git", "Failed to load recent commits", err);
+      setCommits([]);
+    });
   });
 
   // Load changed files (on repo/revision/scope change)

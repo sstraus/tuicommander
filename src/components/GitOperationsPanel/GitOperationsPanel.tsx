@@ -142,7 +142,7 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
     if (!props.visible || !props.repoPath) return;
     // Track repo revision so branch list refreshes on git operations
     void repositoriesStore.getRevision(props.repoPath);
-    fetchBranches();
+    void fetchBranches();
   });
 
   const fetchBranches = async () => {

@@ -136,7 +136,9 @@ function createRepositoriesStore() {
     groupOrder: [],
   });
 
-  // Inverse index: terminal ID → repo path (O(1) lookup instead of O(repos*branches*terminals))
+  // Inverse index: terminal ID → repo path (O(1) lookup instead of O(repos*branches*terminals)).
+  // Maps termId→repoPath only (NOT branchName). renameBranch and mergeBranchState don't update
+  // this map because they never change the repoPath — terminals stay in the same repo.
   const terminalToRepo = new Map<string, string>();
 
   /** Debounced save shorthand using current state */
