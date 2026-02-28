@@ -6,11 +6,13 @@ import { ActivityScreen } from "./screens/ActivityScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { QuestionBanner } from "./components/QuestionBanner";
 import { useSessions } from "./useSessions";
+import { useMobileNotifications } from "./useMobileNotifications";
 import styles from "./MobileApp.module.css";
 
 export default function MobileApp() {
   const [activeTab, setActiveTab] = createSignal<TabId>("sessions");
   const { sessions, loading, error, refresh, questionCount } = useSessions();
+  useMobileNotifications(sessions);
 
   return (
     <div class={styles.shell}>
