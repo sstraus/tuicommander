@@ -160,6 +160,7 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
       promptLibraryStore.markAsUsed(prompt.id);
       promptLibraryStore.closeDrawer();
       props.onClose?.();
+      requestAnimationFrame(() => terminalsStore.getActive()?.ref?.focus());
     } catch (err) {
       appLogger.error("app", "Failed to inject prompt", err);
     }
