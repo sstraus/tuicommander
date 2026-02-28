@@ -3,6 +3,7 @@ pub mod commands;
 pub mod corrections;
 pub mod model;
 pub mod transcribe;
+pub mod vad;
 
 use parking_lot::Mutex;
 use std::sync::atomic::AtomicBool;
