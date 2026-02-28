@@ -1,0 +1,18 @@
+.output {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg-primary);
+  padding: 8px 12px;
+}
+
+.text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fg-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
