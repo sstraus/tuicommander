@@ -1035,6 +1035,23 @@ pub(crate) struct ActiveSessionInfo {
     worktree_branch: Option<String>,
 }
 
+/// Update the working directory of a running PTY session.
+/// Called from the frontend when an OSC 7 escape sequence is detected,
+/// keeping the Rust-side cwd in sync for restart recovery.
+#[tauri::command]
+pub(crate) fn update_session_cwd(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    cwd: String,
+) -> Result<(), String> {
+    let entry = state
+        .sessions
+        .get(&session_id)
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    entry.lock().cwd = Some(cwd);
+    Ok(())
+}
+
 /// List all active PTY sessions for reconnection after frontend reload
 #[tauri::command]
 pub(crate) fn list_active_sessions(state: State<'_, Arc<AppState>>) -> Vec<ActiveSessionInfo> {
