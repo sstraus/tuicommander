@@ -82,6 +82,7 @@ interface DictationStoreState {
   corrections: Record<string, string>;
   devices: AudioDevice[];
   capturingHotkey: boolean;
+  partialText: string;
 }
 
 function createDictationStore() {
@@ -102,11 +103,17 @@ function createDictationStore() {
     corrections: {},
     devices: [],
     capturingHotkey: false,
+    partialText: "",
   });
 
   // Listen for download progress events from Rust
   listen<DownloadProgress>("dictation-download-progress", (event) => {
     setState("downloadPercent", event.payload.percent);
+  });
+
+  // Listen for streaming partial transcription results
+  listen<string>("dictation-partial", (event) => {
+    setState("partialText", event.payload);
   });
 
   const actions = {
@@ -264,11 +271,13 @@ function createDictationStore() {
         const response = await invoke<TranscribeResponse>("stop_dictation_and_transcribe");
         setState("recording", false);
         setState("processing", false);
+        setState("partialText", "");
         return response;
       } catch (err) {
         appLogger.error("dictation", "Failed to stop recording", err);
         setState("recording", false);
         setState("processing", false);
+        setState("partialText", "");
         return null;
       }
     },
