@@ -1,0 +1,25 @@
+src-tauri/src/dictation/vad.rs
+  4edf3f37670677e5 1-137
+src-tauri/src/dictation/mod.rs
+  4edf3f37670677e5 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "e004f4169dd60c31ac11b1c373eaddde95dc4d7e",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "unknown"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 142,
+      "total_deletions": 4,
+      "accepted_lines": 138,
+      "overriden_lines": 0
+    }
+  }
+}
