@@ -156,6 +156,14 @@ impl OutputParser {
     }
 
     fn parse_rate_limit(&self, text: &str) -> Option<ParsedEvent> {
+        // Fast path: every rate-limit pattern requires at least one of these keywords.
+        if !text.contains("rate_limit") && !text.contains("overloaded")
+            && !text.contains("RateLimit") && !text.contains("429")
+            && !text.contains("RESOURCE_EXHAUSTED") && !text.contains("etry") // Retry/retry
+            && !text.contains("Rate Limit") && !text.contains("per minute")
+        {
+            return None;
+        }
         for pattern in self.rate_limit_patterns {
             // Use captures() uniformly — group 0 is the full match (subsumes find())
             if let Some(caps) = pattern.regex.captures(text) {
@@ -192,6 +200,17 @@ impl OutputParser {
     }
 
     fn parse_api_error(&self, text: &str) -> Option<ParsedEvent> {
+        // Fast path: every api-error pattern requires at least one of these keywords.
+        if !text.contains("api_error") && !text.contains("authentication_error")
+            && !text.contains("server_error") && !text.contains("UNAVAILABLE")
+            && !text.contains("INTERNAL") && !text.contains("UNAUTHENTICATED")
+            && !text.contains("litellm") && !text.contains("copilot")
+            && !text.contains("provider_name") && !text.contains("base_resp")
+            && !text.contains("stream error") && !text.contains("servers are down")
+            && !text.contains("not able to authenticate") && !text.contains("request failed")
+        {
+            return None;
+        }
         for pattern in self.api_error_patterns {
             if let Some(m) = pattern.regex.find(text) {
                 // Guard: reject matches inside source code or documentation.
@@ -398,13 +417,32 @@ fn parse_pr_url(text: &str) -> Option<ParsedEvent> {
 
 /// Strip ANSI escape sequences from text using the strip-ansi-escapes crate.
 /// Handles all ANSI escape types: CSI, OSC, SGR, and simple escapes.
+///
+/// Pre-processes CUF (Cursor Forward, `\x1b[nC`) sequences by replacing them
+/// with the equivalent number of spaces, since `strip-ansi-escapes` silently
+/// drops cursor movement sequences and concatenates surrounding text.
 pub(crate) fn strip_ansi(text: &str) -> String {
-    let stripped = strip_ansi_escapes::strip(text);
+    lazy_static::lazy_static! {
+        static ref CUF_RE: regex::Regex = regex::Regex::new(r"\x1b\[(\d*)C").unwrap();
+    }
+    let preprocessed = CUF_RE.replace_all(text, |caps: &regex::Captures| {
+        let n: usize = caps[1].parse().unwrap_or(1).max(1);
+        " ".repeat(n)
+    });
+    let stripped = strip_ansi_escapes::strip(preprocessed.as_ref());
     String::from_utf8(stripped).unwrap_or_else(|_| text.to_string())
 }
 
 /// Parse status line patterns from pre-stripped terminal output.
 fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
+    // Fast path: skip chunks that cannot contain any status line marker.
+    // Checks for: '*' (Claude status), "[Running]", or braille spinner chars (U+2800 block → UTF-8 0xE2 0xA0).
+    if !clean.contains('*') && !clean.contains("[Running]")
+        && !clean.as_bytes().contains(&0xe2)
+    {
+        return None;
+    }
+
     lazy_static::lazy_static! {
         // Claude Code: "* Task name... (time)"
         static ref CLAUDE_STATUS_RE: regex::Regex =
@@ -482,6 +520,16 @@ fn parse_usage_limit(clean: &str) -> Option<ParsedEvent> {
 
 /// Detect when an agent is waiting for user input from pre-stripped text (question, confirmation, menu choice).
 fn parse_question(clean: &str) -> Option<ParsedEvent> {
+    // Fast path: skip chunks that cannot contain any question marker.
+    if !clean.contains('?') && !clean.contains("[Y/") && !clean.contains("[y/")
+        && !clean.contains("[N/") && !clean.contains("[n/")
+        && !clean.contains("(yes/no)") && !clean.contains("Enter to select")
+        && !clean.contains('\u{276F}') && !clean.contains('\u{203A}')
+        && !clean.contains("> ")
+    {
+        return None;
+    }
+
     lazy_static::lazy_static! {
         // Claude Code: "Would you like to proceed?" / "Do you want to..."
         static ref QUESTION_RE: regex::Regex =
@@ -915,6 +963,18 @@ mod tests {
     fn test_strip_ansi() {
         assert_eq!(strip_ansi("\x1b[32mhello\x1b[0m"), "hello");
         assert_eq!(strip_ansi("no escapes"), "no escapes");
+    }
+
+    #[test]
+    fn test_strip_ansi_cuf_replaced_with_spaces() {
+        // CUF (Cursor Forward) \x1b[nC should become n spaces, not be silently dropped.
+        // Without this fix, "hello" and "world" would be concatenated as "helloworld".
+        assert_eq!(strip_ansi("hello\x1b[3Cworld"), "hello   world");
+        // CUF with n=1 (implicit and explicit)
+        assert_eq!(strip_ansi("a\x1b[Cb"), "a b");
+        assert_eq!(strip_ansi("a\x1b[1Cb"), "a b");
+        // Multiple CUF sequences
+        assert_eq!(strip_ansi("x\x1b[2Cy\x1b[4Cz"), "x  y    z");
     }
 
     #[test]
