@@ -1,0 +1,27 @@
+mobile.html
+  4edf3f37670677e5 7-11
+public/mobile-manifest.json
+  4edf3f37670677e5 1-18
+public/mobile-icon.svg
+  4edf3f37670677e5 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "636b18c80c371024570dde44cc325cbf6d58347a",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 28,
+      "total_deletions": 0,
+      "accepted_lines": 28,
+      "overriden_lines": 0
+    }
+  }
+}
