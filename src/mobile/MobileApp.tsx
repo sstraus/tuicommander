@@ -2,6 +2,7 @@ import { createSignal, Match, Switch } from "solid-js";
 import { TopBar } from "./components/TopBar";
 import { BottomTabs, type TabId } from "./components/BottomTabs";
 import { SessionsScreen } from "./screens/SessionsScreen";
+import { QuestionBanner } from "./components/QuestionBanner";
 import { useSessions } from "./useSessions";
 import styles from "./MobileApp.module.css";
 
@@ -19,6 +20,13 @@ export default function MobileApp() {
   return (
     <div class={styles.shell}>
       <TopBar notificationCount={questionCount()} />
+      <QuestionBanner
+        sessions={sessions()}
+        onNavigate={(id) => {
+          setActiveTab("sessions");
+          console.log("Navigate to session:", id);
+        }}
+      />
       <main class={styles.content}>
         <Switch>
           <Match when={activeTab() === "sessions"}>
