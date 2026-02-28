@@ -39,42 +39,29 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     return files().filter((f) => re.test(f.path));
   });
 
-  // Load recent commits when panel becomes visible or repo changes
+  // Load commits + changed files in a single effect (gated behind visibility)
   createEffect(() => {
-    const visible = props.visible;
-    const repoPath = props.repoPath;
-    void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
-
-    if (!visible || !repoPath) {
+    if (!props.visible || !props.repoPath) {
       setCommits([]);
-      return;
-    }
-
-    (async () => {
-      const recent = await repo.getRecentCommits(repoPath, 5);
-      setCommits(recent);
-    })();
-  });
-
-  // Load changed files when visible, repo changes, scope changes, or repo content changes
-  createEffect(() => {
-    const visible = props.visible;
-    const repoPath = props.repoPath;
-    const currentScope = scope();
-    void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
-
-    if (!visible || !repoPath) {
       setFiles([]);
       return;
     }
+
+    const repoPath = props.repoPath;
+    const currentScope = scope();
+    void repositoriesStore.getRevision(repoPath);
 
     setLoading(true);
     setError(null);
 
     (async () => {
       try {
-        const changedFiles = await repo.getChangedFiles(repoPath, currentScope);
+        const [changedFiles, recent] = await Promise.all([
+          repo.getChangedFiles(repoPath, currentScope),
+          repo.getRecentCommits(repoPath, 5),
+        ]);
         setFiles(changedFiles);
+        setCommits(recent);
       } catch (err) {
         setError(String(err));
         setFiles([]);

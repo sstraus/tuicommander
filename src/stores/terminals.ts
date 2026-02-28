@@ -179,7 +179,7 @@ function createTerminalsStore() {
         const next = data.shellState ?? null;
         if (prev !== next) handleShellStateChange(id, prev, next);
       }
-      setState("terminals", id, (prev) => ({ ...prev, ...data }));
+      setState("terminals", id, data);
     },
 
     /** Update session ID */

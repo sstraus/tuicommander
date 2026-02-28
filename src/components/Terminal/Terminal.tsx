@@ -889,8 +889,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
       });
 
-      // Tauri window resize listener - DOM resize event may not fire in webview
+      // Tauri window resize listener - DOM resize event may not fire in webview.
+      // Use a cancelled flag to prevent leaking the listener if cleanup runs
+      // before the async registration resolves.
       let unlistenResize: (() => void) | undefined;
+      let resizeCancelled = false;
       if (isTauri()) {
         import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
           getCurrentWindow().onResized(() => {
@@ -900,12 +903,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
               }
             });
           }).then((unlisten) => {
-            unlistenResize = unlisten;
+            if (resizeCancelled) {
+              unlisten();
+            } else {
+              unlistenResize = unlisten;
+            }
           });
         });
       }
 
       onCleanup(() => {
+        resizeCancelled = true;
         if (rafHandle) cancelAnimationFrame(rafHandle);
         resizeObserver?.disconnect();
         unlistenResize?.();
