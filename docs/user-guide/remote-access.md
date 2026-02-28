@@ -50,6 +50,39 @@ Separate from remote access, TUICommander also runs an **MCP HTTP server** for A
 
 The MCP server is localhost-only and doesn't require authentication — it's designed for local tool integration, not remote access.
 
+## Mobile Companion
+
+TUICommander includes a phone-optimized interface for monitoring agents from your phone.
+
+### Accessing the Mobile UI
+
+1. Enable remote access (see Setup above)
+2. Navigate to `http://<your-ip>:<port>/mobile` from your phone
+3. Log in with your credentials
+
+### Add to Home Screen
+
+The mobile UI supports PWA (Progressive Web App) installation:
+
+- **iOS Safari**: Tap Share → "Add to Home Screen"
+- **Android Chrome**: Tap the three-dot menu → "Add to Home screen"
+
+The app launches in standalone mode (no browser chrome) for a native-like experience.
+
+### Mobile Features
+
+- **Sessions list** — See all running agents with status (idle, busy, question, rate-limited, error)
+- **Session detail** — Live output streaming, quick-reply chips (Yes/No/Enter/Ctrl-C), text input
+- **Question banner** — Instant notification when any agent needs input, with quick-reply buttons
+- **Activity feed** — Chronological event feed grouped by time
+- **Notification sounds** — Audio alerts for questions, errors, completions, and rate limits
+
+### Tips
+
+- Pull down on the sessions list to refresh
+- The question banner appears on all screens — you don't need to be on the sessions tab to respond
+- Sound notifications can be toggled in the mobile Settings tab
+
 ## Troubleshooting
 
 | Problem | Fix |

@@ -821,3 +821,53 @@ See `examples/plugins/` for reference implementations:
 - `repo-dashboard` — Read-only state and dynamic markdown
 - `report-watcher` — Generic report file watcher with markdown viewer
 - `claude-status` — Agent-scoped plugin (`agentTypes: ["claude"]`) tracking usage and rate limits
+
+## 18. Mobile Companion UI
+
+Phone-optimized progressive web app for monitoring AI agents remotely. Separate SolidJS entry point (`src/mobile/`) served by the existing HTTP server at `/mobile`.
+
+### 18.1 Architecture
+- Separate Vite entry point (`mobile.html` + `src/mobile/index.tsx`)
+- Shares transport layer, stores, and notification manager with desktop
+- Server-side routing: `/mobile/*` → `mobile.html`, everything else → `index.html`
+- Session state accumulator enriches `GET /sessions` with question/rate-limit/busy state
+- SSE endpoint (`/events`) and WebSocket JSON framing for real-time updates
+
+### 18.2 Sessions Screen
+- Session cards with agent icon, status badge, project/branch, relative time
+- Pull-to-refresh via touch events
+- Loading skeletons during initial data fetch
+- Empty state with instructional hint
+- Tap card to open session detail
+
+### 18.3 Session Detail Screen
+- Live output via WebSocket (ANSI-stripped, auto-scrolling, 500-line buffer)
+- Quick-action chips: Yes, No, y, n, Enter, Ctrl-C
+- Text command input with mobile keyboard optimizations
+- Back navigation to session list
+
+### 18.4 Question Banner
+- Persistent overlay when any session has `awaiting_input` state
+- Shows agent name, truncated question, Yes/No quick-reply buttons
+- Visible on all screens, between top bar and content
+- Stacks multiple questions
+
+### 18.5 Activity Feed
+- Chronological event feed grouped by time (NOW, EARLIER, TODAY, OLDER)
+- Reads from shared `activityStore`
+- Sticky section headers, tap to navigate to session
+
+### 18.6 Settings
+- Connection info (server URL, status)
+- Notification sound toggle (localStorage-persisted)
+- Open Desktop UI link
+
+### 18.7 PWA Support
+- Web app manifest (`mobile-manifest.json`) with standalone display mode
+- iOS Safari and Android Chrome Add to Home Screen support
+- `apple-mobile-web-app-capable` meta tags
+
+### 18.8 Notification Sounds
+- Reuses shared `NotificationManager` (Web Audio API)
+- State transition detection: question, rate-limit, error, completion
+- Respects sound toggle from Settings screen

@@ -116,6 +116,34 @@ WS /sessions/:id/stream
 
 Receives real-time PTY output as text frames. One WebSocket per session.
 
+### WebSocket JSON Framing (Mobile/Browser)
+
+WebSocket connections to `/sessions/:id/stream` receive JSON-framed messages:
+
+```json
+{"type": "output", "data": "raw terminal output text"}
+{"type": "parsed", "event": {"type": "question", "text": "Allow?"}}
+{"type": "exit"}
+{"type": "closed"}
+```
+
+Frame types:
+- `output` — Raw PTY output (ANSI-stripped in mobile mode)
+- `parsed` — Structured events (questions, rate limits, errors) from the output parser
+- `exit` — Session process exited
+- `closed` — Session was closed
+
+### Server-Sent Events (SSE)
+
+```
+GET /events
+```
+
+Broadcasts server-side events to all browser/mobile clients:
+- `session-created` — New session started (payload: `{session_id, cwd}`)
+- `session-closed` — Session ended (payload: `{session_id}`)
+- `repo-changed` — Git repository state changed (payload: `{path}`)
+
 ### MCP Streamable HTTP
 
 ```

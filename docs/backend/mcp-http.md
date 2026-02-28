@@ -137,3 +137,15 @@ invoke("get_repo_info", { path }) → GET /repo/info?path=...
 ```
 
 PTY output in browser mode uses WebSocket instead of Tauri events.
+
+## Mobile Transport
+
+The mobile companion UI (`/mobile`) uses the same HTTP/WebSocket infrastructure as the desktop browser mode:
+
+- **Session polling**: `GET /sessions` every 3s, enriched with `SessionState` (question, rate-limit, busy, agent type)
+- **Real-time events**: SSE via `GET /events` for session create/close notifications
+- **Live output**: WebSocket to `/sessions/{id}/stream` with JSON framing (`output`, `parsed`, `exit`)
+- **Input**: `POST /sessions/{id}/write` sends text to PTY (used by quick-reply chips and command input)
+- **History**: `GET /sessions/{id}/output?format=text` fetches initial ANSI-stripped output buffer
+
+The mobile entry point shares `transport.ts` and `invoke.ts` with the desktop — no mobile-specific transport code.
