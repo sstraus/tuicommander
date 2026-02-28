@@ -89,6 +89,7 @@ import { invoke, listen } from "./invoke";
 import { isTauri } from "./transport";
 import { setLastMenuActionTime } from "./menuDedup";
 import { initDeepLinkHandler } from "./deep-link-handler";
+import { MobileViewBanner } from "./components/MobileViewBanner";
 
 const getDefaultFontSize = () => settingsStore.state.defaultFontSize;
 const getMaxTabNameLength = () => settingsStore.state.maxTabNameLength;
@@ -967,6 +968,7 @@ const App: Component = () => {
 
   return (
     <div id="app" classList={{ "sidebar-hidden": !uiStore.state.sidebarVisible }}>
+      <MobileViewBanner />
       {/* Toolbar - drag region spanning full width */}
       <Toolbar
         repoPath={gitOps.currentRepoPath()}

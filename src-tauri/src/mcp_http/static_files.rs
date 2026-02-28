@@ -21,6 +21,16 @@ pub(super) async fn serve_index() -> Response {
     serve_file("index.html")
 }
 
+/// Determine which SPA shell to serve as fallback for client-side routing.
+/// Paths starting with "mobile" use mobile.html; everything else uses index.html.
+fn spa_fallback_file(path: &str) -> &str {
+    if path == "mobile" || path.starts_with("mobile/") {
+        "mobile.html"
+    } else {
+        "index.html"
+    }
+}
+
 /// Look up a file and return it with the correct content-type.
 /// In debug builds: reads from disk so pnpm build is reflected immediately.
 /// In release builds: uses embedded bytes (no filesystem dependency).
@@ -41,9 +51,10 @@ fn serve_file(path: &str) -> Response {
                 .to_string();
             return (StatusCode::OK, [(header::CONTENT_TYPE, mime)], bytes).into_response();
         }
-        // path not found on disk → SPA fallback to index.html from disk
-        let index_path = base.join("index.html");
-        if let Ok(bytes) = std::fs::read(&index_path) {
+        // path not found on disk → SPA fallback from disk
+        let fallback = spa_fallback_file(path);
+        let fallback_path = base.join(fallback);
+        if let Ok(bytes) = std::fs::read(&fallback_path) {
             return (
                 StatusCode::OK,
                 [(header::CONTENT_TYPE, "text/html".to_string())],
@@ -69,8 +80,9 @@ fn serve_embedded_file(path: &str) -> Response {
         )
             .into_response()
     } else {
-        // SPA fallback: return index.html for unknown paths
-        if let Some(index) = FRONTEND_DIST.get_file("index.html") {
+        // SPA fallback: serve the appropriate shell for the requested path
+        let fallback = spa_fallback_file(path);
+        if let Some(index) = FRONTEND_DIST.get_file(fallback) {
             (
                 StatusCode::OK,
                 [(header::CONTENT_TYPE, "text/html".to_string())],
