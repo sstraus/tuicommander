@@ -122,13 +122,13 @@ impl OutputParser {
             events.push(evt);
         }
 
-        // Rate limit detection (operates on raw text — patterns target structured error codes)
-        if let Some(evt) = self.parse_rate_limit(text) {
+        // Rate limit detection (operates on clean text to avoid ANSI escapes bridging unrelated tokens)
+        if let Some(evt) = self.parse_rate_limit(&clean) {
             events.push(evt);
         }
 
         // API error detection (5xx, auth errors — distinct from rate limits)
-        if let Some(evt) = self.parse_api_error(text) {
+        if let Some(evt) = self.parse_api_error(&clean) {
             events.push(evt);
         }
 
@@ -275,7 +275,9 @@ fn build_rate_limit_patterns() -> Vec<RateLimitPattern> {
         // Gemini: gRPC error code (UPPER_SNAKE_CASE)
         rl("gemini-resource-exhausted", r"RESOURCE_EXHAUSTED", Some(60000), false),
         // HTTP status line — requires "429" adjacent to HTTP-like context
-        rl("http-429", r"(?i)\b429\b.{0,20}Too Many Requests|HTTP[/ ]\S*\s*429", Some(60000), false),
+        // HTTP/ must be followed by a version (e.g. 1.1, 2) then whitespace then 429;
+        // HTTP<space>429 (no version) also accepted. Prevents ANSI garbage bridging.
+        rl("http-429", r"(?i)\b429\b.{0,20}Too Many Requests|HTTP/\d[\d.]*\s+429|HTTP\s+429", Some(60000), false),
         // Retry-After HTTP header (colon-separated, very specific format)
         rl("retry-after-header", r"(?i)Retry-After:\s*(\d+)", None, true),
         // OpenAI structured retry message (requires "Retry after N seconds" exact phrasing)
@@ -422,6 +424,16 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
     }
 
     for line in clean.lines() {
+        let trimmed = line.trim();
+        // Skip lines that look like diff output, code, or documentation
+        if line_is_diff_or_code_context(line, trimmed) {
+            continue;
+        }
+        // Skip C-style block comment lines (/* ... */ or lines ending with */)
+        if trimmed.starts_with("/*") || trimmed.ends_with("*/") {
+            continue;
+        }
+
         // Try each pattern
         let patterns: &[&regex::Regex] = &[&CLAUDE_STATUS_RE, &RUNNING_STATUS_RE, &SPINNER_STATUS_RE];
         for pattern in patterns {
@@ -721,8 +733,10 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
         // [intent: <text>]  — ASCII single brackets
         // [[intent: <text>]] — ASCII double brackets (also accepted)
         // ⟦intent: <text>⟧ — Unicode mathematical brackets (U+27E6 / U+27E7)
+        // (?:^|\s) anchor: the opening bracket must be at line/string start or after whitespace,
+        // preventing matches on ANSI-stripped garbage like `]che[[intent:`
         static ref INTENT_RE: regex::Regex =
-            regex::Regex::new(r"(?:\[\[?|\x{27E6})intent:\s*(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
+            regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})intent:\s*(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
     }
     INTENT_RE.captures(clean).and_then(|caps| {
         let text = caps[1].trim();
@@ -1829,5 +1843,68 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_colorize_intent_no_match_unchanged() {
         let raw = "Normal terminal output with no intent";
         assert_eq!(colorize_intent(raw), raw);
+    }
+
+    // ---- False positive regression tests ----
+
+    fn has_status_line(events: &[ParsedEvent]) -> bool {
+        events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }))
+    }
+
+    #[test]
+    fn test_no_status_line_in_diff_output() {
+        let parser = OutputParser::new();
+        // Diff line containing * and ... in JSON — should not trigger status line
+        assert!(!has_status_line(&parser.parse(
+            "484 + *   - {\"type\":\"output\",\"data\":\"...\"} for raw PTY output"
+        )));
+    }
+
+    #[test]
+    fn test_no_status_line_in_css_comment() {
+        let parser = OutputParser::new();
+        // CSS block comment with * prefix — should not trigger status line
+        assert!(!has_status_line(&parser.parse(
+            "/* Last prompt sub-row */"
+        )));
+        assert!(!has_status_line(&parser.parse(
+            " * Strip ANSI escape codes from text */"
+        )));
+    }
+
+    #[test]
+    fn test_no_status_line_in_code_listing() {
+        let parser = OutputParser::new();
+        // Code listing with line numbers and * in a comment
+        assert!(!has_status_line(&parser.parse(
+            "156  /* Last prompt sub-row */                                                                                                                    "
+        )));
+    }
+
+    #[test]
+    fn test_no_intent_from_ansi_garbage() {
+        let parser = OutputParser::new();
+        // ANSI-stripped garbage producing ]che[[intent: — not a real intent token
+        assert!(get_intent(&parser.parse("]che[[intent: some text]]")).is_none());
+        // Must be at line start or after whitespace
+        assert!(get_intent(&parser.parse("garbage[[intent: some text]]")).is_none());
+    }
+
+    #[test]
+    fn test_no_rate_limit_story_429() {
+        let parser = OutputParser::new();
+        // Conversational text mentioning "story 429" — not an HTTP 429
+        assert!(!has_rate_limit(&parser.parse(
+            "che sembrano provenire da altre sessioni (story 429"
+        )));
+    }
+
+    #[test]
+    fn test_no_rate_limit_ansi_bridged_429() {
+        let parser = OutputParser::new();
+        // Raw ANSI output where \S* bridges http/ to 429 through escape codes
+        assert!(!has_rate_limit(&parser.parse(
+            "http/\x1b[1C\x1b[39me\x1b[1C\x1b[38;2;177;185;249mstate.rs\x1b[1Cche\x1b[1Csembrano\x1b[1Cprovenire\x1b[1Cda\x1b[1Caltre\x1b[1Csessioni\x1b[1C(story\x1b[1C429"
+        )));
     }
 }
