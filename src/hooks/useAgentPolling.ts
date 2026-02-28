@@ -26,19 +26,21 @@ export function useAgentPolling(): void {
     if (sessions.length === 0) return;
 
     const pollAll = async () => {
-      for (const { termId, sessionId } of sessions) {
-        try {
+      const results = await Promise.allSettled(
+        sessions.map(async ({ termId, sessionId }) => {
           const result = await invoke<string | null>("get_session_foreground_process", {
             sessionId,
           });
-          const agentType = result as AgentType | null;
-          const current = terminalsStore.get(termId);
-          if (current && current.agentType !== agentType) {
-            appLogger.debug("app", `[AgentPoll] ${termId} agentType "${current.agentType}" → "${agentType}"`);
-            terminalsStore.update(termId, { agentType });
-          }
-        } catch {
-          // Session may have been closed; ignore errors silently
+          return { termId, agentType: result as AgentType | null };
+        }),
+      );
+      for (const r of results) {
+        if (r.status !== "fulfilled") continue;
+        const { termId, agentType } = r.value;
+        const current = terminalsStore.get(termId);
+        if (current && current.agentType !== agentType) {
+          appLogger.debug("app", `[AgentPoll] ${termId} agentType "${current.agentType}" → "${agentType}"`);
+          terminalsStore.update(termId, { agentType });
         }
       }
     };
