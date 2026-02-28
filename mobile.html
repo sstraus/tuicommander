@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#1e1e1e" />
+    <title>TUICommander Mobile</title>
+    <style>
+      /* Inline critical styles — visible immediately before CSS/JS loads */
+      html, body { margin: 0; padding: 0; height: 100%; background: #1e1e1e; }
+      #mobile-app {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100dvh;
+        color: #848d97;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 14px;
+      }
+    </style>
+    <script type="module" src="/src/mobile/index.tsx" defer></script>
+  </head>
+
+  <body>
+    <div id="mobile-app"></div>
+  </body>
+</html>

@@ -60,6 +60,12 @@ export default defineConfig(async () => ({
   build: {
     target: "esnext",
     cssMinify: "lightningcss",
+    rollupOptions: {
+      input: {
+        main: "index.html",
+        mobile: "mobile.html",
+      },
+    },
   },
 
 
