@@ -1,4 +1,4 @@
-import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { Component, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -139,6 +139,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   // Shell idle detection: after 500ms of no PTY output, shell is idle
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastOutputTime = 0;
   let activityFlagged = false; // Avoids redundant store updates per data chunk
   let busyFlagged = false;
 
@@ -174,8 +175,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
   /** Process a chunk of PTY output — write to terminal or buffer if not ready */
   const handlePtyData = (data: string) => {
     if (terminal) {
-      // Dispatch to plugins BEFORE writing to xterm so they observe the same byte order
-      if (sessionId) pluginRegistry.processRawOutput(data, sessionId);
+      // Dispatch to plugins for all terminals — background tabs may have
+      // plugin-relevant output (e.g. agent detection, error tracking)
+      if (sessionId) {
+        pluginRegistry.processRawOutput(data, sessionId);
+      }
 
       const byteLen = data.length;
       pendingWriteBytes += byteLen;
@@ -233,12 +237,21 @@ export const Terminal: Component<TerminalProps> = (props) => {
         terminalsStore.clearAwaitingInput(props.id);
       }
     }
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      busyFlagged = false;
-      appLogger.debug("terminal", `[ShellState] ${props.id} → "idle" (500ms timeout)`);
-      terminalsStore.update(props.id, { shellState: "idle" });
-    }, 500);
+    lastOutputTime = now;
+    if (!idleTimer) {
+      idleTimer = setTimeout(function checkIdle() {
+        const elapsed = Date.now() - lastOutputTime;
+        // 490ms accounts for timer imprecision (setTimeout can fire slightly early)
+        if (elapsed >= 490) {
+          idleTimer = undefined;
+          busyFlagged = false;
+          appLogger.debug("terminal", `[ShellState] ${props.id} → "idle" (500ms timeout)`);
+          terminalsStore.update(props.id, { shellState: "idle" });
+        } else {
+          idleTimer = setTimeout(checkIdle, 500 - elapsed);
+        }
+      }, 500);
+    }
   };
 
   /** Replay buffered output into the now-open terminal */
@@ -889,8 +902,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
       });
 
-      // Tauri window resize listener - DOM resize event may not fire in webview
+      // Tauri window resize listener - DOM resize event may not fire in webview.
+      // Use a cancelled flag to prevent leaking the listener if cleanup runs
+      // before the async registration resolves.
       let unlistenResize: (() => void) | undefined;
+      let resizeCancelled = false;
       if (isTauri()) {
         import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
           getCurrentWindow().onResized(() => {
@@ -900,12 +916,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
               }
             });
           }).then((unlisten) => {
-            unlistenResize = unlisten;
+            if (resizeCancelled) {
+              unlisten();
+            } else {
+              unlistenResize = unlisten;
+            }
           });
+        }).catch((err) => {
+          appLogger.warn("terminal", "Failed to register Tauri resize listener", err);
         });
       }
 
       onCleanup(() => {
+        resizeCancelled = true;
         if (rafHandle) cancelAnimationFrame(rafHandle);
         resizeObserver?.disconnect();
         unlistenResize?.();
@@ -997,7 +1020,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     closeSearch: () => setSearchVisible(false),
   };
 
-  createEffect(() => {
+  onMount(() => {
     terminalsStore.update(props.id, { ref: refMethods });
   });
 

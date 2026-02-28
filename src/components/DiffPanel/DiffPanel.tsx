@@ -2,6 +2,7 @@ import { Component, createEffect, createMemo, createSignal, For, Show } from "so
 import { useRepository, type ChangedFile } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore, type DiffStatus } from "../../stores/diffTabs";
+import { appLogger } from "../../stores/appLogger";
 import { getModifierSymbol } from "../../platform";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { t } from "../../i18n";
@@ -39,49 +40,42 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     return files().filter((f) => re.test(f.path));
   });
 
-  // Load recent commits when panel becomes visible or repo changes
+  // Load recent commits (only on repo/revision change, NOT on scope change)
   createEffect(() => {
-    const visible = props.visible;
-    const repoPath = props.repoPath;
-    void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
-
-    if (!visible || !repoPath) {
+    if (!props.visible || !props.repoPath) {
       setCommits([]);
       return;
     }
+    const repoPath = props.repoPath;
+    void repositoriesStore.getRevision(repoPath);
 
-    (async () => {
-      const recent = await repo.getRecentCommits(repoPath, 5);
-      setCommits(recent);
-    })();
+    repo.getRecentCommits(repoPath, 5).then(setCommits).catch((err) => {
+      appLogger.warn("git", "Failed to load recent commits", err);
+      setCommits([]);
+    });
   });
 
-  // Load changed files when visible, repo changes, scope changes, or repo content changes
+  // Load changed files (on repo/revision/scope change)
   createEffect(() => {
-    const visible = props.visible;
-    const repoPath = props.repoPath;
-    const currentScope = scope();
-    void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
-
-    if (!visible || !repoPath) {
+    if (!props.visible || !props.repoPath) {
       setFiles([]);
       return;
     }
 
+    const repoPath = props.repoPath;
+    const currentScope = scope();
+    void repositoriesStore.getRevision(repoPath);
+
     setLoading(true);
     setError(null);
 
-    (async () => {
-      try {
-        const changedFiles = await repo.getChangedFiles(repoPath, currentScope);
-        setFiles(changedFiles);
-      } catch (err) {
+    repo.getChangedFiles(repoPath, currentScope)
+      .then(setFiles)
+      .catch((err) => {
         setError(String(err));
         setFiles([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
+      })
+      .finally(() => setLoading(false));
   });
 
   const handleFileClick = (file: ChangedFile) => {

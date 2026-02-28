@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, For, Show, onCleanup } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
@@ -57,20 +57,29 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   // File clipboard state for copy/cut/paste
   const [clipboard, setClipboard] = createSignal<{ entry: DirEntry; mode: "copy" | "cut" } | null>(null);
 
+  // Track repoPath changes to reset subdir synchronously before fetching
+  let lastRepoPath: string | null = null;
+
   // Load entries when visible, repo changes, subdir changes, or repo content changes
   createEffect(() => {
-    const visible = props.visible;
-    const repoPath = props.repoPath;
-    const subdir = currentSubdir();
-    // Subscribe to repo revision for auto-refresh on git changes
-    void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
-    // Also subscribe to manual refresh trigger
-    void refreshTrigger();
-
-    if (!visible || !repoPath) {
+    if (!props.visible || !props.repoPath) {
       setEntries([]);
       return;
     }
+
+    const repoPath = props.repoPath;
+
+    // Reset subdir when repo changes (merged from separate effect to avoid double fetch)
+    if (repoPath !== lastRepoPath) {
+      lastRepoPath = repoPath;
+      setCurrentSubdir(".");
+    }
+
+    const subdir = currentSubdir();
+    // Subscribe to repo revision for auto-refresh on git changes
+    void repositoriesStore.getRevision(repoPath);
+    // Also subscribe to manual refresh trigger
+    void refreshTrigger();
 
     setLoading(true);
     setError(null);
@@ -87,12 +96,6 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         setLoading(false);
       }
     })();
-  });
-
-  // Reset subdir when repo changes
-  createEffect(() => {
-    void props.repoPath;
-    setCurrentSubdir(".");
   });
 
   // Search results from recursive Rust search (when query is active)
@@ -128,7 +131,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   });
 
   /** Visible entries: search results when query active, directory listing otherwise */
-  const filteredEntries = () => searchQuery().trim() ? searchResults() : entries();
+  const filteredEntries = createMemo(() => searchQuery().trim() ? searchResults() : entries());
 
   const refresh = () => setRefreshTrigger((n) => n + 1);
 

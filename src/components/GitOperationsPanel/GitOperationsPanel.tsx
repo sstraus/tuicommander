@@ -137,13 +137,12 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
     executeCommand(command);
   };
 
-  // Fetch branches when panel opens
+  // Fetch branches when panel opens (gated behind visibility to avoid IPC when hidden)
   createEffect(() => {
+    if (!props.visible || !props.repoPath) return;
     // Track repo revision so branch list refreshes on git operations
-    void (props.repoPath ? repositoriesStore.getRevision(props.repoPath) : 0);
-    if (props.visible && props.repoPath) {
-      fetchBranches();
-    }
+    void repositoriesStore.getRevision(props.repoPath);
+    void fetchBranches();
   });
 
   const fetchBranches = async () => {

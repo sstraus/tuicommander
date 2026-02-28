@@ -1,4 +1,4 @@
-import { createStore, reconcile } from "solid-js/store";
+import { createStore, produce } from "solid-js/store";
 import type { RateLimitInfo } from "../rate-limit";
 import { isStillRateLimited, getRemainingWaitTime } from "../rate-limit";
 
@@ -22,8 +22,7 @@ function createRateLimitStore() {
 
     /** Remove a rate limit (session recovered) */
     removeRateLimit(sessionId: string): void {
-      const { [sessionId]: _removed, ...rest } = state.rateLimits;
-      setState("rateLimits", reconcile(rest));
+      setState(produce((s) => { delete s.rateLimits[sessionId]; }));
     },
 
     /** Check if a session is rate-limited */
@@ -59,20 +58,18 @@ function createRateLimitStore() {
 
     /** Clean up expired rate limits */
     cleanupExpired(): void {
-      const active: Record<string, RateLimitInfo> = {};
-
-      for (const [sessionId, info] of Object.entries(state.rateLimits)) {
-        if (isStillRateLimited(info)) {
-          active[sessionId] = info;
-        }
-      }
-
-      setState("rateLimits", reconcile(active));
+      const expired = Object.entries(state.rateLimits)
+        .filter(([, info]) => !isStillRateLimited(info))
+        .map(([id]) => id);
+      if (expired.length === 0) return;
+      setState(produce((s) => {
+        for (const id of expired) delete s.rateLimits[id];
+      }));
     },
 
     /** Clear all rate limits */
     clearAll(): void {
-      setState("rateLimits", reconcile({}));
+      setState("rateLimits", {});
     },
   };
 

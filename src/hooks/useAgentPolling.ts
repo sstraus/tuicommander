@@ -2,10 +2,16 @@ import { createEffect, onCleanup } from "solid-js";
 import { invoke } from "../invoke";
 import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
-import type { AgentType } from "../agents";
+import { type AgentType, AGENT_TYPES } from "../agents";
 
 /** Polling interval for foreground process detection (ms) */
 const POLL_INTERVAL_MS = 3000;
+
+/** Validate a string from the backend is a known AgentType */
+function toAgentType(value: string | null): AgentType | null {
+  if (value === null) return null;
+  return (AGENT_TYPES as readonly string[]).includes(value) ? (value as AgentType) : null;
+}
 
 /**
  * Polls ALL terminals with active PTY sessions to detect which agent (if any)
@@ -26,26 +32,33 @@ export function useAgentPolling(): void {
     if (sessions.length === 0) return;
 
     const pollAll = async () => {
-      for (const { termId, sessionId } of sessions) {
-        try {
+      const results = await Promise.allSettled(
+        sessions.map(async ({ termId, sessionId }) => {
           const result = await invoke<string | null>("get_session_foreground_process", {
             sessionId,
           });
-          const agentType = result as AgentType | null;
-          const current = terminalsStore.get(termId);
-          if (current && current.agentType !== agentType) {
-            appLogger.debug("app", `[AgentPoll] ${termId} agentType "${current.agentType}" → "${agentType}"`);
-            terminalsStore.update(termId, { agentType });
-          }
-        } catch {
-          // Session may have been closed; ignore errors silently
+          return { termId, agentType: toAgentType(result) };
+        }),
+      );
+      for (const r of results) {
+        if (r.status === "rejected") {
+          appLogger.debug("app", "[AgentPoll] session poll rejected", r.reason);
+          continue;
+        }
+        const { termId, agentType } = r.value;
+        const current = terminalsStore.get(termId);
+        if (current && current.agentType !== agentType) {
+          appLogger.debug("app", `[AgentPoll] ${termId} agentType "${current.agentType}" → "${agentType}"`);
+          terminalsStore.update(termId, { agentType });
         }
       }
     };
 
-    // Poll immediately, then every POLL_INTERVAL_MS
-    pollAll();
-    const timer = setInterval(pollAll, POLL_INTERVAL_MS);
+    // Don't poll immediately on effect re-run — the 3s interval is acceptable latency
+    // and avoids burst polling when many terminals are added during session restore.
+    const timer = setInterval(() => {
+      pollAll().catch((err) => appLogger.debug("app", "[AgentPoll] poll failed", err));
+    }, POLL_INTERVAL_MS);
 
     onCleanup(() => clearInterval(timer));
   });

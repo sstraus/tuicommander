@@ -1,6 +1,9 @@
 /** Supported agent types */
 export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "cursor" | "warp" | "droid" | "git";
 
+/** Runtime array for validating backend strings against AgentType */
+export const AGENT_TYPES: readonly AgentType[] = ["claude", "gemini", "opencode", "aider", "codex", "amp", "cursor", "warp", "droid", "git"] as const;
+
 /** Agent configuration */
 export interface AgentConfig {
   type: AgentType;

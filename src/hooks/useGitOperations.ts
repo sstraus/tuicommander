@@ -226,15 +226,25 @@ export function useGitOperations(deps: GitOperationsDeps) {
       const updatedRepo = repositoriesStore.get(repoPath);
       if (!updatedRepo) return;
 
-      await Promise.all(Object.values(updatedRepo.branches).map(async (branch) => {
-        if (!branch.worktreePath) return;
-        try {
-          const stats = await deps.repo.getDiffStats(branch.worktreePath);
-          repositoriesStore.updateBranchStats(repoPath, branch.name, stats.additions, stats.deletions);
-        } catch {
-          // Ignore stats errors for individual branches
+      const branchesWithPaths = Object.values(updatedRepo.branches).filter((b) => b.worktreePath);
+      const allStats = await Promise.all(
+        branchesWithPaths.map(async (branch) => {
+          try {
+            const stats = await deps.repo.getDiffStats(branch.worktreePath!);
+            return { name: branch.name, stats };
+          } catch (err) {
+            appLogger.debug("git", `getDiffStats failed for ${branch.name}`, err);
+            return null;
+          }
+        }),
+      );
+      batch(() => {
+        for (const result of allStats) {
+          if (result) {
+            repositoriesStore.updateBranchStats(repoPath, result.name, result.stats.additions, result.stats.deletions);
+          }
         }
-      }));
+      });
 
       // Auto-archive merged worktrees when autoArchiveMerged=true
       await handleAutoArchiveMerged(repoPath, updatedRepo.branches);

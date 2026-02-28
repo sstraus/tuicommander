@@ -10,7 +10,7 @@
  * via `push_log`, making logs durable across webview reloads.
  */
 
-import { createSignal } from "solid-js";
+import { batch, createSignal } from "solid-js";
 import { rpc } from "../transport";
 
 // ---------------------------------------------------------------------------
@@ -144,10 +144,13 @@ function createAppLogger() {
     }
 
     if (level === "error") {
-      setUnseenErrorCount((c) => c + 1);
+      batch(() => {
+        setUnseenErrorCount((c) => c + 1);
+        setRevision((r) => r + 1);
+      });
+    } else {
+      setRevision((r) => r + 1);
     }
-
-    setRevision((r) => r + 1);
 
     // Forward to browser console
     const tag = `[${source}]`;

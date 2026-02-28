@@ -1,3 +1,4 @@
+import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
 import type { SavedTerminal } from "../types";
@@ -135,6 +136,11 @@ function createRepositoriesStore() {
     groupOrder: [],
   });
 
+  // Inverse index: terminal ID → repo path (O(1) lookup instead of O(repos*branches*terminals)).
+  // Maps termId→repoPath only (NOT branchName). renameBranch and mergeBranchState don't update
+  // this map because they never change the repoPath — terminals stay in the same repo.
+  const terminalToRepo = new Map<string, string>();
+
   /** Debounced save shorthand using current state */
   const save = () => saveRepos(state.repositories, state.repoOrder, state.activeRepoPath, state.groups, state.groupOrder);
 
@@ -237,6 +243,15 @@ function createRepositoriesStore() {
 
     /** Remove a repository */
     remove(path: string): void {
+      // Clear inverse index entries for all terminals in this repo
+      const repo = state.repositories[path];
+      if (repo) {
+        for (const branch of Object.values(repo.branches)) {
+          for (const termId of branch.terminals) {
+            terminalToRepo.delete(termId);
+          }
+        }
+      }
       setState(
         produce((s) => {
           delete s.repositories[path];
@@ -319,10 +334,13 @@ function createRepositoriesStore() {
       const branch = state.repositories[repoPath]?.branches[branchName];
       if (branch && !branch.terminals.includes(terminalId)) {
         appLogger.info("terminal", `addTerminalToBranch ${branchName} += ${terminalId}`, { before: [...branch.terminals] });
-        setState("repositories", repoPath, "branches", branchName, "terminals", (t) => [...t, terminalId]);
-        if (!branch.hadTerminals) {
-          setState("repositories", repoPath, "branches", branchName, "hadTerminals", true);
-        }
+        terminalToRepo.set(terminalId, repoPath);
+        batch(() => {
+          setState("repositories", repoPath, "branches", branchName, "terminals", (t) => [...t, terminalId]);
+          if (!branch.hadTerminals) {
+            setState("repositories", repoPath, "branches", branchName, "hadTerminals", true);
+          }
+        });
         save();
       }
     },
@@ -331,6 +349,7 @@ function createRepositoriesStore() {
     removeTerminalFromBranch(repoPath: string, branchName: string, terminalId: string): void {
       const branch = state.repositories[repoPath]?.branches[branchName];
       appLogger.info("terminal", `removeTerminalFromBranch ${branchName} -= ${terminalId}`, { before: branch?.terminals ? [...branch.terminals] : [] });
+      terminalToRepo.delete(terminalId);
       setState("repositories", repoPath, "branches", branchName, "terminals", (t) =>
         t.filter((id) => id !== terminalId)
       );
@@ -370,6 +389,13 @@ function createRepositoriesStore() {
           hadTerminals: branch.hadTerminals,
           savedTerminals: branch.savedTerminals?.length ?? 0,
         });
+      }
+
+      // Clean up inverse index for all terminals in the removed branch
+      if (branch) {
+        for (const tid of branch.terminals) {
+          terminalToRepo.delete(tid);
+        }
       }
 
       setState(
@@ -518,15 +544,9 @@ function createRepositoriesStore() {
       save();
     },
 
-    /** Reverse-lookup: find which repo a terminal belongs to (O(repos*branches) scan, but
-     *  only called per-terminal on render — not in a hot reactive loop). */
+    /** Reverse-lookup: find which repo a terminal belongs to (O(1) via inverse index). */
     getRepoPathForTerminal(termId: string): string | null {
-      for (const [path, repo] of Object.entries(state.repositories)) {
-        for (const branch of Object.values(repo.branches)) {
-          if (branch.terminals.includes(termId)) return path;
-        }
-      }
-      return null;
+      return terminalToRepo.get(termId) ?? null;
     },
 
     /** Get terminals for current active branch */
@@ -593,8 +613,10 @@ function createRepositoriesStore() {
       if (exists) return null;
 
       const id = generateGroupId();
-      setState("groups", id, { id, name, color: "", collapsed: false, repoOrder: [] });
-      setState("groupOrder", [...state.groupOrder, id]);
+      batch(() => {
+        setState("groups", id, { id, name, color: "", collapsed: false, repoOrder: [] });
+        setState("groupOrder", [...state.groupOrder, id]);
+      });
       save();
       return id;
     },

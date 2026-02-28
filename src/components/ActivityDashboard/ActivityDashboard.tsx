@@ -1,38 +1,26 @@
-import { Component, For, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { activityDashboardStore } from "../../stores/activityDashboard";
 import { terminalsStore } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
-import { appLogger } from "../../stores/appLogger";
 import { formatRelativeTime } from "../../utils/time";
 import s from "./ActivityDashboard.module.css";
 
 /** Derive status label and CSS class from terminal state */
 function getTerminalStatus(
-  termId: string,
   shellState: string | null,
   awaitingInput: string | null,
   sessionId: string | null,
 ): { label: string; className: string } {
-  let result: { label: string; className: string };
-  let reason: string;
   if (sessionId && rateLimitStore.isRateLimited(sessionId)) {
-    result = { label: "Rate limited", className: s.statusRateLimited };
-    reason = `rateLimitStore.isRateLimited(${sessionId})=true`;
+    return { label: "Rate limited", className: s.statusRateLimited };
   } else if (awaitingInput) {
-    result = { label: "Waiting for input", className: s.statusWaiting };
-    reason = `awaitingInput="${awaitingInput}"`;
+    return { label: "Waiting for input", className: s.statusWaiting };
   } else if (shellState === "busy") {
-    result = { label: "Working", className: s.statusWorking };
-    reason = `shellState="busy"`;
+    return { label: "Working", className: s.statusWorking };
   } else if (shellState === "idle") {
-    result = { label: "Idle", className: s.statusIdle };
-    reason = `shellState="idle"`;
-  } else {
-    result = { label: "—", className: s.statusIdle };
-    reason = `shellState=${shellState === null ? "null" : `"${shellState}"`} (fallthrough)`;
+    return { label: "Idle", className: s.statusIdle };
   }
-  appLogger.debug("app", `[ActivityDash] ${termId} → "${result.label}" because ${reason}`);
-  return result;
+  return { label: "—", className: s.statusIdle };
 }
 
 /** Truncate a prompt to a single line for display */
@@ -76,14 +64,12 @@ export const ActivityDashboard: Component = () => {
     requestAnimationFrame(() => terminalsStore.get(termId)?.ref?.focus());
   };
 
-  const terminals = () => {
-    // Force re-read on tick for relative timestamps
-    void setTick;
+  const terminals = createMemo(() => {
     const ids = terminalsStore.getAttachedIds();
     return ids.map((id) => {
       const term = terminalsStore.get(id);
       if (!term) return null;
-      const status = getTerminalStatus(id, term.shellState, term.awaitingInput, term.sessionId);
+      const status = getTerminalStatus(term.shellState, term.awaitingInput, term.sessionId);
       return {
         id,
         name: term.name,
@@ -104,7 +90,7 @@ export const ActivityDashboard: Component = () => {
       agentIntent: string | null;
       isActive: boolean;
     }>;
-  };
+  });
 
   return (
     <Show when={isOpen()}>
@@ -134,23 +120,29 @@ export const ActivityDashboard: Component = () => {
                     <span class={`${s.status} ${term.status.className}`}>{term.status.label}</span>
                     <span class={s.lastActivity}>{formatRelativeTime(term.lastDataAt)}</span>
                   </div>
-                  <Show when={term.agentIntent}>
-                    <div class={s.promptRow} title={term.agentIntent!}>
-                      {/* Target/crosshair icon for agent-declared intent */}
-                      <svg class={s.promptIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-                        <path d="M8 1a.75.75 0 0 1 .75.75v1.82a4.505 4.505 0 0 1 3.68 3.68h1.82a.75.75 0 0 1 0 1.5h-1.82a4.505 4.505 0 0 1-3.68 3.68v1.82a.75.75 0 0 1-1.5 0v-1.82a4.505 4.505 0 0 1-3.68-3.68H1.75a.75.75 0 0 1 0-1.5h1.82A4.505 4.505 0 0 1 7.25 3.57V1.75A.75.75 0 0 1 8 1ZM5.5 8a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z"/>
-                      </svg>
-                      <span class={s.promptText}>{truncatePrompt(term.agentIntent!)}</span>
-                    </div>
+                  <Show when={term.agentIntent} keyed>
+                    {(intent) => (
+                      <div class={s.promptRow} title={intent}>
+                        {/* Target/crosshair icon for agent-declared intent */}
+                        <svg class={s.promptIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                          <path d="M8 1a.75.75 0 0 1 .75.75v1.82a4.505 4.505 0 0 1 3.68 3.68h1.82a.75.75 0 0 1 0 1.5h-1.82a4.505 4.505 0 0 1-3.68 3.68v1.82a.75.75 0 0 1-1.5 0v-1.82a4.505 4.505 0 0 1-3.68-3.68H1.75a.75.75 0 0 1 0-1.5h1.82A4.505 4.505 0 0 1 7.25 3.57V1.75A.75.75 0 0 1 8 1ZM5.5 8a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z"/>
+                        </svg>
+                        <span class={s.promptText}>{truncatePrompt(intent)}</span>
+                      </div>
+                    )}
                   </Show>
-                  <Show when={term.lastPrompt && !term.agentIntent}>
-                    <div class={s.promptRow} title={term.lastPrompt!}>
-                      <svg class={s.promptIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-                        <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h11A1.5 1.5 0 0 1 15 3.5v7A1.5 1.5 0 0 1 13.5 12H9.373l-2.62 1.81A.75.75 0 0 1 5.6 13.2V12H2.5A1.5 1.5 0 0 1 1 10.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5H6.35a.75.75 0 0 1 .75.75v.83l1.81-1.25a.75.75 0 0 1 .427-.133H13.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-11Z"/>
-                      </svg>
-                      <span class={s.promptText}>{truncatePrompt(term.lastPrompt!)}</span>
-                    </div>
-                  </Show>
+                  {(() => {
+                    const prompt = term.lastPrompt;
+                    if (!prompt || term.agentIntent) return null;
+                    return (
+                      <div class={s.promptRow} title={prompt}>
+                        <svg class={s.promptIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                          <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h11A1.5 1.5 0 0 1 15 3.5v7A1.5 1.5 0 0 1 13.5 12H9.373l-2.62 1.81A.75.75 0 0 1 5.6 13.2V12H2.5A1.5 1.5 0 0 1 1 10.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5H6.35a.75.75 0 0 1 .75.75v.83l1.81-1.25a.75.75 0 0 1 .427-.133H13.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-11Z"/>
+                        </svg>
+                        <span class={s.promptText}>{truncatePrompt(prompt)}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </For>

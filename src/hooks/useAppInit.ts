@@ -3,6 +3,7 @@ import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
 import { githubStore } from "../stores/github";
 import { appLogger } from "../stores/appLogger";
+import { activityStore } from "../stores/activityStore";
 import { invoke, listen } from "../invoke";
 import { isTauri } from "../transport";
 import type { SavedTerminal } from "../types";
@@ -119,9 +120,10 @@ export async function initApp(deps: AppInitDeps) {
     }
   }, SNAPSHOT_INTERVAL_MS);
 
-  // Snapshot terminal metadata and close all PTY sessions on app exit
+  // Snapshot terminal metadata, flush pending saves, and close PTY sessions on app exit
   window.addEventListener("beforeunload", () => {
     clearInterval(snapshotTimer);
+    activityStore.flushSave();
 
     // 1. Snapshot terminal metadata per repo/branch before closing
     const snapshots = collectTerminalSnapshots();

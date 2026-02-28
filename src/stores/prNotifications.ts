@@ -35,11 +35,18 @@ function createPrNotificationsStore() {
 
   let tickTimer: number | null = null;
 
-  /** Start ticking focused time — call once on app init */
+  /** Start ticking focused time — stops automatically when no active notifications */
   function startFocusTimer(): void {
     if (tickTimer) return;
     tickTimer = window.setInterval(() => {
-      if (document.hasFocus() && state.notifications.some((n) => !n.dismissed)) {
+      const hasActive = state.notifications.some((n) => !n.dismissed);
+      if (!hasActive) {
+        // No active notifications — stop the timer to avoid idle CPU
+        clearInterval(tickTimer!);
+        tickTimer = null;
+        return;
+      }
+      if (document.hasFocus()) {
         setState(
           "notifications",
           (n) => !n.dismissed,
@@ -80,6 +87,9 @@ function createPrNotificationsStore() {
         dismissed: false,
       },
     ]);
+
+    // Restart focus timer if it was stopped due to no active notifications
+    if (!tickTimer) startFocusTimer();
   }
 
   /** Dismiss a single notification */
