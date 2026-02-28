@@ -8,28 +8,40 @@ pub mod vad;
 
 use parking_lot::Mutex;
 use std::sync::atomic::AtomicBool;
+use std::sync::mpsc;
+use std::sync::Arc;
 
 /// Shared dictation state accessible from Tauri commands.
 /// Tauri's `.manage()` wraps this in `Arc` internally, so we don't double-wrap.
 pub struct DictationState {
     pub audio: Mutex<Option<audio::AudioCapture>>,
-    pub transcriber: Mutex<Option<transcribe::WhisperTranscriber>>,
-    /// Name of the model currently loaded in `transcriber` (e.g. "large-v3-turbo")
+    /// Name of the model currently loaded in `transcriber_arc` (e.g. "large-v3-turbo")
     pub active_model: Mutex<Option<String>>,
     pub corrections: Mutex<corrections::TextCorrector>,
     pub recording: AtomicBool,
     pub processing: AtomicBool,
+    /// Active streaming session (None when not streaming).
+    pub streaming: Mutex<Option<streaming::StreamingSession>>,
+    /// Receiver for partial transcription results from the streaming thread.
+    pub partial_rx: Mutex<Option<mpsc::Receiver<String>>>,
+    /// All partial results collected during a streaming session.
+    pub partials: Mutex<Vec<String>>,
+    /// Arc-wrapped transcriber for sharing with the streaming thread.
+    pub transcriber_arc: Mutex<Option<Arc<transcribe::WhisperTranscriber>>>,
 }
 
 impl DictationState {
     pub fn new() -> Self {
         Self {
             audio: Mutex::new(None),
-            transcriber: Mutex::new(None),
             active_model: Mutex::new(None),
             corrections: Mutex::new(corrections::TextCorrector::load_or_default()),
             recording: AtomicBool::new(false),
             processing: AtomicBool::new(false),
+            streaming: Mutex::new(None),
+            partial_rx: Mutex::new(None),
+            partials: Mutex::new(Vec::new()),
+            transcriber_arc: Mutex::new(None),
         }
     }
 }
