@@ -1,0 +1,25 @@
+src-tauri/src/pty.rs
+  2bddf5a94845e865 11,262-265
+src-tauri/src/output_parser.rs
+  2bddf5a94845e865 701-712,1779-1791
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "26145b30fb98d972623805663c38f408d314ad2c",
+  "prompts": {
+    "2bddf5a94845e865": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0602e11c-ac39-4020-8612-6caa1938a17c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 30,
+      "total_deletions": 1,
+      "accepted_lines": 30,
+      "overriden_lines": 0
+    }
+  }
+}
