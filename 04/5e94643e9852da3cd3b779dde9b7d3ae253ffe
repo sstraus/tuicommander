@@ -1,0 +1,25 @@
+src-tauri/src/dictation/mod.rs
+  4edf3f37670677e5 11-12,18,23-30,41-44
+src-tauri/src/dictation/commands.rs
+  4edf3f37670677e5 1,5,52,124,148,155,161,165-167,169,176-178,180-195,197-218,235-255,257-259,263-276,278-279,281-292,294-295,298-299,303,306,310,315
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "045e94643e9852da3cd3b779dde9b7d3ae253ffe",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "unknown"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 131,
+      "total_deletions": 46,
+      "accepted_lines": 128,
+      "overriden_lines": 0
+    }
+  }
+}
