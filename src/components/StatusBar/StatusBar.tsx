@@ -38,16 +38,18 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   const [showPrDetailPopover, setShowPrDetailPopover] = createSignal(false);
   const [cwdCopied, setCwdCopied] = createSignal(false);
 
-  // Rate limit countdown — tick every second while any rate limit is active
+  // Shared 1s tick driving both rate-limit countdown and PR merged grace period
   const [rlTick, setRlTick] = createSignal(0);
+  const [prTick, setPrTick] = createSignal(0);
   onMount(() => {
-    const rlTimer = setInterval(() => {
+    const sharedTimer = setInterval(() => {
+      setPrTick((t) => t + 1);
       if (rateLimitStore.getRateLimitedCount() > 0) {
         setRlTick((t) => t + 1);
         rateLimitStore.cleanupExpired();
       }
     }, 1000);
-    onCleanup(() => clearInterval(rlTimer));
+    onCleanup(() => clearInterval(sharedTimer));
   });
 
   const rateLimitWarning = createMemo(() => {
@@ -115,14 +117,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   const notesBadgeCount = () => notesStore.filteredCount(props.currentRepoPath ?? null);
 
   // PR data with lifecycle rules (CLOSED: hidden, MERGED: grace period, OPEN: shown).
-  // Re-evaluates every second so the merged grace period ticks down.
-  const [prTick, setPrTick] = createSignal(0);
-
-  onMount(() => {
-    const prTimer = setInterval(() => setPrTick((t) => t + 1), 1000);
-    onCleanup(() => clearInterval(prTimer));
-  });
-
+  // Re-evaluates every second so the merged grace period ticks down (driven by sharedTimer above).
   const activePrData = createMemo(() => {
     prTick(); // subscribe to 1s tick for merged PR countdown
     const repoPath = props.currentRepoPath;

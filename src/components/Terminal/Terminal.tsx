@@ -902,36 +902,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
       });
 
-      // Tauri window resize listener - DOM resize event may not fire in webview.
-      // Use a cancelled flag to prevent leaking the listener if cleanup runs
-      // before the async registration resolves.
-      let unlistenResize: (() => void) | undefined;
-      let resizeCancelled = false;
-      if (isTauri()) {
-        import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
-          getCurrentWindow().onResized(() => {
-            requestAnimationFrame(() => {
-              if (containerRef && containerRef.offsetWidth > 0 && containerRef.offsetHeight > 0) {
-                doFit();
-              }
-            });
-          }).then((unlisten) => {
-            if (resizeCancelled) {
-              unlisten();
-            } else {
-              unlistenResize = unlisten;
-            }
-          });
-        }).catch((err) => {
-          appLogger.warn("terminal", "Failed to register Tauri resize listener", err);
-        });
-      }
-
       onCleanup(() => {
-        resizeCancelled = true;
         if (rafHandle) cancelAnimationFrame(rafHandle);
         resizeObserver?.disconnect();
-        unlistenResize?.();
       });
     }
   });

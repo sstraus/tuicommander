@@ -34,6 +34,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Mobile Companion UI** — Phone-optimized PWA at `/mobile` for monitoring AI agents remotely. Session list with status cards, live output with quick-reply chips, question overlay banner, activity feed, notification sounds. Installable via Add to Home Screen on iOS Safari and Android Chrome
 
 ### Changed
+- **`get_repo_summary` single-IPC** — New Rust command collapses worktree paths + merged branches + per-path diff stats into one round-trip, replacing N+2 separate IPC calls in `refreshAllBranchStats`
+- **RPC deduplication** — Concurrent identical idempotent (GET) RPC calls are coalesced into a single in-flight request
+- **StatusBar shared timer** — Merged two separate 1-second intervals (rate-limit countdown + PR grace period) into one
+- **Terminal resize cleanup** — Removed redundant Tauri window resize listener (ResizeObserver already handles this)
 - Agent session restore now shows a clickable banner instead of auto-injecting the resume command
 - Migrated ~200 `console.error`/`console.warn` calls to centralized `appLogger` across terminal, hooks, stores, UI components, plugins, and utilities (waves 1-4)
 - Activity Dashboard shows last user prompt (>= 10 words) as sub-row with tooltip, now native Rust implementation
@@ -52,6 +56,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Activity Dashboard state inconsistencies** — `setActive()` no longer resets `shellState` to null; busy flag reconciliation on every PTY chunk prevents "—" status for working terminals; agent polling now covers all terminals (not just the active one)
 - **Rate-limit false positives** — Added `line_is_source_code()` guard so agents reading `output_parser.rs` no longer trigger their own rate-limit patterns
 - **False "awaiting input" indicator** — Silence-based question detector threshold raised from 5s to 10s; added `line_is_likely_not_a_prompt()` guard to filter code, markdown, and long lines
+- **Output parser false positives** — Status line detection now skips diff output, code listings, and block comments; intent parsing requires line-start/whitespace anchor; rate limit and API error detection uses ANSI-stripped text to prevent escape-code bridging (e.g. "story 429" no longer triggers HTTP 429 detection)
 
 ### Removed
 - `showAllBranches` toggle (replaced by Switch Branch submenu)
