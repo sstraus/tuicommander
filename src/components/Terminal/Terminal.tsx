@@ -1,4 +1,4 @@
-import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { Component, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -139,6 +139,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   // Shell idle detection: after 500ms of no PTY output, shell is idle
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastOutputTime = 0;
   let activityFlagged = false; // Avoids redundant store updates per data chunk
   let busyFlagged = false;
 
@@ -174,8 +175,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
   /** Process a chunk of PTY output — write to terminal or buffer if not ready */
   const handlePtyData = (data: string) => {
     if (terminal) {
-      // Dispatch to plugins BEFORE writing to xterm so they observe the same byte order
-      if (sessionId) pluginRegistry.processRawOutput(data, sessionId);
+      // Dispatch to plugins only for the active terminal to avoid unnecessary work
+      if (sessionId && terminalsStore.state.activeId === props.id) {
+        pluginRegistry.processRawOutput(data, sessionId);
+      }
 
       const byteLen = data.length;
       pendingWriteBytes += byteLen;
@@ -233,12 +236,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
         terminalsStore.clearAwaitingInput(props.id);
       }
     }
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      busyFlagged = false;
-      appLogger.debug("terminal", `[ShellState] ${props.id} → "idle" (500ms timeout)`);
-      terminalsStore.update(props.id, { shellState: "idle" });
-    }, 500);
+    lastOutputTime = Date.now();
+    if (!idleTimer) {
+      idleTimer = setTimeout(function checkIdle() {
+        const elapsed = Date.now() - lastOutputTime;
+        if (elapsed >= 490) {
+          idleTimer = undefined;
+          busyFlagged = false;
+          appLogger.debug("terminal", `[ShellState] ${props.id} → "idle" (500ms timeout)`);
+          terminalsStore.update(props.id, { shellState: "idle" });
+        } else {
+          idleTimer = setTimeout(checkIdle, 500 - elapsed);
+        }
+      }, 500);
+    }
   };
 
   /** Replay buffered output into the now-open terminal */
@@ -1005,7 +1016,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     closeSearch: () => setSearchVisible(false),
   };
 
-  createEffect(() => {
+  onMount(() => {
     terminalsStore.update(props.id, { ref: refMethods });
   });
 

@@ -16,11 +16,16 @@ function toPersistedItems(items: ActivityItem[]): PersistedActivityItem[] {
   return items.map(({ onClick: _, ...rest }) => rest);
 }
 
-/** Persist activity items to Rust backend (fire-and-forget) */
+/** Persist activity items to Rust backend (debounced, fire-and-forget) */
+let saveActivityTimer: ReturnType<typeof setTimeout> | null = null;
 function saveActivity(items: ActivityItem[]): void {
-  invoke("save_activity", { items: toPersistedItems(items) }).catch((err) =>
-    appLogger.error("store", "Failed to save activity", err),
-  );
+  if (saveActivityTimer) clearTimeout(saveActivityTimer);
+  saveActivityTimer = setTimeout(() => {
+    saveActivityTimer = null;
+    invoke("save_activity", { items: toPersistedItems(items) }).catch((err) =>
+      appLogger.error("store", "Failed to save activity", err),
+    );
+  }, 300);
 }
 
 function createActivityStore() {
