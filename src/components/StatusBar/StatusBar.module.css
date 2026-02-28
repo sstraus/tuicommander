@@ -1,3 +1,8 @@
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
 /* StatusBar */
 .bar {
   height: var(--status-height);

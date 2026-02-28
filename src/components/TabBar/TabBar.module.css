@@ -1,3 +1,8 @@
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
 /* TabBar wrapper — flex row with scroll region + new-tab button */
 .tabBarWrapper {
   display: flex;
