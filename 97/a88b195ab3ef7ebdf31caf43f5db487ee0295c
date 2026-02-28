@@ -1,0 +1,35 @@
+src/mobile/screens/SessionsScreen.tsx
+  4edf3f37670677e5 1-97
+src/mobile/components/SessionCard.module.css
+  4edf3f37670677e5 1-110
+src/mobile/components/StatusBadge.module.css
+  4edf3f37670677e5 1-43
+src/mobile/screens/SessionsScreen.module.css
+  4edf3f37670677e5 1-57
+src/mobile/MobileApp.tsx
+  4edf3f37670677e5 4-5,17,25,28-34
+src/mobile/components/StatusBadge.tsx
+  4edf3f37670677e5 1-31
+src/mobile/components/SessionCard.tsx
+  4edf3f37670677e5 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "97a88b195ab3ef7ebdf31caf43f5db487ee0295c",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 443,
+      "total_deletions": 42,
+      "accepted_lines": 439,
+      "overriden_lines": 0
+    }
+  }
+}
