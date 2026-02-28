@@ -1,0 +1,27 @@
+src/mobile/components/QuestionBanner.module.css
+  4edf3f37670677e5 1-100
+src/mobile/MobileApp.tsx
+  4edf3f37670677e5 5,23-29
+src/mobile/components/QuestionBanner.tsx
+  4edf3f37670677e5 1-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "0b9ae20310ecbe7447b0efb6ab56f557f19e62e7",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 175,
+      "total_deletions": 0,
+      "accepted_lines": 175,
+      "overriden_lines": 0
+    }
+  }
+}
