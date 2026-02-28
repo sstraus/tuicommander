@@ -39,10 +39,21 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     return files().filter((f) => re.test(f.path));
   });
 
-  // Load commits + changed files in a single effect (gated behind visibility)
+  // Load recent commits (only on repo/revision change, NOT on scope change)
   createEffect(() => {
     if (!props.visible || !props.repoPath) {
       setCommits([]);
+      return;
+    }
+    const repoPath = props.repoPath;
+    void repositoriesStore.getRevision(repoPath);
+
+    repo.getRecentCommits(repoPath, 5).then(setCommits).catch(() => setCommits([]));
+  });
+
+  // Load changed files (on repo/revision/scope change)
+  createEffect(() => {
+    if (!props.visible || !props.repoPath) {
       setFiles([]);
       return;
     }
@@ -54,21 +65,13 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     setLoading(true);
     setError(null);
 
-    (async () => {
-      try {
-        const [changedFiles, recent] = await Promise.all([
-          repo.getChangedFiles(repoPath, currentScope),
-          repo.getRecentCommits(repoPath, 5),
-        ]);
-        setFiles(changedFiles);
-        setCommits(recent);
-      } catch (err) {
+    repo.getChangedFiles(repoPath, currentScope)
+      .then(setFiles)
+      .catch((err) => {
         setError(String(err));
         setFiles([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
+      })
+      .finally(() => setLoading(false));
   });
 
   const handleFileClick = (file: ChangedFile) => {

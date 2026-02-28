@@ -389,6 +389,13 @@ function createRepositoriesStore() {
         });
       }
 
+      // Clean up inverse index for all terminals in the removed branch
+      if (branch) {
+        for (const tid of branch.terminals) {
+          terminalToRepo.delete(tid);
+        }
+      }
+
       setState(
         produce((s) => {
           const r = s.repositories[repoPath];

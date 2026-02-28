@@ -175,8 +175,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
   /** Process a chunk of PTY output — write to terminal or buffer if not ready */
   const handlePtyData = (data: string) => {
     if (terminal) {
-      // Dispatch to plugins only for the active terminal to avoid unnecessary work
-      if (sessionId && terminalsStore.state.activeId === props.id) {
+      // Dispatch to plugins for all terminals — background tabs may have
+      // plugin-relevant output (e.g. agent detection, error tracking)
+      if (sessionId) {
         pluginRegistry.processRawOutput(data, sessionId);
       }
 

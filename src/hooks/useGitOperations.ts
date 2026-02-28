@@ -232,7 +232,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
           try {
             const stats = await deps.repo.getDiffStats(branch.worktreePath!);
             return { name: branch.name, stats };
-          } catch {
+          } catch (err) {
+            appLogger.debug("git", `getDiffStats failed for ${branch.name}`, err);
             return null;
           }
         }),

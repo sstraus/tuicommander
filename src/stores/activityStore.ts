@@ -178,7 +178,22 @@ function createActivityStore() {
   // Reset (for testing)
   // -------------------------------------------------------------------------
 
+  /** Flush any pending debounced save immediately */
+  function flushSave(): void {
+    if (saveActivityTimer) {
+      clearTimeout(saveActivityTimer);
+      saveActivityTimer = null;
+      invoke("save_activity", { items: toPersistedItems(state.items) }).catch((err) =>
+        appLogger.error("store", "Failed to flush activity save", err),
+      );
+    }
+  }
+
   function clearAll(): void {
+    if (saveActivityTimer) {
+      clearTimeout(saveActivityTimer);
+      saveActivityTimer = null;
+    }
     setState({ items: [], sections: [] });
   }
 
@@ -195,6 +210,7 @@ function createActivityStore() {
     getActive,
     getForSection,
     getLastItem,
+    flushSave,
     clearAll,
   };
 }

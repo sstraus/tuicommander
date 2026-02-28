@@ -35,6 +35,10 @@ export function useAgentPolling(): void {
         }),
       );
       for (const r of results) {
+        if (r.status === "rejected") {
+          appLogger.debug("app", "[AgentPoll] session poll rejected", r.reason);
+          continue;
+        }
         if (r.status !== "fulfilled") continue;
         const { termId, agentType } = r.value;
         const current = terminalsStore.get(termId);
@@ -46,8 +50,10 @@ export function useAgentPolling(): void {
     };
 
     // Poll immediately, then every POLL_INTERVAL_MS
-    pollAll();
-    const timer = setInterval(pollAll, POLL_INTERVAL_MS);
+    pollAll().catch((err) => appLogger.debug("app", "[AgentPoll] initial poll failed", err));
+    const timer = setInterval(() => {
+      pollAll().catch((err) => appLogger.debug("app", "[AgentPoll] poll failed", err));
+    }, POLL_INTERVAL_MS);
 
     onCleanup(() => clearInterval(timer));
   });
