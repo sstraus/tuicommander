@@ -1,3 +1,4 @@
+import { batch } from "solid-js";
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
 import { appLogger } from "./appLogger";
@@ -156,39 +157,47 @@ function createUIStore() {
     // Panel toggles — FB, MD, Diff are mutually exclusive
     toggleDiffPanel(): void {
       const next = !state.diffPanelVisible;
-      setState("diffPanelVisible", next);
-      if (next) {
-        setState("markdownPanelVisible", false);
-        setState("fileBrowserPanelVisible", false);
-      }
+      batch(() => {
+        setState("diffPanelVisible", next);
+        if (next) {
+          setState("markdownPanelVisible", false);
+          setState("fileBrowserPanelVisible", false);
+        }
+      });
       saveUIPrefs();
     },
 
     toggleMarkdownPanel(): void {
       const next = !state.markdownPanelVisible;
-      setState("markdownPanelVisible", next);
-      if (next) {
-        setState("diffPanelVisible", false);
-        setState("fileBrowserPanelVisible", false);
-      }
+      batch(() => {
+        setState("markdownPanelVisible", next);
+        if (next) {
+          setState("diffPanelVisible", false);
+          setState("fileBrowserPanelVisible", false);
+        }
+      });
       saveUIPrefs();
     },
 
     setDiffPanelVisible(visible: boolean): void {
-      setState("diffPanelVisible", visible);
-      if (visible) {
-        setState("markdownPanelVisible", false);
-        setState("fileBrowserPanelVisible", false);
-      }
+      batch(() => {
+        setState("diffPanelVisible", visible);
+        if (visible) {
+          setState("markdownPanelVisible", false);
+          setState("fileBrowserPanelVisible", false);
+        }
+      });
       saveUIPrefs();
     },
 
     setMarkdownPanelVisible(visible: boolean): void {
-      setState("markdownPanelVisible", visible);
-      if (visible) {
-        setState("diffPanelVisible", false);
-        setState("fileBrowserPanelVisible", false);
-      }
+      batch(() => {
+        setState("markdownPanelVisible", visible);
+        if (visible) {
+          setState("diffPanelVisible", false);
+          setState("fileBrowserPanelVisible", false);
+        }
+      });
       saveUIPrefs();
     },
 
@@ -204,20 +213,24 @@ function createUIStore() {
 
     toggleFileBrowserPanel(): void {
       const next = !state.fileBrowserPanelVisible;
-      setState("fileBrowserPanelVisible", next);
-      if (next) {
-        setState("diffPanelVisible", false);
-        setState("markdownPanelVisible", false);
-      }
+      batch(() => {
+        setState("fileBrowserPanelVisible", next);
+        if (next) {
+          setState("diffPanelVisible", false);
+          setState("markdownPanelVisible", false);
+        }
+      });
       saveUIPrefs();
     },
 
     setFileBrowserPanelVisible(visible: boolean): void {
-      setState("fileBrowserPanelVisible", visible);
-      if (visible) {
-        setState("diffPanelVisible", false);
-        setState("markdownPanelVisible", false);
-      }
+      batch(() => {
+        setState("fileBrowserPanelVisible", visible);
+        if (visible) {
+          setState("diffPanelVisible", false);
+          setState("markdownPanelVisible", false);
+        }
+      });
       saveUIPrefs();
     },
 
@@ -297,8 +310,10 @@ function createUIStore() {
 
     // Loading state
     setLoading(loading: boolean, message?: string): void {
-      setState("isLoading", loading);
-      setState("loadingMessage", message || "");
+      batch(() => {
+        setState("isLoading", loading);
+        setState("loadingMessage", message || "");
+      });
     },
   };
 

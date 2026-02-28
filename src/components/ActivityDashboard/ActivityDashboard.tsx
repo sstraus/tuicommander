@@ -1,38 +1,27 @@
-import { Component, For, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { activityDashboardStore } from "../../stores/activityDashboard";
 import { terminalsStore } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
-import { appLogger } from "../../stores/appLogger";
 import { formatRelativeTime } from "../../utils/time";
 import s from "./ActivityDashboard.module.css";
 
 /** Derive status label and CSS class from terminal state */
 function getTerminalStatus(
-  termId: string,
+  _termId: string,
   shellState: string | null,
   awaitingInput: string | null,
   sessionId: string | null,
 ): { label: string; className: string } {
-  let result: { label: string; className: string };
-  let reason: string;
   if (sessionId && rateLimitStore.isRateLimited(sessionId)) {
-    result = { label: "Rate limited", className: s.statusRateLimited };
-    reason = `rateLimitStore.isRateLimited(${sessionId})=true`;
+    return { label: "Rate limited", className: s.statusRateLimited };
   } else if (awaitingInput) {
-    result = { label: "Waiting for input", className: s.statusWaiting };
-    reason = `awaitingInput="${awaitingInput}"`;
+    return { label: "Waiting for input", className: s.statusWaiting };
   } else if (shellState === "busy") {
-    result = { label: "Working", className: s.statusWorking };
-    reason = `shellState="busy"`;
+    return { label: "Working", className: s.statusWorking };
   } else if (shellState === "idle") {
-    result = { label: "Idle", className: s.statusIdle };
-    reason = `shellState="idle"`;
-  } else {
-    result = { label: "—", className: s.statusIdle };
-    reason = `shellState=${shellState === null ? "null" : `"${shellState}"`} (fallthrough)`;
+    return { label: "Idle", className: s.statusIdle };
   }
-  appLogger.debug("app", `[ActivityDash] ${termId} → "${result.label}" because ${reason}`);
-  return result;
+  return { label: "—", className: s.statusIdle };
 }
 
 /** Truncate a prompt to a single line for display */
@@ -76,9 +65,7 @@ export const ActivityDashboard: Component = () => {
     requestAnimationFrame(() => terminalsStore.get(termId)?.ref?.focus());
   };
 
-  const terminals = () => {
-    // Force re-read on tick for relative timestamps
-    void setTick;
+  const terminals = createMemo(() => {
     const ids = terminalsStore.getAttachedIds();
     return ids.map((id) => {
       const term = terminalsStore.get(id);
@@ -104,7 +91,7 @@ export const ActivityDashboard: Component = () => {
       agentIntent: string | null;
       isActive: boolean;
     }>;
-  };
+  });
 
   return (
     <Show when={isOpen()}>

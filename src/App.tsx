@@ -320,12 +320,17 @@ const App: Component = () => {
   });
 
   // Prevent system sleep while any terminal is busy (debounced — Story 258/405)
+  let lastSleepBlocked: boolean | null = null;
   createEffect(() => {
     if (!isTauri()) return;
     const enabled = settingsStore.state.preventSleepWhenBusy;
     const anyBusy = terminalsStore.isAnyBusy();
+    const shouldBlock = enabled && anyBusy;
 
-    if (enabled && anyBusy) {
+    if (shouldBlock === lastSleepBlocked) return;
+    lastSleepBlocked = shouldBlock;
+
+    if (shouldBlock) {
       invoke("block_sleep").catch((err) =>
         appLogger.warn("app", "Failed to block sleep", err),
       );

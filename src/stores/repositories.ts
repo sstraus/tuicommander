@@ -1,3 +1,4 @@
+import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
 import type { SavedTerminal } from "../types";
@@ -319,10 +320,12 @@ function createRepositoriesStore() {
       const branch = state.repositories[repoPath]?.branches[branchName];
       if (branch && !branch.terminals.includes(terminalId)) {
         appLogger.info("terminal", `addTerminalToBranch ${branchName} += ${terminalId}`, { before: [...branch.terminals] });
-        setState("repositories", repoPath, "branches", branchName, "terminals", (t) => [...t, terminalId]);
-        if (!branch.hadTerminals) {
-          setState("repositories", repoPath, "branches", branchName, "hadTerminals", true);
-        }
+        batch(() => {
+          setState("repositories", repoPath, "branches", branchName, "terminals", (t) => [...t, terminalId]);
+          if (!branch.hadTerminals) {
+            setState("repositories", repoPath, "branches", branchName, "hadTerminals", true);
+          }
+        });
         save();
       }
     },
@@ -593,8 +596,10 @@ function createRepositoriesStore() {
       if (exists) return null;
 
       const id = generateGroupId();
-      setState("groups", id, { id, name, color: "", collapsed: false, repoOrder: [] });
-      setState("groupOrder", [...state.groupOrder, id]);
+      batch(() => {
+        setState("groups", id, { id, name, color: "", collapsed: false, repoOrder: [] });
+        setState("groupOrder", [...state.groupOrder, id]);
+      });
       save();
       return id;
     },

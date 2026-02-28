@@ -1,3 +1,4 @@
+import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type { AgentType } from "../agents";
 import { appLogger } from "./appLogger";
@@ -167,9 +168,11 @@ function createTerminalsStore() {
     setActive(id: string | null): void {
       if (id) {
         appLogger.debug("terminal", `setActive(${id})`, { shellState: state.terminals[id]?.shellState });
-        setState("terminals", id, "activity", false);
       }
-      setState("activeId", id);
+      batch(() => {
+        if (id) setState("terminals", id, "activity", false);
+        setState("activeId", id);
+      });
     },
 
     /** Update terminal data */

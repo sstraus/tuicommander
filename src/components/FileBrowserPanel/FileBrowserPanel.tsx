@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, For, Show, onCleanup } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
@@ -131,7 +131,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   });
 
   /** Visible entries: search results when query active, directory listing otherwise */
-  const filteredEntries = () => searchQuery().trim() ? searchResults() : entries();
+  const filteredEntries = createMemo(() => searchQuery().trim() ? searchResults() : entries());
 
   const refresh = () => setRefreshTrigger((n) => n + 1);
 
