@@ -1,0 +1,43 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.idle {
+  background: rgba(78, 201, 176, 0.15);
+  color: var(--success);
+}
+
+.busy {
+  background: rgba(89, 168, 221, 0.15);
+  color: var(--accent);
+}
+
+.question {
+  background: rgba(255, 215, 0, 0.15);
+  color: #ffd700;
+  animation: pulse-badge 1.5s ease infinite;
+}
+
+.error {
+  background: rgba(244, 135, 113, 0.15);
+  color: var(--error);
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .question {
+    animation: none;
+  }
+}
