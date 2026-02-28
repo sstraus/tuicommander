@@ -485,7 +485,15 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Mic button in status bar: hold to record, release to transcribe
 - Transcribed text inserts into the focused input element (textarea, input, contenteditable); falls back to active terminal PTY when no text input has focus. Focus target captured at key-press time.
 
-### 9.4 Configuration
+### 9.4 Streaming Transcription
+- Real-time partial results during push-to-talk via adaptive sliding windows
+- First partial within ~1.5s, subsequent windows grow to 3s for quality
+- VAD energy gate skips silence windows (prevents hallucination)
+- Floating toast shows partial text above status bar during recording
+- Prompt token carry-forward across windows for continuity
+- Final transcription pass on tail audio at key release
+
+### 9.5 Configuration
 - Enable/disable, hotkey, language (auto-detect or explicit), model download
 - Audio device selection
 - Text correction dictionary (e.g., "new line" → `\n`)
