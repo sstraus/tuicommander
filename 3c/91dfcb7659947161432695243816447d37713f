@@ -1,0 +1,33 @@
+docs/backend/mcp-http.md
+  4edf3f37670677e5 140-151
+docs/FEATURES.md
+  4edf3f37670677e5 824-873
+docs/api/http-api.md
+  4edf3f37670677e5 119-146
+CHANGELOG.md
+  4edf3f37670677e5 32
+SPEC.md
+  4edf3f37670677e5 331
+docs/user-guide/remote-access.md
+  4edf3f37670677e5 53-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "3c91dfcb7659947161432695243816447d37713f",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 125,
+      "total_deletions": 0,
+      "accepted_lines": 125,
+      "overriden_lines": 0
+    }
+  }
+}
