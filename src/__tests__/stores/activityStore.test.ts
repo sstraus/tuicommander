@@ -303,41 +303,55 @@ describe("activityStore persistence", () => {
   });
 
   describe("save on mutations", () => {
+    // saveActivity is debounced (300ms) — use fake timers to flush
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
     it("persists after addItem", () => {
       store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true });
+      vi.advanceTimersByTime(300);
       expect(mockInvoke).toHaveBeenCalledWith("save_activity", { items: expect.any(Array) });
     });
 
     it("persists after removeItem", () => {
       store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true });
+      vi.advanceTimersByTime(300);
       mockInvoke.mockClear();
       store.removeItem("x");
+      vi.advanceTimersByTime(300);
       expect(mockInvoke).toHaveBeenCalledWith("save_activity", { items: expect.any(Array) });
     });
 
     it("persists after dismissItem", () => {
       store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true });
+      vi.advanceTimersByTime(300);
       mockInvoke.mockClear();
       store.dismissItem("x");
+      vi.advanceTimersByTime(300);
       expect(mockInvoke).toHaveBeenCalledWith("save_activity", { items: expect.any(Array) });
     });
 
     it("persists after dismissSection", () => {
       store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true });
+      vi.advanceTimersByTime(300);
       mockInvoke.mockClear();
       store.dismissSection("s");
+      vi.advanceTimersByTime(300);
       expect(mockInvoke).toHaveBeenCalledWith("save_activity", { items: expect.any(Array) });
     });
 
     it("persists after updateItem", () => {
       store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true });
+      vi.advanceTimersByTime(300);
       mockInvoke.mockClear();
       store.updateItem("x", { title: "Updated" });
+      vi.advanceTimersByTime(300);
       expect(mockInvoke).toHaveBeenCalledWith("save_activity", { items: expect.any(Array) });
     });
 
     it("strips onClick from persisted items", () => {
       store.addItem({ id: "x", pluginId: "p1", sectionId: "s", title: "T", icon: "<svg/>", dismissible: true, onClick: () => {} });
+      vi.advanceTimersByTime(300);
       const saveCall = mockInvoke.mock.calls.find((c) => c[0] === "save_activity");
       expect(saveCall).toBeDefined();
       const saved = saveCall![1].items[0];

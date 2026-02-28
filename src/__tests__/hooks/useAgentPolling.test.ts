@@ -27,8 +27,8 @@ describe("useAgentPolling", () => {
       const { useAgentPolling } = await import("../../hooks/useAgentPolling");
       useAgentPolling();
 
-      // The initial poll fires immediately
-      await vi.advanceTimersByTimeAsync(0);
+      // Poll fires on first interval tick (3s), not immediately
+      await vi.advanceTimersByTimeAsync(3000);
       await Promise.resolve(); // flush microtasks
 
       expect(mockInvoke).toHaveBeenCalledWith("get_session_foreground_process", {
@@ -85,7 +85,7 @@ describe("useAgentPolling", () => {
       const { useAgentPolling } = await import("../../hooks/useAgentPolling");
       useAgentPolling();
 
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(3000);
       await Promise.resolve();
 
       expect(store.get(id)?.agentType).toBeNull();
@@ -105,7 +105,7 @@ describe("useAgentPolling", () => {
       useAgentPolling();
 
       // Should not throw
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(3000);
       await Promise.resolve();
 
       // agentType should remain null (default)

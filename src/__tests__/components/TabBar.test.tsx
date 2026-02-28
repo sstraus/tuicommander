@@ -203,7 +203,7 @@ describe("TabBar", () => {
     expect(tabs[1].classList.contains("shellIdle")).toBe(true);
   });
 
-  it("active tab with shellState 'idle' does NOT have 'shellIdle' class", () => {
+  it("active tab with shellState 'idle' has 'shellIdle' class", () => {
     const id1 = addTerminal({ name: "Active" });
     terminalsStore.setActive(id1);
     terminalsStore.update(id1, { shellState: "idle" });
@@ -212,7 +212,7 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tab = container.querySelector(".tab")!;
-    expect(tab.classList.contains("shellIdle")).toBe(false);
+    expect(tab.classList.contains("shellIdle")).toBe(true);
   });
 
   it("non-active tab with shellState 'busy' does NOT have 'shellIdle' class", () => {

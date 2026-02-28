@@ -1,4 +1,4 @@
-import { createStore, produce } from "solid-js/store";
+import { createStore, produce, reconcile } from "solid-js/store";
 import type { RateLimitInfo } from "../rate-limit";
 import { isStillRateLimited, getRemainingWaitTime } from "../rate-limit";
 
@@ -69,7 +69,7 @@ function createRateLimitStore() {
 
     /** Clear all rate limits */
     clearAll(): void {
-      setState("rateLimits", {});
+      setState("rateLimits", reconcile({}));
     },
   };
 
