@@ -2,13 +2,10 @@ import { createSignal, Match, Switch } from "solid-js";
 import { TopBar } from "./components/TopBar";
 import { BottomTabs, type TabId } from "./components/BottomTabs";
 import { SessionsScreen } from "./screens/SessionsScreen";
+import { ActivityScreen } from "./screens/ActivityScreen";
 import { QuestionBanner } from "./components/QuestionBanner";
 import { useSessions } from "./useSessions";
 import styles from "./MobileApp.module.css";
-
-function ActivityPlaceholder() {
-  return <div class={styles.placeholder}>Activity screen</div>;
-}
 function SettingsPlaceholder() {
   return <div class={styles.placeholder}>Settings screen</div>;
 }
@@ -43,7 +40,12 @@ export default function MobileApp() {
             />
           </Match>
           <Match when={activeTab() === "activity"}>
-            <ActivityPlaceholder />
+            <ActivityScreen
+              onNavigateSession={(id) => {
+                setActiveTab("sessions");
+                console.log("Navigate to session:", id);
+              }}
+            />
           </Match>
           <Match when={activeTab() === "settings"}>
             <SettingsPlaceholder />
