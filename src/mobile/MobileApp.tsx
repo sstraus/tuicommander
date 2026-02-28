@@ -3,12 +3,10 @@ import { TopBar } from "./components/TopBar";
 import { BottomTabs, type TabId } from "./components/BottomTabs";
 import { SessionsScreen } from "./screens/SessionsScreen";
 import { ActivityScreen } from "./screens/ActivityScreen";
+import { SettingsScreen } from "./screens/SettingsScreen";
 import { QuestionBanner } from "./components/QuestionBanner";
 import { useSessions } from "./useSessions";
 import styles from "./MobileApp.module.css";
-function SettingsPlaceholder() {
-  return <div class={styles.placeholder}>Settings screen</div>;
-}
 
 export default function MobileApp() {
   const [activeTab, setActiveTab] = createSignal<TabId>("sessions");
@@ -48,7 +46,7 @@ export default function MobileApp() {
             />
           </Match>
           <Match when={activeTab() === "settings"}>
-            <SettingsPlaceholder />
+            <SettingsScreen />
           </Match>
         </Switch>
       </main>
