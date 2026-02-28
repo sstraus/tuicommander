@@ -153,6 +153,7 @@ pub(crate) fn spawn_reader_thread(
         let running = running.clone();
         let app = app.clone();
         let session_id = session_id.clone();
+        let event_bus = state.event_bus.clone();
         std::thread::spawn(move || {
             while running.load(Ordering::Relaxed) {
                 std::thread::sleep(SILENCE_CHECK_INTERVAL);
@@ -161,9 +162,18 @@ pub(crate) fn spawn_reader_thread(
                 }
                 let question = silence.lock().check_silence();
                 if let Some(prompt_text) = question {
+                    let parsed = ParsedEvent::Question { prompt_text };
+                    // Broadcast to SSE/WebSocket consumers
+                    if let Ok(json) = serde_json::to_value(&parsed) {
+                        let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
+                            session_id: session_id.clone(),
+                            parsed: json,
+                        });
+                    }
+                    // Tauri IPC for desktop backward compat
                     let _ = app.emit(
                         &format!("pty-parsed-{session_id}"),
-                        &ParsedEvent::Question { prompt_text },
+                        &parsed,
                     );
                 }
             }
@@ -249,9 +259,20 @@ pub(crate) fn spawn_reader_thread(
                             } else {
                                 None
                             };
+                            let emit_event = resolved.as_ref().unwrap_or(event);
+                            // Broadcast to SSE/WebSocket consumers (skip Intent — internal only)
+                            if !matches!(event, ParsedEvent::Intent { .. }) {
+                                if let Ok(json) = serde_json::to_value(emit_event) {
+                                    let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
+                                        session_id: session_id.clone(),
+                                        parsed: json,
+                                    });
+                                }
+                            }
+                            // Tauri IPC for desktop backward compat
                             let _ = app.emit(
                                 &format!("pty-parsed-{session_id}"),
-                                resolved.as_ref().unwrap_or(event),
+                                emit_event,
                             );
                         }
 
@@ -259,7 +280,7 @@ pub(crate) fn spawn_reader_thread(
                         let last_q_line = extract_last_question_line(&data);
                         silence.lock().on_chunk(regex_found_question, last_q_line);
 
-                        // Colorize [[intent: ...]] tokens yellow before sending to xterm
+                        // Colorize [intent: ...] tokens yellow before sending to xterm
                         let has_intent = events.iter().any(|e| matches!(e, ParsedEvent::Intent { .. }));
                         let data = if has_intent { colorize_intent(&data) } else { data };
 
@@ -305,6 +326,11 @@ pub(crate) fn spawn_reader_thread(
                 },
             );
         }
+        // Broadcast to SSE/WebSocket consumers
+        let _ = state.event_bus.send(crate::state::AppEvent::PtyExit {
+            session_id: session_id.clone(),
+        });
+        // Tauri IPC for desktop backward compat
         let _ = app.emit(
             &format!("pty-exit-{session_id}"),
             serde_json::json!({ "session_id": session_id }),
@@ -673,9 +699,18 @@ pub(crate) fn write_pty(
                         if word_count >= 10 {
                             state.last_prompts.insert(session_id.clone(), content.clone());
                         }
+                        let parsed = ParsedEvent::UserInput { content };
+                        // Broadcast to SSE/WebSocket consumers
+                        if let Ok(json) = serde_json::to_value(&parsed) {
+                            let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
+                                session_id: session_id.clone(),
+                                parsed: json,
+                            });
+                        }
+                        // Tauri IPC for desktop backward compat
                         let _ = app.emit(
                             &format!("pty-parsed-{session_id}"),
-                            &ParsedEvent::UserInput { content },
+                            &parsed,
                         );
                     }
                 }

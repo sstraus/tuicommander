@@ -37,6 +37,8 @@ pub(super) struct ResizeRequest {
 #[derive(Deserialize)]
 pub(super) struct OutputQuery {
     pub limit: Option<usize>,
+    /// When set to "text", ANSI escape sequences are stripped from the output.
+    pub format: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -262,4 +264,13 @@ pub(super) struct MergePrRequest {
 pub(super) struct RecentCommitsQuery {
     pub path: String,
     pub count: Option<u32>,
+}
+
+// --- Batch PR statuses ---
+
+#[derive(Deserialize)]
+pub(super) struct GetAllPrStatusesRequest {
+    pub paths: Vec<String>,
+    #[serde(default)]
+    pub include_merged: bool,
 }

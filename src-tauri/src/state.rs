@@ -4,10 +4,54 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
+
+// ---------------------------------------------------------------------------
+// AppEvent — unified event bus for all backend events
+// ---------------------------------------------------------------------------
+
+/// Events broadcast to SSE/WebSocket consumers via `tokio::sync::broadcast`.
+/// All event producers (PTY reader, watchers, session lifecycle, plugins) send
+/// to this channel. Consumers: SSE endpoint, WebSocket multiplexer, session
+/// state accumulator, Tauri bridge (desktop backward compat).
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "event", content = "payload")]
+pub enum AppEvent {
+    #[serde(rename = "head-changed")]
+    HeadChanged {
+        repo_path: String,
+        branch: String,
+    },
+    #[serde(rename = "repo-changed")]
+    RepoChanged {
+        repo_path: String,
+    },
+    #[serde(rename = "session-created")]
+    SessionCreated {
+        session_id: String,
+        cwd: Option<String>,
+    },
+    #[serde(rename = "session-closed")]
+    SessionClosed {
+        session_id: String,
+    },
+    #[serde(rename = "pty-parsed")]
+    PtyParsed {
+        session_id: String,
+        parsed: serde_json::Value,
+    },
+    #[serde(rename = "pty-exit")]
+    PtyExit {
+        session_id: String,
+    },
+    #[serde(rename = "plugin-changed")]
+    PluginChanged {
+        plugin_ids: Vec<String>,
+    },
+}
 
 /// TTL for git operations (local disk): 5 seconds
 pub(crate) const GIT_CACHE_TTL: Duration = Duration::from_secs(5);
@@ -575,6 +619,11 @@ pub struct AppState {
     /// Centralized application log ring buffer (1000 entries).
     /// Frontend pushes via push_log, reads via get_logs.
     pub(crate) log_buffer: Mutex<crate::app_logger::LogRingBuffer>,
+    /// Broadcast channel for all backend events (SSE, WebSocket, state accumulator).
+    /// Capacity 256 — lagged receivers get `RecvError::Lagged` and should reconnect.
+    pub(crate) event_bus: tokio::sync::broadcast::Sender<AppEvent>,
+    /// Monotonic counter for SSE event IDs.
+    pub(crate) event_counter: Arc<AtomicU64>,
 }
 
 impl AppState {
@@ -950,6 +999,8 @@ mod tests {
             last_prompts: dashmap::DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
             log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
+            event_bus: tokio::sync::broadcast::channel(256).0,
+            event_counter: Arc::new(AtomicU64::new(0)),
         }
     }
 

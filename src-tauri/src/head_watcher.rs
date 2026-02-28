@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::state::AppEvent;
 use crate::AppState;
 
 /// Debounce interval to coalesce rapid HEAD writes (e.g. rebase, merge)
@@ -30,12 +31,13 @@ fn read_current_branch(repo_path: &Path) -> Option<String> {
 }
 
 /// Start watching .git/HEAD for a repository. Emits `"head-changed"` when the branch changes.
+/// Sends events to both the broadcast channel (for SSE/WebSocket consumers) and Tauri IPC
+/// (for desktop backward compat). The `app_handle` is optional for browser-only mode.
 pub(crate) fn start_watching(
     repo_path: &str,
-    app_handle: &AppHandle,
+    app_handle: Option<&AppHandle>,
+    state: &Arc<AppState>,
 ) -> Result<(), String> {
-    let state = app_handle.state::<Arc<AppState>>();
-
     // Don't double-watch
     if state.head_watchers.contains_key(repo_path) {
         return Ok(());
@@ -47,7 +49,8 @@ pub(crate) fn start_watching(
 
     let repo_path_owned = repo_path.to_string();
     let repo_clone = repo.clone();
-    let handle = app_handle.clone();
+    let handle = app_handle.cloned();
+    let event_bus = state.event_bus.clone();
 
     let mut debouncer = new_debouncer(
         Duration::from_millis(DEBOUNCE_MS),
@@ -70,13 +73,21 @@ pub(crate) fn start_watching(
             }
 
             if let Some(branch) = read_current_branch(&repo_clone) {
-                let _ = handle.emit(
-                    "head-changed",
-                    HeadChangedPayload {
-                        repo_path: repo_path_owned.clone(),
-                        branch,
-                    },
-                );
+                // Broadcast to SSE/WebSocket consumers
+                let _ = event_bus.send(AppEvent::HeadChanged {
+                    repo_path: repo_path_owned.clone(),
+                    branch: branch.clone(),
+                });
+                // Tauri IPC for desktop backward compat
+                if let Some(ref handle) = handle {
+                    let _ = handle.emit(
+                        "head-changed",
+                        HeadChangedPayload {
+                            repo_path: repo_path_owned.clone(),
+                            branch,
+                        },
+                    );
+                }
             }
         },
     )
@@ -93,8 +104,7 @@ pub(crate) fn start_watching(
 }
 
 /// Stop watching a repository's HEAD file.
-pub(crate) fn stop_watching(repo_path: &str, app_handle: &AppHandle) {
-    let state = app_handle.state::<Arc<AppState>>();
+pub(crate) fn stop_watching(repo_path: &str, state: &Arc<AppState>) {
     // Dropping the Debouncer stops the watcher automatically
     state.head_watchers.remove(repo_path);
 }
@@ -106,7 +116,8 @@ pub(crate) fn start_head_watcher(
     repo_path: String,
     app_handle: AppHandle,
 ) -> Result<(), String> {
-    start_watching(&repo_path, &app_handle)
+    let state = app_handle.state::<Arc<AppState>>();
+    start_watching(&repo_path, Some(&app_handle), &state)
 }
 
 #[tauri::command]
@@ -114,5 +125,6 @@ pub(crate) fn stop_head_watcher(
     repo_path: String,
     app_handle: AppHandle,
 ) {
-    stop_watching(&repo_path, &app_handle);
+    let state = app_handle.state::<Arc<AppState>>();
+    stop_watching(&repo_path, &state);
 }

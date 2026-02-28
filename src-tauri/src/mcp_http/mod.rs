@@ -8,8 +8,10 @@ mod github_routes;
 mod mcp_transport;
 mod plugin_docs;
 mod session;
+mod sse_routes;
 mod static_files;
 mod types;
+mod watcher_routes;
 mod worktree_routes;
 
 use crate::AppState;
@@ -146,6 +148,11 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/repo/prs", get(github_routes::repo_pr_statuses))
         .route("/repo/branches", get(git_routes::repo_branches))
         .route("/repo/ci", get(github_routes::repo_ci_checks))
+        .route("/repo/branches/merged", get(git_routes::repo_merged_branches))
+        .route("/repo/prs/batch", post(github_routes::repo_all_pr_statuses))
+        // Watchers (for browser/mobile clients)
+        .route("/watchers/head", post(watcher_routes::start_head_watcher_http).delete(watcher_routes::stop_head_watcher_http))
+        .route("/watchers/repo", post(watcher_routes::start_repo_watcher_http).delete(watcher_routes::stop_repo_watcher_http))
         // Config
         .route("/config", get(config_routes::get_config).put(config_routes::put_config))
         .route("/config/hash-password", post(config_routes::hash_password_http))
@@ -153,6 +160,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/config/ui-prefs", get(config_routes::get_ui_prefs).put(config_routes::put_ui_prefs))
         .route("/config/repo-settings", get(config_routes::get_repo_settings).put(config_routes::put_repo_settings))
         .route("/config/repo-settings/has-custom", get(config_routes::check_has_custom_settings_http))
+        .route("/config/repo-defaults", get(config_routes::get_repo_defaults).put(config_routes::put_repo_defaults))
         .route("/config/repositories", get(config_routes::get_repositories).put(config_routes::put_repositories))
         .route("/config/prompt-library", get(config_routes::get_prompt_library).put(config_routes::put_prompt_library))
         // Logs
@@ -201,8 +209,11 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/repo/recent-commits", get(git_routes::get_recent_commits_http))
         // System
         .route("/system/local-ips", get(git_routes::get_local_ips_http))
+        .route("/system/local-ip", get(git_routes::get_local_ip_http))
         // Plugins
         .route("/plugins/list", get(git_routes::list_user_plugins_http))
+        // Server-Sent Events (for browser/mobile clients)
+        .route("/events", get(sse_routes::sse_events))
         // MCP status + instructions
         .route("/mcp/status", get(config_routes::get_mcp_status_http))
         .route("/mcp/instructions", get(mcp_transport::mcp_instructions_http))
@@ -397,6 +408,8 @@ mod tests {
             last_prompts: DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
             log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
+            event_bus: tokio::sync::broadcast::channel(256).0,
+            event_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         })
     }
 

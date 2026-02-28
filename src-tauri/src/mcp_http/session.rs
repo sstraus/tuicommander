@@ -110,6 +110,7 @@ pub(super) async fn get_output(
     Query(query): Query<OutputQuery>,
 ) -> impl IntoResponse {
     let limit = query.limit.unwrap_or(8192);
+    let strip = query.format.as_deref() == Some("text");
     let ring = match state.output_buffers.get(&session_id) {
         Some(r) => r,
         None => {
@@ -120,11 +121,13 @@ pub(super) async fn get_output(
         }
     };
     let (bytes, total_written) = ring.lock().read_last(limit);
-    let data = String::from_utf8_lossy(&bytes).to_string();
+    let raw = String::from_utf8_lossy(&bytes).to_string();
+    let data = if strip { crate::output_parser::strip_ansi(&raw) } else { raw };
     (
         StatusCode::OK,
         Json(serde_json::json!({
             "data": data,
+            "data_length": data.len(),
             "total_written": total_written
         })),
     )
@@ -154,7 +157,11 @@ pub(super) async fn close_session(
         }
         drop(session);
 
-        // Notify Tauri frontend that the session was closed
+        // Broadcast to SSE/WebSocket consumers
+        let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
+            session_id: session_id.clone(),
+        });
+        // Tauri IPC for desktop backward compat
         if let Some(app) = state.app_handle.read().as_ref() {
             let _ = app.emit("session-closed", serde_json::json!({
                 "session_id": session_id,
@@ -261,6 +268,12 @@ pub(super) async fn create_session(
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
 
+    // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
+    let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
+        session_id: session_id.clone(),
+        cwd: body.cwd.clone(),
+    });
+
     // Use full reader thread (with Tauri events) when AppHandle is available,
     // fall back to headless for tests or pre-setup scenarios
     let app_handle = state.app_handle.read().clone();
@@ -270,7 +283,7 @@ pub(super) async fn create_session(
         spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
     }
 
-    // Notify Tauri frontend about the new session
+    // Tauri IPC for desktop backward compat
     if let Some(app) = app_handle {
         let _ = app.emit("session-created", serde_json::json!({
             "session_id": session_id,
@@ -439,6 +452,12 @@ pub(super) async fn create_session_with_worktree(
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
 
+    // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
+    let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
+        session_id: session_id.clone(),
+        cwd: Some(worktree_path_str.clone()),
+    });
+
     let app_handle = state.app_handle.read().clone();
     if let Some(ref app) = app_handle {
         spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state);
@@ -446,6 +465,7 @@ pub(super) async fn create_session_with_worktree(
         spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
     }
 
+    // Tauri IPC for desktop backward compat
     if let Some(app) = app_handle {
         let _ = app.emit("session-created", serde_json::json!({
             "session_id": session_id,
@@ -465,19 +485,22 @@ pub(super) async fn create_session_with_worktree(
 
 /// WebSocket upgrade handler for streaming PTY output.
 /// Bidirectional: server sends PTY output, client sends PTY input.
+/// Supports `?format=text` query param to strip ANSI escape sequences.
 pub(super) async fn ws_stream(
     ws: WebSocketUpgrade,
     Path(id): Path<String>,
+    Query(query): Query<OutputQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
     if !state.sessions.contains_key(&id) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    ws.on_upgrade(move |socket| handle_ws_session(socket, id, state))
+    let strip = query.format.as_deref() == Some("text");
+    ws.on_upgrade(move |socket| handle_ws_session(socket, id, state, strip))
 }
 
 /// Handle a WebSocket connection for a PTY session.
-async fn handle_ws_session(socket: WebSocket, session_id: String, state: Arc<AppState>) {
+async fn handle_ws_session(socket: WebSocket, session_id: String, state: Arc<AppState>, strip_ansi: bool) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     // Register a channel for receiving PTY output broadcasts
@@ -492,15 +515,27 @@ async fn handle_ws_session(socket: WebSocket, session_id: String, state: Arc<App
     if let Some(ring) = state.output_buffers.get(&session_id) {
         let (data, _) = ring.lock().read_last(OUTPUT_RING_BUFFER_CAPACITY);
         if !data.is_empty() {
-            let text = String::from_utf8_lossy(&data).into_owned();
-            let _ = futures_util::SinkExt::send(&mut ws_sender, Message::Text(text.into())).await;
+            let mut text = String::from_utf8_lossy(&data).into_owned();
+            if strip_ansi {
+                text = crate::output_parser::strip_ansi(&text);
+            }
+            if !text.is_empty() {
+                let _ = futures_util::SinkExt::send(&mut ws_sender, Message::Text(text.into())).await;
+            }
         }
     }
 
     // Spawn a task to forward PTY output to the WebSocket
     let send_task = tokio::spawn(async move {
         while let Some(data) = rx.recv().await {
-            if futures_util::SinkExt::send(&mut ws_sender, Message::Text(data.into()))
+            let out = if strip_ansi {
+                let stripped = crate::output_parser::strip_ansi(&data);
+                if stripped.is_empty() { continue; }
+                stripped
+            } else {
+                data
+            };
+            if futures_util::SinkExt::send(&mut ws_sender, Message::Text(out.into()))
                 .await
                 .is_err()
             {

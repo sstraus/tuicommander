@@ -214,6 +214,12 @@ pub(super) async fn spawn_agent_session(
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
 
+    // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
+    let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
+        session_id: session_id.clone(),
+        cwd: body.cwd.clone(),
+    });
+
     let app_handle = state.app_handle.read().clone();
     if let Some(ref app) = app_handle {
         spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state);
@@ -221,6 +227,7 @@ pub(super) async fn spawn_agent_session(
         spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
     }
 
+    // Tauri IPC for desktop backward compat
     if let Some(app) = app_handle {
         let _ = app.emit("session-created", serde_json::json!({
             "session_id": session_id,

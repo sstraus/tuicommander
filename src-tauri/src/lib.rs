@@ -316,7 +316,7 @@ fn classify_ipv6_addr(ip: &std::net::IpAddr) -> String {
 }
 
 /// Pick preferred IP from a list (Tailscale > Wi-Fi/LAN > any)
-fn pick_preferred_ip(ips: Vec<LocalIpEntry>) -> Option<String> {
+pub(crate) fn pick_preferred_ip(ips: Vec<LocalIpEntry>) -> Option<String> {
     for label_prefix in &["Tailscale", "Wi-Fi", "LAN"] {
         if let Some(e) = ips.iter().find(|e| e.label.contains(label_prefix)) {
             return Some(e.ip.clone());
@@ -557,6 +557,8 @@ pub fn run() {
         last_prompts: DashMap::new(),
         claude_usage_cache: parking_lot::Mutex::new(claude_usage::load_cache_from_disk()),
         log_buffer: parking_lot::Mutex::new(app_logger::LogRingBuffer::new(app_logger::LOG_RING_CAPACITY)),
+        event_bus: tokio::sync::broadcast::channel(256).0,
+        event_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled
@@ -661,10 +663,10 @@ pub fn run() {
             if let Some(repos) = repos_json.get("repos").and_then(|r| r.as_object()) {
                 let handle = app.handle().clone();
                 for repo_path in repos.keys() {
-                    if let Err(e) = head_watcher::start_watching(repo_path, &handle) {
+                    if let Err(e) = head_watcher::start_watching(repo_path, Some(&handle), app_state) {
                         app_logger::log_via_state(app_state, "error", "app", &format!("[HeadWatcher] Failed to watch {repo_path}: {e}"));
                     }
-                    if let Err(e) = repo_watcher::start_watching(repo_path, &handle) {
+                    if let Err(e) = repo_watcher::start_watching(repo_path, Some(&handle), app_state) {
                         app_logger::log_via_state(app_state, "error", "app", &format!("[RepoWatcher] Failed to watch {repo_path}: {e}"));
                     }
                 }

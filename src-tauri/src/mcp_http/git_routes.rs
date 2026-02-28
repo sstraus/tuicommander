@@ -119,6 +119,34 @@ pub(super) async fn get_recent_commits_http(Query(q): Query<RecentCommitsQuery>)
     }
 }
 
+pub(super) async fn repo_merged_branches(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
+    Query(q): Query<PathQuery>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    let path = q.path;
+    // Check cache first (same pattern as Tauri command)
+    if let Some(cached) = crate::AppState::get_cached(&state.merged_branches_cache, &path, crate::state::GIT_CACHE_TTL) {
+        return (StatusCode::OK, Json(serde_json::json!(cached))).into_response();
+    }
+    let state_clone = state.clone();
+    let path_clone = path.clone();
+    match tokio::task::spawn_blocking(move || crate::git::get_merged_branches_impl(std::path::Path::new(&path_clone))).await {
+        Ok(Ok(branches)) => {
+            crate::AppState::set_cached(&state_clone.merged_branches_cache, path, branches.clone());
+            (StatusCode::OK, Json(serde_json::json!(branches))).into_response()
+        }
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+    }
+}
+
+pub(super) async fn get_local_ip_http(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
+) -> impl axum::response::IntoResponse {
+    Json(crate::pick_preferred_ip(crate::get_local_ips_impl(&state)))
+}
+
 pub(super) async fn get_local_ips_http(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
 ) -> impl axum::response::IntoResponse {

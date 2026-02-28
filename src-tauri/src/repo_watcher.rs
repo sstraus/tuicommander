@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::state::AppEvent;
 use crate::AppState;
 
 /// Debounce interval — longer than HEAD watcher because git writes multiple
@@ -49,9 +50,13 @@ pub(crate) fn is_relevant_git_path(path: &Path) -> bool {
 
 /// Start watching `.git/` recursively for a repository.
 /// Emits `"repo-changed"` when relevant files change.
-pub(crate) fn start_watching(repo_path: &str, app_handle: &AppHandle) -> Result<(), String> {
-    let state = app_handle.state::<Arc<AppState>>();
-
+/// Sends events to both the broadcast channel (for SSE/WebSocket consumers) and Tauri IPC
+/// (for desktop backward compat). The `app_handle` is optional for browser-only mode.
+pub(crate) fn start_watching(
+    repo_path: &str,
+    app_handle: Option<&AppHandle>,
+    state: &Arc<AppState>,
+) -> Result<(), String> {
     // Don't double-watch
     if state.repo_watchers.contains_key(repo_path) {
         return Ok(());
@@ -62,7 +67,8 @@ pub(crate) fn start_watching(repo_path: &str, app_handle: &AppHandle) -> Result<
         crate::git::resolve_git_dir(&repo).ok_or_else(|| format!("Cannot find .git for {repo_path}"))?;
 
     let repo_path_owned = repo_path.to_string();
-    let handle = app_handle.clone();
+    let handle = app_handle.cloned();
+    let event_bus = state.event_bus.clone();
 
     let mut debouncer = new_debouncer(
         Duration::from_millis(DEBOUNCE_MS),
@@ -70,7 +76,9 @@ pub(crate) fn start_watching(repo_path: &str, app_handle: &AppHandle) -> Result<
             let events = match events {
                 Ok(evts) => evts,
                 Err(e) => {
-                    crate::app_logger::log_via_handle(&handle, "warn", "app", &format!("[repo_watcher] watcher error for {repo_path_owned}: {e}"));
+                    if let Some(ref handle) = handle {
+                        crate::app_logger::log_via_handle(handle, "warn", "app", &format!("[repo_watcher] watcher error for {repo_path_owned}: {e}"));
+                    }
                     return;
                 }
             };
@@ -84,12 +92,19 @@ pub(crate) fn start_watching(repo_path: &str, app_handle: &AppHandle) -> Result<
                 return;
             }
 
-            let _ = handle.emit(
-                "repo-changed",
-                RepoChangedPayload {
-                    repo_path: repo_path_owned.clone(),
-                },
-            );
+            // Broadcast to SSE/WebSocket consumers
+            let _ = event_bus.send(AppEvent::RepoChanged {
+                repo_path: repo_path_owned.clone(),
+            });
+            // Tauri IPC for desktop backward compat
+            if let Some(ref handle) = handle {
+                let _ = handle.emit(
+                    "repo-changed",
+                    RepoChangedPayload {
+                        repo_path: repo_path_owned.clone(),
+                    },
+                );
+            }
         },
     )
     .map_err(|e| format!("Failed to create repo watcher: {e}"))?;
@@ -127,8 +142,7 @@ pub(crate) fn start_watching(repo_path: &str, app_handle: &AppHandle) -> Result<
 }
 
 /// Stop watching a repository's `.git/` directory.
-pub(crate) fn stop_watching(repo_path: &str, app_handle: &AppHandle) {
-    let state = app_handle.state::<Arc<AppState>>();
+pub(crate) fn stop_watching(repo_path: &str, state: &Arc<AppState>) {
     // Dropping the Debouncer stops the watcher automatically
     state.repo_watchers.remove(repo_path);
 }
@@ -137,12 +151,14 @@ pub(crate) fn stop_watching(repo_path: &str, app_handle: &AppHandle) {
 
 #[tauri::command]
 pub(crate) fn start_repo_watcher(repo_path: String, app_handle: AppHandle) -> Result<(), String> {
-    start_watching(&repo_path, &app_handle)
+    let state = app_handle.state::<Arc<AppState>>();
+    start_watching(&repo_path, Some(&app_handle), &state)
 }
 
 #[tauri::command]
 pub(crate) fn stop_repo_watcher(repo_path: String, app_handle: AppHandle) {
-    stop_watching(&repo_path, &app_handle);
+    let state = app_handle.state::<Arc<AppState>>();
+    stop_watching(&repo_path, &state);
 }
 
 #[cfg(test)]

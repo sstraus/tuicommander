@@ -836,7 +836,7 @@ fn build_multi_repo_pr_query(
 
 /// Fetch PR statuses for all repos in a single batched GraphQL call.
 /// On failure (network, auth, complexity), returns Err so the caller can fall back to per-repo calls.
-fn get_all_pr_statuses_impl(
+pub(crate) fn get_all_pr_statuses_impl(
     paths: &[String],
     include_merged: bool,
     state: &AppState,

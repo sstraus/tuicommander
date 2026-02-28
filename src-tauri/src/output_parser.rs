@@ -57,7 +57,7 @@ pub enum ParsedEvent {
         error_kind: String, // "server", "auth", "unknown"
     },
     /// Agent-declared intent: what the LLM is currently working on.
-    /// Emitted via `[[intent: <text>]]` token in agent output.
+    /// Emitted via `[intent: <text>]` token in agent output.
     #[serde(rename = "intent")]
     Intent {
         text: String,
@@ -147,7 +147,7 @@ impl OutputParser {
             events.push(evt);
         }
 
-        // Intent declaration: [[intent: <text>]] or ⟦intent: <text>⟧
+        // Intent declaration: [intent: <text>] or [[intent: <text>]] or ⟦intent: <text>⟧
         if let Some(evt) = parse_intent(&clean) {
             events.push(evt);
         }
@@ -697,31 +697,32 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Colorize `[[intent: ...]]` tokens in raw PTY output with ANSI yellow (dim).
+/// Colorize `[intent: ...]` tokens in raw PTY output with ANSI yellow (dim).
 /// Called on the raw (ANSI-bearing) data before it is sent to xterm.js so the
 /// intent line stands out visually.  Only invoke when `parse()` returned an
 /// `Intent` event — avoids regex work on every chunk.
 pub fn colorize_intent(raw: &str) -> String {
     lazy_static::lazy_static! {
         static ref RAW_INTENT_RE: regex::Regex =
-            regex::Regex::new(r"(?:\[\[|\x{27E6})intent:\s*.+?\s*(?:\]\]|\x{27E7})").unwrap();
+            regex::Regex::new(r"(?:\[\[?|\x{27E6})intent:\s*.+?\s*(?:\]?\]|\x{27E7})").unwrap();
     }
     RAW_INTENT_RE.replace_all(raw, "\x1b[2;33m$0\x1b[0m").into_owned()
 }
 
-/// Detect agent-declared intent tokens: `[[intent: <text>]]` or `⟦intent: <text>⟧`
-/// Agents are instructed (via MCP) to emit this token when starting a new action,
-/// so the activity board can show what the agent is currently doing.
+/// Detect agent-declared intent tokens: `[intent: <text>]`, `[[intent: <text>]]`,
+/// or `⟦intent: <text>⟧`. Agents are instructed (via MCP) to emit this token when
+/// starting a new action, so the activity board can show what the agent is currently doing.
 fn parse_intent(clean: &str) -> Option<ParsedEvent> {
     // Fast path: must contain "intent:"
     if !clean.contains("intent:") {
         return None;
     }
     lazy_static::lazy_static! {
-        // [[intent: <text>]] — ASCII double brackets
+        // [intent: <text>]  — ASCII single brackets
+        // [[intent: <text>]] — ASCII double brackets (also accepted)
         // ⟦intent: <text>⟧ — Unicode mathematical brackets (U+27E6 / U+27E7)
         static ref INTENT_RE: regex::Regex =
-            regex::Regex::new(r"(?:\[\[|\x{27E6})intent:\s*(.+?)\s*(?:\]\]|\x{27E7})").unwrap();
+            regex::Regex::new(r"(?:\[\[?|\x{27E6})intent:\s*(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
     }
     INTENT_RE.captures(clean).and_then(|caps| {
         let text = caps[1].trim();
@@ -1737,6 +1738,14 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     #[test]
     fn test_intent_basic() {
         let parser = OutputParser::new();
+        let events = parser.parse("[intent: Refactoring the auth module]");
+        assert_eq!(get_intent(&events), Some("Refactoring the auth module".to_string()));
+    }
+
+    #[test]
+    fn test_intent_double_brackets() {
+        let parser = OutputParser::new();
+        // Double brackets still accepted for backward compatibility
         let events = parser.parse("[[intent: Refactoring the auth module]]");
         assert_eq!(get_intent(&events), Some("Refactoring the auth module".to_string()));
     }
@@ -1751,14 +1760,14 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     #[test]
     fn test_intent_in_multiline_output() {
         let parser = OutputParser::new();
-        let events = parser.parse("Some output\n[[intent: Debugging login flow]]\nMore output");
+        let events = parser.parse("Some output\n[intent: Debugging login flow]\nMore output");
         assert_eq!(get_intent(&events), Some("Debugging login flow".to_string()));
     }
 
     #[test]
     fn test_intent_with_ansi() {
         let parser = OutputParser::new();
-        let events = parser.parse("\x1b[33m[[intent: Reviewing PR changes]]\x1b[0m");
+        let events = parser.parse("\x1b[33m[intent: Reviewing PR changes]\x1b[0m");
         assert_eq!(get_intent(&events), Some("Reviewing PR changes".to_string()));
     }
 
@@ -1770,39 +1779,47 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_no_intent_single_brackets() {
+    fn test_intent_single_brackets() {
         let parser = OutputParser::new();
-        // Single brackets should NOT match — too common in normal output
-        assert!(get_intent(&parser.parse("[intent: something]")).is_none());
+        // Single brackets now accepted as the canonical format
+        let events = parser.parse("[intent: something cool]");
+        assert_eq!(get_intent(&events), Some("something cool".to_string()));
     }
 
     #[test]
     fn test_intent_trims_whitespace() {
         let parser = OutputParser::new();
-        let events = parser.parse("[[intent:   Fix the flaky test   ]]");
+        let events = parser.parse("[intent:   Fix the flaky test   ]");
         assert_eq!(get_intent(&events), Some("Fix the flaky test".to_string()));
     }
 
     #[test]
     fn test_intent_ellipsis_filtered() {
         let parser = OutputParser::new();
-        assert!(get_intent(&parser.parse("[[intent: ...]]")).is_none());
+        assert!(get_intent(&parser.parse("[intent: ...]")).is_none());
     }
 
     #[test]
     fn test_intent_template_placeholder_filtered() {
         let parser = OutputParser::new();
-        assert!(get_intent(&parser.parse("[[intent: <text>]]")).is_none());
+        assert!(get_intent(&parser.parse("[intent: <text>]")).is_none());
     }
 
     #[test]
     fn test_intent_too_short_filtered() {
         let parser = OutputParser::new();
-        assert!(get_intent(&parser.parse("[[intent: ab]]")).is_none());
+        assert!(get_intent(&parser.parse("[intent: ab]")).is_none());
     }
 
     #[test]
-    fn test_colorize_intent_wraps_yellow() {
+    fn test_colorize_intent_single_brackets() {
+        let raw = "Some output\n[intent: Refactoring auth]\nMore output";
+        let colored = colorize_intent(raw);
+        assert_eq!(colored, "Some output\n\x1b[2;33m[intent: Refactoring auth]\x1b[0m\nMore output");
+    }
+
+    #[test]
+    fn test_colorize_intent_double_brackets() {
         let raw = "Some output\n[[intent: Refactoring auth]]\nMore output";
         let colored = colorize_intent(raw);
         assert_eq!(colored, "Some output\n\x1b[2;33m[[intent: Refactoring auth]]\x1b[0m\nMore output");
