@@ -203,6 +203,8 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
       return { method: "GET", path: `/repo/branches?path=${p("path")}` };
     case "get_merged_branches":
       return { method: "GET", path: `/repo/branches/merged?path=${p("repoPath")}` };
+    case "get_repo_summary":
+      return { method: "GET", path: `/repo/summary?path=${p("repoPath")}` };
     case "get_ci_checks":
       return { method: "GET", path: `/repo/ci?path=${p("path")}&pr_number=${p("prNumber")}` };
     case "rename_branch":
@@ -415,10 +417,38 @@ export function buildHttpUrl(path: string): string {
 }
 
 /**
+ * In-flight deduplication for idempotent (GET) RPC calls.
+ * Concurrent identical calls share the same Promise — cleared on settle.
+ */
+const _inflight = new Map<string, Promise<unknown>>();
+
+/** True if the command maps to an HTTP GET (idempotent, safe to deduplicate). */
+function isIdempotentRpc(command: string, args: Record<string, unknown>): boolean {
+  try {
+    return mapCommandToHttp(command, args).method === "GET";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * RPC call — uses Tauri invoke() or HTTP fetch() based on environment.
+ * Concurrent identical idempotent calls are coalesced into a single in-flight request.
  * Usage: `const result = await rpc<string>("create_pty", { config });`
  */
-export async function rpc<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
+export function rpc<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
+  if (isIdempotentRpc(command, args)) {
+    const key = `${command}:${JSON.stringify(args)}`;
+    const existing = _inflight.get(key) as Promise<T> | undefined;
+    if (existing) return existing;
+    const promise = rpcImpl<T>(command, args).finally(() => _inflight.delete(key));
+    _inflight.set(key, promise as Promise<unknown>);
+    return promise;
+  }
+  return rpcImpl<T>(command, args);
+}
+
+async function rpcImpl<T>(command: string, args: Record<string, unknown>): Promise<T> {
   if (isTauri()) {
     const { invoke } = await import("@tauri-apps/api/core");
     // Only pass args if non-empty (matches Tauri invoke signature)

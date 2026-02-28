@@ -628,6 +628,74 @@ pub(crate) async fn get_merged_branches(
     Ok(result)
 }
 
+/// Aggregate repo snapshot returned by `get_repo_summary`.
+/// Collapses the N+2 IPC storm (get_worktree_paths + get_merged_branches + N×get_diff_stats)
+/// into a single round-trip.
+#[derive(Serialize)]
+pub(crate) struct RepoSummary {
+    worktree_paths: HashMap<String, String>,
+    merged_branches: Vec<String>,
+    /// Per-worktree diff stats, keyed by worktree path (matches keys of worktree_paths values).
+    diff_stats: HashMap<String, DiffStats>,
+}
+
+/// Core implementation of get_repo_summary, callable from both Tauri command and HTTP route.
+/// Runs worktree_paths + merged_branches concurrently, then diff stats for each path concurrently.
+pub(crate) async fn get_repo_summary_impl(state: &AppState, repo_path: String) -> Result<RepoSummary, String> {
+    // Spawn worktree_paths concurrently while we fetch/check merged_branches cache.
+    let wt_path = repo_path.clone();
+    let worktree_handle = tokio::task::spawn_blocking(move || {
+        crate::worktree::get_worktree_paths(wt_path)
+    });
+
+    let merged_branches = if let Some(cached) = AppState::get_cached(&state.merged_branches_cache, &repo_path, GIT_CACHE_TTL) {
+        cached
+    } else {
+        let mb_path = repo_path.clone();
+        let branches = tokio::task::spawn_blocking(move || {
+            get_merged_branches_impl(Path::new(&mb_path))
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking error: {e}"))??;
+        AppState::set_cached(&state.merged_branches_cache, repo_path.clone(), branches.clone());
+        branches
+    };
+
+    let worktree_paths = worktree_handle
+        .await
+        .map_err(|e| format!("spawn_blocking error: {e}"))?
+        .map_err(|e| format!("get_worktree_paths failed: {e}"))?;
+
+    // Run diff stats for all worktree paths concurrently.
+    let paths: Vec<String> = worktree_paths.values().cloned().collect();
+    let mut handles = Vec::with_capacity(paths.len());
+    for path in paths {
+        handles.push(tokio::task::spawn_blocking(move || {
+            let stats = get_diff_stats(path.clone(), None);
+            (path, stats)
+        }));
+    }
+
+    let mut diff_stats = HashMap::new();
+    for handle in handles {
+        let (path, stats) = handle
+            .await
+            .map_err(|e| format!("spawn_blocking error: {e}"))?;
+        diff_stats.insert(path, stats);
+    }
+
+    Ok(RepoSummary { worktree_paths, merged_branches, diff_stats })
+}
+
+/// Single IPC replacement for the N+2 calls in refreshAllBranchStats.
+#[tauri::command]
+pub(crate) async fn get_repo_summary(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+) -> Result<RepoSummary, String> {
+    get_repo_summary_impl(&state, repo_path).await
+}
+
 /// Get git branches for a repository (Story 052)
 #[tauri::command]
 pub(crate) fn get_git_branches(path: String) -> Result<Vec<serde_json::Value>, String> {

@@ -186,6 +186,21 @@ export function useRepository() {
     }
   }
 
+  /** Aggregate repo snapshot: worktree paths + merged branches + per-path diff stats.
+   *  Replaces 3 separate IPC calls in refreshAllBranchStats with one round-trip. */
+  async function getRepoSummary(repoPath: string): Promise<{
+    worktree_paths: Record<string, string>;
+    merged_branches: string[];
+    diff_stats: Record<string, { additions: number; deletions: number }>;
+  }> {
+    try {
+      return await invoke("get_repo_summary", { repoPath });
+    } catch (err) {
+      appLogger.warn("git", `Failed to get repo summary for ${repoPath}`, err);
+      return { worktree_paths: {}, merged_branches: [], diff_stats: {} };
+    }
+  }
+
   /** Result of branch switch operation */
   interface SwitchBranchResult {
     success: boolean;
@@ -274,6 +289,7 @@ export function useRepository() {
     mergeAndArchiveWorktree,
     finalizeMergedWorktree,
     getMergedBranches,
+    getRepoSummary,
     checkoutRemoteBranch,
     detectOrphanWorktrees,
     removeOrphanWorktree,

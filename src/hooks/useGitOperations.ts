@@ -17,6 +17,11 @@ export interface GitOperationsDeps {
     getInfo: (path: string) => Promise<{ path: string; name: string; initials: string; branch: string; status: "clean" | "dirty" | "conflict" | "merge" | "not-git" | "unknown"; is_git_repo: boolean }>;
     getDiffStats: (path: string) => Promise<{ additions: number; deletions: number }>;
     getWorktreePaths: (repoPath: string) => Promise<Record<string, string>>;
+    getRepoSummary: (repoPath: string) => Promise<{
+      worktree_paths: Record<string, string>;
+      merged_branches: string[];
+      diff_stats: Record<string, { additions: number; deletions: number }>;
+    }>;
     removeWorktree: (repoPath: string, branchName: string, deleteBranch: boolean) => Promise<void>;
     createWorktree: (baseRepo: string, branchName: string, createBranch?: boolean, baseRef?: string) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;
     renameBranch: (repoPath: string, oldName: string, newName: string) => Promise<void>;
@@ -131,11 +136,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
         return;
       }
 
-      const [worktreePaths, mergedBranches] = await Promise.all([
-        deps.repo.getWorktreePaths(repoPath),
-        deps.repo.getMergedBranches(repoPath),
-      ]);
-      const mergedSet = new Set(mergedBranches);
+      const summary = await deps.repo.getRepoSummary(repoPath);
+      const worktreePaths = summary.worktree_paths;
+      const mergedSet = new Set(summary.merged_branches);
 
       const currentRepo = repositoriesStore.get(repoPath);
       if (!currentRepo) return;
@@ -226,22 +229,14 @@ export function useGitOperations(deps: GitOperationsDeps) {
       const updatedRepo = repositoriesStore.get(repoPath);
       if (!updatedRepo) return;
 
-      const branchesWithPaths = Object.values(updatedRepo.branches).filter((b) => b.worktreePath);
-      const allStats = await Promise.all(
-        branchesWithPaths.map(async (branch) => {
-          try {
-            const stats = await deps.repo.getDiffStats(branch.worktreePath!);
-            return { name: branch.name, stats };
-          } catch (err) {
-            appLogger.debug("git", `getDiffStats failed for ${branch.name}`, err);
-            return null;
-          }
-        }),
-      );
+      // Diff stats come from the summary (already fetched server-side concurrently).
+      // summary.diff_stats is keyed by worktree path, matching branch.worktreePath.
       batch(() => {
-        for (const result of allStats) {
-          if (result) {
-            repositoriesStore.updateBranchStats(repoPath, result.name, result.stats.additions, result.stats.deletions);
+        for (const branch of Object.values(updatedRepo.branches)) {
+          if (!branch.worktreePath) continue;
+          const stats = summary.diff_stats[branch.worktreePath];
+          if (stats) {
+            repositoriesStore.updateBranchStats(repoPath, branch.name, stats.additions, stats.deletions);
           }
         }
       });

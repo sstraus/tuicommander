@@ -723,6 +723,7 @@ pub fn run() {
             worktree::get_worktree_paths,
             git::get_git_branches,
             git::get_merged_branches,
+            git::get_repo_summary,
             git::check_is_main_branch,
             git::get_initials,
             git::run_git_command,

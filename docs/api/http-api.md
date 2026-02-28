@@ -218,6 +218,14 @@ GET /repo/branches?path=/path/to/repo
 
 Returns sorted branch list.
 
+### Repo Summary
+
+```
+GET /repo/summary?path=/path/to/repo
+```
+
+Aggregate snapshot: worktree paths, merged branches, and per-path diff stats in one round-trip. Replaces 3+ separate IPC calls.
+
 ### Local Branches
 
 ```

@@ -34,6 +34,8 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `rename_branch` | `path, old_name, new_name` | `()` | Rename branch |
 | `check_is_main_branch` | `branch` | `bool` | Is main/master/develop |
 | `get_initials` | `name` | `String` | 2-char repo initials |
+| `get_merged_branches` | `repo_path` | `Vec<String>` | Branches merged into default branch |
+| `get_repo_summary` | `repo_path` | `RepoSummary` | Aggregate snapshot: worktree paths + merged branches + per-path diff stats in one IPC |
 | `run_git_command` | `path, args` | `String` | Run arbitrary git command |
 
 ## GitHub Integration (`github.rs`)
