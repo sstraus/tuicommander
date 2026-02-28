@@ -523,12 +523,11 @@ fn parse_question(clean: &str) -> Option<ParsedEvent> {
                 prompt_text: trimmed.to_string(),
             });
         }
-        // Generic question: line ends with ? and doesn't look like code/prose
-        if trimmed.ends_with('?') && !line_is_likely_not_a_prompt(line, trimmed) {
-            return Some(ParsedEvent::Question {
-                prompt_text: trimmed.to_string(),
-            });
-        }
+        // Generic `?`-ending lines are NOT detected here. They are handled
+        // exclusively by the silence-based detector in pty.rs — if the agent
+        // goes idle for 10s after printing a `?` line, it's a real question.
+        // Instant detection of streaming fragments causes massive false positives
+        // (e.g., "ad?", "swap?", "linux?", "instead?").
     }
     None
 }
@@ -724,10 +723,15 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
         static ref INTENT_RE: regex::Regex =
             regex::Regex::new(r"(?:\[\[|\x{27E6})intent:\s*(.+?)\s*(?:\]\]|\x{27E7})").unwrap();
     }
-    INTENT_RE.captures(clean).map(|caps| {
-        ParsedEvent::Intent {
-            text: caps[1].trim().to_string(),
+    INTENT_RE.captures(clean).and_then(|caps| {
+        let text = caps[1].trim();
+        // Filter out meaningless intents: ellipsis, bare punctuation, template placeholders
+        if text == "..." || text == "<text>" || text.len() < 4 {
+            return None;
         }
+        Some(ParsedEvent::Intent {
+            text: text.to_string(),
+        })
     })
 }
 
@@ -1145,12 +1149,14 @@ mod tests {
     }
 
     #[test]
-    fn test_question_generic_question_mark_line() {
-        // Generic question lines ending with ? should now be detected
+    fn test_question_generic_question_mark_not_instant() {
+        // Generic `?`-ending lines are NOT detected by the instant parser —
+        // they are handled by the silence-based detector in pty.rs to avoid
+        // false positives from streaming fragments like "ad?", "swap?", "?"
         let parser = OutputParser::new();
         let events = parser.parse("What should we do with this story?");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "Generic question ending with ? should trigger detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "Generic ?-ending lines should NOT trigger instant detection");
     }
 
     #[test]
@@ -1775,6 +1781,24 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let parser = OutputParser::new();
         let events = parser.parse("[[intent:   Fix the flaky test   ]]");
         assert_eq!(get_intent(&events), Some("Fix the flaky test".to_string()));
+    }
+
+    #[test]
+    fn test_intent_ellipsis_filtered() {
+        let parser = OutputParser::new();
+        assert!(get_intent(&parser.parse("[[intent: ...]]")).is_none());
+    }
+
+    #[test]
+    fn test_intent_template_placeholder_filtered() {
+        let parser = OutputParser::new();
+        assert!(get_intent(&parser.parse("[[intent: <text>]]")).is_none());
+    }
+
+    #[test]
+    fn test_intent_too_short_filtered() {
+        let parser = OutputParser::new();
+        assert!(get_intent(&parser.parse("[[intent: ab]]")).is_none());
     }
 
     #[test]
