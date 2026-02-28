@@ -165,6 +165,11 @@ function createPluginStore() {
     return invoke<PluginManifest>("install_plugin_from_zip", { path });
   }
 
+  /** Install a plugin from a local folder. Returns the installed manifest. */
+  async function installFromFolder(path: string): Promise<PluginManifest> {
+    return invoke<PluginManifest>("install_plugin_from_folder", { path });
+  }
+
   return {
     state,
     registerPlugin,
@@ -178,6 +183,7 @@ function createPluginStore() {
     uninstall,
     installFromUrl,
     installFromZip,
+    installFromFolder,
   };
 }
 

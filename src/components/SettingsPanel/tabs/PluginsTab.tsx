@@ -273,10 +273,10 @@ export const PluginsTab: Component = () => {
     registryStore.fetch();
   };
 
-  const handleInstallFromFile = async () => {
+  const handleInstallFromZip = async () => {
     if (installing()) return;
     const selected = await open({
-      title: "Install Plugin",
+      title: "Install Plugin from ZIP",
       filters: [{ name: "Plugin Archive", extensions: ["zip"] }],
       multiple: false,
     });
@@ -288,7 +288,29 @@ export const PluginsTab: Component = () => {
       await pluginStore.installFromZip(selected as string);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      appLogger.error("plugin", "Failed to install plugin", err);
+      appLogger.error("plugin", "Failed to install plugin from ZIP", err);
+      setFileInstallError(msg);
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const handleInstallFromFolder = async () => {
+    if (installing()) return;
+    const selected = await open({
+      title: "Install Plugin from Folder",
+      directory: true,
+      multiple: false,
+    });
+    if (!selected) return;
+
+    setInstalling(true);
+    setFileInstallError(null);
+    try {
+      await pluginStore.installFromFolder(selected as string);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appLogger.error("plugin", "Failed to install plugin from folder", err);
       setFileInstallError(msg);
     } finally {
       setInstalling(false);
@@ -336,7 +358,7 @@ export const PluginsTab: Component = () => {
         <Show
           when={plugins().length > 0}
           fallback={
-            <p class={s.hint}>No plugins installed. Place plugin folders in the plugins directory or install from a ZIP file.</p>
+            <p class={s.hint}>No plugins installed. Use the buttons below to install from a folder or ZIP file.</p>
           }
         >
           <div class={ps.pluginList}>
@@ -350,10 +372,17 @@ export const PluginsTab: Component = () => {
           <div class={ps.installRow}>
             <button
               class={s.testBtn}
-              onClick={handleInstallFromFile}
+              onClick={handleInstallFromFolder}
               disabled={installing()}
             >
-              {installing() ? "Installing..." : "Install from file..."}
+              {installing() ? "Installing..." : "Install from folder..."}
+            </button>
+            <button
+              class={s.testBtn}
+              onClick={handleInstallFromZip}
+              disabled={installing()}
+            >
+              {installing() ? "Installing..." : "Install from ZIP..."}
             </button>
             <Show when={fileInstallError()}>
               <p class={ps.pluginError}>Installation failed: {fileInstallError()}</p>

@@ -809,6 +809,7 @@ pub fn run() {
             plugins::write_plugin_data,
             plugins::delete_plugin_data,
             plugins::install_plugin_from_zip,
+            plugins::install_plugin_from_folder,
             plugins::install_plugin_from_url,
             plugins::uninstall_plugin,
             plugin_fs::plugin_read_file,

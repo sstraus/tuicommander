@@ -409,6 +409,120 @@ pub async fn install_plugin_from_url(
     result
 }
 
+// ---------------------------------------------------------------------------
+// Shared install helpers
+// ---------------------------------------------------------------------------
+
+/// Holds the prepared target directory and optional backup of existing data/.
+struct PreparedTarget {
+    path: PathBuf,
+    data_backup: Option<PathBuf>,
+}
+
+/// Prepare the target plugin directory: backup data/, clean, create fresh dir.
+fn prepare_plugin_target(manifest: &PluginManifest) -> Result<PreparedTarget, String> {
+    let target_dir = plugins_dir().join(&manifest.id);
+
+    // Preserve data/ directory if plugin already exists
+    let data_backup = if target_dir.join("data").exists() {
+        let tmp = std::env::temp_dir().join(format!("tuic-data-backup-{}", uuid::Uuid::new_v4()));
+        std::fs::rename(target_dir.join("data"), &tmp)
+            .map_err(|e| format!("Failed to backup data/: {e}"))?;
+        Some(tmp)
+    } else {
+        None
+    };
+
+    // Clean target
+    if target_dir.exists() {
+        std::fs::remove_dir_all(&target_dir)
+            .map_err(|e| format!("Failed to clean existing plugin dir: {e}"))?;
+    }
+    std::fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("Failed to create plugin dir: {e}"))?;
+
+    Ok(PreparedTarget { path: target_dir, data_backup })
+}
+
+/// Restore data/ backup, emit plugin-changed event, log success.
+fn finalize_plugin_install(
+    target: PreparedTarget,
+    manifest: &PluginManifest,
+    app_handle: &AppHandle,
+) -> Result<PluginManifest, String> {
+    if let Some(tmp) = target.data_backup {
+        std::fs::rename(&tmp, target.path.join("data"))
+            .map_err(|e| format!("Failed to restore data/: {e}"))?;
+    }
+
+    let _ = app_handle.emit("plugin-changed", vec![manifest.id.clone()]);
+    crate::app_logger::log_via_handle(
+        app_handle, "info", "plugin",
+        &format!("Installed plugin \"{}\" v{}", manifest.id, manifest.version),
+    );
+    Ok(manifest.clone())
+}
+
+/// Recursively copy a directory, skipping the `data/` subdirectory (preserved separately).
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    for entry in std::fs::read_dir(src).map_err(|e| format!("Failed to read dir: {e}"))? {
+        let entry = entry.map_err(|e| format!("Dir entry error: {e}"))?;
+        let file_type = entry.file_type().map_err(|e| format!("File type error: {e}"))?;
+        let name = entry.file_name();
+
+        // Skip data/ — it's handled by the backup/restore flow
+        if name == "data" && file_type.is_dir() {
+            continue;
+        }
+
+        let src_path = entry.path();
+        let dst_path = dst.join(&name);
+
+        if file_type.is_dir() {
+            std::fs::create_dir_all(&dst_path)
+                .map_err(|e| format!("Failed to create dir {}: {e}", dst_path.display()))?;
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)
+                .map_err(|e| format!("Failed to copy {}: {e}", name.to_string_lossy()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Install a plugin from a local folder. Validates manifest, copies files to
+/// the plugins directory, preserves existing data/, and emits a reload event.
+#[tauri::command]
+pub async fn install_plugin_from_folder(
+    path: String,
+    app_handle: AppHandle,
+) -> Result<PluginManifest, String> {
+    let src_dir = PathBuf::from(&path);
+    if !src_dir.is_dir() {
+        return Err(format!("Not a directory: {path}"));
+    }
+
+    let manifest_path = src_dir.join("manifest.json");
+    if !manifest_path.exists() {
+        return Err("No manifest.json found in the selected folder".to_string());
+    }
+
+    let manifest_data = std::fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Failed to read manifest.json: {e}"))?;
+    let manifest: PluginManifest = serde_json::from_str(&manifest_data)
+        .map_err(|e| format!("Invalid manifest.json: {e}"))?;
+
+    let dir_name = src_dir.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&manifest.id);
+    validate_manifest(&manifest, dir_name)?;
+
+    let target = prepare_plugin_target(&manifest)?;
+    copy_dir_recursive(&src_dir, &target.path)?;
+
+    finalize_plugin_install(target, &manifest, &app_handle)
+}
+
 /// Core ZIP extraction logic shared by install_plugin_from_zip and install_plugin_from_url.
 fn install_zip_inner(
     zip_path: &std::path::Path,
@@ -442,25 +556,7 @@ fn install_zip_inner(
 
     validate_manifest(&manifest, &manifest.id)?;
 
-    let target_dir = plugins_dir().join(&manifest.id);
-
-    // Preserve data/ directory if plugin already exists
-    let temp_data_dir = if target_dir.join("data").exists() {
-        let tmp = std::env::temp_dir().join(format!("tuic-data-backup-{}", uuid::Uuid::new_v4()));
-        std::fs::rename(target_dir.join("data"), &tmp)
-            .map_err(|e| format!("Failed to backup data/: {e}"))?;
-        Some(tmp)
-    } else {
-        None
-    };
-
-    // Clean target and extract
-    if target_dir.exists() {
-        std::fs::remove_dir_all(&target_dir)
-            .map_err(|e| format!("Failed to clean existing plugin dir: {e}"))?;
-    }
-    std::fs::create_dir_all(&target_dir)
-        .map_err(|e| format!("Failed to create plugin dir: {e}"))?;
+    let target_dir = prepare_plugin_target(&manifest)?;
 
     // Extract files
     for i in 0..archive.len() {
@@ -490,7 +586,7 @@ fn install_zip_inner(
             return Err(format!("ZIP entry attempts path traversal: {relative}"));
         }
 
-        let target = target_dir.join(&relative);
+        let target = target_dir.path.join(&relative);
 
         if entry.is_dir() {
             std::fs::create_dir_all(&target)
@@ -507,17 +603,7 @@ fn install_zip_inner(
         }
     }
 
-    // Restore data/ directory
-    if let Some(tmp) = temp_data_dir {
-        std::fs::rename(&tmp, target_dir.join("data"))
-            .map_err(|e| format!("Failed to restore data/: {e}"))?;
-    }
-
-    // Emit plugin-changed event for hot reload
-    let _ = app_handle.emit("plugin-changed", vec![manifest.id.clone()]);
-
-    crate::app_logger::log_via_handle(app_handle, "info", "plugin", &format!("Installed plugin \"{}\" v{}", manifest.id, manifest.version));
-    Ok(manifest)
+    finalize_plugin_install(target_dir, &manifest, app_handle)
 }
 
 /// Find the path to manifest.json inside a ZIP archive.
