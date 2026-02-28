@@ -82,8 +82,7 @@
 }
 
 .rowMain {
-  display: grid;
-  grid-template-columns: 1fr 80px 100px 80px;
+  display: flex;
   align-items: center;
   gap: 12px;
 }
@@ -96,10 +95,24 @@
   text-overflow: ellipsis;
 }
 
+.project {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
 .agent {
   font-size: var(--font-sm);
   color: var(--fg-muted);
   text-transform: capitalize;
+  flex-shrink: 0;
 }
 
 .status {
@@ -108,6 +121,7 @@
   border-radius: var(--radius-sm);
   text-align: center;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .statusWorking {
@@ -135,6 +149,8 @@
   color: var(--fg-muted);
   text-align: right;
   white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 /* Last prompt sub-row */

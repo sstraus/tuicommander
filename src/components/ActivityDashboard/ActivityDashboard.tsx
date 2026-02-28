@@ -23,6 +23,13 @@ function getTerminalStatus(
   return { label: "—", className: s.statusIdle };
 }
 
+/** Extract project name (last path segment) from cwd */
+function projectName(cwd: string | null): string | null {
+  if (!cwd) return null;
+  const segments = cwd.replace(/\/+$/, "").split("/");
+  return segments[segments.length - 1] || null;
+}
+
 /** Truncate a prompt to a single line for display */
 function truncatePrompt(prompt: string, maxLen = 80): string {
   const oneLine = prompt.replace(/\n/g, " ").trim();
@@ -73,6 +80,7 @@ export const ActivityDashboard: Component = () => {
       return {
         id,
         name: term.name,
+        project: projectName(term.cwd),
         agent: term.agentType || "shell",
         status,
         lastDataAt: term.lastDataAt,
@@ -83,6 +91,7 @@ export const ActivityDashboard: Component = () => {
     }).filter(Boolean) as Array<{
       id: string;
       name: string;
+      project: string | null;
       agent: string;
       status: { label: string; className: string };
       lastDataAt: number | null;
@@ -116,6 +125,9 @@ export const ActivityDashboard: Component = () => {
                 >
                   <div class={s.rowMain}>
                     <span class={s.termName}>{term.name}</span>
+                    <Show when={term.project}>
+                      <span class={s.project}>{term.project}</span>
+                    </Show>
                     <span class={s.agent}>{term.agent}</span>
                     <span class={`${s.status} ${term.status.className}`}>{term.status.label}</span>
                     <span class={s.lastActivity}>{formatRelativeTime(term.lastDataAt)}</span>
