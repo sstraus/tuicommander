@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 use crate::input_line_buffer::{InputAction, InputLineBuffer};
-use crate::output_parser::{extract_last_question_line, OutputParser, ParsedEvent};
+use crate::output_parser::{colorize_intent, extract_last_question_line, OutputParser, ParsedEvent};
 use crate::state::{
     AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
     OutputRingBuffer, PtyConfig, PtyOutput, PtySession, Utf8ReadBuffer,
@@ -258,6 +258,10 @@ pub(crate) fn spawn_reader_thread(
                         // Update silence state for fallback question detection
                         let last_q_line = extract_last_question_line(&data);
                         silence.lock().on_chunk(regex_found_question, last_q_line);
+
+                        // Colorize [[intent: ...]] tokens yellow before sending to xterm
+                        let has_intent = events.iter().any(|e| matches!(e, ParsedEvent::Intent { .. }));
+                        let data = if has_intent { colorize_intent(&data) } else { data };
 
                         let _ = app.emit(
                             &format!("pty-output-{session_id}"),

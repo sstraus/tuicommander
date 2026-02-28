@@ -698,6 +698,18 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
     None
 }
 
+/// Colorize `[[intent: ...]]` tokens in raw PTY output with ANSI yellow (dim).
+/// Called on the raw (ANSI-bearing) data before it is sent to xterm.js so the
+/// intent line stands out visually.  Only invoke when `parse()` returned an
+/// `Intent` event — avoids regex work on every chunk.
+pub fn colorize_intent(raw: &str) -> String {
+    lazy_static::lazy_static! {
+        static ref RAW_INTENT_RE: regex::Regex =
+            regex::Regex::new(r"(?:\[\[|\x{27E6})intent:\s*.+?\s*(?:\]\]|\x{27E7})").unwrap();
+    }
+    RAW_INTENT_RE.replace_all(raw, "\x1b[2;33m$0\x1b[0m").into_owned()
+}
+
 /// Detect agent-declared intent tokens: `[[intent: <text>]]` or `⟦intent: <text>⟧`
 /// Agents are instructed (via MCP) to emit this token when starting a new action,
 /// so the activity board can show what the agent is currently doing.
@@ -1763,5 +1775,18 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let parser = OutputParser::new();
         let events = parser.parse("[[intent:   Fix the flaky test   ]]");
         assert_eq!(get_intent(&events), Some("Fix the flaky test".to_string()));
+    }
+
+    #[test]
+    fn test_colorize_intent_wraps_yellow() {
+        let raw = "Some output\n[[intent: Refactoring auth]]\nMore output";
+        let colored = colorize_intent(raw);
+        assert_eq!(colored, "Some output\n\x1b[2;33m[[intent: Refactoring auth]]\x1b[0m\nMore output");
+    }
+
+    #[test]
+    fn test_colorize_intent_no_match_unchanged() {
+        let raw = "Normal terminal output with no intent";
+        assert_eq!(colorize_intent(raw), raw);
     }
 }
