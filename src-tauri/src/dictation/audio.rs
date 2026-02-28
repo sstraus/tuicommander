@@ -1,6 +1,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use parking_lot::Mutex;
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 /// Information about an available audio input device.
@@ -34,8 +35,11 @@ pub fn list_input_devices() -> Vec<AudioDevice> {
 }
 
 /// Audio capture manager. Captures microphone input as 16kHz mono f32 PCM.
+///
+/// Uses `VecDeque` so the streaming thread can drain from the front while
+/// the cpal callback appends at the back.
 pub struct AudioCapture {
-    buffer: Arc<Mutex<Vec<f32>>>,
+    buffer: Arc<Mutex<VecDeque<f32>>>,
     stream: Option<cpal::Stream>,
 }
 
@@ -70,10 +74,11 @@ impl AudioCapture {
 
         let sample_rate = config.sample_rate().0;
         let channels = config.channels() as usize;
-        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let buffer = Arc::new(Mutex::new(VecDeque::new()));
         let buffer_clone = buffer.clone();
 
-        // Build a stream that collects f32 samples, converting to 16kHz mono
+        // Build a stream that collects f32 samples, converting to 16kHz mono.
+        // Uses try_lock() to avoid blocking the real-time audio callback.
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => device
                 .build_input_stream(
@@ -110,22 +115,52 @@ impl AudioCapture {
         })
     }
 
-    /// Stop capturing and return the collected audio as 16kHz mono f32 PCM.
+    /// Stop capturing and return all collected audio as 16kHz mono f32 PCM.
+    /// Consumes self (batch mode compatibility).
     pub fn stop(mut self) -> Vec<f32> {
-        // Drop the stream to stop capturing
         self.stream.take();
-        let buffer = self.buffer.lock();
-        buffer.clone()
+        self.buffer.lock().drain(..).collect()
     }
 
+    /// Stop the cpal stream without consuming self.
+    /// Audio already in the buffer remains available for `drain_all()`.
+    pub fn stop_stream(&mut self) {
+        self.stream.take();
+    }
+
+    /// Drain up to `count` samples from the front of the buffer.
+    /// Returns fewer samples if fewer are available.
+    pub fn drain_samples(&self, count: usize) -> Vec<f32> {
+        let mut buf = self.buffer.lock();
+        let n = count.min(buf.len());
+        buf.drain(..n).collect()
+    }
+
+    /// Drain all remaining samples from the buffer.
+    pub fn drain_all(&self) -> Vec<f32> {
+        self.buffer.lock().drain(..).collect()
+    }
+
+    /// How many samples are currently buffered.
+    pub fn available(&self) -> usize {
+        self.buffer.lock().len()
+    }
+
+    /// Get a clone of the buffer Arc for sharing with other threads.
+    pub fn buffer_handle(&self) -> Arc<Mutex<VecDeque<f32>>> {
+        self.buffer.clone()
+    }
 }
 
 /// Process an audio chunk: convert to mono and resample to 16kHz.
+/// Uses `try_lock()` so the real-time audio callback never blocks.
+/// If the lock is contended, samples are silently dropped (acceptable
+/// for dictation — 16kHz mono = ~64KB/s, contention is rare).
 fn process_audio_chunk(
     data: &[f32],
     sample_rate: u32,
     channels: usize,
-    buffer: &Arc<Mutex<Vec<f32>>>,
+    buffer: &Arc<Mutex<VecDeque<f32>>>,
 ) {
     // Convert to mono by averaging channels
     let mono: Vec<f32> = data
@@ -134,19 +169,103 @@ fn process_audio_chunk(
         .collect();
 
     // Simple nearest-neighbor resampling to 16kHz
-    // For production quality, consider using a proper resampling library
-    if sample_rate == 16000 {
-        buffer.lock().extend_from_slice(&mono);
+    let resampled = if sample_rate == 16000 {
+        mono
     } else {
         let ratio = 16000.0 / f64::from(sample_rate);
         let output_len = (mono.len() as f64 * ratio) as usize;
-        let mut resampled = Vec::with_capacity(output_len);
+        let mut out = Vec::with_capacity(output_len);
         for i in 0..output_len {
             let src_idx = (i as f64 / ratio) as usize;
             if src_idx < mono.len() {
-                resampled.push(mono[src_idx]);
+                out.push(mono[src_idx]);
             }
         }
-        buffer.lock().extend_from_slice(&resampled);
+        out
+    };
+
+    // try_lock: never block the audio callback
+    if let Some(mut buf) = buffer.try_lock() {
+        buf.extend(resampled.iter());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_streaming_buffer_drain() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        // Push 100 samples
+        {
+            let mut b = buf.lock();
+            b.extend((0..100).map(|i| i as f32));
+        }
+
+        // Create a mock AudioCapture with no stream
+        let capture = AudioCapture {
+            buffer: buf,
+            stream: None,
+        };
+
+        // Drain 30 — should get 30 and leave 70
+        let drained = capture.drain_samples(30);
+        assert_eq!(drained.len(), 30);
+        assert_eq!(drained[0] as u32, 0);
+        assert_eq!(drained[29] as u32, 29);
+        assert_eq!(capture.available(), 70);
+
+        // Drain 100 — should get only the remaining 70
+        let drained = capture.drain_samples(100);
+        assert_eq!(drained.len(), 70);
+        assert_eq!(drained[0] as u32, 30);
+        assert_eq!(capture.available(), 0);
+    }
+
+    #[test]
+    fn test_drain_all() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        {
+            let mut b = buf.lock();
+            b.extend((0..50).map(|i| i as f32));
+        }
+        let capture = AudioCapture {
+            buffer: buf,
+            stream: None,
+        };
+        let all = capture.drain_all();
+        assert_eq!(all.len(), 50);
+        assert_eq!(capture.available(), 0);
+    }
+
+    #[test]
+    fn test_stop_stream_preserves_buffer() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        {
+            let mut b = buf.lock();
+            b.extend((0..10).map(|i| i as f32));
+        }
+        let mut capture = AudioCapture {
+            buffer: buf,
+            stream: None,
+        };
+        capture.stop_stream(); // no-op since stream is None
+        assert_eq!(capture.available(), 10);
+        let all = capture.drain_all();
+        assert_eq!(all.len(), 10);
+    }
+
+    #[test]
+    fn test_process_audio_chunk_try_lock() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let data = vec![0.5f32; 16]; // 16 mono samples at 16kHz
+        process_audio_chunk(&data, 16000, 1, &buf);
+        assert_eq!(buf.lock().len(), 16);
+
+        // While lock is held, process_audio_chunk silently drops samples
+        let guard = buf.lock();
+        process_audio_chunk(&data, 16000, 1, &buf);
+        assert_eq!(guard.len(), 16); // still 16, new samples dropped
     }
 }

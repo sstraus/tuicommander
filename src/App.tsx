@@ -31,6 +31,7 @@ import { HelpPanel } from "./components/HelpPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { ActivityDashboard } from "./components/ActivityDashboard";
 import { ErrorLogPanel } from "./components/ErrorLogPanel";
+import { DictationToast } from "./components/DictationToast/DictationToast";
 import { commandPaletteStore } from "./stores/commandPalette";
 import { activityDashboardStore } from "./stores/activityDashboard";
 import { errorLogStore } from "./stores/errorLog";
@@ -1109,6 +1110,9 @@ const App: Component = () => {
 
       {/* Prompt overlay */}
       <PromptOverlay />
+
+      {/* Dictation streaming toast — shows partial transcription */}
+      <DictationToast />
 
       {/* Prompt library drawer */}
       <PromptDrawer />

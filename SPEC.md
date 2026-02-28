@@ -346,6 +346,10 @@ All stores persist to localStorage:
 - [x] Transcribed text injection into active terminal via PTY
 - [x] Settings > Dictation tab (model, hotkey, language, corrections)
 - [x] Shell integration inject_text stub (prepared for external triggers)
+- [x] Streaming transcription with adaptive sliding windows (1.5s→3s)
+- [x] VAD energy gate (ported from whisper.cpp vad_simple)
+- [x] Floating toast for partial transcription results
+- [x] Prompt token carry-forward across windows
 
 ### Pending (P2)
 - [ ] Task completion detection

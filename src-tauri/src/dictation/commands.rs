@@ -1,7 +1,8 @@
-use super::{audio, corrections, model, transcribe, DictationState};
+use super::{audio, corrections, model, streaming, transcribe, DictationState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
+use std::sync::{mpsc, Arc};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::app_logger;
@@ -48,7 +49,7 @@ pub fn get_dictation_status(
 ) -> Result<DictationStatus, String> {
     let whisper_model = configured_model();
     let model_downloaded = model::model_exists(whisper_model);
-    let has_transcriber = dictation.transcriber.lock().is_some();
+    let has_transcriber = dictation.transcriber_arc.lock().is_some();
 
     let model_status = if !model_downloaded {
         "not_downloaded"
@@ -120,7 +121,7 @@ pub fn delete_whisper_model(
     // Unload transcriber if it's the active model
     let active = dictation.active_model.lock().clone();
     if active.as_deref() == Some(whisper_model.name()) {
-        *dictation.transcriber.lock() = None;
+        *dictation.transcriber_arc.lock() = None;
         *dictation.active_model.lock() = None;
     }
 
@@ -144,34 +145,77 @@ pub fn start_dictation(
     let whisper_model = configured_model();
 
     // Reload transcriber if model changed or not loaded
-    let mut transcriber_lock = dictation.transcriber.lock();
+    let mut transcriber_arc_lock = dictation.transcriber_arc.lock();
     let mut active_model_lock = dictation.active_model.lock();
     let model_changed = active_model_lock
         .as_deref()
         .map(|name| name != whisper_model.name())
         .unwrap_or(true);
 
-    if model_changed || transcriber_lock.is_none() {
+    if model_changed || transcriber_arc_lock.is_none() {
         if !model::model_exists(whisper_model) {
             return Err("Model not downloaded".to_string());
         }
         app_logger::log_via_handle(&app, "info", "dictation", &format!("Loading model: {}", whisper_model.display_name()));
         let t = transcribe::WhisperTranscriber::load(&model::model_path(whisper_model))?;
-        *transcriber_lock = Some(t);
+        *transcriber_arc_lock = Some(Arc::new(t));
         *active_model_lock = Some(whisper_model.name().to_string());
         app_logger::log_via_handle(&app, "info", "dictation", "Model loaded");
     }
+
+    let transcriber_arc = transcriber_arc_lock.clone()
+        .ok_or("Transcriber not available")?;
     drop(active_model_lock);
-    drop(transcriber_lock);
+    drop(transcriber_arc_lock);
 
     // Start audio capture
     let capture = audio::AudioCapture::start().map_err(|e| {
         app_logger::log_via_handle(&app, "error", "dictation", &format!("Audio capture failed: {e}"));
         e
     })?;
+
+    // Get audio buffer handle for streaming thread
+    let audio_buffer = capture.buffer_handle();
     *dictation.audio.lock() = Some(capture);
+
+    // Start streaming session
+    let config = get_dictation_config();
+    let lang = if config.language == "auto" { None } else { Some(config.language.clone()) };
+    let (tx, rx) = mpsc::channel::<String>();
+
+    let session = streaming::StreamingSession::start(
+        transcriber_arc,
+        audio_buffer,
+        tx,
+        lang,
+    );
+    *dictation.streaming.lock() = Some(session);
+    *dictation.partial_rx.lock() = Some(rx);
+    dictation.partials.lock().clear();
+
     dictation.recording.store(true, Ordering::Relaxed);
-    app_logger::log_via_handle(&app, "info", "dictation", "Recording started");
+    app_logger::log_via_handle(&app, "info", "dictation", "Streaming recording started");
+
+    // Spawn event forwarder: reads partials and emits Tauri events
+    let app_clone = app.clone();
+    let partials_clone = {
+        // We need a way for the forwarder thread to access partials.
+        // Since DictationState is behind Tauri's State, we can't easily clone it.
+        // Instead, we'll use a separate Arc for the partials + rx.
+        // Actually, let's just move the rx into the forwarder thread.
+        dictation.partial_rx.lock().take()
+    };
+
+    if let Some(rx) = partials_clone {
+        std::thread::Builder::new()
+            .name("dictation-event-forwarder".into())
+            .spawn(move || {
+                for text in rx {
+                    let _ = app_clone.emit("dictation-partial", &text);
+                }
+            })
+            .map_err(|e| format!("Failed to spawn event forwarder: {e}"))?;
+    }
 
     Ok(())
 }
@@ -188,58 +232,87 @@ pub fn stop_dictation_and_transcribe(
     dictation.recording.store(false, Ordering::Relaxed);
     dictation.processing.store(true, Ordering::Relaxed);
 
-    // Stop audio capture and get samples
-    let capture = dictation
-        .audio
-        .lock()
-        .take()
-        .ok_or("No audio capture active")?;
-    let audio_data = capture.stop();
-    let duration_s = audio_data.len() as f64 / 16000.0;
-    app_logger::log_via_handle(&app, "info", "dictation", &format!("Captured {:.1}s of audio ({} samples)", duration_s, audio_data.len()));
+    // Stop audio capture (stops the cpal stream, but buffer data remains)
+    let mut capture_lock = dictation.audio.lock();
+    if let Some(ref mut capture) = *capture_lock {
+        capture.stop_stream();
+    }
 
-    // Transcribe
-    let transcriber_lock = dictation.transcriber.lock();
-    let transcriber = transcriber_lock
-        .as_ref()
-        .ok_or("Transcriber not loaded")?;
+    // Stop streaming session and collect remaining audio
+    let session = dictation.streaming.lock().take();
+    let remaining_audio = session.map(|s| s.stop()).unwrap_or_default();
 
-    // Pass configured language (None = auto-detect if "auto")
+    // Also drain anything left in the audio capture buffer
+    let capture_remaining = capture_lock.as_ref()
+        .map(|c| c.drain_all())
+        .unwrap_or_default();
+    drop(capture_lock);
+
+    // Combine: streaming remainder + capture buffer remainder
+    let mut tail_audio = remaining_audio;
+    tail_audio.extend(capture_remaining);
+
+    let total_duration_s = tail_audio.len() as f64 / 16000.0;
+    app_logger::log_via_handle(&app, "info", "dictation",
+        &format!("Streaming stopped, {:.1}s tail audio for final pass", total_duration_s));
+
+    // Final transcription on tail audio (if any meaningful amount)
     let config = get_dictation_config();
     let lang = if config.language == "auto" { None } else { Some(config.language.as_str()) };
-    let result = transcriber.transcribe(&audio_data, lang).map_err(|e| {
-        dictation.processing.store(false, Ordering::Relaxed);
-        app_logger::log_via_handle(&app, "error", "dictation", &format!("Transcription failed: {e}"));
-        e
-    })?;
 
-    if let Some(reason) = &result.skip_reason {
-        app_logger::log_via_handle(&app, "warn", "dictation", &format!("Skipped: {reason}"));
+    let mut final_text = String::new();
+
+    if tail_audio.len() >= 8000 {
+        // At least 0.5s of audio for final pass
+        let transcriber_arc = dictation.transcriber_arc.lock();
+        if let Some(ref transcriber) = *transcriber_arc {
+            match transcriber.transcribe(&tail_audio, lang) {
+                Ok(result) if result.skip_reason.is_none() => {
+                    final_text = result.text;
+                }
+                Ok(result) => {
+                    if let Some(reason) = &result.skip_reason {
+                        app_logger::log_via_handle(&app, "info", "dictation",
+                            &format!("Tail transcription skipped: {reason}"));
+                    }
+                }
+                Err(e) => {
+                    app_logger::log_via_handle(&app, "warn", "dictation",
+                        &format!("Tail transcription failed: {e}"));
+                }
+            }
+        }
+    }
+
+    // The streaming thread already sent partials via the channel → emitted as events.
+    // The final text from the tail is the complete result to return.
+    // Note: partials were already shown to the user in real-time via the toast.
+
+    if final_text.is_empty() {
+        app_logger::log_via_handle(&app, "info", "dictation", "No final text from tail");
         dictation.processing.store(false, Ordering::Relaxed);
+        // Clean up
+        *dictation.audio.lock() = None;
         return Ok(TranscribeResponse {
             text: String::new(),
-            skip_reason: Some(reason.clone()),
-            duration_s,
+            skip_reason: Some("streaming completed, no tail audio".to_string()),
+            duration_s: total_duration_s,
         });
     }
 
-    app_logger::log_via_handle(&app, "info", "dictation", &format!("Transcribed: {:?}", result.text));
+    app_logger::log_via_handle(&app, "info", "dictation", &format!("Final text: {:?}", final_text));
 
     // Apply corrections
-    let corrected = dictation.corrections.lock().correct(&result.text);
-
-    // Replace newlines with spaces to prevent accidental command execution
+    let corrected = dictation.corrections.lock().correct(&final_text);
     let final_text = corrected.replace('\n', " ");
-    if final_text != result.text {
-        app_logger::log_via_handle(&app, "info", "dictation", &format!("After corrections: {:?}", final_text));
-    }
 
     dictation.processing.store(false, Ordering::Relaxed);
+    *dictation.audio.lock() = None;
 
     Ok(TranscribeResponse {
         text: final_text,
         skip_reason: None,
-        duration_s,
+        duration_s: total_duration_s,
     })
 }
 

@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Auto-fetch interval** — Per-repo setting to periodically `git fetch --all` in the background (5/15/30/60 min), keeping branch stats and ahead/behind counts fresh without manual intervention
 - **LLM intent declaration** — Agents emit `[[intent: <action>]]` tokens that the output parser captures and displays in the Activity Dashboard, showing real-time work intent alongside user prompts
 - **Mobile Companion UI** — Phone-optimized PWA at `/mobile` for monitoring AI agents remotely. Session list with status cards, live output with quick-reply chips, question overlay banner, activity feed, notification sounds. Installable via Add to Home Screen on iOS Safari and Android Chrome
+- **Streaming dictation with VAD** — Real-time partial transcription during push-to-talk via adaptive sliding windows (1.5s→3s). Voice Activity Detection energy gate skips silence to prevent hallucinations. Floating toast shows partial text above status bar. No new dependencies — built entirely on whisper-rs
 
 ### Changed
 - **`get_repo_summary` single-IPC** — New Rust command collapses worktree paths + merged branches + per-path diff stats into one round-trip, replacing N+2 separate IPC calls in `refreshAllBranchStats`

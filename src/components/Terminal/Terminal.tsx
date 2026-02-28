@@ -339,8 +339,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           }
           case "rate-limit": {
-            const detectedAgent = terminalsStore.get(props.id)?.agentType;
-            appLogger.debug("terminal", `[RateLimit] pattern=${parsed.pattern_name} matched="${parsed.matched_text}" agent=${detectedAgent ?? "none"} sessionId=${targetSessionId}`);
+            const terminal = terminalsStore.get(props.id);
+            const detectedAgent = terminal?.agentType;
+            appLogger.debug("terminal", `[RateLimit] pattern=${parsed.pattern_name} matched="${parsed.matched_text}" agent=${detectedAgent ?? "none"} shellState=${terminal?.shellState} sessionId=${targetSessionId}`);
+            // Guard: if the terminal is actively producing output, the agent is
+            // not actually rate-limited — the match is a false positive from the
+            // agent reading/discussing code that contains rate-limit strings.
+            if (terminal?.shellState === "busy") {
+              appLogger.debug("terminal", `[RateLimit] IGNORED (shellState=busy, likely false positive) pattern=${parsed.pattern_name}`);
+              break;
+            }
             // Deduplicate: skip if this session was rate-limited less than 5s ago
             // (resize redraws can re-match the same rate-limit text)
             const existing = rateLimitStore.getRateLimitInfo(targetSessionId);
