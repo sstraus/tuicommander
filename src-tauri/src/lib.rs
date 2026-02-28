@@ -15,6 +15,7 @@ pub(crate) mod head_watcher;
 pub(crate) mod repo_watcher;
 pub(crate) mod mcp_http;
 pub(crate) mod mcp_upstream_config;
+pub(crate) mod mcp_upstream_credentials;
 mod menu;
 mod output_parser;
 pub(crate) mod plugin_credentials;
@@ -770,6 +771,8 @@ pub fn run() {
             config::save_repo_settings,
             mcp_upstream_config::load_mcp_upstreams,
             mcp_upstream_config::save_mcp_upstreams,
+            mcp_upstream_credentials::save_mcp_upstream_credential,
+            mcp_upstream_credentials::delete_mcp_upstream_credential,
             config::check_has_custom_settings,
             config::load_repo_defaults,
             config::save_repo_defaults,

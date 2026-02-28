@@ -55,6 +55,7 @@ tauri-plugin-process = "2"
 tauri-plugin-deep-link = "2"
 zip = "2"
 glob = "0.3"
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 url = "2"
 chrono = { version = "0.4", features = ["serde"] }
 
