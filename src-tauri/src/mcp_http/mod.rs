@@ -410,6 +410,7 @@ mod tests {
             log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
             event_bus: tokio::sync::broadcast::channel(256).0,
             event_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            session_states: dashmap::DashMap::new(),
         })
     }
 

@@ -311,6 +311,16 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
     case "detect_installed_ides":
       return { method: "GET", path: "/agents/ides" };
 
+    // --- Watchers ---
+    case "start_head_watcher":
+      return { method: "POST", path: `/watchers/head?path=${p("repoPath")}` };
+    case "stop_head_watcher":
+      return { method: "DELETE", path: `/watchers/head?path=${p("repoPath")}` };
+    case "start_repo_watcher":
+      return { method: "POST", path: `/watchers/repo?path=${p("repoPath")}` };
+    case "stop_repo_watcher":
+      return { method: "DELETE", path: `/watchers/repo?path=${p("repoPath")}` };
+
     // --- MCP status ---
     case "get_mcp_status":
       return { method: "GET", path: "/mcp/status" };
@@ -470,21 +480,32 @@ export async function rpc<T>(command: string, args: Record<string, unknown> = {}
 /** Unsubscribe function returned by subscribe() */
 export type Unsubscribe = () => void;
 
+/** Parsed event from WebSocket JSON framing */
+export interface WsParsedEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
 /**
  * Subscribe to PTY session events.
  *
  * In Tauri: uses listen() for pty-output-{sessionId}, pty-exit-{sessionId}.
- * In browser: uses WebSocket to /sessions/{sessionId}/stream.
+ * In browser: uses WebSocket to /sessions/{sessionId}/stream with JSON framing:
+ *   - {"type":"output","data":"..."} for raw PTY output
+ *   - {"type":"parsed","event":{...}} for structured events (questions, rate limits)
+ *   - {"type":"exit"} / {"type":"closed"} for session lifecycle
  *
  * @param sessionId - PTY session ID
  * @param onData - Called with each chunk of PTY output
  * @param onExit - Called when the session exits
+ * @param onParsed - Optional: called with structured parsed events (browser mode)
  * @returns Promise resolving to an unsubscribe function
  */
 export async function subscribePty(
   sessionId: string,
   onData: (data: string) => void,
   onExit: () => void,
+  onParsed?: (event: WsParsedEvent) => void,
 ): Promise<Unsubscribe> {
   if (isTauri()) {
     const { listen } = await import("@tauri-apps/api/event");
@@ -500,10 +521,36 @@ export async function subscribePty(
     };
   }
 
-  // Browser mode: WebSocket
+  // Browser mode: WebSocket with JSON framing
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}/sessions/${sessionId}/stream`;
   const ws = new WebSocket(wsUrl);
+
+  const handleMessage = (event: MessageEvent) => {
+    const raw = event.data as string;
+    // JSON frame detection: starts with { and contains "type"
+    if (raw.startsWith("{")) {
+      try {
+        const frame = JSON.parse(raw) as WsParsedEvent;
+        switch (frame.type) {
+          case "output":
+            onData(frame.data as string);
+            break;
+          case "parsed":
+            onParsed?.(frame);
+            break;
+          case "exit":
+          case "closed":
+            onExit();
+            break;
+        }
+        return;
+      } catch {
+        // Not valid JSON — treat as raw output (backward compat)
+      }
+    }
+    onData(raw);
+  };
 
   // Wait for connection to open. Wire all handlers inside the promise so
   // a pre-handshake close (e.g. session not found) correctly rejects.
@@ -513,7 +560,7 @@ export async function subscribePty(
     ws.onclose = (event: CloseEvent) => {
       reject(new Error(`WebSocket closed before opening (code ${event.code}): ${event.reason || "no reason"}`));
     };
-    ws.onmessage = (event) => onData(event.data);
+    ws.onmessage = handleMessage;
   });
 
   // Re-wire onclose for the live session after successful open
@@ -527,4 +574,53 @@ export async function subscribePty(
   return () => {
     ws.close();
   };
+}
+
+/**
+ * Subscribe to application-level events (head-changed, repo-changed, etc.)
+ *
+ * In Tauri: delegates to individual listen() calls.
+ * In browser: creates a single EventSource to /events SSE endpoint.
+ *
+ * @param handlers - Map of event type → callback
+ * @returns Promise resolving to an unsubscribe function
+ */
+export async function subscribeEvents(
+  handlers: Record<string, (payload: unknown) => void>,
+): Promise<Unsubscribe> {
+  if (isTauri()) {
+    const { listen } = await import("@tauri-apps/api/event");
+    const unsubscribers: Array<() => void> = [];
+    for (const [eventType, handler] of Object.entries(handlers)) {
+      const unlisten = await listen(eventType, (event) => handler(event.payload));
+      unsubscribers.push(unlisten);
+    }
+    return () => unsubscribers.forEach((fn) => fn());
+  }
+
+  // Browser mode: SSE via EventSource
+  const types = Object.keys(handlers).join(",");
+  const url = buildHttpUrl(`/events?types=${encodeURIComponent(types)}`);
+  const es = new EventSource(url);
+
+  for (const [eventType, handler] of Object.entries(handlers)) {
+    es.addEventListener(eventType, ((event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data);
+        handler(payload);
+      } catch {
+        appLogger.warn("network", `Failed to parse SSE event "${eventType}": ${event.data}`);
+      }
+    }) as EventListener);
+  }
+
+  es.addEventListener("lagged", ((event: MessageEvent) => {
+    appLogger.warn("network", `SSE lagged: ${event.data}`);
+  }) as EventListener);
+
+  es.onerror = () => {
+    appLogger.warn("network", "SSE connection error — will auto-reconnect");
+  };
+
+  return () => es.close();
 }

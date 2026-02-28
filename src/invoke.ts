@@ -34,11 +34,77 @@ export function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<
   return getHttpInvoke().then((fn) => fn<T>(cmd, args));
 }
 
+// ---------------------------------------------------------------------------
+// Browser-mode SSE listener — shared EventSource for all listen() calls
+// ---------------------------------------------------------------------------
+
+let _sseSource: EventSource | null = null;
+/** Listeners registered before or after SSE connects */
+const _sseListeners = new Map<string, Set<(payload: unknown) => void>>();
+
+/** Get or create the shared SSE connection for browser mode */
+function ensureSse(): EventSource {
+  if (_sseSource && _sseSource.readyState !== EventSource.CLOSED) return _sseSource;
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  _sseSource = new EventSource(`${origin}/events`);
+
+  _sseSource.onerror = () => {
+    // EventSource auto-reconnects; just log
+    import("./stores/appLogger").then(({ appLogger }) =>
+      appLogger.warn("network", "SSE connection error — will auto-reconnect"),
+    );
+  };
+
+  // Re-attach listeners for all registered event types
+  for (const eventType of _sseListeners.keys()) {
+    attachSseEventType(eventType);
+  }
+
+  return _sseSource;
+}
+
+/** Attach a native SSE addEventListener for a given event type */
+function attachSseEventType(eventType: string) {
+  if (!_sseSource) return;
+  _sseSource.addEventListener(eventType, ((sseEvent: MessageEvent) => {
+    const listeners = _sseListeners.get(eventType);
+    if (!listeners) return;
+    try {
+      const payload = JSON.parse(sseEvent.data);
+      for (const handler of listeners) handler(payload);
+    } catch {
+      // Ignore parse errors
+    }
+  }) as EventListener);
+}
+
 export function listen<T>(
   event: string,
   handler: (event: { payload: T }) => void,
 ): Promise<() => void> {
   if (isTauri()) return tauriListen<T>(event, handler);
-  // Browser mode: events not supported, return no-op unsubscribe
-  return Promise.resolve(() => {});
+
+  // Browser mode: SSE via shared EventSource
+  const wrappedHandler = (payload: unknown) => handler({ payload: payload as T });
+
+  if (!_sseListeners.has(event)) {
+    _sseListeners.set(event, new Set());
+    // If SSE is already connected, attach this new event type
+    if (_sseSource && _sseSource.readyState !== EventSource.CLOSED) {
+      attachSseEventType(event);
+    }
+  }
+  _sseListeners.get(event)!.add(wrappedHandler);
+
+  // Ensure SSE connection exists
+  ensureSse();
+
+  return Promise.resolve(() => {
+    const listeners = _sseListeners.get(event);
+    if (listeners) {
+      listeners.delete(wrappedHandler);
+      if (listeners.size === 0) _sseListeners.delete(event);
+    }
+  });
 }

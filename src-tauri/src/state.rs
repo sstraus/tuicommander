@@ -53,6 +53,56 @@ pub enum AppEvent {
     },
 }
 
+// ---------------------------------------------------------------------------
+// SessionState — server-side accumulator for REST polling (mobile/browser)
+// ---------------------------------------------------------------------------
+
+/// Per-session state accumulated from broadcast events.
+/// Updated by a background task that subscribes to the event bus.
+/// Read by `GET /sessions` to enrich the response for REST-polling clients.
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct SessionState {
+    /// True when a Question parsed event is pending (no subsequent user-input or pty-exit)
+    pub awaiting_input: bool,
+    /// The question text, if awaiting input
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub question_text: Option<String>,
+    /// True when a rate-limit parsed event is active
+    pub rate_limited: bool,
+    /// Retry-after in ms from the rate-limit event
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_ms: Option<u64>,
+    /// Usage limit percentage (0-100), if detected
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_limit_pct: Option<u8>,
+    /// True when we have recent output activity (not idle)
+    pub is_busy: bool,
+    /// Timestamp of last activity (any event for this session)
+    pub last_activity_ms: u64,
+    /// Detected agent type, if known
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_type: Option<String>,
+    /// Last API error, if any
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+}
+
+impl Default for SessionState {
+    fn default() -> Self {
+        Self {
+            awaiting_input: false,
+            question_text: None,
+            rate_limited: false,
+            retry_after_ms: None,
+            usage_limit_pct: None,
+            is_busy: false,
+            last_activity_ms: 0,
+            agent_type: None,
+            last_error: None,
+        }
+    }
+}
+
 /// TTL for git operations (local disk): 5 seconds
 pub(crate) const GIT_CACHE_TTL: Duration = Duration::from_secs(5);
 
@@ -624,6 +674,8 @@ pub struct AppState {
     pub(crate) event_bus: tokio::sync::broadcast::Sender<AppEvent>,
     /// Monotonic counter for SSE event IDs.
     pub(crate) event_counter: Arc<AtomicU64>,
+    /// Per-session state accumulated from broadcast events (for REST polling).
+    pub(crate) session_states: DashMap<String, SessionState>,
 }
 
 impl AppState {
@@ -666,6 +718,107 @@ impl AppState {
         self.merged_branches_cache.remove(path);
         self.github_status_cache.remove(path);
         self.git_status_cache.remove(path);
+    }
+
+    /// Spawn a background task that subscribes to the event bus and updates
+    /// `session_states`. Call once at startup after constructing AppState.
+    pub(crate) fn spawn_session_state_accumulator(state: Arc<AppState>) {
+        let mut rx = state.event_bus.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(event) => Self::apply_event_to_session_state(&state, &event),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        eprintln!("[session-state] lagged by {n} events");
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+    }
+
+    /// Apply a single event to the session state accumulator.
+    fn apply_event_to_session_state(state: &Arc<AppState>, event: &AppEvent) {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        match event {
+            AppEvent::SessionCreated { session_id, .. } => {
+                state.session_states.insert(session_id.clone(), SessionState {
+                    is_busy: true,
+                    last_activity_ms: now_ms,
+                    ..Default::default()
+                });
+            }
+            AppEvent::SessionClosed { session_id } => {
+                state.session_states.remove(session_id);
+            }
+            AppEvent::PtyParsed { session_id, parsed } => {
+                let event_type = parsed.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                state.session_states
+                    .entry(session_id.clone())
+                    .and_modify(|s| {
+                        s.last_activity_ms = now_ms;
+                        s.is_busy = true;
+                        match event_type {
+                            "question" => {
+                                s.awaiting_input = true;
+                                s.question_text = parsed.get("prompt_text")
+                                    .and_then(|t| t.as_str())
+                                    .map(|t| t.to_string());
+                            }
+                            "user-input" => {
+                                // User responded — clear question state
+                                s.awaiting_input = false;
+                                s.question_text = None;
+                            }
+                            "rate-limit" => {
+                                s.rate_limited = true;
+                                s.retry_after_ms = parsed.get("retry_after_ms")
+                                    .and_then(|v| v.as_u64());
+                                s.is_busy = false;
+                            }
+                            "usage-limit" => {
+                                s.usage_limit_pct = parsed.get("percentage")
+                                    .and_then(|v| v.as_u64())
+                                    .map(|v| v as u8);
+                            }
+                            "api-error" => {
+                                s.last_error = parsed.get("matched_text")
+                                    .and_then(|t| t.as_str())
+                                    .map(|t| t.to_string());
+                            }
+                            "status-line" => {
+                                // Agent is working — clear error/rate-limit states
+                                s.rate_limited = false;
+                                s.retry_after_ms = None;
+                                s.last_error = None;
+                            }
+                            _ => {}
+                        }
+                    })
+                    .or_insert_with(|| SessionState {
+                        is_busy: true,
+                        last_activity_ms: now_ms,
+                        ..Default::default()
+                    });
+            }
+            AppEvent::PtyExit { session_id } => {
+                if let Some(mut entry) = state.session_states.get_mut(session_id) {
+                    entry.is_busy = false;
+                    entry.awaiting_input = false;
+                    entry.question_text = None;
+                    entry.rate_limited = false;
+                    entry.last_activity_ms = now_ms;
+                }
+            }
+            // Global events don't affect per-session state
+            AppEvent::HeadChanged { .. }
+            | AppEvent::RepoChanged { .. }
+            | AppEvent::PluginChanged { .. } => {}
+        }
     }
 
     /// Build orchestrator stats snapshot from current state.
@@ -1001,6 +1154,7 @@ mod tests {
             log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
             event_bus: tokio::sync::broadcast::channel(256).0,
             event_counter: Arc::new(AtomicU64::new(0)),
+            session_states: DashMap::new(),
         }
     }
 

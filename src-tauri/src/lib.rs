@@ -567,10 +567,13 @@ pub fn run() {
         let mcp_enabled = config.mcp_server_enabled;
         let remote_enabled = config.remote_access_enabled;
         let mcp_state = state.clone();
+        let accumulator_state = state.clone();
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new()
                 .expect("Failed to create tokio runtime for HTTP server");
             rt.block_on(async move {
+                // Start session state accumulator (consumes broadcast events)
+                AppState::spawn_session_state_accumulator(accumulator_state);
                 mcp_http::start_server(mcp_state, mcp_enabled, remote_enabled).await;
             });
         });

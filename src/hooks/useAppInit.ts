@@ -162,18 +162,16 @@ export async function initApp(deps: AppInitDeps) {
   // state (e.g. "Add Repository" button) before persisted repos have loaded.
   document.getElementById("splash")?.remove();
 
-  // Start HEAD and repo file watchers for all known repos (Tauri-only: no HTTP equivalent)
-  if (isTauri()) {
-    for (const repoPath of repositoriesStore.getPaths()) {
-      // Skip non-git directories — no .git/ to watch
-      if (repositoriesStore.get(repoPath)?.isGitRepo === false) continue;
-      invoke("start_head_watcher", { repoPath }).catch((err) =>
-        appLogger.warn("app", `HeadWatcher failed to start for ${repoPath}`, err),
-      );
-      invoke("start_repo_watcher", { repoPath }).catch((err) =>
-        appLogger.warn("app", `RepoWatcher failed to start for ${repoPath}`, err),
-      );
-    }
+  // Start HEAD and repo file watchers for all known repos
+  for (const repoPath of repositoriesStore.getPaths()) {
+    // Skip non-git directories — no .git/ to watch
+    if (repositoriesStore.get(repoPath)?.isGitRepo === false) continue;
+    invoke("start_head_watcher", { repoPath }).catch((err) =>
+      appLogger.warn("app", `HeadWatcher failed to start for ${repoPath}`, err),
+    );
+    invoke("start_repo_watcher", { repoPath }).catch((err) =>
+      appLogger.warn("app", `RepoWatcher failed to start for ${repoPath}`, err),
+    );
   }
 
   listen<{ repo_path: string; branch: string }>("head-changed", (event) => {
@@ -243,65 +241,63 @@ export async function initApp(deps: AppInitDeps) {
     appLogger.error("app", "Failed to register repo-changed listener", err),
   );
 
-  // Listen for sessions created/closed by remote clients (browser UI)
-  if (isTauri()) {
-    listen<{ session_id: string; cwd: string | null }>("session-created", (event) => {
-      const { session_id, cwd } = event.payload;
-      // Skip if this session is already tracked (created locally)
-      const existing = terminalsStore.getIds().find(
-        (id) => terminalsStore.get(id)?.sessionId === session_id,
-      );
-      if (existing) return;
+  // Listen for sessions created/closed by remote clients (browser UI or other Tauri windows)
+  listen<{ session_id: string; cwd: string | null }>("session-created", (event) => {
+    const { session_id, cwd } = event.payload;
+    // Skip if this session is already tracked (created locally)
+    const existing = terminalsStore.getIds().find(
+      (id) => terminalsStore.get(id)?.sessionId === session_id,
+    );
+    if (existing) return;
 
-      appLogger.info("app", `Remote session created: ${session_id}`);
-      const id = terminalsStore.add({
-        sessionId: session_id,
-        fontSize: deps.getDefaultFontSize(),
-        name: `Remote ${terminalsStore.getCount() + 1}`,
-        cwd: cwd ?? null,
-        awaitingInput: null,
+    appLogger.info("app", `Remote session created: ${session_id}`);
+    const id = terminalsStore.add({
+      sessionId: session_id,
+      fontSize: deps.getDefaultFontSize(),
+      name: `Remote ${terminalsStore.getCount() + 1}`,
+      cwd: cwd ?? null,
+      awaitingInput: null,
+    });
+
+    // Match to repo/branch by cwd
+    if (cwd) {
+      const matchedRepo = repositoriesStore.getPaths().find((repoPath) => {
+        if (cwd === repoPath) return true;
+        const repoState = repositoriesStore.get(repoPath);
+        if (!repoState) return false;
+        return Object.values(repoState.branches).some(
+          (b) => b.worktreePath && cwd === b.worktreePath,
+        );
       });
 
-      // Match to repo/branch by cwd
-      if (cwd) {
-        const matchedRepo = repositoriesStore.getPaths().find((repoPath) => {
-          if (cwd === repoPath) return true;
-          const repoState = repositoriesStore.get(repoPath);
-          if (!repoState) return false;
-          return Object.values(repoState.branches).some(
+      if (matchedRepo) {
+        const repoState = repositoriesStore.get(matchedRepo);
+        const branchName =
+          Object.values(repoState?.branches || {}).find(
             (b) => b.worktreePath && cwd === b.worktreePath,
-          );
-        });
+          )?.name || repoState?.activeBranch;
 
-        if (matchedRepo) {
-          const repoState = repositoriesStore.get(matchedRepo);
-          const branchName =
-            Object.values(repoState?.branches || {}).find(
-              (b) => b.worktreePath && cwd === b.worktreePath,
-            )?.name || repoState?.activeBranch;
-
-          if (branchName) {
-            repositoriesStore.addTerminalToBranch(matchedRepo, branchName, id);
-          }
+        if (branchName) {
+          repositoriesStore.addTerminalToBranch(matchedRepo, branchName, id);
         }
       }
-    }).catch((err) =>
-      appLogger.error("app", "Failed to register session-created listener", err),
-    );
+    }
+  }).catch((err) =>
+    appLogger.error("app", "Failed to register session-created listener", err),
+  );
 
-    listen<{ session_id: string }>("session-closed", (event) => {
-      const { session_id } = event.payload;
-      const termId = terminalsStore.getIds().find(
-        (id) => terminalsStore.get(id)?.sessionId === session_id,
-      );
-      if (termId) {
-        appLogger.info("app", `Remote session closed: ${session_id}`);
-        terminalsStore.remove(termId);
-      }
-    }).catch((err) =>
-      appLogger.error("app", "Failed to register session-closed listener", err),
+  listen<{ session_id: string }>("session-closed", (event) => {
+    const { session_id } = event.payload;
+    const termId = terminalsStore.getIds().find(
+      (id) => terminalsStore.get(id)?.sessionId === session_id,
     );
-  }
+    if (termId) {
+      appLogger.info("app", `Remote session closed: ${session_id}`);
+      terminalsStore.remove(termId);
+    }
+  }).catch((err) =>
+    appLogger.error("app", "Failed to register session-closed listener", err),
+  );
 
   // Check for surviving PTY sessions (persists across Vite HMR reloads)
   let survivingSessions: Awaited<ReturnType<typeof deps.pty.listActiveSessions>> = [];

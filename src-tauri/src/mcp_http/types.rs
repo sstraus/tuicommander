@@ -13,6 +13,9 @@ pub(super) struct SessionInfo {
     pub cwd: Option<String>,
     pub worktree_path: Option<String>,
     pub worktree_branch: Option<String>,
+    // Session state (from accumulator) — present when broadcast channel is active
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<crate::state::SessionState>,
 }
 
 #[derive(Deserialize)]

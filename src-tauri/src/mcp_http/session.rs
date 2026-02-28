@@ -28,6 +28,7 @@ pub(super) async fn list_sessions(State(state): State<Arc<AppState>>) -> Json<Ve
         .map(|entry| {
             let session_id = entry.key().clone();
             let session = entry.value().lock();
+            let session_state = state.session_states.get(&session_id).map(|s| s.clone());
             SessionInfo {
                 session_id,
                 cwd: session.cwd.clone(),
@@ -39,6 +40,7 @@ pub(super) async fn list_sessions(State(state): State<Arc<AppState>>) -> Json<Ve
                     .worktree
                     .as_ref()
                     .and_then(|w| w.branch.clone()),
+                state: session_state,
             }
         })
         .collect();
@@ -500,6 +502,12 @@ pub(super) async fn ws_stream(
 }
 
 /// Handle a WebSocket connection for a PTY session.
+///
+/// Multiplexes two streams to the client:
+/// 1. Raw PTY output via mpsc channel → `{"type":"output","data":"..."}`
+/// 2. Parsed events via broadcast channel → `{"type":"parsed","event":{...}}`
+///
+/// Client → server messages are written to the PTY as input.
 async fn handle_ws_session(socket: WebSocket, session_id: String, state: Arc<AppState>, strip_ansi: bool) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
@@ -511,6 +519,9 @@ async fn handle_ws_session(socket: WebSocket, session_id: String, state: Arc<App
         .or_default()
         .push(tx);
 
+    // Subscribe to broadcast channel for parsed events (filtered by session_id)
+    let mut event_rx = state.event_bus.subscribe();
+
     // Send existing ring buffer content as initial catch-up
     if let Some(ring) = state.output_buffers.get(&session_id) {
         let (data, _) = ring.lock().read_last(OUTPUT_RING_BUFFER_CAPACITY);
@@ -520,26 +531,77 @@ async fn handle_ws_session(socket: WebSocket, session_id: String, state: Arc<App
                 text = crate::output_parser::strip_ansi(&text);
             }
             if !text.is_empty() {
-                let _ = futures_util::SinkExt::send(&mut ws_sender, Message::Text(text.into())).await;
+                let frame = serde_json::json!({"type": "output", "data": text});
+                let _ = futures_util::SinkExt::send(
+                    &mut ws_sender,
+                    Message::Text(frame.to_string().into()),
+                ).await;
             }
         }
     }
 
-    // Spawn a task to forward PTY output to the WebSocket
+    // Spawn a task to forward PTY output + parsed events to the WebSocket
+    let sid_for_events = session_id.clone();
     let send_task = tokio::spawn(async move {
-        while let Some(data) = rx.recv().await {
-            let out = if strip_ansi {
-                let stripped = crate::output_parser::strip_ansi(&data);
-                if stripped.is_empty() { continue; }
-                stripped
-            } else {
-                data
-            };
-            if futures_util::SinkExt::send(&mut ws_sender, Message::Text(out.into()))
-                .await
-                .is_err()
-            {
-                break;
+        loop {
+            tokio::select! {
+                // Raw PTY output from mpsc channel
+                data = rx.recv() => {
+                    let Some(data) = data else { break };
+                    let out = if strip_ansi {
+                        let stripped = crate::output_parser::strip_ansi(&data);
+                        if stripped.is_empty() { continue; }
+                        stripped
+                    } else {
+                        data
+                    };
+                    let frame = serde_json::json!({"type": "output", "data": out});
+                    if futures_util::SinkExt::send(
+                        &mut ws_sender,
+                        Message::Text(frame.to_string().into()),
+                    ).await.is_err() {
+                        break;
+                    }
+                }
+                // Parsed events from broadcast channel
+                result = event_rx.recv() => {
+                    match result {
+                        Ok(event) => {
+                            // Filter: only forward events for this session
+                            let matches = match &event {
+                                crate::state::AppEvent::PtyParsed { session_id: sid, .. } => sid == &sid_for_events,
+                                crate::state::AppEvent::PtyExit { session_id: sid } => sid == &sid_for_events,
+                                crate::state::AppEvent::SessionClosed { session_id: sid } => sid == &sid_for_events,
+                                _ => false,
+                            };
+                            if !matches { continue; }
+
+                            // Extract the inner payload (without serde tag wrapping)
+                            let payload = match &event {
+                                crate::state::AppEvent::PtyParsed { parsed, .. } => {
+                                    serde_json::json!({"type": "parsed", "event": parsed})
+                                }
+                                crate::state::AppEvent::PtyExit { session_id: sid } => {
+                                    serde_json::json!({"type": "exit", "session_id": sid})
+                                }
+                                crate::state::AppEvent::SessionClosed { session_id: sid } => {
+                                    serde_json::json!({"type": "closed", "session_id": sid})
+                                }
+                                _ => continue,
+                            };
+                            if futures_util::SinkExt::send(
+                                &mut ws_sender,
+                                Message::Text(payload.to_string().into()),
+                            ).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            eprintln!("[ws] broadcast lagged by {n} events for session {sid_for_events}");
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
             }
         }
     });
