@@ -1,0 +1,29 @@
+src/components/DictationToast/DictationToast.module.css
+  4edf3f37670677e5 1-85
+src/App.tsx
+  4edf3f37670677e5 34,1107-1109
+src/components/DictationToast/DictationToast.tsx
+  4edf3f37670677e5 1-59
+src/stores/dictation.ts
+  4edf3f37670677e5 85,106,114-118,274,280
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "dbe0c94ebac6489b6be55dddce38e9cb9b5da8ec",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "unknown"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 157,
+      "total_deletions": 0,
+      "accepted_lines": 157,
+      "overriden_lines": 0
+    }
+  }
+}
