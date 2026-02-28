@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Index, Show, createSignal } from "solid-js";
 import { SessionCard } from "../components/SessionCard";
 import type { SessionInfo } from "../useSessions";
 import styles from "./SessionsScreen.module.css";
@@ -68,7 +68,17 @@ export function SessionsScreen(props: SessionsScreenProps) {
       </Show>
 
       <Show when={props.loading && props.sessions.length === 0}>
-        <div class={styles.empty}>Loading sessions...</div>
+        <Index each={[0, 1, 2]}>
+          {() => (
+            <div class={styles.skeleton}>
+              <div class={styles.skeletonIcon} />
+              <div class={styles.skeletonBody}>
+                <div class={styles.skeletonLine} style={{ width: "40%" }} />
+                <div class={styles.skeletonLine} style={{ width: "60%" }} />
+              </div>
+            </div>
+          )}
+        </Index>
       </Show>
 
       <Show when={!props.loading && props.sessions.length === 0 && !props.error}>

@@ -9,6 +9,8 @@
   overflow: hidden;
   /* Prevent rubber-band overscroll on iOS */
   overscroll-behavior: none;
+  /* Forced dark mode */
+  color-scheme: dark;
 }
 
 .content {
@@ -16,13 +18,4 @@
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-}
-
-.placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--fg-muted);
-  font-size: 15px;
 }
