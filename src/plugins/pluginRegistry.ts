@@ -7,7 +7,7 @@ import { prNotificationsStore } from "../stores/prNotifications";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { notificationsStore } from "../stores/notifications";
 import { mdTabsStore } from "../stores/mdTabs";
-import { uiStore } from "../stores/ui";
+
 import { pluginStore } from "../stores/pluginStore";
 import { markdownProviderRegistry } from "./markdownProviderRegistry";
 import { invoke, listen } from "../invoke";
@@ -302,17 +302,11 @@ function createPluginRegistry() {
       openMarkdownPanel(title: string, contentUri: string): void {
         requireCapability(pluginId, capabilities, "ui:markdown");
         mdTabsStore.addVirtual(title, contentUri);
-        if (!uiStore.state.markdownPanelVisible) {
-          uiStore.toggleMarkdownPanel();
-        }
       },
 
       openMarkdownFile(absolutePath: string): void {
         requireCapability(pluginId, capabilities, "ui:markdown");
         mdTabsStore.add("", absolutePath);
-        if (!uiStore.state.markdownPanelVisible) {
-          uiStore.toggleMarkdownPanel();
-        }
       },
 
       async playNotificationSound(): Promise<void> {
@@ -423,9 +417,6 @@ function createPluginRegistry() {
       openPanel(options: OpenPanelOptions): PanelHandle {
         requireCapability(pluginId, capabilities, "ui:panel");
         const tabId = mdTabsStore.addPluginPanel(pluginId, options.title, options.html);
-        if (!uiStore.state.markdownPanelVisible) {
-          uiStore.toggleMarkdownPanel();
-        }
         // Register message handler for this panel
         if (options.onMessage) {
           panelMessageHandlers.set(tabId, options.onMessage);

@@ -213,61 +213,30 @@ describe("mdTabsStore", () => {
   // -------------------------------------------------------------------------
   // Auto-show markdown panel
   // -------------------------------------------------------------------------
-  describe("auto-show markdown panel", () => {
-    it("shows markdown panel when adding a file tab", () => {
+  describe("does not auto-show markdown file browser", () => {
+    it("does not open file browser when adding a file tab", () => {
       createRoot((dispose) => {
         expect(uiStore.state.markdownPanelVisible).toBe(false);
         store.add("/repo", "README.md");
-        expect(uiStore.state.markdownPanelVisible).toBe(true);
+        expect(uiStore.state.markdownPanelVisible).toBe(false);
         dispose();
       });
     });
 
-    it("shows markdown panel when adding a virtual tab", () => {
+    it("does not open file browser when adding a virtual tab", () => {
       createRoot((dispose) => {
         expect(uiStore.state.markdownPanelVisible).toBe(false);
         store.addVirtual("Plan", "plan:file?path=/foo.md");
-        expect(uiStore.state.markdownPanelVisible).toBe(true);
-        dispose();
-      });
-    });
-
-    it("shows markdown panel when adding a plugin panel tab", () => {
-      createRoot((dispose) => {
         expect(uiStore.state.markdownPanelVisible).toBe(false);
-        store.addPluginPanel("test-plugin", "Dashboard", "<h1>hi</h1>");
-        expect(uiStore.state.markdownPanelVisible).toBe(true);
         dispose();
       });
     });
 
-    it("shows markdown panel when adding claude usage tab", () => {
+    it("does not open file browser when adding claude usage tab", () => {
       createRoot((dispose) => {
         expect(uiStore.state.markdownPanelVisible).toBe(false);
         store.addClaudeUsage();
-        expect(uiStore.state.markdownPanelVisible).toBe(true);
-        dispose();
-      });
-    });
-
-    it("shows markdown panel when activating an existing duplicate tab", () => {
-      createRoot((dispose) => {
-        store.add("/repo", "README.md");
-        uiStore.setMarkdownPanelVisible(false);
-        // Adding the same file again should re-activate and show the panel
-        store.add("/repo", "README.md");
-        expect(uiStore.state.markdownPanelVisible).toBe(true);
-        dispose();
-      });
-    });
-
-    it("hides diff panel when markdown panel is auto-shown", () => {
-      createRoot((dispose) => {
-        uiStore.setDiffPanelVisible(true);
-        expect(uiStore.state.diffPanelVisible).toBe(true);
-        store.add("/repo", "README.md");
-        expect(uiStore.state.markdownPanelVisible).toBe(true);
-        expect(uiStore.state.diffPanelVisible).toBe(false);
+        expect(uiStore.state.markdownPanelVisible).toBe(false);
         dispose();
       });
     });
