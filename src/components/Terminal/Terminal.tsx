@@ -18,6 +18,7 @@ import { notificationsStore } from "../../stores/notifications";
 import { invoke } from "../../invoke";
 import { isMacOS } from "../../platform";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
+import { parseOsc7Url } from "../../utils/osc7";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import s from "./Terminal.module.css";
 
@@ -47,6 +48,8 @@ export interface TerminalProps {
   metaHotkeys?: boolean;
   /** When true, terminal initializes immediately without requiring activeId match (e.g. lazygit pane) */
   alwaysVisible?: boolean;
+  /** Called when the shell reports a working directory change via OSC 7 */
+  onCwdChange?: (id: string, cwd: string) => void;
 }
 
 /** Get current theme from settings, with scrollbar defaults */
@@ -793,6 +796,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
           lastOscTitleUpdate = 0;
         }
       }
+    });
+
+    // Track working directory changes via OSC 7 (file://hostname/path).
+    // Updates the terminal's cwd in the store and persists to Rust for restart recovery.
+    terminal.parser.registerOscHandler(7, (data: string) => {
+      const cwd = parseOsc7Url(data);
+      if (!cwd) return true;
+      const sessionId = terminalsStore.get(props.id)?.sessionId;
+      terminalsStore.update(props.id, { cwd });
+      if (sessionId) {
+        invoke("update_session_cwd", { sessionId, cwd });
+      }
+      props.onCwdChange?.(props.id, cwd);
+      return true;
     });
 
     // Replay any PTY output buffered while terminal was not yet open
