@@ -134,31 +134,32 @@ fn navigate<'a>(root: &'a serde_json::Value, key_path: &[&str]) -> Option<&'a se
     Some(current)
 }
 
-/// Detect the tui-mcp-bridge binary path.
-/// Tries resolve_cli first, then falls back to the app's resource directory.
+const BRIDGE_NAME: &str = "tuic-mcp-bridge";
+
+/// Detect the tuic-mcp-bridge binary path.
+/// Priority: sidecar (same dir as main executable) → PATH → bare name.
 fn detect_bridge_binary() -> String {
-    let resolved = crate::cli::resolve_cli("tui-mcp-bridge");
-    if std::path::Path::new(&resolved).exists() {
-        return resolved;
-    }
-    // Fallback: same directory as the current executable
+    // Primary: sidecar bundled alongside the main executable
+    // In release: Contents/MacOS/ (macOS), next to .exe (Windows), same dir (Linux)
+    // In dev: target/debug/ or target/release/
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {
-        let candidate = dir.join("tui-mcp-bridge");
+        #[cfg(not(windows))]
+        let candidate = dir.join(BRIDGE_NAME);
+        #[cfg(windows)]
+        let candidate = dir.join(format!("{BRIDGE_NAME}.exe"));
         if candidate.exists() {
             return candidate.to_string_lossy().to_string();
         }
-        #[cfg(windows)]
-        {
-            let candidate = dir.join("tui-mcp-bridge.exe");
-            if candidate.exists() {
-                return candidate.to_string_lossy().to_string();
-            }
-        }
+    }
+    // Fallback: resolve from PATH via well-known directories
+    let resolved = crate::cli::resolve_cli(BRIDGE_NAME);
+    if std::path::Path::new(&resolved).exists() {
+        return resolved;
     }
     // Last resort: bare name, hope it's on PATH
-    "tui-mcp-bridge".to_string()
+    BRIDGE_NAME.to_string()
 }
 
 /// Read a JSON file, returning an empty object if it doesn't exist or is invalid.
