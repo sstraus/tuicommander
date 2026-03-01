@@ -1,0 +1,33 @@
+src-tauri/src/config.rs
+  4edf3f37670677e5 304-306,366,863,888
+src/components/SettingsPanel/tabs/ServicesTab.tsx
+  4edf3f37670677e5 37,42-59,81-82,122-127,141,551-584,586,588-590,612,618-619,678-728,850-855,874-883,893-914,930-931,939-993,995
+src-tauri/src/lib.rs
+  4edf3f37670677e5 799
+src-tauri/src/mcp_upstream_config.rs
+  4edf3f37670677e5 246-253
+src-tauri/src/mcp_proxy/registry.rs
+  4edf3f37670677e5 425-428,433-434
+src-tauri/src/mcp_http/mcp_transport.rs
+  4edf3f37670677e5 184,186,191-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "51315f634f1534377d19f98634e928332c3830d0",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 265,
+      "total_deletions": 64,
+      "accepted_lines": 245,
+      "overriden_lines": 0
+    }
+  }
+}
