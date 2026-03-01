@@ -49,12 +49,12 @@ interface UpstreamStatusEntry {
 }
 
 /** Static definition of native TUIC tools exposed via MCP */
-const NATIVE_TOOLS: { name: string; description: string }[] = [
-  { name: "session", description: "Manage PTY terminal sessions" },
-  { name: "git", description: "Query git repository state" },
-  { name: "agent", description: "Detect and spawn AI agents" },
-  { name: "config", description: "Read and write app config" },
-  { name: "plugin_dev_guide", description: "Plugin authoring reference" },
+const NATIVE_TOOLS: { name: string; description: string; actions: string }[] = [
+  { name: "session", description: "Manage PTY terminal sessions", actions: "list, create, input, output, resize, close, pause, resume" },
+  { name: "git", description: "Query git repository state", actions: "info, diff, files, branches, github, prs" },
+  { name: "agent", description: "Detect and spawn AI agents", actions: "detect, spawn, stats, metrics" },
+  { name: "config", description: "Read and write app config", actions: "get, save" },
+  { name: "plugin_dev_guide", description: "Plugin authoring reference", actions: "Returns full plugin authoring guide" },
 ];
 
 export const ServicesTab: Component = () => {
@@ -223,10 +223,9 @@ export const ServicesTab: Component = () => {
 
   return (
     <div class={s.section}>
-      <h3>{t("services.heading.mcpServices", "MCP Services")}</h3>
+      <h3>{t("services.heading.httpApiServer", "HTTP API Server")}</h3>
 
       <div class={s.group}>
-        <label>{t("services.label.httpApiServer", "HTTP API Server")}</label>
         <div class={s.toggle}>
           <input
             type="checkbox"
@@ -234,29 +233,39 @@ export const ServicesTab: Component = () => {
             disabled={saving()}
             onChange={(e) => toggleMcp(e.currentTarget.checked)}
           />
-          <span>{t("services.toggle.enableMcp", "Enable MCP server")}</span>
+          <span>{t("services.toggle.enableHttpServer", "Enable HTTP API server")}</span>
         </div>
         <p class={s.hint}>
-          {t("services.hint.mcpDescription", "Exposes a local HTTP API for AI agents and automation tools")}
+          {t("services.hint.httpDescription", "Serves the REST API and MCP protocol for AI agents and automation tools")}
         </p>
       </div>
 
-      <div class={s.group}>
-        <label>{t("services.label.mcpPort", "MCP Port")}</label>
-        <input
-          type="number"
-          class={s.input}
-          value={mcpPort()}
-          min={1024}
-          max={65535}
-          style={{ width: "100px" }}
-          onInput={(e) => setMcpPort(parseInt(e.currentTarget.value) || 3845)}
-          onChange={() => saveConfigField((c) => { c.mcp_port = mcpPort(); })}
-        />
-        <p class={s.hint}>
-          {t("services.hint.mcpPort", "Fixed port for the MCP server. Change requires server restart.")}
-        </p>
-      </div>
+      {/* Port field: only show when remote access is OFF (otherwise remote_access_port is used) */}
+      <Show when={!raEnabled()}>
+        <div class={s.group}>
+          <label>{t("services.label.mcpPort", "Port")}</label>
+          <input
+            type="number"
+            class={s.input}
+            value={mcpPort()}
+            min={1024}
+            max={65535}
+            style={{ width: "100px" }}
+            onInput={(e) => setMcpPort(parseInt(e.currentTarget.value) || 3845)}
+            onChange={() => saveConfigField((c) => { c.mcp_port = mcpPort(); })}
+          />
+          <p class={s.hint}>
+            {t("services.hint.mcpPort", "Localhost-only port. Change requires server restart.")}
+          </p>
+        </div>
+      </Show>
+      <Show when={raEnabled()}>
+        <div class={s.group}>
+          <p class={s.hint}>
+            {t("services.hint.portFromRemote", "Server uses the Remote Access port ({port}) when remote access is enabled.", { port: String(raPort()) })}
+          </p>
+        </div>
+      </Show>
 
       <Show when={status()}>
         {(st) => (
@@ -275,34 +284,6 @@ export const ServicesTab: Component = () => {
             </div>
 
             <Show when={st().running}>
-              <div class={s.group}>
-                <label>{t("services.label.activeSessions", "Active Sessions")}</label>
-                <div class={s.mcpSessionsBar}>
-                  <div
-                    class={s.mcpSessionsFill}
-                    style={{ width: `${Math.min(100, (st().active_sessions / st().max_sessions) * 100)}%` }}
-                  />
-                  <span class={s.mcpSessionsLabel}>
-                    {st().active_sessions} / {st().max_sessions}
-                  </span>
-                </div>
-              </div>
-
-              <div class={s.group}>
-                <label>{t("services.label.apiEndpoints", "API Endpoints")}</label>
-                <p class={s.hint}>
-                  {t("services.hint.apiEndpoints", "Exposes {count} API endpoints.", { count: "21" })}
-                  See <code>pty.md</code> for complete API reference.
-                </p>
-              </div>
-
-              <div class={s.group}>
-                <label>{t("services.label.mcpBridge", "MCP Bridge")}</label>
-                <p class={s.hint}>
-                  {t("services.hint.mcpBridge", "Connects AI coding assistants via the Model Context Protocol")}
-                </p>
-              </div>
-
               <div class={s.group}>
                 <label>{t("services.label.mcpEndpoint", "MCP Endpoint")}</label>
                 <div class={s.urlCopyRow}>
@@ -486,28 +467,23 @@ export const ServicesTab: Component = () => {
                 {(url) => <img src={url()} width={120} height={120} alt={t("services.alt.qrCode", "QR code")} title={t("services.title.qrCode", "Scan to connect")} />}
               </Show>
               <span class={s.qrLabel}>{t("services.label.scanToConnect", "Scan to connect")}</span>
+              {/* Connection URL right under QR code */}
+              <div class={s.urlCopyRow} style={{ "margin-top": "8px", "max-width": "200px" }}>
+                <code class={s.urlFull} style={{ "font-size": "10px", "word-break": "break-all" }}>{qrContent()}</code>
+                <button
+                  class={s.copyBtn}
+                  onClick={copyUrl}
+                  title={t("services.btn.copyUrl", "Copy URL to clipboard")}
+                >
+                  {urlCopied()
+                    ? <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
+                    : <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+                  }
+                </button>
+              </div>
             </div>
           </Show>
         </div>
-
-        <Show when={status()?.running && qrContent()}>
-          <div class={s.urlRow}>
-            <label>{t("services.label.connectionUrl", "Connection URL")}</label>
-            <div class={s.urlCopyRow}>
-              <code class={s.urlFull}>{qrContent()}</code>
-              <button
-                class={s.copyBtn}
-                onClick={copyUrl}
-                title={t("services.btn.copyUrl", "Copy URL to clipboard")}
-              >
-                {urlCopied()
-                  ? <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-                  : <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
-                }
-              </button>
-            </div>
-          </div>
-        </Show>
 
         <div class={s.group} style={{ "margin-top": "16px" }}>
           <div class={s.toggle}>
@@ -574,9 +550,18 @@ export const ServicesTab: Component = () => {
                   }}
                 />
               </div>
-              <div>
+              <div style={{ display: "flex", "align-items": "center", gap: "6px" }}>
                 <span style={{ "font-weight": 500, "font-size": "13px", "font-family": "monospace" }}>{tool.name}</span>
-                <span class={s.hint} style={{ margin: 0, "margin-left": "8px" }}>{tool.description}</span>
+                <span class={s.hint} style={{ margin: 0 }}>{tool.description}</span>
+                <span
+                  title={tool.actions}
+                  style={{
+                    display: "inline-flex", "align-items": "center", "justify-content": "center",
+                    width: "16px", height: "16px", "border-radius": "50%", "flex-shrink": 0,
+                    background: "rgba(255,255,255,0.08)", color: "var(--fg-muted, #888)",
+                    "font-size": "11px", "font-weight": 600, cursor: "help",
+                  }}
+                >?</span>
               </div>
             </div>
           );
@@ -786,7 +771,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
               <input
                 type="password"
                 class={s.input}
-                placeholder="Bearer token (optional, stored in OS keychain)"
+                placeholder="API key for remote MCP servers (optional, stored in OS keychain)"
                 value={form().credential}
                 onInput={e => setForm(f => ({ ...f, credential: e.currentTarget.value }))}
               />
