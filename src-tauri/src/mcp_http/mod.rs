@@ -70,6 +70,12 @@ fn port_file_path() -> std::path::PathBuf {
     crate::config::config_dir().join("mcp-port")
 }
 
+/// Unix socket path for local MCP bridge connections: <config_dir>/mcp.sock
+#[cfg(unix)]
+pub(crate) fn socket_path() -> std::path::PathBuf {
+    crate::config::config_dir().join("mcp.sock")
+}
+
 /// Return the plugin development guide as JSON.
 async fn plugin_dev_guide_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({"content": plugin_docs::PLUGIN_DOCS}))
@@ -254,67 +260,19 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
 }
 
 /// Start the HTTP API server.
-/// When remote access is enabled, binds to 0.0.0.0:{configured_port} with Basic Auth.
-/// Otherwise, binds to 127.0.0.1:0 (localhost only, no auth).
-/// Writes the port number to ~/.tuicommander/mcp-port for the MCP bridge to discover.
+///
+/// **Unix socket** (macOS/Linux): always starts at `<config_dir>/mcp.sock`.
+/// No auth, MCP always enabled. Used by the local MCP bridge.
+///
+/// **TCP listener** (optional): when `remote_enabled` is true, binds to
+/// `0.0.0.0:{remote_access_port}` with Basic Auth.
+///
+/// Both listeners share a single shutdown signal so `save_config` can restart
+/// the server cleanly.
 pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enabled: bool) {
     let config = state.config.read().clone();
 
-    let bind_addr = if remote_enabled {
-        let port = if config.remote_access_port == 0 { 0 } else { config.remote_access_port };
-        if config.ipv6_enabled {
-            // Dual-stack: [::] accepts both IPv4 and IPv6 on macOS/Linux
-            format!("[::]:{port}")
-        } else {
-            format!("0.0.0.0:{port}")
-        }
-    } else {
-        let port = config.mcp_port;
-        format!("127.0.0.1:{port}")
-    };
-
-    let app = build_router(state.clone(), remote_enabled, mcp_enabled);
-
-    let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("MCP HTTP: failed to bind {bind_addr}: {e}");
-            // Fall back to localhost with OS-assigned port (remote access disabled)
-            let fallback = "127.0.0.1:0";
-            eprintln!("MCP HTTP: falling back to {fallback} (remote access disabled)");
-            match tokio::net::TcpListener::bind(fallback).await {
-                Ok(l) => l,
-                Err(e2) => {
-                    eprintln!("MCP HTTP: fallback bind also failed: {e2}, server disabled");
-                    return;
-                }
-            }
-        }
-    };
-
-    let addr = match listener.local_addr() {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("MCP HTTP: failed to get local address: {e}");
-            return;
-        }
-    };
-    if remote_enabled {
-        eprintln!("MCP HTTP API listening on {addr} (remote access enabled)");
-    } else {
-        eprintln!("MCP HTTP API listening on {addr}");
-    }
-
-    // Write port to file for bridge discovery
-    let port_file = port_file_path();
-    if let Some(parent) = port_file.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Err(e) = std::fs::write(&port_file, addr.port().to_string()) {
-        eprintln!("MCP HTTP: failed to write port file: {e}");
-    }
-
-    // Register shutdown channel so save_config can restart server without requiring app restart
+    // Register shutdown channel so save_config can restart server
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     *state.server_shutdown.lock() = Some(shutdown_tx);
 
@@ -336,22 +294,124 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         Arc::clone(&state.mcp_upstream_registry),
     );
 
-    // Serve with ConnectInfo for auth middleware; graceful shutdown via channel
-    let result = axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .with_graceful_shutdown(async { shutdown_rx.await.ok(); })
-    .await;
+    // --- Unix socket listener (always on, no auth) ---
+    #[cfg(unix)]
+    let socket_handle = {
+        let sock = socket_path();
+        // Remove stale socket from a previous run
+        let _ = std::fs::remove_file(&sock);
+        if let Some(parent) = sock.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match tokio::net::UnixListener::bind(&sock) {
+            Ok(uds) => {
+                eprintln!("MCP HTTP: Unix socket listening on {}", sock.display());
+                let app = build_router(state.clone(), false, true);
+                Some(tokio::spawn(async move {
+                    if let Err(e) = axum::serve(uds, app.into_make_service()).await {
+                        eprintln!("MCP HTTP: Unix socket server error: {e}");
+                    }
+                }))
+            }
+            Err(e) => {
+                eprintln!("MCP HTTP: failed to bind Unix socket {}: {e}", sock.display());
+                None
+            }
+        }
+    };
 
+    // --- TCP listener (optional, for remote access with auth) ---
+    let tcp_handle = if remote_enabled {
+        let port = if config.remote_access_port == 0 { 0 } else { config.remote_access_port };
+        let bind_addr = if config.ipv6_enabled {
+            format!("[::]:{port}")
+        } else {
+            format!("0.0.0.0:{port}")
+        };
+        match tokio::net::TcpListener::bind(&bind_addr).await {
+            Ok(listener) => {
+                let addr = listener.local_addr().unwrap_or_else(|_| {
+                    std::net::SocketAddr::from(([0, 0, 0, 0], 0))
+                });
+                eprintln!("MCP HTTP: TCP listening on {addr} (remote access enabled)");
+
+                // Write port to file for legacy bridge discovery
+                let port_file = port_file_path();
+                if let Some(parent) = port_file.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if let Err(e) = std::fs::write(&port_file, addr.port().to_string()) {
+                    eprintln!("MCP HTTP: failed to write port file: {e}");
+                }
+
+                let app = build_router(state.clone(), true, mcp_enabled);
+                Some(tokio::spawn(async move {
+                    if let Err(e) = axum::serve(
+                        listener,
+                        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                    ).await {
+                        eprintln!("MCP HTTP: TCP server error: {e}");
+                    }
+                }))
+            }
+            Err(e) => {
+                eprintln!("MCP HTTP: failed to bind TCP {bind_addr}: {e}");
+                None
+            }
+        }
+    } else {
+        // Local-only TCP for backward compat (bridge port file)
+        let port = config.mcp_port;
+        let bind_addr = format!("127.0.0.1:{port}");
+        match tokio::net::TcpListener::bind(&bind_addr).await {
+            Ok(listener) => {
+                let addr = listener.local_addr().unwrap_or_else(|_| {
+                    std::net::SocketAddr::from(([127, 0, 0, 1], 0))
+                });
+                eprintln!("MCP HTTP: TCP listening on {addr}");
+
+                let port_file = port_file_path();
+                if let Some(parent) = port_file.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if let Err(e) = std::fs::write(&port_file, addr.port().to_string()) {
+                    eprintln!("MCP HTTP: failed to write port file: {e}");
+                }
+
+                let app = build_router(state.clone(), false, mcp_enabled);
+                Some(tokio::spawn(async move {
+                    if let Err(e) = axum::serve(
+                        listener,
+                        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                    ).await {
+                        eprintln!("MCP HTTP: TCP server error: {e}");
+                    }
+                }))
+            }
+            Err(e) => {
+                eprintln!("MCP HTTP: failed to bind TCP {bind_addr}: {e}, continuing with socket only");
+                None
+            }
+        }
+    };
+
+    // Wait for shutdown signal
+    let _ = shutdown_rx.await;
+
+    // Abort listeners
+    #[cfg(unix)]
+    if let Some(h) = socket_handle {
+        h.abort();
+    }
+    if let Some(h) = tcp_handle {
+        h.abort();
+    }
     reaper_handle.abort();
 
-    // Cleanup port file
+    // Cleanup socket and port files
+    #[cfg(unix)]
+    let _ = std::fs::remove_file(socket_path());
     let _ = std::fs::remove_file(port_file_path());
-
-    if let Err(e) = result {
-        eprintln!("MCP HTTP server error: {e}");
-    }
 }
 
 #[cfg(test)]
@@ -1625,5 +1685,43 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         // Native tool — should succeed (empty session list, no error)
         assert_eq!(json["result"]["isError"], false, "Native tool should not error: {json}");
+    }
+
+    /// Unix socket listener: binds, serves health check, cleans up socket file on drop.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_unix_socket_serves_health() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let state = test_state();
+        let tmp_dir = std::env::temp_dir().join(format!("tuic-sock-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let sock_path = tmp_dir.join("mcp.sock");
+
+        // Bind Unix socket and serve the router (no auth, MCP enabled)
+        let app = build_router(state.clone(), false, true);
+        let uds = tokio::net::UnixListener::bind(&sock_path).unwrap();
+        assert!(sock_path.exists(), "socket file should exist after bind");
+
+        let server = tokio::spawn(async move {
+            axum::serve(uds, app.into_make_service()).await.unwrap();
+        });
+
+        // Connect via UnixStream, send raw HTTP GET /health with Connection: close
+        let mut stream = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
+        stream
+            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf);
+        assert!(response.contains("200 OK"), "expected 200 OK, got: {response}");
+        assert!(response.contains("\"ok\":true"), "expected JSON health body, got: {response}");
+
+        server.abort();
+        let _ = std::fs::remove_file(&sock_path);
+        let _ = std::fs::remove_dir(&tmp_dir);
     }
 }
