@@ -553,6 +553,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
         return false;
       }
 
+      // Escape dismisses resume banner when visible and returns focus to terminal
+      if (event.type === "keydown" && event.key === "Escape" && terminalsStore.get(props.id)?.pendingResumeCommand) {
+        terminalsStore.update(props.id, { pendingResumeCommand: null });
+        terminal?.focus();
+        return false;
+      }
+
       // Shift+Enter → ESC CR (\x1b\r): standard multi-line newline for CLI apps
       // (e.g. Claude Code, Ink). Native terminals like ghostty/kitty/WezTerm send
       // this sequence natively; we replicate the behavior for our embedded terminal.
