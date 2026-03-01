@@ -436,21 +436,22 @@ pub(crate) fn strip_ansi(text: &str) -> String {
 /// Parse status line patterns from pre-stripped terminal output.
 fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
     // Fast path: skip chunks that cannot contain any status line marker.
-    // Checks for: '*' (Claude status), "[Running]", "Tokens:" (Aider report),
-    // bullet chars (• ◦), or multi-byte UTF-8 (0xE2 covers braille spinners U+2800,
-    // dingbat asterisks U+2720-273F like ✢, block elements ░█, and ⏺).
+    // Checks for: '*' (Claude), "[Running]", "Tokens:" (Aider), or multi-byte UTF-8:
+    //   0xC2 = lead byte for · (U+00B7, Claude middle dot)
+    //   0xE2 = lead byte for braille U+2800, dingbat asterisks U+2720-273F,
+    //          block elements ░█, bullets •◦, ∴ (U+2234), ● (U+25CF), ○ (U+25CB)
     if !clean.contains('*') && !clean.contains("[Running]") && !clean.contains("Tokens:")
         && !clean.as_bytes().contains(&0xe2)
-        && !clean.as_bytes().contains(&0xc2)  // 0xC2 is lead byte for • (U+2022) and ◦ (U+25E6 is 0xE2)
+        && !clean.as_bytes().contains(&0xc2)
     {
         return None;
     }
 
     lazy_static::lazy_static! {
-        // Claude Code: "* Task name... (time)" or "✢Task name… (time)"
-        // Accepts ASCII * and Unicode dingbat asterisks (✢ U+2722, ✻ U+273B, etc.)
+        // Claude Code: "* Task name... (time)" or "✢Task name… (time)" or "· Verb…"
+        // Accepts ASCII *, middle dot · (U+00B7), and dingbat asterisks U+2720-273F.
         static ref CLAUDE_STATUS_RE: regex::Regex =
-            regex::Regex::new(r"[*\u{2720}-\u{273F}]\s*([^.…\n]+)(?:\.{2,3}|…)").unwrap();
+            regex::Regex::new(r"[*\u{00B7}\u{2720}-\u{273F}]\s*([^.…\n]+)(?:\.{2,3}|…)").unwrap();
         // "[Running] Task name"
         static ref RUNNING_STATUS_RE: regex::Regex =
             regex::Regex::new(r"(?i)\[Running\]\s+(.+)").unwrap();
@@ -469,6 +470,10 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
         // Requires parenthesized time suffix to avoid false positives from markdown bullets.
         static ref CODEX_BULLET_RE: regex::Regex =
             regex::Regex::new(r"[\u{2022}\u{25E6}]\s+(\w[^(]*?)\s*\(\d+[smh]").unwrap();
+        // Copilot CLI indicators: ∴ (U+2234 thinking), ● (U+25CF active), ○ (U+25CB queued)
+        // Format: "∴ Thinking…" or "● Read file..." or "○ Verify..."
+        static ref COPILOT_STATUS_RE: regex::Regex =
+            regex::Regex::new(r"[\u{2234}\u{25CF}\u{25CB}]\s+([^.…\n]+)(?:\.{2,3}|…)").unwrap();
         // Time info
         static ref TIME_RE: regex::Regex =
             regex::Regex::new(r"\((\d+[smh])").unwrap();
@@ -494,6 +499,7 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
             &RUNNING_STATUS_RE,
             &AIDER_TOKENS_RE,
             &AIDER_SPINNER_RE,
+            &COPILOT_STATUS_RE,
             &CODEX_BULLET_RE,
             &SPINNER_STATUS_RE,
         ];
@@ -1086,6 +1092,62 @@ mod tests {
         match &events[0] {
             ParsedEvent::StatusLine { task_name, .. } => {
                 assert_eq!(task_name, "Analyzing your codebase");
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_claude_middle_dot() {
+        // Claude Code uses · (U+00B7 middle dot) as one of its spinner frames
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{00B7} Considering\u{2026}");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, .. } => {
+                assert_eq!(task_name, "Considering");
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_copilot_therefore() {
+        // GitHub Copilot CLI uses ∴ (U+2234 THEREFORE) for thinking state
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{2234} Thinking\u{2026}");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, .. } => {
+                assert_eq!(task_name, "Thinking");
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_copilot_bullet() {
+        // GitHub Copilot CLI uses ● (U+25CF) for active tool calls
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{25CF} Read file...");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, .. } => {
+                assert_eq!(task_name, "Read file");
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_amazon_q_thinking() {
+        // Amazon Q: "⠹ Thinking..." (braille + ASCII dots, not Unicode ellipsis)
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{2839} Thinking...");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, .. } => {
+                assert_eq!(task_name, "Thinking");
             }
             _ => panic!("Expected StatusLine, got {:?}", events[0]),
         }

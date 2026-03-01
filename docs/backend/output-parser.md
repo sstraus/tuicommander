@@ -136,9 +136,12 @@ Patterns are compiled once at `OutputParser::new()` and reused across calls.
 
 | Agent | Pattern | Example |
 |-------|---------|---------|
-| Claude Code | Dingbat asterisk `✢` or ASCII `*` + ellipsis | `✢Reading files… (12s · ↑ 4.6k tokens)` |
+| Claude Code | `·`/`✢`/`✳`/`✶`/`✻`/`✽`/`*` + ellipsis | `✢Reading files… (12s)` or `· Considering…` |
 | Aider | Knight Rider scanner `░█` / `█░` + task text | `░█        Waiting for claude-3-5-sonnet` |
 | Aider | Token report `Tokens:` prefix | `Tokens: 5.2k sent, 1.3k received.` |
 | Codex CLI | Bullet `•`/`◦` + task + parenthesized time | `• Working (5s • esc to interrupt)` |
+| Copilot CLI | `∴`/`●`/`○` + task + dots/ellipsis | `∴ Thinking…` or `● Read file...` |
 | Gemini CLI | Braille spinner `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` + phrase | `⠋ Analyzing your codebase` |
+| Amazon Q | Braille spinner + task + ASCII dots | `⠹ Thinking...` |
+| Cline | Braille spinner + mode + optional timer | `⠙ Planning (45s · esc to interrupt)` |
 | Generic | `[Running]` prefix | `[Running] npm test` |
