@@ -161,7 +161,10 @@ fn streaming_loop(
                     transcribe_window(&transcriber, &window, language.as_deref())
                 {
                     if !text.is_empty() {
-                        let _ = tx.send(text);
+                        if tx.send(text).is_err() {
+                            // Receiver dropped — stop streaming
+                            break;
+                        }
                     }
                 }
 
@@ -207,7 +210,10 @@ fn transcribe_window(
                 Some(result.text)
             }
         }
-        Err(_) => None,
+        Err(e) => {
+            eprintln!("[dictation] transcription error: {e}");
+            None
+        }
     }
 }
 

@@ -229,7 +229,9 @@ pub fn start_dictation(
         .name("dictation-event-forwarder".into())
         .spawn(move || {
             for text in rx {
-                let _ = app_clone.emit("dictation-partial", &text);
+                if let Err(e) = app_clone.emit("dictation-partial", &text) {
+                    eprintln!("[dictation] failed to emit partial event: {e}");
+                }
             }
         })
         .map_err(|e| format!("Failed to spawn event forwarder: {e}"))?;
@@ -319,7 +321,7 @@ pub fn stop_dictation_and_transcribe(
         });
     }
 
-    app_logger::log_via_handle(&app, "info", "dictation", &format!("Final text: {:?}", final_text));
+    app_logger::log_via_handle(&app, "info", "dictation", &format!("Final text: {} chars", final_text.len()));
 
     // Apply corrections
     let corrected = dictation.corrections.lock().correct(&final_text);

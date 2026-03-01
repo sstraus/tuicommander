@@ -86,7 +86,7 @@ impl AudioCapture {
                     move |data: &[f32], _: &cpal::InputCallbackInfo| {
                         process_audio_chunk(data, sample_rate, channels, &buffer_clone);
                     },
-                    |err| eprintln!("Audio stream error: {err}"),
+                    |err| eprintln!("[dictation] audio stream error: {err}"),
                     None,
                 )
                 .map_err(|e| format!("Failed to build input stream: {e}"))?,
@@ -98,7 +98,7 @@ impl AudioCapture {
                             data.iter().map(|&s| f32::from(s) / f32::from(i16::MAX)).collect();
                         process_audio_chunk(&float_data, sample_rate, channels, &buffer_clone);
                     },
-                    |err| eprintln!("Audio stream error: {err}"),
+                    |err| eprintln!("[dictation] audio stream error: {err}"),
                     None,
                 )
                 .map_err(|e| format!("Failed to build input stream: {e}"))?,
