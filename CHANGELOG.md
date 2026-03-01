@@ -13,9 +13,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Multi-agent status line detection** — Output parser now recognizes status lines from Claude Code (✢/·/asterisk), Aider (Knight Rider scanner + token reports), Codex CLI (bullet spinner), GitHub Copilot CLI (∴/●/○ indicators), Gemini CLI, Amazon Q, and Cline (braille dots). Tab titles update correctly for all supported agents
 
 ### Fixed
+- **macOS TCC permission prompts** — App was triggering "would like to access Desktop/Documents" dialogs due to filesystem probing in Claude Usage slug resolver, terminal path canonicalization, and file dialogs without defaultPath. All four code paths now guard against TCC-protected directories
 - **Tab/sidebar animations not playing** — `pulse-opacity` keyframes defined in `global.css` were silently ignored by CSS Modules (scoped name mismatch). Moved keyframes into each module file; activity dots, busy indicators, and awaiting-input pulses now animate correctly
 - **Rate-limit false positives** — Rate-limit pattern matches are now suppressed when the terminal is actively producing output (busy state), eliminating noise from agents reading code that contains rate-limit strings
 - **Prompt Library focus loss** — Terminal now regains focus after prompt injection from the Prompt Library drawer
+- **False positive API error** — Removed overly generic "request failed unexpectedly" from copilot-auth-error pattern, was triggering on normal Claude Code output
 
 ## [0.6.0] - 2026-02-28
 
