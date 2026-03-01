@@ -367,6 +367,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
           const isDragging = () => draggingId() === id;
           const isDragOver = () => dragOverId() === id && draggingId() !== id;
           const progress = () => terminal()?.progress;
+          const isRemote = () => terminal()?.isRemote;
           const isEditing = () => editingId() === id;
 
           // Unified split tab mode: hide second pane's tab, show combined name on first
@@ -404,6 +405,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   hasActivity() && s.hasActivity,
                   isBusy() && s.shellBusy,
                   isIdle() && s.shellIdle,
+                  isRemote() && s.remoteTab,
                   isDragging() && s.dragging,
                   isDragOver() && dragOverSide() === "left" && s.dragOverLeft,
                   isDragOver() && dragOverSide() === "right" && s.dragOverRight,

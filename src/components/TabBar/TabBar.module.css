@@ -371,6 +371,30 @@
   align-items: center;
 }
 
+/* Remote/PTY tabs */
+.tab.remoteTab {
+  background: linear-gradient(to bottom, rgba(251, 191, 36, 0.1), rgba(251, 191, 36, 0.05));
+  border-bottom: 2px solid rgba(251, 191, 36, 0.3);
+}
+
+.tab.remoteTab:hover {
+  background: linear-gradient(to bottom, rgba(251, 191, 36, 0.15), rgba(251, 191, 36, 0.08));
+}
+
+.tab.remoteTab.active {
+  background: linear-gradient(to bottom, rgba(251, 191, 36, 0.25), rgba(251, 191, 36, 0.15));
+  border-bottom-color: #fbbf24;
+}
+
+.tab.remoteTab.active::before {
+  display: none;
+}
+
+.tab.remoteTab .tabIcon {
+  color: #fbbf24;
+  opacity: 0.8;
+}
+
 /* Drag & drop */
 .tab.dragging {
   opacity: 0.4;

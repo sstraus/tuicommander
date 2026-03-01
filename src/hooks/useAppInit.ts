@@ -256,9 +256,10 @@ export async function initApp(deps: AppInitDeps) {
     const id = terminalsStore.add({
       sessionId: session_id,
       fontSize: deps.getDefaultFontSize(),
-      name: `Remote ${terminalsStore.getCount() + 1}`,
+      name: `PTY: Session ${terminalsStore.getCount() + 1}`,
       cwd: cwd ?? null,
       awaitingInput: null,
+      isRemote: true,
     });
 
     // Match to repo/branch by cwd
