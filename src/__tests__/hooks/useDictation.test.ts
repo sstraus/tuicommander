@@ -30,7 +30,7 @@ describe("useDictation", () => {
       recording: false,
       processing: false,
       loading: false,
-      modelStatus: "ready" as string,
+      modelStatus: "ready" as "not_downloaded" | "downloaded" | "ready",
     },
     refreshStatus: vi.fn().mockResolvedValue(undefined),
     startRecording: vi.fn().mockResolvedValue(undefined),
@@ -126,7 +126,7 @@ describe("useDictation", () => {
     });
 
     it("shows loading message when model not ready", async () => {
-      mockDictationStore.state.modelStatus = "downloading";
+      mockDictationStore.state.modelStatus = "downloaded";
 
       await dictation.handleDictationStart();
 

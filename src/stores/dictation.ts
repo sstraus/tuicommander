@@ -19,7 +19,7 @@ export interface ModelInfo {
   actual_size_mb: number;
 }
 
-/** Possible model status values from Rust backend */
+/** Model status values from Rust backend */
 type ModelStatus = "not_downloaded" | "downloaded" | "ready";
 
 /** Model status from Rust backend */

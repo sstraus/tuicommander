@@ -26,21 +26,28 @@ pub fn vad_simple(
         return false;
     }
 
-    // Copy for high-pass filtering (avoid mutating caller's data).
-    let mut filtered = pcm.to_vec();
-    if freq_thold > 0.0 {
-        high_pass_filter(&mut filtered, freq_thold, sample_rate as f32);
-    }
+    // Only copy when high-pass filtering is needed (avoids allocation otherwise).
+    let filtered;
+    let samples = if freq_thold > 0.0 {
+        filtered = {
+            let mut buf = pcm.to_vec();
+            high_pass_filter(&mut buf, freq_thold, sample_rate as f32);
+            buf
+        };
+        &filtered[..]
+    } else {
+        pcm
+    };
 
     let mut energy_all: f32 = 0.0;
     let mut energy_last: f32 = 0.0;
-    for (i, &s) in filtered.iter().enumerate() {
+    for (i, &s) in samples.iter().enumerate() {
         energy_all += s.abs();
         if i >= n_samples - n_samples_last {
             energy_last += s.abs();
         }
     }
-    energy_all /= n_samples as f32;
+    energy_all /= samples.len() as f32;
     energy_last /= n_samples_last as f32;
 
     // If overall energy is near-zero (all silence), report silent.

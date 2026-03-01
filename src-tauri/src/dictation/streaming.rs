@@ -8,7 +8,7 @@
 /// - Overlapping windows with `keep_ms` of previous context
 /// - `set_single_segment(true)` + `set_no_timestamps(true)` for short windows
 
-use crate::dictation::transcribe::Transcribe;
+use crate::dictation::transcribe::Transcriber;
 use crate::dictation::vad;
 use parking_lot::Mutex;
 use std::collections::VecDeque;
@@ -57,7 +57,7 @@ impl StreamingSession {
     /// via `tx`. On stop, the thread returns unconsumed audio for a final
     /// transcription pass.
     pub fn start(
-        transcriber: Arc<dyn Transcribe>,
+        transcriber: Arc<dyn Transcriber>,
         audio_buffer: Arc<Mutex<VecDeque<f32>>>,
         tx: mpsc::Sender<String>,
         language: Option<String>,
@@ -108,7 +108,7 @@ impl StreamingSession {
 ///
 /// Returns unconsumed audio when stopped.
 fn streaming_loop(
-    transcriber: Arc<dyn Transcribe>,
+    transcriber: Arc<dyn Transcriber>,
     audio_buffer: Arc<Mutex<VecDeque<f32>>>,
     tx: mpsc::Sender<String>,
     stop: Arc<AtomicBool>,
@@ -117,8 +117,8 @@ fn streaming_loop(
     let mut step_buf: Vec<f32> = Vec::new();
     let mut prev_tail: Vec<f32> = Vec::new(); // keep_ms overlap from previous window
     let mut window_buf: Vec<f32> = Vec::new(); // reusable window buffer
-    let mut current_step_ms = INITIAL_STEP_MS;
     let mut swap_buf: VecDeque<f32> = VecDeque::new(); // for O(1) lock swap
+    let mut current_step_ms = INITIAL_STEP_MS;
 
     let keep_samples = ms_to_samples(KEEP_MS);
     let max_buffer_samples = (MAX_BUFFER_S * SAMPLE_RATE as f32) as usize;
@@ -128,10 +128,12 @@ fn streaming_loop(
             break;
         }
 
-        // Swap shared buffer with empty local VecDeque (O(1) lock hold)
+        // Drain available samples from shared buffer using swap for O(1) lock hold
         {
             let mut buf = audio_buffer.lock();
-            std::mem::swap(&mut *buf, &mut swap_buf);
+            if !buf.is_empty() {
+                std::mem::swap(&mut *buf, &mut swap_buf);
+            }
         }
         if !swap_buf.is_empty() {
             step_buf.extend(swap_buf.drain(..));
@@ -155,6 +157,7 @@ fn streaming_loop(
             if has_speech {
                 // Build window: [keep from previous | current step] — reuse buffer
                 window_buf.clear();
+                window_buf.reserve(prev_tail.len() + step_buf.len());
                 window_buf.extend_from_slice(&prev_tail);
                 window_buf.extend_from_slice(&step_buf);
 
@@ -165,7 +168,6 @@ fn streaming_loop(
                     if !text.is_empty() {
                         if tx.send(text).is_err() {
                             // Receiver dropped — stop streaming
-                            eprintln!("[dictation] partial channel disconnected, stopping");
                             break;
                         }
                     }
@@ -178,19 +180,17 @@ fn streaming_loop(
                 } else {
                     prev_tail.extend_from_slice(&step_buf);
                 }
-
-                // Grow window toward MAX_STEP_MS during speech
-                if current_step_ms < MAX_STEP_MS {
-                    current_step_ms = (current_step_ms + STEP_GROWTH_MS).min(MAX_STEP_MS);
-                }
-            } else {
-                // Reset window size on silence for low-latency first partial
-                current_step_ms = INITIAL_STEP_MS;
-                prev_tail.clear();
             }
 
             // Clear step buffer after processing (whether speech or silence)
             step_buf.clear();
+
+            // Grow window toward MAX_STEP_MS (grows on both speech and silence
+            // to improve quality as the session progresses; only the first window
+            // uses the small INITIAL_STEP_MS for low-latency first partial).
+            if current_step_ms < MAX_STEP_MS {
+                current_step_ms = (current_step_ms + STEP_GROWTH_MS).min(MAX_STEP_MS);
+            }
         }
 
         std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
@@ -204,21 +204,22 @@ fn streaming_loop(
 ///
 /// Returns the transcribed text, or None on error.
 fn transcribe_window(
-    transcriber: &dyn Transcribe,
+    transcriber: &dyn Transcriber,
     window: &[f32],
     language: Option<&str>,
 ) -> Option<String> {
+    // Use the existing transcribe method which already sets
+    // single_segment, no_timestamps, suppress_nst
     match transcriber.transcribe(window, language) {
         Ok(result) => {
             if result.skip_reason.is_some() {
                 None
             } else {
-                eprintln!("[dictation] partial: {} chars", result.text.len());
                 Some(result.text)
             }
         }
         Err(e) => {
-            eprintln!("[dictation] transcribe_window error: {e}");
+            eprintln!("[dictation] transcription error: {e}");
             None
         }
     }
@@ -227,22 +228,49 @@ fn transcribe_window(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dictation::transcribe::{Transcribe, TranscribeResult};
+    use crate::dictation::transcribe::{TranscribeResult, Transcriber};
+    use std::sync::atomic::AtomicUsize;
 
-    /// Test transcriber that echoes the sample count as text.
-    struct EchoTranscriber;
+    /// Mock transcriber that echoes the sample count as text.
+    struct EchoTranscriber {
+        call_count: AtomicUsize,
+    }
 
-    impl Transcribe for EchoTranscriber {
-        fn transcribe(
-            &self,
-            audio: &[f32],
-            _language: Option<&str>,
-        ) -> Result<TranscribeResult, String> {
+    impl EchoTranscriber {
+        fn new() -> Self {
+            Self { call_count: AtomicUsize::new(0) }
+        }
+    }
+
+    impl Transcriber for EchoTranscriber {
+        fn transcribe(&self, audio: &[f32], _language: Option<&str>) -> Result<TranscribeResult, String> {
+            self.call_count.fetch_add(1, Ordering::Relaxed);
             Ok(TranscribeResult {
-                text: format!("samples:{}", audio.len()),
+                text: format!("{}samples", audio.len()),
                 skip_reason: None,
             })
         }
+    }
+
+    /// Mock transcriber that always skips (simulates silence detection).
+    struct SkipTranscriber;
+
+    impl Transcriber for SkipTranscriber {
+        fn transcribe(&self, _audio: &[f32], _language: Option<&str>) -> Result<TranscribeResult, String> {
+            Ok(TranscribeResult {
+                text: String::new(),
+                skip_reason: Some("silence".to_string()),
+            })
+        }
+    }
+
+    /// Generate a sine wave (speech-like signal) for testing.
+    fn speech_samples(duration_ms: u32) -> Vec<f32> {
+        use std::f32::consts::PI;
+        let n = ms_to_samples(duration_ms);
+        (0..n)
+            .map(|i| (2.0 * PI * 440.0 * i as f32 / SAMPLE_RATE as f32).sin() * 0.5)
+            .collect()
     }
 
     #[test]
@@ -255,7 +283,6 @@ mod tests {
 
     #[test]
     fn test_adaptive_window_sizes() {
-        // Simulate the window growth pattern
         let mut current_step_ms = INITIAL_STEP_MS;
         let mut sizes = vec![current_step_ms];
 
@@ -266,197 +293,139 @@ mod tests {
             sizes.push(current_step_ms);
         }
 
-        // First window is 1500ms
         assert_eq!(sizes[0], 1500);
-        // Second is 2000ms
         assert_eq!(sizes[1], 2000);
-        // Third is 2500ms
         assert_eq!(sizes[2], 2500);
-        // Fourth is 3000ms (max)
         assert_eq!(sizes[3], 3000);
-        // Stays at max
         assert_eq!(sizes[4], 3000);
     }
 
     #[test]
     fn test_vad_skips_silence() {
-        // Simulate: silence-only step buffer → VAD returns true (silent) → no transcription
-        let silence = vec![0.0f32; ms_to_samples(2000)]; // 2s of silence
-
-        // vad_simple returns true for silence
-        let is_silent = vad::vad_simple(
-            &silence,
-            SAMPLE_RATE,
-            VAD_LAST_MS,
-            VAD_THRESHOLD,
-            VAD_FREQ_THRESHOLD,
-        );
+        let silence = vec![0.0f32; ms_to_samples(2000)];
+        let is_silent = vad::vad_simple(&silence, SAMPLE_RATE, VAD_LAST_MS, VAD_THRESHOLD, VAD_FREQ_THRESHOLD);
         assert!(is_silent, "VAD should detect silence");
-
-        // has_speech = !is_silent = false → no transcription would happen
-        let has_speech = !is_silent;
-        assert!(!has_speech, "Should skip silence");
     }
 
     #[test]
     fn test_vad_detects_speech() {
-        use std::f32::consts::PI;
-
-        // Generate a sine wave (speech-like signal)
-        let n = ms_to_samples(2000);
-        let speech: Vec<f32> = (0..n)
-            .map(|i| (2.0 * PI * 440.0 * i as f32 / SAMPLE_RATE as f32).sin() * 0.5)
-            .collect();
-
-        let is_silent = vad::vad_simple(
-            &speech,
-            SAMPLE_RATE,
-            VAD_LAST_MS,
-            VAD_THRESHOLD,
-            VAD_FREQ_THRESHOLD,
-        );
+        let speech = speech_samples(2000);
+        let is_silent = vad::vad_simple(&speech, SAMPLE_RATE, VAD_LAST_MS, VAD_THRESHOLD, VAD_FREQ_THRESHOLD);
         assert!(!is_silent, "VAD should detect speech");
-
-        let has_speech = !is_silent;
-        assert!(has_speech, "Should process speech");
     }
 
     #[test]
-    fn test_streaming_session_with_echo_transcriber() {
-        use std::f32::consts::PI;
-
-        let transcriber: Arc<dyn Transcribe> = Arc::new(EchoTranscriber);
+    fn test_stop_signal_terminates_real_loop() {
+        // Test the REAL streaming_loop with EchoTranscriber — no fabricated loop
+        let transcriber: Arc<dyn Transcriber> = Arc::new(EchoTranscriber::new());
         let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let stop = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::channel::<String>();
 
-        let session = StreamingSession::start(
-            transcriber,
-            buffer.clone(),
-            tx,
-            None,
-        );
+        let buf_clone = buffer.clone();
+        let stop_clone = stop.clone();
 
-        // Push 2s of speech-like audio (440Hz sine wave) — exceeds INITIAL_STEP_MS (1.5s)
-        let n = ms_to_samples(2000);
-        let speech: Vec<f32> = (0..n)
-            .map(|i| (2.0 * PI * 440.0 * i as f32 / SAMPLE_RATE as f32).sin() * 0.5)
-            .collect();
+        let handle = std::thread::spawn(move || {
+            streaming_loop(transcriber, buf_clone, tx, stop_clone, None)
+        });
+
+        // Let it poll a few times with no data
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        stop.store(true, Ordering::Release);
+
+        let remaining = handle.join().expect("Loop should not panic");
+        assert!(remaining.is_empty(), "No unconsumed audio expected");
+        assert!(rx.try_recv().is_err(), "No partials expected with empty buffer");
+    }
+
+    #[test]
+    fn test_streaming_loop_emits_partials_on_speech() {
+        // Feed speech data into the buffer and verify partials arrive
+        let transcriber: Arc<dyn Transcriber> = Arc::new(EchoTranscriber::new());
+        let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel::<String>();
+
+        // Pre-fill buffer with enough speech for the first window (1500ms)
         {
             let mut buf = buffer.lock();
-            buf.extend(speech.iter());
+            buf.extend(speech_samples(2000));
         }
 
-        // Wait for the streaming loop to process (poll interval is 50ms)
-        std::thread::sleep(std::time::Duration::from_millis(300));
+        let buf_clone = buffer.clone();
+        let stop_clone = stop.clone();
 
-        // Stop the session
-        let remaining = session.stop();
+        let handle = std::thread::spawn(move || {
+            streaming_loop(transcriber, buf_clone, tx, stop_clone, None)
+        });
 
-        // Should have received at least one partial transcription
-        let mut partials = Vec::new();
-        while let Ok(text) = rx.try_recv() {
-            partials.push(text);
-        }
-        assert!(
-            !partials.is_empty(),
-            "Should have received at least one partial from EchoTranscriber"
-        );
-        // Each partial should report the sample count
-        for partial in &partials {
-            assert!(
-                partial.starts_with("samples:"),
-                "Expected 'samples:N', got '{partial}'"
-            );
-        }
+        // Wait for the loop to process the speech window
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        stop.store(true, Ordering::Release);
+        handle.join().expect("Loop should not panic");
+
+        // Should have received at least one partial
+        let partial = rx.try_recv().expect("Should have received a partial");
+        assert!(partial.contains("samples"), "EchoTranscriber returns sample count");
     }
 
     #[test]
     fn test_streaming_loop_skips_silence() {
-        let transcriber: Arc<dyn Transcribe> = Arc::new(EchoTranscriber);
+        // Feed silence into the buffer — no partials should arrive
+        let transcriber: Arc<dyn Transcriber> = Arc::new(EchoTranscriber::new());
         let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let stop = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::channel::<String>();
 
-        let session = StreamingSession::start(
-            transcriber,
-            buffer.clone(),
-            tx,
-            None,
-        );
-
-        // Push 2s of silence — VAD should skip it, no transcription
-        let n = ms_to_samples(2000);
+        // Pre-fill with silence
         {
             let mut buf = buffer.lock();
-            buf.extend(std::iter::repeat(0.0f32).take(n));
+            buf.extend(vec![0.0f32; ms_to_samples(2000)]);
         }
 
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        session.stop();
+        let buf_clone = buffer.clone();
+        let stop_clone = stop.clone();
 
-        // Should NOT have received any partials (silence is skipped)
-        assert!(
-            rx.try_recv().is_err(),
-            "Should not transcribe silence"
-        );
+        let handle = std::thread::spawn(move || {
+            streaming_loop(transcriber, buf_clone, tx, stop_clone, None)
+        });
+
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        stop.store(true, Ordering::Release);
+        handle.join().expect("Loop should not panic");
+
+        // VAD should have skipped — no partials
+        assert!(rx.try_recv().is_err(), "No partials expected for silence");
     }
 
     #[test]
-    fn test_streaming_session_stop_terminates() {
-        let transcriber: Arc<dyn Transcribe> = Arc::new(EchoTranscriber);
+    fn test_streaming_loop_breaks_on_channel_disconnect() {
+        // Drop the receiver — loop should break when tx.send() fails
+        let transcriber: Arc<dyn Transcriber> = Arc::new(EchoTranscriber::new());
         let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
-        let (tx, _rx) = mpsc::channel::<String>();
+        let stop = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel::<String>();
 
-        let session = StreamingSession::start(
-            transcriber,
-            buffer.clone(),
-            tx,
-            None,
-        );
-
-        // Let it run briefly with no audio
-        std::thread::sleep(std::time::Duration::from_millis(100));
-
-        // Stop should return promptly (no hang)
-        let leftover = session.stop();
-        assert!(leftover.is_empty(), "No audio was pushed, so no remainder");
-    }
-
-    #[test]
-    fn test_partial_results_with_mock_buffer() {
-        // Test that the streaming loop properly drains from the shared buffer
-        // and accumulates in step_buf
-        let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
-
-        // Push some samples
+        // Pre-fill with speech
         {
             let mut buf = buffer.lock();
-            buf.extend((0..1000).map(|i| i as f32 * 0.001));
+            buf.extend(speech_samples(2000));
         }
 
-        // Drain them (simulating what the loop does)
-        let mut step_buf: Vec<f32> = Vec::new();
-        {
-            let mut buf = buffer.lock();
-            let available = buf.len();
-            step_buf.extend(buf.drain(..available));
-        }
+        // Drop receiver before loop processes
+        drop(rx);
 
-        assert_eq!(step_buf.len(), 1000);
-        assert_eq!(buffer.lock().len(), 0);
+        let buf_clone = buffer.clone();
+        let stop_clone = stop.clone();
 
-        // Push more
-        {
-            let mut buf = buffer.lock();
-            buf.extend((0..500).map(|i| i as f32 * 0.002));
-        }
+        let handle = std::thread::spawn(move || {
+            streaming_loop(transcriber, buf_clone, tx, stop_clone, None)
+        });
 
-        {
-            let mut buf = buffer.lock();
-            let available = buf.len();
-            step_buf.extend(buf.drain(..available));
-        }
-
-        assert_eq!(step_buf.len(), 1500);
+        // Loop should terminate on its own due to channel disconnect
+        let remaining = handle.join().expect("Loop should not panic");
+        // It may or may not have remaining audio depending on timing
+        let _ = remaining;
     }
 
     #[test]
@@ -464,9 +433,7 @@ mod tests {
         let keep_samples = ms_to_samples(KEEP_MS);
         assert_eq!(keep_samples, 3200);
 
-        // Simulate saving tail for overlap
         let step_buf: Vec<f32> = (0..48000).map(|i| i as f32 * 0.001).collect();
-
         let prev_tail = if step_buf.len() > keep_samples {
             step_buf[step_buf.len() - keep_samples..].to_vec()
         } else {
@@ -474,7 +441,24 @@ mod tests {
         };
 
         assert_eq!(prev_tail.len(), 3200);
-        // The tail should be the last 3200 samples
         assert!((prev_tail[0] - (48000 - 3200) as f32 * 0.001).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_transcribe_window_with_skip() {
+        let transcriber = SkipTranscriber;
+        let window = speech_samples(2000);
+        let result = transcribe_window(&transcriber, &window, None);
+        assert!(result.is_none(), "SkipTranscriber should return None");
+    }
+
+    #[test]
+    fn test_transcribe_window_with_echo() {
+        let transcriber = EchoTranscriber::new();
+        let window = speech_samples(2000);
+        let result = transcribe_window(&transcriber, &window, None);
+        assert!(result.is_some());
+        let text = result.unwrap();
+        assert!(text.contains("samples"));
     }
 }

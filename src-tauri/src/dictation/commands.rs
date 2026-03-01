@@ -1,4 +1,5 @@
 use super::{audio, corrections, model, streaming, transcribe, DictationState};
+use transcribe::Transcriber;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -213,7 +214,7 @@ pub fn start_dictation(
     let (tx, rx) = mpsc::channel::<String>();
 
     let session = streaming::StreamingSession::start(
-        transcriber_arc,
+        transcriber_arc as Arc<dyn transcribe::Transcriber>,
         audio_buffer,
         tx,
         lang,
@@ -229,7 +230,9 @@ pub fn start_dictation(
         .name("dictation-event-forwarder".into())
         .spawn(move || {
             for text in rx {
-                let _ = app_clone.emit("dictation-partial", &text);
+                if let Err(e) = app_clone.emit("dictation-partial", &text) {
+                    eprintln!("[dictation] failed to emit partial event: {e}");
+                }
             }
         })
         .map_err(|e| format!("Failed to spawn event forwarder: {e}"))?;
@@ -319,7 +322,7 @@ pub fn stop_dictation_and_transcribe(
         });
     }
 
-    app_logger::log_via_handle(&app, "info", "dictation", &format!("Final text: {:?}", final_text));
+    app_logger::log_via_handle(&app, "info", "dictation", &format!("Final text: {} chars", final_text.len()));
 
     // Apply corrections
     let corrected = dictation.corrections.lock().correct(&final_text);

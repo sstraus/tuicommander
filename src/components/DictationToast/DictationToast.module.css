@@ -79,8 +79,8 @@
 }
 
 @keyframes dots {
-  0% { content: ""; }
-  33% { content: "."; }
-  66% { content: ".."; }
-  100% { content: "..."; }
+  0% { content: ""; width: 0; }
+  33% { content: "."; width: auto; }
+  66% { content: ".."; width: auto; }
+  100% { content: "..."; width: auto; }
 }

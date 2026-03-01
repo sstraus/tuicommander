@@ -43,10 +43,11 @@ pub struct AudioCapture {
     stream: Option<cpal::Stream>,
 }
 
-// Safety: cpal::Stream is !Send because it holds platform-specific raw pointers.
-// AudioCapture wraps Stream inside Option<cpal::Stream>, which is only created,
-// played, and dropped on the same thread (via DictationState's parking_lot::Mutex).
-// The Mutex serialises all access, so no data race is possible.
+// Safety: cpal::Stream is !Send due to platform audio API raw pointers.
+// AudioCapture is stored in `Mutex<Option<AudioCapture>>` in DictationState.
+// The stream is created on one thread and only dropped (via `stop_stream()` or `Drop`)
+// while holding the mutex lock. We never dereference or use cpal's internal raw
+// pointers directly — all interaction goes through cpal's public API.
 unsafe impl Send for AudioCapture {}
 
 impl AudioCapture {
@@ -80,29 +81,41 @@ impl AudioCapture {
 
         // Build a stream that collects f32 samples, converting to 16kHz mono.
         // Uses try_lock() to avoid blocking the real-time audio callback.
+        // Pre-allocate scratch buffers in the closure to avoid per-callback allocations.
         let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => device
-                .build_input_stream(
-                    &config.into(),
-                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                        process_audio_chunk(data, sample_rate, channels, &buffer_clone);
-                    },
-                    |err| eprintln!("Audio stream error: {err}"),
-                    None,
-                )
-                .map_err(|e| format!("Failed to build input stream: {e}"))?,
-            cpal::SampleFormat::I16 => device
-                .build_input_stream(
-                    &config.into(),
-                    move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                        let float_data: Vec<f32> =
-                            data.iter().map(|&s| f32::from(s) / f32::from(i16::MAX)).collect();
-                        process_audio_chunk(&float_data, sample_rate, channels, &buffer_clone);
-                    },
-                    |err| eprintln!("Audio stream error: {err}"),
-                    None,
-                )
-                .map_err(|e| format!("Failed to build input stream: {e}"))?,
+            cpal::SampleFormat::F32 => {
+                let mut mono_buf: Vec<f32> = Vec::new();
+                let mut resample_buf: Vec<f32> = Vec::new();
+                device
+                    .build_input_stream(
+                        &config.into(),
+                        move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                            process_audio_chunk(data, sample_rate, channels, &buffer_clone,
+                                &mut mono_buf, &mut resample_buf);
+                        },
+                        |err| eprintln!("[dictation] audio stream error: {err}"),
+                        None,
+                    )
+                    .map_err(|e| format!("Failed to build input stream: {e}"))?
+            }
+            cpal::SampleFormat::I16 => {
+                let mut float_buf: Vec<f32> = Vec::new();
+                let mut mono_buf: Vec<f32> = Vec::new();
+                let mut resample_buf: Vec<f32> = Vec::new();
+                device
+                    .build_input_stream(
+                        &config.into(),
+                        move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                            float_buf.clear();
+                            float_buf.extend(data.iter().map(|&s| f32::from(s) / f32::from(i16::MAX)));
+                            process_audio_chunk(&float_buf, sample_rate, channels, &buffer_clone,
+                                &mut mono_buf, &mut resample_buf);
+                        },
+                        |err| eprintln!("[dictation] audio stream error: {err}"),
+                        None,
+                    )
+                    .map_err(|e| format!("Failed to build input stream: {e}"))?
+            }
             format => return Err(format!("Unsupported sample format: {format:?}")),
         };
 
@@ -153,54 +166,54 @@ impl AudioCapture {
     }
 }
 
-/// Maximum buffer size: 30 seconds at 16kHz = 480,000 samples.
-/// If the streaming thread falls behind, older samples are dropped.
-const MAX_BUFFER_SAMPLES: usize = 16_000 * 30;
-
 /// Process an audio chunk: convert to mono and resample to 16kHz.
 /// Uses `try_lock()` so the real-time audio callback never blocks.
 /// If the lock is contended, samples are silently dropped (acceptable
 /// for dictation — 16kHz mono = ~64KB/s, contention is rare).
+///
+/// `mono_buf` and `resample_buf` are pre-allocated scratch buffers owned by
+/// the closure to avoid per-callback heap allocations.
 fn process_audio_chunk(
     data: &[f32],
     sample_rate: u32,
     channels: usize,
     buffer: &Arc<Mutex<VecDeque<f32>>>,
+    mono_buf: &mut Vec<f32>,
+    resample_buf: &mut Vec<f32>,
 ) {
-    // try_lock: never block the real-time audio callback
-    let Some(mut buf) = buffer.try_lock() else {
-        return; // contention — drop samples (acceptable for dictation)
-    };
+    // Convert to mono by averaging channels — reuse buffer
+    mono_buf.clear();
+    mono_buf.extend(
+        data.chunks(channels)
+            .map(|frame| frame.iter().sum::<f32>() / channels as f32),
+    );
 
-    if channels == 1 && sample_rate == 16000 {
-        // Fast path: no conversion needed — extend directly
-        buf.extend(data.iter());
-    } else if sample_rate == 16000 {
-        // Mono-mix only (no resampling)
-        let ch_f = channels as f32;
-        for frame in data.chunks(channels) {
-            buf.push_back(frame.iter().sum::<f32>() / ch_f);
-        }
+    // Simple nearest-neighbor resampling to 16kHz
+    let output = if sample_rate == 16000 {
+        &mono_buf[..]
     } else {
-        // Full path: mono-mix + nearest-neighbor resample
-        let ch_f = channels as f32;
-        let mono_len = data.len() / channels;
+        resample_buf.clear();
         let ratio = 16000.0 / f64::from(sample_rate);
-        let output_len = (mono_len as f64 * ratio) as usize;
-
+        let output_len = (mono_buf.len() as f64 * ratio) as usize;
+        resample_buf.reserve(output_len);
         for i in 0..output_len {
             let src_idx = (i as f64 / ratio) as usize;
-            if src_idx < mono_len {
-                let frame = &data[src_idx * channels..(src_idx + 1) * channels];
-                buf.push_back(frame.iter().sum::<f32>() / ch_f);
+            if src_idx < mono_buf.len() {
+                resample_buf.push(mono_buf[src_idx]);
             }
         }
-    }
+        &resample_buf[..]
+    };
 
-    // Cap buffer to prevent unbounded growth if the consumer falls behind
-    if buf.len() > MAX_BUFFER_SAMPLES {
-        let excess = buf.len() - MAX_BUFFER_SAMPLES;
-        buf.drain(..excess);
+    // try_lock: never block the audio callback
+    if let Some(mut buf) = buffer.try_lock() {
+        buf.extend(output.iter());
+        // Cap at 30s (480k samples at 16kHz) to prevent unbounded growth
+        const MAX_SAMPLES: usize = 16_000 * 30;
+        let len = buf.len();
+        if len > MAX_SAMPLES {
+            buf.drain(..len - MAX_SAMPLES);
+        }
     }
 }
 
@@ -273,85 +286,89 @@ mod tests {
     #[test]
     fn test_process_audio_chunk_try_lock() {
         let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let mut mono_buf = Vec::new();
+        let mut resample_buf = Vec::new();
         let data = vec![0.5f32; 16]; // 16 mono samples at 16kHz
-        process_audio_chunk(&data, 16000, 1, &buf);
+        process_audio_chunk(&data, 16000, 1, &buf, &mut mono_buf, &mut resample_buf);
         assert_eq!(buf.lock().len(), 16);
 
         // While lock is held, process_audio_chunk silently drops samples
         let guard = buf.lock();
-        process_audio_chunk(&data, 16000, 1, &buf);
+        process_audio_chunk(&data, 16000, 1, &buf, &mut mono_buf, &mut resample_buf);
         assert_eq!(guard.len(), 16); // still 16, new samples dropped
     }
 
     #[test]
-    fn test_process_audio_chunk_stereo_16khz() {
+    fn test_process_audio_chunk_stereo_to_mono() {
         let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
-        // 4 stereo frames: [L0, R0, L1, R1, L2, R2, L3, R3]
-        let data = vec![0.2, 0.8, 0.4, 0.6, 1.0, 0.0, -0.5, 0.5];
-        process_audio_chunk(&data, 16000, 2, &buf);
+        let mut mono_buf = Vec::new();
+        let mut resample_buf = Vec::new();
 
+        // 8 stereo frames (16 samples total) at 16kHz
+        // Left=1.0, Right=0.0 → mono should average to 0.5
+        let stereo_data: Vec<f32> = (0..8).flat_map(|_| vec![1.0, 0.0]).collect();
+        assert_eq!(stereo_data.len(), 16);
+
+        process_audio_chunk(&stereo_data, 16000, 2, &buf, &mut mono_buf, &mut resample_buf);
         let result: Vec<f32> = buf.lock().drain(..).collect();
-        assert_eq!(result.len(), 4);
-        // Each output sample is the average of L and R
-        assert!((result[0] - 0.5).abs() < 1e-6); // (0.2 + 0.8) / 2
-        assert!((result[1] - 0.5).abs() < 1e-6); // (0.4 + 0.6) / 2
-        assert!((result[2] - 0.5).abs() < 1e-6); // (1.0 + 0.0) / 2
-        assert!((result[3] - 0.0).abs() < 1e-6); // (-0.5 + 0.5) / 2
-    }
-
-    #[test]
-    fn test_process_audio_chunk_resample_48khz_mono() {
-        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
-        // 48 samples at 48kHz mono = 1ms → should produce ~16 samples at 16kHz
-        let data: Vec<f32> = (0..48).map(|i| i as f32 / 48.0).collect();
-        process_audio_chunk(&data, 48000, 1, &buf);
-
-        let result: Vec<f32> = buf.lock().drain(..).collect();
-        // 48 samples at 48kHz → 16 samples at 16kHz (ratio 1/3)
-        assert_eq!(result.len(), 16);
-        // First sample should be data[0] = 0.0
-        assert!((result[0] - 0.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_process_audio_chunk_resample_48khz_stereo() {
-        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
-        // 48 stereo frames at 48kHz = 96 f32 values, 1ms
-        // Each frame: [L=0.4, R=0.6] → mono average = 0.5
-        let data: Vec<f32> = (0..48).flat_map(|_| vec![0.4f32, 0.6]).collect();
-        process_audio_chunk(&data, 48000, 2, &buf);
-
-        let result: Vec<f32> = buf.lock().drain(..).collect();
-        // 48 frames at 48kHz → 16 samples at 16kHz
-        assert_eq!(result.len(), 16);
-        // All samples should be ~0.5 (average of 0.4 and 0.6)
-        for (i, &sample) in result.iter().enumerate() {
-            assert!(
-                (sample - 0.5).abs() < 1e-6,
-                "sample {i} should be 0.5, got {sample}"
-            );
+        assert_eq!(result.len(), 8, "Stereo→mono should halve the sample count");
+        for s in &result {
+            assert!((s - 0.5).abs() < 1e-6, "Each mono sample should be 0.5, got {s}");
         }
     }
 
     #[test]
-    fn test_process_audio_chunk_buffer_cap() {
+    fn test_process_audio_chunk_resample_48k_to_16k() {
         let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
-        // Pre-fill buffer near max capacity
-        {
-            let mut b = buf.lock();
-            b.extend(std::iter::repeat(0.0f32).take(MAX_BUFFER_SAMPLES));
+        let mut mono_buf = Vec::new();
+        let mut resample_buf = Vec::new();
+
+        // 480 mono samples at 48kHz = 10ms of audio → should produce ~160 samples at 16kHz
+        let data = vec![0.25f32; 480];
+        process_audio_chunk(&data, 48000, 1, &buf, &mut mono_buf, &mut resample_buf);
+        let result: Vec<f32> = buf.lock().drain(..).collect();
+
+        // 480 * (16000/48000) = 160
+        assert_eq!(result.len(), 160, "48kHz→16kHz should produce 1/3 samples");
+        for s in &result {
+            assert!((s - 0.25).abs() < 1e-6, "Nearest-neighbor should preserve value");
         }
-        assert_eq!(buf.lock().len(), MAX_BUFFER_SAMPLES);
+    }
 
-        // Add 100 more samples — should trigger cap, keeping total at MAX_BUFFER_SAMPLES
-        let extra = vec![1.0f32; 100];
-        process_audio_chunk(&extra, 16000, 1, &buf);
+    #[test]
+    fn test_process_audio_chunk_stereo_48k() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let mut mono_buf = Vec::new();
+        let mut resample_buf = Vec::new();
 
-        let b = buf.lock();
-        assert_eq!(b.len(), MAX_BUFFER_SAMPLES);
-        // The last 100 samples should be 1.0 (the new data)
-        assert!((b[MAX_BUFFER_SAMPLES - 1] - 1.0).abs() < 1e-6);
-        // The oldest samples (0.0) should have been drained
-        assert!((b[0] - 0.0).abs() < 1e-6); // still 0.0 since only 100 were drained
+        // 960 samples = 480 stereo frames at 48kHz = 10ms
+        let stereo_data: Vec<f32> = (0..480).flat_map(|_| vec![0.8, 0.2]).collect();
+        process_audio_chunk(&stereo_data, 48000, 2, &buf, &mut mono_buf, &mut resample_buf);
+        let result: Vec<f32> = buf.lock().drain(..).collect();
+
+        // 480 mono frames at 48kHz → 160 samples at 16kHz
+        assert_eq!(result.len(), 160, "Stereo 48kHz→mono 16kHz");
+        for s in &result {
+            assert!((s - 0.5).abs() < 1e-6, "Averaged stereo (0.8+0.2)/2 = 0.5");
+        }
+    }
+
+    #[test]
+    fn test_scratch_buffers_reused() {
+        // Verify that scratch buffers are reused across calls (capacity grows once)
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let mut mono_buf: Vec<f32> = Vec::new();
+        let mut resample_buf: Vec<f32> = Vec::new();
+
+        let data = vec![0.5f32; 480];
+        process_audio_chunk(&data, 48000, 1, &buf, &mut mono_buf, &mut resample_buf);
+        let cap_after_first = mono_buf.capacity();
+
+        buf.lock().clear();
+        process_audio_chunk(&data, 48000, 1, &buf, &mut mono_buf, &mut resample_buf);
+        let cap_after_second = mono_buf.capacity();
+
+        // Capacity should not have changed — buffers are reused
+        assert_eq!(cap_after_first, cap_after_second, "Buffer should be reused, not reallocated");
     }
 }

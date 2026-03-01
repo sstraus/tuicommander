@@ -18,7 +18,7 @@ export interface DictationDeps {
       recording: boolean;
       processing: boolean;
       loading: boolean;
-      modelStatus: string;
+      modelStatus: "not_downloaded" | "downloaded" | "ready";
     };
     refreshStatus: () => Promise<void>;
     startRecording: () => Promise<void>;
