@@ -25,6 +25,7 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn().mockResolvedValue(undefined),
 }));
 
+import { invoke } from "@tauri-apps/api/core";
 import { WorktreeManager } from "../../components/WorktreeManager";
 import { worktreeManagerStore } from "../../stores/worktreeManager";
 import { repositoriesStore } from "../../stores/repositories";
@@ -32,6 +33,7 @@ import { repositoriesStore } from "../../stores/repositories";
 describe("WorktreeManager", () => {
   beforeEach(() => {
     worktreeManagerStore.close();
+    vi.clearAllMocks();
     // Clear repos — reset to empty
     for (const path of Object.keys(repositoriesStore.state.repositories)) {
       repositoriesStore.remove(path);
@@ -152,5 +154,99 @@ describe("WorktreeManager", () => {
     const { container } = render(() => <WorktreeManager />);
 
     expect(container.querySelector("[class*='repo']")?.textContent).toBe("my-project");
+  });
+
+  describe("orphan worktrees", () => {
+    it("calls detect_orphan_worktrees for each repo when panel opens", async () => {
+      repositoriesStore.add({ path: "/repo-a", displayName: "A" });
+      repositoriesStore.setBranch("/repo-a", "main", { worktreePath: "/repo-a" });
+      repositoriesStore.add({ path: "/repo-b", displayName: "B" });
+      repositoriesStore.setBranch("/repo-b", "dev", { worktreePath: "/repo-b" });
+
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === "detect_orphan_worktrees") return [];
+        return undefined;
+      });
+
+      worktreeManagerStore.open();
+      render(() => <WorktreeManager />);
+
+      // Wait for async effects
+      await vi.waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith("detect_orphan_worktrees", { repoPath: "/repo-a" });
+        expect(invoke).toHaveBeenCalledWith("detect_orphan_worktrees", { repoPath: "/repo-b" });
+      });
+    });
+
+    it("displays orphan rows with orphan badge", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === "detect_orphan_worktrees") return ["/repo/.wt/stale-branch"];
+        return undefined;
+      });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager />);
+
+      await vi.waitFor(() => {
+        expect(container.querySelector("[class*='orphanBadge']")).not.toBeNull();
+      });
+
+      const orphanBadge = container.querySelector("[class*='orphanBadge']");
+      expect(orphanBadge?.textContent).toBe("orphan");
+    });
+
+    it("shows prune button on orphan rows", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === "detect_orphan_worktrees") return ["/repo/.wt/stale"];
+        return undefined;
+      });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager />);
+
+      await vi.waitFor(() => {
+        const pruneBtn = container.querySelector("[class*='pruneBtn']");
+        expect(pruneBtn).not.toBeNull();
+        expect(pruneBtn?.textContent).toBe("Prune");
+      });
+    });
+
+    it("calls remove_orphan_worktree and removes row on prune click", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === "detect_orphan_worktrees") return ["/repo/.wt/stale"];
+        return undefined;
+      });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager />);
+
+      await vi.waitFor(() => {
+        expect(container.querySelector("[class*='pruneBtn']")).not.toBeNull();
+      });
+
+      const pruneBtn = container.querySelector("[class*='pruneBtn']")!;
+      fireEvent.click(pruneBtn);
+
+      await vi.waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith("remove_orphan_worktree", {
+          repoPath: "/repo",
+          worktreePath: "/repo/.wt/stale",
+        });
+      });
+
+      // After pruning, the orphan row should be gone
+      await vi.waitFor(() => {
+        expect(container.querySelector("[class*='orphanBadge']")).toBeNull();
+      });
+    });
   });
 });

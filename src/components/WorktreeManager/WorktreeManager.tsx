@@ -1,4 +1,5 @@
-import { Component, For, Show, createEffect, createMemo, onCleanup } from "solid-js";
+import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { invoke } from "@tauri-apps/api/core";
 import { worktreeManagerStore } from "../../stores/worktreeManager";
 import { repositoriesStore } from "../../stores/repositories";
 import { githubStore } from "../../stores/github";
@@ -19,6 +20,13 @@ interface WorktreeRow {
   isMerged: boolean;
   prStatus: BranchPrStatus | null;
   lastCommitTs: number | null;
+}
+
+/** Orphan worktree (detached HEAD, branch deleted) */
+interface OrphanRow {
+  repoPath: string;
+  repoName: string;
+  worktreePath: string;
 }
 
 /** Extract display name (last path segment) from a path */
@@ -52,6 +60,45 @@ export const WorktreeManager: Component = () => {
       void repositoriesStore.getRevision(repo.path);
     }
   });
+
+  // Orphan worktree detection
+  const [orphanRows, setOrphanRows] = createSignal<OrphanRow[]>([]);
+
+  createEffect(() => {
+    if (!isOpen()) {
+      setOrphanRows([]);
+      return;
+    }
+    const repos = repositoriesStore.getOrderedRepos();
+    const detectAll = async () => {
+      const allOrphans: OrphanRow[] = [];
+      for (const repo of repos) {
+        try {
+          const paths = await invoke<string[]>("detect_orphan_worktrees", { repoPath: repo.path });
+          for (const wtPath of paths) {
+            allOrphans.push({
+              repoPath: repo.path,
+              repoName: repo.displayName || displayName(repo.path),
+              worktreePath: wtPath,
+            });
+          }
+        } catch {
+          // Detection failure is non-fatal
+        }
+      }
+      setOrphanRows(allOrphans);
+    };
+    void detectAll();
+  });
+
+  async function handlePrune(orphan: OrphanRow) {
+    try {
+      await invoke("remove_orphan_worktree", { repoPath: orphan.repoPath, worktreePath: orphan.worktreePath });
+      setOrphanRows((prev) => prev.filter((o) => o.worktreePath !== orphan.worktreePath));
+    } catch {
+      // Prune failure is non-fatal — row stays visible
+    }
+  }
 
   const worktrees = createMemo<WorktreeRow[]>(() => {
     if (!isOpen()) return [];
@@ -115,6 +162,17 @@ export const WorktreeManager: Component = () => {
                   </Show>
                   <DirtyStats additions={wt.additions} deletions={wt.deletions} />
                   <span class={s.timestamp}>{formatRelativeTime(wt.lastCommitTs)}</span>
+                </div>
+              )}
+            </For>
+
+            <For each={orphanRows()}>
+              {(orphan) => (
+                <div class={`${s.row} ${s.orphanRow}`}>
+                  <span class={s.branch}>{displayName(orphan.worktreePath)}</span>
+                  <span class={s.repo}>{orphan.repoName}</span>
+                  <span class={s.orphanBadge}>orphan</span>
+                  <button class={s.pruneBtn} onClick={() => handlePrune(orphan)}>Prune</button>
                 </div>
               )}
             </For>
