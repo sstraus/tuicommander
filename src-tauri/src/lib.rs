@@ -436,11 +436,31 @@ fn read_file(path: String, file: String) -> Result<String, String> {
 
 /// Read a file by absolute path (read-only, no repo constraint).
 /// Used for viewing files outside the active repository.
+///
+/// SAFETY: Refuses to read files in macOS TCC-protected directories
+/// (Desktop, Documents, Photos, Music, etc.) to avoid permission dialogs.
 #[tauri::command]
 fn read_external_file(path: String) -> Result<String, String> {
     let p = std::path::Path::new(&path);
     if !p.is_absolute() {
         return Err("read_external_file requires an absolute path".to_string());
+    }
+    // Block TCC-protected directories
+    if let Some(home) = dirs::home_dir() {
+        if p.starts_with(&home) {
+            if let Ok(rel) = p.strip_prefix(&home) {
+                if let Some(first) = rel.components().next() {
+                    let name = first.as_os_str().to_string_lossy();
+                    const TCC_DIRS: &[&str] = &[
+                        "Desktop", "Documents", "Downloads", "Movies",
+                        "Music", "Pictures", "Library",
+                    ];
+                    if TCC_DIRS.iter().any(|d| d.eq_ignore_ascii_case(&name)) {
+                        return Err(format!("Access denied: {name}/ is a protected directory"));
+                    }
+                }
+            }
+        }
     }
     std::fs::read_to_string(p)
         .map_err(|e| format!("Failed to read file: {e}"))

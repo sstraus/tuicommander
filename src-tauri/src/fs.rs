@@ -543,9 +543,34 @@ pub fn strip_line_col_suffix(candidate: &str) -> &str {
     &candidate[..end]
 }
 
+/// macOS TCC-protected directory names under $HOME.
+/// Probing these with `.exists()` or `.canonicalize()` triggers permission dialogs.
+const TCC_PROTECTED_DIRS: &[&str] = &[
+    "Desktop", "Documents", "Downloads", "Movies", "Music", "Pictures",
+    "Library", "Photos Library.photoslibrary",
+];
+
+/// Returns true if `path` falls under a macOS TCC-protected directory.
+fn is_tcc_protected_path(path: &std::path::Path) -> bool {
+    let Some(home) = dirs::home_dir() else { return false };
+    if !path.starts_with(&home) {
+        return false;
+    }
+    if let Ok(rel) = path.strip_prefix(&home) {
+        if let Some(first) = rel.components().next() {
+            let name = first.as_os_str().to_string_lossy();
+            return TCC_PROTECTED_DIRS.iter().any(|d| d.eq_ignore_ascii_case(&name));
+        }
+    }
+    false
+}
+
 /// Validate a path candidate from terminal output against the filesystem.
 /// Strips `:line:col` suffixes, resolves relative paths against `cwd`,
 /// and checks existence.
+///
+/// SAFETY: Refuses to probe macOS TCC-protected directories to avoid
+/// triggering system permission dialogs.
 #[tauri::command]
 pub fn resolve_terminal_path(cwd: String, candidate: String) -> Option<ResolvedFilePath> {
     let path_str = strip_line_col_suffix(&candidate);
@@ -556,6 +581,11 @@ pub fn resolve_terminal_path(cwd: String, candidate: String) -> Option<ResolvedF
     } else {
         PathBuf::from(&cwd).join(&path)
     };
+
+    // Never probe TCC-protected directories
+    if is_tcc_protected_path(&absolute) {
+        return None;
+    }
 
     // Canonicalize to resolve symlinks and verify existence
     match absolute.canonicalize() {

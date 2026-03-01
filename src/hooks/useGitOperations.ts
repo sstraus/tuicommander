@@ -242,7 +242,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
           }
           const ts = summary.last_commit_ts?.[branch.name];
           if (ts !== undefined) {
-            repositoriesStore.setBranch(repoPath, branch.name, { lastCommitTs: ts });
+            // Rust emits Unix seconds (%ct); JS Date.now() uses milliseconds
+            repositoriesStore.setBranch(repoPath, branch.name, { lastCommitTs: ts !== null ? ts * 1000 : null });
           }
         }
       });
@@ -586,6 +587,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
         directory: true,
         multiple: false,
         title: "Select Repository Folder",
+        defaultPath: repositoriesStore.getActive()?.path ?? "/",
       });
       if (!selected) return;
       path = typeof selected === "string" ? selected : selected[0];
@@ -1103,7 +1105,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     let best: { repoPath: string; branchName: string } | null = null;
     let bestLen = 0;
     for (const repoPath of repositoriesStore.getPaths()) {
-      const repo = repositoriesStore.state.repositories[repoPath];
+      const repo = repositoriesStore.get(repoPath);
       if (!repo) continue;
       for (const [branchName, branch] of Object.entries(repo.branches)) {
         // For main branches without a worktreePath, the repo path itself is the match
@@ -1118,64 +1120,89 @@ export function useGitOperations(deps: GitOperationsDeps) {
     return best;
   };
 
+  /** Async body for debounced CWD change handling — extracted for proper error catching. */
+  const performCwdReassignment = async (terminalId: string, newCwd: string) => {
+    // Guard: terminal may have been closed during the debounce window
+    if (!terminalsStore.get(terminalId)) return;
+
+    const currentRepoPathForTerm = repositoriesStore.getRepoPathForTerminal(terminalId);
+    // Find which branch the terminal currently belongs to
+    let currentBranchName: string | null = null;
+    if (currentRepoPathForTerm) {
+      const repo = repositoriesStore.get(currentRepoPathForTerm);
+      if (repo) {
+        for (const [bName, branch] of Object.entries(repo.branches)) {
+          if (branch.terminals.includes(terminalId)) {
+            currentBranchName = bName;
+            break;
+          }
+        }
+      }
+    }
+
+    let target = findBranchForCwd(newCwd);
+
+    // If no match and cwd is inside a known repo, the worktree may have just been created
+    if (!target && currentRepoPathForTerm) {
+      const isInsideKnownRepo = repositoriesStore.getPaths().some(
+        (rp) => newCwd === rp || newCwd.startsWith(rp + "/"),
+      );
+      if (isInsideKnownRepo) {
+        await refreshAllBranchStats();
+        target = findBranchForCwd(newCwd);
+      }
+    }
+
+    if (!target) return; // Unknown path — no reassignment
+    // Same branch? Nothing to do
+    if (target.repoPath === currentRepoPathForTerm && target.branchName === currentBranchName) return;
+
+    const { repoPath: targetRepoPath, branchName: targetBranchName } = target;
+
+    appLogger.info("terminal", `[CwdChange] ${terminalId} → ${targetRepoPath}:${targetBranchName} (cwd=${newCwd})`);
+
+    batch(() => {
+      // Remove from old branch
+      if (currentRepoPathForTerm && currentBranchName) {
+        repositoriesStore.removeTerminalFromBranch(currentRepoPathForTerm, currentBranchName, terminalId);
+      }
+      // Add to new branch
+      repositoriesStore.addTerminalToBranch(targetRepoPath, targetBranchName, terminalId);
+
+      // If this is the active terminal, switch the active branch
+      if (terminalsStore.state.activeId === terminalId) {
+        repositoriesStore.setActiveBranch(targetRepoPath, targetBranchName);
+        setCurrentBranch(targetBranchName);
+        if (targetRepoPath !== currentRepoPathForTerm) {
+          repositoriesStore.setActive(targetRepoPath);
+          setCurrentRepoPath(targetRepoPath);
+        }
+      }
+    });
+  };
+
   /** Called from Terminal.tsx OSC 7 handler when a terminal's cwd changes. */
   const handleTerminalCwdChange = (terminalId: string, newCwd: string) => {
     // Debounce reassignment per terminal (300ms) — cwd store update is immediate in Terminal.tsx
     clearTimeout(cwdDebounceTimers.get(terminalId));
     cwdDebounceTimers.set(
       terminalId,
-      setTimeout(async () => {
+      setTimeout(() => {
         cwdDebounceTimers.delete(terminalId);
-
-        const currentRepoPathForTerm = repositoriesStore.getRepoPathForTerminal(terminalId);
-        // Find which branch the terminal currently belongs to
-        let currentBranchName: string | null = null;
-        if (currentRepoPathForTerm) {
-          const repo = repositoriesStore.state.repositories[currentRepoPathForTerm];
-          if (repo) {
-            for (const [bName, branch] of Object.entries(repo.branches)) {
-              if (branch.terminals.includes(terminalId)) {
-                currentBranchName = bName;
-                break;
-              }
-            }
-          }
-        }
-
-        let target = findBranchForCwd(newCwd);
-
-        // If no match, the worktree may have just been created — refresh and retry
-        if (!target && currentRepoPathForTerm) {
-          await refreshAllBranchStats();
-          target = findBranchForCwd(newCwd);
-        }
-
-        if (!target) return; // Unknown path — no reassignment
-        // Same branch? Nothing to do
-        if (target.repoPath === currentRepoPathForTerm && target.branchName === currentBranchName) return;
-
-        appLogger.info("terminal", `[CwdChange] ${terminalId} → ${target.repoPath}:${target.branchName} (cwd=${newCwd})`);
-
-        batch(() => {
-          // Remove from old branch
-          if (currentRepoPathForTerm && currentBranchName) {
-            repositoriesStore.removeTerminalFromBranch(currentRepoPathForTerm, currentBranchName, terminalId);
-          }
-          // Add to new branch
-          repositoriesStore.addTerminalToBranch(target!.repoPath, target!.branchName, terminalId);
-
-          // If this is the active terminal, switch the active branch
-          if (terminalsStore.state.activeId === terminalId) {
-            repositoriesStore.setActiveBranch(target!.repoPath, target!.branchName);
-            setCurrentBranch(target!.branchName);
-            if (target!.repoPath !== currentRepoPathForTerm) {
-              repositoriesStore.setActive(target!.repoPath);
-              setCurrentRepoPath(target!.repoPath);
-            }
-          }
-        });
+        void performCwdReassignment(terminalId, newCwd).catch((err) =>
+          appLogger.warn("terminal", `[CwdChange] reassignment error for ${terminalId}`, err),
+        );
       }, 300),
     );
+  };
+
+  /** Cancel any pending CWD debounce timer for a terminal (call on terminal close). */
+  const cancelCwdTracking = (terminalId: string) => {
+    const timer = cwdDebounceTimers.get(terminalId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      cwdDebounceTimers.delete(terminalId);
+    }
   };
 
   return {
@@ -1214,6 +1241,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     handleCheckoutRemoteBranch,
     handleSwitchBranch,
     handleTerminalCwdChange,
+    cancelCwdTracking,
     switchBranchLists,
     currentBranches,
     refreshBranchLists,

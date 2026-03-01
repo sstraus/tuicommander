@@ -279,6 +279,7 @@ export const PluginsTab: Component = () => {
       title: "Install Plugin from ZIP",
       filters: [{ name: "Plugin Archive", extensions: ["zip"] }],
       multiple: false,
+      defaultPath: "/",
     });
     if (!selected) return;
 
@@ -301,6 +302,7 @@ export const PluginsTab: Component = () => {
       title: "Install Plugin from Folder",
       directory: true,
       multiple: false,
+      defaultPath: "/",
     });
     if (!selected) return;
 

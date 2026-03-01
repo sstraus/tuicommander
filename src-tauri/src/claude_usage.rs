@@ -203,11 +203,36 @@ fn claude_projects_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("projects"))
 }
 
+/// macOS TCC-protected directories under $HOME that we must never probe.
+/// Calling `.exists()` on these triggers the "would like to access" system dialog.
+const TCC_PROTECTED_DIRS: &[&str] = &[
+    "Desktop", "Documents", "Downloads", "Movies", "Music", "Pictures",
+    "Library", "Photos Library.photoslibrary",
+];
+
+/// Returns true if `path` is a TCC-protected directory (or inside one).
+fn is_tcc_protected(path: &std::path::Path) -> bool {
+    let Some(home) = dirs::home_dir() else { return false };
+    if !path.starts_with(&home) {
+        return false;
+    }
+    if let Ok(rel) = path.strip_prefix(&home) {
+        if let Some(first) = rel.components().next() {
+            let name = first.as_os_str().to_string_lossy();
+            return TCC_PROTECTED_DIRS.iter().any(|d| d.eq_ignore_ascii_case(&name));
+        }
+    }
+    false
+}
+
 /// Resolve a Claude Code project slug back to a filesystem path.
 ///
 /// Claude Code creates project slugs by replacing `/`, `.`, `_`, and other
 /// special characters with `-`. This is ambiguous, so we greedily match
 /// atoms against real directories on disk.
+///
+/// SAFETY: Never probes macOS TCC-protected directories (Desktop, Documents,
+/// Photos, Music, etc.) to avoid triggering system permission dialogs.
 ///
 /// Example: `-Users-stefano-straus-Gits-CC-Playground-tui-commander`
 ///       → `/Users/stefano.straus/Gits/CC_Playground/tui-commander`
@@ -236,6 +261,10 @@ fn resolve_slug_to_path(slug: &str) -> Option<String> {
             for separator in &["-", ".", "_"] {
                 let candidate = segment_atoms.join(separator);
                 let candidate_path = path.join(&candidate);
+                // Skip TCC-protected directories to avoid macOS permission dialogs
+                if is_tcc_protected(&candidate_path) {
+                    continue;
+                }
                 if candidate_path.exists() {
                     path = candidate_path;
                     i += len;
