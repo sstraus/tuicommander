@@ -19,9 +19,12 @@ export interface ModelInfo {
   actual_size_mb: number;
 }
 
+/** Model status values from Rust backend */
+type ModelStatus = "not_downloaded" | "downloaded" | "ready";
+
 /** Model status from Rust backend */
 interface DictationStatus {
-  model_status: string; // "not_downloaded", "downloaded", "ready"
+  model_status: ModelStatus;
   model_name: string;
   model_size_mb: number;
   recording: boolean;
@@ -71,7 +74,7 @@ interface DictationStoreState {
   language: string;
   selectedModel: string;
   models: ModelInfo[];
-  modelStatus: string;
+  modelStatus: ModelStatus;
   modelName: string;
   modelSizeMb: number;
   recording: boolean;
@@ -142,7 +145,13 @@ function createDictationStore() {
       };
       try {
         await invoke("set_dictation_config", { config });
-        setState(partial as Partial<DictationStoreState>);
+        // Map DictationConfig fields to DictationStoreState fields
+        const storeUpdate: Partial<DictationStoreState> = {};
+        if (partial.enabled !== undefined) storeUpdate.enabled = partial.enabled;
+        if (partial.hotkey !== undefined) storeUpdate.hotkey = partial.hotkey;
+        if (partial.language !== undefined) storeUpdate.language = partial.language;
+        if (partial.model !== undefined) storeUpdate.selectedModel = partial.model;
+        setState(storeUpdate);
       } catch (err) {
         appLogger.error("dictation", "Failed to save dictation config", err);
       }

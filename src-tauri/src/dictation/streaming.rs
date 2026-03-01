@@ -185,7 +185,9 @@ fn streaming_loop(
             // Clear step buffer after processing (whether speech or silence)
             step_buf.clear();
 
-            // Grow window toward MAX_STEP_MS
+            // Grow window toward MAX_STEP_MS (grows on both speech and silence
+            // to improve quality as the session progresses; only the first window
+            // uses the small INITIAL_STEP_MS for low-latency first partial).
             if current_step_ms < MAX_STEP_MS {
                 current_step_ms = (current_step_ms + STEP_GROWTH_MS).min(MAX_STEP_MS);
             }

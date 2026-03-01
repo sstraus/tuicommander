@@ -43,9 +43,11 @@ pub struct AudioCapture {
     stream: Option<cpal::Stream>,
 }
 
-// Safety: AudioCapture is only accessed through parking_lot::Mutex in DictationState.
-// cpal::Stream is !Send due to internal raw pointers, but we never move the stream
-// across threads — it lives in one place behind a Mutex and is dropped in-place.
+// Safety: cpal::Stream is !Send due to platform audio API raw pointers.
+// AudioCapture is stored in `Mutex<Option<AudioCapture>>` in DictationState.
+// The stream is created on one thread and only dropped (via `stop_stream()` or `Drop`)
+// while holding the mutex lock. We never dereference or use cpal's internal raw
+// pointers directly — all interaction goes through cpal's public API.
 unsafe impl Send for AudioCapture {}
 
 impl AudioCapture {
@@ -206,6 +208,12 @@ fn process_audio_chunk(
     // try_lock: never block the audio callback
     if let Some(mut buf) = buffer.try_lock() {
         buf.extend(output.iter());
+        // Cap at 30s (480k samples at 16kHz) to prevent unbounded growth
+        const MAX_SAMPLES: usize = 16_000 * 30;
+        let len = buf.len();
+        if len > MAX_SAMPLES {
+            buf.drain(..len - MAX_SAMPLES);
+        }
     }
 }
 
