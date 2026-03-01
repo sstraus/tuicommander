@@ -105,7 +105,7 @@ const CONFIG_ACTIONS: &str = "get, save";
 
 /// MCP tool definitions — 5 meta-commands mirroring tui_mcp_bridge
 fn native_tool_definitions() -> serde_json::Value {
-    serde_json::json!([
+    let defs = serde_json::json!([
         {
             "name": "session",
             "description": "Manage PTY terminal sessions.\n\nActions (pass as 'action' parameter):\n- list: Returns [{session_id, cwd, worktree_path, worktree_branch}] for all active sessions. Call first to discover IDs.\n- create: Creates a new PTY session. Returns {session_id}. Optional: rows, cols, shell, cwd.\n- input: Sends text and/or a special key to a session. Requires session_id, plus input and/or special_key.\n- output: Returns {data, total_written} from session ring buffer. Requires session_id. Optional: limit.\n- resize: Resizes PTY dimensions. Requires session_id, rows, cols.\n- close: Terminates a session. Requires session_id.\n- pause: Pauses output buffering. Requires session_id.\n- resume: Resumes output buffering. Requires session_id.",
@@ -160,7 +160,22 @@ fn native_tool_definitions() -> serde_json::Value {
             "description": "Returns comprehensive plugin authoring reference: manifest format, PluginHost API (all 4 tiers), structured event types, and working examples. Call before writing any plugin code.",
             "inputSchema": { "type": "object", "properties": {}, "required": [] }
         }
-    ])
+    ]);
+
+    // Guard invariant: native tool names must never contain "__" — that prefix
+    // is the routing discriminator for upstream proxy tools.
+    #[cfg(debug_assertions)]
+    if let Some(arr) = defs.as_array() {
+        for tool in arr {
+            let name = tool["name"].as_str().unwrap_or("");
+            debug_assert!(
+                !name.contains("__"),
+                "Native tool name '{name}' contains '__' — reserved for upstream namespace separator"
+            );
+        }
+    }
+
+    defs
 }
 
 /// Returns native tools merged with upstream proxy tools (namespaced as `{upstream}__`).

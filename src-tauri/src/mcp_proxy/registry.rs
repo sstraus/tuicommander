@@ -65,48 +65,59 @@ pub(crate) enum UpstreamStatus {
     Failed,
 }
 
-/// Per-upstream circuit breaker state (shared inside Mutex via entry).
+/// Internal state protected by a single mutex to avoid race conditions
+/// between failure_count, retry_count, and open_until writes.
+struct CircuitBreakerState {
+    failure_count: u32,
+    retry_count: u32,
+    open_until: Option<Instant>,
+}
+
+/// Per-upstream circuit breaker.
 struct CircuitBreaker {
-    failure_count: AtomicU32,
-    retry_count: AtomicU32,
-    open_until: parking_lot::RwLock<Option<Instant>>,
+    state: parking_lot::Mutex<CircuitBreakerState>,
 }
 
 impl CircuitBreaker {
     fn new() -> Self {
         Self {
-            failure_count: AtomicU32::new(0),
-            retry_count: AtomicU32::new(0),
-            open_until: parking_lot::RwLock::new(None),
+            state: parking_lot::Mutex::new(CircuitBreakerState {
+                failure_count: 0,
+                retry_count: 0,
+                open_until: None,
+            }),
         }
     }
 
     /// Returns `true` if the circuit is currently open (backoff active).
     fn is_open(&self) -> bool {
-        self.open_until
-            .read()
+        self.state
+            .lock()
+            .open_until
             .map(|until| Instant::now() < until)
             .unwrap_or(false)
     }
 
     /// Record success — resets failure count and closes the circuit.
     fn record_success(&self) {
-        self.failure_count.store(0, Ordering::Relaxed);
-        self.retry_count.store(0, Ordering::Relaxed);
-        *self.open_until.write() = None;
+        let mut s = self.state.lock();
+        s.failure_count = 0;
+        s.retry_count = 0;
+        s.open_until = None;
     }
 
     /// Record failure. Returns `true` if we have hit `CB_MAX_RETRIES`.
     fn record_failure(&self) -> bool {
-        let count = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
-        if count >= CB_THRESHOLD {
-            let retry = self.retry_count.fetch_add(1, Ordering::Relaxed) + 1;
-            if retry > CB_MAX_RETRIES {
+        let mut s = self.state.lock();
+        s.failure_count += 1;
+        if s.failure_count >= CB_THRESHOLD {
+            s.retry_count += 1;
+            if s.retry_count > CB_MAX_RETRIES {
                 return true; // caller should transition to Failed
             }
-            let excess = count.saturating_sub(CB_THRESHOLD) as f64;
+            let excess = s.failure_count.saturating_sub(CB_THRESHOLD) as f64;
             let delay_ms = (CB_BASE_MS * 2_f64.powf(excess)).min(CB_MAX_MS);
-            *self.open_until.write() = Some(Instant::now() + Duration::from_millis(delay_ms as u64));
+            s.open_until = Some(Instant::now() + Duration::from_millis(delay_ms as u64));
         }
         false
     }
@@ -815,7 +826,7 @@ mod tests {
         }
         cb.record_success();
         assert!(!cb.is_open());
-        assert_eq!(cb.failure_count.load(Ordering::Relaxed), 0);
+        assert_eq!(cb.state.lock().failure_count, 0);
     }
 
     #[test]
