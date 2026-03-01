@@ -11,9 +11,20 @@ pub struct TranscribeResult {
     pub skip_reason: Option<String>,
 }
 
+/// Trait for transcription backends, enabling test substitution.
+pub trait Transcribe: Send + Sync {
+    fn transcribe(&self, audio: &[f32], language: Option<&str>) -> Result<TranscribeResult, String>;
+}
+
 /// Whisper model wrapper for transcription.
 pub struct WhisperTranscriber {
     ctx: WhisperContext,
+}
+
+impl Transcribe for WhisperTranscriber {
+    fn transcribe(&self, audio: &[f32], language: Option<&str>) -> Result<TranscribeResult, String> {
+        self.transcribe(audio, language)
+    }
 }
 
 impl WhisperTranscriber {

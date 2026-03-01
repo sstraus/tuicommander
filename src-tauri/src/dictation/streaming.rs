@@ -8,7 +8,7 @@
 /// - Overlapping windows with `keep_ms` of previous context
 /// - `set_single_segment(true)` + `set_no_timestamps(true)` for short windows
 
-use crate::dictation::transcribe::WhisperTranscriber;
+use crate::dictation::transcribe::Transcribe;
 use crate::dictation::vad;
 use parking_lot::Mutex;
 use std::collections::VecDeque;
@@ -57,7 +57,7 @@ impl StreamingSession {
     /// via `tx`. On stop, the thread returns unconsumed audio for a final
     /// transcription pass.
     pub fn start(
-        transcriber: Arc<WhisperTranscriber>,
+        transcriber: Arc<dyn Transcribe>,
         audio_buffer: Arc<Mutex<VecDeque<f32>>>,
         tx: mpsc::Sender<String>,
         language: Option<String>,
@@ -108,7 +108,7 @@ impl StreamingSession {
 ///
 /// Returns unconsumed audio when stopped.
 fn streaming_loop(
-    transcriber: Arc<WhisperTranscriber>,
+    transcriber: Arc<dyn Transcribe>,
     audio_buffer: Arc<Mutex<VecDeque<f32>>>,
     tx: mpsc::Sender<String>,
     stop: Arc<AtomicBool>,
@@ -160,7 +160,7 @@ fn streaming_loop(
 
                 // Transcribe the window
                 if let Some(text) =
-                    transcribe_window(&transcriber, &window_buf, language.as_deref())
+                    transcribe_window(&*transcriber, &window_buf, language.as_deref())
                 {
                     if !text.is_empty() {
                         if tx.send(text).is_err() {
@@ -204,7 +204,7 @@ fn streaming_loop(
 ///
 /// Returns the transcribed text, or None on error.
 fn transcribe_window(
-    transcriber: &WhisperTranscriber,
+    transcriber: &dyn Transcribe,
     window: &[f32],
     language: Option<&str>,
 ) -> Option<String> {
@@ -227,6 +227,23 @@ fn transcribe_window(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dictation::transcribe::{Transcribe, TranscribeResult};
+
+    /// Test transcriber that echoes the sample count as text.
+    struct EchoTranscriber;
+
+    impl Transcribe for EchoTranscriber {
+        fn transcribe(
+            &self,
+            audio: &[f32],
+            _language: Option<&str>,
+        ) -> Result<TranscribeResult, String> {
+            Ok(TranscribeResult {
+                text: format!("samples:{}", audio.len()),
+                skip_reason: None,
+            })
+        }
+    }
 
     #[test]
     fn test_ms_to_samples() {
@@ -305,57 +322,103 @@ mod tests {
     }
 
     #[test]
-    fn test_stop_signal_terminates_loop() {
-        // Create a shared buffer and stop flag
+    fn test_streaming_session_with_echo_transcriber() {
+        use std::f32::consts::PI;
+
+        let transcriber: Arc<dyn Transcribe> = Arc::new(EchoTranscriber);
         let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
-        let stop = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::channel::<String>();
 
-        let buffer_clone = buffer.clone();
-        let stop_clone = stop.clone();
+        let session = StreamingSession::start(
+            transcriber,
+            buffer.clone(),
+            tx,
+            None,
+        );
 
-        // Spawn the streaming loop in a thread (no transcriber needed —
-        // with no audio data, it just polls and checks stop)
-        let handle = std::thread::spawn(move || {
-            // We can't create a real WhisperTranscriber without a model,
-            // but with an empty buffer and immediate stop, the loop exits
-            // before trying to transcribe anything.
-            let mut step_buf: Vec<f32> = Vec::new();
-            let mut iterations = 0;
+        // Push 2s of speech-like audio (440Hz sine wave) — exceeds INITIAL_STEP_MS (1.5s)
+        let n = ms_to_samples(2000);
+        let speech: Vec<f32> = (0..n)
+            .map(|i| (2.0 * PI * 440.0 * i as f32 / SAMPLE_RATE as f32).sin() * 0.5)
+            .collect();
+        {
+            let mut buf = buffer.lock();
+            buf.extend(speech.iter());
+        }
 
-            loop {
-                if stop_clone.load(Ordering::Acquire) {
-                    break;
-                }
+        // Wait for the streaming loop to process (poll interval is 50ms)
+        std::thread::sleep(std::time::Duration::from_millis(300));
 
-                {
-                    let mut buf = buffer_clone.lock();
-                    let available = buf.len();
-                    if available > 0 {
-                        step_buf.extend(buf.drain(..available));
-                    }
-                }
+        // Stop the session
+        let remaining = session.stop();
 
-                iterations += 1;
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+        // Should have received at least one partial transcription
+        let mut partials = Vec::new();
+        while let Ok(text) = rx.try_recv() {
+            partials.push(text);
+        }
+        assert!(
+            !partials.is_empty(),
+            "Should have received at least one partial from EchoTranscriber"
+        );
+        // Each partial should report the sample count
+        for partial in &partials {
+            assert!(
+                partial.starts_with("samples:"),
+                "Expected 'samples:N', got '{partial}'"
+            );
+        }
+    }
 
-            iterations
-        });
+    #[test]
+    fn test_streaming_loop_skips_silence() {
+        let transcriber: Arc<dyn Transcribe> = Arc::new(EchoTranscriber);
+        let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let (tx, rx) = mpsc::channel::<String>();
 
-        // Let it run a few iterations
+        let session = StreamingSession::start(
+            transcriber,
+            buffer.clone(),
+            tx,
+            None,
+        );
+
+        // Push 2s of silence — VAD should skip it, no transcription
+        let n = ms_to_samples(2000);
+        {
+            let mut buf = buffer.lock();
+            buf.extend(std::iter::repeat(0.0f32).take(n));
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        session.stop();
+
+        // Should NOT have received any partials (silence is skipped)
+        assert!(
+            rx.try_recv().is_err(),
+            "Should not transcribe silence"
+        );
+    }
+
+    #[test]
+    fn test_streaming_session_stop_terminates() {
+        let transcriber: Arc<dyn Transcribe> = Arc::new(EchoTranscriber);
+        let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let (tx, _rx) = mpsc::channel::<String>();
+
+        let session = StreamingSession::start(
+            transcriber,
+            buffer.clone(),
+            tx,
+            None,
+        );
+
+        // Let it run briefly with no audio
         std::thread::sleep(std::time::Duration::from_millis(100));
 
-        // Signal stop
-        stop.store(true, Ordering::Release);
-
-        // Should terminate quickly
-        let iterations = handle.join().expect("Thread should not panic");
-        assert!(iterations > 0, "Should have run at least one iteration");
-        assert!(iterations < 50, "Should have stopped promptly");
-
-        // No partials should have been sent (no audio)
-        assert!(rx.try_recv().is_err(), "No partials expected");
+        // Stop should return promptly (no hang)
+        let leftover = session.stop();
+        assert!(leftover.is_empty(), "No audio was pushed, so no remainder");
     }
 
     #[test]

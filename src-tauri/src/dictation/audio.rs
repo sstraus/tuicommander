@@ -282,4 +282,76 @@ mod tests {
         process_audio_chunk(&data, 16000, 1, &buf);
         assert_eq!(guard.len(), 16); // still 16, new samples dropped
     }
+
+    #[test]
+    fn test_process_audio_chunk_stereo_16khz() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        // 4 stereo frames: [L0, R0, L1, R1, L2, R2, L3, R3]
+        let data = vec![0.2, 0.8, 0.4, 0.6, 1.0, 0.0, -0.5, 0.5];
+        process_audio_chunk(&data, 16000, 2, &buf);
+
+        let result: Vec<f32> = buf.lock().drain(..).collect();
+        assert_eq!(result.len(), 4);
+        // Each output sample is the average of L and R
+        assert!((result[0] - 0.5).abs() < 1e-6); // (0.2 + 0.8) / 2
+        assert!((result[1] - 0.5).abs() < 1e-6); // (0.4 + 0.6) / 2
+        assert!((result[2] - 0.5).abs() < 1e-6); // (1.0 + 0.0) / 2
+        assert!((result[3] - 0.0).abs() < 1e-6); // (-0.5 + 0.5) / 2
+    }
+
+    #[test]
+    fn test_process_audio_chunk_resample_48khz_mono() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        // 48 samples at 48kHz mono = 1ms → should produce ~16 samples at 16kHz
+        let data: Vec<f32> = (0..48).map(|i| i as f32 / 48.0).collect();
+        process_audio_chunk(&data, 48000, 1, &buf);
+
+        let result: Vec<f32> = buf.lock().drain(..).collect();
+        // 48 samples at 48kHz → 16 samples at 16kHz (ratio 1/3)
+        assert_eq!(result.len(), 16);
+        // First sample should be data[0] = 0.0
+        assert!((result[0] - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_process_audio_chunk_resample_48khz_stereo() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        // 48 stereo frames at 48kHz = 96 f32 values, 1ms
+        // Each frame: [L=0.4, R=0.6] → mono average = 0.5
+        let data: Vec<f32> = (0..48).flat_map(|_| vec![0.4f32, 0.6]).collect();
+        process_audio_chunk(&data, 48000, 2, &buf);
+
+        let result: Vec<f32> = buf.lock().drain(..).collect();
+        // 48 frames at 48kHz → 16 samples at 16kHz
+        assert_eq!(result.len(), 16);
+        // All samples should be ~0.5 (average of 0.4 and 0.6)
+        for (i, &sample) in result.iter().enumerate() {
+            assert!(
+                (sample - 0.5).abs() < 1e-6,
+                "sample {i} should be 0.5, got {sample}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_process_audio_chunk_buffer_cap() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        // Pre-fill buffer near max capacity
+        {
+            let mut b = buf.lock();
+            b.extend(std::iter::repeat(0.0f32).take(MAX_BUFFER_SAMPLES));
+        }
+        assert_eq!(buf.lock().len(), MAX_BUFFER_SAMPLES);
+
+        // Add 100 more samples — should trigger cap, keeping total at MAX_BUFFER_SAMPLES
+        let extra = vec![1.0f32; 100];
+        process_audio_chunk(&extra, 16000, 1, &buf);
+
+        let b = buf.lock();
+        assert_eq!(b.len(), MAX_BUFFER_SAMPLES);
+        // The last 100 samples should be 1.0 (the new data)
+        assert!((b[MAX_BUFFER_SAMPLES - 1] - 1.0).abs() < 1e-6);
+        // The oldest samples (0.0) should have been drained
+        assert!((b[0] - 0.0).abs() < 1e-6); // still 0.0 since only 100 were drained
+    }
 }

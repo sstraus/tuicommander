@@ -264,6 +264,16 @@ describe("dictationStore", () => {
       });
     });
 
+    it("maps model field to selectedModel in store state", async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await createRoot(async (dispose) => {
+        await store.saveConfig({ model: "small" });
+        expect(store.state.selectedModel).toBe("small");
+        dispose();
+      });
+    });
+
     it("handles save failure gracefully", async () => {
       mockInvoke.mockRejectedValueOnce(new Error("disk full"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -293,14 +303,16 @@ describe("dictationStore", () => {
   });
 
   describe("stopRecording()", () => {
-    it("returns transcribed text on success", async () => {
-      mockInvoke.mockResolvedValueOnce("Hello world");
+    it("returns TranscribeResponse on success", async () => {
+      const response = { text: "Hello world", skip_reason: null, duration_s: 2.5 };
+      mockInvoke.mockResolvedValueOnce(response);
 
       await createRoot(async (dispose) => {
         const result = await store.stopRecording();
-        expect(result).toBe("Hello world");
+        expect(result).toEqual(response);
         expect(store.state.recording).toBe(false);
         expect(store.state.processing).toBe(false);
+        expect(store.state.partialText).toBe("");
         expect(mockInvoke).toHaveBeenCalledWith("stop_dictation_and_transcribe");
         dispose();
       });
@@ -315,6 +327,7 @@ describe("dictationStore", () => {
         expect(result).toBeNull();
         expect(store.state.recording).toBe(false);
         expect(store.state.processing).toBe(false);
+        expect(store.state.partialText).toBe("");
         consoleSpy.mockRestore();
         dispose();
       });
