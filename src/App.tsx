@@ -30,7 +30,7 @@ import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { ActivityDashboard } from "./components/ActivityDashboard";
-import { WorktreeManager } from "./components/WorktreeManager";
+import { WorktreeManager, type WorktreeActions } from "./components/WorktreeManager";
 import { ErrorLogPanel } from "./components/ErrorLogPanel";
 import { DictationToast } from "./components/DictationToast/DictationToast";
 import { commandPaletteStore } from "./stores/commandPalette";
@@ -753,6 +753,27 @@ const App: Component = () => {
     toggleErrorLog: () => errorLogStore.toggle(),
   };
 
+  // Worktree manager action callbacks
+  const worktreeActions: WorktreeActions = {
+    onOpenTerminal: (repoPath, branchName) => {
+      void gitOps.handleAddTerminalToBranch(repoPath, branchName);
+    },
+    onDelete: (repoPath, branchName) => {
+      void gitOps.handleRemoveBranch(repoPath, branchName);
+    },
+    onMergeAndArchive: (repoPath, branchName) => {
+      const repoState = repositoriesStore.get(repoPath);
+      const mainBranch = repoState ? Object.values(repoState.branches).find(b => b.isMain)?.name : undefined;
+      if (!mainBranch) {
+        setStatusInfo("Cannot merge: no main branch found");
+        return;
+      }
+      const effective = repoSettingsStore.getEffective(repoPath);
+      const afterMerge = effective?.afterMerge ?? "archive";
+      void gitOps.handleMergeAndArchive(repoPath, branchName, mainBranch, afterMerge);
+    },
+  };
+
   // Action entries for the command palette: static registry + dynamic entries
   const actionEntries = createMemo(() => {
     const entries = getActionEntries(shortcutHandlers);
@@ -1130,7 +1151,7 @@ const App: Component = () => {
       <ActivityDashboard />
 
       {/* Worktree manager */}
-      <WorktreeManager />
+      <WorktreeManager actions={worktreeActions} />
 
       {/* Error log panel */}
       <ErrorLogPanel />

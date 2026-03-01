@@ -227,6 +227,75 @@ describe("WorktreeManager", () => {
     });
   });
 
+  describe("row actions", () => {
+    const mockActions = {
+      onOpenTerminal: vi.fn(),
+      onDelete: vi.fn(),
+      onMergeAndArchive: vi.fn(),
+    };
+
+    it("shows action buttons on non-main worktree rows", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature-x", { worktreePath: "/repo/.wt/x" });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const row = container.querySelector("[class*='row']");
+      expect(row?.querySelector("[class*='actionBtn']")).not.toBeNull();
+    });
+
+    it("disables delete and merge on main worktree rows", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const row = container.querySelector("[class*='mainRow']");
+      const deleteBtn = row?.querySelector("[data-action='delete']") as HTMLButtonElement | null;
+      const mergeBtn = row?.querySelector("[data-action='merge']") as HTMLButtonElement | null;
+      expect(deleteBtn?.disabled).toBe(true);
+      expect(mergeBtn?.disabled).toBe(true);
+    });
+
+    it("calls onOpenTerminal when terminal button is clicked", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feat", { worktreePath: "/repo/.wt/feat" });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const termBtn = container.querySelector("[data-action='terminal']")!;
+      fireEvent.click(termBtn);
+      expect(mockActions.onOpenTerminal).toHaveBeenCalledWith("/repo", "feat");
+    });
+
+    it("calls onDelete when delete button is clicked", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feat", { worktreePath: "/repo/.wt/feat" });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const deleteBtn = container.querySelector("[data-action='delete']")!;
+      fireEvent.click(deleteBtn);
+      expect(mockActions.onDelete).toHaveBeenCalledWith("/repo", "feat");
+    });
+
+    it("calls onMergeAndArchive when merge button is clicked", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feat", { worktreePath: "/repo/.wt/feat" });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const mergeBtn = container.querySelector("[data-action='merge']")!;
+      fireEvent.click(mergeBtn);
+      expect(mockActions.onMergeAndArchive).toHaveBeenCalledWith("/repo", "feat");
+    });
+  });
+
   describe("composing filters", () => {
     it("applies repo filter AND text filter together", () => {
       repositoriesStore.add({ path: "/repo-a", displayName: "Alpha" });

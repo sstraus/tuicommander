@@ -35,7 +35,14 @@ function displayName(path: string): string {
   return segments[segments.length - 1] || path;
 }
 
-export const WorktreeManager: Component = () => {
+/** Action callbacks for worktree row operations */
+export interface WorktreeActions {
+  onOpenTerminal: (repoPath: string, branchName: string) => void;
+  onDelete: (repoPath: string, branchName: string) => void;
+  onMergeAndArchive: (repoPath: string, branchName: string) => void;
+}
+
+export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props) => {
   const isOpen = () => worktreeManagerStore.state.isOpen;
 
   // Escape to close
@@ -217,6 +224,38 @@ export const WorktreeManager: Component = () => {
                   </Show>
                   <DirtyStats additions={wt.additions} deletions={wt.deletions} />
                   <span class={s.timestamp}>{formatRelativeTime(wt.lastCommitTs)}</span>
+                  <Show when={props.actions}>
+                    {(actions) => (
+                      <div class={s.actions}>
+                        <button
+                          class={s.actionBtn}
+                          data-action="terminal"
+                          title="Open terminal"
+                          onClick={() => actions().onOpenTerminal(wt.repoPath, wt.branch)}
+                        >
+                          &gt;_
+                        </button>
+                        <button
+                          class={s.actionBtn}
+                          data-action="merge"
+                          title="Merge & archive"
+                          disabled={wt.isMain}
+                          onClick={() => actions().onMergeAndArchive(wt.repoPath, wt.branch)}
+                        >
+                          &#x2714;
+                        </button>
+                        <button
+                          class={`${s.actionBtn} ${s.actionBtnDanger}`}
+                          data-action="delete"
+                          title="Delete worktree"
+                          disabled={wt.isMain}
+                          onClick={() => actions().onDelete(wt.repoPath, wt.branch)}
+                        >
+                          &#x2715;
+                        </button>
+                      </div>
+                    )}
+                  </Show>
                 </div>
               )}
             </For>

@@ -210,6 +210,39 @@
   color: var(--error);
 }
 
+.actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.actionBtn {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  background: none;
+  border: 1px solid transparent;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.actionBtn:hover:not(:disabled) {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+  border-color: var(--border);
+}
+
+.actionBtn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.actionBtnDanger:hover:not(:disabled) {
+  color: var(--error);
+}
+
 .orphanRow {
   opacity: 0.7;
 }
