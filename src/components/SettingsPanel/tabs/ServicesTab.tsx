@@ -1,5 +1,5 @@
 import { Component, For, Show, createSignal, createResource, createMemo, createEffect, onMount, onCleanup } from "solid-js";
-import { rpc } from "../../../transport";
+import { rpc, type UpstreamMcpConfig, type UpstreamMcpServer, type UpstreamTransport } from "../../../transport";
 import { appLogger } from "../../../stores/appLogger";
 import QRCode from "qrcode";
 import { t } from "../../../i18n";
@@ -527,6 +527,273 @@ export const ServicesTab: Component = () => {
       <p class={s.hint} style={{ "margin-top": "16px" }}>
         {t("services.hint.serverStartsAutomatically", "The server starts automatically when the app launches if enabled")}
       </p>
+
+      <UpstreamMcpPanel />
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Upstream MCP Servers panel (Tauri-only — uses OS keyring)
+// ---------------------------------------------------------------------------
+
+/** Blank form state for adding a new upstream */
+function emptyForm() {
+  return {
+    name: "",
+    transportType: "http" as "http" | "stdio",
+    url: "",
+    command: "",
+    args: "",
+    credential: "",
+    timeout: 30,
+  };
+}
+
+const UpstreamMcpPanel: Component = () => {
+  const [upstreams, setUpstreams] = createSignal<UpstreamMcpServer[]>([]);
+  const [showAdd, setShowAdd] = createSignal(false);
+  const [form, setForm] = createSignal(emptyForm());
+  const [saving, setSaving] = createSignal(false);
+  const [error, setError] = createSignal("");
+
+  // Load upstream config on mount (Tauri-only)
+  onMount(async () => {
+    try {
+      const cfg = await rpc<UpstreamMcpConfig>("load_mcp_upstreams");
+      setUpstreams(cfg.servers ?? []);
+    } catch {
+      // Not in Tauri — silently skip
+    }
+  });
+
+  async function saveUpstreams(servers: UpstreamMcpServer[]) {
+    setSaving(true);
+    setError("");
+    try {
+      await rpc("save_mcp_upstreams", { config: { servers } });
+      setUpstreams(servers);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addUpstream() {
+    const f = form();
+    if (!f.name.trim()) { setError("Name is required"); return; }
+
+    const transport: UpstreamTransport = f.transportType === "http"
+      ? { type: "http", url: f.url.trim() }
+      : {
+          type: "stdio",
+          command: f.command.trim(),
+          args: f.args.trim() ? f.args.trim().split(/\s+/) : [],
+        };
+
+    const server: UpstreamMcpServer = {
+      id: crypto.randomUUID(),
+      name: f.name.trim(),
+      transport,
+      enabled: true,
+      timeout_secs: f.timeout,
+    };
+
+    // Save credential before persisting config (ignored if empty)
+    if (f.credential) {
+      try {
+        await rpc("save_mcp_upstream_credential", { name: server.name, token: f.credential });
+      } catch {
+        // Non-fatal — credential might not be needed
+      }
+    }
+
+    await saveUpstreams([...upstreams(), server]);
+    setForm(emptyForm());
+    setShowAdd(false);
+  }
+
+  async function toggleUpstream(id: string, enabled: boolean) {
+    const updated = upstreams().map(s => s.id === id ? { ...s, enabled } : s);
+    await saveUpstreams(updated);
+  }
+
+  async function removeUpstream(id: string, name: string) {
+    if (!confirm(`Remove upstream "${name}"?`)) return;
+    await rpc("delete_mcp_upstream_credential", { name }).catch(() => {});
+    await saveUpstreams(upstreams().filter(s => s.id !== id));
+  }
+
+  return (
+    <div style={{ "margin-top": "24px", "border-top": "1px solid var(--border)", "padding-top": "16px" }}>
+      <div class={s.group}>
+        <label style={{ display: "flex", "align-items": "center", gap: "8px", "justify-content": "space-between" }}>
+          <span>Upstream MCP Servers</span>
+          <button
+            class={s.copyBtn}
+            onClick={() => { setShowAdd(v => !v); setError(""); }}
+            title="Add upstream server"
+            style={{ "font-size": "18px", "line-height": 1 }}
+          >
+            {showAdd() ? "−" : "+"}
+          </button>
+        </label>
+        <p class={s.hint}>
+          Proxy external MCP servers through TUIC. Their tools appear prefixed as <code>{"{name}__{tool}"}</code>.
+        </p>
+      </div>
+
+      {/* Add upstream form */}
+      <Show when={showAdd()}>
+        <div class={s.group} style={{ background: "var(--bg-secondary, rgba(255,255,255,0.03))", padding: "12px", "border-radius": "6px" }}>
+          <div style={{ display: "grid", gap: "8px" }}>
+            <input
+              type="text"
+              class={s.input}
+              placeholder="Name (e.g. context7, github)"
+              value={form().name}
+              onInput={e => setForm(f => ({ ...f, name: e.currentTarget.value }))}
+            />
+            <select
+              class={s.input}
+              value={form().transportType}
+              onChange={e => setForm(f => ({ ...f, transportType: e.currentTarget.value as "http" | "stdio" }))}
+            >
+              <option value="http">HTTP (Streamable MCP)</option>
+              <option value="stdio">stdio (process)</option>
+            </select>
+            <Show when={form().transportType === "http"}>
+              <input
+                type="text"
+                class={s.input}
+                placeholder="URL (e.g. http://localhost:8080/mcp)"
+                value={form().url}
+                onInput={e => setForm(f => ({ ...f, url: e.currentTarget.value }))}
+              />
+              <input
+                type="password"
+                class={s.input}
+                placeholder="Bearer token (optional, stored in OS keychain)"
+                value={form().credential}
+                onInput={e => setForm(f => ({ ...f, credential: e.currentTarget.value }))}
+              />
+            </Show>
+            <Show when={form().transportType === "stdio"}>
+              <input
+                type="text"
+                class={s.input}
+                placeholder="Command (e.g. npx)"
+                value={form().command}
+                onInput={e => setForm(f => ({ ...f, command: e.currentTarget.value }))}
+              />
+              <input
+                type="text"
+                class={s.input}
+                placeholder="Args (space-separated, e.g. -y @modelcontextprotocol/server-filesystem /path)"
+                value={form().args}
+                onInput={e => setForm(f => ({ ...f, args: e.currentTarget.value }))}
+              />
+            </Show>
+            <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+              <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Timeout (s):</label>
+              <input
+                type="number"
+                class={s.input}
+                value={form().timeout}
+                min={0} max={300}
+                style={{ width: "70px" }}
+                onInput={e => setForm(f => ({ ...f, timeout: parseInt(e.currentTarget.value) || 30 }))}
+              />
+              <button
+                class={s.copyBtn}
+                onClick={addUpstream}
+                disabled={saving()}
+                style={{ "margin-left": "auto" }}
+              >
+                {saving() ? "Adding…" : "Add"}
+              </button>
+              <button
+                class={s.copyBtn}
+                onClick={() => { setShowAdd(false); setForm(emptyForm()); setError(""); }}
+              >
+                Cancel
+              </button>
+            </div>
+            <Show when={error()}>
+              <p class={s.hint} style={{ color: "var(--error, #e06c75)" }}>{error()}</p>
+            </Show>
+          </div>
+        </div>
+      </Show>
+
+      {/* Upstream list */}
+      <Show when={upstreams().length === 0 && !showAdd()}>
+        <p class={s.hint} style={{ color: "var(--text-dimmed)" }}>
+          No upstream servers configured. Click <strong>+</strong> to add one.
+        </p>
+      </Show>
+
+      <For each={upstreams()}>
+        {(server) => (
+          <div class={s.group} style={{ display: "flex", "align-items": "center", gap: "8px", padding: "8px 0", "border-bottom": "1px solid var(--border-subtle, rgba(255,255,255,0.06))" }}>
+            {/* Enable toggle */}
+            <div class={s.toggle} style={{ "margin-right": "4px" }}>
+              <input
+                type="checkbox"
+                checked={server.enabled}
+                onChange={e => toggleUpstream(server.id, e.currentTarget.checked)}
+              />
+            </div>
+            {/* Info */}
+            <div style={{ flex: 1, "min-width": 0 }}>
+              <div style={{ display: "flex", "align-items": "center", gap: "6px", "flex-wrap": "wrap" }}>
+                <span style={{ "font-weight": 500, "font-size": "13px" }}>{server.name}</span>
+                <span style={{
+                  "font-size": "10px", padding: "1px 5px", "border-radius": "3px",
+                  background: server.transport.type === "http" ? "rgba(97,175,239,0.15)" : "rgba(152,195,121,0.15)",
+                  color: server.transport.type === "http" ? "#61afef" : "#98c379",
+                }}>
+                  {server.transport.type.toUpperCase()}
+                </span>
+                <Show when={!server.enabled}>
+                  <span style={{ "font-size": "10px", padding: "1px 5px", "border-radius": "3px", background: "rgba(255,255,255,0.05)", color: "var(--text-dimmed)" }}>
+                    Disabled
+                  </span>
+                </Show>
+              </div>
+              <div class={s.hint} style={{ margin: 0, "font-family": "monospace", "font-size": "11px" }}>
+                {server.transport.type === "http"
+                  ? server.transport.url
+                  : server.transport.command + (server.transport.args?.length ? " " + server.transport.args.join(" ") : "")}
+              </div>
+            </div>
+            {/* Reconnect */}
+            <button
+              class={s.copyBtn}
+              title="Reconnect"
+              onClick={() => rpc("reconnect_mcp_upstream", { name: server.name }).catch(e => appLogger.warn("network", String(e)))}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+              </svg>
+            </button>
+            {/* Remove */}
+            <button
+              class={s.copyBtn}
+              title="Remove"
+              onClick={() => removeUpstream(server.id, server.name)}
+              style={{ color: "var(--error, #e06c75)" }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+              </svg>
+            </button>
+          </div>
+        )}
+      </For>
     </div>
   );
 };
