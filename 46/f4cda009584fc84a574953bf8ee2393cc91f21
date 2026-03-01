@@ -1,0 +1,23 @@
+src-tauri/src/mcp_proxy/registry.rs
+  b90003bea2fc81ca 290-295,304-306,309,546-547,550-553,566,572-579,585,590-600
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "46f4cda009584fc84a574953bf8ee2393cc91f21",
+  "prompts": {
+    "b90003bea2fc81ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e65d89a4-0976-4295-9eb6-be7e2893c71b",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 39,
+      "total_deletions": 12,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}
