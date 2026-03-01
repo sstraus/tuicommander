@@ -112,8 +112,14 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
     let mcp_server_enabled = config.mcp_server_enabled;
     let remote_access_enabled = config.remote_access_enabled;
 
+    let tools_changed = old.disabled_native_tools != config.disabled_native_tools;
+
     config::save_app_config(config.clone())?;  // clone goes to disk
     *state.config.write() = config;             // move original into state
+
+    if tools_changed {
+        let _ = state.mcp_tools_changed.send(());
+    }
 
     if server_changed {
         // Shutdown existing server (if any)
@@ -577,10 +583,13 @@ pub fn run() {
         event_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         session_states: dashmap::DashMap::new(),
         mcp_upstream_registry: Arc::new(mcp_proxy::registry::UpstreamRegistry::new()),
+        mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
     });
 
     // Wire the event bus into the upstream registry so status changes emit SSE events.
     state.mcp_upstream_registry.set_event_bus(state.event_bus.clone());
+    // Wire the MCP tools_changed signal so upstream changes notify MCP bridge clients.
+    state.mcp_upstream_registry.set_mcp_tools_tx(state.mcp_tools_changed.clone());
 
     // Start HTTP API server if either MCP or Remote Access is enabled
     if config.mcp_server_enabled || config.remote_access_enabled {

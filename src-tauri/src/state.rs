@@ -672,6 +672,9 @@ pub struct AppState {
     pub(crate) session_states: DashMap<String, SessionState>,
     /// Upstream MCP proxy registry — aggregates tools from all connected upstreams.
     pub(crate) mcp_upstream_registry: Arc<crate::mcp_proxy::registry::UpstreamRegistry>,
+    /// Broadcast channel for MCP `notifications/tools/list_changed`.
+    /// Fired when native tools are toggled or upstream tool lists change.
+    pub(crate) mcp_tools_changed: tokio::sync::broadcast::Sender<()>,
 }
 
 impl AppState {
@@ -1154,6 +1157,7 @@ mod tests {
             event_counter: Arc::new(AtomicU64::new(0)),
             session_states: DashMap::new(),
             mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
+            mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
         }
     }
 

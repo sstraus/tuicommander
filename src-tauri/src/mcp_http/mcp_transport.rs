@@ -679,7 +679,11 @@ fn handle_config(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
             };
             match crate::config::save_app_config(config.clone()) {
                 Ok(()) => {
-                    *state.config.write() = config;
+                    let old_disabled = state.config.read().disabled_native_tools.clone();
+                    *state.config.write() = config.clone();
+                    if old_disabled != config.disabled_native_tools {
+                        let _ = state.mcp_tools_changed.send(());
+                    }
                     serde_json::json!({"ok": true})
                 }
                 Err(e) => serde_json::json!({"error": e}),
@@ -693,7 +697,7 @@ fn handle_config(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
 
 // ---------------------------------------------------------------------------
 // Streamable HTTP transport (MCP spec 2025-03-26)
-// Single /mcp endpoint — POST for JSON-RPC, GET returns 405, DELETE ends session
+// Single /mcp endpoint — POST for JSON-RPC, GET for SSE notifications, DELETE ends session
 // ---------------------------------------------------------------------------
 
 const MCP_SESSION_HEADER: &str = "mcp-session-id";
@@ -822,9 +826,50 @@ pub(super) async fn mcp_post(
     }
 }
 
-/// GET /mcp — Not supported (we don't use server-initiated streaming)
-pub(super) async fn mcp_get() -> impl IntoResponse {
-    StatusCode::METHOD_NOT_ALLOWED
+/// GET /mcp — SSE stream for MCP server→client notifications (tools/list_changed).
+/// Requires a valid `mcp-session-id` header (established via POST /mcp initialize).
+pub(super) async fn mcp_get(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // Validate MCP session
+    let session_valid = headers
+        .get(MCP_SESSION_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(|sid| state.mcp_sessions.contains_key(sid))
+        .unwrap_or(false);
+    if !session_valid {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let mut rx = state.mcp_tools_changed.subscribe();
+
+    let stream = async_stream::stream! {
+        loop {
+            match rx.recv().await {
+                Ok(()) => {
+                    let notification = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "method": "notifications/tools/list_changed"
+                    });
+                    yield Ok::<_, std::convert::Infallible>(
+                        axum::response::sse::Event::default()
+                            .data(serde_json::to_string(&notification).unwrap_or_default())
+                    );
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    };
+
+    axum::response::sse::Sse::new(stream)
+        .keep_alive(
+            axum::response::sse::KeepAlive::new()
+                .interval(std::time::Duration::from_secs(15))
+                .text("ping"),
+        )
+        .into_response()
 }
 
 /// GET /mcp/instructions — Returns dynamic server instructions for the bridge binary

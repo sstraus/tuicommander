@@ -198,6 +198,8 @@ pub(crate) struct UpstreamRegistry {
     entries: DashMap<String, Arc<UpstreamEntry>>,
     /// Broadcast bus for emitting upstream status change events (optional).
     event_bus: parking_lot::RwLock<Option<tokio::sync::broadcast::Sender<crate::state::AppEvent>>>,
+    /// MCP tools_changed signal — fired when upstream tool availability changes.
+    mcp_tools_tx: parking_lot::RwLock<Option<tokio::sync::broadcast::Sender<()>>>,
 }
 
 impl UpstreamRegistry {
@@ -205,12 +207,18 @@ impl UpstreamRegistry {
         Self {
             entries: DashMap::new(),
             event_bus: parking_lot::RwLock::new(None),
+            mcp_tools_tx: parking_lot::RwLock::new(None),
         }
     }
 
     /// Wire the event bus so status changes emit SSE events.
     pub(crate) fn set_event_bus(&self, bus: tokio::sync::broadcast::Sender<crate::state::AppEvent>) {
         *self.event_bus.write() = Some(bus);
+    }
+
+    /// Wire the MCP tools_changed signal so upstream changes notify MCP clients.
+    pub(crate) fn set_mcp_tools_tx(&self, tx: tokio::sync::broadcast::Sender<()>) {
+        *self.mcp_tools_tx.write() = Some(tx);
     }
 
     /// Emit an upstream status change event (fire-and-forget).
@@ -220,6 +228,12 @@ impl UpstreamRegistry {
                 name: name.to_string(),
                 status: status.to_string(),
             });
+        }
+        // Status changes to/from Ready affect the merged tool list
+        if status == "Ready" || status == "Error" || status == "Disconnected" {
+            if let Some(tx) = self.mcp_tools_tx.read().as_ref() {
+                let _ = tx.send(());
+            }
         }
     }
 

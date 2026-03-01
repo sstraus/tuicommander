@@ -94,6 +94,63 @@ async fn server_initialize() -> Result<String, String> {
 struct BridgeState {
     session_id: Mutex<Option<String>>,
     connected: AtomicBool,
+    /// Handle to the SSE listener task — aborted and restarted on reconnect.
+    sse_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+/// Open a persistent GET /mcp SSE connection and forward server notifications to stdout.
+/// Runs until the connection is closed or an error occurs.
+async fn sse_listener(session_id: String) {
+    let Ok(mut stream) = tokio::net::UnixStream::connect(socket_path()).await else {
+        return;
+    };
+
+    let request = format!(
+        "GET /mcp HTTP/1.1\r\nHost: localhost\r\nAccept: text/event-stream\r\nmcp-session-id: {session_id}\r\n\r\n"
+    );
+    if stream.write_all(request.as_bytes()).await.is_err() {
+        return;
+    }
+
+    // Read SSE events line by line using a simple buffer
+    let mut buf = Vec::with_capacity(4096);
+    let mut tmp = [0u8; 1024];
+    loop {
+        let n = match stream.read(&mut tmp).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n,
+        };
+        buf.extend_from_slice(&tmp[..n]);
+
+        // Process complete lines (SSE uses \n-delimited frames)
+        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let line = String::from_utf8_lossy(&buf[..pos]).trim().to_string();
+            buf.drain(..=pos);
+
+            if let Some(data) = line.strip_prefix("data:") {
+                let data = data.trim();
+                if data.contains("tools/list_changed") {
+                    emit_tools_changed();
+                }
+            }
+        }
+    }
+}
+
+/// Spawn (or restart) the SSE listener background task.
+fn start_sse_listener(state: &Arc<BridgeState>) {
+    let sid = state.session_id.lock().unwrap().clone();
+    let Some(sid) = sid else { return };
+
+    // Abort previous listener if any
+    if let Some(handle) = state.sse_handle.lock().unwrap().take() {
+        handle.abort();
+    }
+
+    let handle = tokio::spawn(async move {
+        sse_listener(sid).await;
+    });
+    *state.sse_handle.lock().unwrap() = Some(handle);
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -101,6 +158,7 @@ async fn main() {
     let state = Arc::new(BridgeState {
         session_id: Mutex::new(None),
         connected: AtomicBool::new(false),
+        sse_handle: Mutex::new(None),
     });
 
     // Try initial connection
@@ -108,6 +166,7 @@ async fn main() {
         eprintln!("tuic-mcp-bridge: connected to TUIC");
         *state.session_id.lock().unwrap() = Some(sid);
         state.connected.store(true, Ordering::Relaxed);
+        start_sse_listener(&state);
     } else {
         eprintln!("tuic-mcp-bridge: TUIC not running, will retry in background");
     }
@@ -128,6 +187,10 @@ async fn main() {
                     eprintln!("tuic-mcp-bridge: connection lost");
                     *bg_state.session_id.lock().unwrap() = None;
                     bg_state.connected.store(false, Ordering::Relaxed);
+                    // Abort SSE listener
+                    if let Some(h) = bg_state.sse_handle.lock().unwrap().take() {
+                        h.abort();
+                    }
                     emit_tools_changed();
                 }
             } else {
@@ -136,6 +199,7 @@ async fn main() {
                     eprintln!("tuic-mcp-bridge: reconnected to TUIC");
                     *bg_state.session_id.lock().unwrap() = Some(sid);
                     bg_state.connected.store(true, Ordering::Relaxed);
+                    start_sse_listener(&bg_state);
                     emit_tools_changed();
                 }
             }
@@ -189,6 +253,7 @@ async fn main() {
                         eprintln!("tuic-mcp-bridge: reconnected to TUIC");
                         *state.session_id.lock().unwrap() = Some(sid);
                         state.connected.store(true, Ordering::Relaxed);
+                        start_sse_listener(&state);
                         emit_tools_changed();
                     }
                 }

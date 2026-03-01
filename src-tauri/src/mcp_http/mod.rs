@@ -440,6 +440,7 @@ mod tests {
             event_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             session_states: dashmap::DashMap::new(),
             mcp_upstream_registry: std::sync::Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
+            mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
         })
     }
 
@@ -737,14 +738,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mcp_get_returns_405() {
+    async fn test_mcp_get_without_session_returns_401() {
         let state = test_state();
         let app = build_router(state, false, true);
         let resp = app
             .oneshot(Request::get("/mcp").body(Body::empty()).unwrap())
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
@@ -1638,6 +1639,91 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         // Native tool — should succeed (empty session list, no error)
         assert_eq!(json["result"]["isError"], false, "Native tool should not error: {json}");
+    }
+
+    /// Changing disabled_native_tools via put_config fires mcp_tools_changed.
+    #[tokio::test]
+    async fn test_config_change_fires_tools_changed() {
+        let state = test_state();
+        let mut rx = state.mcp_tools_changed.subscribe();
+
+        // Save config with a disabled tool
+        let mut config = state.config.read().clone();
+        config.disabled_native_tools = vec!["session".to_string()];
+        let app = build_router(state.clone(), false, true);
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
+        let resp = app.oneshot(put_from("/config", &serde_json::to_value(&config).unwrap(), addr)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Should have received a tools_changed signal
+        let result = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
+        assert!(result.is_ok(), "expected tools_changed signal after config change");
+    }
+
+    /// GET /mcp with valid session returns SSE stream that emits tools/list_changed
+    /// when mcp_tools_changed is signaled.
+    #[tokio::test]
+    async fn test_mcp_sse_tools_changed() {
+        let state = test_state();
+
+        // Start a real TCP server so we can use reqwest streaming
+        let app = build_router(state.clone(), false, true);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+                .await.unwrap();
+        });
+
+        let client = reqwest::Client::new();
+
+        // Establish MCP session via initialize
+        let init_body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "initialize",
+            "params": { "protocolVersion": "2025-03-26", "capabilities": {},
+                        "clientInfo": { "name": "test", "version": "0.1" } }
+        });
+        let resp = client.post(format!("http://{addr}/mcp"))
+            .json(&init_body)
+            .send().await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let session_id = resp.headers()
+            .get("mcp-session-id").expect("initialize should return session id")
+            .to_str().unwrap().to_string();
+
+        // GET /mcp with session header → SSE stream
+        let resp = client.get(format!("http://{addr}/mcp"))
+            .header("mcp-session-id", &session_id)
+            .header("Accept", "text/event-stream")
+            .send().await.unwrap();
+        assert_eq!(resp.status(), 200, "GET /mcp should return 200 for SSE");
+        let ct = resp.headers().get("content-type").unwrap().to_str().unwrap().to_string();
+        assert!(ct.contains("text/event-stream"), "expected SSE content-type, got: {ct}");
+
+        // Signal tools changed after a small delay so SSE stream is ready
+        let tools_tx = state.mcp_tools_changed.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            let _ = tools_tx.send(());
+        });
+
+        // Read SSE chunks with timeout
+        use futures_util::StreamExt;
+        let mut stream = resp.bytes_stream();
+        let mut collected = String::new();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while let Some(Ok(chunk)) = stream.next().await {
+                collected.push_str(&String::from_utf8_lossy(&chunk));
+                if collected.contains("tools/list_changed") {
+                    return true;
+                }
+            }
+            false
+        }).await;
+
+        assert!(result.unwrap_or(false),
+            "expected tools/list_changed notification in SSE stream, got: {collected}");
     }
 
     /// Unix socket listener: binds, serves health check, cleans up socket file on drop.

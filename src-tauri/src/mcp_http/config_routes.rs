@@ -40,7 +40,11 @@ pub(super) async fn put_config(
     }
     match crate::config::save_app_config(config.clone()) {
         Ok(()) => {
-            *state.config.write() = config;
+            let old_disabled = state.config.read().disabled_native_tools.clone();
+            *state.config.write() = config.clone();
+            if old_disabled != config.disabled_native_tools {
+                let _ = state.mcp_tools_changed.send(());
+            }
             (StatusCode::OK, Json(serde_json::json!({"ok": true})))
         }
         Err(e) => (
