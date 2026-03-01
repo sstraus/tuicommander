@@ -91,6 +91,7 @@ const TAB_TYPE_LEGEND: TabTypeEntry[] = [
   { color: "#7aa2f7", label: "Editor", description: "Code editor" },
   { color: "#22c55e", label: "Markdown", description: "Markdown viewer" },
   { color: "#a78bfa", label: "Panel", description: "Dashboard / plugin panel" },
+  { color: "#fbbf24", label: "PTY", description: "Remote session (HTTP/MCP)" },
 ];
 
 /** Panel colors — the accent color of right-side panels */

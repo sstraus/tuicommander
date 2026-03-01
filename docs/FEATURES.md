@@ -27,6 +27,8 @@
 - Rename: double-click tab name (inline editing)
 - Reorder: drag-and-drop with visual drop indicators
 - Tab status dot (left of name): grey=running, green=idle, blue-pulse=background activity, orange-pulse=awaiting input, red-pulse=error
+- Tab type colors: red gradient=diff, blue gradient=editor, teal gradient=markdown, purple gradient=panel, amber gradient=remote PTY session
+- Remote PTY sessions (created via HTTP/MCP) show "PTY:" prefix and amber styling
 - Progress bar (OSC 9;4)
 - Context menu (right-click): Close Tab, Close Other Tabs, Close Tabs to the Right, Detach to Window
 - Detach to Window: right-click a tab to open it in a floating OS window
@@ -516,7 +518,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Search by name or content
 
 ### 10.3 Keyboard Navigation
-- `↑/↓`: navigate, `Enter`: insert, `Ctrl+N`: new, `Ctrl+E`: edit, `Ctrl+F`: toggle favorite, `Esc`: close
+- `↑/↓`: navigate, `Enter`: insert (restores terminal focus), `Ctrl+N`: new, `Ctrl+E`: edit, `Ctrl+F`: toggle favorite, `Esc`: close
 
 ### 10.4 Run Commands
 - `Cmd+R`: run saved command for active branch

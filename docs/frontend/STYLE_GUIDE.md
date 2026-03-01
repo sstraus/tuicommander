@@ -176,6 +176,7 @@ Three levels only. Never invent new shadow values.
 ### Keyframe Animations
 
 **`pulse-opacity`**: Opacity 0.4 → 1.0 → 0.4, infinite. Duration 1.5s or 2s.
+Defined in each CSS Module file that uses it (not in `global.css` — CSS Modules scope animation names).
 Used for: active branch icon, CI pending badge, rate limit indicator.
 
 **`pulse-question`**: Box-shadow 0 → `0 0 12px 4px rgba(122,162,247,0.4)` → 0.
@@ -191,6 +192,13 @@ Used for: status bar notification text that overflows its container.
 - Blue (`--accent`, pulse ×3): background tab produced output
 - Orange (`--warning`, pulse infinite): awaiting user input (question or confirmation)
 - Red (`--error`, pulse infinite): awaiting error acknowledgement
+
+**Tab type color scheme** (gradient background + colored border-bottom):
+- Red (`#ef4444`): diff tabs
+- Blue (`--accent` / `#7aa2f7`): editor tabs
+- Teal (`#2dd4bf`): markdown tabs
+- Purple (`#a78bfa`): panel tabs
+- Amber (`#fbbf24`): remote PTY sessions (created via HTTP/MCP)
 
 Always use `ease` timing. Respect `prefers-reduced-motion`. Never `transition: all`.
 

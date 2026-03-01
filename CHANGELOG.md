@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
 - **Terminal CWD tracking via OSC 7** — Terminals detect working directory changes via OSC 7 escape sequences. When a terminal cd's into a known worktree, the tab automatically reassigns to that worktree's branch. Supports restart recovery via Rust-side cwd persistence.
+- **Remote PTY session tab styling** — Sessions created via HTTP/MCP now display with amber tab color and "PTY:" name prefix for instant visual distinction from local terminals
+
+### Fixed
+- **Tab/sidebar animations not playing** — `pulse-opacity` keyframes defined in `global.css` were silently ignored by CSS Modules (scoped name mismatch). Moved keyframes into each module file; activity dots, busy indicators, and awaiting-input pulses now animate correctly
+- **Rate-limit false positives** — Rate-limit pattern matches are now suppressed when the terminal is actively producing output (busy state), eliminating noise from agents reading code that contains rate-limit strings
+- **Prompt Library focus loss** — Terminal now regains focus after prompt injection from the Prompt Library drawer
 
 ## [0.6.0] - 2026-02-28
 
