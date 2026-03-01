@@ -563,6 +563,7 @@ pub fn run() {
         event_bus: tokio::sync::broadcast::channel(256).0,
         event_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         session_states: dashmap::DashMap::new(),
+        mcp_upstream_registry: Arc::new(mcp_proxy::registry::UpstreamRegistry::new()),
     });
 
     // Start HTTP API server if either MCP or Remote Access is enabled

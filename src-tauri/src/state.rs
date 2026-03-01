@@ -662,6 +662,8 @@ pub struct AppState {
     pub(crate) event_counter: Arc<AtomicU64>,
     /// Per-session state accumulated from broadcast events (for REST polling).
     pub(crate) session_states: DashMap<String, SessionState>,
+    /// Upstream MCP proxy registry — aggregates tools from all connected upstreams.
+    pub(crate) mcp_upstream_registry: Arc<crate::mcp_proxy::registry::UpstreamRegistry>,
 }
 
 impl AppState {
@@ -1141,6 +1143,7 @@ mod tests {
             event_bus: tokio::sync::broadcast::channel(256).0,
             event_counter: Arc::new(AtomicU64::new(0)),
             session_states: DashMap::new(),
+            mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
         }
     }
 

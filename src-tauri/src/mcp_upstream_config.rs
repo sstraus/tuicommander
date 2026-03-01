@@ -157,7 +157,7 @@ pub(crate) fn validate_upstream_config(
 }
 
 /// Check if a URL points to this TUIC instance (circular proxy).
-fn is_self_referential(url: &str, self_port: u16) -> bool {
+pub(crate) fn is_self_referential(url: &str, self_port: u16) -> bool {
     let Ok(parsed) = url::Url::parse(url) else {
         return false;
     };

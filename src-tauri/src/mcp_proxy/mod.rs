@@ -7,3 +7,4 @@
 
 pub(crate) mod http_client;
 pub(crate) mod stdio_client;
+pub(crate) mod registry;
