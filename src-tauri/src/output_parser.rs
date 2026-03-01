@@ -436,7 +436,8 @@ pub(crate) fn strip_ansi(text: &str) -> String {
 /// Parse status line patterns from pre-stripped terminal output.
 fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
     // Fast path: skip chunks that cannot contain any status line marker.
-    // Checks for: '*' (Claude status), "[Running]", or braille spinner chars (U+2800 block → UTF-8 0xE2 0xA0).
+    // Checks for: '*' (Claude status), "[Running]", or multi-byte UTF-8 (0xE2 covers
+    // braille spinners U+2800, dingbat asterisks U+2720-273F like ✢, and ⏺).
     if !clean.contains('*') && !clean.contains("[Running]")
         && !clean.as_bytes().contains(&0xe2)
     {
@@ -444,9 +445,10 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
     }
 
     lazy_static::lazy_static! {
-        // Claude Code: "* Task name... (time)"
+        // Claude Code: "* Task name... (time)" or "✢Task name… (time)"
+        // Accepts ASCII * and Unicode dingbat asterisks (✢ U+2722, ✻ U+273B, etc.)
         static ref CLAUDE_STATUS_RE: regex::Regex =
-            regex::Regex::new(r"\*\s+([^.…]+)(?:\.{2,3}|…)").unwrap();
+            regex::Regex::new(r"[*\u{2720}-\u{273F}]\s*([^.…\n]+)(?:\.{2,3}|…)").unwrap();
         // "[Running] Task name"
         static ref RUNNING_STATUS_RE: regex::Regex =
             regex::Regex::new(r"(?i)\[Running\]\s+(.+)").unwrap();
@@ -943,6 +945,22 @@ mod tests {
                 assert!(token_info.is_some());
             }
             _ => panic!("Expected StatusLine event"),
+        }
+    }
+
+    #[test]
+    fn test_status_line_claude_dingbat() {
+        // Claude Code v2.1.63+ uses ✢ (U+2722) instead of * for status lines
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{2722}Updating verification document\u{2026} (5m1s\u{b7} \u{2191} 4.6k tokens \u{b7} thought for 4s)");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, time_info, token_info, .. } => {
+                assert_eq!(task_name, "Updating verification document");
+                assert_eq!(time_info.as_deref(), Some("5m"));
+                assert!(token_info.is_some());
+            }
+            _ => panic!("Expected StatusLine event, got {:?}", events[0]),
         }
     }
 
