@@ -45,7 +45,8 @@
   min-width: 0;
 }
 
-.dots {
+.dots::after {
+  content: "...";
   color: var(--fg-secondary, #888888);
   animation: dots 1.5s steps(3) infinite;
 }
