@@ -316,6 +316,117 @@ describe("WorktreeManager", () => {
     });
   });
 
+  describe("multi-select and batch delete", () => {
+    const mockActions = {
+      onOpenTerminal: vi.fn(),
+      onDelete: vi.fn(),
+      onMergeAndArchive: vi.fn(),
+    };
+
+    it("shows checkboxes when more than 1 non-main worktree exists", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feat-a", { worktreePath: "/repo/.wt/a" });
+      repositoriesStore.setBranch("/repo", "feat-b", { worktreePath: "/repo/.wt/b" });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const checkboxes = container.querySelectorAll("[class*='rowCheckbox']");
+      expect(checkboxes.length).toBeGreaterThan(0);
+    });
+
+    it("toggles selection when checkbox is clicked", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feat-a", { worktreePath: "/repo/.wt/a" });
+      repositoriesStore.setBranch("/repo", "feat-b", { worktreePath: "/repo/.wt/b" });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const checkbox = container.querySelector("[class*='rowCheckbox']") as HTMLInputElement;
+      fireEvent.click(checkbox);
+
+      expect(worktreeManagerStore.state.selectedIds.size).toBe(1);
+    });
+
+    it("shows select-all checkbox in header that selects all non-main rows", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "feat-a", { worktreePath: "/repo/.wt/a" });
+      repositoriesStore.setBranch("/repo", "feat-b", { worktreePath: "/repo/.wt/b" });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const selectAll = container.querySelector("[class*='selectAll']") as HTMLInputElement;
+      expect(selectAll).not.toBeNull();
+
+      fireEvent.click(selectAll);
+      // Should select feat-a and feat-b (not main)
+      expect(worktreeManagerStore.state.selectedIds.size).toBe(2);
+    });
+
+    it("shows selection count and Delete Selected button when items selected", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feat-a", { worktreePath: "/repo/.wt/a" });
+      repositoriesStore.setBranch("/repo", "feat-b", { worktreePath: "/repo/.wt/b" });
+
+      worktreeManagerStore.open();
+      worktreeManagerStore.toggleSelect("/repo::feat-a");
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const batchBar = container.querySelector("[class*='batchBar']");
+      expect(batchBar).not.toBeNull();
+      expect(batchBar?.textContent).toContain("1 selected");
+
+      const deleteBtn = container.querySelector("[class*='batchDeleteBtn']");
+      expect(deleteBtn).not.toBeNull();
+    });
+
+    it("calls onDelete for each selected worktree on batch delete", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feat-a", { worktreePath: "/repo/.wt/a" });
+      repositoriesStore.setBranch("/repo", "feat-b", { worktreePath: "/repo/.wt/b" });
+
+      worktreeManagerStore.open();
+      worktreeManagerStore.toggleSelect("/repo::feat-a");
+      worktreeManagerStore.toggleSelect("/repo::feat-b");
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const deleteBtn = container.querySelector("[class*='batchDeleteBtn']")!;
+      fireEvent.click(deleteBtn);
+
+      expect(mockActions.onDelete).toHaveBeenCalledWith("/repo", "feat-a");
+      expect(mockActions.onDelete).toHaveBeenCalledWith("/repo", "feat-b");
+    });
+
+    it("clears selection after batch delete", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feat-a", { worktreePath: "/repo/.wt/a" });
+
+      worktreeManagerStore.open();
+      worktreeManagerStore.toggleSelect("/repo::feat-a");
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const deleteBtn = container.querySelector("[class*='batchDeleteBtn']")!;
+      fireEvent.click(deleteBtn);
+
+      expect(worktreeManagerStore.state.selectedIds.size).toBe(0);
+    });
+
+    it("does not show checkboxes on main worktree rows", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "feat-a", { worktreePath: "/repo/.wt/a" });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const mainRow = container.querySelector("[class*='mainRow']");
+      expect(mainRow?.querySelector("[class*='rowCheckbox']")).toBeNull();
+    });
+  });
+
   describe("orphan worktrees", () => {
     it("calls detect_orphan_worktrees for each repo when panel opens", async () => {
       repositoriesStore.add({ path: "/repo-a", displayName: "A" });

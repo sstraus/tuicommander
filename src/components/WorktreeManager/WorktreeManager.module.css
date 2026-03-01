@@ -107,6 +107,42 @@
   color: var(--fg-muted);
 }
 
+.batchBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+}
+
+.batchDeleteBtn {
+  font-size: var(--font-xs);
+  color: var(--error);
+  background: none;
+  border: 1px solid var(--error);
+  padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.batchDeleteBtn:hover {
+  background: rgba(244, 135, 113, 0.15);
+}
+
+.selectAll {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.rowCheckbox {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
 .list {
   flex: 1;
   overflow-y: auto;

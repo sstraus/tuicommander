@@ -165,6 +165,32 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
     return rows;
   });
 
+  // Selectable (non-main) worktree IDs from filtered set
+  const selectableIds = createMemo(() => worktrees().filter((w) => !w.isMain).map((w) => w.id));
+
+  const selectionCount = () => worktreeManagerStore.state.selectedIds.size;
+
+  function handleSelectAll() {
+    const ids = selectableIds();
+    if (worktreeManagerStore.state.selectedIds.size === ids.length) {
+      worktreeManagerStore.clearSelection();
+    } else {
+      worktreeManagerStore.selectAll(ids);
+    }
+  }
+
+  function handleBatchDelete() {
+    if (!props.actions) return;
+    const selected = worktreeManagerStore.state.selectedIds;
+    for (const id of selected) {
+      const [repoPath, branchName] = id.split("::");
+      if (repoPath && branchName) {
+        props.actions.onDelete(repoPath, branchName);
+      }
+    }
+    worktreeManagerStore.clearSelection();
+  }
+
   return (
     <Show when={isOpen()}>
       <div class={s.overlay} onClick={() => worktreeManagerStore.close()}>
@@ -176,7 +202,24 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
             </button>
           </div>
 
+          <Show when={selectionCount() > 0}>
+            <div class={s.batchBar}>
+              <span>{selectionCount()} selected</span>
+              <button class={s.batchDeleteBtn} onClick={handleBatchDelete}>
+                Delete Selected ({selectionCount()})
+              </button>
+            </div>
+          </Show>
+
           <div class={s.toolbar}>
+            <Show when={selectableIds().length > 1}>
+              <input
+                type="checkbox"
+                class={s.selectAll}
+                checked={selectableIds().length > 0 && worktreeManagerStore.state.selectedIds.size === selectableIds().length}
+                onChange={handleSelectAll}
+              />
+            </Show>
             <Show when={repoOptions().length > 1}>
               <div class={s.pillsRow}>
                 <button
@@ -214,6 +257,14 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
             <For each={worktrees()}>
               {(wt) => (
                 <div class={`${s.row} ${wt.isMain ? s.mainRow : ""}`}>
+                  <Show when={!wt.isMain && selectableIds().length > 1}>
+                    <input
+                      type="checkbox"
+                      class={s.rowCheckbox}
+                      checked={worktreeManagerStore.state.selectedIds.has(wt.id)}
+                      onChange={() => worktreeManagerStore.toggleSelect(wt.id)}
+                    />
+                  </Show>
                   <span class={s.branch}>{wt.branch}</span>
                   <span class={s.repo}>{wt.repoName}</span>
                   <Show when={wt.isMain}>
