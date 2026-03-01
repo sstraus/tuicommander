@@ -9,7 +9,7 @@ import s from "../Settings.module.css";
 interface McpStatus {
   enabled: boolean;
   running: boolean;
-  port: number | null;
+  remote_port: number | null;
   active_sessions: number;
   /** Connected MCP protocol clients (reaped after 1h idle) */
   mcp_clients: number;
@@ -26,7 +26,6 @@ interface AppConfig {
   font_size: number;
   theme: string;
   mcp_server_enabled: boolean;
-  mcp_port: number;
   remote_access_enabled: boolean;
   remote_access_port: number;
   remote_access_username: string;
@@ -62,8 +61,6 @@ export const ServicesTab: Component = () => {
   const [localIps] = createResource(() => rpc<LocalIpEntry[]>("get_local_ips"));
   const [selectedIp, setSelectedIp] = createSignal<string>("");
   const [saving, setSaving] = createSignal(false);
-  const [mcpPort, setMcpPort] = createSignal(3845);
-  const [mcpUrlCopied, setMcpUrlCopied] = createSignal(false);
 
   // Remote access form state
   const [raEnabled, setRaEnabled] = createSignal(false);
@@ -130,7 +127,6 @@ export const ServicesTab: Component = () => {
   const loadRemoteConfig = async () => {
     try {
       const config = await rpc<AppConfig>("load_config");
-      setMcpPort(config.mcp_port ?? 3845);
       setRaEnabled(config.remote_access_enabled);
       setRaPort(config.remote_access_port);
       setRaUsername(config.remote_access_username);
@@ -240,32 +236,11 @@ export const ServicesTab: Component = () => {
         </p>
       </div>
 
-      {/* Port field: only show when remote access is OFF (otherwise remote_access_port is used) */}
-      <Show when={!raEnabled()}>
-        <div class={s.group}>
-          <label>{t("services.label.mcpPort", "Port")}</label>
-          <input
-            type="number"
-            class={s.input}
-            value={mcpPort()}
-            min={1024}
-            max={65535}
-            style={{ width: "100px" }}
-            onInput={(e) => setMcpPort(parseInt(e.currentTarget.value) || 3845)}
-            onChange={() => saveConfigField((c) => { c.mcp_port = mcpPort(); })}
-          />
-          <p class={s.hint}>
-            {t("services.hint.mcpPort", "Localhost-only port. Change requires server restart.")}
-          </p>
-        </div>
-      </Show>
-      <Show when={raEnabled()}>
-        <div class={s.group}>
-          <p class={s.hint}>
-            {t("services.hint.portFromRemote", "Server uses the Remote Access port ({port}) when remote access is enabled.", { port: String(raPort()) })}
-          </p>
-        </div>
-      </Show>
+      <div class={s.group}>
+        <p class={s.hint}>
+          {t("services.hint.socketInfo", "Local MCP connections use a Unix socket. No port configuration needed.")}
+        </p>
+      </div>
 
       <Show when={status()}>
         {(st) => (
@@ -277,39 +252,19 @@ export const ServicesTab: Component = () => {
                 <span class={s.mcpStatusText}>
                   {st().running ? t("services.status.running", "Running") : st().enabled ? t("services.status.pendingRestart", "Pending restart") : t("services.status.stopped", "Stopped")}
                 </span>
-                <Show when={st().running && st().port}>
-                  <span class={s.mcpStatusPort}>{t("services.label.port", "Port")} {st().port}</span>
+                <Show when={st().running}>
+                  <span class={s.mcpStatusPort}>{t("services.label.socket", "Socket")}</span>
                 </Show>
               </div>
             </div>
 
             <Show when={st().running}>
               <div class={s.group}>
-                <label>{t("services.label.mcpEndpoint", "MCP Endpoint")}</label>
-                <div class={s.urlCopyRow}>
-                  <code class={s.urlFull}>{`http://127.0.0.1:${st().port}/mcp`}</code>
-                  <button
-                    class={s.copyBtn}
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(`http://127.0.0.1:${st().port}/mcp`);
-                        setMcpUrlCopied(true);
-                        setTimeout(() => setMcpUrlCopied(false), 2000);
-                      } catch { /* ignore */ }
-                    }}
-                    title={t("services.btn.copyUrl", "Copy URL to clipboard")}
-                  >
-                    {mcpUrlCopied()
-                      ? <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-                      : <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
-                    }
-                  </button>
-                </div>
+                <label>{t("services.label.mcpConnection", "MCP Connection")}</label>
                 <p class={s.hint}>
-                  {t("services.hint.mcpEndpoint", "Use this URL to register TUICommander with any MCP-compatible AI client")}
+                  {t("services.hint.mcpConnection", "AI agents connect via the tuic-mcp-bridge sidecar. MCP configs are auto-installed in supported agents (Claude Code, Cursor, etc.).")}
                 </p>
               </div>
-
             </Show>
           </>
         )}
@@ -393,7 +348,7 @@ export const ServicesTab: Component = () => {
               </div>
             </div>
 
-            <Show when={status()?.running && status()?.port}>
+            <Show when={status()?.running && status()?.remote_port}>
               <div class={s.group}>
                 <label>{t("services.label.networkInterface", "Network Interface")}</label>
                 <Show when={(localIps()?.length ?? 0) > 1} fallback={
