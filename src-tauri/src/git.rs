@@ -641,21 +641,33 @@ pub(crate) struct RepoSummary {
     last_commit_ts: HashMap<String, Option<i64>>,
 }
 
-/// Get the unix timestamp of the last commit on each branch.
-/// Runs a single `git log -1 --format=%ct` per branch.
+/// Get the unix timestamp of the last commit on each branch using a single
+/// `git for-each-ref` call instead of N sequential `git log` subprocesses.
 fn get_last_commit_timestamps(
     repo_path: &Path,
     branches: &[String],
 ) -> HashMap<String, Option<i64>> {
-    let mut result = HashMap::with_capacity(branches.len());
-    for branch in branches {
-        let ts = git_cmd(repo_path)
-            .args(["log", "-1", "--format=%ct", branch])
-            .run()
-            .ok()
-            .and_then(|out| out.stdout.trim().parse::<i64>().ok());
-        result.insert(branch.clone(), ts);
+    let mut result: HashMap<String, Option<i64>> = branches
+        .iter()
+        .map(|b| (b.clone(), None))
+        .collect();
+
+    let out = match git_cmd(repo_path)
+        .args(["for-each-ref", "--format=%(refname:short)\t%(creatordate:unix)", "refs/heads/"])
+        .run()
+    {
+        Ok(out) => out,
+        Err(_) => return result,
+    };
+
+    for line in out.stdout.lines() {
+        if let Some((name, ts_str)) = line.split_once('\t') {
+            if let Some(entry) = result.get_mut(name) {
+                *entry = ts_str.parse::<i64>().ok();
+            }
+        }
     }
+
     result
 }
 

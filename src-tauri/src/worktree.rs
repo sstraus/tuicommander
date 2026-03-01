@@ -505,12 +505,17 @@ pub(crate) fn detect_orphan_worktrees(repo_path: String) -> Result<Vec<String>, 
 }
 
 /// Remove an orphan worktree by its filesystem path (detached HEAD — no branch to look up).
+///
+/// Safety: `worktree_path` is validated against the repo's actual worktree list to prevent
+/// arbitrary directory deletion via a crafted path.
 #[tauri::command]
 pub(crate) fn remove_orphan_worktree(
     state: State<'_, Arc<AppState>>,
     repo_path: String,
     worktree_path: String,
 ) -> Result<(), String> {
+    validate_worktree_path(&repo_path, &worktree_path)?;
+
     let base_repo = PathBuf::from(&repo_path);
     let path = PathBuf::from(&worktree_path);
     let worktree = WorktreeInfo {
@@ -524,6 +529,35 @@ pub(crate) fn remove_orphan_worktree(
     };
     remove_worktree_internal(&worktree)?;
     state.invalidate_repo_caches(&repo_path);
+    Ok(())
+}
+
+/// Validate that `worktree_path` is a known worktree of the given repo by checking it against
+/// `git worktree list --porcelain` output. Prevents arbitrary directory deletion.
+pub(crate) fn validate_worktree_path(repo_path: &str, worktree_path: &str) -> Result<(), String> {
+    let path = PathBuf::from(worktree_path);
+    if !path.is_absolute() {
+        return Err("worktree_path must be an absolute path".to_string());
+    }
+
+    let out = git_cmd(Path::new(repo_path))
+        .args(["worktree", "list", "--porcelain"])
+        .run()
+        .map_err(|e| format!("git worktree list failed: {e}"))?;
+
+    let known_paths: Vec<&str> = out
+        .stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .collect();
+
+    if !known_paths.iter().any(|p| *p == worktree_path) {
+        return Err(format!(
+            "Refused: '{}' is not a known worktree of '{}'",
+            worktree_path, repo_path
+        ));
+    }
+
     Ok(())
 }
 

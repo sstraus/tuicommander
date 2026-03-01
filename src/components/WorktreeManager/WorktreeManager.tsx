@@ -1,5 +1,6 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../invoke";
+import { appLogger } from "../../stores/appLogger";
 import { worktreeManagerStore } from "../../stores/worktreeManager";
 import { repositoriesStore } from "../../stores/repositories";
 import { githubStore } from "../../stores/github";
@@ -17,7 +18,6 @@ interface WorktreeRow {
   additions: number;
   deletions: number;
   isMain: boolean;
-  isMerged: boolean;
   prStatus: BranchPrStatus | null;
   lastCommitTs: number | null;
 }
@@ -59,16 +59,7 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
     onCleanup(() => document.removeEventListener("keydown", handleKeydown, true));
   });
 
-  // Subscribe to revision signals for reactive refresh
-  createEffect(() => {
-    if (!isOpen()) return;
-    const repos = repositoriesStore.getOrderedRepos();
-    for (const repo of repos) {
-      void repositoriesStore.getRevision(repo.path);
-    }
-  });
-
-  // Orphan worktree detection
+  // Orphan worktree detection (with cancellation guard for rapid open/close)
   const [orphanRows, setOrphanRows] = createSignal<OrphanRow[]>([]);
 
   createEffect(() => {
@@ -77,9 +68,14 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
       return;
     }
     const repos = repositoriesStore.getOrderedRepos();
+    // Subscribe to revision signals so orphan detection re-runs on repo changes
+    for (const repo of repos) repositoriesStore.getRevision(repo.path);
+
+    let cancelled = false;
     const detectAll = async () => {
       const allOrphans: OrphanRow[] = [];
       for (const repo of repos) {
+        if (cancelled) return;
         try {
           const paths = await invoke<string[]>("detect_orphan_worktrees", { repoPath: repo.path });
           for (const wtPath of paths) {
@@ -89,28 +85,30 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
               worktreePath: wtPath,
             });
           }
-        } catch {
-          // Detection failure is non-fatal
+        } catch (err) {
+          appLogger.warn("git", `detect_orphan_worktrees failed for ${repo.path}`, err);
         }
       }
-      setOrphanRows(allOrphans);
+      if (!cancelled) setOrphanRows(allOrphans);
     };
     void detectAll();
+    onCleanup(() => { cancelled = true; });
   });
 
   async function handlePrune(orphan: OrphanRow) {
     try {
       await invoke("remove_orphan_worktree", { repoPath: orphan.repoPath, worktreePath: orphan.worktreePath });
       setOrphanRows((prev) => prev.filter((o) => o.worktreePath !== orphan.worktreePath));
-    } catch {
-      // Prune failure is non-fatal — row stays visible
+    } catch (err) {
+      appLogger.warn("git", `Failed to prune orphan worktree ${orphan.worktreePath}`, err);
     }
   }
 
-  // All worktrees (unfiltered)
+  // All worktrees (unfiltered). Subscribes to revision signals so it re-runs on repo changes.
   const allWorktrees = createMemo<WorktreeRow[]>(() => {
     if (!isOpen()) return [];
     const repos = repositoriesStore.getOrderedRepos();
+    for (const repo of repos) repositoriesStore.getRevision(repo.path);
     const rows: WorktreeRow[] = [];
 
     for (const repo of repos) {
@@ -125,7 +123,6 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
           additions: branch.additions,
           deletions: branch.deletions,
           isMain: branch.isMain,
-          isMerged: branch.isMerged,
           prStatus: githubStore.getPrStatus(repo.path, branchName),
           lastCommitTs: branch.lastCommitTs ?? null,
         });
@@ -170,35 +167,42 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
 
   const selectionCount = () => worktreeManagerStore.state.selectedIds.size;
 
+  // Selection is scoped to currently visible (filtered) worktrees
+  const allVisibleSelected = () =>
+    selectableIds().length > 0 &&
+    selectableIds().every((id) => worktreeManagerStore.state.selectedIds.has(id));
+
   function handleSelectAll() {
-    const ids = selectableIds();
-    if (worktreeManagerStore.state.selectedIds.size === ids.length) {
+    if (allVisibleSelected()) {
       worktreeManagerStore.clearSelection();
     } else {
-      worktreeManagerStore.selectAll(ids);
+      worktreeManagerStore.selectAll(selectableIds());
     }
+  }
+
+  /** Parse a worktree ID (repoPath::branchName) using lastIndexOf to handle paths with `::` */
+  function parseWorktreeId(id: string): { repoPath: string; branchName: string } | null {
+    const sep = id.lastIndexOf("::");
+    if (sep === -1) return null;
+    return { repoPath: id.slice(0, sep), branchName: id.slice(sep + 2) };
   }
 
   function handleBatchDelete() {
     if (!props.actions) return;
-    const selected = worktreeManagerStore.state.selectedIds;
+    const selected = [...worktreeManagerStore.state.selectedIds];
     for (const id of selected) {
-      const [repoPath, branchName] = id.split("::");
-      if (repoPath && branchName) {
-        props.actions.onDelete(repoPath, branchName);
-      }
+      const parsed = parseWorktreeId(id);
+      if (parsed) props.actions.onDelete(parsed.repoPath, parsed.branchName);
     }
     worktreeManagerStore.clearSelection();
   }
 
   function handleBatchMerge() {
     if (!props.actions) return;
-    const selected = worktreeManagerStore.state.selectedIds;
+    const selected = [...worktreeManagerStore.state.selectedIds];
     for (const id of selected) {
-      const [repoPath, branchName] = id.split("::");
-      if (repoPath && branchName) {
-        props.actions.onMergeAndArchive(repoPath, branchName);
-      }
+      const parsed = parseWorktreeId(id);
+      if (parsed) props.actions.onMergeAndArchive(parsed.repoPath, parsed.branchName);
     }
     worktreeManagerStore.clearSelection();
   }
@@ -231,7 +235,7 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
               <input
                 type="checkbox"
                 class={s.selectAll}
-                checked={selectableIds().length > 0 && worktreeManagerStore.state.selectedIds.size === selectableIds().length}
+                checked={allVisibleSelected()}
                 onChange={handleSelectAll}
               />
             </Show>
@@ -295,7 +299,7 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
                       <div class={s.actions}>
                         <button
                           class={s.actionBtn}
-                          data-action="terminal"
+
                           title="Open terminal"
                           onClick={() => actions().onOpenTerminal(wt.repoPath, wt.branch)}
                         >
@@ -303,7 +307,7 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
                         </button>
                         <button
                           class={s.actionBtn}
-                          data-action="merge"
+
                           title="Merge & archive"
                           disabled={wt.isMain}
                           onClick={() => actions().onMergeAndArchive(wt.repoPath, wt.branch)}
@@ -312,7 +316,7 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
                         </button>
                         <button
                           class={`${s.actionBtn} ${s.actionBtnDanger}`}
-                          data-action="delete"
+
                           title="Delete worktree"
                           disabled={wt.isMain}
                           onClick={() => actions().onDelete(wt.repoPath, wt.branch)}
@@ -350,16 +354,15 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
 
 /** Compact PR state badge */
 const PrBadge: Component<{ state: string; number: number }> = (props) => {
+  const st = () => props.state.toLowerCase();
   const cls = () => {
-    const st = props.state?.toLowerCase();
-    if (st === "merged") return s.prMerged;
-    if (st === "closed") return s.prClosed;
+    if (st() === "merged") return s.prMerged;
+    if (st() === "closed") return s.prClosed;
     return s.prOpen;
   };
   const label = () => {
-    const st = props.state?.toLowerCase();
-    if (st === "merged") return "Merged";
-    if (st === "closed") return "Closed";
+    if (st() === "merged") return "Merged";
+    if (st() === "closed") return "Closed";
     return `#${props.number}`;
   };
   return <span class={`${s.prBadge} ${cls()}`}>{label()}</span>;

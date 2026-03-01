@@ -251,8 +251,8 @@
 }
 
 .prMerged {
-  background: rgba(171, 130, 255, 0.15);
-  color: #ab82ff;
+  background: rgba(163, 113, 247, 0.15);
+  color: var(--merged);
 }
 
 .prClosed {

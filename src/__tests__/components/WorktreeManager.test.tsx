@@ -29,6 +29,21 @@ import { invoke } from "@tauri-apps/api/core";
 import { WorktreeManager } from "../../components/WorktreeManager";
 import { worktreeManagerStore } from "../../stores/worktreeManager";
 import { repositoriesStore } from "../../stores/repositories";
+import { githubStore } from "../../stores/github";
+import type { BranchPrStatus } from "../../types";
+
+/** Minimal PR status factory — only override what you need per test */
+function mockPr(overrides: Partial<BranchPrStatus> & Pick<BranchPrStatus, "number" | "branch" | "state">): BranchPrStatus {
+  return {
+    title: "", url: "", additions: 0, deletions: 0,
+    checks: { passed: 0, failed: 0, pending: 0, total: 0 },
+    check_details: [], author: "", commits: 0, mergeable: "UNKNOWN",
+    merge_state_status: "UNKNOWN", review_decision: "", labels: [],
+    is_draft: false, base_ref_name: "main", created_at: "", updated_at: "",
+    merge_state_label: null, review_state_label: null,
+    ...overrides,
+  };
+}
 
 describe("WorktreeManager", () => {
   beforeEach(() => {
@@ -253,8 +268,8 @@ describe("WorktreeManager", () => {
       const { container } = render(() => <WorktreeManager actions={mockActions} />);
 
       const row = container.querySelector("[class*='mainRow']");
-      const deleteBtn = row?.querySelector("[data-action='delete']") as HTMLButtonElement | null;
-      const mergeBtn = row?.querySelector("[data-action='merge']") as HTMLButtonElement | null;
+      const deleteBtn = row?.querySelector("[title='Delete worktree']") as HTMLButtonElement | null;
+      const mergeBtn = row?.querySelector("[title='Merge & archive']") as HTMLButtonElement | null;
       expect(deleteBtn?.disabled).toBe(true);
       expect(mergeBtn?.disabled).toBe(true);
     });
@@ -266,7 +281,7 @@ describe("WorktreeManager", () => {
       worktreeManagerStore.open();
       const { container } = render(() => <WorktreeManager actions={mockActions} />);
 
-      const termBtn = container.querySelector("[data-action='terminal']")!;
+      const termBtn = container.querySelector("[title='Open terminal']")!;
       fireEvent.click(termBtn);
       expect(mockActions.onOpenTerminal).toHaveBeenCalledWith("/repo", "feat");
     });
@@ -278,7 +293,7 @@ describe("WorktreeManager", () => {
       worktreeManagerStore.open();
       const { container } = render(() => <WorktreeManager actions={mockActions} />);
 
-      const deleteBtn = container.querySelector("[data-action='delete']")!;
+      const deleteBtn = container.querySelector("[title='Delete worktree']")!;
       fireEvent.click(deleteBtn);
       expect(mockActions.onDelete).toHaveBeenCalledWith("/repo", "feat");
     });
@@ -290,7 +305,7 @@ describe("WorktreeManager", () => {
       worktreeManagerStore.open();
       const { container } = render(() => <WorktreeManager actions={mockActions} />);
 
-      const mergeBtn = container.querySelector("[data-action='merge']")!;
+      const mergeBtn = container.querySelector("[title='Merge & archive']")!;
       fireEvent.click(mergeBtn);
       expect(mockActions.onMergeAndArchive).toHaveBeenCalledWith("/repo", "feat");
     });
@@ -519,6 +534,32 @@ describe("WorktreeManager", () => {
       });
     });
 
+    it("keeps orphan row when remove_orphan_worktree fails", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === "detect_orphan_worktrees") return ["/repo/.wt/stale"];
+        if (cmd === "remove_orphan_worktree") throw new Error("worktree locked");
+        return undefined;
+      });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager />);
+
+      await vi.waitFor(() => {
+        expect(container.querySelector("[class*='pruneBtn']")).not.toBeNull();
+      });
+
+      const pruneBtn = container.querySelector("[class*='pruneBtn']")!;
+      fireEvent.click(pruneBtn);
+
+      // Row should still be present after failure
+      await vi.waitFor(() => {
+        expect(container.querySelector("[class*='orphanBadge']")).not.toBeNull();
+      });
+    });
+
     it("calls remove_orphan_worktree and removes row on prune click", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
@@ -549,6 +590,89 @@ describe("WorktreeManager", () => {
       await vi.waitFor(() => {
         expect(container.querySelector("[class*='orphanBadge']")).toBeNull();
       });
+    });
+  });
+
+  describe("PR badge", () => {
+    it("shows PR number badge for open PR", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature-x", { worktreePath: "/repo/.wt/x" });
+      githubStore.updateRepoData("/repo", [
+        mockPr({ number: 42, title: "My PR", branch: "feature-x", state: "OPEN" }),
+      ]);
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager />);
+
+      const badge = container.querySelector("[class*='prBadge']");
+      expect(badge?.textContent).toBe("#42");
+      expect(badge?.className).toMatch(/prOpen/);
+    });
+
+    it("shows 'Merged' badge for merged PR", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature-x", { worktreePath: "/repo/.wt/x" });
+      githubStore.updateRepoData("/repo", [
+        mockPr({ number: 10, branch: "feature-x", state: "MERGED" }),
+      ]);
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager />);
+
+      const badge = container.querySelector("[class*='prBadge']");
+      expect(badge?.textContent).toBe("Merged");
+      expect(badge?.className).toMatch(/prMerged/);
+    });
+
+    it("shows 'Closed' badge for closed PR", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature-x", { worktreePath: "/repo/.wt/x" });
+      githubStore.updateRepoData("/repo", [
+        mockPr({ number: 5, branch: "feature-x", state: "CLOSED" }),
+      ]);
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager />);
+
+      const badge = container.querySelector("[class*='prBadge']");
+      expect(badge?.textContent).toBe("Closed");
+      expect(badge?.className).toMatch(/prClosed/);
+    });
+  });
+
+  describe("select-all toggle", () => {
+    const mockActions = {
+      onOpenTerminal: vi.fn(),
+      onDelete: vi.fn(),
+      onMergeAndArchive: vi.fn(),
+    };
+
+    it("deselects all when select-all checkbox is clicked while all are selected", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feat-a", { worktreePath: "/repo/.wt/a" });
+      repositoriesStore.setBranch("/repo", "feat-b", { worktreePath: "/repo/.wt/b" });
+
+      worktreeManagerStore.open();
+      worktreeManagerStore.selectAll(["/repo::feat-a", "/repo::feat-b"]);
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const selectAll = container.querySelector("[class*='selectAll']") as HTMLInputElement;
+      fireEvent.click(selectAll);
+      expect(worktreeManagerStore.state.selectedIds.size).toBe(0);
+    });
+  });
+
+  describe("filter edge cases", () => {
+    it("shows empty state when filter combination matches nothing", () => {
+      repositoriesStore.add({ path: "/repo-a", displayName: "Alpha" });
+      repositoriesStore.setBranch("/repo-a", "feature-auth", { worktreePath: "/repo-a/.wt/auth" });
+
+      worktreeManagerStore.open();
+      worktreeManagerStore.setRepoFilter("/repo-a");
+      worktreeManagerStore.setTextFilter("does-not-exist");
+      const { container } = render(() => <WorktreeManager />);
+
+      expect(container.querySelector("[class*='empty']")?.textContent).toContain("No worktrees found");
     });
   });
 });

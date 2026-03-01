@@ -778,6 +778,44 @@ describe("useGitOperations", () => {
       expect(repositoriesStore.get("/repo")?.branches["main"]).toBeDefined();
     });
 
+    it("stores lastCommitTs converted from seconds to milliseconds", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "feature-x", { worktreePath: "/repo/wt-feature-x" });
+
+      mockRepo.getRepoSummary.mockResolvedValue({
+        worktree_paths: { main: "/repo", "feature-x": "/repo/wt-feature-x" },
+        merged_branches: [],
+        diff_stats: {
+          "/repo": { additions: 0, deletions: 0 },
+          "/repo/wt-feature-x": { additions: 0, deletions: 0 },
+        },
+        last_commit_ts: { main: 1700000001, "feature-x": 1700000042 },
+      });
+
+      await gitOps.refreshAllBranchStats();
+
+      const repo = repositoriesStore.get("/repo");
+      expect(repo?.branches["main"]?.lastCommitTs).toBe(1700000001 * 1000);
+      expect(repo?.branches["feature-x"]?.lastCommitTs).toBe(1700000042 * 1000);
+    });
+
+    it("stores lastCommitTs as null when backend returns null", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", lastCommitTs: 999 });
+
+      mockRepo.getRepoSummary.mockResolvedValue({
+        worktree_paths: { main: "/repo" },
+        merged_branches: [],
+        diff_stats: { "/repo": { additions: 0, deletions: 0 } },
+        last_commit_ts: { main: null },
+      });
+
+      await gitOps.refreshAllBranchStats();
+
+      expect(repositoriesStore.get("/repo")?.branches["main"]?.lastCommitTs).toBeNull();
+    });
+
   });
 
   describe("handleRemoveBranch (backend failure)", () => {

@@ -115,6 +115,9 @@ pub(super) async fn remove_orphan_worktree_http(
     Json(body): Json<super::types::RemoveOrphanRequest>,
 ) -> Response {
     if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
+    if let Err(e) = crate::worktree::validate_worktree_path(&body.repo_path, &body.worktree_path) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))).into_response();
+    }
     let worktree = crate::state::WorktreeInfo {
         name: std::path::Path::new(&body.worktree_path)
             .file_name()
