@@ -70,6 +70,6 @@ tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 
 [[bin]]
-name = "tui-mcp-bridge"
-path = "src/bin/tui_mcp_bridge.rs"
+name = "tuic-mcp-bridge"
+path = "src/bin/tuic_mcp_bridge.rs"
 
