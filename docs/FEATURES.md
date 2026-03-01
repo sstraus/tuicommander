@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.5.2 | **Last verified:** 2026-02-23
+**Version:** 0.5.3 | **Last verified:** 2026-03-01
 
 ---
 
@@ -81,7 +81,13 @@
 - Terminal handles international keyboard input correctly
 - Rate-limit false positives reduced for non-ASCII input
 
-### 1.10 Kitty Keyboard Protocol
+### 1.10 OSC 7 CWD Tracking
+- Terminals report their current working directory via OSC 7 escape sequences
+- Parsed in Rust and stored per-session as `session_cwd`
+- When a terminal's CWD falls inside a known worktree path, the session is automatically reassigned to the correct branch in the sidebar
+- Enables accurate branch association even when the user `cd`s into a different worktree from a single terminal
+
+### 1.11 Kitty Keyboard Protocol
 - Supports Kitty keyboard protocol flag 1 (disambiguate escape codes)
 - Per-session flag tracking via `get_kitty_flags` Tauri command
 - Enables correct handling of `Shift+Enter` (multi-line input), `Ctrl+Backspace`, and modifier key combinations in agents that request the protocol (e.g. Claude Code)
@@ -94,7 +100,7 @@
 - Add repository via `+` button or folder dialog
 - Click repo header to expand/collapse branch list
 - Click again to toggle icon-only mode (shows initials)
-- `⋯` button: Repo Settings, Switch Branch (via context menu on main worktree), Move to Group, Park Repository, Remove
+- `⋯` button: Repo Settings, Switch Branch (via context menu on main worktree), Create Worktree, Move to Group, Park Repository, Remove
 
 ### 2.2 Repository Groups
 - Named, colored groups for organizing repositories
@@ -119,6 +125,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Merged badge: branches merged into main show a "Merged" badge
 - Question indicator: `?` icon (orange, pulsing) when agent asks a question
 - Quick switcher badge: numbered index shown when `Cmd+Ctrl` held
+- Remote-only branches with open PRs: shown in sidebar with PR badge and "Checkout" action (creates local tracking branch)
 - Branch sorting: main/master/develop always first, then alphabetical; merged PR branches sorted last
 
 ### 2.4 Git Quick Actions
@@ -147,6 +154,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 ### 3.1 Panel System
 - File Browser, Markdown, and Diff panels are **mutually exclusive** — opening one closes the others
 - Ideas panel is independent (can be open alongside any of the above)
+- Subtle fade transition when closing side panels (opacity + transform animation)
 - All panels have drag-resize handles on their left edge (200-800px)
 - Min-width constraints prevent panels from collapsing (Markdown: 300px, File Browser: 200px)
 - Toggle buttons in status bar with hotkey hints visible during quick switcher
@@ -161,6 +169,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Renders `.md` and `.mdx` files with syntax-highlighted code blocks
 - File list from repository's markdown files
 - Clickable file paths in terminal open `.md` files here
+- Auto-show: adding any markdown tab automatically opens the Markdown panel if it's closed
 - Header bar shows file path (or title for virtual tabs) with Edit button (pencil icon) to open in CodeEditor
 
 ### 3.4 File Browser Panel (`Cmd+E`)
@@ -217,7 +226,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 
 ### 3.11 Activity Dashboard (`Cmd+Shift+A`)
 - Real-time view of all active terminal sessions in a compact list
-- Each row shows: terminal name, agent type, status, last activity time, and the last user prompt (>= 10 words) as an italic sub-row with tooltip
+- Each row shows: terminal name, project name badge (last segment of CWD), agent type, status, last activity time, and the last user prompt (>= 10 words) as an italic sub-row with tooltip
 - Status color codes: green=working, yellow=waiting, red=rate-limited, gray=idle
 - Rate limit indicators with countdown timers
 - Click any row to switch to that terminal and close the dashboard
@@ -318,6 +327,8 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 
 ### 6.2 Agent Detection
 - Auto-detection from terminal output patterns
+- Multi-agent status line detection: recognizes format `╭──── Agent Name ────╮` and variations
+- Claude middle-dot prompt (`·`) and Copilot CLI patterns detected
 - Brand SVG logos for each agent (fallback to capital letter)
 - Agent badge in status bar showing active agent
 - Binary detection: Rust probes well-known directories via `resolve_cli()` for reliable PATH resolution in desktop-launched apps
@@ -348,7 +359,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - **Usage Over Time chart:** SVG line chart of token usage over 7 days
   - Input tokens (blue) and output tokens (red) stacked area
   - Interactive hover crosshair with tooltip
-- **Insights:** Session count, message totals, input/output tokens, cache stats
+- **Insights:** Session count, message totals, input/output tokens, cache stats, tokens-per-hour metric (based on real active hours from session timestamps)
 - **Activity heatmap:** 52-week GitHub-style contribution grid
   - Tooltip shows date, message count, and top 3 projects
 - **Model Usage table:** Per-model breakdown (messages, input, output, cache)
@@ -359,12 +370,17 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
   - File-size-based cache (only new bytes parsed on each scan)
   - Cache persisted to disk as JSON for fast restarts
 
-### 6.7 API Error Detection
+### 6.7 Intent Event Tracking
+- Agents declaring work phases via `[[intent: ...]]` tokens are detected and colorized yellow in terminal output
+- Structured `Intent` events emitted for LLM-declared work phase tracking
+- Centralized debounced busy signal with completion notifications for accurate idle/active status
+
+### 6.8 API Error Detection
 - Detects API errors (server errors, auth failures) from agent output and provider-level JSON error responses
 - Covers Claude Code, Aider, Codex CLI, Gemini CLI, Copilot, and raw API error JSON from providers (OpenAI, Anthropic, Google, OpenRouter, MiniMax)
 - Triggers error notification sound and logs to the Error Log Panel
 
-### 6.8 Agent Configuration (Settings > Agents)
+### 6.9 Agent Configuration (Settings > Agents)
 - **Agent list:** All supported agents with availability status and version detection
 - **Run configurations:** Named command templates per agent (binary, args, env vars)
 - **Default config:** One run config per agent marked as default for quick launching
@@ -454,7 +470,14 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Individual dismiss or dismiss all
 - Click to open PR detail popover
 
-### 8.5 Auto-Delete Branch on PR Close
+### 8.5 Merge PR via GitHub API
+- Merge PRs directly from TUICommander without switching to GitHub web
+- Configurable merge strategy per repo: merge commit, squash, or rebase (Settings > Repository > Worktree tab)
+- Triggered from Merge & Archive workflow (sidebar context menu or Worktree Manager)
+- After-merge behavior setting: `archive` (auto-archive worktree), `delete` (remove worktree), `ask` (show dialog with options)
+- Merge dialog shown when `afterMerge=ask`: presents archive/delete/keep choices before proceeding
+
+### 8.6 Auto-Delete Branch on PR Close
 - Per-repo setting: Off (default) / Ask / Auto
 - Triggered when GitHub polling detects PR merged or closed transition
 - If branch has a linked worktree, removes worktree first then deletes branch
@@ -462,12 +485,12 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Uses safe `git branch -d` (refuses unmerged branches)
 - Deduplication prevents double-firing on the same PR
 
-### 8.6 Polling
+### 8.7 Polling
 - Active window: every 30 seconds
 - Hidden window: every 2 minutes
 - API budget: ~2 calls/min/repo
 
-### 8.7 Token Resolution
+### 8.8 Token Resolution
 - `gh_token` crate with empty-string bug workaround
 - Fallback to `gh auth token` CLI
 
@@ -577,7 +600,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Auto-populated from `actionRegistry.ts` (`ACTION_META` map) — new actions appear automatically
 
 ### 11.7 Agents
-- See **6.8 Agent Configuration** for full details
+- See **6.9 Agent Configuration** for full details
 - Claude Usage Dashboard enable/disable toggle (under Claude agent section)
 
 ---
@@ -699,6 +722,8 @@ All data persisted to platform config directory via Rust:
 | `Cmd+K` | Prompt library |
 | `Cmd+J` | Task queue |
 | `Cmd+Shift+E` | Error log |
+| `Cmd+Shift+W` | Worktree manager |
+| `Cmd+Shift+A` | Activity dashboard |
 
 ### Git & Lazygit
 | Shortcut | Action |
@@ -812,6 +837,7 @@ All data persisted to platform config directory via Rust:
 - **Browse tab:** Discover plugins from the community registry with one-click install/update
 - **Enable/Disable:** Persisted in `AppConfig.disabled_plugin_ids`
 - **ZIP Installation:** Install from local `.zip` file or HTTPS URL
+- **Folder Installation:** Install from a local folder (copies plugin directory into plugins dir)
 - **Uninstall:** Removes plugin directory (confirmation required)
 
 ### 17.3 Plugin Registry
@@ -838,6 +864,7 @@ See `examples/plugins/` for reference implementations:
 - `repo-dashboard` — Read-only state and dynamic markdown
 - `report-watcher` — Generic report file watcher with markdown viewer
 - `claude-status` — Agent-scoped plugin (`agentTypes: ["claude"]`) tracking usage and rate limits
+- `wiz-stories-kanban` — Kanban board panel for file-based stories with drag-and-drop, filters, and work log timeline
 
 ## 18. Mobile Companion UI
 
