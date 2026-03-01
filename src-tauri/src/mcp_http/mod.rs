@@ -1540,4 +1540,76 @@ mod tests {
         // Only tx1 should remain (its rx1 is still alive)
         assert_eq!(state.ws_clients.get("sess").unwrap().len(), 1);
     }
+
+    // --- MCP proxy wiring tests ---
+
+    /// tools/list returns only native tools when no upstream is connected.
+    #[tokio::test]
+    async fn test_tools_list_no_upstream_returns_native_only() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        let body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "tools/list", "params": {}
+        });
+        let resp = app.oneshot(mcp_post("/mcp", &body)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let tools = json["result"]["tools"].as_array().unwrap();
+        // No upstream → exactly 5 native tools
+        assert_eq!(tools.len(), 5);
+        let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert!(names.contains(&"session"));
+        assert!(names.contains(&"git"));
+        assert!(names.contains(&"agent"));
+        assert!(names.contains(&"config"));
+        assert!(names.contains(&"plugin_dev_guide"));
+    }
+
+    /// tools/call with upstream-prefixed name returns error (no upstream registered).
+    #[tokio::test]
+    async fn test_tools_call_upstream_prefix_returns_error_when_no_upstream() {
+        let state = test_state();
+        // Inject a session so the session_valid check passes
+        state.mcp_sessions.insert("test-sid-proxy".to_string(), std::time::Instant::now());
+
+        let app = build_router(state, false, true);
+        let body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "tools/call",
+            "params": { "name": "myupstream__do_thing", "arguments": {} }
+        });
+        let resp = app
+            .oneshot(mcp_post_with_session("/mcp", &body, "test-sid-proxy"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        // Should be an error response with isError:true
+        assert_eq!(json["result"]["isError"], true, "Expected isError:true, got: {json}");
+    }
+
+    /// tools/call with a native tool name still works after wiring.
+    #[tokio::test]
+    async fn test_native_tool_call_still_works_after_wiring() {
+        let state = test_state();
+        state.mcp_sessions.insert("test-sid-native".to_string(), std::time::Instant::now());
+        let app = build_router(state, false, true);
+        let body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "tools/call",
+            "params": { "name": "session", "arguments": { "action": "list" } }
+        });
+        let resp = app
+            .oneshot(mcp_post_with_session("/mcp", &body, "test-sid-native"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        // Native tool — should succeed (empty session list, no error)
+        assert_eq!(json["result"]["isError"], false, "Native tool should not error: {json}");
+    }
 }

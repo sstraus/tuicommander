@@ -104,7 +104,7 @@ const AGENT_ACTIONS: &str = "detect, spawn, stats, metrics";
 const CONFIG_ACTIONS: &str = "get, save";
 
 /// MCP tool definitions — 5 meta-commands mirroring tui_mcp_bridge
-fn mcp_tool_definitions() -> serde_json::Value {
+fn native_tool_definitions() -> serde_json::Value {
     serde_json::json!([
         {
             "name": "session",
@@ -160,6 +160,21 @@ fn mcp_tool_definitions() -> serde_json::Value {
             "inputSchema": { "type": "object", "properties": {}, "required": [] }
         }
     ])
+}
+
+/// Returns native tools merged with upstream proxy tools (namespaced as `{upstream}__`).
+///
+/// Upstream tools are omitted when no upstreams are Ready.
+fn merged_tool_definitions(state: &Arc<AppState>) -> serde_json::Value {
+    let mut tools: Vec<serde_json::Value> = native_tool_definitions()
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+
+    let upstream_tools = state.mcp_upstream_registry.aggregated_tools();
+    tools.extend(upstream_tools);
+
+    serde_json::Value::Array(tools)
 }
 
 /// Translate special key names to terminal escape sequences
@@ -693,7 +708,7 @@ pub(super) async fn mcp_post(
         }
 
         "tools/list" => {
-            let tools = mcp_tool_definitions();
+            let tools = merged_tool_definitions(&state);
             let response = serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -728,16 +743,25 @@ pub(super) async fn mcp_post(
             let tool_name = params["name"].as_str().unwrap_or("").to_string();
             let args = params.get("arguments").cloned().unwrap_or(serde_json::json!({}));
 
-            let state_clone = state.clone();
-            let result = match tokio::task::spawn_blocking(move || {
-                handle_mcp_tool_call(&state_clone, addr, &tool_name, &args)
-            }).await {
-                Ok(r) => r,
-                Err(e) => serde_json::json!({"error": format!("Task failed: {e}")}),
+            // Route upstream-prefixed tools ({upstream}__{tool}) via the proxy registry.
+            // Native tools (no "__") go through the sync handler via spawn_blocking.
+            let (result, is_error) = if tool_name.contains("__") {
+                match state.mcp_upstream_registry.proxy_tool_call(&tool_name, args.clone()).await {
+                    Ok(v) => (v, false),
+                    Err(e) => (serde_json::json!({"error": e}), true),
+                }
+            } else {
+                let state_clone = state.clone();
+                let result = match tokio::task::spawn_blocking(move || {
+                    handle_mcp_tool_call(&state_clone, addr, &tool_name, &args)
+                }).await {
+                    Ok(r) => r,
+                    Err(e) => serde_json::json!({"error": format!("Task failed: {e}")}),
+                };
+                let is_error = result.get("error").is_some();
+                (result, is_error)
             };
             let text = serde_json::to_string_pretty(&result).unwrap_or_default();
-
-            let is_error = result.get("error").is_some();
             let response = serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -792,7 +816,7 @@ pub(super) async fn mcp_delete(
 // Re-export for tests — these need to be public enough for sibling test module
 #[cfg(test)]
 pub(crate) fn test_mcp_tool_definitions() -> serde_json::Value {
-    mcp_tool_definitions()
+    native_tool_definitions()
 }
 #[cfg(test)]
 pub(crate) fn test_translate_special_key(key: &str) -> Option<&'static str> {
