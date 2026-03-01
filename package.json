@@ -10,6 +10,7 @@
     "build:watch": "vite build --watch",
     "preview": "vite preview",
     "tauri": "tauri",
+    "build:sidecar": "TARGET=$(rustc --print host-tuple) && touch src-tauri/binaries/tuic-mcp-bridge-$TARGET && cd src-tauri && cargo build --release --bin tuic-mcp-bridge && cp target/release/tuic-mcp-bridge binaries/tuic-mcp-bridge-$TARGET",
     "test": "vitest",
     "test:coverage": "vitest run --coverage"
   },

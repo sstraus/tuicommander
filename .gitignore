@@ -37,3 +37,6 @@ CLAUDE.md
 .fastembed_cache
 scripts
 competitor-analysis
+
+# Sidecar binaries (built during cargo tauri build)
+src-tauri/binaries/tuic-mcp-bridge-*
