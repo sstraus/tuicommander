@@ -1,15 +1,13 @@
 /// Streaming transcription engine.
 ///
-/// A background thread drains audio from `AudioCapture` in adaptive sliding
+/// A background thread drains audio from the shared buffer in adaptive sliding
 /// windows (1.5s → 3s), runs VAD to skip silence, and feeds whisper-rs for
 /// partial transcription results emitted via `mpsc::Sender<String>`.
 ///
 /// Follows the `stream.cpp` pattern from whisper.cpp:
 /// - Overlapping windows with `keep_ms` of previous context
-/// - Prompt token carry-forward to prevent repetition
 /// - `set_single_segment(true)` + `set_no_timestamps(true)` for short windows
 
-use crate::dictation::audio::AudioCapture;
 use crate::dictation::transcribe::WhisperTranscriber;
 use crate::dictation::vad;
 use parking_lot::Mutex;
@@ -40,9 +38,6 @@ const VAD_LAST_MS: u32 = 1000;
 const POLL_INTERVAL_MS: u64 = 50;
 /// Maximum buffer accumulation before forced flush (seconds).
 const MAX_BUFFER_S: f32 = 30.0;
-/// no_speech_prob threshold — skip segment if above this.
-const NO_SPEECH_PROB_THRESHOLD: f32 = 0.6;
-
 /// Convert milliseconds to sample count at 16kHz.
 fn ms_to_samples(ms: u32) -> usize {
     (SAMPLE_RATE as usize * ms as usize) / 1000
@@ -122,7 +117,6 @@ fn streaming_loop(
     let mut step_buf: Vec<f32> = Vec::new();
     let mut prev_tail: Vec<f32> = Vec::new(); // keep_ms overlap from previous window
     let mut current_step_ms = INITIAL_STEP_MS;
-    let mut prompt_tokens: Vec<i32> = Vec::new();
 
     let keep_samples = ms_to_samples(KEEP_MS);
     let max_buffer_samples = (MAX_BUFFER_S * SAMPLE_RATE as f32) as usize;
@@ -164,7 +158,7 @@ fn streaming_loop(
 
                 // Transcribe the window
                 if let Some(text) =
-                    transcribe_window(&transcriber, &window, &prompt_tokens, language.as_deref())
+                    transcribe_window(&transcriber, &window, language.as_deref())
                 {
                     if !text.is_empty() {
                         let _ = tx.send(text);
@@ -201,7 +195,6 @@ fn streaming_loop(
 fn transcribe_window(
     transcriber: &WhisperTranscriber,
     window: &[f32],
-    _prompt_tokens: &[i32],
     language: Option<&str>,
 ) -> Option<String> {
     // Use the existing transcribe method which already sets
