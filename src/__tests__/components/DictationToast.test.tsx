@@ -46,7 +46,7 @@ describe("DictationToast", () => {
     mockInvoke.mockResolvedValueOnce(undefined); // start_dictation
 
     await createRoot(async (dispose) => {
-      const { container } = render(() => <DictationToast />);
+      render(() => <DictationToast />);
 
       await dictationStore.startRecording();
       expect(dictationStore.state.recording).toBe(true);

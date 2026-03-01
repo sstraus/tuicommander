@@ -3,7 +3,7 @@
 /// Compares the absolute energy of the last `last_ms` milliseconds against the
 /// entire buffer.  Returns `true` when the tail is **silent** (energy ratio
 /// below `vad_thold`).
-
+///
 /// Returns `true` when the tail of `pcm` is silent.
 ///
 /// * `pcm`         – 16-bit float PCM samples (will NOT be mutated)
@@ -70,11 +70,11 @@ fn high_pass_filter(data: &mut [f32], cutoff: f32, sample_rate: f32) {
     let alpha = rc / (rc + dt);
     let mut y = 0.0f32;
     let mut prev_x = data[0];
-    for i in 1..data.len() {
-        let x = data[i];
+    for sample in &mut data[1..] {
+        let x = *sample;
         y = alpha * (y + x - prev_x);
         prev_x = x;
-        data[i] = y;
+        *sample = y;
     }
     data[0] = 0.0; // first sample has no predecessor
 }

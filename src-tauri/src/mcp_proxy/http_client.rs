@@ -187,7 +187,7 @@ impl HttpMcpClient {
         Ok(resp_value
             .get("result")
             .cloned()
-            .unwrap_or_else(|| resp_value))
+            .unwrap_or(resp_value))
     }
 
     /// Call a tool, re-initializing once on session expiry (400) or connection error.
@@ -218,6 +218,7 @@ impl HttpMcpClient {
     }
 
     /// Send DELETE /mcp to cleanly terminate the upstream session.
+    #[allow(dead_code)]
     pub(crate) async fn shutdown(&self) {
         if let Some(sid) = &self.session_id {
             let auth_token = read_upstream_credential(&self.name).unwrap_or(None);
@@ -230,6 +231,7 @@ impl HttpMcpClient {
     }
 
     /// Whether this client has an active session.
+    #[allow(dead_code)]
     pub(crate) fn is_connected(&self) -> bool {
         self.session_id.is_some()
     }

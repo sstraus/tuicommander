@@ -287,7 +287,7 @@ impl UpstreamRegistry {
 
         entry.metrics.call_count.fetch_add(1, Ordering::Relaxed);
         let t0 = Instant::now();
-        let result = dispatch_tool_call(&entry.client, &tool_name, args).await;
+        let result = dispatch_tool_call(&entry.client, tool_name, args).await;
         let elapsed_ms = t0.elapsed().as_millis().min(u32::MAX as u128) as u32;
         entry.metrics.last_latency_ms.store(elapsed_ms, Ordering::Relaxed);
 
@@ -340,14 +340,13 @@ impl UpstreamRegistry {
         }
 
         // Circular proxy guard
-        if let UpstreamTransport::Http { ref url } = config.transport {
-            if let Some(port) = self_port {
-                if crate::mcp_upstream_config::is_self_referential(url, port) {
-                    return Err(format!(
-                        "Upstream '{name}' points to TUIC itself — circular proxy"
-                    ));
-                }
-            }
+        if let UpstreamTransport::Http { ref url } = config.transport
+            && let Some(port) = self_port
+            && crate::mcp_upstream_config::is_self_referential(url, port)
+        {
+            return Err(format!(
+                "Upstream '{name}' points to TUIC itself — circular proxy"
+            ));
         }
 
         let client = build_client(&name, &config)?;
@@ -379,10 +378,10 @@ impl UpstreamRegistry {
             .ok_or_else(|| format!("Upstream '{name}' not found"))?;
 
         // Fire-and-forget shutdown for stdio (sync)
-        if let UpstreamClient::Stdio(ref mutex) = entry.client {
-            if let Ok(mut client) = mutex.lock() {
-                client.shutdown();
-            }
+        if let UpstreamClient::Stdio(ref mutex) = entry.client
+            && let Ok(mut client) = mutex.lock()
+        {
+            client.shutdown();
         }
         // HTTP clients don't hold persistent connections — nothing to clean up.
 
@@ -390,11 +389,13 @@ impl UpstreamRegistry {
     }
 
     /// Names of all registered upstreams.
+    #[allow(dead_code)]
     pub(crate) fn upstream_names(&self) -> Vec<String> {
         self.entries.iter().map(|e| e.key().clone()).collect()
     }
 
     /// Status of a specific upstream.
+    #[allow(dead_code)]
     pub(crate) fn status(&self, name: &str) -> Option<UpstreamStatus> {
         self.entries.get(name).map(|e| e.status.read().clone())
     }
@@ -488,13 +489,13 @@ impl UpstreamRegistry {
                         || old_server.tool_filter != new_server.tool_filter
                 }
             };
-            if should_connect {
-                if let Err(e) = self.connect_upstream(new_server.clone(), Some(self_port)).await {
-                    eprintln!(
-                        "[mcp-registry] Failed to connect upstream '{}': {e}",
-                        new_server.name
-                    );
-                }
+            if should_connect
+                && let Err(e) = self.connect_upstream(new_server.clone(), Some(self_port)).await
+            {
+                eprintln!(
+                    "[mcp-registry] Failed to connect upstream '{}': {e}",
+                    new_server.name
+                );
             }
         }
     }

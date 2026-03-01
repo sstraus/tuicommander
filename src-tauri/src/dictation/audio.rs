@@ -131,6 +131,7 @@ impl AudioCapture {
 
     /// Stop capturing and return all collected audio as 16kHz mono f32 PCM.
     /// Consumes self (batch mode compatibility).
+    #[allow(dead_code)]
     pub fn stop(mut self) -> Vec<f32> {
         self.stream.take();
         self.buffer.lock().drain(..).collect()
@@ -144,6 +145,7 @@ impl AudioCapture {
 
     /// Drain up to `count` samples from the front of the buffer.
     /// Returns fewer samples if fewer are available.
+    #[allow(dead_code)]
     pub fn drain_samples(&self, count: usize) -> Vec<f32> {
         let mut buf = self.buffer.lock();
         let n = count.min(buf.len());
@@ -156,6 +158,7 @@ impl AudioCapture {
     }
 
     /// How many samples are currently buffered.
+    #[allow(dead_code)]
     pub fn available(&self) -> usize {
         self.buffer.lock().len()
     }

@@ -1,5 +1,4 @@
 use super::{audio, corrections, model, streaming, transcribe, DictationState};
-use transcribe::Transcriber;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;

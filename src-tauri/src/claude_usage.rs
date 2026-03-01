@@ -216,11 +216,11 @@ fn is_tcc_protected(path: &std::path::Path) -> bool {
     if !path.starts_with(&home) {
         return false;
     }
-    if let Ok(rel) = path.strip_prefix(&home) {
-        if let Some(first) = rel.components().next() {
-            let name = first.as_os_str().to_string_lossy();
-            return TCC_PROTECTED_DIRS.iter().any(|d| d.eq_ignore_ascii_case(&name));
-        }
+    if let Ok(rel) = path.strip_prefix(&home)
+        && let Some(first) = rel.components().next()
+    {
+        let name = first.as_os_str().to_string_lossy();
+        return TCC_PROTECTED_DIRS.iter().any(|d| d.eq_ignore_ascii_case(&name));
     }
     false
 }

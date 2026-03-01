@@ -551,7 +551,7 @@ pub(crate) fn validate_worktree_path(repo_path: &str, worktree_path: &str) -> Re
         .filter_map(|line| line.strip_prefix("worktree "))
         .collect();
 
-    if !known_paths.iter().any(|p| *p == worktree_path) {
+    if !known_paths.contains(&worktree_path) {
         return Err(format!(
             "Refused: '{}' is not a known worktree of '{}'",
             worktree_path, repo_path

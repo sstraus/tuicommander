@@ -661,10 +661,10 @@ fn get_last_commit_timestamps(
     };
 
     for line in out.stdout.lines() {
-        if let Some((name, ts_str)) = line.split_once('\t') {
-            if let Some(entry) = result.get_mut(name) {
-                *entry = ts_str.parse::<i64>().ok();
-            }
+        if let Some((name, ts_str)) = line.split_once('\t')
+            && let Some(entry) = result.get_mut(name)
+        {
+            *entry = ts_str.parse::<i64>().ok();
         }
     }
 

@@ -7,7 +7,6 @@
 /// Follows the `stream.cpp` pattern from whisper.cpp:
 /// - Overlapping windows with `keep_ms` of previous context
 /// - `set_single_segment(true)` + `set_no_timestamps(true)` for short windows
-
 use crate::dictation::transcribe::Transcriber;
 use crate::dictation::vad;
 use parking_lot::Mutex;
@@ -96,6 +95,7 @@ impl StreamingSession {
     }
 
     /// Check if the streaming thread is still running.
+    #[allow(dead_code)]
     pub fn is_running(&self) -> bool {
         self.handle
             .as_ref()
@@ -164,13 +164,11 @@ fn streaming_loop(
                 // Transcribe the window
                 if let Some(text) =
                     transcribe_window(&*transcriber, &window_buf, language.as_deref())
+                    && !text.is_empty()
+                    && tx.send(text).is_err()
                 {
-                    if !text.is_empty() {
-                        if tx.send(text).is_err() {
-                            // Receiver dropped — stop streaming
-                            break;
-                        }
-                    }
+                    // Receiver dropped — stop streaming
+                    break;
                 }
 
                 // Save tail as overlap for next window — reuse buffer

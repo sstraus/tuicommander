@@ -446,20 +446,18 @@ fn read_external_file(path: String) -> Result<String, String> {
         return Err("read_external_file requires an absolute path".to_string());
     }
     // Block TCC-protected directories
-    if let Some(home) = dirs::home_dir() {
-        if p.starts_with(&home) {
-            if let Ok(rel) = p.strip_prefix(&home) {
-                if let Some(first) = rel.components().next() {
-                    let name = first.as_os_str().to_string_lossy();
-                    const TCC_DIRS: &[&str] = &[
-                        "Desktop", "Documents", "Downloads", "Movies",
-                        "Music", "Pictures", "Library",
-                    ];
-                    if TCC_DIRS.iter().any(|d| d.eq_ignore_ascii_case(&name)) {
-                        return Err(format!("Access denied: {name}/ is a protected directory"));
-                    }
-                }
-            }
+    if let Some(home) = dirs::home_dir()
+        && p.starts_with(&home)
+        && let Ok(rel) = p.strip_prefix(&home)
+        && let Some(first) = rel.components().next()
+    {
+        let name = first.as_os_str().to_string_lossy();
+        const TCC_DIRS: &[&str] = &[
+            "Desktop", "Documents", "Downloads", "Movies",
+            "Music", "Pictures", "Library",
+        ];
+        if TCC_DIRS.iter().any(|d| d.eq_ignore_ascii_case(&name)) {
+            return Err(format!("Access denied: {name}/ is a protected directory"));
         }
     }
     std::fs::read_to_string(p)
