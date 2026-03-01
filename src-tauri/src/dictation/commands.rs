@@ -223,12 +223,24 @@ pub fn start_dictation(
     // recording is already true (set by compare_exchange above)
     app_logger::log_via_handle(&app, "info", "dictation", "Streaming recording started");
 
-    // Spawn event forwarder: reads partials from channel and emits Tauri events
+    // Reset accumulated partials for this session
+    dictation.accumulated_partials.lock().clear();
+
+    // Spawn event forwarder: reads partials from channel, emits Tauri events,
+    // and concatenates them for accuracy comparison at the end.
     let app_clone = app.clone();
+    let accumulated = dictation.inner().accumulated_partials.clone();
     std::thread::Builder::new()
         .name("dictation-event-forwarder".into())
         .spawn(move || {
             for text in rx {
+                {
+                    let mut acc = accumulated.lock();
+                    if !acc.is_empty() {
+                        acc.push(' ');
+                    }
+                    acc.push_str(&text);
+                }
                 if let Err(e) = app_clone.emit("dictation-partial", &text) {
                     eprintln!("[dictation] failed to emit partial event: {e}");
                 }
@@ -314,8 +326,25 @@ pub fn stop_dictation_and_transcribe(
         });
     }
 
+    // Log composition vs full-pass comparison for accuracy analysis
+    let composed = std::mem::take(&mut *dictation.accumulated_partials.lock());
+    let match_pct = if !composed.is_empty() && !final_text.is_empty() {
+        let common = final_text.chars().zip(composed.chars())
+            .take_while(|(a, b)| a == b).count();
+        let max_len = final_text.len().max(composed.len());
+        (common as f64 / max_len as f64 * 100.0) as u32
+    } else {
+        0
+    };
     app_logger::log_via_handle(&app, "info", "dictation",
-        &format!("Final text: {} chars from {:.1}s audio", final_text.len(), total_duration_s));
+        &format!("[accuracy] full={} chars, composed={} chars, match={}%, audio={:.1}s",
+            final_text.len(), composed.len(), match_pct, total_duration_s));
+    if composed != final_text {
+        app_logger::log_via_handle(&app, "debug", "dictation",
+            &format!("[accuracy] FULL: \"{}\"", final_text));
+        app_logger::log_via_handle(&app, "debug", "dictation",
+            &format!("[accuracy] COMP: \"{}\"", composed));
+    }
 
     // Apply corrections
     let corrected = dictation.corrections.lock().correct(&final_text);

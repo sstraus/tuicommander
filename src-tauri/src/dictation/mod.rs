@@ -23,6 +23,8 @@ pub struct DictationState {
     pub streaming: Mutex<Option<streaming::StreamingSession>>,
     /// Arc-wrapped transcriber for sharing with the streaming thread.
     pub transcriber_arc: Mutex<Option<Arc<dyn transcribe::Transcriber>>>,
+    /// Concatenation of all streaming partials (for accuracy comparison logging).
+    pub accumulated_partials: Arc<Mutex<String>>,
 }
 
 impl DictationState {
@@ -35,6 +37,7 @@ impl DictationState {
             processing: AtomicBool::new(false),
             streaming: Mutex::new(None),
             transcriber_arc: Mutex::new(None),
+            accumulated_partials: Arc::new(Mutex::new(String::new())),
         }
     }
 }
