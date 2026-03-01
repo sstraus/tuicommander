@@ -230,14 +230,19 @@ export function useGitOperations(deps: GitOperationsDeps) {
       const updatedRepo = repositoriesStore.get(repoPath);
       if (!updatedRepo) return;
 
-      // Diff stats come from the summary (already fetched server-side concurrently).
+      // Diff stats and last-commit timestamps from the summary.
       // summary.diff_stats is keyed by worktree path, matching branch.worktreePath.
+      // summary.last_commit_ts is keyed by branch name.
       batch(() => {
         for (const branch of Object.values(updatedRepo.branches)) {
           if (!branch.worktreePath) continue;
           const stats = summary.diff_stats[branch.worktreePath];
           if (stats) {
             repositoriesStore.updateBranchStats(repoPath, branch.name, stats.additions, stats.deletions);
+          }
+          const ts = summary.last_commit_ts?.[branch.name];
+          if (ts !== undefined) {
+            repositoriesStore.setBranch(repoPath, branch.name, { lastCommitTs: ts });
           }
         }
       });

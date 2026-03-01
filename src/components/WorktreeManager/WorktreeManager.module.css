@@ -131,6 +131,38 @@
   flex-shrink: 0;
 }
 
+.prBadge {
+  font-size: var(--font-xs);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.prOpen {
+  background: rgba(78, 201, 176, 0.15);
+  color: var(--success);
+}
+
+.prMerged {
+  background: rgba(171, 130, 255, 0.15);
+  color: #ab82ff;
+}
+
+.prClosed {
+  background: rgba(244, 135, 113, 0.15);
+  color: var(--error);
+}
+
+.timestamp {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  text-align: right;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .footer {
   display: flex;
   align-items: center;

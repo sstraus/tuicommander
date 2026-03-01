@@ -663,6 +663,7 @@ describe("useGitOperations", () => {
         worktree_paths: { main: "/repo" },
         merged_branches: [],
         diff_stats: { "/repo": { additions: 5, deletions: 3 } },
+        last_commit_ts: {},
       });
 
       await gitOps.refreshAllBranchStats();
@@ -680,6 +681,7 @@ describe("useGitOperations", () => {
         worktree_paths: { main: "/repo" },
         merged_branches: [],
         diff_stats: { "/repo": { additions: 0, deletions: 0 } },
+        last_commit_ts: {},
       });
 
       await gitOps.refreshAllBranchStats();
@@ -699,6 +701,7 @@ describe("useGitOperations", () => {
           "/repo": { additions: 2, deletions: 1 },
           "/repo/.worktrees/feature-external": { additions: 2, deletions: 1 },
         },
+        last_commit_ts: {},
       });
 
       await gitOps.refreshAllBranchStats();
@@ -722,6 +725,7 @@ describe("useGitOperations", () => {
         worktree_paths: { "feature/acme": "/repo" },
         merged_branches: [],
         diff_stats: { "/repo": { additions: 1, deletions: 0 } },
+        last_commit_ts: {},
       });
 
       await gitOps.refreshAllBranchStats();
@@ -746,6 +750,7 @@ describe("useGitOperations", () => {
         worktree_paths: { "feature/acme": "/repo" },
         merged_branches: [],
         diff_stats: { "/repo": { additions: 0, deletions: 0 } },
+        last_commit_ts: {},
       });
 
       await gitOps.refreshAllBranchStats();
@@ -764,6 +769,7 @@ describe("useGitOperations", () => {
         worktree_paths: { main: "/repo" },
         merged_branches: [],
         diff_stats: {},
+        last_commit_ts: {},
       });
 
       await gitOps.refreshAllBranchStats();
@@ -1187,7 +1193,7 @@ describe("useGitOperations", () => {
         branch: "main",
         status: "clean",
       });
-      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/new-repo" }, merged_branches: [], diff_stats: {} });
+      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/new-repo" }, merged_branches: [], diff_stats: {}, last_commit_ts: {} });
 
       await gitOps.handleAddRepo();
 
@@ -1205,7 +1211,7 @@ describe("useGitOperations", () => {
         branch: "develop",
         status: "dirty",
       });
-      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { develop: "/array-repo" }, merged_branches: [], diff_stats: {} });
+      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { develop: "/array-repo" }, merged_branches: [], diff_stats: {}, last_commit_ts: {} });
 
       await gitOps.handleAddRepo();
 
@@ -1232,7 +1238,7 @@ describe("useGitOperations", () => {
         branch: "main",
         status: "clean",
       });
-      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/fresh-repo" }, merged_branches: [], diff_stats: {} });
+      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/fresh-repo" }, merged_branches: [], diff_stats: {}, last_commit_ts: {} });
 
       await gitOps.handleAddRepo();
 
@@ -1254,7 +1260,7 @@ describe("useGitOperations", () => {
         branch: "main",
         status: "clean",
       });
-      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/new-repo" }, merged_branches: [], diff_stats: {} });
+      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/new-repo" }, merged_branches: [], diff_stats: {}, last_commit_ts: {} });
 
       await gitOps.handleAddRepo();
 
@@ -1352,7 +1358,7 @@ describe("useGitOperations", () => {
     beforeEach(() => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
-      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/repo" }, merged_branches: [], diff_stats: {} });
+      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/repo" }, merged_branches: [], diff_stats: {}, last_commit_ts: {} });
     });
 
     it("auto-removes orphans silently when orphanCleanup=on", async () => {
@@ -1438,6 +1444,7 @@ describe("useGitOperations", () => {
         worktree_paths: { main: "/repo", "feature/x": "/repo/.worktrees/feature-x" },
         merged_branches: ["feature/x"],
         diff_stats: {},
+        last_commit_ts: {},
       });
     });
 
@@ -1467,6 +1474,7 @@ describe("useGitOperations", () => {
         worktree_paths: { main: "/repo" },
         merged_branches: ["main"],
         diff_stats: {},
+        last_commit_ts: {},
       });
 
       await gitOps.refreshAllBranchStats();

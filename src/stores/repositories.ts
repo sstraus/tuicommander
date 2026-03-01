@@ -18,6 +18,7 @@ export interface BranchState {
   additions: number;
   deletions: number;
   isMerged: boolean; // true when branch is fully merged into the repo's main branch
+  lastCommitTs: number | null; // Unix timestamp of last commit on this branch
   runCommand?: string; // Saved run command for this branch
   savedTerminals?: SavedTerminal[]; // Persisted terminal metadata for session restore
 }
@@ -318,6 +319,7 @@ function createRepositoriesStore() {
           additions: 0,
           deletions: 0,
           isMerged: false,
+          lastCommitTs: null,
           ...data,
         });
       }

@@ -1,6 +1,9 @@
 import { Component, For, Show, createEffect, createMemo, onCleanup } from "solid-js";
 import { worktreeManagerStore } from "../../stores/worktreeManager";
 import { repositoriesStore } from "../../stores/repositories";
+import { githubStore } from "../../stores/github";
+import { formatRelativeTime } from "../../utils/time";
+import type { BranchPrStatus } from "../../types";
 import s from "./WorktreeManager.module.css";
 
 /** Row data derived from repo/branch state */
@@ -14,6 +17,8 @@ interface WorktreeRow {
   deletions: number;
   isMain: boolean;
   isMerged: boolean;
+  prStatus: BranchPrStatus | null;
+  lastCommitTs: number | null;
 }
 
 /** Extract display name (last path segment) from a path */
@@ -66,6 +71,8 @@ export const WorktreeManager: Component = () => {
           deletions: branch.deletions,
           isMain: branch.isMain,
           isMerged: branch.isMerged,
+          prStatus: githubStore.getPrStatus(repo.path, branchName),
+          lastCommitTs: branch.lastCommitTs ?? null,
         });
       }
     }
@@ -103,7 +110,11 @@ export const WorktreeManager: Component = () => {
                   <Show when={wt.isMain}>
                     <span class={s.mainBadge}>main</span>
                   </Show>
+                  <Show when={wt.prStatus}>
+                    {(pr) => <PrBadge state={pr().state} number={pr().number} />}
+                  </Show>
                   <DirtyStats additions={wt.additions} deletions={wt.deletions} />
+                  <span class={s.timestamp}>{formatRelativeTime(wt.lastCommitTs)}</span>
                 </div>
               )}
             </For>
@@ -117,6 +128,23 @@ export const WorktreeManager: Component = () => {
       </div>
     </Show>
   );
+};
+
+/** Compact PR state badge */
+const PrBadge: Component<{ state: string; number: number }> = (props) => {
+  const cls = () => {
+    const st = props.state?.toLowerCase();
+    if (st === "merged") return s.prMerged;
+    if (st === "closed") return s.prClosed;
+    return s.prOpen;
+  };
+  const label = () => {
+    const st = props.state?.toLowerCase();
+    if (st === "merged") return "Merged";
+    if (st === "closed") return "Closed";
+    return `#${props.number}`;
+  };
+  return <span class={`${s.prBadge} ${cls()}`}>{label()}</span>;
 };
 
 /** Compact dirty stats badge */
