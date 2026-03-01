@@ -13,6 +13,7 @@ import { compareBranches } from "../../utils/branchSort";
 import { cx } from "../../utils";
 import { t } from "../../i18n";
 import type { BranchPrStatus } from "../../types";
+import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
 import s from "./Sidebar.module.css";
 
 const BRANCH_ICON_CLASSES: Record<string, string> = {
@@ -327,18 +328,34 @@ export const BranchItem: Component<{
   );
 };
 
-/** Popover listing open PRs on remote-only branches (no local branch/worktree) */
+/** Popover listing open PRs on remote-only branches with inline accordion detail */
 const RemoteOnlyPrPopover: Component<{
   prs: BranchPrStatus[];
+  repoPath: string;
   onClose: () => void;
-  onShowPrDetail: (branch: string) => void;
   onCheckout: (branchName: string) => void;
   onCreateWorktree?: (branchName: string) => void;
 }> = (props) => {
+  const [expandedBranch, setExpandedBranch] = createSignal<string | null>(null);
+
+  const handleRowClick = (branch: string) => {
+    setExpandedBranch((prev) => prev === branch ? null : branch);
+  };
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      if (expandedBranch()) {
+        setExpandedBranch(null);
+      } else {
+        props.onClose();
+      }
+    }
+  };
+
   return (
     <>
-      <div class={s.remoteOnlyOverlay} onClick={props.onClose} />
-      <div class={s.remoteOnlyPopover}>
+      <div class={s.remoteOnlyOverlay} onClick={props.onClose} onKeyDown={handleKeyDown} tabIndex={-1} />
+      <div class={s.remoteOnlyPopover} onKeyDown={handleKeyDown} tabIndex={-1}>
         <div class={s.remoteOnlyHeader}>
           <span>{t("sidebar.remoteOnlyPrs", "Remote-only PRs")}</span>
           <button class={s.remoteOnlyClose} onClick={props.onClose}>&times;</button>
@@ -346,36 +363,44 @@ const RemoteOnlyPrPopover: Component<{
         <div class={s.remoteOnlyList}>
           <For each={props.prs}>
             {(pr) => (
-              <div class={s.remoteOnlyRow} onClick={() => props.onShowPrDetail(pr.branch)}>
-                <span class={s.remoteOnlyNum}>#{pr.number}</span>
-                <span class={s.remoteOnlyBranch}>{pr.branch}</span>
-                <PrStateBadge
-                  prNumber={pr.number}
-                  state={pr.state}
-                  isDraft={pr.is_draft}
-                  mergeable={pr.mergeable}
-                  reviewDecision={pr.review_decision}
-                  ciFailed={pr.checks?.failed}
-                  ciPending={pr.checks?.pending}
-                />
-                <div class={s.remoteOnlyActions}>
-                  <button
-                    class={s.remoteOnlyCheckout}
-                    onClick={(e) => { e.stopPropagation(); props.onCheckout(pr.branch); }}
-                    title={t("sidebar.checkoutBranch", "Check out this branch locally")}
-                  >
-                    {t("sidebar.checkout", "Checkout")}
-                  </button>
-                  <Show when={props.onCreateWorktree}>
-                    <button
-                      class={s.remoteOnlyWorktree}
-                      onClick={(e) => { e.stopPropagation(); props.onCreateWorktree!(pr.branch); }}
-                      title={t("sidebar.createWorktreeFromBranch", "Create worktree from this branch")}
-                    >
-                      {t("sidebar.worktree", "Worktree")}
-                    </button>
-                  </Show>
+              <div class={cx(s.remoteOnlyItem, expandedBranch() === pr.branch && s.remoteOnlyItemExpanded)}>
+                <div class={s.remoteOnlyRow} onClick={() => handleRowClick(pr.branch)}>
+                  <span class={s.remoteOnlyNum}>#{pr.number}</span>
+                  <span class={s.remoteOnlyTitle}>{pr.title}</span>
+                  <PrStateBadge
+                    prNumber={pr.number}
+                    state={pr.state}
+                    isDraft={pr.is_draft}
+                    mergeable={pr.mergeable}
+                    reviewDecision={pr.review_decision}
+                    ciFailed={pr.checks?.failed}
+                    ciPending={pr.checks?.pending}
+                  />
                 </div>
+                <Show when={expandedBranch() === pr.branch}>
+                  <div class={s.remoteOnlyDetail}>
+                    <PrDetailContent repoPath={props.repoPath} branch={pr.branch}>
+                      <div class={s.remoteOnlyDetailActions}>
+                        <button
+                          class={s.remoteOnlyCheckout}
+                          onClick={() => props.onCheckout(pr.branch)}
+                          title={t("sidebar.checkoutBranch", "Check out this branch locally")}
+                        >
+                          {t("sidebar.checkout", "Checkout")}
+                        </button>
+                        <Show when={props.onCreateWorktree}>
+                          <button
+                            class={s.remoteOnlyWorktree}
+                            onClick={() => props.onCreateWorktree!(pr.branch)}
+                            title={t("sidebar.createWorktreeFromBranch", "Create worktree from this branch")}
+                          >
+                            {t("sidebar.worktree", "Worktree")}
+                          </button>
+                        </Show>
+                      </div>
+                    </PrDetailContent>
+                  </div>
+                </Show>
               </div>
             )}
           </For>
@@ -603,11 +628,8 @@ export const RepoSection: Component<{
       <Show when={remoteOnlyPopoverVisible() && remoteOnlyPrs().length > 0}>
         <RemoteOnlyPrPopover
           prs={remoteOnlyPrs()}
+          repoPath={props.repo.path}
           onClose={() => setRemoteOnlyPopoverVisible(false)}
-          onShowPrDetail={(branch) => {
-            setRemoteOnlyPopoverVisible(false);
-            props.onShowPrDetail(branch);
-          }}
           onCheckout={(branch) => {
             setRemoteOnlyPopoverVisible(false);
             props.onCheckoutRemoteBranch?.(branch);

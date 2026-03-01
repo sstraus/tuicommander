@@ -1,13 +1,11 @@
-import { Component, Show, For, onMount, onCleanup } from "solid-js";
+import { Component, Show, onMount, onCleanup } from "solid-js";
 import { githubStore } from "../../stores/github";
 import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
-import { CiRing } from "../ui/CiRing";
-import { relativeTime } from "../../utils/time";
 import { handleOpenUrl } from "../../utils/openUrl";
-import { getCiIcon, getCiClass } from "../../utils/ciDisplay";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
+import { PrDetailContent } from "./PrDetailContent";
 import s from "./PrDetailPopover.module.css";
 
 /** Extract "owner/repo" from a GitHub PR URL, e.g. https://github.com/owner/repo/pull/67 */
@@ -27,28 +25,6 @@ const STATE_CLASSES: Record<string, string> = {
   draft: s.draft,
 };
 
-/** Map backend merge state CSS class strings to module classes */
-const MERGE_STATE_CLASSES: Record<string, string> = {
-  clean: s.clean,
-  behind: s.behind,
-  blocked: s.blocked,
-  conflicting: s.conflicting,
-};
-
-/** Map backend review state CSS class strings to module classes */
-const REVIEW_STATE_CLASSES: Record<string, string> = {
-  approved: s.approved,
-  "changes-requested": s.changesRequested,
-  "review-required": s.reviewRequired,
-};
-
-/** Map CI state strings to module classes */
-const CI_CLASSES: Record<string, string> = {
-  success: s.success,
-  failure: s.failure,
-  pending: s.pending,
-};
-
 export interface PrDetailPopoverProps {
   repoPath: string;
   branch: string;
@@ -60,8 +36,6 @@ export interface PrDetailPopoverProps {
 /** Rich PR detail popover showing PR metadata, diff stats, and CI checks */
 export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
   const prData = () => githubStore.getBranchPrData(props.repoPath, props.branch);
-  const checkSummary = () => githubStore.getCheckSummary(props.repoPath, props.branch);
-  const checkDetails = () => githubStore.getCheckDetails(props.repoPath, props.branch);
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -71,40 +45,11 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown);
-    // Lazy-load CI check details when popover opens
-    const pr = prData();
-    if (pr) {
-      githubStore.loadCheckDetails(props.repoPath, props.branch, pr.number).catch(() => {});
-    }
   });
 
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown);
   });
-
-  /** Whether the PR is in a terminal state (closed or merged) */
-  const isTerminalState = () => {
-    const state = prData()?.state?.toUpperCase();
-    return state === "CLOSED" || state === "MERGED";
-  };
-
-  /** Merge readiness label and CSS class — pre-computed by Rust backend.
-   *  Suppressed for closed/merged PRs (labels are meaningless). */
-  const mergeState = () => {
-    if (isTerminalState()) return null;
-    const label = prData()?.merge_state_label;
-    if (!label) return null;
-    return { label: label.label, cssClass: label.css_class };
-  };
-
-  /** Review decision label — pre-computed by Rust backend.
-   *  Suppressed for closed/merged PRs (labels are meaningless). */
-  const reviewState = () => {
-    if (isTerminalState()) return null;
-    const label = prData()?.review_state_label;
-    if (!label) return null;
-    return { label: label.label, cssClass: label.css_class };
-  };
 
   const stateClass = () => {
     if (prData()?.is_draft) return "draft";
@@ -158,128 +103,8 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                 <button class={s.close} onClick={props.onClose}>&times;</button>
               </div>
 
-              {/* Merge + review status pills */}
-              <Show when={mergeState() || reviewState()}>
-                <div class={s.statusRow}>
-                  <Show when={mergeState()}>
-                    {(ms) => (
-                      <span class={cx(s.mergeStateBadge, MERGE_STATE_CLASSES[ms().cssClass])}>
-                        {ms().label}
-                      </span>
-                    )}
-                  </Show>
-                  <Show when={reviewState()}>
-                    {(rs) => (
-                      <span class={cx(s.reviewStateBadge, REVIEW_STATE_CLASSES[rs().cssClass])}>
-                        {rs().label}
-                      </span>
-                    )}
-                  </Show>
-                </div>
-              </Show>
-
-              {/* Labels */}
-              <Show when={pr().labels?.length > 0}>
-                <div class={s.labels}>
-                  <For each={pr().labels}>
-                    {(label) => (
-                      <span
-                        class={s.label}
-                        style={{
-                          "background-color": label.background_color || undefined,
-                          "border-color": label.color ? `#${label.color}` : undefined,
-                          color: label.text_color || undefined,
-                        }}
-                      >
-                        {label.name}
-                      </span>
-                    )}
-                  </For>
-                </div>
-              </Show>
-
-              {/* Merge direction */}
-              <Show when={pr().base_ref_name}>
-                <div class={s.mergeDirection}>
-                  <span class={s.branchName}>{pr().branch}</span>
-                  <span class={s.arrow}>{"\u2192"}</span>
-                  <span class={s.branchName}>{pr().base_ref_name}</span>
-                </div>
-              </Show>
-
-              {/* Timestamps */}
-              <Show when={pr().created_at}>
-                <div class={s.timestamps}>
-                  <span>{t("prDetail.created", "Created")} {relativeTime(pr().created_at)}</span>
-                  <Show when={pr().updated_at && pr().updated_at !== pr().created_at}>
-                    <span class={s.separator}>&middot;</span>
-                    <span>{t("prDetail.updated", "Updated")} {relativeTime(pr().updated_at)}</span>
-                  </Show>
-                </div>
-              </Show>
-
-              {/* Subheader: author + commits */}
-              <div class={s.meta}>
-                <span class={s.author}>{pr().author}</span>
-                <span class={s.separator}>&middot;</span>
-                <span>{pr().commits} commit{pr().commits !== 1 ? "s" : ""}</span>
-                <span class={s.separator}>&middot;</span>
-                <span class={s.additions}>+{pr().additions}</span>
-                <span class={s.deletions}>-{pr().deletions}</span>
-              </div>
-
-              {/* CI summary */}
-              <Show when={checkSummary()?.total ? checkSummary() : null}>
-                {(cs) => (
-                  <div class={s.ciSummary}>
-                    <CiRing
-                      passed={cs().passed}
-                      failed={cs().failed}
-                      pending={cs().pending}
-                    />
-                    <span class={s.ciText}>
-                      <Show when={cs().failed > 0}>
-                        <span class={cx(s.ciCount, s.failure)}>{cs().failed} {t("prDetail.failed", "failed")}</span>
-                      </Show>
-                      <Show when={cs().pending > 0}>
-                        <span class={cx(s.ciCount, s.pending)}>{cs().pending} {t("prDetail.pending", "pending")}</span>
-                      </Show>
-                      <Show when={cs().passed > 0}>
-                        <span class={cx(s.ciCount, s.success)}>{cs().passed} {t("prDetail.passed", "passed")}</span>
-                      </Show>
-                    </span>
-                  </div>
-                )}
-              </Show>
-
-              {/* Check list */}
-              <Show when={checkDetails().length > 0}>
-                <div class={s.checks}>
-                  <For each={checkDetails()}>
-                    {(check) => (
-                      <div class={s.checkItem}>
-                        <span class={cx(s.checkIcon, CI_CLASSES[getCiClass(check.state)])}>
-                          {getCiIcon(check.state)}
-                        </span>
-                        <span class={s.checkName}>{check.context}</span>
-                        <span class={cx(s.checkStatus, CI_CLASSES[getCiClass(check.state)])}>
-                          {check.state}
-                        </span>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </Show>
-
-              {/* Open on GitHub */}
-              <Show when={pr().url}>
-                <div
-                  class={s.openGithub}
-                  onClick={() => handleOpenUrl(pr().url)}
-                >
-                  {t("prDetail.openOnGithub", "Open on GitHub")} {"\u2197"}
-                </div>
-              </Show>
+              {/* Shared body content: status pills, labels, meta, CI, checks, open link */}
+              <PrDetailContent repoPath={props.repoPath} branch={props.branch} />
             </>
           )}
         </Show>

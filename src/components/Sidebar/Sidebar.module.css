@@ -835,13 +835,21 @@
   padding: 4px 0;
 }
 
+/* ── Remote-only PR row (collapsed) ── */
+.remoteOnlyItem {
+  border-bottom: 1px solid transparent;
+}
+
+.remoteOnlyItemExpanded {
+  border-bottom: 1px solid var(--border);
+}
+
 .remoteOnlyRow {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
   cursor: pointer;
-  flex-wrap: wrap;
 }
 
 .remoteOnlyRow:hover {
@@ -854,7 +862,7 @@
   flex-shrink: 0;
 }
 
-.remoteOnlyBranch {
+.remoteOnlyTitle {
   flex: 1;
   font-size: var(--font-sm);
   color: var(--fg-primary);
@@ -864,15 +872,22 @@
   min-width: 0;
 }
 
-.remoteOnlyActions {
+/* ── Remote-only PR accordion detail ── */
+.remoteOnlyDetail {
+  padding: 0 4px 8px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+}
+
+.remoteOnlyDetailActions {
   display: flex;
-  gap: 4px;
-  flex-shrink: 0;
+  gap: 6px;
+  padding: 8px 8px 4px;
 }
 
 .remoteOnlyCheckout,
 .remoteOnlyWorktree {
-  padding: 2px 8px;
+  padding: 4px 12px;
   font-size: var(--font-xs);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
