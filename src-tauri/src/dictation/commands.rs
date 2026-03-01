@@ -3,6 +3,29 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::{mpsc, Arc};
+
+/// Helper to reset recording flag on error paths.
+struct RecordingGuard<'a> {
+    recording: &'a std::sync::atomic::AtomicBool,
+    disarmed: bool,
+}
+
+impl<'a> RecordingGuard<'a> {
+    fn new(recording: &'a std::sync::atomic::AtomicBool) -> Self {
+        Self { recording, disarmed: false }
+    }
+    fn disarm(&mut self) {
+        self.disarmed = true;
+    }
+}
+
+impl Drop for RecordingGuard<'_> {
+    fn drop(&mut self) {
+        if !self.disarmed {
+            self.recording.store(false, Ordering::Release);
+        }
+    }
+}
 use tauri::{AppHandle, Emitter, State};
 
 use crate::app_logger;
@@ -63,8 +86,8 @@ pub fn get_dictation_status(
         model_status: model_status.to_string(),
         model_name: whisper_model.name().to_string(),
         model_size_mb: model::model_size_bytes(whisper_model) / 1_048_576,
-        recording: dictation.recording.load(Ordering::Relaxed),
-        processing: dictation.processing.load(Ordering::Relaxed),
+        recording: dictation.recording.load(Ordering::Acquire),
+        processing: dictation.processing.load(Ordering::Acquire),
     })
 }
 
@@ -134,11 +157,17 @@ pub fn start_dictation(
     app: AppHandle,
     dictation: State<'_, DictationState>,
 ) -> Result<(), String> {
-    // Prevent concurrent recordings
-    if dictation.recording.load(Ordering::Relaxed) {
+    // Atomic test-and-set: prevents TOCTOU race from concurrent IPC calls
+    if dictation.recording
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
         return Err("Already recording".to_string());
     }
-    if dictation.processing.load(Ordering::Relaxed) {
+    // Guard resets recording=false if we return early on any error path
+    let mut recording_guard = RecordingGuard::new(&dictation.recording);
+
+    if dictation.processing.load(Ordering::Acquire) {
         return Err("Transcription in progress".to_string());
     }
 
@@ -190,33 +219,23 @@ pub fn start_dictation(
         lang,
     );
     *dictation.streaming.lock() = Some(session);
-    *dictation.partial_rx.lock() = Some(rx);
-    dictation.partials.lock().clear();
 
-    dictation.recording.store(true, Ordering::Relaxed);
+    // recording is already true (set by compare_exchange above)
     app_logger::log_via_handle(&app, "info", "dictation", "Streaming recording started");
 
-    // Spawn event forwarder: reads partials and emits Tauri events
+    // Spawn event forwarder: reads partials from channel and emits Tauri events
     let app_clone = app.clone();
-    let partials_clone = {
-        // We need a way for the forwarder thread to access partials.
-        // Since DictationState is behind Tauri's State, we can't easily clone it.
-        // Instead, we'll use a separate Arc for the partials + rx.
-        // Actually, let's just move the rx into the forwarder thread.
-        dictation.partial_rx.lock().take()
-    };
+    std::thread::Builder::new()
+        .name("dictation-event-forwarder".into())
+        .spawn(move || {
+            for text in rx {
+                let _ = app_clone.emit("dictation-partial", &text);
+            }
+        })
+        .map_err(|e| format!("Failed to spawn event forwarder: {e}"))?;
 
-    if let Some(rx) = partials_clone {
-        std::thread::Builder::new()
-            .name("dictation-event-forwarder".into())
-            .spawn(move || {
-                for text in rx {
-                    let _ = app_clone.emit("dictation-partial", &text);
-                }
-            })
-            .map_err(|e| format!("Failed to spawn event forwarder: {e}"))?;
-    }
-
+    // Success: keep recording=true (disarm the guard so it doesn't reset on drop)
+    recording_guard.disarm();
     Ok(())
 }
 
@@ -225,12 +244,12 @@ pub fn stop_dictation_and_transcribe(
     app: AppHandle,
     dictation: State<'_, DictationState>,
 ) -> Result<TranscribeResponse, String> {
-    if !dictation.recording.load(Ordering::Relaxed) {
+    if !dictation.recording.load(Ordering::Acquire) {
         return Err("Not recording".to_string());
     }
 
-    dictation.recording.store(false, Ordering::Relaxed);
-    dictation.processing.store(true, Ordering::Relaxed);
+    dictation.recording.store(false, Ordering::Release);
+    dictation.processing.store(true, Ordering::Release);
 
     // Stop audio capture (stops the cpal stream, but buffer data remains)
     let mut capture_lock = dictation.audio.lock();
@@ -290,7 +309,7 @@ pub fn stop_dictation_and_transcribe(
 
     if final_text.is_empty() {
         app_logger::log_via_handle(&app, "info", "dictation", "No final text from tail");
-        dictation.processing.store(false, Ordering::Relaxed);
+        dictation.processing.store(false, Ordering::Release);
         // Clean up
         *dictation.audio.lock() = None;
         return Ok(TranscribeResponse {
@@ -306,7 +325,7 @@ pub fn stop_dictation_and_transcribe(
     let corrected = dictation.corrections.lock().correct(&final_text);
     let final_text = corrected.replace('\n', " ");
 
-    dictation.processing.store(false, Ordering::Relaxed);
+    dictation.processing.store(false, Ordering::Release);
     *dictation.audio.lock() = None;
 
     Ok(TranscribeResponse {
