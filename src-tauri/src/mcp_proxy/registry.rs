@@ -230,10 +230,10 @@ impl UpstreamRegistry {
             });
         }
         // Status changes to/from Ready affect the merged tool list
-        if status == "Ready" || status == "Error" || status == "Disconnected" {
-            if let Some(tx) = self.mcp_tools_tx.read().as_ref() {
-                let _ = tx.send(());
-            }
+        if matches!(status, "Ready" | "Error" | "Disconnected")
+            && let Some(tx) = self.mcp_tools_tx.read().as_ref()
+        {
+            let _ = tx.send(());
         }
     }
 

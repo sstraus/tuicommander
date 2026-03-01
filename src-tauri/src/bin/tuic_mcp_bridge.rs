@@ -71,7 +71,7 @@ async fn post_mcp(body: &str, session_id: Option<&str>) -> Result<(String, Optio
         .find_map(|line| {
             let lower = line.to_lowercase();
             if lower.starts_with("mcp-session-id:") {
-                Some(line.splitn(2, ':').nth(1)?.trim().to_string())
+                Some(line.split_once(':')?.1.trim().to_string())
             } else {
                 None
             }
@@ -248,14 +248,14 @@ async fn main() {
             // Proxy to server
             _ => {
                 // Lazy reconnect attempt if disconnected
-                if !state.connected.load(Ordering::Relaxed) {
-                    if let Ok(sid) = server_initialize().await {
-                        eprintln!("tuic-mcp-bridge: reconnected to TUIC");
-                        *state.session_id.lock().unwrap() = Some(sid);
-                        state.connected.store(true, Ordering::Relaxed);
-                        start_sse_listener(&state);
-                        emit_tools_changed();
-                    }
+                if !state.connected.load(Ordering::Relaxed)
+                    && let Ok(sid) = server_initialize().await
+                {
+                    eprintln!("tuic-mcp-bridge: reconnected to TUIC");
+                    *state.session_id.lock().unwrap() = Some(sid);
+                    state.connected.store(true, Ordering::Relaxed);
+                    start_sse_listener(&state);
+                    emit_tools_changed();
                 }
 
                 if state.connected.load(Ordering::Relaxed) {
