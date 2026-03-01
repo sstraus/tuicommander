@@ -118,7 +118,8 @@ fn native_tool_definitions() -> serde_json::Value {
                 "cols": { "type": "integer", "description": "Terminal cols (action=create or resize)" },
                 "shell": { "type": "string", "description": "Shell binary path (action=create)" },
                 "cwd": { "type": "string", "description": "Working directory (action=create)" },
-                "limit": { "type": "integer", "description": "Bytes to read, default 8192 (action=output)" }
+                "limit": { "type": "integer", "description": "Bytes to read, default 8192 (action=output)" },
+                "format": { "type": "string", "description": "Output format: 'text' strips ANSI escape codes (default), 'raw' preserves them (action=output)" }
             }, "required": ["action"] }
         },
         {
@@ -346,8 +347,15 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 None => return serde_json::json!({"error": "Session not found"}),
             };
             let (bytes, total_written) = ring.lock().read_last(limit);
-            let data = String::from_utf8_lossy(&bytes).to_string();
-            serde_json::json!({"data": data, "total_written": total_written})
+            let raw = String::from_utf8_lossy(&bytes).to_string();
+            // Strip ANSI by default — AI agents don't need escape codes.
+            // Pass format="raw" to preserve them (e.g. for terminal rendering).
+            let data = if args["format"].as_str() == Some("raw") {
+                raw
+            } else {
+                crate::output_parser::strip_ansi(&raw)
+            };
+            serde_json::json!({"data": data, "data_length": data.len(), "total_written": total_written})
         }
         "resize" => {
             let session_id = match require_session_id(args, "resize") {
