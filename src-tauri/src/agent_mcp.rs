@@ -192,6 +192,55 @@ fn write_json_file(path: &std::path::Path, value: &serde_json::Value) -> Result<
     Ok(())
 }
 
+/// Supported agent types for auto-install
+const SUPPORTED_AGENTS: &[&str] = &["claude", "cursor", "windsurf", "vscode", "zed", "amp", "gemini"];
+
+/// Auto-install MCP bridge config into all supported agent configs.
+/// Called once at first app launch. Skips agents that already have our entry.
+pub(crate) fn auto_install_mcp_configs() {
+    let bridge_path = detect_bridge_binary();
+    eprintln!("MCP: auto-installing bridge config (bridge: {bridge_path})");
+
+    for agent in SUPPORTED_AGENTS {
+        let Some(spec) = get_mcp_config_spec(agent) else { continue };
+
+        let root = read_json_file(&spec.config_path);
+        let already_installed = navigate(&root, &spec.key_path)
+            .and_then(|v| v.as_object())
+            .is_some_and(|obj| obj.contains_key(TUIC_MCP_KEY));
+
+        if already_installed {
+            eprintln!("MCP: {agent} — already installed, skipping");
+            continue;
+        }
+
+        let entry = TuicMcpEntry {
+            command: bridge_path.clone(),
+            args: vec![],
+        };
+        let entry_value = match serde_json::to_value(&entry) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("MCP: {agent} — serialize error: {e}");
+                continue;
+            }
+        };
+
+        let mut root = read_json_file(&spec.config_path);
+        let servers = navigate_or_create(&mut root, &spec.key_path);
+        if let Some(obj) = servers.as_object_mut() {
+            obj.insert(TUIC_MCP_KEY.to_string(), entry_value);
+        } else {
+            *servers = serde_json::json!({ TUIC_MCP_KEY: entry_value });
+        }
+
+        match write_json_file(&spec.config_path, &root) {
+            Ok(()) => eprintln!("MCP: {agent} — installed at {}", spec.config_path.display()),
+            Err(e) => eprintln!("MCP: {agent} — write error: {e}"),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------

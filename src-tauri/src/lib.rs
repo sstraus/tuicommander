@@ -605,6 +605,18 @@ pub fn run() {
         });
     }
 
+    // Auto-install MCP bridge config into agent configs on first launch
+    if !config.mcp_config_installed {
+        agent_mcp::auto_install_mcp_configs();
+        let mut cfg = state.config.write();
+        cfg.mcp_config_installed = true;
+        let cfg_clone = cfg.clone();
+        drop(cfg);
+        if let Err(e) = config::save_app_config(cfg_clone) {
+            eprintln!("MCP: failed to persist mcp_config_installed flag: {e}");
+        }
+    }
+
     let builder = tauri::Builder::default();
     let builder = plugins::register_plugin_protocol(builder);
     let builder = builder

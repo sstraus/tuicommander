@@ -241,6 +241,9 @@ pub(crate) struct AppConfig {
     /// Fixed port for MCP server (0 = OS-assigned)
     #[serde(default = "default_mcp_port")]
     pub(crate) mcp_port: u16,
+    /// Whether MCP config has been auto-installed in agent configs
+    #[serde(default)]
+    pub(crate) mcp_config_installed: bool,
     /// Preferred IDE (e.g. "vscode", "cursor")
     #[serde(default)]
     pub(crate) ide: String,
@@ -343,6 +346,7 @@ impl Default for AppConfig {
             theme: "vscode-dark".to_string(),
             mcp_server_enabled: false,
             mcp_port: default_mcp_port(),
+            mcp_config_installed: false,
             ide: String::new(),
             default_font_size: 13,
             remote_access_enabled: false,
@@ -840,6 +844,7 @@ mod tests {
             theme: "dark".to_string(),
             mcp_server_enabled: true,
             mcp_port: 4000,
+            mcp_config_installed: false,
             ide: "cursor".to_string(),
             default_font_size: 18,
             remote_access_enabled: true,
