@@ -91,14 +91,30 @@ impl StdioMcpClient {
 
         self.last_spawn = Some(Instant::now());
 
-        // Build the command, merging configured env vars with inherited environment
+        // Build the command with a sanitized environment.
+        // We clear the parent env to prevent credential leakage (ANTHROPIC_API_KEY,
+        // AWS_SECRET_ACCESS_KEY, etc.) to potentially untrusted MCP server processes,
+        // then re-add only the variables needed for normal operation.
         let mut cmd = std::process::Command::new(&self.config.command);
         cmd.args(&self.config.args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::inherit()); // stderr goes to parent log
+            .stderr(std::process::Stdio::inherit());
 
-        // Merge configured env vars on top of inherited env
+        cmd.env_clear();
+
+        // Re-add safe passthrough variables needed by child processes
+        const SAFE_ENV_KEYS: &[&str] = &[
+            "PATH", "HOME", "USER", "LANG", "LC_ALL",
+            "TMPDIR", "TEMP", "TMP", "SHELL", "TERM",
+        ];
+        for key in SAFE_ENV_KEYS {
+            if let Ok(val) = std::env::var(key) {
+                cmd.env(key, val);
+            }
+        }
+
+        // Apply user-configured env overrides on top of the safe set
         for (k, v) in &self.config.env {
             cmd.env(k, v);
         }
