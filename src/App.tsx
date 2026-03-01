@@ -30,6 +30,7 @@ import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { ActivityDashboard } from "./components/ActivityDashboard";
+import { WorktreeManager } from "./components/WorktreeManager";
 import { ErrorLogPanel } from "./components/ErrorLogPanel";
 import { DictationToast } from "./components/DictationToast/DictationToast";
 import { commandPaletteStore } from "./stores/commandPalette";
@@ -1127,6 +1128,9 @@ const App: Component = () => {
 
       {/* Activity dashboard */}
       <ActivityDashboard />
+
+      {/* Worktree manager */}
+      <WorktreeManager />
 
       {/* Error log panel */}
       <ErrorLogPanel />
