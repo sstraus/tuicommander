@@ -421,11 +421,12 @@ describe("Sidebar", () => {
       expect(menu).not.toBeNull();
 
       const menuItems = menu!.querySelectorAll(".item");
-      expect(menuItems.length).toBe(4);
+      expect(menuItems.length).toBe(5);
       expect(menuItems[0].textContent).toContain("Repo Settings");
-      expect(menuItems[1].textContent).toContain("Move to Group");
-      expect(menuItems[2].textContent).toContain("Park Repository");
-      expect(menuItems[3].textContent).toContain("Remove Repository");
+      expect(menuItems[1].textContent).toContain("Create Worktree");
+      expect(menuItems[2].textContent).toContain("Move to Group");
+      expect(menuItems[3].textContent).toContain("Park Repository");
+      expect(menuItems[4].textContent).toContain("Remove Repository");
     });
 
     it("repo menu Settings click calls onRepoSettings", () => {
@@ -450,10 +451,41 @@ describe("Sidebar", () => {
       const menuBtn = container.querySelector(".repoActionBtn")!;
       fireEvent.click(menuBtn);
 
-      // Click remove — index 3 (after "Repo Settings", "Move to Group", and "Park Repository")
+      // Click remove — index 4 (after "Repo Settings", "Create Worktree", "Move to Group", and "Park Repository")
       const menuItems = container.querySelectorAll(".item");
-      fireEvent.click(menuItems[3]);
+      fireEvent.click(menuItems[4]);
       expect(onRemoveRepo).toHaveBeenCalledWith("/repo1");
+    });
+
+    it("repo menu Create Worktree click calls onAddWorktree", () => {
+      const onAddWorktree = vi.fn();
+      const { container } = render(() => <Sidebar {...defaultProps({ onAddWorktree })} />);
+
+      // Open menu
+      const menuBtn = container.querySelector(".repoActionBtn")!;
+      fireEvent.click(menuBtn);
+
+      // Click Create Worktree — index 1
+      const menuItems = container.querySelectorAll(".item");
+      fireEvent.click(menuItems[1]);
+      expect(onAddWorktree).toHaveBeenCalledWith("/repo1");
+    });
+
+    it("repo menu does not show Create Worktree for non-git repos", () => {
+      setRepos({ "/repo1": makeRepo({ isGitRepo: false }) });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+
+      // Open menu
+      const menuBtn = container.querySelector(".repoActionBtn")!;
+      fireEvent.click(menuBtn);
+
+      const menu = container.querySelector(".menu");
+      expect(menu).not.toBeNull();
+
+      const menuItems = menu!.querySelectorAll(".item");
+      expect(menuItems.length).toBe(4);
+      const labels = Array.from(menuItems).map((el) => el.textContent);
+      expect(labels.some((l) => l?.includes("Create Worktree"))).toBe(false);
     });
 
     it("repo menu closes after action", () => {
@@ -508,11 +540,12 @@ describe("Sidebar", () => {
       expect(menu).not.toBeNull();
 
       const menuItems = menu!.querySelectorAll(".item");
-      expect(menuItems.length).toBe(4);
+      expect(menuItems.length).toBe(5);
       expect(menuItems[0].textContent).toContain("Repo Settings");
-      expect(menuItems[1].textContent).toContain("Move to Group");
-      expect(menuItems[2].textContent).toContain("Park Repository");
-      expect(menuItems[3].textContent).toContain("Remove Repository");
+      expect(menuItems[1].textContent).toContain("Create Worktree");
+      expect(menuItems[2].textContent).toContain("Move to Group");
+      expect(menuItems[3].textContent).toContain("Park Repository");
+      expect(menuItems[4].textContent).toContain("Remove Repository");
     });
 
     it("repo header click calls toggleExpanded", () => {

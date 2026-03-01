@@ -447,6 +447,10 @@ export const RepoSection: Component<{
       { label: "Repo Settings", action: () => props.onSettings() },
     ];
 
+    if (props.repo.isGitRepo !== false) {
+      items.push({ label: "Create Worktree", action: () => props.onAddWorktree() });
+    }
+
     // "Move to Group" submenu — always available (includes "New Group...")
     const layout = repositoriesStore.getGroupedLayout();
     const currentGroup = repositoriesStore.getGroupForRepo(props.repo.path);
