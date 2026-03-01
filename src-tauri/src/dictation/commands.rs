@@ -219,32 +219,20 @@ pub fn start_dictation(
         lang,
     );
     *dictation.streaming.lock() = Some(session);
-    *dictation.partial_rx.lock() = Some(rx);
-    dictation.partials.lock().clear();
 
     // recording is already true (set by compare_exchange above)
     app_logger::log_via_handle(&app, "info", "dictation", "Streaming recording started");
 
-    // Spawn event forwarder: reads partials and emits Tauri events
+    // Spawn event forwarder: reads partials from channel and emits Tauri events
     let app_clone = app.clone();
-    let partials_clone = {
-        // We need a way for the forwarder thread to access partials.
-        // Since DictationState is behind Tauri's State, we can't easily clone it.
-        // Instead, we'll use a separate Arc for the partials + rx.
-        // Actually, let's just move the rx into the forwarder thread.
-        dictation.partial_rx.lock().take()
-    };
-
-    if let Some(rx) = partials_clone {
-        std::thread::Builder::new()
-            .name("dictation-event-forwarder".into())
-            .spawn(move || {
-                for text in rx {
-                    let _ = app_clone.emit("dictation-partial", &text);
-                }
-            })
-            .map_err(|e| format!("Failed to spawn event forwarder: {e}"))?;
-    }
+    std::thread::Builder::new()
+        .name("dictation-event-forwarder".into())
+        .spawn(move || {
+            for text in rx {
+                let _ = app_clone.emit("dictation-partial", &text);
+            }
+        })
+        .map_err(|e| format!("Failed to spawn event forwarder: {e}"))?;
 
     // Success: keep recording=true (disarm the guard so it doesn't reset on drop)
     recording_guard.disarm();

@@ -8,7 +8,6 @@ pub mod vad;
 
 use parking_lot::Mutex;
 use std::sync::atomic::AtomicBool;
-use std::sync::mpsc;
 use std::sync::Arc;
 
 /// Shared dictation state accessible from Tauri commands.
@@ -22,10 +21,6 @@ pub struct DictationState {
     pub processing: AtomicBool,
     /// Active streaming session (None when not streaming).
     pub streaming: Mutex<Option<streaming::StreamingSession>>,
-    /// Receiver for partial transcription results from the streaming thread.
-    pub partial_rx: Mutex<Option<mpsc::Receiver<String>>>,
-    /// All partial results collected during a streaming session.
-    pub partials: Mutex<Vec<String>>,
     /// Arc-wrapped transcriber for sharing with the streaming thread.
     pub transcriber_arc: Mutex<Option<Arc<transcribe::WhisperTranscriber>>>,
 }
@@ -39,8 +34,6 @@ impl DictationState {
             recording: AtomicBool::new(false),
             processing: AtomicBool::new(false),
             streaming: Mutex::new(None),
-            partial_rx: Mutex::new(None),
-            partials: Mutex::new(Vec::new()),
             transcriber_arc: Mutex::new(None),
         }
     }
