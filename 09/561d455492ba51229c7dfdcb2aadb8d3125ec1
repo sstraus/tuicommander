@@ -1,0 +1,31 @@
+src-tauri/src/dictation/streaming.rs
+  4edf3f37670677e5 188-190
+src/__tests__/hooks/useDictation.test.ts
+  4edf3f37670677e5 33,129
+src-tauri/src/dictation/audio.rs
+  4edf3f37670677e5 46-50,211-216
+src/hooks/useDictation.ts
+  4edf3f37670677e5 21
+src/stores/dictation.ts
+  4edf3f37670677e5 22-24,27,77,148-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "09561d455492ba51229c7dfdcb2aadb8d3125ec1",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "unknown"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 31,
+      "total_deletions": 12,
+      "accepted_lines": 29,
+      "overriden_lines": 0
+    }
+  }
+}
