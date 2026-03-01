@@ -19,7 +19,7 @@ use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{header, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
-use axum::{extract::Path as AxumPath, Json, Router};
+use axum::{extract::{Path as AxumPath, State}, Json, Router};
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
@@ -73,6 +73,13 @@ fn port_file_path() -> std::path::PathBuf {
 /// Return the plugin development guide as JSON.
 async fn plugin_dev_guide_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({"content": plugin_docs::PLUGIN_DOCS}))
+}
+
+/// GET /mcp/upstream-status — returns status + metrics for all upstream MCP servers.
+async fn upstream_status_handler(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    Json(state.mcp_upstream_registry.status_snapshot())
 }
 
 /// Serve plugin data files over HTTP.
@@ -217,6 +224,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/events", get(sse_routes::sse_events))
         // MCP status + instructions
         .route("/mcp/status", get(config_routes::get_mcp_status_http))
+        .route("/mcp/upstream-status", get(upstream_status_handler))
         .route("/mcp/instructions", get(mcp_transport::mcp_instructions_http))
         // Plugin docs (for MCP bridge)
         .route("/plugins/docs", get(plugin_dev_guide_handler))
@@ -322,6 +330,11 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
             });
         }
     });
+
+    // Spawn upstream health checker: pings Ready upstreams every 60s
+    crate::mcp_proxy::registry::UpstreamRegistry::spawn_health_checker(
+        Arc::clone(&state.mcp_upstream_registry),
+    );
 
     // Serve with ConnectInfo for auth middleware; graceful shutdown via channel
     let result = axum::serve(
