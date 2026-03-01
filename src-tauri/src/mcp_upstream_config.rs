@@ -187,7 +187,7 @@ pub(crate) async fn save_mcp_upstreams(
     config: UpstreamMcpConfig,
     state: tauri::State<'_, crate::state::AppState>,
 ) -> Result<(), String> {
-    let self_port = state.config.read().mcp_port;
+    let self_port = state.config.read().remote_access_port;
     let errors = validate_upstream_config(&config, self_port);
     if !errors.is_empty() {
         let msgs: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
@@ -216,7 +216,7 @@ pub(crate) async fn reconnect_mcp_upstream(
     state: tauri::State<'_, crate::state::AppState>,
 ) -> Result<(), String> {
     let config: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
-    let self_port = state.config.read().mcp_port;
+    let self_port = state.config.read().remote_access_port;
 
     // Validate before connecting
     let errors = validate_upstream_config(&config, self_port);

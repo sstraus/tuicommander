@@ -171,16 +171,14 @@ pub(super) async fn put_notes(
 
 pub(super) async fn get_mcp_status_http(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let config = state.config.read().clone();
-    let port_file = crate::config::config_dir().join("mcp-port");
-    let port = std::fs::read_to_string(&port_file)
-        .ok()
-        .and_then(|s| s.trim().parse::<u16>().ok());
-    let server_should_run = config.mcp_server_enabled || config.remote_access_enabled;
-    let running = server_should_run && port.is_some();
+    #[cfg(unix)]
+    let socket_exists = super::socket_path().exists();
+    #[cfg(not(unix))]
+    let socket_exists = false;
+    let running = socket_exists;
     Json(serde_json::json!({
         "enabled": config.mcp_server_enabled,
         "running": running,
-        "port": port,
         "active_sessions": state.sessions.len(),
         "mcp_clients": state.mcp_sessions.len(),
         "max_sessions": MAX_CONCURRENT_SESSIONS,

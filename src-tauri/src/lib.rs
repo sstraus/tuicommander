@@ -480,23 +480,20 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
         )
     };
 
-    let port_file = config::config_dir().join("mcp-port");
-    let port = std::fs::read_to_string(&port_file)
-        .ok()
-        .and_then(|s| s.trim().parse::<u16>().ok());
+    // Check if the Unix socket is alive (local MCP always on)
+    #[cfg(unix)]
+    let socket_exists = mcp_http::socket_path().exists();
+    #[cfg(not(unix))]
+    let socket_exists = false;
+    let running = socket_exists;
 
-    let server_should_run = mcp_enabled || remote_enabled;
-    let running = server_should_run && port.is_some();
-
-    // Quick TCP self-test: can we reach the server on the external (non-loopback) IP?
-    // A failure here usually means a firewall is blocking incoming connections.
-    // Only runs when remote is enabled and we have an IP and port.
-    // Uses spawn_blocking to avoid blocking the async executor during the TCP connect.
+    // TCP reachability self-test for remote access
+    let remote_port = state.config.read().remote_access_port;
     let reachable = if remote_enabled {
         let preferred_ip = pick_preferred_ip(get_local_ips_with_config(state.config.read().ipv6_enabled));
-        if let (Some(p), Some(ip)) = (port, preferred_ip) {
-            // Bracket-wrap IPv6 literals for valid SocketAddr parsing
-            let addr = if ip.contains(':') { format!("[{ip}]:{p}") } else { format!("{ip}:{p}") };
+        if let Some(ip) = preferred_ip {
+            let port = remote_port;
+            let addr = if ip.contains(':') { format!("[{ip}]:{port}") } else { format!("{ip}:{port}") };
             tokio::task::spawn_blocking(move || {
                 addr.parse::<std::net::SocketAddr>().ok().map(|sa| {
                     std::net::TcpStream::connect_timeout(
@@ -519,14 +516,11 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
     Ok(serde_json::json!({
         "enabled": mcp_enabled,
         "running": running,
-        "port": port,
+        "remote_port": if remote_enabled { Some(remote_port) } else { None },
         "active_sessions": active_sessions,
         "mcp_clients": mcp_protocol_sessions,
         "max_sessions": MAX_CONCURRENT_SESSIONS,
-        // session_token is the primary auth credential — included in the QR code URL.
-        // Only exposed via this Tauri command (local IPC), never via the HTTP API.
         "session_token": session_token,
-        // null = remote disabled, true = TCP connect succeeded, false = likely firewalled
         "reachable": reachable,
     }))
 }

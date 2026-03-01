@@ -65,11 +65,6 @@ fn validate_repo_path(path: &str) -> Result<(), (StatusCode, Json<serde_json::Va
         .map_err(|msg| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg}))))
 }
 
-/// Port file path: <config_dir>/mcp-port
-fn port_file_path() -> std::path::PathBuf {
-    crate::config::config_dir().join("mcp-port")
-}
-
 /// Unix socket path for local MCP bridge connections: <config_dir>/mcp.sock
 #[cfg(unix)]
 pub(crate) fn socket_path() -> std::path::PathBuf {
@@ -320,7 +315,7 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         }
     };
 
-    // --- TCP listener (optional, for remote access with auth) ---
+    // --- TCP listener (only for remote access with auth) ---
     let tcp_handle = if remote_enabled {
         let port = if config.remote_access_port == 0 { 0 } else { config.remote_access_port };
         let bind_addr = if config.ipv6_enabled {
@@ -334,15 +329,6 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
                     std::net::SocketAddr::from(([0, 0, 0, 0], 0))
                 });
                 eprintln!("MCP HTTP: TCP listening on {addr} (remote access enabled)");
-
-                // Write port to file for legacy bridge discovery
-                let port_file = port_file_path();
-                if let Some(parent) = port_file.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                if let Err(e) = std::fs::write(&port_file, addr.port().to_string()) {
-                    eprintln!("MCP HTTP: failed to write port file: {e}");
-                }
 
                 let app = build_router(state.clone(), true, mcp_enabled);
                 Some(tokio::spawn(async move {
@@ -360,39 +346,7 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
             }
         }
     } else {
-        // Local-only TCP for backward compat (bridge port file)
-        let port = config.mcp_port;
-        let bind_addr = format!("127.0.0.1:{port}");
-        match tokio::net::TcpListener::bind(&bind_addr).await {
-            Ok(listener) => {
-                let addr = listener.local_addr().unwrap_or_else(|_| {
-                    std::net::SocketAddr::from(([127, 0, 0, 1], 0))
-                });
-                eprintln!("MCP HTTP: TCP listening on {addr}");
-
-                let port_file = port_file_path();
-                if let Some(parent) = port_file.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                if let Err(e) = std::fs::write(&port_file, addr.port().to_string()) {
-                    eprintln!("MCP HTTP: failed to write port file: {e}");
-                }
-
-                let app = build_router(state.clone(), false, mcp_enabled);
-                Some(tokio::spawn(async move {
-                    if let Err(e) = axum::serve(
-                        listener,
-                        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-                    ).await {
-                        eprintln!("MCP HTTP: TCP server error: {e}");
-                    }
-                }))
-            }
-            Err(e) => {
-                eprintln!("MCP HTTP: failed to bind TCP {bind_addr}: {e}, continuing with socket only");
-                None
-            }
-        }
+        None
     };
 
     // Wait for shutdown signal
@@ -408,10 +362,9 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
     }
     reaper_handle.abort();
 
-    // Cleanup socket and port files
+    // Cleanup socket file
     #[cfg(unix)]
     let _ = std::fs::remove_file(socket_path());
-    let _ = std::fs::remove_file(port_file_path());
 }
 
 #[cfg(test)]
