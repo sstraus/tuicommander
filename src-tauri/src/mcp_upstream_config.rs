@@ -87,6 +87,7 @@ pub(crate) enum UpstreamConfigError {
     EmptyName(String),
     InvalidName(String),
     DuplicateName(String),
+    InvalidUrlScheme(String),
     SelfReferentialUrl(String),
     EmptyUrl(String),
     EmptyCommand(String),
@@ -101,6 +102,9 @@ impl std::fmt::Display for UpstreamConfigError {
                 "Name '{name}' is invalid: must contain only lowercase letters, digits, hyphens, and underscores"
             ),
             Self::DuplicateName(name) => write!(f, "Duplicate server name: '{name}'"),
+            Self::InvalidUrlScheme(url) => {
+                write!(f, "URL '{url}' must use http:// or https:// scheme")
+            }
             Self::SelfReferentialUrl(url) => {
                 write!(f, "URL '{url}' points to this TUIC instance (circular proxy)")
             }
@@ -141,6 +145,8 @@ pub(crate) fn validate_upstream_config(
             UpstreamTransport::Http { url } => {
                 if url.is_empty() {
                     errors.push(UpstreamConfigError::EmptyUrl(server.id.clone()));
+                } else if !url.starts_with("http://") && !url.starts_with("https://") {
+                    errors.push(UpstreamConfigError::InvalidUrlScheme(url.clone()));
                 } else if is_self_referential(url, self_port) {
                     errors.push(UpstreamConfigError::SelfReferentialUrl(url.clone()));
                 }
@@ -532,6 +538,54 @@ mod tests {
         };
         let errors = validate_upstream_config(&config, 3845);
         assert!(errors.len() >= 3, "Expected at least 3 errors, got: {errors:?}");
+    }
+
+    // -- Validation: invalid URL scheme --
+
+    #[test]
+    fn ftp_scheme_rejected() {
+        let config = UpstreamMcpConfig {
+            servers: vec![http_server("bad", "ftp://remote:8080/mcp")],
+        };
+        let errors = validate_upstream_config(&config, 3845);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], UpstreamConfigError::InvalidUrlScheme(_)));
+    }
+
+    #[test]
+    fn file_scheme_rejected() {
+        let config = UpstreamMcpConfig {
+            servers: vec![http_server("bad", "file:///etc/passwd")],
+        };
+        let errors = validate_upstream_config(&config, 3845);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], UpstreamConfigError::InvalidUrlScheme(_)));
+    }
+
+    #[test]
+    fn javascript_scheme_rejected() {
+        let config = UpstreamMcpConfig {
+            servers: vec![http_server("bad", "javascript:alert(1)")],
+        };
+        let errors = validate_upstream_config(&config, 3845);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], UpstreamConfigError::InvalidUrlScheme(_)));
+    }
+
+    #[test]
+    fn http_scheme_accepted() {
+        let config = UpstreamMcpConfig {
+            servers: vec![http_server("ok", "http://remote:8080/mcp")],
+        };
+        assert!(validate_upstream_config(&config, 3845).is_empty());
+    }
+
+    #[test]
+    fn https_scheme_accepted() {
+        let config = UpstreamMcpConfig {
+            servers: vec![http_server("ok", "https://remote:443/mcp")],
+        };
+        assert!(validate_upstream_config(&config, 3845).is_empty());
     }
 
     // -- is_self_referential edge cases --

@@ -10,6 +10,23 @@
 
 const SERVICE_NAME: &str = "tuicommander-mcp";
 
+/// Validate that an upstream name is safe for use as a keyring key.
+/// Must match `[a-z0-9_-]+` (same rule as upstream config validation).
+fn validate_keyring_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Upstream name must not be empty".to_string());
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+    {
+        return Err(format!(
+            "Upstream name '{name}' is invalid: must contain only lowercase letters, digits, hyphens, and underscores"
+        ));
+    }
+    Ok(())
+}
+
 /// Read a credential for an upstream MCP server.
 /// Returns `None` if no credential is stored (not an error).
 pub(crate) fn read_upstream_credential(upstream_name: &str) -> Result<Option<String>, String> {
@@ -62,11 +79,13 @@ pub(crate) fn save_mcp_upstream_credential(
     name: String,
     token: String,
 ) -> Result<(), String> {
+    validate_keyring_name(&name)?;
     save_upstream_credential(&name, &token)
 }
 
 #[tauri::command]
 pub(crate) fn delete_mcp_upstream_credential(name: String) -> Result<(), String> {
+    validate_keyring_name(&name)?;
     delete_upstream_credential(&name)
 }
 
@@ -121,6 +140,41 @@ mod tests {
         // Verify deleted
         let after_delete = read_upstream_credential(TEST_UPSTREAM).unwrap();
         assert_eq!(after_delete, None);
+    }
+
+    // -- validate_keyring_name --
+
+    #[test]
+    fn valid_keyring_names() {
+        assert!(validate_keyring_name("my-server").is_ok());
+        assert!(validate_keyring_name("server_1").is_ok());
+        assert!(validate_keyring_name("a").is_ok());
+        assert!(validate_keyring_name("abc-def_123").is_ok());
+    }
+
+    #[test]
+    fn empty_keyring_name_rejected() {
+        assert!(validate_keyring_name("").is_err());
+    }
+
+    #[test]
+    fn uppercase_keyring_name_rejected() {
+        assert!(validate_keyring_name("MyServer").is_err());
+    }
+
+    #[test]
+    fn keyring_name_with_spaces_rejected() {
+        assert!(validate_keyring_name("my server").is_err());
+    }
+
+    #[test]
+    fn keyring_name_with_path_separators_rejected() {
+        assert!(validate_keyring_name("../etc/passwd").is_err());
+    }
+
+    #[test]
+    fn keyring_name_with_special_chars_rejected() {
+        assert!(validate_keyring_name("server;drop").is_err());
     }
 
     #[test]
