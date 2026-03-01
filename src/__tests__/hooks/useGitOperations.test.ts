@@ -25,7 +25,7 @@ describe("useGitOperations", () => {
     getInfo: vi.fn(),
     getDiffStats: vi.fn().mockResolvedValue({ additions: 0, deletions: 0 }),
     getWorktreePaths: vi.fn().mockResolvedValue({}),
-    getRepoSummary: vi.fn().mockResolvedValue({ worktree_paths: {}, merged_branches: [], diff_stats: {} }),
+    getRepoSummary: vi.fn().mockResolvedValue({ worktree_paths: {}, merged_branches: [], diff_stats: {}, last_commit_ts: {} }),
     removeWorktree: vi.fn().mockResolvedValue(undefined),
     createWorktree: vi.fn(),
     renameBranch: vi.fn().mockResolvedValue(undefined),

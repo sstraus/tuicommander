@@ -637,6 +637,26 @@ pub(crate) struct RepoSummary {
     merged_branches: Vec<String>,
     /// Per-worktree diff stats, keyed by worktree path (matches keys of worktree_paths values).
     diff_stats: HashMap<String, DiffStats>,
+    /// Unix timestamp of the last commit on each branch, keyed by branch name.
+    last_commit_ts: HashMap<String, Option<i64>>,
+}
+
+/// Get the unix timestamp of the last commit on each branch.
+/// Runs a single `git log -1 --format=%ct` per branch.
+fn get_last_commit_timestamps(
+    repo_path: &Path,
+    branches: &[String],
+) -> HashMap<String, Option<i64>> {
+    let mut result = HashMap::with_capacity(branches.len());
+    for branch in branches {
+        let ts = git_cmd(repo_path)
+            .args(["log", "-1", "--format=%ct", branch])
+            .run()
+            .ok()
+            .and_then(|out| out.stdout.trim().parse::<i64>().ok());
+        result.insert(branch.clone(), ts);
+    }
+    result
 }
 
 /// Core implementation of get_repo_summary, callable from both Tauri command and HTTP route.
@@ -666,25 +686,35 @@ pub(crate) async fn get_repo_summary_impl(state: &AppState, repo_path: String) -
         .map_err(|e| format!("spawn_blocking error: {e}"))?
         .map_err(|e| format!("get_worktree_paths failed: {e}"))?;
 
-    // Run diff stats for all worktree paths concurrently.
+    // Run diff stats and last-commit timestamps concurrently.
     let paths: Vec<String> = worktree_paths.values().cloned().collect();
-    let mut handles = Vec::with_capacity(paths.len());
+    let mut diff_handles = Vec::with_capacity(paths.len());
     for path in paths {
-        handles.push(tokio::task::spawn_blocking(move || {
+        diff_handles.push(tokio::task::spawn_blocking(move || {
             let stats = get_diff_stats(path.clone(), None);
             (path, stats)
         }));
     }
 
+    let branch_names: Vec<String> = worktree_paths.keys().cloned().collect();
+    let ts_repo_path = repo_path.clone();
+    let ts_handle = tokio::task::spawn_blocking(move || {
+        get_last_commit_timestamps(Path::new(&ts_repo_path), &branch_names)
+    });
+
     let mut diff_stats = HashMap::new();
-    for handle in handles {
+    for handle in diff_handles {
         let (path, stats) = handle
             .await
             .map_err(|e| format!("spawn_blocking error: {e}"))?;
         diff_stats.insert(path, stats);
     }
 
-    Ok(RepoSummary { worktree_paths, merged_branches, diff_stats })
+    let last_commit_ts = ts_handle
+        .await
+        .map_err(|e| format!("spawn_blocking error: {e}"))?;
+
+    Ok(RepoSummary { worktree_paths, merged_branches, diff_stats, last_commit_ts })
 }
 
 /// Single IPC replacement for the N+2 calls in refreshAllBranchStats.
@@ -1207,5 +1237,37 @@ mod tests {
         assert_eq!(NULL_DEVICE, "/dev/null");
         #[cfg(windows)]
         assert_eq!(NULL_DEVICE, "NUL");
+    }
+
+    // --- get_last_commit_timestamps tests ---
+
+    #[test]
+    fn get_last_commit_timestamps_returns_timestamp_for_main() {
+        // Uses the current repo (tuicommander) as a real git repo.
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let result = get_last_commit_timestamps(&repo, &["main".to_string()]);
+        assert!(result.contains_key("main"), "should contain 'main' key");
+        let ts = result["main"];
+        assert!(ts.is_some(), "main branch should have a commit timestamp");
+        // Timestamp should be reasonable (after 2024-01-01 = 1704067200)
+        assert!(ts.unwrap() > 1_704_067_200, "timestamp should be after 2024");
+    }
+
+    #[test]
+    fn get_last_commit_timestamps_nonexistent_branch_returns_none() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let result = get_last_commit_timestamps(
+            &repo,
+            &["nonexistent-branch-abc123".to_string()],
+        );
+        assert!(result.contains_key("nonexistent-branch-abc123"));
+        assert!(result["nonexistent-branch-abc123"].is_none());
+    }
+
+    #[test]
+    fn get_last_commit_timestamps_empty_input_returns_empty() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let result = get_last_commit_timestamps(&repo, &[]);
+        assert!(result.is_empty());
     }
 }

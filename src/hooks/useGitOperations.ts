@@ -21,6 +21,7 @@ export interface GitOperationsDeps {
       worktree_paths: Record<string, string>;
       merged_branches: string[];
       diff_stats: Record<string, { additions: number; deletions: number }>;
+      last_commit_ts: Record<string, number | null>;
     }>;
     removeWorktree: (repoPath: string, branchName: string, deleteBranch: boolean) => Promise<void>;
     createWorktree: (baseRepo: string, branchName: string, createBranch?: boolean, baseRef?: string) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;

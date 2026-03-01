@@ -192,12 +192,13 @@ export function useRepository() {
     worktree_paths: Record<string, string>;
     merged_branches: string[];
     diff_stats: Record<string, { additions: number; deletions: number }>;
+    last_commit_ts: Record<string, number | null>;
   }> {
     try {
       return await invoke("get_repo_summary", { repoPath });
     } catch (err) {
       appLogger.warn("git", `Failed to get repo summary for ${repoPath}`, err);
-      return { worktree_paths: {}, merged_branches: [], diff_stats: {} };
+      return { worktree_paths: {}, merged_branches: [], diff_stats: {}, last_commit_ts: {} };
     }
   }
 
