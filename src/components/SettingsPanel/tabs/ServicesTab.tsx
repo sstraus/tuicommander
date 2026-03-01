@@ -53,6 +53,8 @@ const NATIVE_TOOLS: { name: string; description: string; actions: string }[] = [
   { name: "git", description: "Query git repository state", actions: "info, diff, files, branches, github, prs" },
   { name: "agent", description: "Detect and spawn AI agents", actions: "detect, spawn, stats, metrics" },
   { name: "config", description: "Read and write app config", actions: "get, save" },
+  { name: "workspace", description: "Query repos, groups, worktrees", actions: "list, active" },
+  { name: "notify", description: "Show notifications to the user", actions: "toast, confirm" },
   { name: "plugin_dev_guide", description: "Plugin authoring reference", actions: "Returns full plugin authoring guide" },
 ];
 

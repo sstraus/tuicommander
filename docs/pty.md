@@ -123,7 +123,7 @@ All git endpoints take a `?path=` query parameter specifying the repository path
 |--------|------|-------------|
 | GET | `/plugins/docs` | Plugin development guide (AI-optimized reference) |
 
-## Available MCP Tools (5 meta-commands)
+## Available MCP Tools (7 meta-commands)
 
 All tools except `plugin_dev_guide` require an `action` parameter to select the operation.
 
@@ -175,6 +175,23 @@ All actions require `path` (absolute path to git repository).
 |--------|-------------|-----------------|
 | `get` | Returns app config (password hash stripped) | — |
 | `save` | Persists configuration. Partial updates OK | `config` (object) |
+
+### `workspace` — Workspace repositories and groups
+
+| Action | Description | Required params |
+|--------|-------------|-----------------|
+| `list` | Returns all open repos with group membership, branch, dirty status, and worktrees | — |
+| `active` | Returns the currently focused repo path, branch, and group | — |
+
+### `notify` — User notifications
+
+| Action | Description | Required params |
+|--------|-------------|-----------------|
+| `toast` | Shows a temporary notification to the TUIC user | `title` |
+| `confirm` | Shows a blocking confirmation dialog. Returns `{confirmed: bool}`. Localhost only | `title` |
+
+**Optional params for `toast`:** `message`, `level` (info, warn, error; default: info)
+**Optional params for `confirm`:** `message`
 
 ### `plugin_dev_guide` — Plugin authoring reference
 

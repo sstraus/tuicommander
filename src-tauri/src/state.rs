@@ -57,6 +57,13 @@ pub enum AppEvent {
         name: String,
         status: String,
     },
+    /// Toast notification from MCP tool
+    #[serde(rename = "mcp-toast")]
+    McpToast {
+        title: String,
+        message: Option<String>,
+        level: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -817,7 +824,8 @@ impl AppState {
             AppEvent::HeadChanged { .. }
             | AppEvent::RepoChanged { .. }
             | AppEvent::PluginChanged { .. }
-            | AppEvent::UpstreamStatusChanged { .. } => {}
+            | AppEvent::UpstreamStatusChanged { .. }
+            | AppEvent::McpToast { .. } => {}
         }
     }
 

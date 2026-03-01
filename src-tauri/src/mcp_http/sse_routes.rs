@@ -92,6 +92,7 @@ fn event_type_name(event: &AppEvent) -> &'static str {
         AppEvent::PtyExit { .. } => "pty-exit",
         AppEvent::PluginChanged { .. } => "plugin-changed",
         AppEvent::UpstreamStatusChanged { .. } => "upstream-status-changed",
+        AppEvent::McpToast { .. } => "mcp-toast",
     }
 }
 
@@ -122,6 +123,9 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         }
         AppEvent::UpstreamStatusChanged { name, status } => {
             serde_json::json!({ "name": name, "status": status })
+        }
+        AppEvent::McpToast { title, message, level } => {
+            serde_json::json!({ "title": title, "message": message, "level": level })
         }
     }
 }

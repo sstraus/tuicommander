@@ -924,7 +924,7 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 ### 19.1 Architecture
 - TUIC acts as both an MCP server (to downstream clients) and an MCP client (to upstream servers)
 - All upstream tools are exposed via the single `POST /mcp` Streamable HTTP endpoint
-- Native TUIC tools (`session`, `git`, `agent`, `config`, `plugin_dev_guide`) coexist with upstream tools
+- Native TUIC tools (`session`, `git`, `agent`, `config`, `workspace`, `notify`, `plugin_dev_guide`) coexist with upstream tools
 - Tool routing: names containing `__` are routed to the upstream registry; all others handled natively
 
 ### 19.2 Tool Namespace

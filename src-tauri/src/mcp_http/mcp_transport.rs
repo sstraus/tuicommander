@@ -39,6 +39,8 @@ fn build_mcp_instructions(state: &Arc<AppState>) -> String {
     out.push_str("| `git` | info, diff, files, branches, github, prs |\n");
     out.push_str("| `agent` | detect, spawn, stats, metrics |\n");
     out.push_str("| `config` | get, save |\n");
+    out.push_str("| `workspace` | list, active |\n");
+    out.push_str("| `notify` | toast, confirm |\n");
     out.push_str("| `plugin_dev_guide` | *(no action — returns plugin authoring reference)* |\n\n");
 
     out.push_str("**Workflow:** Call `session action=list` first to discover active sessions. ");
@@ -102,6 +104,8 @@ const SESSION_ACTIONS: &str = "list, create, input, output, resize, close, pause
 const GIT_ACTIONS: &str = "info, diff, files, branches, github, prs";
 const AGENT_ACTIONS: &str = "detect, spawn, stats, metrics";
 const CONFIG_ACTIONS: &str = "get, save";
+const WORKSPACE_ACTIONS: &str = "list, active";
+const NOTIFY_ACTIONS: &str = "toast, confirm";
 
 /// MCP tool definitions — 5 meta-commands mirroring tui_mcp_bridge
 fn native_tool_definitions() -> serde_json::Value {
@@ -154,6 +158,23 @@ fn native_tool_definitions() -> serde_json::Value {
                 "action": { "type": "string", "description": "One of: get, save" },
                 "config": { "type": "object", "description": "Config fields to save (action=save)" }
             }, "required": ["action"] }
+        },
+        {
+            "name": "workspace",
+            "description": "Query the workspace: open repositories, groups, worktrees, and active focus.\n\nActions (pass as 'action' parameter):\n- list: Returns all open repos with group membership, branch, dirty status, and worktrees.\n- active: Returns the currently focused repo path, branch, and group.",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: list, active" }
+            }, "required": ["action"] }
+        },
+        {
+            "name": "notify",
+            "description": "Show notifications to the TUIC user.\n\nActions (pass as 'action' parameter):\n- toast: Shows a temporary notification. Requires title. Optional: message, level (info/warn/error).\n- confirm: Shows a blocking confirmation dialog. Requires title. Optional: message. Returns {confirmed: boolean}. Restricted to localhost.",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: toast, confirm" },
+                "title": { "type": "string", "description": "Notification title (required)" },
+                "message": { "type": "string", "description": "Optional body text" },
+                "level": { "type": "string", "description": "Toast level: info, warn, error (default: info)" }
+            }, "required": ["action", "title"] }
         },
         {
             "name": "plugin_dev_guide",
@@ -260,11 +281,13 @@ fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, arg
         "git" => handle_git(state, args),
         "agent" => handle_agent(state, addr, args),
         "config" => handle_config(state, addr, args),
+        "workspace" => handle_workspace(state, args),
+        "notify" => handle_notify(state, addr, args),
         "plugin_dev_guide" => {
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
         }
         _ => serde_json::json!({"error": format!(
-            "Unknown tool '{}'. Available: session, git, agent, config, plugin_dev_guide", name
+            "Unknown tool '{}'. Available: session, git, agent, config, workspace, notify, plugin_dev_guide", name
         )}),
     }
 }
@@ -691,6 +714,166 @@ fn handle_config(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'config'. Available: {}", other, CONFIG_ACTIONS
+        )}),
+    }
+}
+
+fn handle_workspace(_state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "workspace", WORKSPACE_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "list" => {
+            let repo_data = crate::config::load_repositories();
+            let repos = repo_data.get("repos").cloned().unwrap_or(serde_json::json!({}));
+            let repo_order = repo_data.get("repoOrder")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let groups = repo_data.get("groups").cloned().unwrap_or(serde_json::json!({}));
+
+            // Build group membership lookup: repo_path → group name
+            let mut repo_group: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            if let Some(groups_obj) = groups.as_object() {
+                for (_gid, group) in groups_obj {
+                    let group_name = group["name"].as_str().unwrap_or("").to_string();
+                    if let Some(order) = group["repoOrder"].as_array() {
+                        for path_val in order {
+                            if let Some(path) = path_val.as_str() {
+                                repo_group.insert(path.to_string(), group_name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+
+            let mut results: Vec<serde_json::Value> = Vec::new();
+            for path_val in &repo_order {
+                let path = match path_val.as_str() {
+                    Some(p) => p,
+                    None => continue,
+                };
+                let repo_entry = repos.get(path);
+                let display_name = repo_entry
+                    .and_then(|r| r["displayName"].as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let info = crate::git::get_repo_info_impl(path);
+                let worktrees = crate::worktree::get_worktree_paths(path.to_string())
+                    .unwrap_or_default();
+
+                let mut entry = serde_json::json!({
+                    "path": path,
+                    "name": if display_name.is_empty() { &info.name } else { &display_name },
+                    "branch": info.branch,
+                    "status": info.status,
+                    "is_git_repo": info.is_git_repo,
+                });
+                if let Some(group_name) = repo_group.get(path) {
+                    entry["group"] = serde_json::json!(group_name);
+                }
+                if !worktrees.is_empty() {
+                    entry["worktrees"] = to_json_or_error(&worktrees);
+                }
+                results.push(entry);
+            }
+            serde_json::json!(results)
+        }
+        "active" => {
+            let repo_data = crate::config::load_repositories();
+            let active_path = match repo_data.get("activeRepoPath").and_then(|v| v.as_str()) {
+                Some(p) => p.to_string(),
+                None => return serde_json::json!({"active": null}),
+            };
+
+            let info = crate::git::get_repo_info_impl(&active_path);
+
+            // Find group membership
+            let groups = repo_data.get("groups").cloned().unwrap_or(serde_json::json!({}));
+            let mut group_name: Option<String> = None;
+            if let Some(groups_obj) = groups.as_object() {
+                for (_gid, group) in groups_obj {
+                    if let Some(order) = group["repoOrder"].as_array() {
+                        if order.iter().any(|p| p.as_str() == Some(&active_path)) {
+                            group_name = group["name"].as_str().map(|s| s.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+
+            let mut result = serde_json::json!({
+                "path": active_path,
+                "name": info.name,
+                "branch": info.branch,
+                "status": info.status,
+            });
+            if let Some(gn) = group_name {
+                result["group"] = serde_json::json!(gn);
+            }
+            result
+        }
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'workspace'. Available: {}", other, WORKSPACE_ACTIONS
+        )}),
+    }
+}
+
+fn handle_notify(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "notify", NOTIFY_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "toast" => {
+            let title = match args["title"].as_str() {
+                Some(t) => t.to_string(),
+                None => return serde_json::json!({"error": "Action 'toast' requires 'title'"}),
+            };
+            let message = args["message"].as_str().map(|s| s.to_string());
+            let level = args["level"].as_str().unwrap_or("info");
+            let level = match level {
+                "info" | "warn" | "error" => level.to_string(),
+                other => return serde_json::json!({"error": format!(
+                    "Invalid level '{}'. Must be: info, warn, error", other
+                )}),
+            };
+            let _ = state.event_bus.send(crate::state::AppEvent::McpToast {
+                title,
+                message,
+                level,
+            });
+            serde_json::json!({"ok": true})
+        }
+        "confirm" => {
+            if !addr.ip().is_loopback() {
+                return serde_json::json!({"error": "Action 'confirm' is restricted to localhost connections"});
+            }
+            let title = match args["title"].as_str() {
+                Some(t) => t.to_string(),
+                None => return serde_json::json!({"error": "Action 'confirm' requires 'title'"}),
+            };
+            let message = args["message"].as_str().unwrap_or("").to_string();
+
+            let app_handle = state.app_handle.read();
+            let handle = match app_handle.as_ref() {
+                Some(h) => h,
+                None => return serde_json::json!({"error": "App handle not available (headless mode)"}),
+            };
+
+            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+            let confirmed = handle.dialog()
+                .message(&message)
+                .title(&title)
+                .buttons(MessageDialogButtons::OkCancel)
+                .blocking_show();
+
+            serde_json::json!({"confirmed": confirmed})
+        }
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'notify'. Available: {}", other, NOTIFY_ACTIONS
         )}),
     }
 }
