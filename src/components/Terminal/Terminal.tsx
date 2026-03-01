@@ -337,7 +337,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
           case "status-line": {
             // Agent is working again — clear any question state
-            appLogger.debug("terminal", `[ParsedEvent] ${props.id} status-line task="${parsed.task_name}" → clearAwaitingInput`);
             terminalsStore.clearAwaitingInput(props.id);
             // Store current task for Activity Dashboard (not tab title — too noisy)
             terminalsStore.update(props.id, { currentTask: parsed.task_name });
