@@ -335,6 +335,36 @@ const simulator = {
     console.log("[tuic] Ticker message cleared");
   },
 
+  /** Inject remote-only PRs (branches that exist on GitHub but not locally) */
+  remote(options?: { count?: number; branches?: Array<{ branch: string; state?: string; number?: number }> }): void {
+    suppressPolling();
+    const { repoPath } = ensureRepo();
+    const branches: Array<{ branch: string; state?: string; number?: number }> = options?.branches ?? Array.from({ length: options?.count ?? 2 }, (_, i) => ({
+      branch: `remote/feature-${i + 1}`,
+      number: 200 + i,
+    }));
+
+    const prStatuses: import("../types").BranchPrStatus[] = branches.map((b) =>
+      buildPrStatus(b.branch, {
+        number: b.number ?? 200,
+        state: b.state ?? "OPEN",
+      }),
+    );
+
+    // Get existing PR data and merge with new remote-only PRs
+    const active = repositoriesStore.getActive();
+    const existingPrs: import("../types").BranchPrStatus[] = [];
+    if (active) {
+      for (const branchName of Object.keys(active.branches)) {
+        const pr = githubStore.getPrStatus(repoPath, branchName);
+        if (pr) existingPrs.push(pr);
+      }
+    }
+
+    githubStore.updateRepoData(repoPath, [...existingPrs, ...prStatuses]);
+    console.log(`[tuic] Injected ${prStatuses.length} remote-only PRs for ${repoPath}: ${prStatuses.map((p) => p.branch).join(", ")}`);
+  },
+
   /** Simulate ahead/behind counts on the active branch (shown in toolbar) */
   aheadBehind(options?: { ahead?: number; behind?: number }): void {
     suppressPolling();
@@ -460,6 +490,12 @@ const simulator = {
   __tuic.ticker({ clickable: true })           Clickable (logs on click)
   __tuic.ticker({ ttlMs: 10000 })              Custom TTL (10s)
   __tuic.tickerClear()                         Remove ticker message
+
+── Remote-only PRs (sidebar badge) ─────────────────────────
+  __tuic.remote()                              Default: 2 remote-only PRs
+  __tuic.remote({ count: 5 })                  Inject 5 remote-only PRs
+  __tuic.remote({ branches: [{ branch: 'feat/api', number: 99 }] })  Custom branches
+  __tuic.remote({ branches: [{ branch: 'fix/bug', state: 'OPEN', number: 101 }] })
 
 ── Ahead/Behind (toolbar branch) ────────────────────────────
   __tuic.aheadBehind()                         Default: ↑12 ↓3

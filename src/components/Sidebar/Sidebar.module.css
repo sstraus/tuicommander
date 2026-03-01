@@ -8,6 +8,7 @@
   width: var(--sidebar-width);
   min-width: 200px;
   max-width: 500px;
+  flex-shrink: 0;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
@@ -34,7 +35,7 @@
 
 .content {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: overlay;
   padding: 4px 0;
 }
 
@@ -361,6 +362,7 @@
   margin: 1px 0;
   transition: background 0.1s;
   position: relative;
+  min-height: 30px;
 }
 
 .branchItem:hover {
