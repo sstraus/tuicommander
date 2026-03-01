@@ -156,6 +156,97 @@ describe("WorktreeManager", () => {
     expect(container.querySelector("[class*='repo']")?.textContent).toBe("my-project");
   });
 
+  describe("repo filter pills", () => {
+    it("shows repo pill buttons including All", () => {
+      repositoriesStore.add({ path: "/repo-a", displayName: "Alpha" });
+      repositoriesStore.setBranch("/repo-a", "main", { worktreePath: "/repo-a" });
+      repositoriesStore.add({ path: "/repo-b", displayName: "Beta" });
+      repositoriesStore.setBranch("/repo-b", "dev", { worktreePath: "/repo-b" });
+
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager />);
+
+      const pills = container.querySelectorAll("[class*='filterPill']");
+      // "All" + "Alpha" + "Beta"
+      expect(pills.length).toBe(3);
+      expect(pills[0].textContent).toBe("All");
+    });
+
+    it("filters rows by selected repo", () => {
+      repositoriesStore.add({ path: "/repo-a", displayName: "Alpha" });
+      repositoriesStore.setBranch("/repo-a", "main", { worktreePath: "/repo-a" });
+      repositoriesStore.add({ path: "/repo-b", displayName: "Beta" });
+      repositoriesStore.setBranch("/repo-b", "dev", { worktreePath: "/repo-b" });
+
+      worktreeManagerStore.open();
+      worktreeManagerStore.setRepoFilter("/repo-a");
+      const { container } = render(() => <WorktreeManager />);
+
+      const rows = container.querySelectorAll("[class*='row']");
+      expect(rows.length).toBe(1);
+      expect(rows[0].querySelector("[class*='branch']")?.textContent).toBe("main");
+    });
+
+    it("shows all repos when filter is null (All)", () => {
+      repositoriesStore.add({ path: "/repo-a", displayName: "Alpha" });
+      repositoriesStore.setBranch("/repo-a", "main", { worktreePath: "/repo-a" });
+      repositoriesStore.add({ path: "/repo-b", displayName: "Beta" });
+      repositoriesStore.setBranch("/repo-b", "dev", { worktreePath: "/repo-b" });
+
+      worktreeManagerStore.open();
+      // repoFilter is null by default
+      const { container } = render(() => <WorktreeManager />);
+
+      const rows = container.querySelectorAll("[class*='row']");
+      expect(rows.length).toBe(2);
+    });
+  });
+
+  describe("text search filter", () => {
+    it("filters rows by branch name substring (case-insensitive)", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature-auth", { worktreePath: "/repo/.wt/auth" });
+      repositoriesStore.setBranch("/repo", "feature-billing", { worktreePath: "/repo/.wt/billing" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+      worktreeManagerStore.open();
+      worktreeManagerStore.setTextFilter("AUTH");
+      const { container } = render(() => <WorktreeManager />);
+
+      const rows = container.querySelectorAll("[class*='row']");
+      expect(rows.length).toBe(1);
+      expect(rows[0].querySelector("[class*='branch']")?.textContent).toBe("feature-auth");
+    });
+
+    it("shows search input", () => {
+      worktreeManagerStore.open();
+      const { container } = render(() => <WorktreeManager />);
+
+      const searchInput = container.querySelector("[class*='searchInput']");
+      expect(searchInput).not.toBeNull();
+    });
+  });
+
+  describe("composing filters", () => {
+    it("applies repo filter AND text filter together", () => {
+      repositoriesStore.add({ path: "/repo-a", displayName: "Alpha" });
+      repositoriesStore.setBranch("/repo-a", "feature-auth", { worktreePath: "/repo-a/.wt/auth" });
+      repositoriesStore.setBranch("/repo-a", "feature-billing", { worktreePath: "/repo-a/.wt/billing" });
+      repositoriesStore.add({ path: "/repo-b", displayName: "Beta" });
+      repositoriesStore.setBranch("/repo-b", "feature-auth", { worktreePath: "/repo-b/.wt/auth" });
+
+      worktreeManagerStore.open();
+      worktreeManagerStore.setRepoFilter("/repo-a");
+      worktreeManagerStore.setTextFilter("auth");
+      const { container } = render(() => <WorktreeManager />);
+
+      const rows = container.querySelectorAll("[class*='row']");
+      expect(rows.length).toBe(1);
+      expect(rows[0].querySelector("[class*='branch']")?.textContent).toBe("feature-auth");
+      expect(rows[0].querySelector("[class*='repo']")?.textContent).toBe("Alpha");
+    });
+  });
+
   describe("orphan worktrees", () => {
     it("calls detect_orphan_worktrees for each repo when panel opens", async () => {
       repositoriesStore.add({ path: "/repo-a", displayName: "A" });

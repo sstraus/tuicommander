@@ -100,7 +100,8 @@ export const WorktreeManager: Component = () => {
     }
   }
 
-  const worktrees = createMemo<WorktreeRow[]>(() => {
+  // All worktrees (unfiltered)
+  const allWorktrees = createMemo<WorktreeRow[]>(() => {
     if (!isOpen()) return [];
     const repos = repositoriesStore.getOrderedRepos();
     const rows: WorktreeRow[] = [];
@@ -124,12 +125,36 @@ export const WorktreeManager: Component = () => {
       }
     }
 
-    // Sort: non-main first (actionable), then main; alphabetical within each group
     rows.sort((a, b) => {
       if (a.isMain !== b.isMain) return a.isMain ? 1 : -1;
       return a.branch.localeCompare(b.branch);
     });
 
+    return rows;
+  });
+
+  // Unique repos for filter pills
+  const repoOptions = createMemo(() => {
+    const seen = new Map<string, string>();
+    for (const wt of allWorktrees()) {
+      if (!seen.has(wt.repoPath)) {
+        seen.set(wt.repoPath, wt.repoName);
+      }
+    }
+    return Array.from(seen.entries()).map(([path, name]) => ({ path, name }));
+  });
+
+  // Filtered worktrees (repo + text)
+  const worktrees = createMemo(() => {
+    let rows = allWorktrees();
+    const repoFilter = worktreeManagerStore.state.repoFilter;
+    if (repoFilter) {
+      rows = rows.filter((r) => r.repoPath === repoFilter);
+    }
+    const textFilter = worktreeManagerStore.state.textFilter.toLowerCase();
+    if (textFilter) {
+      rows = rows.filter((r) => r.branch.toLowerCase().includes(textFilter));
+    }
     return rows;
   });
 
@@ -144,8 +169,38 @@ export const WorktreeManager: Component = () => {
             </button>
           </div>
 
+          <div class={s.toolbar}>
+            <Show when={repoOptions().length > 1}>
+              <div class={s.pillsRow}>
+                <button
+                  class={`${s.filterPill} ${!worktreeManagerStore.state.repoFilter ? s.filterPillActive : ""}`}
+                  onClick={() => worktreeManagerStore.setRepoFilter(null)}
+                >
+                  All
+                </button>
+                <For each={repoOptions()}>
+                  {(repo) => (
+                    <button
+                      class={`${s.filterPill} ${worktreeManagerStore.state.repoFilter === repo.path ? s.filterPillActive : ""}`}
+                      onClick={() => worktreeManagerStore.setRepoFilter(repo.path)}
+                    >
+                      {repo.name}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <input
+              class={s.searchInput}
+              type="text"
+              placeholder="Filter branches…"
+              value={worktreeManagerStore.state.textFilter}
+              onInput={(e) => worktreeManagerStore.setTextFilter(e.currentTarget.value)}
+            />
+          </div>
+
           <div class={s.list}>
-            <Show when={worktrees().length === 0}>
+            <Show when={worktrees().length === 0 && orphanRows().length === 0}>
               <div class={s.empty}>No worktrees found. Create one from the sidebar.</div>
             </Show>
 

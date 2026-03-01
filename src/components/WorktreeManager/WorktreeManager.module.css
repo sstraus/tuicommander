@@ -51,6 +51,62 @@
   color: var(--fg-primary);
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pillsRow {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.filterPill {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  background: var(--bg-tertiary);
+  border: 1px solid transparent;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.filterPill:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.filterPillActive {
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+  border-color: var(--border);
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-sm);
+  color: var(--fg-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  outline: none;
+}
+
+.searchInput:focus {
+  border-color: var(--accent);
+}
+
+.searchInput::placeholder {
+  color: var(--fg-muted);
+}
+
 .list {
   flex: 1;
   overflow-y: auto;
