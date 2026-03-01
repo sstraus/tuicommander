@@ -146,6 +146,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let activityFlagged = false; // Avoids redundant store updates per data chunk
   let busyFlagged = false;
 
+  // Resize grace period: PTY resize causes the shell to redraw the prompt,
+  // which looks like output activity. Track when we last resized so
+  // handlePtyData can suppress spurious busy→idle transitions.
+  let lastResizeAt = 0;
+  const RESIZE_GRACE_MS = 500;
+
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
 
   /** Fit terminal to container, guarded against undersized containers.
@@ -226,8 +232,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
 
     // Shell idle detection: mark busy on output, start 500ms idle timer.
-    // Always reconcile: if the store drifted (e.g. was reset externally), re-assert busy.
+    // Suppress spurious busy→idle cycles from resize redraws: when the shell
+    // was already idle and we just resized, the PTY redraws the prompt which
+    // generates output. Without this guard the tab indicator pulses blue again.
     const storeState = terminalsStore.get(props.id)?.shellState;
+    const isResizeRedraw = storeState === "idle" && (now - lastResizeAt) < RESIZE_GRACE_MS;
+    if (isResizeRedraw) {
+      // Still update lastOutputTime so a genuine command typed right after
+      // resize is detected, but don't flip shellState to busy.
+      lastOutputTime = now;
+      return;
+    }
+
+    // Always reconcile: if the store drifted (e.g. was reset externally), re-assert busy.
     if (!busyFlagged || storeState !== "busy") {
       busyFlagged = true;
       if (storeState !== "busy") {
@@ -458,6 +475,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       if (sessionId) {
         // Already have a session (eagerly attached above) — just resize to current dimensions
         try {
+          lastResizeAt = Date.now();
           await pty.resize(sessionId, terminal.rows, terminal.cols);
           reconnected = true;
           appLogger.info("terminal", `initSession(${props.id}) — reconnected to ${sessionId}`);
@@ -829,6 +847,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           // the authoritative dimensions ourselves.
           clearTimeout(resizeTimer);
           if (sessionId && terminal && terminal.rows > 0 && terminal.cols > 0) {
+            lastResizeAt = Date.now();
             pty.resize(sessionId, terminal.rows, terminal.cols).catch((err) => {
               appLogger.error("terminal", "ResizeObserver resize failed", err);
             });
@@ -858,6 +877,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         resizeTimer = setTimeout(async () => {
           if (sessionId) {
             try {
+              lastResizeAt = Date.now();
               await pty.resize(sessionId, rows, cols);
             } catch (err) {
               appLogger.error("terminal", "Failed to resize PTY", err);
@@ -915,6 +935,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // may not fire (debounced 150ms + xterm may already report the fitted dimensions).
         // Force a resize to ensure PTY is in sync with the newly-fitted container.
         if (sessionId && terminal && terminal.rows > 0 && terminal.cols > 0) {
+          lastResizeAt = Date.now();
           pty.resize(sessionId, terminal.rows, terminal.cols).catch(() => {
             // Silently ignore resize errors (PTY may have exited)
           });
