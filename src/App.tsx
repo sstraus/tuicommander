@@ -34,6 +34,7 @@ import { ErrorLogPanel } from "./components/ErrorLogPanel";
 import { DictationToast } from "./components/DictationToast/DictationToast";
 import { commandPaletteStore } from "./stores/commandPalette";
 import { activityDashboardStore } from "./stores/activityDashboard";
+import { worktreeManagerStore } from "./stores/worktreeManager";
 import { errorLogStore } from "./stores/errorLog";
 import { appLogger } from "./stores/appLogger";
 import { getActionEntries } from "./actions/actionRegistry";
@@ -747,6 +748,7 @@ const App: Component = () => {
     },
     toggleCommandPalette: () => commandPaletteStore.toggle(),
     toggleActivityDashboard: () => activityDashboardStore.toggle(),
+    toggleWorktreeManager: () => worktreeManagerStore.toggle(),
     toggleErrorLog: () => errorLogStore.toggle(),
   };
 

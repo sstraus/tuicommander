@@ -59,6 +59,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
 
   "command-palette": { label: "Command palette", category: "Navigation" },
   "activity-dashboard": { label: "Activity dashboard", category: "Navigation" },
+  "worktree-manager": { label: "Worktree manager", category: "Git" },
   "toggle-error-log": { label: "Error log", category: "Navigation" },
 };
 
@@ -103,6 +104,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "toggle-sidebar": handlers.toggleSidebar,
     "command-palette": handlers.toggleCommandPalette,
     "activity-dashboard": handlers.toggleActivityDashboard,
+    "worktree-manager": handlers.toggleWorktreeManager,
     "toggle-error-log": handlers.toggleErrorLog,
   };
 
