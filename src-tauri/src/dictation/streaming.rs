@@ -88,7 +88,13 @@ impl StreamingSession {
     pub fn stop(mut self) -> Vec<f32> {
         self.stop.store(true, Ordering::Release);
         if let Some(handle) = self.handle.take() {
-            handle.join().unwrap_or_default()
+            match handle.join() {
+                Ok(audio) => audio,
+                Err(e) => {
+                    eprintln!("[dictation] streaming thread panicked: {e:?}");
+                    Vec::new()
+                }
+            }
         } else {
             Vec::new()
         }
