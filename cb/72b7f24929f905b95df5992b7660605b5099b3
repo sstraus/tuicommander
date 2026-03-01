@@ -1,0 +1,25 @@
+docs/user-guide/mcp-proxy.md
+  b90003bea2fc81ca 1-180
+docs/backend/mcp-proxy.md
+  b90003bea2fc81ca 1-274
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "cb72b7f24929f905b95df5992b7660605b5099b3",
+  "prompts": {
+    "b90003bea2fc81ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e65d89a4-0976-4295-9eb6-be7e2893c71b",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 573,
+      "overriden_lines": 0
+    }
+  }
+}
