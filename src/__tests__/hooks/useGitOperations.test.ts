@@ -1506,4 +1506,137 @@ describe("useGitOperations", () => {
       vi.useRealTimers();
     });
   });
+
+  describe("handleTerminalCwdChange (OSC 7)", () => {
+    const addTerminal = (opts: { sessionId: string | null; cwd: string; name?: string }) => {
+      return terminalsStore.add({
+        sessionId: opts.sessionId,
+        fontSize: 14,
+        name: opts.name ?? "T",
+        cwd: opts.cwd,
+        awaitingInput: null,
+      });
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      // Set up repo with main branch and a worktree branch
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "feature-x", { worktreePath: "/repo/.worktrees/feature-x" });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("reassigns terminal from main to worktree branch on cwd change", async () => {
+      const id = addTerminal({ sessionId: "s1", cwd: "/repo" });
+      repositoriesStore.addTerminalToBranch("/repo", "main", id);
+      terminalsStore.setActive(id);
+
+      gitOps.handleTerminalCwdChange(id, "/repo/.worktrees/feature-x");
+      await vi.advanceTimersByTimeAsync(300);
+
+      const main = repositoriesStore.get("/repo")?.branches["main"];
+      const feature = repositoriesStore.get("/repo")?.branches["feature-x"];
+      expect(main?.terminals).not.toContain(id);
+      expect(feature?.terminals).toContain(id);
+    });
+
+    it("does nothing when cwd maps to the same branch", async () => {
+      const id = addTerminal({ sessionId: "s2", cwd: "/repo" });
+      repositoriesStore.addTerminalToBranch("/repo", "main", id);
+
+      gitOps.handleTerminalCwdChange(id, "/repo/src/deep/folder");
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Still on main — /repo/src is a subdirectory of /repo (main's worktreePath)
+      const main = repositoriesStore.get("/repo")?.branches["main"];
+      expect(main?.terminals).toContain(id);
+    });
+
+    it("longest prefix wins when worktrees nest", async () => {
+      const id = addTerminal({ sessionId: "s3", cwd: "/repo" });
+      repositoriesStore.addTerminalToBranch("/repo", "main", id);
+      terminalsStore.setActive(id);
+
+      // cwd inside the feature-x worktree subdirectory
+      gitOps.handleTerminalCwdChange(id, "/repo/.worktrees/feature-x/src/components");
+      await vi.advanceTimersByTimeAsync(300);
+
+      const feature = repositoriesStore.get("/repo")?.branches["feature-x"];
+      expect(feature?.terminals).toContain(id);
+    });
+
+    it("does not match repo-old when cwd is /repo (boundary check)", async () => {
+      // Add a second repo whose path is a string-prefix of "/repo" but not a path-prefix
+      repositoriesStore.add({ path: "/repo-old", displayName: "RepoOld" });
+      repositoriesStore.setBranch("/repo-old", "main", { worktreePath: "/repo-old" });
+      const id = addTerminal({ sessionId: "s4", cwd: "/repo-old" });
+      repositoriesStore.addTerminalToBranch("/repo-old", "main", id);
+
+      // cwd "/repo" should NOT match "/repo-old" (the "/" boundary guard prevents it)
+      gitOps.handleTerminalCwdChange(id, "/repo");
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Terminal should have moved away from /repo-old
+      const repoOldMain = repositoriesStore.get("/repo-old")?.branches["main"];
+      expect(repoOldMain?.terminals).not.toContain(id);
+    });
+
+    it("does nothing for cwd outside all known repos", async () => {
+      const id = addTerminal({ sessionId: "s5", cwd: "/repo" });
+      repositoriesStore.addTerminalToBranch("/repo", "main", id);
+
+      gitOps.handleTerminalCwdChange(id, "/tmp/random/path");
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Should still be on main — no reassignment
+      const main = repositoriesStore.get("/repo")?.branches["main"];
+      expect(main?.terminals).toContain(id);
+    });
+
+    it("debounces rapid cwd changes — only the last one takes effect", async () => {
+      const id = addTerminal({ sessionId: "s6", cwd: "/repo" });
+      repositoriesStore.addTerminalToBranch("/repo", "main", id);
+      terminalsStore.setActive(id);
+
+      // Rapid fire: main → feature-x → main
+      gitOps.handleTerminalCwdChange(id, "/repo/.worktrees/feature-x");
+      gitOps.handleTerminalCwdChange(id, "/repo");
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Should end up on main (last cwd wins)
+      const main = repositoriesStore.get("/repo")?.branches["main"];
+      expect(main?.terminals).toContain(id);
+    });
+
+    it("does not crash when terminal was closed during debounce window", async () => {
+      const id = addTerminal({ sessionId: "s7", cwd: "/repo" });
+      repositoriesStore.addTerminalToBranch("/repo", "main", id);
+
+      gitOps.handleTerminalCwdChange(id, "/repo/.worktrees/feature-x");
+      // Close terminal before debounce fires
+      repositoriesStore.removeTerminalFromBranch("/repo", "main", id);
+      terminalsStore.remove(id);
+
+      // Should not throw
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    it("cancelCwdTracking cancels pending debounce timer", async () => {
+      const id = addTerminal({ sessionId: "s8", cwd: "/repo" });
+      repositoriesStore.addTerminalToBranch("/repo", "main", id);
+      terminalsStore.setActive(id);
+
+      gitOps.handleTerminalCwdChange(id, "/repo/.worktrees/feature-x");
+      gitOps.cancelCwdTracking(id);
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Timer was cancelled — terminal should still be on main
+      const main = repositoriesStore.get("/repo")?.branches["main"];
+      expect(main?.terminals).toContain(id);
+    });
+  });
 });

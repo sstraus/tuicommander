@@ -47,4 +47,9 @@ describe("parseOsc7Url", () => {
   it("preserves root path", () => {
     expect(parseOsc7Url("file:///")).toBe("/");
   });
+
+  it("returns null for malformed percent-encoding", () => {
+    expect(parseOsc7Url("file:///path/%GG")).toBeNull();
+    expect(parseOsc7Url("file:///path/%2")).toBeNull();
+  });
 });

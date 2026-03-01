@@ -1044,6 +1044,13 @@ pub(crate) fn update_session_cwd(
     session_id: String,
     cwd: String,
 ) -> Result<(), String> {
+    let path = std::path::Path::new(&cwd);
+    if !path.is_absolute() {
+        return Err("cwd must be an absolute path".into());
+    }
+    if cwd.contains('\0') {
+        return Err("cwd must not contain null bytes".into());
+    }
     let entry = state
         .sessions
         .get(&session_id)

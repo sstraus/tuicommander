@@ -803,10 +803,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
     terminal.parser.registerOscHandler(7, (data: string) => {
       const cwd = parseOsc7Url(data);
       if (!cwd) return true;
-      const sessionId = terminalsStore.get(props.id)?.sessionId;
       terminalsStore.update(props.id, { cwd });
       if (sessionId) {
-        invoke("update_session_cwd", { sessionId, cwd });
+        invoke("update_session_cwd", { sessionId, cwd }).catch((err) =>
+          appLogger.warn("terminal", "Failed to persist cwd to Rust session", err),
+        );
       }
       props.onCwdChange?.(props.id, cwd);
       return true;

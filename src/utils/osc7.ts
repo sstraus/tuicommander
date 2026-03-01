@@ -13,10 +13,15 @@ export function parseOsc7Url(data: string): string | null {
   if (url.protocol !== "file:") return null;
 
   const raw = url.pathname;
-  if (!raw || raw === "") return null;
+  if (!raw) return null;
 
   // Decode percent-encoding (e.g. %20 → space, %23 → #)
-  const decoded = decodeURIComponent(raw);
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
 
   // Strip trailing slash unless it's the root path
   const path =

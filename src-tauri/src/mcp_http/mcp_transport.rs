@@ -119,7 +119,7 @@ fn native_tool_definitions() -> serde_json::Value {
                 "shell": { "type": "string", "description": "Shell binary path (action=create)" },
                 "cwd": { "type": "string", "description": "Working directory (action=create)" },
                 "limit": { "type": "integer", "description": "Bytes to read, default 8192 (action=output)" },
-                "format": { "type": "string", "description": "Output format: 'text' strips ANSI escape codes (default), 'raw' preserves them (action=output)" }
+                "format": { "type": "string", "description": "Output format: ANSI escape codes are stripped by default; pass 'raw' to preserve them (action=output)" }
             }, "required": ["action"] }
         },
         {
