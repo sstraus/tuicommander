@@ -287,6 +287,12 @@ impl UpstreamRegistry {
         match result {
             Ok(v) => {
                 entry.cb.record_success();
+                // Recover from CircuitOpen → Ready on success
+                let prev = entry.status.read().clone();
+                if prev == UpstreamStatus::CircuitOpen {
+                    *entry.status.write() = UpstreamStatus::Ready;
+                    self.emit_status_change(upstream_name, "ready");
+                }
                 Ok(v)
             }
             Err(e) => {
@@ -295,10 +301,12 @@ impl UpstreamRegistry {
                 if exhausted {
                     *entry.status.write() = UpstreamStatus::Failed;
                     self.emit_status_change(upstream_name, "failed");
-                } else if *entry.status.read() == UpstreamStatus::Ready {
-                    // Only open the circuit if we were previously Ready
-                    *entry.status.write() = UpstreamStatus::CircuitOpen;
-                    self.emit_status_change(upstream_name, "circuit_open");
+                } else if entry.cb.is_open() {
+                    let prev = entry.status.read().clone();
+                    if prev != UpstreamStatus::CircuitOpen {
+                        *entry.status.write() = UpstreamStatus::CircuitOpen;
+                        self.emit_status_change(upstream_name, "circuit_open");
+                    }
                 }
                 Err(e)
             }
@@ -535,10 +543,14 @@ async fn initialize_entry(
                 eprintln!("[mcp-registry] '{name}' failed permanently: {e}");
                 *entry.status.write() = UpstreamStatus::Failed;
                 "failed"
-            } else {
-                eprintln!("[mcp-registry] '{name}' initialization failed: {e}");
+            } else if entry.cb.is_open() {
+                eprintln!("[mcp-registry] '{name}' initialization failed (circuit open): {e}");
                 *entry.status.write() = UpstreamStatus::CircuitOpen;
                 "circuit_open"
+            } else {
+                // Below threshold — stay in Connecting, CB not open yet
+                eprintln!("[mcp-registry] '{name}' initialization failed: {e}");
+                "connecting"
             }
         }
     };
@@ -551,26 +563,41 @@ async fn initialize_entry(
     }
 }
 
-/// Run health checks on all Ready upstreams.
+/// Run health checks on Ready and recoverable CircuitOpen upstreams.
 async fn run_health_checks(registry: &UpstreamRegistry) {
     // Snapshot the bus once so each spawned task gets a clone without holding the lock.
     let bus_snapshot = registry.event_bus.read().clone();
 
     for entry_ref in registry.entries.iter() {
-        if *entry_ref.status.read() != UpstreamStatus::Ready {
-            continue;
-        }
-        if entry_ref.cb.is_open() {
-            // Still in backoff — skip until window expires
+        let status = entry_ref.status.read().clone();
+        // Probe Ready upstreams and CircuitOpen with expired backoff
+        let should_probe = match status {
+            UpstreamStatus::Ready => true,
+            UpstreamStatus::CircuitOpen => !entry_ref.cb.is_open(),
+            _ => false,
+        };
+        if !should_probe {
             continue;
         }
         let entry = Arc::clone(entry_ref.value());
         let name = entry_ref.key().clone();
         let bus = bus_snapshot.clone();
+        let was_circuit_open = status == UpstreamStatus::CircuitOpen;
         tokio::spawn(async move {
             let ok = health_check_entry(&entry).await;
             if ok {
                 entry.cb.record_success();
+                // Recovery: CircuitOpen → Ready
+                if was_circuit_open {
+                    *entry.status.write() = UpstreamStatus::Ready;
+                    eprintln!("[mcp-registry] '{name}' recovered (Ready)");
+                    if let Some(ref sender) = bus {
+                        let _ = sender.send(crate::state::AppEvent::UpstreamStatusChanged {
+                            name: name.clone(),
+                            status: "ready".to_string(),
+                        });
+                    }
+                }
             } else {
                 let exhausted = entry.cb.record_failure();
                 let new_status = if exhausted {
