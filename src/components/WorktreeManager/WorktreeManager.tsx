@@ -191,6 +191,18 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
     worktreeManagerStore.clearSelection();
   }
 
+  function handleBatchMerge() {
+    if (!props.actions) return;
+    const selected = worktreeManagerStore.state.selectedIds;
+    for (const id of selected) {
+      const [repoPath, branchName] = id.split("::");
+      if (repoPath && branchName) {
+        props.actions.onMergeAndArchive(repoPath, branchName);
+      }
+    }
+    worktreeManagerStore.clearSelection();
+  }
+
   return (
     <Show when={isOpen()}>
       <div class={s.overlay} onClick={() => worktreeManagerStore.close()}>
@@ -205,8 +217,11 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
           <Show when={selectionCount() > 0}>
             <div class={s.batchBar}>
               <span>{selectionCount()} selected</span>
+              <button class={s.batchMergeBtn} onClick={handleBatchMerge}>
+                Merge &amp; Archive ({selectionCount()})
+              </button>
               <button class={s.batchDeleteBtn} onClick={handleBatchDelete}>
-                Delete Selected ({selectionCount()})
+                Delete ({selectionCount()})
               </button>
             </div>
           </Show>

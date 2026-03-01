@@ -118,6 +118,21 @@
   color: var(--fg-muted);
 }
 
+.batchMergeBtn {
+  font-size: var(--font-xs);
+  color: var(--success);
+  background: none;
+  border: 1px solid var(--success);
+  padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.batchMergeBtn:hover {
+  background: rgba(78, 201, 176, 0.15);
+}
+
 .batchDeleteBtn {
   font-size: var(--font-xs);
   color: var(--error);
@@ -126,7 +141,6 @@
   padding: 2px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  margin-left: auto;
 }
 
 .batchDeleteBtn:hover {

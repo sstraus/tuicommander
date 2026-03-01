@@ -414,6 +414,37 @@ describe("WorktreeManager", () => {
       expect(worktreeManagerStore.state.selectedIds.size).toBe(0);
     });
 
+    it("shows Merge & Archive Selected button when items selected", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feat-a", { worktreePath: "/repo/.wt/a" });
+      repositoriesStore.setBranch("/repo", "feat-b", { worktreePath: "/repo/.wt/b" });
+
+      worktreeManagerStore.open();
+      worktreeManagerStore.toggleSelect("/repo::feat-a");
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const mergeBtn = container.querySelector("[class*='batchMergeBtn']");
+      expect(mergeBtn).not.toBeNull();
+    });
+
+    it("calls onMergeAndArchive for each selected worktree on batch merge", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feat-a", { worktreePath: "/repo/.wt/a" });
+      repositoriesStore.setBranch("/repo", "feat-b", { worktreePath: "/repo/.wt/b" });
+
+      worktreeManagerStore.open();
+      worktreeManagerStore.toggleSelect("/repo::feat-a");
+      worktreeManagerStore.toggleSelect("/repo::feat-b");
+      const { container } = render(() => <WorktreeManager actions={mockActions} />);
+
+      const mergeBtn = container.querySelector("[class*='batchMergeBtn']")!;
+      fireEvent.click(mergeBtn);
+
+      expect(mockActions.onMergeAndArchive).toHaveBeenCalledWith("/repo", "feat-a");
+      expect(mockActions.onMergeAndArchive).toHaveBeenCalledWith("/repo", "feat-b");
+      expect(worktreeManagerStore.state.selectedIds.size).toBe(0);
+    });
+
     it("does not show checkboxes on main worktree rows", () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
