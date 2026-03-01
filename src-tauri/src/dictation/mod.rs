@@ -22,7 +22,7 @@ pub struct DictationState {
     /// Active streaming session (None when not streaming).
     pub streaming: Mutex<Option<streaming::StreamingSession>>,
     /// Arc-wrapped transcriber for sharing with the streaming thread.
-    pub transcriber_arc: Mutex<Option<Arc<dyn transcribe::Transcribe>>>,
+    pub transcriber_arc: Mutex<Option<Arc<dyn transcribe::Transcriber>>>,
 }
 
 impl DictationState {
