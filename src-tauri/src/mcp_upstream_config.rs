@@ -177,7 +177,7 @@ pub(crate) fn load_mcp_upstreams() -> UpstreamMcpConfig {
 }
 
 #[tauri::command]
-pub(crate) fn save_mcp_upstreams(
+pub(crate) async fn save_mcp_upstreams(
     config: UpstreamMcpConfig,
     state: tauri::State<'_, crate::state::AppState>,
 ) -> Result<(), String> {
@@ -187,7 +187,93 @@ pub(crate) fn save_mcp_upstreams(
         let msgs: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
         return Err(msgs.join("; "));
     }
-    save_json_config(UPSTREAMS_FILE, &config)
+
+    // Load old config to compute the diff for hot-reload
+    let old_config: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
+    save_json_config(UPSTREAMS_FILE, &config)?;
+
+    // Apply diff to the live registry (no server restart needed)
+    apply_upstream_config_diff(&state.mcp_upstream_registry, &old_config, &config, self_port).await;
+
+    Ok(())
+}
+
+/// Reconnect a single upstream by name (disconnect + connect).
+///
+/// Useful when credentials change or the upstream is temporarily unreachable.
+#[tauri::command]
+pub(crate) async fn reconnect_mcp_upstream(
+    name: String,
+    state: tauri::State<'_, crate::state::AppState>,
+) -> Result<(), String> {
+    let config: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
+    let server = config
+        .servers
+        .into_iter()
+        .find(|s| s.name == name)
+        .ok_or_else(|| format!("Upstream '{name}' not found in config"))?;
+
+    let self_port = state.config.read().mcp_port;
+    let registry = &state.mcp_upstream_registry;
+
+    // Disconnect if currently registered (ignore error if not present)
+    let _ = registry.disconnect_upstream(&name);
+
+    // Reconnect
+    registry.connect_upstream(server, Some(self_port)).await
+}
+
+/// Apply a config diff to the live registry without restarting the server.
+///
+/// - Removed servers → disconnect
+/// - Added servers → connect
+/// - Changed servers (same id, different config) → disconnect + reconnect
+async fn apply_upstream_config_diff(
+    registry: &crate::mcp_proxy::registry::UpstreamRegistry,
+    old: &UpstreamMcpConfig,
+    new: &UpstreamMcpConfig,
+    self_port: u16,
+) {
+    use std::collections::HashMap;
+
+    let old_by_id: HashMap<&str, &UpstreamMcpServer> =
+        old.servers.iter().map(|s| (s.id.as_str(), s)).collect();
+    let new_by_id: HashMap<&str, &UpstreamMcpServer> =
+        new.servers.iter().map(|s| (s.id.as_str(), s)).collect();
+
+    // Disconnect removed or changed servers
+    for (id, old_server) in &old_by_id {
+        let should_disconnect = match new_by_id.get(id) {
+            None => true,                                                // removed
+            Some(new_server) => old_server.id != new_server.id          // sanity (always equal)
+                || old_server.name != new_server.name
+                || old_server.transport != new_server.transport
+                || old_server.enabled != new_server.enabled
+                || old_server.timeout_secs != new_server.timeout_secs
+                || old_server.tool_filter != new_server.tool_filter,
+        };
+        if should_disconnect {
+            let _ = registry.disconnect_upstream(&old_server.name);
+        }
+    }
+
+    // Connect new or changed servers
+    for new_server in &new.servers {
+        let old = old_by_id.get(new_server.id.as_str());
+        let should_connect = match old {
+            None => true, // new
+            Some(old_server) => old_server.name != new_server.name
+                || old_server.transport != new_server.transport
+                || old_server.enabled != new_server.enabled
+                || old_server.timeout_secs != new_server.timeout_secs
+                || old_server.tool_filter != new_server.tool_filter,
+        };
+        if should_connect {
+            if let Err(e) = registry.connect_upstream(new_server.clone(), Some(self_port)).await {
+                eprintln!("[mcp-config] Failed to connect upstream '{}': {e}", new_server.name);
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -514,6 +600,75 @@ mod tests {
         // load_json_config returns Default for missing files
         let config: UpstreamMcpConfig = load_json_config("nonexistent-mcp-upstreams-test.json");
         assert!(config.servers.is_empty());
+    }
+
+    // -- apply_upstream_config_diff --
+
+    use crate::mcp_proxy::registry::UpstreamRegistry;
+
+    fn disabled_http_server(name: &str, url: &str) -> UpstreamMcpServer {
+        let mut s = http_server(name, url);
+        s.enabled = false;
+        s
+    }
+
+    #[tokio::test]
+    async fn diff_connects_new_server() {
+        let registry = UpstreamRegistry::new();
+        let old = UpstreamMcpConfig { servers: vec![] };
+        let new_server = disabled_http_server("alpha", "http://127.0.0.1:1/mcp");
+        let new = UpstreamMcpConfig { servers: vec![new_server] };
+
+        apply_upstream_config_diff(&registry, &old, &new, 9999).await;
+
+        assert_eq!(registry.upstream_names(), vec!["alpha"]);
+    }
+
+    #[tokio::test]
+    async fn diff_disconnects_removed_server() {
+        let registry = UpstreamRegistry::new();
+        let server = disabled_http_server("beta", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(server.clone(), None).await.unwrap();
+
+        let old = UpstreamMcpConfig { servers: vec![server] };
+        let new = UpstreamMcpConfig { servers: vec![] };
+
+        apply_upstream_config_diff(&registry, &old, &new, 9999).await;
+
+        assert!(registry.upstream_names().is_empty());
+    }
+
+    #[tokio::test]
+    async fn diff_reconnects_changed_server() {
+        let registry = UpstreamRegistry::new();
+        let mut old_server = disabled_http_server("gamma", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(old_server.clone(), None).await.unwrap();
+
+        let old = UpstreamMcpConfig { servers: vec![old_server.clone()] };
+
+        // Change the URL → same id, different transport
+        old_server.transport = UpstreamTransport::Http { url: "http://127.0.0.1:2/mcp".to_string() };
+        let new = UpstreamMcpConfig { servers: vec![old_server] };
+
+        apply_upstream_config_diff(&registry, &old, &new, 9999).await;
+
+        // gamma should still be registered (disconnected + reconnected)
+        assert!(registry.upstream_names().contains(&"gamma".to_string()));
+    }
+
+    #[tokio::test]
+    async fn diff_unchanged_server_stays_connected() {
+        let registry = UpstreamRegistry::new();
+        let server = disabled_http_server("delta", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(server.clone(), None).await.unwrap();
+
+        let old = UpstreamMcpConfig { servers: vec![server.clone()] };
+        let new = UpstreamMcpConfig { servers: vec![server] };
+
+        apply_upstream_config_diff(&registry, &old, &new, 9999).await;
+
+        // Unchanged → still registered once (no double-connect)
+        assert_eq!(registry.upstream_names(), vec!["delta"]);
     }
 
     #[test]

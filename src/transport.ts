@@ -7,6 +7,36 @@
 
 import { appLogger } from "./stores/appLogger";
 
+// ---------------------------------------------------------------------------
+// MCP upstream config types (mirrors Rust structs in mcp_upstream_config.rs)
+// ---------------------------------------------------------------------------
+
+export type UpstreamTransport =
+  | { type: "http"; url: string }
+  | { type: "stdio"; command: string; args?: string[]; env?: Record<string, string> };
+
+export type FilterMode = "allow" | "deny";
+
+export interface ToolFilter {
+  mode: FilterMode;
+  patterns: string[];
+}
+
+export interface UpstreamMcpServer {
+  id: string;
+  name: string;
+  transport: UpstreamTransport;
+  enabled: boolean;
+  timeout_secs: number;
+  tool_filter?: ToolFilter;
+}
+
+export interface UpstreamMcpConfig {
+  servers: UpstreamMcpServer[];
+}
+
+// ---------------------------------------------------------------------------
+
 /** Detect whether we're running inside a Tauri webview */
 export function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in globalThis;
@@ -38,6 +68,12 @@ const BROWSER_UNSUPPORTED_COMMANDS = new Set([
   "set_dictation_config",
   // OS integration
   "open_in_app",
+  // MCP upstream management (uses OS keyring — not available in browser)
+  "load_mcp_upstreams",
+  "save_mcp_upstreams",
+  "reconnect_mcp_upstream",
+  "save_mcp_upstream_credential",
+  "delete_mcp_upstream_credential",
 ]);
 
 /** Map a Tauri invoke command + args to an HTTP method/path/body */
