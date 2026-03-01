@@ -417,6 +417,73 @@ impl UpstreamRegistry {
     // Background health check
     // -----------------------------------------------------------------------
 
+    // -----------------------------------------------------------------------
+    // Config diff (hot-reload)
+    // -----------------------------------------------------------------------
+
+    /// Apply a config diff to the live registry without restarting the server.
+    ///
+    /// - Removed servers → disconnect
+    /// - Added servers → connect
+    /// - Changed servers (same id, different config) → disconnect + reconnect
+    pub(crate) async fn apply_config_diff(
+        &self,
+        old: &crate::mcp_upstream_config::UpstreamMcpConfig,
+        new: &crate::mcp_upstream_config::UpstreamMcpConfig,
+        self_port: u16,
+    ) {
+        use std::collections::HashMap;
+
+        let old_by_id: HashMap<&str, &crate::mcp_upstream_config::UpstreamMcpServer> =
+            old.servers.iter().map(|s| (s.id.as_str(), s)).collect();
+        let new_by_id: HashMap<&str, &crate::mcp_upstream_config::UpstreamMcpServer> =
+            new.servers.iter().map(|s| (s.id.as_str(), s)).collect();
+
+        // Disconnect removed or changed servers
+        for (id, old_server) in &old_by_id {
+            let should_disconnect = match new_by_id.get(id) {
+                None => true, // removed
+                Some(new_server) => {
+                    old_server.name != new_server.name
+                        || old_server.transport != new_server.transport
+                        || old_server.enabled != new_server.enabled
+                        || old_server.timeout_secs != new_server.timeout_secs
+                        || old_server.tool_filter != new_server.tool_filter
+                }
+            };
+            if should_disconnect {
+                let _ = self.disconnect_upstream(&old_server.name);
+            }
+        }
+
+        // Connect new or changed servers
+        for new_server in &new.servers {
+            let old = old_by_id.get(new_server.id.as_str());
+            let should_connect = match old {
+                None => true, // new
+                Some(old_server) => {
+                    old_server.name != new_server.name
+                        || old_server.transport != new_server.transport
+                        || old_server.enabled != new_server.enabled
+                        || old_server.timeout_secs != new_server.timeout_secs
+                        || old_server.tool_filter != new_server.tool_filter
+                }
+            };
+            if should_connect {
+                if let Err(e) = self.connect_upstream(new_server.clone(), Some(self_port)).await {
+                    eprintln!(
+                        "[mcp-registry] Failed to connect upstream '{}': {e}",
+                        new_server.name
+                    );
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Background health check
+    // -----------------------------------------------------------------------
+
     /// Spawn the background health-check task.
     ///
     /// The task runs every `HEALTH_CHECK_INTERVAL` and calls `health_check()`
