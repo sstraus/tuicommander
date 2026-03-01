@@ -796,6 +796,7 @@ pub fn run() {
             mcp_upstream_config::load_mcp_upstreams,
             mcp_upstream_config::save_mcp_upstreams,
             mcp_upstream_config::reconnect_mcp_upstream,
+            mcp_upstream_config::get_mcp_upstream_status,
             mcp_upstream_credentials::save_mcp_upstream_credential,
             mcp_upstream_credentials::delete_mcp_upstream_credential,
             config::check_has_custom_settings,

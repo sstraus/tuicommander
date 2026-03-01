@@ -243,6 +243,14 @@ pub(crate) async fn reconnect_mcp_upstream(
     registry.connect_upstream(server, Some(self_port)).await
 }
 
+/// Returns a JSON snapshot of all upstream statuses, tool lists, and metrics.
+#[tauri::command]
+pub(crate) fn get_mcp_upstream_status(
+    state: tauri::State<'_, crate::state::AppState>,
+) -> serde_json::Value {
+    state.mcp_upstream_registry.status_snapshot()
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

@@ -34,9 +34,28 @@ interface AppConfig {
   session_token_duration_secs: number;
   ipv6_enabled: boolean;
   lan_auth_bypass: boolean;
+  disabled_native_tools: string[];
 }
 
 interface LocalIpEntry { ip: string; label: string; }
+
+interface UpstreamStatusEntry {
+  name: string;
+  status: "connecting" | "ready" | "circuit_open" | "disabled" | "failed";
+  transport: { type: string; url?: string; command?: string; args?: string[] };
+  tool_count: number;
+  tools: string[];
+  metrics: { call_count: number; error_count: number; last_latency_ms: number };
+}
+
+/** Static definition of native TUIC tools exposed via MCP */
+const NATIVE_TOOLS: { name: string; description: string }[] = [
+  { name: "session", description: "Manage PTY terminal sessions" },
+  { name: "git", description: "Query git repository state" },
+  { name: "agent", description: "Detect and spawn AI agents" },
+  { name: "config", description: "Read and write app config" },
+  { name: "plugin_dev_guide", description: "Plugin authoring reference" },
+];
 
 export const ServicesTab: Component = () => {
   const [status, setStatus] = createSignal<McpStatus | null>(null);
@@ -59,6 +78,8 @@ export const ServicesTab: Component = () => {
   const [lanAuthBypass, setLanAuthBypass] = createSignal(false);
   const [urlCopied, setUrlCopied] = createSignal(false);
   const [regenerating, setRegenerating] = createSignal(false);
+  const [disabledNativeTools, setDisabledNativeTools] = createSignal<string[]>([]);
+  const [upstreamStatus, setUpstreamStatus] = createSignal<UpstreamStatusEntry[]>([]);
 
   // Auto-select best IP when list loads (prefer Tailscale, then LAN/Wi-Fi)
   createEffect(() => {
@@ -98,6 +119,12 @@ export const ServicesTab: Component = () => {
       // Transient poll failures are normal during app startup
       appLogger.debug("config", "MCP status refresh failed", e);
     }
+    try {
+      const snap = await rpc<{ upstreams: UpstreamStatusEntry[] }>("get_mcp_upstream_status");
+      setUpstreamStatus(snap.upstreams ?? []);
+    } catch {
+      // Upstream status not available (e.g. server not running)
+    }
   };
 
   const loadRemoteConfig = async () => {
@@ -111,6 +138,7 @@ export const ServicesTab: Component = () => {
       setTokenDuration(config.session_token_duration_secs ?? 86400);
       setIpv6Enabled(config.ipv6_enabled ?? false);
       setLanAuthBypass(config.lan_auth_bypass ?? false);
+      setDisabledNativeTools(config.disabled_native_tools ?? []);
     } catch (e) {
       appLogger.warn("config", "Failed to load remote access config, using defaults", e);
     }
@@ -520,15 +548,46 @@ export const ServicesTab: Component = () => {
         </div>
       </Show>
 
-      <p class={s.hint} style={{ "margin-top": "12px", color: "var(--text-dimmed)" }}>
+      {/* ── TUIC Tools ── */}
+      <h3 style={{ "margin-top": "24px" }}>TUIC Tools</h3>
+      <div class={s.group}>
+        <p class={s.hint}>
+          Native tools exposed via MCP. Disable tools to restrict what AI agents can access.
+        </p>
+      </div>
+      <For each={NATIVE_TOOLS}>
+        {(tool) => {
+          const disabled = () => disabledNativeTools().includes(tool.name);
+          return (
+            <div class={s.group} style={{ display: "flex", "align-items": "center", gap: "8px", padding: "4px 0" }}>
+              <div class={s.toggle} style={{ "margin-right": "4px" }}>
+                <input
+                  type="checkbox"
+                  checked={!disabled()}
+                  onChange={(e) => {
+                    const enabled = e.currentTarget.checked;
+                    const updated = enabled
+                      ? disabledNativeTools().filter(n => n !== tool.name)
+                      : [...disabledNativeTools(), tool.name];
+                    setDisabledNativeTools(updated);
+                    saveConfigField((c) => { (c as AppConfig & { disabled_native_tools: string[] }).disabled_native_tools = updated; });
+                  }}
+                />
+              </div>
+              <div>
+                <span style={{ "font-weight": 500, "font-size": "13px", "font-family": "monospace" }}>{tool.name}</span>
+                <span class={s.hint} style={{ margin: 0, "margin-left": "8px" }}>{tool.description}</span>
+              </div>
+            </div>
+          );
+        }}
+      </For>
+
+      <UpstreamMcpPanel upstreamStatus={upstreamStatus()} />
+
+      <p class={s.hint} style={{ "margin-top": "16px", color: "var(--text-dimmed)" }}>
         {t("services.hint.autoSave", "Settings are saved automatically when changed")}
       </p>
-
-      <p class={s.hint} style={{ "margin-top": "16px" }}>
-        {t("services.hint.serverStartsAutomatically", "The server starts automatically when the app launches if enabled")}
-      </p>
-
-      <UpstreamMcpPanel />
     </div>
   );
 };
@@ -550,12 +609,14 @@ function emptyForm() {
   };
 }
 
-const UpstreamMcpPanel: Component = () => {
+const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (props) => {
   const [upstreams, setUpstreams] = createSignal<UpstreamMcpServer[]>([]);
   const [showAdd, setShowAdd] = createSignal(false);
   const [form, setForm] = createSignal(emptyForm());
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
+  const [editingId, setEditingId] = createSignal<string | null>(null);
+  const [editForm, setEditForm] = createSignal(emptyForm());
 
   // Load upstream config on mount (Tauri-only)
   onMount(async () => {
@@ -612,6 +673,57 @@ const UpstreamMcpPanel: Component = () => {
     await saveUpstreams([...upstreams(), server]);
     setForm(emptyForm());
     setShowAdd(false);
+  }
+
+  /** Get live status entry for an upstream by name */
+  function getStatus(name: string): UpstreamStatusEntry | undefined {
+    return props.upstreamStatus.find(u => u.name === name);
+  }
+
+  /** Status dot color based on upstream connection state */
+  function statusColor(st: string | undefined): string {
+    switch (st) {
+      case "ready": return "var(--green, #98c379)";
+      case "connecting": return "var(--warning, #e5c07b)";
+      case "circuit_open":
+      case "failed": return "var(--error, #e06c75)";
+      default: return "var(--text-dimmed)";
+    }
+  }
+
+  function startEdit(server: UpstreamMcpServer) {
+    setEditingId(server.id);
+    setEditForm({
+      name: server.name,
+      transportType: server.transport.type,
+      url: server.transport.type === "http" ? server.transport.url : "",
+      command: server.transport.type === "stdio" ? server.transport.command : "",
+      args: server.transport.type === "stdio" ? (server.transport.args?.join(" ") ?? "") : "",
+      credential: "",
+      timeout: server.timeout_secs,
+    });
+  }
+
+  async function saveEdit(server: UpstreamMcpServer) {
+    const f = editForm();
+    const transport: UpstreamTransport = f.transportType === "http"
+      ? { type: "http", url: f.url.trim() }
+      : { type: "stdio", command: f.command.trim(), args: f.args.trim() ? f.args.trim().split(/\s+/) : [] };
+
+    const updated: UpstreamMcpServer = {
+      ...server,
+      transport,
+      timeout_secs: f.timeout,
+    };
+
+    if (f.credential) {
+      try {
+        await rpc("save_mcp_upstream_credential", { name: server.name, token: f.credential });
+      } catch { /* non-fatal */ }
+    }
+
+    await saveUpstreams(upstreams().map(s => s.id === server.id ? updated : s));
+    setEditingId(null);
   }
 
   async function toggleUpstream(id: string, enabled: boolean) {
@@ -735,64 +847,153 @@ const UpstreamMcpPanel: Component = () => {
       </Show>
 
       <For each={upstreams()}>
-        {(server) => (
-          <div class={s.group} style={{ display: "flex", "align-items": "center", gap: "8px", padding: "8px 0", "border-bottom": "1px solid var(--border-subtle, rgba(255,255,255,0.06))" }}>
-            {/* Enable toggle */}
-            <div class={s.toggle} style={{ "margin-right": "4px" }}>
-              <input
-                type="checkbox"
-                checked={server.enabled}
-                onChange={e => toggleUpstream(server.id, e.currentTarget.checked)}
-              />
-            </div>
-            {/* Info */}
-            <div style={{ flex: 1, "min-width": 0 }}>
-              <div style={{ display: "flex", "align-items": "center", gap: "6px", "flex-wrap": "wrap" }}>
-                <span style={{ "font-weight": 500, "font-size": "13px" }}>{server.name}</span>
-                <span style={{
-                  "font-size": "10px", padding: "1px 5px", "border-radius": "3px",
-                  background: server.transport.type === "http" ? "rgba(97,175,239,0.15)" : "rgba(152,195,121,0.15)",
-                  color: server.transport.type === "http" ? "#61afef" : "#98c379",
-                }}>
-                  {server.transport.type.toUpperCase()}
-                </span>
-                <Show when={!server.enabled}>
-                  <span style={{ "font-size": "10px", padding: "1px 5px", "border-radius": "3px", background: "rgba(255,255,255,0.05)", color: "var(--text-dimmed)" }}>
-                    Disabled
-                  </span>
-                </Show>
+        {(server) => {
+          const st = () => getStatus(server.name);
+          const isEditing = () => editingId() === server.id;
+          return (
+            <div style={{ "border-bottom": "1px solid var(--border-subtle, rgba(255,255,255,0.06))" }}>
+              <div class={s.group} style={{ display: "flex", "align-items": "center", gap: "8px", padding: "8px 0" }}>
+                {/* Enable toggle */}
+                <div class={s.toggle} style={{ "margin-right": "4px" }}>
+                  <input
+                    type="checkbox"
+                    checked={server.enabled}
+                    onChange={e => toggleUpstream(server.id, e.currentTarget.checked)}
+                  />
+                </div>
+                {/* Info */}
+                <div style={{ flex: 1, "min-width": 0 }}>
+                  <div style={{ display: "flex", "align-items": "center", gap: "6px", "flex-wrap": "wrap" }}>
+                    <span style={{ "font-weight": 500, "font-size": "13px" }}>{server.name}</span>
+                    <span style={{
+                      "font-size": "10px", padding: "1px 5px", "border-radius": "3px",
+                      background: server.transport.type === "http" ? "rgba(97,175,239,0.15)" : "rgba(152,195,121,0.15)",
+                      color: server.transport.type === "http" ? "#61afef" : "#98c379",
+                    }}>
+                      {server.transport.type.toUpperCase()}
+                    </span>
+                    {/* Status dot */}
+                    <Show when={st()}>
+                      {(entry) => (
+                        <span style={{
+                          display: "inline-block", width: "7px", height: "7px", "border-radius": "50%",
+                          background: statusColor(entry().status),
+                        }} title={entry().status.replace("_", " ")} />
+                      )}
+                    </Show>
+                    <Show when={!server.enabled}>
+                      <span style={{ "font-size": "10px", padding: "1px 5px", "border-radius": "3px", background: "rgba(255,255,255,0.05)", color: "var(--text-dimmed)" }}>
+                        Disabled
+                      </span>
+                    </Show>
+                  </div>
+                  <div class={s.hint} style={{ margin: 0, "font-family": "monospace", "font-size": "11px" }}>
+                    {server.transport.type === "http"
+                      ? server.transport.url
+                      : server.transport.command + (server.transport.args?.length ? " " + server.transport.args.join(" ") : "")}
+                  </div>
+                  {/* Metrics line */}
+                  <Show when={st()?.metrics}>
+                    {(m) => (
+                      <div class={s.hint} style={{ margin: 0, "font-size": "11px" }}>
+                        {st()!.tool_count} tools · {m().call_count} calls · {m().error_count} errors
+                        {m().last_latency_ms > 0 ? ` · ${m().last_latency_ms}ms` : ""}
+                      </div>
+                    )}
+                  </Show>
+                </div>
+                {/* Edit */}
+                <button
+                  class={s.copyBtn}
+                  title="Edit"
+                  onClick={() => isEditing() ? setEditingId(null) : startEdit(server)}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293z"/>
+                  </svg>
+                </button>
+                {/* Reconnect */}
+                <button
+                  class={s.copyBtn}
+                  title="Reconnect"
+                  onClick={() => rpc("reconnect_mcp_upstream", { name: server.name }).catch(e => appLogger.warn("network", String(e)))}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+                    <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+                  </svg>
+                </button>
+                {/* Remove */}
+                <button
+                  class={s.copyBtn}
+                  title="Remove"
+                  onClick={() => removeUpstream(server.id, server.name)}
+                  style={{ color: "var(--error, #e06c75)" }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                    <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                  </svg>
+                </button>
               </div>
-              <div class={s.hint} style={{ margin: 0, "font-family": "monospace", "font-size": "11px" }}>
-                {server.transport.type === "http"
-                  ? server.transport.url
-                  : server.transport.command + (server.transport.args?.length ? " " + server.transport.args.join(" ") : "")}
-              </div>
+              {/* Edit inline panel */}
+              <Show when={isEditing()}>
+                <div style={{ background: "var(--bg-secondary, rgba(255,255,255,0.03))", padding: "12px", "border-radius": "6px", "margin-bottom": "8px" }}>
+                  <div style={{ display: "grid", gap: "8px" }}>
+                    <Show when={editForm().transportType === "http"}>
+                      <div>
+                        <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>URL</label>
+                        <input type="text" class={s.input} value={editForm().url}
+                          onInput={e => setEditForm(f => ({ ...f, url: e.currentTarget.value }))} />
+                      </div>
+                      <div>
+                        <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Bearer token</label>
+                        <input type="password" class={s.input}
+                          placeholder="Enter new token (leave blank to keep current)"
+                          value={editForm().credential}
+                          onInput={e => setEditForm(f => ({ ...f, credential: e.currentTarget.value }))} />
+                        <p class={s.hint} style={{ margin: "2px 0 0" }}>Stored in OS keychain. Leave blank to keep current token.</p>
+                      </div>
+                    </Show>
+                    <Show when={editForm().transportType === "stdio"}>
+                      <div>
+                        <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Command</label>
+                        <input type="text" class={s.input} value={editForm().command}
+                          onInput={e => setEditForm(f => ({ ...f, command: e.currentTarget.value }))} />
+                      </div>
+                      <div>
+                        <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Args</label>
+                        <input type="text" class={s.input} value={editForm().args}
+                          onInput={e => setEditForm(f => ({ ...f, args: e.currentTarget.value }))} />
+                      </div>
+                    </Show>
+                    <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+                      <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Timeout (s):</label>
+                      <input type="number" class={s.input} value={editForm().timeout}
+                        min={0} max={300} style={{ width: "70px" }}
+                        onInput={e => setEditForm(f => ({ ...f, timeout: parseInt(e.currentTarget.value) || 30 }))} />
+                    </div>
+                    {/* Discovered tools */}
+                    <Show when={st()?.tools?.length}>
+                      <div>
+                        <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Discovered tools ({st()!.tools.length})</label>
+                        <div style={{ "font-family": "monospace", "font-size": "11px", color: "var(--text-dimmed)", "margin-top": "4px", "line-height": "1.6" }}>
+                          {st()!.tools.join(", ")}
+                        </div>
+                      </div>
+                    </Show>
+                    <div style={{ display: "flex", gap: "8px", "justify-content": "flex-end" }}>
+                      <button class={s.copyBtn} onClick={() => saveEdit(server)} disabled={saving()}>
+                        {saving() ? "Saving…" : "Save"}
+                      </button>
+                      <button class={s.copyBtn} onClick={() => setEditingId(null)}>Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              </Show>
             </div>
-            {/* Reconnect */}
-            <button
-              class={s.copyBtn}
-              title="Reconnect"
-              onClick={() => rpc("reconnect_mcp_upstream", { name: server.name }).catch(e => appLogger.warn("network", String(e)))}
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
-                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
-              </svg>
-            </button>
-            {/* Remove */}
-            <button
-              class={s.copyBtn}
-              title="Remove"
-              onClick={() => removeUpstream(server.id, server.name)}
-              style={{ color: "var(--error, #e06c75)" }}
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
-                <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
-              </svg>
-            </button>
-          </div>
-        )}
+          );
+        }}
       </For>
     </div>
   );

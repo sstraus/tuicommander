@@ -181,11 +181,19 @@ fn native_tool_definitions() -> serde_json::Value {
 /// Returns native tools merged with upstream proxy tools (namespaced as `{upstream}__`).
 ///
 /// Upstream tools are omitted when no upstreams are Ready.
+/// Native tools listed in `config.disabled_native_tools` are excluded.
 fn merged_tool_definitions(state: &Arc<AppState>) -> serde_json::Value {
+    let disabled = &state.config.read().disabled_native_tools;
     let mut tools: Vec<serde_json::Value> = native_tool_definitions()
         .as_array()
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|t| {
+            let name = t["name"].as_str().unwrap_or("");
+            !disabled.contains(&name.to_string())
+        })
+        .collect();
 
     let upstream_tools = state.mcp_upstream_registry.aggregated_tools();
     tools.extend(upstream_tools);

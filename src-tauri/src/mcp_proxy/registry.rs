@@ -422,11 +422,16 @@ impl UpstreamRegistry {
                     "args": args,
                 }),
             };
+            let tools_read = e.tools.read();
+            let tool_names: Vec<&str> = tools_read.iter()
+                .map(|t| t.original_name.as_str())
+                .collect();
             serde_json::json!({
                 "name": entry_ref.key(),
                 "status": status_str,
                 "transport": transport_info,
-                "tool_count": e.tools.read().len(),
+                "tool_count": tools_read.len(),
+                "tools": tool_names,
                 "metrics": e.metrics.snapshot(),
             })
         }).collect();

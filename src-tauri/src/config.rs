@@ -301,6 +301,9 @@ pub(crate) struct AppConfig {
     /// Agent types disabled by the user (won't appear in sidebar "Add Agent" menu)
     #[serde(default)]
     pub(crate) disabled_agents: Vec<String>,
+    /// Native MCP tool names disabled by the user (excluded from tools/list response)
+    #[serde(default)]
+    pub(crate) disabled_native_tools: Vec<String>,
 }
 
 fn default_language() -> String {
@@ -360,6 +363,7 @@ impl Default for AppConfig {
             ipv6_enabled: false,
             lan_auth_bypass: false,
             disabled_agents: Vec::new(),
+            disabled_native_tools: Vec::new(),
         }
     }
 }
@@ -856,6 +860,7 @@ mod tests {
             ipv6_enabled: true,
             lan_auth_bypass: true,
             disabled_agents: vec!["codex".to_string()],
+            disabled_native_tools: vec!["plugin_dev_guide".to_string()],
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -880,6 +885,7 @@ mod tests {
         assert_eq!(loaded.session_token_duration_secs, 3600);
         assert!(loaded.ipv6_enabled);
         assert!(loaded.lan_auth_bypass);
+        assert_eq!(loaded.disabled_native_tools, vec!["plugin_dev_guide".to_string()]);
     }
 
     #[test]
