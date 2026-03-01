@@ -45,7 +45,8 @@
   min-width: 0;
 }
 
-.dots {
+.dots::after {
+  content: "...";
   color: var(--fg-secondary, #888888);
   animation: dots 1.5s steps(3) infinite;
 }
@@ -78,8 +79,8 @@
 }
 
 @keyframes dots {
-  0% { content: ""; }
-  33% { content: "."; }
-  66% { content: ".."; }
-  100% { content: "..."; }
+  0% { content: ""; width: 0; }
+  33% { content: "."; width: auto; }
+  66% { content: ".."; width: auto; }
+  100% { content: "..."; width: auto; }
 }

@@ -1,35 +1,22 @@
 import { Show, createSignal, createEffect, onCleanup } from "solid-js";
-import { listen } from "../../invoke";
 import { dictationStore } from "../../stores/dictation";
 import styles from "./DictationToast.module.css";
 
 /**
  * Floating toast that shows partial transcription results during streaming
- * dictation. Positioned above the status bar, auto-shows when recording
- * starts and hides when recording stops.
+ * dictation. Positioned above the status bar, auto-shows when partials arrive
+ * and hides when recording stops.
  */
 export function DictationToast() {
-  const [partialText, setPartialText] = createSignal("");
   const [visible, setVisible] = createSignal(false);
   const [exiting, setExiting] = createSignal(false);
 
-  // Listen for partial transcription events from the streaming thread
-  let unlisten: (() => void) | undefined;
-
+  // Show toast when partialText becomes non-empty
   createEffect(() => {
-    listen<string>("dictation-partial", (event) => {
-      setPartialText(event.payload);
-      if (!visible()) {
-        setExiting(false);
-        setVisible(true);
-      }
-    }).then((fn) => {
-      unlisten = fn;
-    });
-  });
-
-  onCleanup(() => {
-    unlisten?.();
+    if (dictationStore.state.partialText) {
+      setExiting(false);
+      setVisible(true);
+    }
   });
 
   // Auto-hide when recording stops
@@ -39,7 +26,6 @@ export function DictationToast() {
       const timer = setTimeout(() => {
         setVisible(false);
         setExiting(false);
-        setPartialText("");
       }, 150); // match fadeOut duration
       onCleanup(() => clearTimeout(timer));
     }
@@ -50,8 +36,8 @@ export function DictationToast() {
       <div class={styles.toast} data-exiting={exiting()}>
         <span class={styles.indicator} />
         <span class={styles.text}>
-          {partialText() || "Listening"}
-          <span class={styles.dots}>...</span>
+          {dictationStore.state.partialText || "Listening"}
+          <span class={styles.dots} />
         </span>
       </div>
     </Show>

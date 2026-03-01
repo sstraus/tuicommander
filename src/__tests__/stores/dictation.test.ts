@@ -293,14 +293,23 @@ describe("dictationStore", () => {
   });
 
   describe("stopRecording()", () => {
-    it("returns transcribed text on success", async () => {
-      mockInvoke.mockResolvedValueOnce("Hello world");
+    it("returns TranscribeResponse on success", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        text: "Hello world",
+        skip_reason: null,
+        duration_s: 2.5,
+      });
 
       await createRoot(async (dispose) => {
         const result = await store.stopRecording();
-        expect(result).toBe("Hello world");
+        expect(result).toEqual({
+          text: "Hello world",
+          skip_reason: null,
+          duration_s: 2.5,
+        });
         expect(store.state.recording).toBe(false);
         expect(store.state.processing).toBe(false);
+        expect(store.state.partialText).toBe("");
         expect(mockInvoke).toHaveBeenCalledWith("stop_dictation_and_transcribe");
         dispose();
       });
