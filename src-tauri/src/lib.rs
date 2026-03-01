@@ -576,6 +576,7 @@ pub fn run() {
         kitty_states: DashMap::new(),
         input_buffers: DashMap::new(),
         last_prompts: DashMap::new(),
+        silence_states: DashMap::new(),
         claude_usage_cache: parking_lot::Mutex::new(claude_usage::load_cache_from_disk()),
         log_buffer: parking_lot::Mutex::new(app_logger::LogRingBuffer::new(app_logger::LOG_RING_CAPACITY)),
         event_bus: tokio::sync::broadcast::channel(256).0,

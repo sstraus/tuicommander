@@ -119,6 +119,13 @@ impl SilenceState {
         }
     }
 
+    /// Called by write_pty when the user submits a line of input.
+    /// Clears any pending question candidate since it was typed by the user, not the agent.
+    pub(crate) fn suppress_user_input(&mut self) {
+        self.pending_question_line = None;
+        self.question_already_emitted = true;
+    }
+
     /// Called by the timer thread. Returns the question text if the silence
     /// threshold has been reached and we haven't emitted yet.
     pub(crate) fn check_silence(&mut self) -> Option<String> {
@@ -146,6 +153,9 @@ pub(crate) fn spawn_reader_thread(
 ) {
     let silence = Arc::new(Mutex::new(SilenceState::new()));
     let running = Arc::new(AtomicBool::new(true));
+
+    // Register in AppState so write_pty can suppress user-typed question lines
+    state.silence_states.insert(session_id.clone(), silence.clone());
 
     // Spawn silence-detection timer thread
     {
@@ -343,6 +353,7 @@ pub(crate) fn spawn_reader_thread(
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
+        state.silence_states.remove(&session_id);
     });
 }
 
@@ -430,6 +441,7 @@ pub(crate) fn spawn_headless_reader_thread(
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
+        state.silence_states.remove(&session_id);
     });
 }
 
@@ -711,6 +723,13 @@ pub(crate) fn write_pty(
                             &format!("pty-parsed-{session_id}"),
                             &parsed,
                         );
+
+                        // Suppress silence-based question detection for user-typed lines.
+                        // The PTY will echo this input back — without suppression, a line
+                        // ending with `?` would be mistaken for an agent question prompt.
+                        if let Some(ss) = state.silence_states.get(&session_id) {
+                            ss.lock().suppress_user_input();
+                        }
                     }
                 }
                 InputAction::Interrupt => {
@@ -809,6 +828,7 @@ pub(crate) fn close_pty(
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
+        state.silence_states.remove(&session_id);
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
         let mut session = session_mutex.into_inner();
 
@@ -1180,5 +1200,17 @@ mod tests {
         s.on_chunk(false, Some("Second question?".to_string()));
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), Some("Second question?".to_string()));
+    }
+
+    #[test]
+    fn test_silence_state_suppress_user_input() {
+        let mut s = SilenceState::new();
+        // User types a line ending with `?` — PTY will echo it back
+        s.on_chunk(false, Some("c'è ancora una storia?".to_string()));
+        // write_pty detects user input and suppresses
+        s.suppress_user_input();
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        // Should NOT fire — the question was typed by the user
+        assert!(s.check_silence().is_none());
     }
 }

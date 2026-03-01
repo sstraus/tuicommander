@@ -144,6 +144,7 @@ pub(super) async fn close_session(
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
+        state.silence_states.remove(&session_id);
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
 
         let mut session = session_mutex.into_inner();

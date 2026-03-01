@@ -654,6 +654,9 @@ pub struct AppState {
     /// Last relevant user prompt per session (>= 10 words).
     /// Updated on each qualifying user input line, read by the Activity Dashboard.
     pub(crate) last_prompts: DashMap<String, String>,
+    /// Per-session silence state for fallback question detection.
+    /// Shared between the reader thread and write_pty so user-typed lines can be suppressed.
+    pub(crate) silence_states: DashMap<String, Arc<Mutex<crate::pty::SilenceState>>>,
     /// Incremental cache for Claude session transcript parsing.
     /// Loaded from disk on startup, persisted after each scan.
     pub(crate) claude_usage_cache: Mutex<crate::claude_usage::SessionStatsCache>,
@@ -1144,6 +1147,7 @@ mod tests {
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),
+            silence_states: dashmap::DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
             log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
             event_bus: tokio::sync::broadcast::channel(256).0,
