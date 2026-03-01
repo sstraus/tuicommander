@@ -14,6 +14,7 @@ pub(crate) mod github;
 pub(crate) mod head_watcher;
 pub(crate) mod repo_watcher;
 pub(crate) mod mcp_http;
+pub(crate) mod mcp_proxy;
 pub(crate) mod mcp_upstream_config;
 pub(crate) mod mcp_upstream_credentials;
 mod menu;
