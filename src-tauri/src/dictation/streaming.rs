@@ -106,7 +106,8 @@ impl StreamingSession {
 
 /// The core streaming loop, runs on a dedicated thread.
 ///
-/// Returns unconsumed audio when stopped.
+/// Returns ALL audio captured during the session (both processed and unprocessed)
+/// so the caller can do a single high-quality final transcription.
 fn streaming_loop(
     transcriber: Arc<dyn Transcriber>,
     audio_buffer: Arc<Mutex<VecDeque<f32>>>,
@@ -114,6 +115,7 @@ fn streaming_loop(
     stop: Arc<AtomicBool>,
     language: Option<String>,
 ) -> Vec<f32> {
+    let mut all_audio: Vec<f32> = Vec::new(); // complete recording for final pass
     let mut step_buf: Vec<f32> = Vec::new();
     let mut prev_tail: Vec<f32> = Vec::new(); // keep_ms overlap from previous window
     let mut window_buf: Vec<f32> = Vec::new(); // reusable window buffer
@@ -136,6 +138,7 @@ fn streaming_loop(
             }
         }
         if !swap_buf.is_empty() {
+            all_audio.extend(swap_buf.iter());
             step_buf.extend(swap_buf.drain(..));
         }
 
@@ -194,8 +197,9 @@ fn streaming_loop(
         std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
     }
 
-    // Return unconsumed audio
-    step_buf
+    // Append any unprocessed samples still in step_buf
+    all_audio.extend_from_slice(&step_buf);
+    all_audio
 }
 
 /// Transcribe a single window using the whisper transcriber.

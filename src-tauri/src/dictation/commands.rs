@@ -259,69 +259,63 @@ pub fn stop_dictation_and_transcribe(
         capture.stop_stream();
     }
 
-    // Stop streaming session and collect remaining audio
+    // Stop streaming session and collect ALL audio (processed + unprocessed)
     let session = dictation.streaming.lock().take();
-    let remaining_audio = session.map(|s| s.stop()).unwrap_or_default();
+    let mut all_audio = session.map(|s| s.stop()).unwrap_or_default();
 
-    // Also drain anything left in the audio capture buffer
+    // Also drain anything left in the audio capture buffer (arrived after last poll)
     let capture_remaining = capture_lock.as_ref()
         .map(|c| c.drain_all())
         .unwrap_or_default();
     drop(capture_lock);
 
-    // Combine: streaming remainder + capture buffer remainder
-    let mut tail_audio = remaining_audio;
-    tail_audio.extend(capture_remaining);
+    all_audio.extend(capture_remaining);
 
-    let total_duration_s = tail_audio.len() as f64 / 16000.0;
+    let total_duration_s = all_audio.len() as f64 / 16000.0;
     app_logger::log_via_handle(&app, "info", "dictation",
-        &format!("Streaming stopped, {:.1}s tail audio for final pass", total_duration_s));
+        &format!("Streaming stopped, {:.1}s total audio for final transcription", total_duration_s));
 
-    // Final transcription on tail audio (if any meaningful amount)
+    // Single final transcription on the complete audio for maximum accuracy
     let config = get_dictation_config();
     let lang = if config.language == "auto" { None } else { Some(config.language.as_str()) };
 
     let mut final_text = String::new();
 
-    if tail_audio.len() >= 8000 {
-        // At least 0.5s of audio for final pass
+    if all_audio.len() >= 8000 {
+        // At least 0.5s of audio
         let transcriber_arc = dictation.transcriber_arc.lock();
         if let Some(ref transcriber) = *transcriber_arc {
-            match transcriber.transcribe(&tail_audio, lang) {
+            match transcriber.transcribe(&all_audio, lang) {
                 Ok(result) if result.skip_reason.is_none() => {
                     final_text = result.text;
                 }
                 Ok(result) => {
                     if let Some(reason) = &result.skip_reason {
                         app_logger::log_via_handle(&app, "info", "dictation",
-                            &format!("Tail transcription skipped: {reason}"));
+                            &format!("Final transcription skipped: {reason}"));
                     }
                 }
                 Err(e) => {
                     app_logger::log_via_handle(&app, "warn", "dictation",
-                        &format!("Tail transcription failed: {e}"));
+                        &format!("Final transcription failed: {e}"));
                 }
             }
         }
     }
 
-    // The streaming thread already sent partials via the channel → emitted as events.
-    // The final text from the tail is the complete result to return.
-    // Note: partials were already shown to the user in real-time via the toast.
-
     if final_text.is_empty() {
-        app_logger::log_via_handle(&app, "info", "dictation", "No final text from tail");
+        app_logger::log_via_handle(&app, "info", "dictation", "No speech detected");
         dictation.processing.store(false, Ordering::Release);
-        // Clean up
         *dictation.audio.lock() = None;
         return Ok(TranscribeResponse {
             text: String::new(),
-            skip_reason: Some("streaming completed, no tail audio".to_string()),
+            skip_reason: Some("no speech detected".to_string()),
             duration_s: total_duration_s,
         });
     }
 
-    app_logger::log_via_handle(&app, "info", "dictation", &format!("Final text: {} chars", final_text.len()));
+    app_logger::log_via_handle(&app, "info", "dictation",
+        &format!("Final text: {} chars from {:.1}s audio", final_text.len(), total_duration_s));
 
     // Apply corrections
     let corrected = dictation.corrections.lock().correct(&final_text);
