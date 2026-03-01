@@ -116,7 +116,9 @@ fn streaming_loop(
 ) -> Vec<f32> {
     let mut step_buf: Vec<f32> = Vec::new();
     let mut prev_tail: Vec<f32> = Vec::new(); // keep_ms overlap from previous window
+    let mut window_buf: Vec<f32> = Vec::new(); // reusable window buffer
     let mut current_step_ms = INITIAL_STEP_MS;
+    let mut swap_buf: VecDeque<f32> = VecDeque::new(); // for O(1) lock swap
 
     let keep_samples = ms_to_samples(KEEP_MS);
     let max_buffer_samples = (MAX_BUFFER_S * SAMPLE_RATE as f32) as usize;
@@ -126,13 +128,13 @@ fn streaming_loop(
             break;
         }
 
-        // Drain available samples from shared buffer
+        // Swap shared buffer with empty local VecDeque (O(1) lock hold)
         {
             let mut buf = audio_buffer.lock();
-            let available = buf.len();
-            if available > 0 {
-                step_buf.extend(buf.drain(..available));
-            }
+            std::mem::swap(&mut *buf, &mut swap_buf);
+        }
+        if !swap_buf.is_empty() {
+            step_buf.extend(swap_buf.drain(..));
         }
 
         let current_step_samples = ms_to_samples(current_step_ms);
@@ -151,35 +153,44 @@ fn streaming_loop(
             );
 
             if has_speech {
-                // Build window: [keep from previous | current step]
-                let mut window = Vec::with_capacity(prev_tail.len() + step_buf.len());
-                window.extend_from_slice(&prev_tail);
-                window.extend_from_slice(&step_buf);
+                // Build window: [keep from previous | current step] — reuse buffer
+                window_buf.clear();
+                window_buf.extend_from_slice(&prev_tail);
+                window_buf.extend_from_slice(&step_buf);
 
                 // Transcribe the window
                 if let Some(text) =
-                    transcribe_window(&transcriber, &window, language.as_deref())
+                    transcribe_window(&transcriber, &window_buf, language.as_deref())
                 {
                     if !text.is_empty() {
-                        let _ = tx.send(text);
+                        if tx.send(text).is_err() {
+                            // Receiver dropped — stop streaming
+                            eprintln!("[dictation] partial channel disconnected, stopping");
+                            break;
+                        }
                     }
                 }
 
-                // Save tail as overlap for next window
+                // Save tail as overlap for next window — reuse buffer
+                prev_tail.clear();
                 if step_buf.len() > keep_samples {
-                    prev_tail = step_buf[step_buf.len() - keep_samples..].to_vec();
+                    prev_tail.extend_from_slice(&step_buf[step_buf.len() - keep_samples..]);
                 } else {
-                    prev_tail = step_buf.clone();
+                    prev_tail.extend_from_slice(&step_buf);
                 }
+
+                // Grow window toward MAX_STEP_MS during speech
+                if current_step_ms < MAX_STEP_MS {
+                    current_step_ms = (current_step_ms + STEP_GROWTH_MS).min(MAX_STEP_MS);
+                }
+            } else {
+                // Reset window size on silence for low-latency first partial
+                current_step_ms = INITIAL_STEP_MS;
+                prev_tail.clear();
             }
 
             // Clear step buffer after processing (whether speech or silence)
             step_buf.clear();
-
-            // Grow window toward MAX_STEP_MS
-            if current_step_ms < MAX_STEP_MS {
-                current_step_ms = (current_step_ms + STEP_GROWTH_MS).min(MAX_STEP_MS);
-            }
         }
 
         std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
@@ -197,17 +208,19 @@ fn transcribe_window(
     window: &[f32],
     language: Option<&str>,
 ) -> Option<String> {
-    // Use the existing transcribe method which already sets
-    // single_segment, no_timestamps, suppress_nst
     match transcriber.transcribe(window, language) {
         Ok(result) => {
             if result.skip_reason.is_some() {
                 None
             } else {
+                eprintln!("[dictation] partial: {} chars", result.text.len());
                 Some(result.text)
             }
         }
-        Err(_) => None,
+        Err(e) => {
+            eprintln!("[dictation] transcribe_window error: {e}");
+            None
+        }
     }
 }
 

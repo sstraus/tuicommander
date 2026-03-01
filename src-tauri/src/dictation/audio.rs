@@ -43,9 +43,10 @@ pub struct AudioCapture {
     stream: Option<cpal::Stream>,
 }
 
-// Safety: AudioCapture is only accessed through parking_lot::Mutex in DictationState.
-// cpal::Stream is !Send due to internal raw pointers, but we never move the stream
-// across threads — it lives in one place behind a Mutex and is dropped in-place.
+// Safety: cpal::Stream is !Send because it holds platform-specific raw pointers.
+// AudioCapture wraps Stream inside Option<cpal::Stream>, which is only created,
+// played, and dropped on the same thread (via DictationState's parking_lot::Mutex).
+// The Mutex serialises all access, so no data race is possible.
 unsafe impl Send for AudioCapture {}
 
 impl AudioCapture {
@@ -152,6 +153,10 @@ impl AudioCapture {
     }
 }
 
+/// Maximum buffer size: 30 seconds at 16kHz = 480,000 samples.
+/// If the streaming thread falls behind, older samples are dropped.
+const MAX_BUFFER_SAMPLES: usize = 16_000 * 30;
+
 /// Process an audio chunk: convert to mono and resample to 16kHz.
 /// Uses `try_lock()` so the real-time audio callback never blocks.
 /// If the lock is contended, samples are silently dropped (acceptable
@@ -162,31 +167,40 @@ fn process_audio_chunk(
     channels: usize,
     buffer: &Arc<Mutex<VecDeque<f32>>>,
 ) {
-    // Convert to mono by averaging channels
-    let mono: Vec<f32> = data
-        .chunks(channels)
-        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
-        .collect();
-
-    // Simple nearest-neighbor resampling to 16kHz
-    let resampled = if sample_rate == 16000 {
-        mono
-    } else {
-        let ratio = 16000.0 / f64::from(sample_rate);
-        let output_len = (mono.len() as f64 * ratio) as usize;
-        let mut out = Vec::with_capacity(output_len);
-        for i in 0..output_len {
-            let src_idx = (i as f64 / ratio) as usize;
-            if src_idx < mono.len() {
-                out.push(mono[src_idx]);
-            }
-        }
-        out
+    // try_lock: never block the real-time audio callback
+    let Some(mut buf) = buffer.try_lock() else {
+        return; // contention — drop samples (acceptable for dictation)
     };
 
-    // try_lock: never block the audio callback
-    if let Some(mut buf) = buffer.try_lock() {
-        buf.extend(resampled.iter());
+    if channels == 1 && sample_rate == 16000 {
+        // Fast path: no conversion needed — extend directly
+        buf.extend(data.iter());
+    } else if sample_rate == 16000 {
+        // Mono-mix only (no resampling)
+        let ch_f = channels as f32;
+        for frame in data.chunks(channels) {
+            buf.push_back(frame.iter().sum::<f32>() / ch_f);
+        }
+    } else {
+        // Full path: mono-mix + nearest-neighbor resample
+        let ch_f = channels as f32;
+        let mono_len = data.len() / channels;
+        let ratio = 16000.0 / f64::from(sample_rate);
+        let output_len = (mono_len as f64 * ratio) as usize;
+
+        for i in 0..output_len {
+            let src_idx = (i as f64 / ratio) as usize;
+            if src_idx < mono_len {
+                let frame = &data[src_idx * channels..(src_idx + 1) * channels];
+                buf.push_back(frame.iter().sum::<f32>() / ch_f);
+            }
+        }
+    }
+
+    // Cap buffer to prevent unbounded growth if the consumer falls behind
+    if buf.len() > MAX_BUFFER_SAMPLES {
+        let excess = buf.len() - MAX_BUFFER_SAMPLES;
+        buf.drain(..excess);
     }
 }
 
