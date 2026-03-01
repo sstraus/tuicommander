@@ -108,6 +108,15 @@ Client ──GET───> /mcp   (405 Method Not Allowed)
 Client ──DELETE─> /mcp  (end session, pass Mcp-Session-Id header)
 ```
 
+### MCP Tool: `session` Output
+
+The `session` tool's `action=output` strips ANSI escape codes by default, returning clean text suitable for AI consumption. Pass `format="raw"` to preserve escape sequences (e.g. for terminal rendering).
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `limit` | `8192` | Max bytes to read |
+| `format` | (text) | `"raw"` preserves ANSI escape codes |
+
 ## Authentication
 
 When remote access is enabled:

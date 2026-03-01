@@ -80,10 +80,15 @@ Content-Type: application/json
 ### Read Output
 
 ```
-GET /sessions/:id/output?limit=4096
+GET /sessions/:id/output?limit=4096&format=text
 ```
 
 Returns recent output from the ring buffer (up to 64KB).
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `limit` | `8192` | Max bytes to read |
+| `format` | (raw) | `text` strips ANSI escape codes |
 
 ### Foreground Process
 
