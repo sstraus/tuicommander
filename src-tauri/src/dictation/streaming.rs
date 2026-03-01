@@ -116,6 +116,8 @@ fn streaming_loop(
 ) -> Vec<f32> {
     let mut step_buf: Vec<f32> = Vec::new();
     let mut prev_tail: Vec<f32> = Vec::new(); // keep_ms overlap from previous window
+    let mut window_buf: Vec<f32> = Vec::new(); // reusable window buffer
+    let mut swap_buf: VecDeque<f32> = VecDeque::new(); // for O(1) lock swap
     let mut current_step_ms = INITIAL_STEP_MS;
 
     let keep_samples = ms_to_samples(KEEP_MS);
@@ -126,13 +128,15 @@ fn streaming_loop(
             break;
         }
 
-        // Drain available samples from shared buffer
+        // Drain available samples from shared buffer using swap for O(1) lock hold
         {
             let mut buf = audio_buffer.lock();
-            let available = buf.len();
-            if available > 0 {
-                step_buf.extend(buf.drain(..available));
+            if !buf.is_empty() {
+                std::mem::swap(&mut *buf, &mut swap_buf);
             }
+        }
+        if !swap_buf.is_empty() {
+            step_buf.extend(swap_buf.drain(..));
         }
 
         let current_step_samples = ms_to_samples(current_step_ms);
@@ -151,14 +155,15 @@ fn streaming_loop(
             );
 
             if has_speech {
-                // Build window: [keep from previous | current step]
-                let mut window = Vec::with_capacity(prev_tail.len() + step_buf.len());
-                window.extend_from_slice(&prev_tail);
-                window.extend_from_slice(&step_buf);
+                // Build window: [keep from previous | current step] — reuse buffer
+                window_buf.clear();
+                window_buf.reserve(prev_tail.len() + step_buf.len());
+                window_buf.extend_from_slice(&prev_tail);
+                window_buf.extend_from_slice(&step_buf);
 
                 // Transcribe the window
                 if let Some(text) =
-                    transcribe_window(&transcriber, &window, language.as_deref())
+                    transcribe_window(&transcriber, &window_buf, language.as_deref())
                 {
                     if !text.is_empty() {
                         if tx.send(text).is_err() {
@@ -168,11 +173,12 @@ fn streaming_loop(
                     }
                 }
 
-                // Save tail as overlap for next window
+                // Save tail as overlap for next window — reuse buffer
+                prev_tail.clear();
                 if step_buf.len() > keep_samples {
-                    prev_tail = step_buf[step_buf.len() - keep_samples..].to_vec();
+                    prev_tail.extend_from_slice(&step_buf[step_buf.len() - keep_samples..]);
                 } else {
-                    prev_tail = step_buf.clone();
+                    prev_tail.extend_from_slice(&step_buf);
                 }
             }
 
