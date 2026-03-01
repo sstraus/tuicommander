@@ -89,6 +89,42 @@ Removing a worktree:
 2. Runs `git worktree remove` to clean up
 3. Removes the branch entry from the sidebar
 
+## Worktree Manager Panel
+
+Open the Worktree Manager with `Cmd+Shift+W` (or via the Command Palette → "Worktree Manager"). It shows a unified view of all worktrees across your repositories.
+
+### What It Shows
+
+Each worktree row displays:
+- **Branch name** and **repository badge**
+- **Dirty status** — file additions/deletions, or "clean"
+- **PR state** — open (with PR number), merged, or closed
+- **Last commit timestamp** — relative time since last activity
+- **Main badge** — marks the main branch (actions disabled)
+
+Orphan worktrees (detached HEAD or deleted branch) appear at the bottom with a warning badge and a **Prune** button to clean them up.
+
+### Filtering
+
+- **Repo pills** — Click a repository name to filter by repo (appears when you have multiple repos)
+- **Text search** — Type in the search field to filter branches by name
+- Filters compose: selecting a repo and typing text shows only matching branches in that repo
+
+### Single-Row Actions
+
+Each worktree row has action buttons (visible on the right):
+- **`>_`** — Open a terminal in the worktree directory
+- **`✔`** — Merge the branch into main and archive (disabled for main branches)
+- **`✕`** — Delete the worktree and branch (disabled for main branches)
+
+### Batch Operations
+
+Select multiple worktrees using the checkboxes (shown when more than one selectable worktree exists). A batch bar appears with:
+- **Merge & Archive (N)** — Merges and archives all selected branches
+- **Delete (N)** — Deletes all selected worktrees
+
+Use the **Select All** checkbox in the toolbar to toggle all non-main worktrees.
+
 ## External Worktree Detection
 
 TUICommander monitors `.git/worktrees/` for changes. Worktrees created outside the app (via CLI or other tools) are detected and appear in the sidebar after the next refresh.

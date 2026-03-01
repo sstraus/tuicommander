@@ -394,6 +394,13 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Merge & Archive: right-click → merge branch into main, then archive or delete based on setting
 - External worktree detection: monitors `.git/worktrees/` for changes from CLI or other tools
 - Remove via sidebar `×` button or context menu (with confirmation)
+- **Worktree Manager panel** (`Cmd+Shift+W` or Command Palette → "Worktree manager"):
+  - Dedicated overlay listing all worktrees across all repos with metadata: branch name, repo badge, PR state (open/merged/closed), dirty stats, last commit timestamp
+  - Orphan worktree detection with warning badge and Prune action
+  - Repo filter pills and text search for branch names
+  - Multi-select with checkboxes and select-all for batch operations
+  - Batch delete and batch merge & archive
+  - Single-row actions: Open Terminal, Merge & Archive, Delete (disabled on main worktrees)
 
 ### 7.3 Auto-Fetch
 - Per-repo configurable interval (5/15/30/60 minutes, default: disabled)

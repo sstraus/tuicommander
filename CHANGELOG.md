@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Worktree Manager panel** — Dedicated overlay (`Cmd+Shift+W` or Command Palette) listing all worktrees across repos with branch name, repo badge, PR state, dirty stats, and last commit timestamp. Features: orphan detection with Prune action, repo filter pills + text search, multi-select with batch delete and batch merge & archive, single-row actions (Open Terminal, Delete, Merge & Archive). Main worktrees have destructive actions disabled
 - **Terminal CWD tracking via OSC 7** — Terminals detect working directory changes via OSC 7 escape sequences. When a terminal cd's into a known worktree, the tab automatically reassigns to that worktree's branch. Supports restart recovery via Rust-side cwd persistence.
 - **Remote PTY session tab styling** — Sessions created via HTTP/MCP now display with amber tab color and "PTY:" name prefix for instant visual distinction from local terminals
 - **Multi-agent status line detection** — Output parser now recognizes status lines from Claude Code (✢/·/asterisk), Aider (Knight Rider scanner + token reports), Codex CLI (bullet spinner), GitHub Copilot CLI (∴/●/○ indicators), Gemini CLI, Amazon Q, and Cline (braille dots). Tab titles update correctly for all supported agents

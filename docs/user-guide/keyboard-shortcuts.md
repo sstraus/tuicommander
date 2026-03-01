@@ -193,5 +193,6 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `toggle-git-ops` | `Cmd+Shift+G` | Git operations panel |
 | `open-lazygit` | `Cmd+G` | Open lazygit |
 | `open-lazygit-pane` | `Cmd+Shift+L` | Lazygit split pane |
+| `worktree-manager` | `Cmd+Shift+W` | Worktree Manager panel |
 | `find-in-terminal` | `Cmd+F` | Find in terminal |
 | `switch-branch-1..9` | `Cmd+Ctrl+1..9` | Switch to branch N |
