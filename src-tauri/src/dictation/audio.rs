@@ -289,4 +289,78 @@ mod tests {
         process_audio_chunk(&data, 16000, 1, &buf, &mut mono_buf, &mut resample_buf);
         assert_eq!(guard.len(), 16); // still 16, new samples dropped
     }
+
+    #[test]
+    fn test_process_audio_chunk_stereo_to_mono() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let mut mono_buf = Vec::new();
+        let mut resample_buf = Vec::new();
+
+        // 8 stereo frames (16 samples total) at 16kHz
+        // Left=1.0, Right=0.0 → mono should average to 0.5
+        let stereo_data: Vec<f32> = (0..8).flat_map(|_| vec![1.0, 0.0]).collect();
+        assert_eq!(stereo_data.len(), 16);
+
+        process_audio_chunk(&stereo_data, 16000, 2, &buf, &mut mono_buf, &mut resample_buf);
+        let result: Vec<f32> = buf.lock().drain(..).collect();
+        assert_eq!(result.len(), 8, "Stereo→mono should halve the sample count");
+        for s in &result {
+            assert!((s - 0.5).abs() < 1e-6, "Each mono sample should be 0.5, got {s}");
+        }
+    }
+
+    #[test]
+    fn test_process_audio_chunk_resample_48k_to_16k() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let mut mono_buf = Vec::new();
+        let mut resample_buf = Vec::new();
+
+        // 480 mono samples at 48kHz = 10ms of audio → should produce ~160 samples at 16kHz
+        let data = vec![0.25f32; 480];
+        process_audio_chunk(&data, 48000, 1, &buf, &mut mono_buf, &mut resample_buf);
+        let result: Vec<f32> = buf.lock().drain(..).collect();
+
+        // 480 * (16000/48000) = 160
+        assert_eq!(result.len(), 160, "48kHz→16kHz should produce 1/3 samples");
+        for s in &result {
+            assert!((s - 0.25).abs() < 1e-6, "Nearest-neighbor should preserve value");
+        }
+    }
+
+    #[test]
+    fn test_process_audio_chunk_stereo_48k() {
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let mut mono_buf = Vec::new();
+        let mut resample_buf = Vec::new();
+
+        // 960 samples = 480 stereo frames at 48kHz = 10ms
+        let stereo_data: Vec<f32> = (0..480).flat_map(|_| vec![0.8, 0.2]).collect();
+        process_audio_chunk(&stereo_data, 48000, 2, &buf, &mut mono_buf, &mut resample_buf);
+        let result: Vec<f32> = buf.lock().drain(..).collect();
+
+        // 480 mono frames at 48kHz → 160 samples at 16kHz
+        assert_eq!(result.len(), 160, "Stereo 48kHz→mono 16kHz");
+        for s in &result {
+            assert!((s - 0.5).abs() < 1e-6, "Averaged stereo (0.8+0.2)/2 = 0.5");
+        }
+    }
+
+    #[test]
+    fn test_scratch_buffers_reused() {
+        // Verify that scratch buffers are reused across calls (capacity grows once)
+        let buf: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let mut mono_buf: Vec<f32> = Vec::new();
+        let mut resample_buf: Vec<f32> = Vec::new();
+
+        let data = vec![0.5f32; 480];
+        process_audio_chunk(&data, 48000, 1, &buf, &mut mono_buf, &mut resample_buf);
+        let cap_after_first = mono_buf.capacity();
+
+        buf.lock().clear();
+        process_audio_chunk(&data, 48000, 1, &buf, &mut mono_buf, &mut resample_buf);
+        let cap_after_second = mono_buf.capacity();
+
+        // Capacity should not have changed — buffers are reused
+        assert_eq!(cap_after_first, cap_after_second, "Buffer should be reused, not reallocated");
+    }
 }

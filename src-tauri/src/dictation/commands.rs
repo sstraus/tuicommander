@@ -1,4 +1,5 @@
 use super::{audio, corrections, model, streaming, transcribe, DictationState};
+use transcribe::Transcriber;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -213,7 +214,7 @@ pub fn start_dictation(
     let (tx, rx) = mpsc::channel::<String>();
 
     let session = streaming::StreamingSession::start(
-        transcriber_arc,
+        transcriber_arc as Arc<dyn transcribe::Transcriber>,
         audio_buffer,
         tx,
         lang,
