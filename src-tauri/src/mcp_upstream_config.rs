@@ -233,6 +233,9 @@ pub(crate) async fn reconnect_mcp_upstream(
 
     let registry = &state.mcp_upstream_registry;
 
+    // Emit reconnecting event so the UI can show feedback
+    registry.emit_status_change(&name, "connecting");
+
     // Disconnect if currently registered (ignore error if not present)
     let _ = registry.disconnect_upstream(&name);
 

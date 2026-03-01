@@ -214,7 +214,7 @@ impl UpstreamRegistry {
     }
 
     /// Emit an upstream status change event (fire-and-forget).
-    fn emit_status_change(&self, name: &str, status: &str) {
+    pub(crate) fn emit_status_change(&self, name: &str, status: &str) {
         if let Some(bus) = self.event_bus.read().as_ref() {
             let _ = bus.send(crate::state::AppEvent::UpstreamStatusChanged {
                 name: name.to_string(),
@@ -246,6 +246,13 @@ impl UpstreamRegistry {
                 let mut def = tool.definition.clone();
                 if let Some(obj) = def.as_object_mut() {
                     obj.insert("name".to_string(), Value::String(prefixed_name));
+                    // Annotate description with upstream origin
+                    let desc = obj
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let annotated = format!("[via {}] {}", entry.config.name, desc);
+                    obj.insert("description".to_string(), Value::String(annotated));
                 }
                 result.push(def);
             }
@@ -403,9 +410,21 @@ impl UpstreamRegistry {
                 UpstreamStatus::Disabled => "disabled",
                 UpstreamStatus::Failed => "failed",
             };
+            let transport_info = match &e.config.transport {
+                UpstreamTransport::Http { url } => serde_json::json!({
+                    "type": "http",
+                    "url": url,
+                }),
+                UpstreamTransport::Stdio { command, args, .. } => serde_json::json!({
+                    "type": "stdio",
+                    "command": command,
+                    "args": args,
+                }),
+            };
             serde_json::json!({
                 "name": entry_ref.key(),
                 "status": status_str,
+                "transport": transport_info,
                 "tool_count": e.tools.read().len(),
                 "metrics": e.metrics.snapshot(),
             })
@@ -850,6 +869,19 @@ mod tests {
         let tools = registry.aggregated_tools();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0]["name"], "myserver__do_thing");
+    }
+
+    #[test]
+    fn aggregated_tools_annotates_description() {
+        let registry = UpstreamRegistry::new();
+        let (name, entry) = ready_entry("myserver", vec![make_tool_def("do_thing")]);
+        registry.entries.insert(name, entry);
+
+        let tools = registry.aggregated_tools();
+        assert_eq!(tools.len(), 1);
+        let desc = tools[0]["description"].as_str().unwrap();
+        assert!(desc.starts_with("[via myserver]"), "got: {desc}");
+        assert!(desc.contains("test tool"), "got: {desc}");
     }
 
     #[test]
