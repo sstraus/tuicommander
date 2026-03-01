@@ -139,10 +139,13 @@ impl UpstreamMetrics {
     }
 }
 
-/// Client variant — wraps either transport behind a sync Mutex for interior mutability.
+/// Client variant — wraps either transport behind a Mutex for interior mutability.
+///
+/// The stdio variant uses `Arc<std::sync::Mutex<…>>` so that the Arc can be
+/// cloned into `spawn_blocking` closures without any unsafe lifetime extension.
 pub(crate) enum UpstreamClient {
     Http(Mutex<HttpMcpClient>),
-    Stdio(std::sync::Mutex<StdioMcpClient>),
+    Stdio(Arc<std::sync::Mutex<StdioMcpClient>>),
 }
 
 /// One upstream server tracked in the registry.
@@ -428,7 +431,7 @@ fn build_client(name: &str, config: &UpstreamMcpServer) -> Result<UpstreamClient
         UpstreamTransport::Stdio { .. } => {
             let client = StdioMcpClient::from_upstream_config(name.to_string(), &config.transport)
                 .ok_or_else(|| format!("Failed to build stdio client for '{name}'"))?;
-            Ok(UpstreamClient::Stdio(std::sync::Mutex::new(client)))
+            Ok(UpstreamClient::Stdio(Arc::new(std::sync::Mutex::new(client))))
         }
     }
 }
@@ -471,15 +474,11 @@ async fn dispatch_tool_call(
             guard.call_tool_with_reconnect(tool_name, args).await
         }
         UpstreamClient::Stdio(mutex) => {
-            // StdioMcpClient is sync — run in a blocking thread
-            let mutex = mutex as *const std::sync::Mutex<StdioMcpClient>;
-            // SAFETY: the entry (and its mutex) lives as long as this Arc — the
-            // caller holds an Arc<UpstreamEntry> across the await point.
-            let mutex_ref: &'static std::sync::Mutex<StdioMcpClient> =
-                unsafe { &*mutex };
+            // StdioMcpClient is sync — clone the Arc and run in a blocking thread.
+            let arc = Arc::clone(mutex);
             let tool_name = tool_name.to_string();
             tokio::task::spawn_blocking(move || {
-                let mut guard = mutex_ref
+                let mut guard = arc
                     .lock()
                     .map_err(|e| format!("Stdio client mutex poisoned: {e}"))?;
                 guard.call_tool(&tool_name, args)
@@ -502,11 +501,9 @@ async fn initialize_entry(
             guard.initialize().await
         }
         UpstreamClient::Stdio(mutex) => {
-            let mutex_ptr = mutex as *const std::sync::Mutex<StdioMcpClient>;
-            let mutex_ref: &'static std::sync::Mutex<StdioMcpClient> =
-                unsafe { &*mutex_ptr };
+            let arc = Arc::clone(mutex);
             tokio::task::spawn_blocking(move || {
-                let mut guard = mutex_ref.lock().map_err(|e| e.to_string())?;
+                let mut guard = arc.lock().map_err(|e| e.to_string())?;
                 guard.spawn_and_initialize()
             })
             .await
@@ -596,11 +593,9 @@ async fn health_check_entry(entry: &UpstreamEntry) -> bool {
             guard.health_check().await.is_ok()
         }
         UpstreamClient::Stdio(mutex) => {
-            let mutex_ptr = mutex as *const std::sync::Mutex<StdioMcpClient>;
-            let mutex_ref: &'static std::sync::Mutex<StdioMcpClient> = unsafe { &*mutex_ptr };
+            let arc = Arc::clone(mutex);
             tokio::task::spawn_blocking(move || {
-                mutex_ref
-                    .lock()
+                arc.lock()
                     .map(|mut g| g.is_alive())
                     .unwrap_or(false)
             })
