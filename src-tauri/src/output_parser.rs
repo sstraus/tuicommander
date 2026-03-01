@@ -436,10 +436,12 @@ pub(crate) fn strip_ansi(text: &str) -> String {
 /// Parse status line patterns from pre-stripped terminal output.
 fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
     // Fast path: skip chunks that cannot contain any status line marker.
-    // Checks for: '*' (Claude status), "[Running]", or multi-byte UTF-8 (0xE2 covers
-    // braille spinners U+2800, dingbat asterisks U+2720-273F like ✢, and ⏺).
-    if !clean.contains('*') && !clean.contains("[Running]")
+    // Checks for: '*' (Claude status), "[Running]", "Tokens:" (Aider report),
+    // bullet chars (• ◦), or multi-byte UTF-8 (0xE2 covers braille spinners U+2800,
+    // dingbat asterisks U+2720-273F like ✢, block elements ░█, and ⏺).
+    if !clean.contains('*') && !clean.contains("[Running]") && !clean.contains("Tokens:")
         && !clean.as_bytes().contains(&0xe2)
+        && !clean.as_bytes().contains(&0xc2)  // 0xC2 is lead byte for • (U+2022) and ◦ (U+25E6 is 0xE2)
     {
         return None;
     }
@@ -452,15 +454,27 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
         // "[Running] Task name"
         static ref RUNNING_STATUS_RE: regex::Regex =
             regex::Regex::new(r"(?i)\[Running\]\s+(.+)").unwrap();
-        // Spinner: "⠋ Task name"
+        // Braille spinner: "⠋ Task name" (Gemini CLI dots, generic)
         static ref SPINNER_STATUS_RE: regex::Regex =
             regex::Regex::new(r"[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s+([^.…]+)").unwrap();
+        // Aider Knight Rider scanner: "░█" or "█░" prefix followed by spaces + task text
+        // The scanner chars (░ U+2591, █ U+2588) bounce back and forth across the line.
+        static ref AIDER_SPINNER_RE: regex::Regex =
+            regex::Regex::new(r"[\u{2588}\u{2591}#=]{1,2}\s{2,}(.+)").unwrap();
+        // Aider token report: "Tokens: 5.2k sent, 1.3k received."
+        static ref AIDER_TOKENS_RE: regex::Regex =
+            regex::Regex::new(r"Tokens:\s+(.+?)\.$").unwrap();
+        // Codex CLI bullet spinner: "• Working (5s • esc to interrupt)" or "◦ Working (12s)"
+        // • (U+2022) and ◦ (U+25E6) alternate as a blink spinner.
+        // Requires parenthesized time suffix to avoid false positives from markdown bullets.
+        static ref CODEX_BULLET_RE: regex::Regex =
+            regex::Regex::new(r"[\u{2022}\u{25E6}]\s+(\w[^(]*?)\s*\(\d+[smh]").unwrap();
         // Time info
         static ref TIME_RE: regex::Regex =
             regex::Regex::new(r"\((\d+[smh])").unwrap();
         // Token info
         static ref TOKEN_RE: regex::Regex =
-            regex::Regex::new(r"(?i)(\d+(?:\.\d+)?k?\s*tokens)").unwrap();
+            regex::Regex::new(r"(?i)(\d+(?:[.,]\d+)?k?\s*tokens)").unwrap();
     }
 
     for line in clean.lines() {
@@ -474,8 +488,15 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
             continue;
         }
 
-        // Try each pattern
-        let patterns: &[&regex::Regex] = &[&CLAUDE_STATUS_RE, &RUNNING_STATUS_RE, &SPINNER_STATUS_RE];
+        // Try each pattern (order matters: more specific first)
+        let patterns: &[&regex::Regex] = &[
+            &CLAUDE_STATUS_RE,
+            &RUNNING_STATUS_RE,
+            &AIDER_TOKENS_RE,
+            &AIDER_SPINNER_RE,
+            &CODEX_BULLET_RE,
+            &SPINNER_STATUS_RE,
+        ];
         for pattern in patterns {
             if let Some(caps) = pattern.captures(line) {
                 let task_name = caps[1].trim().to_string();
@@ -483,7 +504,12 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
                     continue;
                 }
                 let time_info = TIME_RE.captures(line).map(|c| c[1].to_string());
-                let token_info = TOKEN_RE.captures(line).map(|c| c[1].to_string());
+                // For Aider token reports the whole line IS the token info
+                let token_info = if std::ptr::eq(*pattern, &*AIDER_TOKENS_RE) {
+                    Some(task_name.clone())
+                } else {
+                    TOKEN_RE.captures(line).map(|c| c[1].to_string())
+                };
                 return Some(ParsedEvent::StatusLine {
                     task_name,
                     full_line: line.trim().to_string(),
@@ -974,6 +1000,94 @@ mod tests {
                 assert_eq!(task_name, "npm test");
             }
             _ => panic!("Expected StatusLine event"),
+        }
+    }
+
+    #[test]
+    fn test_status_line_aider_spinner() {
+        // Aider uses a Knight Rider scanner: "░█        Waiting for claude-3-5-sonnet"
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{2591}\u{2588}        Waiting for claude-3-5-sonnet");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, .. } => {
+                assert_eq!(task_name, "Waiting for claude-3-5-sonnet");
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_aider_token_report() {
+        // Aider token report: "Tokens: 5.2k sent, 1.3k received."
+        let parser = OutputParser::new();
+        let events = parser.parse("Tokens: 5.2k sent, 1.3k received.");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, token_info, .. } => {
+                assert_eq!(task_name, "5.2k sent, 1.3k received");
+                assert!(token_info.is_some(), "Expected token_info");
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_aider_token_report_with_cache() {
+        // Aider with cache: "Tokens: 2,345 sent, 123 cache write, 456 cache hit, 789 received."
+        let parser = OutputParser::new();
+        let events = parser.parse("Tokens: 2,345 sent, 123 cache write, 456 cache hit, 789 received.");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, .. } => {
+                assert!(task_name.contains("sent"));
+                assert!(task_name.contains("received"));
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_codex_working() {
+        // Codex CLI: "• Working (5s • esc to interrupt)"
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{2022} Working (5s \u{2022} esc to interrupt)");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, time_info, .. } => {
+                assert_eq!(task_name, "Working");
+                assert_eq!(time_info.as_deref(), Some("5s"));
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_codex_working_hollow() {
+        // Codex CLI alternate spinner: "◦ Working (12s)"
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{25E6} Working (12s)");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, time_info, .. } => {
+                assert_eq!(task_name, "Working");
+                assert_eq!(time_info.as_deref(), Some("12s"));
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_gemini_braille_with_phrase() {
+        // Gemini CLI: braille spinner + loading phrase
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{280B} Analyzing your codebase");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, .. } => {
+                assert_eq!(task_name, "Analyzing your codebase");
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
         }
     }
 
@@ -1957,6 +2071,14 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(!has_status_line(&parser.parse(
             "156  /* Last prompt sub-row */                                                                                                                    "
         )));
+    }
+
+    #[test]
+    fn test_no_status_line_from_markdown_bullet() {
+        let parser = OutputParser::new();
+        // Markdown bullet list — should NOT trigger Codex bullet pattern
+        assert!(!has_status_line(&parser.parse("• This is a bullet point in a list")));
+        assert!(!has_status_line(&parser.parse("  • Another nested bullet item")));
     }
 
     #[test]

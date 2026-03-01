@@ -128,6 +128,17 @@ The parser uses regex patterns to detect:
 - API errors from agents and API providers (5xx, auth failures)
 - GitHub/GitLab PR URLs in `gh pr create` output
 - OSC 9;4 terminal progress sequences
-- Agent status lines with timing/token info
+- Agent status lines with timing/token info (see below)
 
 Patterns are compiled once at `OutputParser::new()` and reused across calls.
+
+### Status Line Detection by Agent
+
+| Agent | Pattern | Example |
+|-------|---------|---------|
+| Claude Code | Dingbat asterisk `✢` or ASCII `*` + ellipsis | `✢Reading files… (12s · ↑ 4.6k tokens)` |
+| Aider | Knight Rider scanner `░█` / `█░` + task text | `░█        Waiting for claude-3-5-sonnet` |
+| Aider | Token report `Tokens:` prefix | `Tokens: 5.2k sent, 1.3k received.` |
+| Codex CLI | Bullet `•`/`◦` + task + parenthesized time | `• Working (5s • esc to interrupt)` |
+| Gemini CLI | Braille spinner `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` + phrase | `⠋ Analyzing your codebase` |
+| Generic | `[Running]` prefix | `[Running] npm test` |
