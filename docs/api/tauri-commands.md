@@ -98,6 +98,56 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `open_in_app` | `path, app` | `()` | Open path in application |
 | `spawn_agent` | `pty_config, agent_config` | `String` (session ID) | Spawn agent in PTY |
 
+## MCP Upstream Proxy (`mcp_upstream_config.rs`, `mcp_upstream_credentials.rs`)
+
+Commands for managing upstream MCP servers proxied through TUICommander's `/mcp` endpoint.
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `load_mcp_upstreams` | -- | `UpstreamMcpConfig` | Load upstream config from `mcp-upstreams.json` |
+| `save_mcp_upstreams` | `config: UpstreamMcpConfig` | `()` | Validate, persist, and hot-reload upstream config. Errors if validation fails |
+| `reconnect_mcp_upstream` | `name: String` | `()` | Disconnect and reconnect a single upstream by name. Useful after credential changes or transient failures |
+| `save_mcp_upstream_credential` | `name: String, token: String` | `()` | Store a Bearer token for an upstream in the OS keyring |
+| `delete_mcp_upstream_credential` | `name: String` | `()` | Remove a Bearer token from the OS keyring (idempotent) |
+
+### UpstreamMcpConfig schema
+
+```typescript
+interface UpstreamMcpConfig {
+  servers: UpstreamMcpServer[];
+}
+
+interface UpstreamMcpServer {
+  id: string;              // Unique UUID, used for config diff tracking
+  name: string;            // Namespace prefix — must match [a-z0-9_-]+
+  transport: UpstreamTransport;
+  enabled: boolean;        // Default: true
+  timeout_secs: number;    // Default: 30 (0 = no timeout, HTTP only)
+  tool_filter?: ToolFilter; // Optional allow/deny filter
+}
+
+type UpstreamTransport =
+  | { type: "http"; url: string }
+  | { type: "stdio"; command: string; args: string[]; env: Record<string, string> };
+
+interface ToolFilter {
+  mode: "allow" | "deny";
+  patterns: string[];  // Exact names or trailing-* glob prefix patterns
+}
+```
+
+### Upstream status values
+
+The live registry exposes status via SSE events (`upstream_status_changed`). Valid status strings:
+
+| Value | Meaning |
+|-------|---------|
+| `connecting` | Handshake in progress |
+| `ready` | Tools available |
+| `circuit_open` | Circuit breaker open, backoff active |
+| `disabled` | Disabled in config |
+| `failed` | Permanently failed, manual reconnect required |
+
 ## Agent MCP Configuration (`agent_mcp.rs`)
 
 | Command | Args | Returns | Description |

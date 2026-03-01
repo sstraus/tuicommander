@@ -887,4 +887,71 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 ### 18.8 Notification Sounds
 - Reuses shared `NotificationManager` (Web Audio API)
 - State transition detection: question, rate-limit, error, completion
+
+---
+
+## 19. MCP Proxy Hub
+
+TUICommander aggregates upstream MCP servers and exposes them through its own `/mcp` endpoint. Any MCP client (Claude Code, Cursor, VS Code) connecting to TUIC automatically gains access to all configured upstream tools.
+
+### 19.1 Architecture
+- TUIC acts as both an MCP server (to downstream clients) and an MCP client (to upstream servers)
+- All upstream tools are exposed via the single `POST /mcp` Streamable HTTP endpoint
+- Native TUIC tools (`session`, `git`, `agent`, `config`, `plugin_dev_guide`) coexist with upstream tools
+- Tool routing: names containing `__` are routed to the upstream registry; all others handled natively
+
+### 19.2 Tool Namespace
+- Upstream tools are prefixed: `{upstream_name}__{tool_name}`
+- Double underscore (`__`) is the routing discriminator — native tool names never contain it
+- Tool descriptions are annotated with `[via {upstream_name}]` to identify origin
+- Clients always see the merged tool list in a single `tools/list` response
+
+### 19.3 Supported Transports
+- **HTTP (Streamable HTTP, spec 2025-03-26)** — connects to any MCP server with an HTTP endpoint
+- **Stdio** — spawns local processes (npm packages, Python scripts, etc.) communicating via newline-delimited JSON-RPC
+
+### 19.4 Circuit Breaker (per upstream)
+- 3 consecutive failures → circuit opens
+- Backoff: 1s → exponential growth → 60s cap
+- After 10 retry cycles without recovery → permanent `Failed` state
+- Recovery: successful tool call or health check resets the circuit breaker
+
+### 19.5 Health Checks
+- Background task probes every `Ready` upstream every 60 seconds via `tools/list` (HTTP) or process liveness check (stdio)
+- `CircuitOpen` upstreams with expired backoff are also probed for recovery
+
+### 19.6 Tool Filtering (per upstream)
+- Allow list: only matching tools are exposed
+- Deny list: all tools except matching ones are exposed
+- Pattern syntax: exact match or trailing-`*` prefix glob
+
+### 19.7 Hot-Reload
+- Adding, removing, or changing upstreams takes effect on save without restarting TUIC or AI clients
+- Config diff computed by stable `id` field; only changed entries are reconnected
+
+### 19.8 Credential Management
+- Bearer tokens stored in OS keyring (Keychain / Credential Manager / Secret Service)
+- Config file (`mcp-upstreams.json`) never contains secrets
+- Per-upstream credential lookup at call time
+
+### 19.9 Environment Sanitization (stdio)
+- Parent environment is cleared before spawning to prevent credential leakage
+- Safe allowlist re-applied: `PATH, HOME, USER, LANG, LC_ALL, TMPDIR, TEMP, TMP, SHELL, TERM`
+- User-configured `env` overrides applied on top
+
+### 19.10 SSE Events
+- `upstream_status_changed` events emitted on status transitions (connecting, ready, circuit_open, disabled, failed)
+- Delivered via `GET /events` SSE stream
+
+### 19.11 Metrics (per upstream, lock-free)
+- `call_count` — total tool calls routed
+- `error_count` — total failed calls
+- `last_latency_ms` — last observed round-trip time
+
+### 19.12 Validation
+- Names: must match `[a-z0-9_-]+`, must be unique
+- HTTP URLs: must use `http://` or `https://` scheme only
+- Self-referential URL detection: rejects URLs pointing to TUIC's own MCP port
+- Stdio: command must be non-empty
+- All errors collected (not just first) and returned to caller
 - Respects sound toggle from Settings screen

@@ -329,6 +329,7 @@ All stores persist to localStorage:
 - [x] Plugin system (see FEATURES.md section 17)
 - [x] Remote access / HTTP server
 - [x] Mobile Companion PWA (sessions, live output, question reply, activity feed)
+- [x] MCP Proxy Hub (aggregate upstream MCP servers via HTTP and stdio, tool namespace prefixing, circuit breaker, hot-reload, OS keyring credentials, tool filtering)
 - [x] Copy Path in Markdown panel
 - [x] Claude Usage Dashboard (native SolidJS component with API polling, session analytics, usage timeline)
 - [x] ConfirmDialog component (in-app dark-themed replacement for native OS dialogs)
