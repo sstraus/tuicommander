@@ -82,9 +82,18 @@
 }
 
 .rowMain {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 80px 100px 80px;
   align-items: center;
   gap: 12px;
+}
+
+/* Terminal name + optional project badge — both in the 1fr column */
+.nameCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .termName {
@@ -112,7 +121,6 @@
   font-size: var(--font-sm);
   color: var(--fg-muted);
   text-transform: capitalize;
-  flex-shrink: 0;
 }
 
 .status {
@@ -121,7 +129,6 @@
   border-radius: var(--radius-sm);
   text-align: center;
   white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .statusWorking {
@@ -149,12 +156,10 @@
   color: var(--fg-muted);
   text-align: right;
   white-space: nowrap;
-  flex-shrink: 0;
-  margin-left: auto;
 }
 
-/* Last prompt sub-row */
-.promptRow {
+/* Sub-rows: current task, last prompt, agent intent */
+.subRow {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -163,13 +168,13 @@
   min-width: 0;
 }
 
-.promptIcon {
+.subIcon {
   flex-shrink: 0;
   color: var(--fg-muted);
   opacity: 0.6;
 }
 
-.promptText {
+.subText {
   font-size: var(--font-xs);
   color: var(--fg-muted);
   white-space: nowrap;

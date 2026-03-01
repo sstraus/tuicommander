@@ -449,32 +449,36 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
     }
 
     lazy_static::lazy_static! {
+        // All status-line patterns are anchored to ^\s* because agent status lines
+        // are always the first thing on the visible line (agents use \r to overwrite).
+        // Without anchoring, `*` in code/output would false-positive.
+
         // Claude Code: "* Task name... (time)" or "✢Task name… (time)" or "· Verb…"
         // Accepts ASCII *, middle dot · (U+00B7), and dingbat asterisks U+2720-273F.
         static ref CLAUDE_STATUS_RE: regex::Regex =
-            regex::Regex::new(r"[*\u{00B7}\u{2720}-\u{273F}]\s*([^.…\n]+)(?:\.{2,3}|…)").unwrap();
+            regex::Regex::new(r"^\s*[*\u{00B7}\u{2720}-\u{273F}]\s*([^.…\n]+)(?:\.{2,3}|…)").unwrap();
         // "[Running] Task name"
         static ref RUNNING_STATUS_RE: regex::Regex =
-            regex::Regex::new(r"(?i)\[Running\]\s+(.+)").unwrap();
+            regex::Regex::new(r"(?i)^\s*\[Running\]\s+(.+)").unwrap();
         // Braille spinner: "⠋ Task name" (Gemini CLI dots, generic)
         static ref SPINNER_STATUS_RE: regex::Regex =
-            regex::Regex::new(r"[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s+([^.…]+)").unwrap();
+            regex::Regex::new(r"^\s*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s+([^.…]+)").unwrap();
         // Aider Knight Rider scanner: "░█" or "█░" prefix followed by spaces + task text
         // The scanner chars (░ U+2591, █ U+2588) bounce back and forth across the line.
         static ref AIDER_SPINNER_RE: regex::Regex =
-            regex::Regex::new(r"[\u{2588}\u{2591}#=]{1,2}\s{2,}(.+)").unwrap();
+            regex::Regex::new(r"^\s*[\u{2588}\u{2591}#=]{1,2}\s{2,}(.+)").unwrap();
         // Aider token report: "Tokens: 5.2k sent, 1.3k received."
         static ref AIDER_TOKENS_RE: regex::Regex =
-            regex::Regex::new(r"Tokens:\s+(.+?)\.$").unwrap();
+            regex::Regex::new(r"^\s*Tokens:\s+(.+?)\.$").unwrap();
         // Codex CLI bullet spinner: "• Working (5s • esc to interrupt)" or "◦ Working (12s)"
         // • (U+2022) and ◦ (U+25E6) alternate as a blink spinner.
         // Requires parenthesized time suffix to avoid false positives from markdown bullets.
         static ref CODEX_BULLET_RE: regex::Regex =
-            regex::Regex::new(r"[\u{2022}\u{25E6}]\s+(\w[^(]*?)\s*\(\d+[smh]").unwrap();
+            regex::Regex::new(r"^\s*[\u{2022}\u{25E6}]\s+(\w[^(]*?)\s*\(\d+[smh]").unwrap();
         // Copilot CLI indicators: ∴ (U+2234 thinking), ● (U+25CF active), ○ (U+25CB queued)
         // Format: "∴ Thinking…" or "● Read file..." or "○ Verify..."
         static ref COPILOT_STATUS_RE: regex::Regex =
-            regex::Regex::new(r"[\u{2234}\u{25CF}\u{25CB}]\s+([^.…\n]+)(?:\.{2,3}|…)").unwrap();
+            regex::Regex::new(r"^\s*[\u{2234}\u{25CF}\u{25CB}]\s+([^.…\n]+)(?:\.{2,3}|…)").unwrap();
         // Time info
         static ref TIME_RE: regex::Regex =
             regex::Regex::new(r"\((\d+[smh])").unwrap();
@@ -508,6 +512,16 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
             if let Some(caps) = pattern.captures(line) {
                 let task_name = caps[1].trim().to_string();
                 if task_name.len() < 3 {
+                    continue;
+                }
+                // Reject task names containing code/data artifacts — real agent
+                // status lines are natural language (e.g. "Reading files").
+                if task_name.contains('[') || task_name.contains(']')
+                    || task_name.contains('"') || task_name.contains('\'')
+                    || task_name.contains('|') || task_name.contains('{')
+                    || task_name.contains('}') || task_name.contains('\\')
+                    || task_name.contains('/')
+                {
                     continue;
                 }
                 let time_info = TIME_RE.captures(line).map(|c| c[1].to_string());
@@ -1152,6 +1166,51 @@ mod tests {
             }
             _ => panic!("Expected StatusLine, got {:?}", events[0]),
         }
+    }
+
+    #[test]
+    fn test_status_line_rejects_glob_pattern() {
+        // Code output like ("*/*") ... must NOT be captured as a status line.
+        // The `*` is not at the start of the line.
+        let parser = OutputParser::new();
+        let events = parser.parse(r#"    ("*/*") ..."#);
+        assert!(
+            !events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
+            "Glob pattern in code should not match status line: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_status_line_rejects_stats_suffix() {
+        // Claude Code stats like ") | [C2 S31 K30 A30 M7 H..." must NOT match.
+        let parser = OutputParser::new();
+        let events = parser.parse("* ) | [C2 S31 K30 A30 M7 H...");
+        assert!(
+            !events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
+            "Stats suffix should be rejected by content validation: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_status_line_rejects_mid_line_asterisk() {
+        // Asterisk mid-line in code should not trigger status-line detection
+        let parser = OutputParser::new();
+        let events = parser.parse(r#"  let result = a * b... done"#);
+        assert!(
+            !events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
+            "Mid-line asterisk should not match: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_status_line_rejects_path_with_asterisk() {
+        // Paths with wildcard should not trigger
+        let parser = OutputParser::new();
+        let events = parser.parse("src/**/*.ts...");
+        assert!(
+            !events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
+            "Path with asterisk should not match: {:?}", events
+        );
     }
 
     #[test]

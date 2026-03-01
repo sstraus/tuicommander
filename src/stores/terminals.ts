@@ -38,6 +38,7 @@ export interface TerminalData {
   lastDataAt: number | null; // Timestamp of last PTY output
   lastPrompt: string | null; // Last relevant user prompt (>= 10 words), set by Rust
   agentIntent: string | null; // LLM-declared intent via [[intent: ...]] token
+  currentTask: string | null; // Current agent task from status-line parsing (e.g. "Reading files")
   isRemote: boolean; // Created via HTTP/MCP (not locally by the UI)
 }
 
@@ -138,16 +139,16 @@ function createTerminalsStore() {
 
   const actions = {
     /** Add a new terminal */
-    add(data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "isRemote"> & { isRemote?: boolean }): string {
+    add(data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote"> & { isRemote?: boolean }): string {
       const id = `term-${state.counter + 1}`;
       setState("counter", (c) => c + 1);
-      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, isRemote: false, ...data });
+      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, ...data });
       return id;
     },
 
     /** Register a terminal with a specific ID (used by floating windows to reconnect to existing PTY sessions) */
-    register(id: string, data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "isRemote"> & { isRemote?: boolean }): void {
-      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, isRemote: false, ...data });
+    register(id: string, data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote"> & { isRemote?: boolean }): void {
+      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, ...data });
     },
 
     /** Remove a terminal. Sets activeId to null when removing the active terminal —

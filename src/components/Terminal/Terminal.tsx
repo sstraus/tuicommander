@@ -73,8 +73,10 @@ export function cleanOscTitle(title: string): string {
   // Reject titles that look like shell scripts before any processing
   if (SHELL_SCRIPT_RE.test(title)) return "";
 
+  // Strip leading agent spinner symbols: * · (U+00B7) and dingbats U+2720-273F (✳ ✢ ✶ etc.)
+  let cleaned = title.replace(/^[\s*\u00B7\u2720-\u273F]+/, "");
   // Strip "user@host:" or bare "user@host" prefix
-  let cleaned = title.replace(/^[^@\s]+@[^:\s]+(:\s*)?/, "");
+  cleaned = cleaned.replace(/^[^@\s]+@[^:\s]+(:\s*)?/, "");
   // Strip leading env var assignments (KEY=value pairs, including empty values)
   cleaned = cleaned.replace(/^(\s*\w+=\S*\s+)+/, "");
   cleaned = cleaned.trim();
@@ -169,9 +171,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
   });
 
-  // Track when OSC title last updated the tab name (OSC titles take priority over status-line)
-  let lastOscTitleUpdate = 0;
-  // Original tab name before any command/agent overwrote it
+  // Original tab name before any OSC title overwrote it
   let originalName: string | null = null;
 
   const pty = usePty();
@@ -285,12 +285,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
   };
 
-  /** Truncate task name to fit in tab title */
-  const truncateTaskName = (name: string, maxLength = 25): string => {
-    if (name.length <= maxLength) return name;
-    return name.slice(0, maxLength - 1) + "\u2026";
-  };
-
   /** Set up event listeners for a known session ID */
   const attachSessionListeners = async (targetSessionId: string) => {
 
@@ -306,14 +300,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // (e.g. lazygit pane closed). Updating a removed entry would recreate it as a ghost.
         const stillExists = terminalsStore.get(props.id);
         if (stillExists) {
-          // Restore original tab name if it was overwritten by status-line
+          // Restore original tab name if it was overwritten by OSC title
           if (originalName && !stillExists.nameIsCustom) {
             terminalsStore.update(props.id, { name: originalName });
           }
-          terminalsStore.update(props.id, { sessionId: null });
+          terminalsStore.update(props.id, { sessionId: null, currentTask: null });
           terminalsStore.clearAwaitingInput(props.id);
         }
-        lastOscTitleUpdate = 0;
         sessionId = null;
         props.onSessionExit?.(props.id);
         if (terminalsStore.state.activeId !== props.id) {
@@ -346,16 +339,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
             // Agent is working again — clear any question state
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} status-line task="${parsed.task_name}" → clearAwaitingInput`);
             terminalsStore.clearAwaitingInput(props.id);
-            const now = Date.now();
-            const currentTerm = terminalsStore.get(props.id);
-            // Only use status-line title if OSC hasn't set a title recently (2s)
-            if (now - lastOscTitleUpdate > 2000 && !currentTerm?.nameIsCustom) {
-              if (!originalName) {
-                originalName = currentTerm?.name || null;
-              }
-              const taskTitle = truncateTaskName(parsed.task_name);
-              terminalsStore.update(props.id, { name: taskTitle });
-            }
+            // Store current task for Activity Dashboard (not tab title — too noisy)
+            terminalsStore.update(props.id, { currentTask: parsed.task_name });
             break;
           }
           case "rate-limit": {
@@ -807,11 +792,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
             originalName = terminalsStore.get(props.id)?.name || null;
           }
           terminalsStore.update(props.id, { name: cleaned });
-          lastOscTitleUpdate = Date.now();
         } else if (originalName) {
           // Bare user@host means shell prompt returned — restore original tab name
           terminalsStore.update(props.id, { name: originalName });
-          lastOscTitleUpdate = 0;
         }
       }
     });

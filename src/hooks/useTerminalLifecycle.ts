@@ -330,6 +330,25 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       mdTabsStore.setActive(null);
       terminalsStore.setActive(null);
     } else {
+      // Switch repo/branch context if the terminal belongs to a different one
+      const repoPath = repositoriesStore.getRepoPathForTerminal(id);
+      if (repoPath) {
+        const repo = repositoriesStore.state.repositories[repoPath];
+        if (repo) {
+          // Find which branch owns this terminal
+          for (const [branchName, branch] of Object.entries(repo.branches)) {
+            if (branch.terminals.includes(id)) {
+              if (repositoriesStore.state.activeRepoPath !== repoPath) {
+                repositoriesStore.setActive(repoPath);
+              }
+              if (repo.activeBranch !== branchName) {
+                repositoriesStore.setActiveBranch(repoPath, branchName);
+              }
+              break;
+            }
+          }
+        }
+      }
       terminalsStore.setActive(id);
       diffTabsStore.setActive(null);
       mdTabsStore.setActive(null);

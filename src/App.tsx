@@ -1148,7 +1148,7 @@ const App: Component = () => {
       </Show>
 
       {/* Activity dashboard */}
-      <ActivityDashboard />
+      <ActivityDashboard onSelect={terminalLifecycle.handleTerminalSelect} />
 
       {/* Worktree manager */}
       <WorktreeManager actions={worktreeActions} />

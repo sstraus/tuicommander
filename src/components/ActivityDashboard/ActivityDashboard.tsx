@@ -20,7 +20,7 @@ function getTerminalStatus(
   } else if (shellState === "idle") {
     return { label: "Idle", className: s.statusIdle };
   }
-  return { label: "—", className: s.statusIdle };
+  return { label: "\u2014", className: s.statusIdle };
 }
 
 /** Extract project name (last path segment) from cwd */
@@ -30,14 +30,39 @@ function projectName(cwd: string | null): string | null {
   return segments[segments.length - 1] || null;
 }
 
-/** Truncate a prompt to a single line for display */
-function truncatePrompt(prompt: string, maxLen = 80): string {
-  const oneLine = prompt.replace(/\n/g, " ").trim();
+/** Truncate a string to a single line for display */
+function truncate(text: string, maxLen = 80): string {
+  const oneLine = text.replace(/\n/g, " ").trim();
   if (oneLine.length <= maxLen) return oneLine;
   return oneLine.slice(0, maxLen - 1) + "\u2026";
 }
 
-export const ActivityDashboard: Component = () => {
+/** Speech bubble icon (last prompt) */
+const PromptIcon: Component = () => (
+  <svg class={s.subIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+    <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h11A1.5 1.5 0 0 1 15 3.5v7A1.5 1.5 0 0 1 13.5 12H9.373l-2.62 1.81A.75.75 0 0 1 5.6 13.2V12H2.5A1.5 1.5 0 0 1 1 10.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5H6.35a.75.75 0 0 1 .75.75v.83l1.81-1.25a.75.75 0 0 1 .427-.133H13.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-11Z"/>
+  </svg>
+);
+
+/** Crosshair icon (agent intent) */
+const IntentIcon: Component = () => (
+  <svg class={s.subIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+    <path d="M8 1a.75.75 0 0 1 .75.75v1.82a4.505 4.505 0 0 1 3.68 3.68h1.82a.75.75 0 0 1 0 1.5h-1.82a4.505 4.505 0 0 1-3.68 3.68v1.82a.75.75 0 0 1-1.5 0v-1.82a4.505 4.505 0 0 1-3.68-3.68H1.75a.75.75 0 0 1 0-1.5h1.82A4.505 4.505 0 0 1 7.25 3.57V1.75A.75.75 0 0 1 8 1ZM5.5 8a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z"/>
+  </svg>
+);
+
+/** Gear/spinner icon (current task) */
+const TaskIcon: Component = () => (
+  <svg class={s.subIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+    <path d="M7.068.727c.243-.97 1.62-.97 1.864 0l.3 1.2a.957.957 0 0 0 1.18.633l1.18-.39c.93-.31 1.753.789 1.13 1.593l-.76.98a.957.957 0 0 0 .166 1.34l1.01.76c.78.59.39 1.82-.55 1.84l-1.22.03a.957.957 0 0 0-.905.905l-.03 1.22c-.02.94-1.25 1.33-1.84.55l-.76-1.01a.957.957 0 0 0-1.34-.166l-.98.76c-.804.623-1.903-.2-1.593-1.13l.39-1.18a.957.957 0 0 0-.633-1.18l-1.2-.3c-.97-.243-.97-1.62 0-1.864l1.2-.3a.957.957 0 0 0 .633-1.18l-.39-1.18c-.31-.93.789-1.753 1.593-1.13l.98.76a.957.957 0 0 0 1.34-.166l.76-1.01ZM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+  </svg>
+);
+
+interface ActivityDashboardProps {
+  onSelect?: (id: string) => void;
+}
+
+export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
   const [, setTick] = createSignal(0);
   const isOpen = () => activityDashboardStore.state.isOpen;
 
@@ -65,10 +90,13 @@ export const ActivityDashboard: Component = () => {
   });
 
   const handleRowClick = (termId: string) => {
-    terminalsStore.setActive(termId);
+    if (props.onSelect) {
+      props.onSelect(termId);
+    } else {
+      terminalsStore.setActive(termId);
+      requestAnimationFrame(() => terminalsStore.get(termId)?.ref?.focus());
+    }
     activityDashboardStore.close();
-    // Focus the terminal after switching
-    requestAnimationFrame(() => terminalsStore.get(termId)?.ref?.focus());
   };
 
   const terminals = createMemo(() => {
@@ -86,6 +114,8 @@ export const ActivityDashboard: Component = () => {
         lastDataAt: term.lastDataAt,
         lastPrompt: term.lastPrompt,
         agentIntent: term.agentIntent,
+        // Claude Code spinner verbs are decorative garbage — suppress them
+        currentTask: term.agentType === "claude" ? null : term.currentTask,
         isActive: terminalsStore.state.activeId === id,
       };
     }).filter(Boolean) as Array<{
@@ -97,6 +127,7 @@ export const ActivityDashboard: Component = () => {
       lastDataAt: number | null;
       lastPrompt: string | null;
       agentIntent: string | null;
+      currentTask: string | null;
       isActive: boolean;
     }>;
   });
@@ -124,22 +155,29 @@ export const ActivityDashboard: Component = () => {
                   onClick={() => handleRowClick(term.id)}
                 >
                   <div class={s.rowMain}>
-                    <span class={s.termName}>{term.name}</span>
-                    <Show when={term.project}>
-                      <span class={s.project}>{term.project}</span>
-                    </Show>
+                    <div class={s.nameCell}>
+                      <span class={s.termName}>{term.name}</span>
+                      <Show when={term.project}>
+                        <span class={s.project}>{term.project}</span>
+                      </Show>
+                    </div>
                     <span class={s.agent}>{term.agent}</span>
                     <span class={`${s.status} ${term.status.className}`}>{term.status.label}</span>
                     <span class={s.lastActivity}>{formatRelativeTime(term.lastDataAt)}</span>
                   </div>
+                  <Show when={term.currentTask}>
+                    {(task) => (
+                      <div class={s.subRow} title={task()}>
+                        <TaskIcon />
+                        <span class={s.subText}>{truncate(task())}</span>
+                      </div>
+                    )}
+                  </Show>
                   <Show when={term.agentIntent} keyed>
                     {(intent) => (
-                      <div class={s.promptRow} title={intent}>
-                        {/* Target/crosshair icon for agent-declared intent */}
-                        <svg class={s.promptIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-                          <path d="M8 1a.75.75 0 0 1 .75.75v1.82a4.505 4.505 0 0 1 3.68 3.68h1.82a.75.75 0 0 1 0 1.5h-1.82a4.505 4.505 0 0 1-3.68 3.68v1.82a.75.75 0 0 1-1.5 0v-1.82a4.505 4.505 0 0 1-3.68-3.68H1.75a.75.75 0 0 1 0-1.5h1.82A4.505 4.505 0 0 1 7.25 3.57V1.75A.75.75 0 0 1 8 1ZM5.5 8a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z"/>
-                        </svg>
-                        <span class={s.promptText}>{truncatePrompt(intent)}</span>
+                      <div class={s.subRow} title={intent}>
+                        <IntentIcon />
+                        <span class={s.subText}>{truncate(intent)}</span>
                       </div>
                     )}
                   </Show>
@@ -147,11 +185,9 @@ export const ActivityDashboard: Component = () => {
                     const prompt = term.lastPrompt;
                     if (!prompt || term.agentIntent) return null;
                     return (
-                      <div class={s.promptRow} title={prompt}>
-                        <svg class={s.promptIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-                          <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h11A1.5 1.5 0 0 1 15 3.5v7A1.5 1.5 0 0 1 13.5 12H9.373l-2.62 1.81A.75.75 0 0 1 5.6 13.2V12H2.5A1.5 1.5 0 0 1 1 10.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5H6.35a.75.75 0 0 1 .75.75v.83l1.81-1.25a.75.75 0 0 1 .427-.133H13.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-11Z"/>
-                        </svg>
-                        <span class={s.promptText}>{truncatePrompt(prompt)}</span>
+                      <div class={s.subRow} title={prompt}>
+                        <PromptIcon />
+                        <span class={s.subText}>{truncate(prompt)}</span>
                       </div>
                     );
                   })()}
