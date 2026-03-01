@@ -52,6 +52,11 @@ pub enum AppEvent {
     PluginChanged {
         plugin_ids: Vec<String>,
     },
+    #[serde(rename = "upstream-status-changed")]
+    UpstreamStatusChanged {
+        name: String,
+        status: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -805,7 +810,8 @@ impl AppState {
             // Global events don't affect per-session state
             AppEvent::HeadChanged { .. }
             | AppEvent::RepoChanged { .. }
-            | AppEvent::PluginChanged { .. } => {}
+            | AppEvent::PluginChanged { .. }
+            | AppEvent::UpstreamStatusChanged { .. } => {}
         }
     }
 

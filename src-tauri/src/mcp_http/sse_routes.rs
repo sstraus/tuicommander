@@ -91,6 +91,7 @@ fn event_type_name(event: &AppEvent) -> &'static str {
         AppEvent::PtyParsed { .. } => "pty-parsed",
         AppEvent::PtyExit { .. } => "pty-exit",
         AppEvent::PluginChanged { .. } => "plugin-changed",
+        AppEvent::UpstreamStatusChanged { .. } => "upstream-status-changed",
     }
 }
 
@@ -118,6 +119,9 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         }
         AppEvent::PluginChanged { plugin_ids } => {
             serde_json::json!({ "plugin_ids": plugin_ids })
+        }
+        AppEvent::UpstreamStatusChanged { name, status } => {
+            serde_json::json!({ "name": name, "status": status })
         }
     }
 }

@@ -566,6 +566,9 @@ pub fn run() {
         mcp_upstream_registry: Arc::new(mcp_proxy::registry::UpstreamRegistry::new()),
     });
 
+    // Wire the event bus into the upstream registry so status changes emit SSE events.
+    state.mcp_upstream_registry.set_event_bus(state.event_bus.clone());
+
     // Start HTTP API server if either MCP or Remote Access is enabled
     if config.mcp_server_enabled || config.remote_access_enabled {
         let mcp_enabled = config.mcp_server_enabled;

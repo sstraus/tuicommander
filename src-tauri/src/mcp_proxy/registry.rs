@@ -112,6 +112,33 @@ impl CircuitBreaker {
     }
 }
 
+/// Per-upstream call metrics (lock-free counters).
+pub(crate) struct UpstreamMetrics {
+    pub(crate) call_count: AtomicU32,
+    pub(crate) error_count: AtomicU32,
+    /// Last observed round-trip latency in milliseconds (0 = never called).
+    pub(crate) last_latency_ms: AtomicU32,
+}
+
+impl UpstreamMetrics {
+    fn new() -> Self {
+        Self {
+            call_count: AtomicU32::new(0),
+            error_count: AtomicU32::new(0),
+            last_latency_ms: AtomicU32::new(0),
+        }
+    }
+
+    /// Snapshot metrics for serialization.
+    pub(crate) fn snapshot(&self) -> serde_json::Value {
+        serde_json::json!({
+            "call_count": self.call_count.load(Ordering::Relaxed),
+            "error_count": self.error_count.load(Ordering::Relaxed),
+            "last_latency_ms": self.last_latency_ms.load(Ordering::Relaxed),
+        })
+    }
+}
+
 /// Client variant — wraps either transport behind a sync Mutex for interior mutability.
 pub(crate) enum UpstreamClient {
     Http(Mutex<HttpMcpClient>),
@@ -124,6 +151,7 @@ pub(crate) struct UpstreamEntry {
     pub(crate) status: parking_lot::RwLock<UpstreamStatus>,
     /// Cached tool list (set on successful initialize / health-check).
     pub(crate) tools: parking_lot::RwLock<Vec<UpstreamToolDef>>,
+    pub(crate) metrics: UpstreamMetrics,
     client: UpstreamClient,
     cb: CircuitBreaker,
 }
@@ -139,6 +167,7 @@ impl UpstreamEntry {
             config,
             status: parking_lot::RwLock::new(status),
             tools: parking_lot::RwLock::new(Vec::new()),
+            metrics: UpstreamMetrics::new(),
             client,
             cb: CircuitBreaker::new(),
         }
@@ -153,12 +182,30 @@ impl UpstreamEntry {
 pub(crate) struct UpstreamRegistry {
     /// `upstream_name` → entry
     entries: DashMap<String, Arc<UpstreamEntry>>,
+    /// Broadcast bus for emitting upstream status change events (optional).
+    event_bus: parking_lot::RwLock<Option<tokio::sync::broadcast::Sender<crate::state::AppEvent>>>,
 }
 
 impl UpstreamRegistry {
     pub(crate) fn new() -> Self {
         Self {
             entries: DashMap::new(),
+            event_bus: parking_lot::RwLock::new(None),
+        }
+    }
+
+    /// Wire the event bus so status changes emit SSE events.
+    pub(crate) fn set_event_bus(&self, bus: tokio::sync::broadcast::Sender<crate::state::AppEvent>) {
+        *self.event_bus.write() = Some(bus);
+    }
+
+    /// Emit an upstream status change event (fire-and-forget).
+    fn emit_status_change(&self, name: &str, status: &str) {
+        if let Some(bus) = self.event_bus.read().as_ref() {
+            let _ = bus.send(crate::state::AppEvent::UpstreamStatusChanged {
+                name: name.to_string(),
+                status: status.to_string(),
+            });
         }
     }
 
@@ -217,7 +264,11 @@ impl UpstreamRegistry {
             return Err(format!("Circuit open for upstream '{upstream_name}'"));
         }
 
+        entry.metrics.call_count.fetch_add(1, Ordering::Relaxed);
+        let t0 = Instant::now();
         let result = dispatch_tool_call(&entry.client, &tool_name, args).await;
+        let elapsed_ms = t0.elapsed().as_millis().min(u32::MAX as u128) as u32;
+        entry.metrics.last_latency_ms.store(elapsed_ms, Ordering::Relaxed);
 
         match result {
             Ok(v) => {
@@ -225,12 +276,15 @@ impl UpstreamRegistry {
                 Ok(v)
             }
             Err(e) => {
+                entry.metrics.error_count.fetch_add(1, Ordering::Relaxed);
                 let exhausted = entry.cb.record_failure();
                 if exhausted {
                     *entry.status.write() = UpstreamStatus::Failed;
+                    self.emit_status_change(upstream_name, "failed");
                 } else if *entry.status.read() == UpstreamStatus::Ready {
                     // Only open the circuit if we were previously Ready
                     *entry.status.write() = UpstreamStatus::CircuitOpen;
+                    self.emit_status_change(upstream_name, "circuit_open");
                 }
                 Err(e)
             }
@@ -275,11 +329,14 @@ impl UpstreamRegistry {
             return Ok(());
         }
 
-        // Run initialize in background (don't block the caller)
+        // Run initialize in background (don't block the caller).
+        // Snapshot the event bus sender (if any) so the spawned task can emit events
+        // without needing a reference back to the registry.
         let entry_clone = Arc::clone(&entry);
         let name_clone = name.clone();
+        let bus_snapshot = self.event_bus.read().clone();
         tokio::spawn(async move {
-            initialize_entry(&entry_clone, &name_clone).await;
+            initialize_entry(&entry_clone, &name_clone, bus_snapshot.as_ref()).await;
         });
 
         Ok(())
@@ -311,6 +368,27 @@ impl UpstreamRegistry {
     /// Status of a specific upstream.
     pub(crate) fn status(&self, name: &str) -> Option<UpstreamStatus> {
         self.entries.get(name).map(|e| e.status.read().clone())
+    }
+
+    /// Returns a JSON snapshot of all upstream statuses and metrics.
+    pub(crate) fn status_snapshot(&self) -> serde_json::Value {
+        let upstreams: Vec<serde_json::Value> = self.entries.iter().map(|entry_ref| {
+            let e = entry_ref.value();
+            let status_str = match *e.status.read() {
+                UpstreamStatus::Connecting => "connecting",
+                UpstreamStatus::Ready => "ready",
+                UpstreamStatus::CircuitOpen => "circuit_open",
+                UpstreamStatus::Disabled => "disabled",
+                UpstreamStatus::Failed => "failed",
+            };
+            serde_json::json!({
+                "name": entry_ref.key(),
+                "status": status_str,
+                "tool_count": e.tools.read().len(),
+                "metrics": e.metrics.snapshot(),
+            })
+        }).collect();
+        serde_json::json!({ "upstreams": upstreams })
     }
 
     // -----------------------------------------------------------------------
@@ -413,7 +491,11 @@ async fn dispatch_tool_call(
 }
 
 /// Run the MCP initialize sequence for an entry and update its status.
-async fn initialize_entry(entry: &Arc<UpstreamEntry>, name: &str) {
+async fn initialize_entry(
+    entry: &Arc<UpstreamEntry>,
+    name: &str,
+    bus: Option<&tokio::sync::broadcast::Sender<crate::state::AppEvent>>,
+) {
     let result = match &entry.client {
         UpstreamClient::Http(mutex) => {
             let mut guard = mutex.lock().await;
@@ -432,27 +514,40 @@ async fn initialize_entry(entry: &Arc<UpstreamEntry>, name: &str) {
         }
     };
 
-    match result {
+    let status_str = match result {
         Ok(tools) => {
             *entry.tools.write() = tools;
             *entry.status.write() = UpstreamStatus::Ready;
             eprintln!("[mcp-registry] '{name}' initialized (Ready)");
+            "ready"
         }
         Err(e) => {
             let exhausted = entry.cb.record_failure();
-            *entry.status.write() = if exhausted {
+            if exhausted {
                 eprintln!("[mcp-registry] '{name}' failed permanently: {e}");
-                UpstreamStatus::Failed
+                *entry.status.write() = UpstreamStatus::Failed;
+                "failed"
             } else {
                 eprintln!("[mcp-registry] '{name}' initialization failed: {e}");
-                UpstreamStatus::CircuitOpen
-            };
+                *entry.status.write() = UpstreamStatus::CircuitOpen;
+                "circuit_open"
+            }
         }
+    };
+
+    if let Some(sender) = bus {
+        let _ = sender.send(crate::state::AppEvent::UpstreamStatusChanged {
+            name: name.to_string(),
+            status: status_str.to_string(),
+        });
     }
 }
 
 /// Run health checks on all Ready upstreams.
 async fn run_health_checks(registry: &UpstreamRegistry) {
+    // Snapshot the bus once so each spawned task gets a clone without holding the lock.
+    let bus_snapshot = registry.event_bus.read().clone();
+
     for entry_ref in registry.entries.iter() {
         if *entry_ref.status.read() != UpstreamStatus::Ready {
             continue;
@@ -463,18 +558,30 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
         }
         let entry = Arc::clone(entry_ref.value());
         let name = entry_ref.key().clone();
+        let bus = bus_snapshot.clone();
         tokio::spawn(async move {
             let ok = health_check_entry(&entry).await;
             if ok {
                 entry.cb.record_success();
             } else {
                 let exhausted = entry.cb.record_failure();
-                if exhausted {
-                    *entry.status.write() = UpstreamStatus::Failed;
+                let new_status = if exhausted {
                     eprintln!("[mcp-registry] '{name}' health check failed permanently");
+                    UpstreamStatus::Failed
                 } else {
-                    *entry.status.write() = UpstreamStatus::CircuitOpen;
                     eprintln!("[mcp-registry] '{name}' health check failed — circuit opening");
+                    UpstreamStatus::CircuitOpen
+                };
+                *entry.status.write() = new_status.clone();
+                if let Some(ref sender) = bus {
+                    let status_str = match new_status {
+                        UpstreamStatus::Failed => "failed",
+                        _ => "circuit_open",
+                    };
+                    let _ = sender.send(crate::state::AppEvent::UpstreamStatusChanged {
+                        name: name.clone(),
+                        status: status_str.to_string(),
+                    });
                 }
             }
         });
