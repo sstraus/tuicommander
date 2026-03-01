@@ -341,7 +341,8 @@ fn build_api_error_patterns() -> Vec<ApiErrorPattern> {
         // Codex CLI: stream error with retry exhaustion (non-429 status)
         ae("codex-stream-error", r"stream error: exceeded retry limit, last status: [45]\d\d", "server"),
         // Copilot CLI: token/auth failures
-        ae("copilot-auth-error", r"(?:Failed to get copilot token|copilot token.*expired|request failed unexpectedly)", "auth"),
+        // Note: "request failed unexpectedly" removed — too generic, triggers on Claude output
+        ae("copilot-auth-error", r"(?:Failed to get copilot token|copilot token.*expired)", "auth"),
 
         // === Provider-level JSON error patterns ===
         // These fire when any CLI prints the raw API error response.
@@ -1826,11 +1827,13 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_api_error_copilot_request_failed() {
+    fn test_no_api_error_generic_request_failed() {
+        // "request failed unexpectedly" is too generic — should NOT trigger api error
+        // (was causing false positives on Claude Code output, see log scan 2026-03-01)
         let parser = OutputParser::new();
         let input = "request failed unexpectedly";
         let events = parser.parse(input);
-        assert!(has_api_error(&events));
+        assert!(!has_api_error(&events));
     }
 
     // --- Provider-level API error tests ---
