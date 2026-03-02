@@ -3,6 +3,7 @@ import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { activityStore } from "../stores/activityStore";
 import { appLogger } from "../stores/appLogger";
+import { parseFrontmatter } from "../utils/frontmatter";
 import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -77,7 +78,9 @@ const planMarkdownProvider: MarkdownProvider = {
     if (!rawPath || rawPath.includes("..")) return null;
 
     try {
-      return await invoke<string>("plugin_read_file", { path: rawPath, pluginId: PLUGIN_ID });
+      const raw = await invoke<string>("plugin_read_file", { path: rawPath, pluginId: PLUGIN_ID });
+      const { content } = parseFrontmatter(raw);
+      return content;
     } catch (err) {
       appLogger.warn("plugin", `Failed to read plan file: ${rawPath}`, err);
       return null;
