@@ -233,6 +233,12 @@ describe("useKeyboardShortcuts", () => {
       fireKeydown("L", { metaKey: true, shiftKey: true });
       expect(handlers.openLazygitPane).toHaveBeenCalled();
     });
+
+    it("Cmd+Shift+L does nothing when lazygit unavailable", () => {
+      (handlers.lazygitAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
+      fireKeydown("L", { metaKey: true, shiftKey: true });
+      expect(handlers.openLazygitPane).not.toHaveBeenCalled();
+    });
   });
 
   describe("run command", () => {
