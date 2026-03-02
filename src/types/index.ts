@@ -162,6 +162,8 @@ export interface SavedTerminal {
   cwd: string | null;
   fontSize: number;
   agentType: import("../agents").AgentType | null;
+  /** Claude Code session UUID — enables session-specific resume via --resume <uuid> */
+  claudeSessionId?: string | null;
 }
 
 /** Orchestrator stats from backend */

@@ -795,11 +795,11 @@ fn handle_workspace(_state: &Arc<AppState>, args: &serde_json::Value) -> serde_j
             let mut group_name: Option<String> = None;
             if let Some(groups_obj) = groups.as_object() {
                 for (_gid, group) in groups_obj {
-                    if let Some(order) = group["repoOrder"].as_array() {
-                        if order.iter().any(|p| p.as_str() == Some(&active_path)) {
-                            group_name = group["name"].as_str().map(|s| s.to_string());
-                            break;
-                        }
+                    if let Some(order) = group["repoOrder"].as_array()
+                        && order.iter().any(|p| p.as_str() == Some(&active_path))
+                    {
+                        group_name = group["name"].as_str().map(|s| s.to_string());
+                        break;
                     }
                 }
             }

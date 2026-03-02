@@ -242,6 +242,56 @@ describe("initApp", () => {
     expect(deps.handleBranchSelect).toHaveBeenCalledWith("/repo", "main");
   });
 
+  it("snapshots claudeSessionId into savedTerminals on beforeunload", async () => {
+    repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+    repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+    // Surviving session so initApp re-adopts and assigns to branch
+    const deps = createMockDeps({
+      pty: {
+        listActiveSessions: vi.fn().mockResolvedValue([
+          { session_id: "sess-1", cwd: "/repo" },
+        ]),
+        close: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+
+    await initApp(deps);
+
+    // Set claudeSessionId on the re-adopted terminal
+    const termId = terminalsStore.getIds()[0];
+    terminalsStore.update(termId, { claudeSessionId: "abc-123-uuid" });
+
+    // Trigger beforeunload to snapshot
+    window.dispatchEvent(new Event("beforeunload"));
+
+    const branch = repositoriesStore.get("/repo")?.branches["main"];
+    expect(branch?.savedTerminals?.length).toBe(1);
+    expect(branch?.savedTerminals?.[0].claudeSessionId).toBe("abc-123-uuid");
+  });
+
+  it("snapshots null claudeSessionId for terminals without it", async () => {
+    repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+    repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+    const deps = createMockDeps({
+      pty: {
+        listActiveSessions: vi.fn().mockResolvedValue([
+          { session_id: "sess-2", cwd: "/repo" },
+        ]),
+        close: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+
+    await initApp(deps);
+
+    window.dispatchEvent(new Event("beforeunload"));
+
+    const branch = repositoriesStore.get("/repo")?.branches["main"];
+    expect(branch?.savedTerminals?.length).toBe(1);
+    expect(branch?.savedTerminals?.[0].claudeSessionId).toBeNull();
+  });
+
   it("registers beforeunload handler to close PTY sessions", async () => {
     const addListenerSpy = vi.spyOn(window, "addEventListener");
     const deps = createMockDeps();
