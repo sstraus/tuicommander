@@ -6,11 +6,6 @@ interface OutputViewProps {
   sessionId: string;
 }
 
-/** Strip ANSI escape codes from text */
-function stripAnsi(text: string): string {
-  return text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
-}
-
 export function OutputView(props: OutputViewProps) {
   const [lines, setLines] = createSignal<string[]>([]);
   let containerEl: HTMLDivElement | undefined;
@@ -45,9 +40,8 @@ export function OutputView(props: OutputViewProps) {
     unsubscribe = (await subscribePty(
       props.sessionId,
       (data) => {
-        const stripped = stripAnsi(data);
         setLines((prev) => {
-          const newLines = stripped.split("\n");
+          const newLines = data.split("\n");
           // Append to last line if no newline at start
           if (prev.length > 0 && newLines.length > 0) {
             const merged = [...prev];
@@ -61,6 +55,7 @@ export function OutputView(props: OutputViewProps) {
       () => {
         setLines((prev) => [...prev, "--- session exited ---"]);
       },
+      { stripAnsi: true },
     )) ?? null;
   });
 

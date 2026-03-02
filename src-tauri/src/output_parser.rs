@@ -426,12 +426,38 @@ pub(crate) fn strip_ansi(text: &str) -> String {
     lazy_static::lazy_static! {
         static ref CUF_RE: regex::Regex = regex::Regex::new(r"\x1b\[(\d*)C").unwrap();
     }
-    let preprocessed = CUF_RE.replace_all(text, |caps: &regex::Captures| {
+    // Apply carriage return semantics BEFORE stripping escape codes, because
+    // strip_ansi_escapes::strip() silently removes \r without applying its
+    // overwrite-from-start-of-line semantics. This is critical for animated
+    // status lines (Claude Code, Codex, etc.) that use \r to update in place.
+    let cr_applied = apply_carriage_returns(text);
+    let preprocessed = CUF_RE.replace_all(&cr_applied, |caps: &regex::Captures| {
         let n: usize = caps[1].parse().unwrap_or(1).max(1);
         " ".repeat(n)
     });
     let stripped = strip_ansi_escapes::strip(preprocessed.as_ref());
     String::from_utf8(stripped).unwrap_or_else(|_| text.to_string())
+}
+
+/// Simulate carriage return semantics: for each line, text after `\r`
+/// overwrites from the beginning of the line. `\r\n` is treated as a
+/// normal line ending (not an overwrite).
+fn apply_carriage_returns(text: &str) -> String {
+    // Normalize \r\n to \n first so they don't trigger overwrite logic
+    let normalized = text.replace("\r\n", "\n");
+    let mut result = String::with_capacity(normalized.len());
+    for (i, line) in normalized.split('\n').enumerate() {
+        if i > 0 {
+            result.push('\n');
+        }
+        if let Some(last_cr) = line.rfind('\r') {
+            // Take the segment after the last \r — it overwrites everything before
+            result.push_str(&line[last_cr + 1..]);
+        } else {
+            result.push_str(line);
+        }
+    }
+    result
 }
 
 /// Parse status line patterns from pre-stripped terminal output.
@@ -1228,6 +1254,29 @@ mod tests {
         assert_eq!(strip_ansi("a\x1b[1Cb"), "a b");
         // Multiple CUF sequences
         assert_eq!(strip_ansi("x\x1b[2Cy\x1b[4Cz"), "x  y    z");
+    }
+
+    #[test]
+    fn test_strip_ansi_carriage_return_overwrites_line() {
+        // Claude Code animated status line: \r overwrites the current line
+        assert_eq!(strip_ansi("old text\rnew text"), "new text");
+        // Multiple \r — only last segment survives
+        assert_eq!(strip_ansi("first\rsecond\rthird"), "third");
+        // \r followed by shorter text — overwrites only the beginning
+        assert_eq!(strip_ansi("long content here\rhi"), "hi");
+        // Mixed: newlines + carriage returns
+        assert_eq!(strip_ansi("line1\nold\rnew\nline3"), "line1\nnew\nline3");
+        // No \r — unchanged
+        assert_eq!(strip_ansi("hello\nworld"), "hello\nworld");
+        // \r\n is a normal line ending — should not collapse
+        assert_eq!(strip_ansi("line1\r\nline2"), "line1\nline2");
+    }
+
+    #[test]
+    fn test_strip_ansi_claude_status_line_realistic() {
+        // Realistic Claude Code output: colored status line overwritten by \r
+        let input = "\x1b[33m* Reading files...\x1b[0m\r\x1b[33m* Writing code...\x1b[0m\r\x1b[33m* Done\x1b[0m\n";
+        assert_eq!(strip_ansi(input), "* Done\n");
     }
 
     #[test]

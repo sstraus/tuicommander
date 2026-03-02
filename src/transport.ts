@@ -578,12 +578,23 @@ export interface WsParsedEvent {
  * @param onParsed - Optional: called with structured parsed events (browser mode)
  * @returns Promise resolving to an unsubscribe function
  */
+export interface SubscribePtyOptions {
+  /** Request ANSI-stripped plain text from the server (for non-terminal views like mobile) */
+  stripAnsi?: boolean;
+  onParsed?: (event: WsParsedEvent) => void;
+}
+
 export async function subscribePty(
   sessionId: string,
   onData: (data: string) => void,
   onExit: () => void,
-  onParsed?: (event: WsParsedEvent) => void,
+  onParsedOrOptions?: ((event: WsParsedEvent) => void) | SubscribePtyOptions,
 ): Promise<Unsubscribe> {
+  // Normalize overloaded 4th param: function (legacy) or options object
+  const opts: SubscribePtyOptions = typeof onParsedOrOptions === "function"
+    ? { onParsed: onParsedOrOptions }
+    : onParsedOrOptions ?? {};
+  const onParsed = opts.onParsed;
   if (isTauri()) {
     const { listen } = await import("@tauri-apps/api/event");
     const unlistenOutput = await listen<{ data: string }>(`pty-output-${sessionId}`, (event) => {
@@ -600,7 +611,8 @@ export async function subscribePty(
 
   // Browser mode: WebSocket with JSON framing
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${protocol}//${window.location.host}/sessions/${sessionId}/stream`;
+  const query = opts.stripAnsi ? "?format=text" : "";
+  const wsUrl = `${protocol}//${window.location.host}/sessions/${sessionId}/stream${query}`;
   const ws = new WebSocket(wsUrl);
 
   const handleMessage = (event: MessageEvent) => {
