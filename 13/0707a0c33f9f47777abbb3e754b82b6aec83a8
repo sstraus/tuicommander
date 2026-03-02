@@ -1,0 +1,23 @@
+src-tauri/src/bin/tuic_mcp_bridge.rs
+  88c215de39a45219 84-85,91-93,160-161,169,202,240-281,288,296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "130707a0c33f9f47777abbb3e754b82b6aec83a8",
+  "prompts": {
+    "88c215de39a45219": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "47573fa9-0331-4cb3-a504-e4abd5ee79ce",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 54,
+      "total_deletions": 10,
+      "accepted_lines": 53,
+      "overriden_lines": 0
+    }
+  }
+}
