@@ -13,6 +13,7 @@ const SIDEBAR_DEFAULT_WIDTH = 300;
 const DIFF_PANEL_DEFAULT_WIDTH = 400;
 const MARKDOWN_PANEL_DEFAULT_WIDTH = 400;
 const NOTES_PANEL_DEFAULT_WIDTH = 350;
+const PLAN_PANEL_DEFAULT_WIDTH = 350;
 const SETTINGS_NAV_DEFAULT_WIDTH = 180;
 
 /** UI store state */
@@ -28,11 +29,13 @@ interface UIStoreState {
   markdownPanelVisible: boolean;
   notesPanelVisible: boolean;
   fileBrowserPanelVisible: boolean;
+  planPanelVisible: boolean;
 
   // Resizable panel widths (persisted)
   diffPanelWidth: number;
   markdownPanelWidth: number;
   notesPanelWidth: number;
+  planPanelWidth: number;
   settingsNavWidth: number;
 
   // Diff panel state
@@ -59,9 +62,11 @@ function createUIStore() {
     markdownPanelVisible: false,
     notesPanelVisible: false,
     fileBrowserPanelVisible: false,
+    planPanelVisible: false,
     diffPanelWidth: DIFF_PANEL_DEFAULT_WIDTH,
     markdownPanelWidth: MARKDOWN_PANEL_DEFAULT_WIDTH,
     notesPanelWidth: NOTES_PANEL_DEFAULT_WIDTH,
+    planPanelWidth: PLAN_PANEL_DEFAULT_WIDTH,
     settingsNavWidth: SETTINGS_NAV_DEFAULT_WIDTH,
     currentDiffRepo: null,
     activeDropdown: null,
@@ -79,9 +84,11 @@ function createUIStore() {
         markdown_panel_visible: state.markdownPanelVisible,
         notes_panel_visible: state.notesPanelVisible,
         file_browser_panel_visible: state.fileBrowserPanelVisible,
+        plan_panel_visible: state.planPanelVisible,
         diff_panel_width: state.diffPanelWidth,
         markdown_panel_width: state.markdownPanelWidth,
         notes_panel_width: state.notesPanelWidth,
+        plan_panel_width: state.planPanelWidth,
         settings_nav_width: state.settingsNavWidth,
       },
     }).catch((err) => appLogger.debug("store", "Failed to save UI prefs", err));
@@ -112,9 +119,11 @@ function createUIStore() {
           markdown_panel_visible?: boolean;
           notes_panel_visible?: boolean;
           file_browser_panel_visible?: boolean;
+          plan_panel_visible?: boolean;
           diff_panel_width?: number;
           markdown_panel_width?: number;
           notes_panel_width?: number;
+          plan_panel_width?: number;
           settings_nav_width?: number;
         }>("load_ui_prefs");
         if (loaded) {
@@ -136,6 +145,9 @@ function createUIStore() {
           if (loaded.file_browser_panel_visible !== undefined) {
             setState("fileBrowserPanelVisible", loaded.file_browser_panel_visible);
           }
+          if (loaded.plan_panel_visible !== undefined) {
+            setState("planPanelVisible", loaded.plan_panel_visible);
+          }
           if (loaded.diff_panel_width !== undefined) {
             setState("diffPanelWidth", loaded.diff_panel_width);
           }
@@ -144,6 +156,9 @@ function createUIStore() {
           }
           if (loaded.notes_panel_width !== undefined) {
             setState("notesPanelWidth", loaded.notes_panel_width);
+          }
+          if (loaded.plan_panel_width !== undefined) {
+            setState("planPanelWidth", loaded.plan_panel_width);
           }
           if (loaded.settings_nav_width !== undefined) {
             setState("settingsNavWidth", loaded.settings_nav_width);
@@ -162,6 +177,7 @@ function createUIStore() {
         if (next) {
           setState("markdownPanelVisible", false);
           setState("fileBrowserPanelVisible", false);
+          setState("planPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -174,6 +190,7 @@ function createUIStore() {
         if (next) {
           setState("diffPanelVisible", false);
           setState("fileBrowserPanelVisible", false);
+          setState("planPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -185,6 +202,7 @@ function createUIStore() {
         if (visible) {
           setState("markdownPanelVisible", false);
           setState("fileBrowserPanelVisible", false);
+          setState("planPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -196,6 +214,7 @@ function createUIStore() {
         if (visible) {
           setState("diffPanelVisible", false);
           setState("fileBrowserPanelVisible", false);
+          setState("planPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -218,6 +237,7 @@ function createUIStore() {
         if (next) {
           setState("diffPanelVisible", false);
           setState("markdownPanelVisible", false);
+          setState("planPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -229,6 +249,32 @@ function createUIStore() {
         if (visible) {
           setState("diffPanelVisible", false);
           setState("markdownPanelVisible", false);
+          setState("planPanelVisible", false);
+        }
+      });
+      saveUIPrefs();
+    },
+
+    togglePlanPanel(): void {
+      const next = !state.planPanelVisible;
+      batch(() => {
+        setState("planPanelVisible", next);
+        if (next) {
+          setState("diffPanelVisible", false);
+          setState("markdownPanelVisible", false);
+          setState("fileBrowserPanelVisible", false);
+        }
+      });
+      saveUIPrefs();
+    },
+
+    setPlanPanelVisible(visible: boolean): void {
+      batch(() => {
+        setState("planPanelVisible", visible);
+        if (visible) {
+          setState("diffPanelVisible", false);
+          setState("markdownPanelVisible", false);
+          setState("fileBrowserPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -289,6 +335,11 @@ function createUIStore() {
       saveUIPrefs();
     },
 
+    setPlanPanelWidth(width: number): void {
+      setState("planPanelWidth", width);
+      saveUIPrefs();
+    },
+
     setSettingsNavWidth(width: number): void {
       setState("settingsNavWidth", width);
     },
@@ -304,6 +355,7 @@ function createUIStore() {
       setState("diffPanelWidth", DIFF_PANEL_DEFAULT_WIDTH);
       setState("markdownPanelWidth", MARKDOWN_PANEL_DEFAULT_WIDTH);
       setState("notesPanelWidth", NOTES_PANEL_DEFAULT_WIDTH);
+      setState("planPanelWidth", PLAN_PANEL_DEFAULT_WIDTH);
       setState("settingsNavWidth", SETTINGS_NAV_DEFAULT_WIDTH);
       saveUIPrefs();
     },

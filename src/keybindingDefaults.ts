@@ -41,6 +41,7 @@ export const ACTION_NAMES = [
   "activity-dashboard",
   "worktree-manager",
   "toggle-error-log",
+  "toggle-plan",
   // Numbered tabs and branches
   ...Array.from({ length: 9 }, (_, i) => `switch-tab-${i + 1}`),
   ...Array.from({ length: 9 }, (_, i) => `switch-branch-${i + 1}`),
@@ -94,6 +95,7 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "activity-dashboard": "Cmd+Shift+A",
   "worktree-manager": "Cmd+Shift+W",
   "toggle-error-log": "Cmd+Shift+E",
+  "toggle-plan": "Cmd+P",
   // Numbered tabs
   ...Object.fromEntries(
     Array.from({ length: 9 }, (_, i) => [`switch-tab-${i + 1}`, `Cmd+${i + 1}`]),

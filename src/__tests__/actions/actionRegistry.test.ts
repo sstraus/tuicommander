@@ -32,6 +32,7 @@ function createMockHandlers(): ShortcutHandlers {
     toggleHelpPanel: vi.fn(),
     toggleNotesPanel: vi.fn(),
     toggleFileBrowserPanel: vi.fn(),
+    togglePlanPanel: vi.fn(),
     findInTerminal: vi.fn(),
     toggleCommandPalette: vi.fn(),
     toggleActivityDashboard: vi.fn(),

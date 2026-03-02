@@ -448,12 +448,16 @@ pub(crate) struct UIPrefsConfig {
     pub(crate) notes_panel_visible: bool,
     #[serde(default)]
     pub(crate) file_browser_panel_visible: bool,
+    #[serde(default)]
+    pub(crate) plan_panel_visible: bool,
     #[serde(default = "default_panel_width")]
     pub(crate) diff_panel_width: u32,
     #[serde(default = "default_panel_width")]
     pub(crate) markdown_panel_width: u32,
     #[serde(default = "default_notes_panel_width")]
     pub(crate) notes_panel_width: u32,
+    #[serde(default = "default_plan_panel_width")]
+    pub(crate) plan_panel_width: u32,
     #[serde(default = "default_settings_nav_width")]
     pub(crate) settings_nav_width: u32,
 }
@@ -467,9 +471,11 @@ impl Default for UIPrefsConfig {
             markdown_panel_visible: false,
             notes_panel_visible: false,
             file_browser_panel_visible: false,
+            plan_panel_visible: false,
             diff_panel_width: default_panel_width(),
             markdown_panel_width: default_panel_width(),
             notes_panel_width: default_notes_panel_width(),
+            plan_panel_width: default_plan_panel_width(),
             settings_nav_width: default_settings_nav_width(),
         }
     }
@@ -478,6 +484,7 @@ impl Default for UIPrefsConfig {
 fn default_sidebar_width() -> u32 { 260 }
 fn default_panel_width() -> u32 { 400 }
 fn default_notes_panel_width() -> u32 { 350 }
+fn default_plan_panel_width() -> u32 { 350 }
 fn default_settings_nav_width() -> u32 { 180 }
 
 // ---------------------------------------------------------------------------

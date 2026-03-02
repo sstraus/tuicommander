@@ -3,6 +3,7 @@ import { FileBrowserPanel } from "./FileBrowserPanel";
 import { MarkdownPanel } from "./MarkdownPanel";
 import { NotesPanel } from "./NotesPanel";
 import { DiffPanel } from "./DiffPanel";
+import { PlanPanel } from "./PlanPanel/PlanPanel";
 import { uiStore } from "../stores/ui";
 import { terminalsStore } from "../stores/terminals";
 
@@ -44,6 +45,12 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
         visible={uiStore.state.diffPanelVisible}
         repoPath={props.repoPath}
         onClose={() => uiStore.toggleDiffPanel()}
+      />
+
+      <PlanPanel
+        visible={uiStore.state.planPanelVisible}
+        repoPath={props.repoPath}
+        onClose={() => uiStore.togglePlanPanel()}
       />
     </>
   );

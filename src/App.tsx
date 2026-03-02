@@ -766,6 +766,7 @@ const App: Component = () => {
     toggleHelpPanel: () => setHelpPanelVisible((v) => !v),
     toggleNotesPanel: uiStore.toggleNotesPanel,
     toggleFileBrowserPanel: uiStore.toggleFileBrowserPanel,
+    togglePlanPanel: uiStore.togglePlanPanel,
     findInTerminal: () => {
       const active = terminalsStore.getActive();
       active?.ref?.openSearch();

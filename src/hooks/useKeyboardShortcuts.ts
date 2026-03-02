@@ -52,6 +52,7 @@ export interface ShortcutHandlers {
   toggleHelpPanel: () => void;
   toggleNotesPanel: () => void;
   toggleFileBrowserPanel: () => void;
+  togglePlanPanel: () => void;
   findInTerminal: () => void;
   toggleCommandPalette: () => void;
   toggleActivityDashboard: () => void;
@@ -120,6 +121,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "toggle-markdown": handlers.toggleMarkdownPanel(); return true;
     case "toggle-notes": handlers.toggleNotesPanel(); return true;
     case "toggle-file-browser": handlers.toggleFileBrowserPanel(); return true;
+    case "toggle-plan": handlers.togglePlanPanel(); return true;
     case "toggle-prompt-library": handlers.togglePromptLibrary(); return true;
     case "toggle-settings": handlers.toggleSettings(); return true;
     case "toggle-task-queue": handlers.toggleTaskQueue(); return true;

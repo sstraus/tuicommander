@@ -47,6 +47,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "toggle-notes": { label: "Toggle ideas panel", category: "Panels" },
   "toggle-help": { label: "Toggle help panel", category: "Panels" },
   "toggle-file-browser": { label: "Toggle file browser", category: "Panels" },
+  "toggle-plan": { label: "Toggle plan panel", category: "Panels" },
 
   "open-lazygit": { label: "Open lazygit", category: "Git" },
   "toggle-git-ops": { label: "Git operations panel", category: "Git" },
@@ -96,6 +97,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "toggle-notes": handlers.toggleNotesPanel,
     "toggle-help": handlers.toggleHelpPanel,
     "toggle-file-browser": handlers.toggleFileBrowserPanel,
+    "toggle-plan": handlers.togglePlanPanel,
     "open-lazygit": () => { if (handlers.lazygitAvailable()) handlers.spawnLazygit(); },
     "toggle-git-ops": handlers.toggleGitOpsPanel,
     "open-lazygit-pane": () => { if (handlers.lazygitAvailable()) handlers.openLazygitPane(); },
