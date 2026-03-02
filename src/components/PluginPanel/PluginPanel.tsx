@@ -77,11 +77,11 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
     pluginRegistry.handlePanelMessage(props.tab.id, data);
   };
 
-  window.addEventListener("message", handleMessage);
-  onCleanup(() => window.removeEventListener("message", handleMessage));
-
-  // Register send channel so plugin can send messages to this iframe
+  // Register message listener and send channel on mount; clean up on unmount
   onMount(() => {
+    window.addEventListener("message", handleMessage);
+    onCleanup(() => window.removeEventListener("message", handleMessage));
+
     const tabId = props.tab.id;
     pluginRegistry.registerPanelSendChannel(tabId, (data: unknown) => {
       if (iframeRef?.contentWindow) {
