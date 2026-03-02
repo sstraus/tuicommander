@@ -175,6 +175,30 @@ export interface StateChangeEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Terminal context menu actions
+// ---------------------------------------------------------------------------
+
+/** Snapshot of terminal state passed to action handlers at right-click time. */
+export interface TerminalActionContext {
+  /** Session ID of the terminal that was right-clicked, or null if none active */
+  sessionId: string | null;
+  /** Repository path that owns the terminal, or null if not in a repo */
+  repoPath: string | null;
+}
+
+/** A plugin-registered action shown in the terminal context menu "Actions" submenu. */
+export interface TerminalAction {
+  /** Unique action identifier (scoped to the plugin) */
+  id: string;
+  /** Display label in the context menu */
+  label: string;
+  /** Handler invoked when the user clicks the action */
+  action: (ctx: TerminalActionContext) => void;
+  /** Optional callback evaluated at menu-open time to disable the action */
+  disabled?: (ctx: TerminalActionContext) => boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Capabilities
 // ---------------------------------------------------------------------------
 
@@ -209,7 +233,8 @@ export type PluginCapability =
   | "ui:panel"
   | "ui:ticker"
   | "exec:cli"
-  | "git:read";
+  | "git:read"
+  | "ui:context-menu";
 
 /** Error thrown when a plugin calls a method without the required capability */
 export class PluginCapabilityError extends Error {
@@ -387,6 +412,14 @@ export interface PluginHost {
   getGitDiff(repoPath: string, scope?: "staged" | "unstaged"): Promise<string>;
 
   // -- Tier 3: Write actions (capability-gated) --
+
+  /**
+   * Register an action in the terminal right-click "Actions" submenu.
+   * Requires "ui:context-menu" capability.
+   * The action handler receives a snapshot of the terminal context (sessionId, repoPath)
+   * captured at right-click time.
+   */
+  registerTerminalAction(action: TerminalAction): Disposable;
 
   /** Send input to a terminal session. Requires "pty:write" capability. */
   writePty(sessionId: string, data: string): Promise<void>;
