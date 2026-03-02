@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **MCP bridge as Tauri sidecar** — `tuic-mcp-bridge` ships with the app and auto-configures MCP on first launch for Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini
+- **MCP `tools/list_changed` SSE notification** — Connected MCP clients receive live tool-list updates when upstream tool lists change
 - **MCP Proxy Hub** — TUICommander now aggregates upstream MCP servers and exposes them through its own `/mcp` endpoint. Configure HTTP and stdio upstream servers in Settings > Services > MCP Upstreams; their tools are automatically available to any MCP client (Claude Code, Cursor, VS Code) connecting to TUIC. Features: tool namespace prefixing (`{upstream}__{tool}`), per-upstream tool allow/deny filters, circuit breaker (3 failures → open, 1s–60s exponential backoff, 10 retries → permanent failure), 60-second health checks, hot-reload on config save, credential storage via OS keyring, environment sanitization for stdio children, SSE status events, and self-referential URL detection
 - **Worktree Manager panel** — Dedicated overlay (`Cmd+Shift+W` or Command Palette) listing all worktrees across repos with branch name, repo badge, PR state, dirty stats, and last commit timestamp. Features: orphan detection with Prune action, repo filter pills + text search, multi-select with batch delete and batch merge & archive, single-row actions (Open Terminal, Delete, Merge & Archive). Main worktrees have destructive actions disabled
 - **Terminal CWD tracking via OSC 7** — Terminals detect working directory changes via OSC 7 escape sequences. When a terminal cd's into a known worktree, the tab automatically reassigns to that worktree's branch. Supports restart recovery via Rust-side cwd persistence.
@@ -15,7 +17,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **MCP workspace tool** — New `workspace` MCP tool with `list` (all open repos with groups, worktrees, branch, dirty status) and `active` (currently focused repo) actions
 - **MCP notify tool** — New `notify` MCP tool with `toast` (temporary notification with info/warn/error level) and `confirm` (blocking confirmation dialog, localhost-only) actions
 
+### Changed
+- **MCP Unix socket transport** — MCP server now uses Unix domain socket (`<config_dir>/mcp.sock`) for local connections; port-based infrastructure removed. TCP port only for remote access
+- **MCP session output ANSI stripping** — MCP session output now strips ANSI codes by default (pass `format=raw` to preserve)
+
 ### Fixed
+- **False question notification on user-typed input** — User-submitted lines echoed by PTY no longer trigger question detector
+- **Voice dictation TOCTOU race on rapid start** — `compare_exchange` prevents duplicate recording sessions
+- **Voice dictation final transcription accuracy** — Final transcription uses full captured audio instead of tail-only for improved accuracy
+- **DictationToast lifecycle** — Removed duplicate event subscription causing stale toast state
 - **macOS TCC permission prompts** — App was triggering "would like to access Desktop/Documents" dialogs due to filesystem probing in Claude Usage slug resolver, terminal path canonicalization, and file dialogs without defaultPath. All four code paths now guard against TCC-protected directories
 - **Tab/sidebar animations not playing** — `pulse-opacity` keyframes defined in `global.css` were silently ignored by CSS Modules (scoped name mismatch). Moved keyframes into each module file; activity dots, busy indicators, and awaiting-input pulses now animate correctly
 - **Rate-limit false positives** — Rate-limit pattern matches are now suppressed when the terminal is actively producing output (busy state), eliminating noise from agents reading code that contains rate-limit strings

@@ -20,7 +20,7 @@ Each repo shows a header with the repo name and action buttons:
 
 - **Click** the header to expand/collapse the branch list
 - **Click again** to toggle icon-only mode (shows repo initials — saves space)
-- **`⋯` button** — Opens a menu with: Repo Settings, Remove, Move to Group
+- **`⋯` button** — Opens a menu with: Repo Settings, Create Worktree, Move to Group (with submenus for existing groups, Ungrouped, and New Group), Park Repository, Remove Repository
 - **Right-click main worktree row** → **Switch Branch** submenu: shows all local branches with a checkmark on the current one. If the working tree is dirty, prompts to stash changes first. Blocks switching when a terminal has a running process.
 
 ### Removing Repositories
@@ -77,7 +77,11 @@ Each branch row can show:
 ### Branch Actions
 
 - **Double-click** the branch name to rename the branch
-- **Right-click** for context menu: Copy Path, Add Terminal, Delete Worktree, Open in IDE, Rename Branch
+- **Right-click** for context menu: Copy Path, Add Terminal, Create Worktree (for branches without a worktree), Delete Worktree, Open in IDE, Rename Branch/Worktree, Merge & Archive
+
+## Remote-Only PRs
+
+When a repository has open PRs on branches that only exist on the remote (not checked out locally), a badge appears in the branch section. Click it to open a popover listing these PRs. Each row shows the PR number, title, and state badge. Click a row to expand an inline accordion showing PR details, with **Checkout** and **Worktree** action buttons to check out the branch or create a worktree from it.
 
 ## Park Repos
 

@@ -79,7 +79,7 @@ Detected via multiple patterns:
 - **Ink navigation footer**: "Enter to select" (Ink SelectInput menus)
 - **Generic questions**: Any line ending with `?` that passes false-positive filters (rejects code comments, markdown, indented code, backtick fragments, bold markers, long prose >120 chars)
 
-Additionally, `extract_last_question_line()` provides silence-based detection: if the last non-empty line ends with `?` and isn't code/prose, the session may be waiting for input.
+Additionally, `extract_last_question_line()` provides silence-based detection: if the last non-empty line ends with `?` and isn't code/prose, the session may be waiting for input. User-typed lines (detected via `suppress_user_input`) are excluded from question detection to avoid false positives when the user themselves types a line ending with `?`.
 
 ### ApiError
 
@@ -94,7 +94,7 @@ ParsedEvent::ApiError {
 ```
 
 Detects errors from two tiers:
-- **Agent-specific**: Claude Code, Aider, Codex CLI, Gemini CLI, Copilot CLI
+- **Agent-specific**: Claude Code, Aider, Codex CLI, Gemini CLI, Copilot CLI (note: the generic "request failed unexpectedly" pattern was removed from Copilot detection due to false positives on Claude Code output)
 - **Provider-level**: OpenAI, Anthropic, Google, OpenRouter, MiniMax JSON error structures
 
 Frontend plays an error notification sound and logs via `appLogger.error()`.
@@ -131,6 +131,19 @@ The parser uses regex patterns to detect:
 - Agent status lines with timing/token info (see below)
 
 Patterns are compiled once at `OutputParser::new()` and reused across calls.
+
+### False-Positive Guards
+
+Two guard functions prevent false-positive detection when agents read or display source code, diffs, or documentation containing error-like or question-like patterns:
+
+- **`line_is_source_code(line)`** — Returns `true` for lines that look like source code rather than real errors. Detects: Rust raw string literals (`r"..."`, `r#"..."#`), line comments (`//`, `#`), function/const/let declarations, indented code with string delimiters (4+ leading spaces), markdown fences (`` ``` ``), bullet points (`- `, `* `), and markdown tables (`| ... |`).
+- **`line_is_diff_or_code_context(raw_line, trimmed)`** — Returns `true` for lines that look like diff output or code listings. Detects: unified diff lines (`+`, `-` prefixes), line-number prefixed code (`462 -...`), Claude Code diff summary blocks (`⏺⎿`), and diff summary lines (`Added16lines`).
+
+Both guards are applied to rate limit, API error, and question pattern matches before emitting events.
+
+### ANSI Pre-Processing
+
+The `strip_ansi()` function pre-processes CUF (Cursor Forward, `\x1b[nC`) escape sequences by replacing them with the equivalent number of spaces before stripping all ANSI escapes. Without this, `strip-ansi-escapes` silently drops cursor movement sequences and would concatenate surrounding text (e.g., `"hello\x1b[3Cworld"` would become `"helloworld"` instead of `"hello   world"`).
 
 ### Status Line Detection by Agent
 

@@ -45,6 +45,7 @@ close_pty(cleanup_worktree)
 | `pause_pty(session_id)` | Pause the reader thread (stops output emission). |
 | `resume_pty(session_id)` | Resume the reader thread. |
 | `close_pty(session_id, cleanup_worktree)` | Close PTY and optionally remove worktree. |
+| `update_session_cwd(session_id, cwd)` | Update session's working directory (called from frontend on OSC 7). |
 
 ### Monitoring
 
@@ -134,6 +135,37 @@ impl OutputRingBuffer {
     fn read_last(&self, limit: usize) -> (Vec<u8>, u64) // Read last N bytes
 }
 ```
+
+## OSC 7 CWD Tracking
+
+Shells that emit OSC 7 (`\x1b]7;file://hostname/path\x07`) report the current working directory after each command. TUICommander uses this to keep the Rust-side `PtySession.cwd` in sync:
+
+1. **Frontend handler:** `terminal.parser.registerOscHandler(7, ...)` in `Terminal.tsx` parses the `file://` URL via `parseOsc7Url()`.
+2. **Store update:** The parsed path is written to `terminalsStore` so the UI reflects the current directory.
+3. **IPC persist:** The frontend calls `update_session_cwd(sessionId, cwd)` to update `PtySession.cwd` on the Rust side.
+4. **Restart recovery:** The persisted cwd is used during session restore so reopened terminals start in the correct directory.
+5. **Worktree reassignment:** When the cwd changes to a path inside a different worktree, the terminal tab is reassigned to the corresponding branch in the sidebar.
+
+## Shell Environment Variables
+
+`build_shell_command()` sets these environment variables for spawned PTY sessions:
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `COLORTERM` | `truecolor` | Advertise 24-bit color support |
+| `KITTY_WINDOW_ID` | `1` | Signal kitty keyboard protocol support for heuristic detection by Ink-based agents |
+| `TERM_PROGRAM` | `ghostty` | Satisfy Claude Code's terminal allow-list for kitty protocol; also prevents macOS `/etc/zshrc` from sourcing `zshrc_Apple_Terminal` |
+| `TERM_PROGRAM_VERSION` | `3.0.0` | Passes Claude Code's version gate (rejects `^[0-2]\.`) |
+
+Additionally, `CLAUDECODE` is removed from the environment (`env_remove`) to prevent nested-session detection when TUICommander itself runs inside a Claude Code session.
+
+## Silence-Based Question Detection
+
+The reader thread tracks output silence to detect unanswered agent prompts. When the terminal stops producing output for a configured duration (10 seconds) after the last line ends with `?`, the session is treated as waiting for input. This complements the instant pattern-based detection in the output parser and catches generic questions that would cause too many false positives if detected immediately (e.g., streaming fragments like "ad?", "swap?").
+
+## Amber Tab Styling
+
+Sessions created via HTTP/MCP (remote sessions) are flagged with `isRemote`. The tab bar applies an amber gradient background and amber bottom border (`rgba(251, 191, 36, ...)`) to visually distinguish remote-created sessions from locally spawned ones.
 
 ## Concurrency
 

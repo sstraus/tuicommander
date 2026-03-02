@@ -49,6 +49,8 @@ App.tsx (central orchestrator)
 ├── CreateWorktreeDialog/     # Worktree creation dialog
 ├── PromptDialog/             # Text input prompt dialog
 ├── RunCommandDialog/         # Configure terminal commands
+├── WorktreeManager/          # Overlay panel for worktree management
+├── MergePostActionDialog/    # Dialog for post-merge actions (keep/delete branch)
 ├── ContextMenu/              # Right-click menu for terminals
 ├── IdeLauncher/              # Open repository in IDE
 └── LazygitFloating           # Lazygit floating window
@@ -220,3 +222,4 @@ Native SolidJS component (not a plugin) showing Claude API usage data. Displayed
 | Task Queue | — | Local state in App.tsx |
 | Command Palette | `Cmd+P` | `commandPaletteStore.toggle()` |
 | Activity Dashboard | — | `activityDashboardStore.toggle()` |
+| Worktree Manager | `Cmd+Shift+W` | `worktreeManagerStore.toggle()` |

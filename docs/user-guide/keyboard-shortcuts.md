@@ -82,6 +82,7 @@ Font size range: 8px to 32px, step 2px per action.
 | `Cmd+,` | Open settings |
 | `Cmd+?` | Toggle help panel |
 | `Cmd+K` | Prompt library |
+| `Cmd+Shift+W` | Worktree Manager |
 | `Cmd+J` | Task queue |
 
 Note: File browser, Markdown, and Diff panels are mutually exclusive — opening one closes any other that is open.

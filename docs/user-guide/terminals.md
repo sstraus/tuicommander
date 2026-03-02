@@ -12,6 +12,10 @@ Each terminal tab runs an independent PTY (pseudo-terminal) session with your sh
 
 New terminals inherit the working directory from the active branch's worktree path.
 
+### CWD Tracking (OSC 7)
+
+When your shell reports directory changes via OSC 7, TUICommander updates the terminal's working directory in real time. If the new directory falls inside a different worktree, the terminal tab is automatically reassigned to the corresponding branch in the sidebar.
+
 ### Terminal Lifecycle
 
 Terminals are **never unmounted** from the DOM. When you switch branches or tabs, terminals are hidden but remain alive. Switch back and your process, scroll position, and output are exactly as you left them.
@@ -51,6 +55,7 @@ Drag tabs to reorder them. Visual drop indicators show where the tab will land.
 | Question icon | Agent is asking a question |
 | Error icon | Error detected in output |
 | Progress bar | Operation in progress (OSC 9;4) |
+| Amber gradient | Session created via HTTP/MCP (remote session) |
 
 ### Tab Shortcuts
 
@@ -162,7 +167,7 @@ When an agent asks a question, the tab indicator changes and a notification soun
 
 ### Session Restore
 
-When you restart TUICommander and a terminal had an active agent session, a clickable banner appears: "Agent session was active — click to resume." Clicking the banner sends the agent's resume command. The banner is dismissible if you do not want to resume.
+When you restart TUICommander and a terminal had an active agent session, a clickable banner appears: "Agent session was active — click to resume." Clicking the banner sends the agent's resume command. Press **Escape** or click the **x** button to dismiss the banner without resuming.
 
 ### OSC 8 Hyperlinks
 

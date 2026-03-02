@@ -1,61 +1,75 @@
-# MCP PTY Bridge
+# MCP Bridge
 
-TUICommander exposes terminal sessions, git operations, config, and agent spawning to external tools (Claude Code, Cursor, etc.) via the Model Context Protocol (MCP).
+TUICommander exposes terminal sessions, git operations, config, and agent spawning to external tools (Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini) via the Model Context Protocol (MCP).
 
 ## Architecture
 
 ```
-Claude Code  <--stdio/JSON-RPC-->  tui-mcp-bridge  <--HTTP-->  TUICommander (axum on 127.0.0.1)
+AI Agent  <--stdio/JSON-RPC-->  tuic-mcp-bridge  <--HTTP over Unix socket-->  TUICommander (axum)
 ```
 
 The system has two components:
 
-1. **HTTP API** - Embedded axum server inside TUICommander, listening on `127.0.0.1` (localhost only)
-2. **MCP Bridge** - Standalone binary (`tui-mcp-bridge`) that translates MCP protocol to HTTP calls
+1. **HTTP API** — Embedded axum server inside TUICommander, always listening on a Unix domain socket at `<config_dir>/mcp.sock`
+2. **MCP Bridge** — Sidecar binary (`tuic-mcp-bridge`) shipped alongside the app, translating MCP stdio transport to HTTP calls over the Unix socket
 
-## Enabling the MCP Server
+## How It Works
 
-The MCP HTTP server is **disabled by default**. Enable it in TUICommander's config:
+The bridge binary (`tuic-mcp-bridge`) is a Tauri sidecar — it ships with the app and requires no manual build. It:
 
-Edit `~/.tuicommander/config.json`:
+- Reads JSON-RPC messages from stdin (MCP stdio transport)
+- Forwards them as `POST /mcp` requests over the Unix socket to TUICommander
+- Returns responses on stdout
+- Handles `initialize` locally so it works even when TUICommander is not running
+- Reconnects automatically every 3 seconds if TUICommander is stopped or restarted
+- Maintains a persistent SSE connection (`GET /mcp`) to receive server-initiated `notifications/tools/list_changed` events, which it forwards to the AI agent
+- When disconnected, returns empty tool lists and graceful error messages instead of crashing
+
+## Auto-Install
+
+On first launch, TUICommander auto-installs the MCP bridge config into all supported agents:
+
+| Agent | Config File | Key Path |
+|-------|------------|----------|
+| Claude Code | `~/.claude.json` | `mcpServers.tuicommander` |
+| Cursor | `~/.cursor/mcp.json` | `mcpServers.tuicommander` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `mcpServers.tuicommander` |
+| VS Code | `<vscode_user_dir>/mcp.json` | `servers.tuicommander` |
+| Zed | `~/.config/zed/settings.json` | `context_servers.tuicommander` |
+| Amp | `~/.config/amp/settings.json` | `amp.mcpServers.tuicommander` |
+| Gemini | `~/.gemini/settings.json` | `mcpServers.tuicommander` |
+
+The installed config entry looks like:
+
 ```json
 {
-  "mcp_server_enabled": true
+  "tuicommander": {
+    "command": "/path/to/tuic-mcp-bridge"
+  }
 }
 ```
 
-Restart TUICommander after changing this setting. When enabled, the app starts an HTTP server on a random localhost port and writes the port number to `~/.tuicommander/mcp-port`.
+The bridge binary path is resolved from the sidecar location (same directory as the main executable). You can also manage MCP installation per-agent from **Settings > Agents** in the UI.
 
-## Building the Bridge Binary
+## Manual Configuration
 
-```bash
-cd src-tauri
-cargo build --bin tui-mcp-bridge --release
-```
-
-The binary will be at `src-tauri/target/release/tui-mcp-bridge`.
-
-## Configuring Claude Code
-
-Add to your Claude Code MCP config (`~/.claude.json` or project `.claude/settings.json`):
+If auto-install didn't run or you need to configure manually, add the entry to your agent's MCP config file. For example, in Claude Code (`~/.claude.json`):
 
 ```json
 {
   "mcpServers": {
     "tuicommander": {
-      "command": "/path/to/tui-mcp-bridge"
+      "command": "/Applications/TUICommander.app/Contents/MacOS/tuic-mcp-bridge"
     }
   }
 }
 ```
 
+The exact path depends on your platform and installation location.
+
 ## HTTP API Reference
 
-Read the port from `~/.tuicommander/mcp-port`:
-```bash
-PORT=$(cat ~/.tuicommander/mcp-port)
-BASE=http://127.0.0.1:$PORT
-```
+The HTTP API is served over the Unix socket at `<config_dir>/mcp.sock`. When remote access is enabled, a TCP listener also starts on the configured port.
 
 ### Health
 
@@ -197,55 +211,26 @@ All actions require `path` (absolute path to git repository).
 
 Returns the complete plugin development reference (manifest format, PluginHost API, structured event types, examples). No `action` parameter needed.
 
-## Example Usage
-
-```bash
-PORT=$(cat ~/.tuicommander/mcp-port)
-
-# Create a session and run a command
-SESSION=$(curl -s -X POST http://127.0.0.1:$PORT/sessions \
-  -H "Content-Type: application/json" \
-  -d '{"cwd": "/path/to/repo"}' | jq -r .session_id)
-
-curl -X POST http://127.0.0.1:$PORT/sessions/$SESSION/write \
-  -H "Content-Type: application/json" \
-  -d '{"data": "git status\r"}'
-
-sleep 1
-curl "http://127.0.0.1:$PORT/sessions/$SESSION/output?limit=4096"
-
-# Get repo info
-curl "http://127.0.0.1:$PORT/repo/info?path=/path/to/repo"
-
-# Get GitHub PR statuses
-curl "http://127.0.0.1:$PORT/repo/prs?path=/path/to/repo"
-
-# Spawn a Claude agent
-AGENT=$(curl -s -X POST http://127.0.0.1:$PORT/sessions/agent \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Explain this codebase", "cwd": "/path/to/repo", "print_mode": true}' \
-  | jq -r .session_id)
-
-# Read agent output
-curl "http://127.0.0.1:$PORT/sessions/$AGENT/output?limit=65536"
-
-# Check orchestrator stats
-curl http://127.0.0.1:$PORT/stats
-
-# Detect installed agents
-curl http://127.0.0.1:$PORT/agents
-```
-
 ## Security
 
-- The HTTP server binds to `127.0.0.1` only (not `0.0.0.0`) - no network exposure
-- No authentication (same-user, same-machine assumption)
-- The MCP bridge reads the port from a file only accessible to the current user
-- The feature is opt-in via `mcp_server_enabled` config flag
+- The Unix socket is only accessible to the current user (filesystem permissions)
+- No authentication on the Unix socket (same-user, same-machine assumption)
+- TCP listener only starts when remote access is explicitly enabled, with Basic Auth required
+- MCP bridge config is auto-installed on first launch, manageable from Settings > Agents
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| Bridge reports "TUIC not running" | Start TUICommander. The bridge reconnects automatically every 3 seconds. |
+| Agent shows no tools | Ensure TUICommander is running. The bridge returns empty tool lists when disconnected. |
+| Config not auto-installed | Check if `~/.claude.json` (or equivalent) exists with a `tuicommander` entry. Reinstall from Settings > Agents. |
+| Socket permission denied | Verify `<config_dir>/mcp.sock` is owned by your user. Delete the stale socket and restart TUICommander. |
+| Bridge binary not found | The bridge should be in the same directory as the main TUICommander executable. Check your installation. |
 
 ## Limitations
 
-- **Headless sessions** - Sessions created via HTTP don't emit Tauri events (no frontend rendering). Use `get_output` to poll for output.
-- **Raw output** - `get_output` returns raw terminal output including ANSI escape codes. No VT100 screen parsing.
-- **Polling only** - No WebSocket streaming. Use `get_output` to poll for new output.
-- **64KB buffer** - The ring buffer holds the last 64KB of output per session. Older output is discarded.
+- **Headless sessions** — Sessions created via HTTP don't emit Tauri events (no frontend rendering). Use `get_output` to poll for output.
+- **Raw output** — `get_output` returns raw terminal output including ANSI escape codes. No VT100 screen parsing.
+- **Polling only** — No WebSocket streaming. Use `get_output` to poll for new output.
+- **64KB buffer** — The ring buffer holds the last 64KB of output per session. Older output is discarded.

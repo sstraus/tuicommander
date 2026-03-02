@@ -12,7 +12,7 @@ Local voice-to-text using Whisper with Metal acceleration on macOS. Push-to-talk
 | `audio.rs` | Audio capture from microphone via CPAL (VecDeque ring buffer) |
 | `commands.rs` | Tauri command handlers |
 | `model.rs` | Whisper model download and management |
-| `transcribe.rs` | Whisper transcription via whisper-rs |
+| `transcribe.rs` | `Transcriber` trait + `WhisperTranscriber` implementation via whisper-rs |
 | `streaming.rs` | Streaming transcription loop with adaptive windows and VAD |
 | `vad.rs` | Voice Activity Detection (energy-based, ported from whisper.cpp) |
 | `corrections.rs` | Post-processing text corrections |
@@ -24,7 +24,7 @@ Local voice-to-text using Whisper with Metal acceleration on macOS. Push-to-talk
 | Command | Description |
 |---------|-------------|
 | `start_dictation()` | Start recording + streaming transcription |
-| `stop_dictation_and_transcribe()` | Stop streaming, final pass on tail, return text |
+| `stop_dictation_and_transcribe()` | Stop streaming, final pass on full captured audio, return `TranscribeResponse { text, skip_reason, duration_s }` |
 | `inject_text(text)` | Apply corrections to text (called after transcription) |
 
 ### Tauri Events
@@ -63,13 +63,26 @@ pub struct DictationState {
     pub recording: AtomicBool,
     pub processing: AtomicBool,
     pub streaming: Mutex<Option<StreamingSession>>,
-    pub partial_rx: Mutex<Option<mpsc::Receiver<String>>>,
-    pub partials: Mutex<Vec<String>>,
-    pub transcriber_arc: Mutex<Option<Arc<WhisperTranscriber>>>,
+    pub transcriber_arc: Mutex<Option<Arc<dyn Transcriber>>>,
+    pub accumulated_partials: Arc<Mutex<String>>,
 }
 ```
 
 Managed as Tauri state alongside `AppState`.
+
+## Transcriber Trait
+
+```rust
+pub trait Transcriber: Send + Sync {
+    fn transcribe(&self, audio: &[f32], language: Option<&str>) -> Result<TranscribeResult, String>;
+}
+```
+
+`WhisperTranscriber` implements this trait using whisper-rs. The trait abstraction enables mock implementations for testing without requiring a Whisper model.
+
+## Recording Guard (TOCTOU)
+
+`start_dictation()` uses `compare_exchange(false, true, AcqRel, Acquire)` on the `recording` flag to prevent TOCTOU races from concurrent IPC calls. If two calls arrive simultaneously, only the first succeeds; the second returns `"Already recording"`. A drop guard resets `recording = false` on any early error return.
 
 ## Streaming Architecture
 
@@ -102,10 +115,10 @@ User releases hotkey
 stop_dictation_and_transcribe()
     ├── Stop cpal stream (buffer preserved)
     ├── Signal StreamingSession stop → join thread
-    ├── Collect tail audio (remaining step_buf + buffer)
-    ├── Final transcription on tail (if >= 0.5s)
+    ├── Collect ALL audio (processed + unprocessed + capture buffer remainder)
+    ├── Final transcription on full captured audio (if >= 0.5s)
     ├── Apply text corrections
-    └── Return TranscribeResponse
+    └── Return TranscribeResponse { text, skip_reason, duration_s }
     │
     ▼
 Frontend injects text into focus target
@@ -150,6 +163,16 @@ Microphone → CPAL callback → try_lock() → VecDeque<f32> ← drain_samples(
 ```
 
 Key design: `try_lock()` in the CPAL callback ensures the real-time audio thread **never blocks**. On contention, samples are silently dropped — acceptable for dictation at 16kHz mono (~64KB/s).
+
+## Audio Resampling
+
+`process_audio_chunk()` converts raw microphone input to the 16kHz mono f32 PCM format required by Whisper:
+
+1. **I16 → F32 conversion** — If the audio device provides `I16` samples, they are normalized to `[-1.0, 1.0]` by dividing by `i16::MAX`.
+2. **Stereo → mono** — Multi-channel frames are averaged (`frame.sum() / channels`).
+3. **Nearest-neighbor resampling to 16kHz** — For sample rates other than 16kHz (e.g., 48kHz), the output length is calculated as `input_len * (16000 / sample_rate)` and samples are picked by index mapping (`src_idx = i / ratio`).
+
+Pre-allocated scratch buffers (`mono_buf`, `resample_buf`) are captured in the CPAL closure to avoid per-callback heap allocations. The buffer is capped at 30 seconds (480k samples) to prevent unbounded growth.
 
 ## Model Storage
 

@@ -6,21 +6,30 @@ Optional HTTP/WebSocket server that exposes all Tauri commands as REST endpoints
 
 ## Activation
 
-Opt-in via Settings > Services > MCP Server toggle, or `config.json`:
+The server has two independent listeners:
+
+- **Unix socket** (always started): Listens at `<config_dir>/mcp.sock` with no authentication. Used by the local `tuic-mcp-bridge` sidecar.
+- **TCP listener** (opt-in): Only starts when remote access is enabled. Binds to `0.0.0.0:<remote_access_port>` with Basic Auth.
+
+The `mcp_server_enabled` config flag controls whether the `/mcp` protocol route is active (MCP tool discovery and invocation), not whether the server itself starts. The HTTP API endpoints (sessions, git, config, etc.) are always available on the Unix socket.
+
+Configuration via Settings > Services, or `config.json`:
 
 ```json
 {
   "mcp_server_enabled": true,
   "remote_access_enabled": false,
-  "remote_access_port": 3100
+  "remote_access_port": 9876
 }
 ```
 
-When enabled, the server:
-1. Binds to a random port (or configured port for remote access)
-2. Writes port number to `<config_dir>/mcp-port` file
+On startup, the server:
+1. Binds a Unix domain socket at `<config_dir>/mcp.sock` (removes stale socket from previous run)
+2. If remote access is enabled, binds a TCP listener on the configured port
 3. Starts Axum HTTP server on a background tokio thread
 4. Enables CORS for browser mode
+5. Spawns MCP session reaper (evicts stale sessions after 1h TTL)
+6. Spawns upstream health checker for proxied MCP servers
 
 ## REST API Endpoints
 
@@ -104,9 +113,11 @@ MCP Streamable HTTP transport (spec 2025-03-26):
 
 ```
 Client ──POST──> /mcp   (JSON-RPC request, response in body)
-Client ──GET───> /mcp   (405 Method Not Allowed)
+Client ──GET───> /mcp   (SSE stream for server notifications, requires Mcp-Session-Id header)
 Client ──DELETE─> /mcp  (end session, pass Mcp-Session-Id header)
 ```
+
+The `GET /mcp` SSE stream emits `notifications/tools/list_changed` whenever the available tool set changes (e.g., native tools are enabled/disabled via config, or upstream MCP servers connect/disconnect). The bridge sidecar subscribes to this stream and forwards the notification to the AI agent.
 
 ### MCP Tool: `session` Output
 

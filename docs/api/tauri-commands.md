@@ -18,6 +18,7 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `get_session_metrics` | -- | `JSON` | Spawn/fail/byte counts |
 | `list_active_sessions` | -- | `Vec<ActiveSessionInfo>` | List all sessions |
 | `list_worktrees` | -- | `Vec<JSON>` | List managed worktrees |
+| `update_session_cwd` | `session_id, cwd` | `()` | Update session working directory (from OSC 7) |
 | `get_session_foreground_process` | `session_id` | `JSON` | Get foreground process info |
 
 ## Git Operations (`git.rs`)
@@ -59,6 +60,8 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `generate_worktree_name_cmd` | `existing_names` | `String` | Generate unique name |
 | `list_local_branches` | `path` | `Vec<String>` | List local branches |
 | `checkout_remote_branch` | `repo_path, branch_name` | `()` | Check out a remote-only branch as a new local tracking branch |
+| `detect_orphan_worktrees` | `repo_path` | `Vec<String>` | Detect worktrees in detached HEAD state (branch deleted) |
+| `remove_orphan_worktree` | `repo_path, worktree_path` | `()` | Remove an orphan worktree by filesystem path (validated against repo) |
 
 ## Configuration (`config.rs`)
 
@@ -182,7 +185,7 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
 | `start_dictation` | -- | `()` | Start recording |
-| `stop_dictation_and_transcribe` | -- | `String` | Stop + transcribe |
+| `stop_dictation_and_transcribe` | -- | `TranscribeResponse` | Stop + transcribe. Returns `{text, skip_reason?, duration_s}` |
 | `inject_text` | `text` | `String` | Apply corrections |
 | `get_dictation_status` | -- | `DictationStatus` | Model/recording status |
 | `get_model_info` | -- | `Vec<ModelInfo>` | Available models |

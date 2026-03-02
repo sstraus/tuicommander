@@ -43,12 +43,32 @@ See [AI Agents](ai-agents.md) for details on agent detection, rate limits, and t
 
 ## Services Tab
 
-### MCP HTTP Server
+### HTTP API Server
 
-Enable an HTTP API server on localhost for external tool integration:
-- Exposes terminal sessions, git operations, and agent spawning
-- Used by Claude Code, Cursor, and other tools via MCP protocol
-- Shows server status (running/stopped), port, and active session count
+Enable the HTTP API server for external tool integration:
+- Serves the REST API and MCP protocol for AI agents and automation tools
+- Local MCP connections use a Unix domain socket at `<config_dir>/mcp.sock` — no port configuration needed
+- AI agents connect via the `tuic-mcp-bridge` sidecar (auto-installed on first launch for Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini)
+- Shows server status (running/stopped) and active session count
+
+### TUIC Tools
+
+Native tools exposed to AI agents via MCP. Each tool can be individually enabled or disabled to restrict what agents can access:
+- **session** — PTY terminal session management
+- **git** — Repository state queries
+- **agent** — AI agent detection and spawning
+- **config** — App configuration read/write
+- **workspace** — Repo and worktree queries
+- **notify** — User notifications (toast, confirm)
+- **plugin_dev_guide** — Plugin authoring reference
+
+### Upstream MCP Servers
+
+Proxy external MCP servers through TUICommander. Their tools appear prefixed as `{name}__{tool}`:
+- Add upstream servers via HTTP (Streamable MCP) or stdio (process) transport
+- API keys for HTTP upstreams are stored in the OS keychain
+- Live status (connecting, ready, circuit open, failed) with tool count and call metrics
+- Reconnect and remove controls per upstream
 
 ### Remote Access
 

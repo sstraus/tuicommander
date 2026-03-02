@@ -23,12 +23,22 @@ interface TerminalData {
   id: string;
   sessionId: string | null;
   name: string;
+  nameIsCustom: boolean;            // When true, OSC/status-line title changes are ignored
   repoPath: string;
   branchName: string;
   fontSize: number;
+  cwd: string | null;               // Current working directory (from OSC 7)
   awaitingInput: AwaitingInputType; // "question" | "error" | "confirmation" | null
   shellState: ShellState;           // "busy" | "idle" | null
-  hasActivity: boolean;
+  activity: boolean;
+  progress: number | null;          // OSC 9;4 progress (0-100), null when inactive
+  agentType: AgentType | null;      // Detected foreground agent process (e.g. "claude")
+  usageLimit: { percentage: number; limitType: string } | null;
+  lastDataAt: number | null;        // Timestamp of last PTY output
+  lastPrompt: string | null;        // Last relevant user prompt (>= 10 words), set by Rust
+  agentIntent: string | null;       // LLM-declared intent via [[intent: ...]] token
+  currentTask: string | null;       // Current agent task from status-line parsing
+  isRemote: boolean;                // Created via HTTP/MCP (not locally by the UI)
 }
 
 interface TabLayout {
@@ -358,6 +368,20 @@ PR state transition notifications (merged, closed, blocked, CI failed, etc.).
 
 ### userActivityStore (`userActivity.ts`)
 Tracks last user activity timestamp. Used for merged PR grace period calculations.
+
+### worktreeManagerStore (`worktreeManager.ts`)
+Worktree Manager overlay state and selection.
+
+**State Shape:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `isOpen` | `boolean` | Overlay visibility |
+| `selectedIds` | `Set<string>` | Multi-select worktree IDs |
+| `repoFilter` | `string \| null` | Filter by repo path |
+| `textFilter` | `string` | Free-text search filter |
+
+**Actions:** `open()`, `close()` (resets all state), `toggle()`, `toggleSelect(id)`, `selectAll(ids)`, `clearSelection()`, `setRepoFilter(path)`, `setTextFilter(text)`.
 
 ### editorTabsStore (`editorTabs.ts`)
 Open code editor tabs (CodeEditorTab).

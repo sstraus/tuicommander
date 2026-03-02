@@ -18,7 +18,15 @@ TUICommander detects, monitors, and manages AI coding agents running in your ter
 
 ## Agent Detection
 
-TUICommander auto-detects which agent is running in each terminal by matching output patterns. When detected:
+TUICommander auto-detects which agent is running in each terminal by matching output patterns. Detection uses agent-specific status line markers:
+
+- **Claude Code**: Middle dot `·` (U+00B7), dingbat asterisks `✢` `✳` `✶` `✻` `✽` (U+2720–273F), or ASCII `*`
+- **Copilot CLI**: Therefore sign `∴` (U+2234), filled circle `●` (U+25CF), empty circle `○` (U+25CB)
+- **Aider**: Knight Rider scanner blocks `░█`
+- **Gemini CLI / Amazon Q / Cline**: Braille spinners `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`
+- **Codex CLI**: Bullets `•` `◦`
+
+When detected:
 
 - The **status bar** shows the agent's brand logo and name
 - The **tab indicator** updates to reflect agent state
@@ -46,7 +54,7 @@ When an agent asks an interactive question (Y/N, multiple choice, numbered optio
    - `Escape` to dismiss
 3. Plays a **notification sound** (if enabled in Settings → Notifications)
 
-For unrecognized agents, silence-based detection kicks in — if the terminal stops producing output for a configured duration, it's treated as a potential prompt.
+For unrecognized agents, silence-based detection kicks in — if the terminal stops producing output for a configured duration, it's treated as a potential prompt. Lines typed by the user that end with `?` are suppressed from question detection to avoid false positives.
 
 ## Usage Limit Tracking
 

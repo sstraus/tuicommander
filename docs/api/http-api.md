@@ -4,7 +4,8 @@ REST API served by the Axum HTTP server when MCP server is enabled. All Tauri co
 
 ## Base URL
 
-`http://localhost:{port}` — port written to `<config_dir>/mcp-port` file on startup.
+- **Local (Unix socket):** `<config_dir>/mcp.sock` — always started on macOS/Linux. No auth, MCP always enabled. Used by the local MCP bridge binary.
+- **Remote (TCP):** `http://<host>:{remote_access_port}` — only started when remote access is enabled in settings. HTTP Basic Auth required.
 
 ## Authentication
 
@@ -90,6 +91,14 @@ Returns recent output from the ring buffer (up to 64KB).
 | `limit` | `8192` | Max bytes to read |
 | `format` | (raw) | `text` strips ANSI escape codes |
 
+### Kitty Protocol Flags
+
+```
+GET /sessions/:id/kitty-flags
+```
+
+Returns the current Kitty keyboard protocol flags (integer) for a session.
+
 ### Foreground Process
 
 ```
@@ -141,13 +150,23 @@ Frame types:
 ### Server-Sent Events (SSE)
 
 ```
-GET /events
+GET /events?types=repo-changed,pty-parsed
 ```
 
-Broadcasts server-side events to all browser/mobile clients:
-- `session-created` — New session started (payload: `{session_id, cwd}`)
-- `session-closed` — Session ended (payload: `{session_id}`)
-- `repo-changed` — Git repository state changed (payload: `{path}`)
+Broadcasts server-side events to all browser/mobile clients. Supports optional `?types=` query parameter for comma-separated event name filtering. Uses monotonic event IDs and 15-second keep-alive pings.
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `session-created` | `{session_id, cwd}` | New session started |
+| `session-closed` | `{session_id}` | Session ended |
+| `repo-changed` | `{repo_path}` | Git repository state changed |
+| `head-changed` | `{repo_path, branch}` | Git HEAD changed (branch switch) |
+| `pty-parsed` | `{session_id, parsed}` | Structured output event from PTY parser |
+| `pty-exit` | `{session_id}` | PTY process exited |
+| `plugin-changed` | `{plugin_ids}` | Plugin(s) installed/removed/updated |
+| `upstream-status-changed` | `{name, status}` | MCP upstream server status change |
+| `mcp-toast` | `{title, message, level}` | Toast notification from MCP layer |
+| `lagged` | `{missed}` | Client fell behind; N events were dropped |
 
 ### MCP Streamable HTTP
 
@@ -307,6 +326,55 @@ GET /repo/prs?path=/path/to/repo
 
 Returns `BranchPrStatus[]` for all branches with open PRs.
 
+### PR Statuses (Multi-Repo Batch)
+
+```
+POST /repo/prs/batch
+Content-Type: application/json
+
+{ "paths": ["/repo1", "/repo2"], "include_merged": false }
+```
+
+Returns aggregated PR statuses across multiple repositories.
+
+### Merged Branches
+
+```
+GET /repo/branches/merged?path=/path/to/repo
+```
+
+Returns list of branch names merged into the default branch.
+
+### Orphan Worktrees
+
+```
+GET /repo/orphan-worktrees?repoPath=/path/to/repo
+```
+
+Returns list of worktree directory paths that are in detached HEAD state (their branch was deleted).
+
+### Remove Orphan Worktree
+
+```
+POST /repo/remove-orphan
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "worktreePath": "/path/to/worktree" }
+```
+
+Removes an orphan worktree by filesystem path. The worktree path is validated against the repo's actual worktree list.
+
+### Merge PR via GitHub
+
+```
+POST /repo/merge-pr
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "prNumber": 42, "mergeMethod": "squash" }
+```
+
+Merges a PR via the GitHub API. `mergeMethod` must be `"merge"`, `"squash"`, or `"rebase"`. Returns `{"sha": "..."}` on success.
+
 ### CI Checks
 
 ```
@@ -390,6 +458,15 @@ PUT /config/repo-settings
 
 Load/save per-repository settings.
 
+### Repository Defaults
+
+```
+GET /config/repo-defaults
+PUT /config/repo-defaults
+```
+
+Load/save default settings applied to new repositories.
+
 ### Check Custom Settings
 
 ```
@@ -433,20 +510,38 @@ GET /mcp/status
 
 Returns MCP server status (enabled, port, connected clients).
 
+### MCP Upstream Status
+
+```
+GET /mcp/upstream-status
+```
+
+Returns status and metrics for all upstream MCP servers (connecting, ready, circuit_open, disabled, failed).
+
+### MCP Instructions
+
+```
+GET /mcp/instructions
+```
+
+Returns dynamic server instructions for the MCP bridge binary as `{"instructions": "..."}`.
+
 ## Filesystem Endpoints
 
 ```
-GET  /fs/list?path=/path/to/dir
-GET  /fs/read?path=/path/to/file
-POST /fs/write         { "path": "...", "content": "..." }
-POST /fs/mkdir         { "path": "..." }
-POST /fs/delete        { "path": "..." }
-POST /fs/rename        { "src": "...", "dest": "..." }
-POST /fs/copy          { "src": "...", "dest": "..." }
-POST /fs/gitignore     { "path": "...", "pattern": "..." }
+GET  /fs/list?repoPath=/path/to/repo&subdir=src
+GET  /fs/search?repoPath=/path/to/repo&query=main&limit=50
+GET  /fs/read?repoPath=/path/to/repo&file=src/main.rs
+GET  /fs/read-external?path=/absolute/path/to/file
+POST /fs/write         { "repoPath": "...", "file": "...", "content": "..." }
+POST /fs/mkdir         { "repoPath": "...", "dir": "..." }
+POST /fs/delete        { "repoPath": "...", "path": "..." }
+POST /fs/rename        { "repoPath": "...", "from": "...", "to": "..." }
+POST /fs/copy          { "repoPath": "...", "from": "...", "to": "..." }
+POST /fs/gitignore     { "repoPath": "...", "pattern": "..." }
 ```
 
-Sandboxed filesystem operations for the file manager panel.
+Sandboxed filesystem operations for the file manager panel. `/fs/read-external` reads an arbitrary absolute path (not sandboxed to a repo).
 
 ## Monitoring Endpoints
 
@@ -481,6 +576,34 @@ GET /system/local-ips
 ```
 
 Returns list of local network interfaces and addresses.
+
+### Local IP (Primary)
+
+```
+GET /system/local-ip
+```
+
+Returns the preferred local IP address (single value).
+
+## Watcher Endpoints
+
+### Head Watcher
+
+```
+POST   /watchers/head?path=/path/to/repo
+DELETE /watchers/head?path=/path/to/repo
+```
+
+Start/stop watching `.git/HEAD` for branch changes. Browser-only mode.
+
+### Repo Watcher
+
+```
+POST   /watchers/repo?path=/path/to/repo
+DELETE /watchers/repo?path=/path/to/repo
+```
+
+Start/stop watching `.git/` for repository state changes. Browser-only mode.
 
 ## Agent Endpoints
 
@@ -605,6 +728,17 @@ Content-Type: application/json
 ```
 
 Returns a unique worktree name.
+
+### Finalize Merged Worktree
+
+```
+POST /worktrees/finalize
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "branchName": "feature-x", "action": "archive" }
+```
+
+Finalizes a merged worktree branch. `action` must be `"archive"` (moves to archive directory) or `"delete"` (removes worktree and branch).
 
 ### Remove Worktree
 

@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.5.3 | **Last verified:** 2026-03-01
+**Version:** 0.6.0 | **Last verified:** 2026-03-02
 
 ---
 
@@ -83,7 +83,7 @@
 
 ### 1.10 OSC 7 CWD Tracking
 - Terminals report their current working directory via OSC 7 escape sequences
-- Parsed in Rust and stored per-session as `session_cwd`
+- Parsed in the frontend via xterm.js `registerOscHandler(7, ...)`, then sent to Rust via `update_session_cwd` IPC and stored per-session as `session_cwd`
 - When a terminal's CWD falls inside a known worktree path, the session is automatically reassigned to the correct branch in the sidebar
 - Enables accurate branch association even when the user `cd`s into a different worktree from a single terminal
 
@@ -226,7 +226,11 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 
 ### 3.11 Activity Dashboard (`Cmd+Shift+A`)
 - Real-time view of all active terminal sessions in a compact list
-- Each row shows: terminal name, project name badge (last segment of CWD), agent type, status, last activity time, and the last user prompt (>= 10 words) as an italic sub-row with tooltip
+- Each row shows: terminal name, project name badge (last segment of CWD), agent type, status, last activity time
+- Sub-rows (up to one shown per terminal, in priority order):
+  - `currentTask` (gear icon) — current agent task from status-line parsing (e.g. "Reading files"). Suppressed for Claude Code (spinner verbs are decorative)
+  - `agentIntent` (crosshair icon) — LLM-declared intent via `[[intent: ...]]` token
+  - `lastPrompt` (speech bubble icon) — last user prompt (>= 10 words). Shown only when no `agentIntent` is present
 - Status color codes: green=working, yellow=waiting, red=rate-limited, gray=idle
 - Rate limit indicators with countdown timers
 - Click any row to switch to that terminal and close the dashboard
@@ -327,8 +331,8 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 
 ### 6.2 Agent Detection
 - Auto-detection from terminal output patterns
-- Multi-agent status line detection: recognizes format `╭──── Agent Name ────╮` and variations
-- Claude middle-dot prompt (`·`) and Copilot CLI patterns detected
+- Multi-agent status line detection via regex patterns anchored to line start: Claude Code (`*`/`✢`/`·` + task text + `...`/`…`), `[Running] Task` format, Aider (Knight Rider scanner `░█` + token reports), Codex CLI (`•`/`◦` bullet spinner with time suffix), Copilot CLI (`∴`/`●`/`○` indicators), Gemini CLI (braille dots `⠋⠙⠹...`)
+- Status lines rejected when they appear in diff output, code listings, or block comments
 - Brand SVG logos for each agent (fallback to capital letter)
 - Agent badge in status bar showing active agent
 - Binary detection: Rust probes well-known directories via `resolve_cli()` for reliable PATH resolution in desktop-launched apps
@@ -522,8 +526,8 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - First partial within ~1.5s, subsequent windows grow to 3s for quality
 - VAD energy gate skips silence windows (prevents hallucination)
 - Floating toast shows partial text above status bar during recording
-- Prompt token carry-forward across windows for continuity
-- Final transcription pass on tail audio at key release
+- 200ms audio window overlap (`keep_ms`) carries context across windows for continuity
+- Final transcription pass on full captured audio at key release
 
 ### 9.5 Configuration
 - Enable/disable, hotkey, language (auto-detect or explicit), model download
@@ -577,8 +581,11 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Reset panel sizes: restore sidebar and panel widths to defaults
 
 ### 11.3 Services
-- MCP HTTP server: enable/disable, port, session count
-- Remote access: port, username, password (bcrypt hash), URL display
+- HTTP API server: enable/disable toggle. Local MCP connections use a Unix domain socket (no port configuration needed); TCP port only for remote access
+- MCP connection info: bridge sidecar auto-installs configs for supported agents (Claude Code, Cursor, etc.)
+- TUIC native tool toggles: enable/disable individual MCP tools (`session`, `git`, `agent`, `config`, `workspace`, `notify`, `plugin_dev_guide`) to restrict what AI agents can access
+- MCP Upstreams: add/edit/remove upstream MCP servers (HTTP or stdio), per-upstream enable/disable, reconnect, credential storage via OS keyring, live status dots, tool count and metrics
+- Remote access: port, username, password (bcrypt hash), URL display, QR code, token duration, IPv6 dual-stack, LAN auth bypass
 - Voice dictation: full setup (see section 9)
 
 ### 11.4 Repository Settings (per-repo)
@@ -672,6 +679,8 @@ All data persisted to platform config directory via Rust:
 - Exposes terminal sessions, git operations, agent spawning
 - WebSocket streaming, Streamable HTTP transport
 - Used by Claude Code, Cursor, and other tools via MCP protocol
+- `tuic-mcp-bridge` ships as a Tauri sidecar; auto-installs MCP configs on first launch for Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini
+- Local connections use Unix domain socket (`<config_dir>/mcp.sock`); TCP port reserved for remote access only
 
 ### 14.7 macOS Dock Badge
 - Badge count for attention-requiring notifications (questions, errors)
@@ -968,6 +977,7 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 
 ### 19.10 SSE Events
 - `upstream_status_changed` events emitted on status transitions (connecting, ready, circuit_open, disabled, failed)
+- `tools/list_changed` notification emitted when upstream tool lists change, enabling live tool-list updates for connected MCP clients
 - Delivered via `GET /events` SSE stream
 
 ### 19.11 Metrics (per upstream, lock-free)
