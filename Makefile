@@ -22,7 +22,7 @@ export MACOSX_DEPLOYMENT_TARGET ?= 10.15
 DIST_DIR=dist-release
 
 .PHONY: all clean dev test build build-dmg check sign verify-sign notarize release dist \
-       nightly github-release preview
+       nightly github-release preview bump
 
 all: build sign
 
@@ -124,6 +124,20 @@ nightly:
 	git push origin tip --force; \
 	echo "==> Nightly triggered. Monitor: gh run list -w Nightly --limit 1"
 
+# Bump version across all manifests (no commit, no tag).
+# Usage: make bump V=0.6.2
+bump:
+	@if [ -z "$(V)" ]; then echo "ERROR: specify version with V=x.y.z" && exit 1; fi; \
+	CUR=$$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'); \
+	echo "==> Bumping $$CUR → $(V)"; \
+	sed -i '' 's/^version = "'"$$CUR"'"/version = "$(V)"/' src-tauri/Cargo.toml; \
+	sed -i '' 's/"version": "'"$$CUR"'"/"version": "$(V)"/' src-tauri/tauri.conf.json; \
+	sed -i '' 's/"version": "'"$$CUR"'"/"version": "$(V)"/' package.json; \
+	echo "  src-tauri/Cargo.toml  → $(V)"; \
+	echo "  src-tauri/tauri.conf.json → $(V)"; \
+	echo "  package.json          → $(V)"; \
+	echo "==> Done. Run 'cargo check' or 'make github-release' to continue."
+
 # Full versioned release: bump version, commit, tag, push, wait for CI, publish.
 # Usage: make github-release BUMP=patch  (patch|minor|major, default: patch)
 # NOTE: sed -i '' is macOS syntax — run this from macOS only.
@@ -146,9 +160,10 @@ github-release:
 	echo "--- Bumping version to $$NEW..."; \
 	sed -i '' "s/^version = \"$$CUR\"/version = \"$$NEW\"/" src-tauri/Cargo.toml; \
 	sed -i '' "s/\"version\": \"$$CUR\"/\"version\": \"$$NEW\"/" src-tauri/tauri.conf.json; \
+	sed -i '' "s/\"version\": \"$$CUR\"/\"version\": \"$$NEW\"/" package.json; \
 	cd src-tauri && cargo check --quiet; cd ..; \
 	echo "--- Committing and tagging..."; \
-	git add src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/Cargo.lock; \
+	git add src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/Cargo.lock package.json; \
 	git commit -m "chore: bump version to $$TAG"; \
 	git tag "$$TAG"; \
 	COMMIT=$$(git rev-parse HEAD); \
