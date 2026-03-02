@@ -352,15 +352,17 @@ function createRepositoriesStore() {
       const branch = state.repositories[repoPath]?.branches[branchName];
       appLogger.info("terminal", `removeTerminalFromBranch ${branchName} -= ${terminalId}`, { before: branch?.terminals ? [...branch.terminals] : [] });
       terminalToRepo.delete(terminalId);
-      setState("repositories", repoPath, "branches", branchName, "terminals", (t) =>
-        t.filter((id) => id !== terminalId)
-      );
-      // When last terminal is removed, clear stale savedTerminals so the periodic
-      // snapshot doesn't resurrect closed tabs on next branch click.
-      const updated = state.repositories[repoPath]?.branches[branchName];
-      if (updated && updated.terminals.length === 0 && updated.savedTerminals && updated.savedTerminals.length > 0) {
-        setState("repositories", repoPath, "branches", branchName, "savedTerminals", []);
-      }
+      batch(() => {
+        setState("repositories", repoPath, "branches", branchName, "terminals", (t) =>
+          t.filter((id) => id !== terminalId)
+        );
+        // When last terminal is removed, clear stale savedTerminals so the periodic
+        // snapshot doesn't resurrect closed tabs on next branch click.
+        const updated = state.repositories[repoPath]?.branches[branchName];
+        if (updated && updated.terminals.length === 0 && updated.savedTerminals && updated.savedTerminals.length > 0) {
+          setState("repositories", repoPath, "branches", branchName, "savedTerminals", []);
+        }
+      });
       save();
     },
 
