@@ -104,6 +104,19 @@ function createMdTabsStore() {
       return tabId;
     },
 
+    /** Add a virtual markdown tab without making it active (background tab). Returns tab ID or null if already open. */
+    addVirtualBackground(title: string, contentUri: string): string | null {
+      const existing = Object.values(base.state.tabs).find(
+        (tab) => tab.type === "virtual" && tab.contentUri === contentUri,
+      ) as VirtualTab | undefined;
+      if (existing) return null; // already open — no-op
+
+      const id = base._nextId("md");
+      // Add to store without changing activeId
+      base._setState("tabs", id, { type: "virtual", id, title, contentUri, pinned: true } as VirtualTab);
+      return id;
+    },
+
     /**
      * Add a plugin panel tab (or return existing if same pluginId+title already open).
      * Returns the tab ID.

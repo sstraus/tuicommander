@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // Mock invoke so the MarkdownProvider doesn't need a real Tauri context
 vi.mock("../../invoke", () => ({
@@ -10,6 +10,8 @@ import { invoke } from "../../invoke";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { activityStore } from "../../stores/activityStore";
 import { terminalsStore } from "../../stores/terminals";
+import { repositoriesStore } from "../../stores/repositories";
+import { mdTabsStore } from "../../stores/mdTabs";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
 import { planPlugin } from "../../plugins/planPlugin";
 
@@ -35,6 +37,7 @@ beforeEach(() => {
   pluginRegistry.clear();
   activityStore.clearAll();
   markdownProviderRegistry.clear();
+  mdTabsStore.clearAll();
   clearTerminals();
   mockedInvoke.mockReset().mockResolvedValue(undefined);
 });
@@ -228,6 +231,20 @@ describe("plan MarkdownProvider", () => {
     expect(mockedInvoke).toHaveBeenCalledWith("plugin_read_file", { path: "/repo/plan.md", pluginId: "plan" });
   });
 
+  it("strips frontmatter from rendered content", async () => {
+    mockedInvoke.mockResolvedValue("---\ntitle: My Plan\nstatus: draft\n---\n# Plan Content\nBody here");
+    const result = await markdownProviderRegistry.resolve("plan:file?path=%2Frepo%2Fplan.md");
+    expect(result).not.toContain("---");
+    expect(result).toContain("# Plan Content");
+    expect(result).toContain("Body here");
+  });
+
+  it("returns full content when no frontmatter present", async () => {
+    mockedInvoke.mockResolvedValue("# No Frontmatter\nJust content");
+    const result = await markdownProviderRegistry.resolve("plan:file?path=%2Frepo%2Fplan.md");
+    expect(result).toBe("# No Frontmatter\nJust content");
+  });
+
   it("returns null when path query param is missing", async () => {
     const result = await markdownProviderRegistry.resolve("plan:file");
     expect(result).toBeNull();
@@ -243,5 +260,56 @@ describe("plan MarkdownProvider", () => {
     const result = await markdownProviderRegistry.resolve("plan:file?path=%2Ffoo%2F..%2F..%2Fetc%2Fpasswd");
     expect(result).toBeNull();
     expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto-open new plan in markdown tab
+// ---------------------------------------------------------------------------
+
+describe("plan auto-open", () => {
+  beforeEach(() => {
+    pluginRegistry.register(planPlugin);
+    repositoriesStore.add({ path: "/repo", displayName: "repo" });
+    repositoriesStore.setActive("/repo");
+  });
+
+  afterEach(() => {
+    repositoriesStore.setActive(null);
+  });
+
+  it("auto-opens a new plan as a background virtual tab", async () => {
+    addTerminalWithSession("sess-auto", "/repo");
+    const spy = vi.spyOn(mdTabsStore, "addVirtualBackground");
+
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/new.md" }, "sess-auto");
+    await flushMicrotasks();
+
+    expect(spy).toHaveBeenCalledWith("new", "plan:file?path=%2Frepo%2Fplans%2Fnew.md");
+    spy.mockRestore();
+  });
+
+  it("does NOT auto-open the same plan on repeated detection", async () => {
+    addTerminalWithSession("sess-repeat", "/repo");
+    const spy = vi.spyOn(mdTabsStore, "addVirtualBackground");
+
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/dup.md" }, "sess-repeat");
+    await flushMicrotasks();
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/dup.md" }, "sess-repeat");
+    await flushMicrotasks();
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it("does NOT auto-open when plan is for a different repo", async () => {
+    addTerminalWithSession("sess-other", "/other-repo");
+    const spy = vi.spyOn(mdTabsStore, "addVirtualBackground");
+
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/other-repo/plans/x.md" }, "sess-other");
+    await flushMicrotasks();
+
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });

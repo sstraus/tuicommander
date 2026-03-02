@@ -2,6 +2,7 @@ import { invoke } from "../invoke";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { activityStore } from "../stores/activityStore";
+import { mdTabsStore } from "../stores/mdTabs";
 import { appLogger } from "../stores/appLogger";
 import { parseFrontmatter } from "../utils/frontmatter";
 import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
@@ -125,6 +126,7 @@ class PlanPlugin implements TuiPlugin {
 
       // If already tracked, move it to the end (most recent)
       const existingIdx = this.planItemIds.indexOf(id);
+      const isNew = existingIdx < 0;
       if (existingIdx >= 0) {
         this.planItemIds.splice(existingIdx, 1);
       }
@@ -136,18 +138,26 @@ class PlanPlugin implements TuiPlugin {
         host.removeItem(evictId);
       }
 
+      const title = displayName(absolutePath);
+      const uri = contentUri(absolutePath);
+
       // Add or update (addItem deduplicates by id)
       host.addItem({
         id,
         pluginId: PLUGIN_ID,
         sectionId: SECTION_ID,
-        title: displayName(absolutePath),
+        title,
         subtitle: absolutePath,
         icon: ICON_SVG,
         dismissible: true,
         repoPath: repoPath ?? undefined,
-        contentUri: contentUri(absolutePath),
+        contentUri: uri,
       });
+
+      // Auto-open new plans belonging to the active repo as a background tab
+      if (isNew && repoPath && repoPath === repositoriesStore.state.activeRepoPath) {
+        mdTabsStore.addVirtualBackground(title, uri);
+      }
     });
 
     host.registerMarkdownProvider("plan", planMarkdownProvider);
