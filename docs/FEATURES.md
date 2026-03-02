@@ -330,14 +330,23 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 | Agent | Binary | Resume Command |
 |-------|--------|----------------|
 | Claude Code | `claude` | `claude --resume <uuid>` (session-aware) / `claude --continue` (fallback) |
-| Gemini CLI | `gemini` | `gemini --resume` |
+| Gemini CLI | `gemini` | `gemini --resume <uuid>` (session-aware) / `gemini --resume` (fallback) |
 | OpenCode | `opencode` | `opencode -c` |
 | Aider | `aider` | `aider --restore-chat-history` |
-| Codex CLI | `codex` | `codex resume --last` |
+| Codex CLI | `codex` | `codex resume <uuid>` (session-aware) / `codex resume --last` (fallback) |
 | Amp | `amp` | `amp threads continue` |
 | Cursor Agent | `cursor-agent` | `cursor-agent resume` |
 | Warp Oz | `oz` | — |
 | Droid (Factory) | `droid` | — |
+
+### 6.1.1 Session-Aware Resume
+When an agent is detected running in a terminal, TUICommander automatically discovers its session ID from the filesystem and stores it per-terminal (`agentSessionId`). On restore, this enables session-specific resume instead of generic fallback commands.
+
+- **Claude Code** — Sessions stored as `~/.claude/projects/<slug>/<uuid>.jsonl`; UUID from filename
+- **Gemini CLI** — Sessions stored in `~/.gemini/tmp/<hash>/chats/session-*.json`; `sessionId` field from JSON
+- **Codex CLI** — Sessions stored in `~/.codex/sessions/YYYY/MM/DD/rollout-*-<UUID>.jsonl`; UUID from filename
+
+Discovery runs once per terminal on `null→agent` transition. Multiple concurrent agents are handled via a `claimed_ids` deduplication list. On agent exit, the stored session ID is cleared to allow re-discovery on next launch.
 
 ### 6.2 Agent Detection
 - Auto-detection from terminal output patterns
