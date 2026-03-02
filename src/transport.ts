@@ -241,6 +241,10 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
       return { method: "GET", path: `/repo/branches/merged?path=${p("repoPath")}` };
     case "get_repo_summary":
       return { method: "GET", path: `/repo/summary?path=${p("repoPath")}` };
+    case "get_repo_structure":
+      return { method: "GET", path: `/repo/structure?path=${p("repoPath")}` };
+    case "get_repo_diff_stats":
+      return { method: "GET", path: `/repo/diff-stats/batch?path=${p("repoPath")}` };
     case "get_ci_checks":
       return { method: "GET", path: `/repo/ci?path=${p("path")}&pr_number=${p("prNumber")}` };
     case "rename_branch":

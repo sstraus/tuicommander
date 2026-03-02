@@ -202,6 +202,34 @@ export function useRepository() {
     }
   }
 
+  /** Fast structural snapshot: worktree paths + merged branches only.
+   *  Used by progressive loading Phase 1 — returns before expensive diff stats. */
+  async function getRepoStructure(repoPath: string): Promise<{
+    worktree_paths: Record<string, string>;
+    merged_branches: string[];
+  }> {
+    try {
+      return await invoke("get_repo_structure", { repoPath });
+    } catch (err) {
+      appLogger.warn("git", `Failed to get repo structure for ${repoPath}`, err);
+      return { worktree_paths: {}, merged_branches: [] };
+    }
+  }
+
+  /** Per-worktree diff stats + last-commit timestamps.
+   *  Used by progressive loading Phase 2 — runs after structure is already displayed. */
+  async function getRepoDiffStats(repoPath: string): Promise<{
+    diff_stats: Record<string, { additions: number; deletions: number }>;
+    last_commit_ts: Record<string, number | null>;
+  }> {
+    try {
+      return await invoke("get_repo_diff_stats", { repoPath });
+    } catch (err) {
+      appLogger.warn("git", `Failed to get repo diff stats for ${repoPath}`, err);
+      return { diff_stats: {}, last_commit_ts: {} };
+    }
+  }
+
   /** Result of branch switch operation */
   interface SwitchBranchResult {
     success: boolean;
@@ -296,6 +324,8 @@ export function useRepository() {
     finalizeMergedWorktree,
     getMergedBranches,
     getRepoSummary,
+    getRepoStructure,
+    getRepoDiffStats,
     checkoutRemoteBranch,
     detectOrphanWorktrees,
     removeOrphanWorktree,

@@ -130,6 +130,28 @@ pub(super) async fn repo_summary(
     }
 }
 
+pub(super) async fn repo_structure(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
+    Query(q): Query<PathQuery>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    match crate::git::get_repo_structure_impl(&state, q.path).await {
+        Ok(structure) => (StatusCode::OK, Json(serde_json::json!(structure))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+    }
+}
+
+pub(super) async fn repo_diff_stats_batch(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
+    Query(q): Query<PathQuery>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    match crate::git::get_repo_diff_stats_impl(&state, q.path).await {
+        Ok(stats) => (StatusCode::OK, Json(serde_json::json!(stats))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+    }
+}
+
 pub(super) async fn repo_merged_branches(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
     Query(q): Query<PathQuery>,
