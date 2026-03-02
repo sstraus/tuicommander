@@ -258,11 +258,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
         appLogger.debug("terminal", `[ShellState] ${props.id} → "busy" (PTY output, was "${storeState}")`);
         terminalsStore.update(props.id, { shellState: "busy" });
       }
-      // New output after idle means the user answered any pending prompt
-      if (terminalsStore.get(props.id)?.awaitingInput) {
-        appLogger.debug("terminal", `[ShellState] ${props.id} clearAwaitingInput (new PTY output while awaiting)`);
-        terminalsStore.clearAwaitingInput(props.id);
-      }
+      // NOTE: do NOT clear awaitingInput here. PTY output does not mean the user
+      // answered the question — the agent may be printing more context or
+      // the shell is redrawing the prompt after a resize. awaitingInput is cleared
+      // explicitly by: user keypress (onData), status-line/progress events, or session exit.
     }
     lastOutputTime = now;
     if (!idleTimer) {

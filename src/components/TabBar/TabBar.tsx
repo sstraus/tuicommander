@@ -402,9 +402,11 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   (isActive() || isActiveInUnified()) && s.active,
                   awaitingInput() && s.awaitingInput,
                   awaitingInput() && AWAITING_CLASSES[awaitingInput()!],
-                  hasActivity() && s.hasActivity,
-                  isBusy() && s.shellBusy,
-                  isIdle() && s.shellIdle,
+                  // Suppress activity/busy/idle indicators when awaiting input —
+                  // the awaiting state (orange/red) takes visual priority over blue busy dot.
+                  !awaitingInput() && hasActivity() && s.hasActivity,
+                  !awaitingInput() && isBusy() && s.shellBusy,
+                  !awaitingInput() && isIdle() && s.shellIdle,
                   isRemote() && s.remoteTab,
                   isDragging() && s.dragging,
                   isDragOver() && dragOverSide() === "left" && s.dragOverLeft,

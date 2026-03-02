@@ -204,6 +204,21 @@ describe("terminalsStore", () => {
       });
     });
 
+    it("shellState update does not clear awaitingInput (PTY output must not erase question state)", () => {
+      createRoot((dispose) => {
+        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        store.setAwaitingInput(id, "question");
+        // Simulate PTY output: shellState goes busy
+        store.update(id, { shellState: "busy" });
+        // awaitingInput must survive — the question is still pending
+        expect(store.get(id)!.awaitingInput).toBe("question");
+        // And going back to idle also must not clear it
+        store.update(id, { shellState: "idle" });
+        expect(store.get(id)!.awaitingInput).toBe("question");
+        dispose();
+      });
+    });
+
     it("getAwaitingInputIds returns correct IDs", () => {
       createRoot((dispose) => {
         const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });

@@ -79,6 +79,11 @@ const SILENCE_QUESTION_THRESHOLD: std::time::Duration = std::time::Duration::fro
 /// How often the timer thread wakes up to check for silence.
 const SILENCE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// Grace period after a PTY resize during which parsed events (Question, RateLimit,
+/// ApiError) are suppressed. The shell redraws visible output after SIGWINCH, which
+/// would otherwise re-trigger notifications for content already on screen.
+const RESIZE_GRACE: std::time::Duration = std::time::Duration::from_millis(1000);
+
 /// Shared state between the PTY reader thread and the silence-detection timer thread.
 pub(crate) struct SilenceState {
     /// When the last chunk of output was received from the PTY.
@@ -88,6 +93,8 @@ pub(crate) struct SilenceState {
     /// Whether a Question event has already been emitted for the current pending line
     /// (either by the instant regex detector or by the silence timer).
     pub(crate) question_already_emitted: bool,
+    /// When the last resize was requested. Used to suppress re-parsing of redrawn output.
+    last_resize_at: Option<std::time::Instant>,
 }
 
 impl SilenceState {
@@ -96,7 +103,23 @@ impl SilenceState {
             last_output_at: std::time::Instant::now(),
             pending_question_line: None,
             question_already_emitted: false,
+            last_resize_at: None,
         }
+    }
+
+    /// Called by resize_pty when the terminal is resized.
+    /// Marks the start of a grace period during which parsed events are suppressed.
+    pub(crate) fn on_resize(&mut self) {
+        self.last_resize_at = Some(std::time::Instant::now());
+    }
+
+    /// Returns true if we are within the resize grace period.
+    /// Parsed events (Question, RateLimit, ApiError) should be suppressed during this window
+    /// because the shell redraws visible output after SIGWINCH, causing false re-detections.
+    pub(crate) fn is_resize_grace(&self) -> bool {
+        self.last_resize_at
+            .map(|t| t.elapsed() < RESIZE_GRACE)
+            .unwrap_or(false)
     }
 
     /// Called by the reader thread after each chunk.
@@ -250,10 +273,23 @@ pub(crate) fn spawn_reader_thread(
                         if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
                             clients.retain(|tx| tx.send(data.clone()).is_ok());
                         }
-                        // Emit parsed events before raw output
+                        // Emit parsed events before raw output.
+                        // Suppress notification-class events during resize grace period:
+                        // the shell redraws visible output after SIGWINCH, which would
+                        // re-trigger Question/RateLimit/ApiError for content already on screen.
+                        let in_resize_grace = silence.lock().is_resize_grace();
                         let events = parser.parse(&data);
-                        let regex_found_question = events.iter().any(|e| matches!(e, ParsedEvent::Question { .. }));
+                        let regex_found_question = if in_resize_grace { false } else {
+                            events.iter().any(|e| matches!(e, ParsedEvent::Question { .. }))
+                        };
                         for event in &events {
+                            if in_resize_grace && matches!(event,
+                                ParsedEvent::Question { .. }
+                                | ParsedEvent::RateLimit { .. }
+                                | ParsedEvent::ApiError { .. }
+                            ) {
+                                continue;
+                            }
                             // Resolve relative plan-file paths to absolute using session CWD
                             let resolved = if let ParsedEvent::PlanFile { path } = event {
                                 if !path.starts_with('/') {
@@ -776,7 +812,13 @@ pub(crate) fn resize_pty(
             pixel_width: 0,
             pixel_height: 0,
         })
-        .map_err(|e| format!("Failed to resize PTY: {e}"))
+        .map_err(|e| format!("Failed to resize PTY: {e}"))?;
+    // Mark resize in silence state so the reader thread suppresses re-parsed events
+    // from the shell's prompt redraw triggered by SIGWINCH.
+    if let Some(ss) = state.silence_states.get(&session_id) {
+        ss.lock().on_resize();
+    }
+    Ok(())
 }
 
 /// Pause PTY reader thread (flow control: frontend buffer full)
@@ -1212,5 +1254,41 @@ mod tests {
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         // Should NOT fire — the question was typed by the user
         assert!(s.check_silence().is_none());
+    }
+
+    // --- Resize grace period tests ---
+
+    #[test]
+    fn test_resize_grace_active_immediately_after_resize() {
+        let mut s = SilenceState::new();
+        s.on_resize();
+        assert!(s.is_resize_grace(), "grace period should be active right after resize");
+    }
+
+    #[test]
+    fn test_resize_grace_inactive_before_resize() {
+        let s = SilenceState::new();
+        assert!(!s.is_resize_grace(), "grace period should be inactive with no resize");
+    }
+
+    #[test]
+    fn test_resize_grace_expires_after_threshold() {
+        let mut s = SilenceState::new();
+        s.on_resize();
+        // Backdating the resize timestamp past the grace period
+        s.last_resize_at = Some(std::time::Instant::now() - RESIZE_GRACE - std::time::Duration::from_millis(100));
+        assert!(!s.is_resize_grace(), "grace period should have expired");
+    }
+
+    #[test]
+    fn test_resize_grace_refreshed_on_second_resize() {
+        let mut s = SilenceState::new();
+        s.on_resize();
+        // Expire the first grace period
+        s.last_resize_at = Some(std::time::Instant::now() - RESIZE_GRACE - std::time::Duration::from_millis(100));
+        assert!(!s.is_resize_grace());
+        // Second resize refreshes the timer
+        s.on_resize();
+        assert!(s.is_resize_grace(), "second resize should restart grace period");
     }
 }
