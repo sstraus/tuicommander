@@ -311,6 +311,13 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
         body: { repoPath: args.repoPath, worktreePath: args.worktreePath },
       };
 
+    case "run_setup_script":
+      return {
+        method: "POST",
+        path: "/worktrees/run-script",
+        body: { script: args.script, cwd: args.cwd },
+      };
+
     case "merge_pr_via_github":
       return {
         method: "POST",

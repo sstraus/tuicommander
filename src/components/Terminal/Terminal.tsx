@@ -274,6 +274,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
           busyFlagged = false;
           appLogger.debug("terminal", `[ShellState] ${props.id} → "idle" (500ms timeout)`);
           terminalsStore.update(props.id, { shellState: "idle" });
+
+          // Auto-execute pending init command (run script) on first idle
+          const initCmd = terminalsStore.get(props.id)?.pendingInitCommand;
+          if (initCmd && sessionId) {
+            terminalsStore.update(props.id, { pendingInitCommand: null });
+            pty.write(sessionId, initCmd + "\r").catch(() => {});
+          }
         } else {
           idleTimer = setTimeout(checkIdle, 500 - elapsed);
         }

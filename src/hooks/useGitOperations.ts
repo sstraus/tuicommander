@@ -38,6 +38,7 @@ export interface GitOperationsDeps {
     removeOrphanWorktree: (repoPath: string, worktreePath: string) => Promise<void>;
     mergePrViaGithub: (repoPath: string, prNumber: number, mergeMethod: string) => Promise<string>;
     switchBranch: (repoPath: string, branchName: string, opts?: { force?: boolean; stash?: boolean }) => Promise<{ success: boolean; stashed: boolean; previous_branch: string; new_branch: string }>;
+    runSetupScript: (script: string, cwd: string) => Promise<{ exit_code: number; stdout: string; stderr: string }>;
   };
   pty: {
     canSpawn: () => Promise<boolean>;
@@ -716,7 +717,28 @@ export function useGitOperations(deps: GitOperationsDeps) {
       repositoriesStore.setBranch(repoPath, result.branch, { worktreePath: result.path });
       repositoriesStore.setActiveBranch(repoPath, result.branch);
 
-      await handleAddTerminalToBranch(repoPath, result.branch);
+      // Run setup script if configured (before opening terminal)
+      const effective = repoSettingsStore.getEffective(repoPath);
+      if (effective?.setupScript) {
+        try {
+          deps.setStatusInfo(`Running setup script in ${options.branchName}...`);
+          const scriptResult = await deps.repo.runSetupScript(effective.setupScript, result.path);
+          if (scriptResult.exit_code !== 0) {
+            appLogger.warn("git", `Setup script failed (exit ${scriptResult.exit_code})`, scriptResult.stderr);
+            deps.setStatusInfo(`Setup script failed (exit ${scriptResult.exit_code})`);
+          }
+        } catch (err) {
+          appLogger.warn("git", "Setup script execution error", err);
+          deps.setStatusInfo(`Setup script failed: ${err}`);
+        }
+      }
+
+      const termId = await handleAddTerminalToBranch(repoPath, result.branch);
+
+      // Set run script as pending init command on the new terminal
+      if (termId && effective?.runScript) {
+        terminalsStore.update(termId, { pendingInitCommand: effective.runScript });
+      }
 
       try {
         const stats = await deps.repo.getDiffStats(result.path);
@@ -752,7 +774,28 @@ export function useGitOperations(deps: GitOperationsDeps) {
       repositoriesStore.setBranch(repoPath, result.branch, { worktreePath: result.path });
       repositoriesStore.setActiveBranch(repoPath, result.branch);
 
-      await handleAddTerminalToBranch(repoPath, result.branch);
+      // Run setup script if configured (before opening terminal)
+      const effective = repoSettingsStore.getEffective(repoPath);
+      if (effective?.setupScript) {
+        try {
+          deps.setStatusInfo(`Running setup script in ${cloneName}...`);
+          const scriptResult = await deps.repo.runSetupScript(effective.setupScript, result.path);
+          if (scriptResult.exit_code !== 0) {
+            appLogger.warn("git", `Setup script failed (exit ${scriptResult.exit_code})`, scriptResult.stderr);
+            deps.setStatusInfo(`Setup script failed (exit ${scriptResult.exit_code})`);
+          }
+        } catch (err) {
+          appLogger.warn("git", "Setup script execution error", err);
+          deps.setStatusInfo(`Setup script failed: ${err}`);
+        }
+      }
+
+      const termId = await handleAddTerminalToBranch(repoPath, result.branch);
+
+      // Set run script as pending init command on the new terminal
+      if (termId && effective?.runScript) {
+        terminalsStore.update(termId, { pendingInitCommand: effective.runScript });
+      }
 
       try {
         const stats = await deps.repo.getDiffStats(result.path);

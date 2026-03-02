@@ -41,6 +41,7 @@ describe("useGitOperations", () => {
     removeOrphanWorktree: vi.fn().mockResolvedValue(undefined),
     mergePrViaGithub: vi.fn().mockResolvedValue("abc123sha"),
     switchBranch: vi.fn().mockResolvedValue({ success: true, stashed: false, previous_branch: "main", new_branch: "feature" }),
+    runSetupScript: vi.fn().mockResolvedValue({ exit_code: 0, stdout: "", stderr: "" }),
   };
 
   const mockPty = {
@@ -1048,6 +1049,94 @@ describe("useGitOperations", () => {
       await gitOps.confirmCreateWorktree({ branchName: "bold-nexus-042", createBranch: true, baseRef: "main" });
 
       expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("Failed to create worktree"));
+    });
+
+    it("runs setupScript after worktree creation", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { setupScript: "npm install" });
+
+      mockRepo.createWorktree.mockResolvedValue({
+        name: "feat-test",
+        path: "/repo/wt/feat-test",
+        branch: "feat-test",
+        base_repo: "/repo",
+      });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+
+      await gitOps.handleAddWorktree("/repo");
+      await gitOps.confirmCreateWorktree({ branchName: "feat-test", createBranch: true, baseRef: "main" });
+
+      expect(mockRepo.runSetupScript).toHaveBeenCalledWith("npm install", "/repo/wt/feat-test");
+    });
+
+    it("does not run setupScript when empty", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+      mockRepo.createWorktree.mockResolvedValue({
+        name: "feat-test",
+        path: "/repo/wt/feat-test",
+        branch: "feat-test",
+        base_repo: "/repo",
+      });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+
+      await gitOps.handleAddWorktree("/repo");
+      await gitOps.confirmCreateWorktree({ branchName: "feat-test", createBranch: true, baseRef: "main" });
+
+      expect(mockRepo.runSetupScript).not.toHaveBeenCalled();
+    });
+
+    it("sets pendingInitCommand from runScript", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { runScript: "npm run dev" });
+
+      mockRepo.createWorktree.mockResolvedValue({
+        name: "feat-test",
+        path: "/repo/wt/feat-test",
+        branch: "feat-test",
+        base_repo: "/repo",
+      });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+
+      await gitOps.handleAddWorktree("/repo");
+      await gitOps.confirmCreateWorktree({ branchName: "feat-test", createBranch: true, baseRef: "main" });
+
+      // Find the terminal created for this worktree
+      const branch = repositoriesStore.get("/repo")?.branches["feat-test"];
+      expect(branch?.terminals.length).toBeGreaterThan(0);
+      const termId = branch!.terminals[0];
+      const terminal = terminalsStore.get(termId);
+      expect(terminal?.pendingInitCommand).toBe("npm run dev");
+    });
+
+    it("warns but continues when setupScript fails", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { setupScript: "exit 1" });
+
+      mockRepo.createWorktree.mockResolvedValue({
+        name: "feat-test",
+        path: "/repo/wt/feat-test",
+        branch: "feat-test",
+        base_repo: "/repo",
+      });
+      mockRepo.runSetupScript.mockResolvedValue({ exit_code: 1, stdout: "", stderr: "failed" });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+
+      await gitOps.handleAddWorktree("/repo");
+      await gitOps.confirmCreateWorktree({ branchName: "feat-test", createBranch: true, baseRef: "main" });
+
+      // Should still create a terminal despite script failure
+      const branch = repositoriesStore.get("/repo")?.branches["feat-test"];
+      expect(branch?.terminals.length).toBeGreaterThan(0);
+      // Should warn about failure
+      expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("Setup script failed"));
     });
   });
 

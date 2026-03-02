@@ -261,6 +261,11 @@ export function useRepository() {
     }
   }
 
+  /** Run a setup/run script in a given directory */
+  async function runSetupScript(script: string, cwd: string): Promise<{ exit_code: number; stdout: string; stderr: string }> {
+    return await invoke<{ exit_code: number; stdout: string; stderr: string }>("run_setup_script", { script, cwd });
+  }
+
   /** Get recent commits for a repository */
   async function getRecentCommits(path: string, count?: number): Promise<RecentCommit[]> {
     try {
@@ -297,6 +302,7 @@ export function useRepository() {
     mergePrViaGithub,
     listLocalBranches,
     switchBranch,
+    runSetupScript,
     getRecentCommits,
   };
 }

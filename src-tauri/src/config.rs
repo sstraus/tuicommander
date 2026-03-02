@@ -961,9 +961,11 @@ mod tests {
             markdown_panel_visible: false,
             notes_panel_visible: false,
             file_browser_panel_visible: true,
+            plan_panel_visible: false,
             diff_panel_width: 500,
             markdown_panel_width: 450,
             notes_panel_width: 320,
+            plan_panel_width: 350,
             settings_nav_width: 200,
         };
         let loaded: UIPrefsConfig = round_trip_in_dir(dir.path(), "ui-prefs.json", &cfg);
