@@ -83,18 +83,17 @@ const SOUNDS: Record<NotificationSound, SoundSequence> = {
 /** Audio context for sound generation */
 let audioContext: AudioContext | null = null;
 
-/** Get or create audio context */
+/** Get or create audio context, resuming on every call to catch user gestures */
 function getAudioContext(): AudioContext {
   if (!audioContext) {
     audioContext = new AudioContext();
-    // Resume on first user interaction (autoplay policy workaround)
-    const resume = () => {
-      if (audioContext?.state === "suspended") {
-        audioContext.resume();
-      }
-    };
-    document.addEventListener("click", resume, { once: true });
-    document.addEventListener("keydown", resume, { once: true });
+  }
+  // Always try to resume synchronously — WebKit requires resume()
+  // to be called in the synchronous call chain of a user gesture.
+  // The { once: true } pattern fails when the listener is consumed
+  // by a non-audio click, leaving the context permanently suspended.
+  if (audioContext.state === "suspended") {
+    audioContext.resume();
   }
   return audioContext;
 }
@@ -105,11 +104,6 @@ async function playSoundSequence(
   volume: number
 ): Promise<void> {
   const ctx = getAudioContext();
-
-  // Resume context if suspended (autoplay policy)
-  if (ctx.state === "suspended") {
-    await ctx.resume();
-  }
 
   const attackTime = 0.01;
   const releaseTime = 0.03;
