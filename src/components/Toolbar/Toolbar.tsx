@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal, createEffect, onCleanup } from "solid-js";
+import { Component, Show, For, createSignal, createEffect, createMemo, onCleanup } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { updaterStore } from "../../stores/updater";
@@ -81,13 +81,13 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     onCleanup(() => document.removeEventListener("mousedown", handler));
   });
 
-  const activeNotifs = () => prNotificationsStore.getActive();
-  const activeActivityItems = () => activityStore.getActive();
-  const activitySections = () => activityStore.getSections();
+  const activeNotifs = createMemo(() => prNotificationsStore.getActive());
+  const activeActivityItems = createMemo(() => activityStore.getActive());
+  const activitySections = createMemo(() => activityStore.getSections());
   const hasUpdate = () => updaterStore.state.available && !!updaterStore.state.version;
   const totalBadgeCount = () => activeNotifs().length + activeActivityItems().length + (hasUpdate() ? 1 : 0);
   const hasAnyItems = () => totalBadgeCount() > 0;
-  const lastItem = () => getLastItemAcrossStores();
+  const lastItem = createMemo(() => getLastItemAcrossStores());
 
   const activeBranch = () => {
     const activeRepoPath = repositoriesStore.state.activeRepoPath;
