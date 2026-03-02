@@ -95,6 +95,10 @@ function createTerminalsStore() {
     debouncedBusy: {},
   });
 
+  // Reverse map: session_id → terminal_id for O(1) hot-path lookups.
+  // Plain JS (not in SolidJS store) — maintained in sync with sessionId field.
+  const sessionToTerminal = new Map<string, string>();
+
   // Debounced busy tracking: timers + timestamps are plain JS, the boolean state
   // lives in the SolidJS store (state.debouncedBusy) for reactivity.
   const busySinceMap = new Map<string, number>();
@@ -145,18 +149,22 @@ function createTerminalsStore() {
       const id = `term-${state.counter + 1}`;
       setState("counter", (c) => c + 1);
       setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, claudeSessionId: null, ...data });
+      if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
       return id;
     },
 
     /** Register a terminal with a specific ID (used by floating windows to reconnect to existing PTY sessions) */
     register(id: string, data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "claudeSessionId"> & { isRemote?: boolean }): void {
       setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, claudeSessionId: null, ...data });
+      if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
     },
 
     /** Remove a terminal. Sets activeId to null when removing the active terminal —
      *  the caller is responsible for selecting a same-branch replacement beforehand. */
     remove(id: string): void {
       appLogger.info("terminal", `TermStore.remove(${id})`, { remaining: Object.keys(state.terminals).filter(k => k !== id) });
+      const sessionId = state.terminals[id]?.sessionId;
+      if (sessionId) sessionToTerminal.delete(sessionId);
       cleanupBusyState(id);
       setState(
         produce((s) => {
@@ -193,6 +201,9 @@ function createTerminalsStore() {
 
     /** Update session ID */
     setSessionId(id: string, sessionId: string | null): void {
+      const prev = state.terminals[id]?.sessionId;
+      if (prev) sessionToTerminal.delete(prev);
+      if (sessionId) sessionToTerminal.set(sessionId, id);
       setState("terminals", id, "sessionId", sessionId);
     },
 
@@ -242,12 +253,16 @@ function createTerminalsStore() {
       return state.terminals[id];
     },
 
+    /** Get the terminal ID for a PTY session, or null if not found */
+    getTerminalForSession(sessionId: string): string | null {
+      return sessionToTerminal.get(sessionId) ?? null;
+    },
+
     /** Get the agentType for a PTY session, or null if not found */
     getAgentTypeForSession(sessionId: string): string | null {
-      for (const t of Object.values(state.terminals)) {
-        if (t.sessionId === sessionId) return t.agentType ?? null;
-      }
-      return null;
+      const termId = sessionToTerminal.get(sessionId);
+      if (!termId) return null;
+      return state.terminals[termId]?.agentType ?? null;
     },
 
     /** Get active terminal */

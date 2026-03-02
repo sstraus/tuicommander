@@ -207,9 +207,7 @@ function createPluginRegistry() {
       },
 
       getRepoPathForSession(sessionId: string): string | null {
-        const termId = terminalsStore.getIds().find(
-          (id: string) => terminalsStore.get(id)?.sessionId === sessionId,
-        );
+        const termId = terminalsStore.getTerminalForSession(sessionId);
         if (!termId) return null;
         for (const repoPath of repositoriesStore.getPaths()) {
           const repo = repositoriesStore.get(repoPath);
