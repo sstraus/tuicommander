@@ -1,0 +1,25 @@
+src/__tests__/stores/pluginStore.test.ts
+  c8cd94e095227087 1-103
+src/__tests__/hooks/useKeyboardShortcuts.test.ts
+  c8cd94e095227087 236-241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "71f21d0b0b0aee94fc71bcdd914da25ef9abbd08",
+  "prompts": {
+    "c8cd94e095227087": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7548d0d3-365e-4ba8-b520-25179e736afe",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 0,
+      "accepted_lines": 109,
+      "overriden_lines": 0
+    }
+  }
+}
