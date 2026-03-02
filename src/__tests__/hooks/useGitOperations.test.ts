@@ -26,6 +26,8 @@ describe("useGitOperations", () => {
     getDiffStats: vi.fn().mockResolvedValue({ additions: 0, deletions: 0 }),
     getWorktreePaths: vi.fn().mockResolvedValue({}),
     getRepoSummary: vi.fn().mockResolvedValue({ worktree_paths: {}, merged_branches: [], diff_stats: {}, last_commit_ts: {} }),
+    getRepoStructure: vi.fn().mockResolvedValue({ worktree_paths: {}, merged_branches: [] }),
+    getRepoDiffStats: vi.fn().mockResolvedValue({ diff_stats: {}, last_commit_ts: {} }),
     removeWorktree: vi.fn().mockResolvedValue(undefined),
     createWorktree: vi.fn(),
     renameBranch: vi.fn().mockResolvedValue(undefined),
@@ -657,10 +659,27 @@ describe("useGitOperations", () => {
   });
 
   describe("refreshAllBranchStats", () => {
+    /** Helper: mock both Phase 1 (structure) and Phase 2 (diff stats) from a single summary object */
+    function mockSummary(summary: {
+      worktree_paths: Record<string, string>;
+      merged_branches: string[];
+      diff_stats: Record<string, { additions: number; deletions: number }>;
+      last_commit_ts: Record<string, number | null>;
+    }) {
+      mockRepo.getRepoStructure.mockResolvedValue({
+        worktree_paths: summary.worktree_paths,
+        merged_branches: summary.merged_branches,
+      });
+      mockRepo.getRepoDiffStats.mockResolvedValue({
+        diff_stats: summary.diff_stats,
+        last_commit_ts: summary.last_commit_ts,
+      });
+    }
+
     it("updates branch stats for all repos", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
-      mockRepo.getRepoSummary.mockResolvedValue({
+      mockSummary({
         worktree_paths: { main: "/repo" },
         merged_branches: [],
         diff_stats: { "/repo": { additions: 5, deletions: 3 } },
@@ -678,7 +697,7 @@ describe("useGitOperations", () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
       repositoriesStore.setBranch("/repo", "stale", { worktreePath: "/repo/stale" });
-      mockRepo.getRepoSummary.mockResolvedValue({
+      mockSummary({
         worktree_paths: { main: "/repo" },
         merged_branches: [],
         diff_stats: { "/repo": { additions: 0, deletions: 0 } },
@@ -695,7 +714,7 @@ describe("useGitOperations", () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
       // Simulate an external `git worktree add` — new branch appears in summary
-      mockRepo.getRepoSummary.mockResolvedValue({
+      mockSummary({
         worktree_paths: { main: "/repo", "feature-external": "/repo/.worktrees/feature-external" },
         merged_branches: [],
         diff_stats: {
@@ -715,14 +734,11 @@ describe("useGitOperations", () => {
     });
 
     it("removes stale activeBranch when HEAD moved to different branch", async () => {
-      // Scenario: repo persisted with activeBranch="main", user switched to
-      // "feature/acme" externally. Backend returns only "feature/acme" as worktree.
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      // Backend now says HEAD is on feature/acme (main worktree checked out on different branch)
-      mockRepo.getRepoSummary.mockResolvedValue({
+      mockSummary({
         worktree_paths: { "feature/acme": "/repo" },
         merged_branches: [],
         diff_stats: { "/repo": { additions: 1, deletions: 0 } },
@@ -732,11 +748,8 @@ describe("useGitOperations", () => {
       await gitOps.refreshAllBranchStats();
 
       const repo = repositoriesStore.get("/repo");
-      // "main" should be gone — it's not a worktree
       expect(repo?.branches["main"]).toBeUndefined();
-      // "feature/acme" should exist
       expect(repo?.branches["feature/acme"]).toBeDefined();
-      // activeBranch should have been updated
       expect(repo?.activeBranch).toBe("feature/acme");
     });
 
@@ -747,7 +760,7 @@ describe("useGitOperations", () => {
       const tid = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T1", cwd: "/repo", awaitingInput: null });
       repositoriesStore.addTerminalToBranch("/repo", "main", tid);
 
-      mockRepo.getRepoSummary.mockResolvedValue({
+      mockSummary({
         worktree_paths: { "feature/acme": "/repo" },
         merged_branches: [],
         diff_stats: { "/repo": { additions: 0, deletions: 0 } },
@@ -765,8 +778,7 @@ describe("useGitOperations", () => {
     it("handles missing diff stats gracefully (no throw)", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
-      // diff_stats empty — no stats for any path
-      mockRepo.getRepoSummary.mockResolvedValue({
+      mockSummary({
         worktree_paths: { main: "/repo" },
         merged_branches: [],
         diff_stats: {},
@@ -775,7 +787,6 @@ describe("useGitOperations", () => {
 
       await gitOps.refreshAllBranchStats();
 
-      // Should not throw
       expect(repositoriesStore.get("/repo")?.branches["main"]).toBeDefined();
     });
 
@@ -784,7 +795,7 @@ describe("useGitOperations", () => {
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
       repositoriesStore.setBranch("/repo", "feature-x", { worktreePath: "/repo/wt-feature-x" });
 
-      mockRepo.getRepoSummary.mockResolvedValue({
+      mockSummary({
         worktree_paths: { main: "/repo", "feature-x": "/repo/wt-feature-x" },
         merged_branches: [],
         diff_stats: {
@@ -805,7 +816,7 @@ describe("useGitOperations", () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", lastCommitTs: 999 });
 
-      mockRepo.getRepoSummary.mockResolvedValue({
+      mockSummary({
         worktree_paths: { main: "/repo" },
         merged_branches: [],
         diff_stats: { "/repo": { additions: 0, deletions: 0 } },
@@ -817,6 +828,92 @@ describe("useGitOperations", () => {
       expect(repositoriesStore.get("/repo")?.branches["main"]?.lastCommitTs).toBeNull();
     });
 
+  });
+
+  describe("refreshAllBranchStats — progressive loading", () => {
+    it("Phase 1 updates worktreePath before Phase 2 runs", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+      let structureCallOrder = 0;
+      let diffStatsCallOrder = 0;
+      let callCounter = 0;
+
+      mockRepo.getRepoStructure.mockImplementation(async () => {
+        structureCallOrder = ++callCounter;
+        return {
+          worktree_paths: { main: "/repo", "feature-new": "/repo/wt-new" },
+          merged_branches: [],
+        };
+      });
+      mockRepo.getRepoDiffStats.mockImplementation(async () => {
+        diffStatsCallOrder = ++callCounter;
+        // By now, Phase 1 should have already updated the store
+        const repo = repositoriesStore.get("/repo");
+        expect(repo?.branches["feature-new"]?.worktreePath).toBe("/repo/wt-new");
+        return {
+          diff_stats: {
+            "/repo": { additions: 1, deletions: 0 },
+            "/repo/wt-new": { additions: 3, deletions: 2 },
+          },
+          last_commit_ts: { main: 1700000001, "feature-new": 1700000042 },
+        };
+      });
+
+      await gitOps.refreshAllBranchStats();
+
+      expect(structureCallOrder).toBeLessThan(diffStatsCallOrder);
+      const repo = repositoriesStore.get("/repo");
+      expect(repo?.branches["feature-new"]?.additions).toBe(3);
+      expect(repo?.branches["feature-new"]?.deletions).toBe(2);
+    });
+
+    it("Phase 2 failure does not corrupt Phase 1 state", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+      mockRepo.getRepoStructure.mockResolvedValue({
+        worktree_paths: { main: "/repo", "feature-a": "/repo/wt-a" },
+        merged_branches: ["feature-a"],
+      });
+      mockRepo.getRepoDiffStats.mockRejectedValue(new Error("git diff failed"));
+
+      await gitOps.refreshAllBranchStats();
+
+      const repo = repositoriesStore.get("/repo");
+      // Phase 1 state should be intact
+      expect(repo?.branches["feature-a"]?.worktreePath).toBe("/repo/wt-a");
+      expect(repo?.branches["feature-a"]?.isMerged).toBe(true);
+      // Stats should be at defaults (Phase 2 failed)
+      expect(repo?.branches["feature-a"]?.additions).toBe(0);
+    });
+
+    it("auto-archive runs after Phase 1, before Phase 2", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+
+      let archiveCalledBeforeDiffStats = false;
+
+      mockRepo.getRepoStructure.mockResolvedValue({
+        worktree_paths: { main: "/repo", "merged-branch": "/repo/wt-merged" },
+        merged_branches: ["merged-branch"],
+      });
+      mockRepo.finalizeMergedWorktree.mockImplementation(async () => {
+        archiveCalledBeforeDiffStats = !mockRepo.getRepoDiffStats.mock.calls.length;
+        return { merged: true, action: "archived", archive_path: null };
+      });
+      mockRepo.getRepoDiffStats.mockResolvedValue({
+        diff_stats: { "/repo": { additions: 0, deletions: 0 } },
+        last_commit_ts: {},
+      });
+
+      await gitOps.refreshAllBranchStats();
+
+      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "merged-branch", "archive");
+      expect(archiveCalledBeforeDiffStats).toBe(true);
+    });
   });
 
   describe("handleRemoveBranch (backend failure)", () => {
@@ -1393,7 +1490,8 @@ describe("useGitOperations", () => {
         branch: "main",
         status: "clean",
       });
-      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/new-repo" }, merged_branches: [], diff_stats: {}, last_commit_ts: {} });
+      mockRepo.getRepoStructure.mockResolvedValue({ worktree_paths: { main: "/new-repo" }, merged_branches: [] });
+      mockRepo.getRepoDiffStats.mockResolvedValue({ diff_stats: {}, last_commit_ts: {} });
 
       await gitOps.handleAddRepo();
 
@@ -1411,7 +1509,8 @@ describe("useGitOperations", () => {
         branch: "develop",
         status: "dirty",
       });
-      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { develop: "/array-repo" }, merged_branches: [], diff_stats: {}, last_commit_ts: {} });
+      mockRepo.getRepoStructure.mockResolvedValue({ worktree_paths: { develop: "/array-repo" }, merged_branches: [] });
+      mockRepo.getRepoDiffStats.mockResolvedValue({ diff_stats: {}, last_commit_ts: {} });
 
       await gitOps.handleAddRepo();
 
@@ -1438,7 +1537,8 @@ describe("useGitOperations", () => {
         branch: "main",
         status: "clean",
       });
-      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/fresh-repo" }, merged_branches: [], diff_stats: {}, last_commit_ts: {} });
+      mockRepo.getRepoStructure.mockResolvedValue({ worktree_paths: { main: "/fresh-repo" }, merged_branches: [] });
+      mockRepo.getRepoDiffStats.mockResolvedValue({ diff_stats: {}, last_commit_ts: {} });
 
       await gitOps.handleAddRepo();
 
@@ -1460,7 +1560,8 @@ describe("useGitOperations", () => {
         branch: "main",
         status: "clean",
       });
-      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/new-repo" }, merged_branches: [], diff_stats: {}, last_commit_ts: {} });
+      mockRepo.getRepoStructure.mockResolvedValue({ worktree_paths: { main: "/new-repo" }, merged_branches: [] });
+      mockRepo.getRepoDiffStats.mockResolvedValue({ diff_stats: {}, last_commit_ts: {} });
 
       await gitOps.handleAddRepo();
 
@@ -1558,7 +1659,8 @@ describe("useGitOperations", () => {
     beforeEach(() => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
-      mockRepo.getRepoSummary.mockResolvedValue({ worktree_paths: { main: "/repo" }, merged_branches: [], diff_stats: {}, last_commit_ts: {} });
+      mockRepo.getRepoStructure.mockResolvedValue({ worktree_paths: { main: "/repo" }, merged_branches: [] });
+      mockRepo.getRepoDiffStats.mockResolvedValue({ diff_stats: {}, last_commit_ts: {} });
     });
 
     it("auto-removes orphans silently when orphanCleanup=on", async () => {
@@ -1640,12 +1742,11 @@ describe("useGitOperations", () => {
     beforeEach(() => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
-      mockRepo.getRepoSummary.mockResolvedValue({
+      mockRepo.getRepoStructure.mockResolvedValue({
         worktree_paths: { main: "/repo", "feature/x": "/repo/.worktrees/feature-x" },
         merged_branches: ["feature/x"],
-        diff_stats: {},
-        last_commit_ts: {},
       });
+      mockRepo.getRepoDiffStats.mockResolvedValue({ diff_stats: {}, last_commit_ts: {} });
     });
 
     it("archives merged linked worktrees when autoArchiveMerged=true", async () => {
@@ -1670,12 +1771,11 @@ describe("useGitOperations", () => {
       repoSettingsStore.getOrCreate("/repo", "Repo");
       repoSettingsStore.update("/repo", { autoArchiveMerged: true });
       // main branch worktreePath === repoPath → must be skipped
-      mockRepo.getRepoSummary.mockResolvedValue({
+      mockRepo.getRepoStructure.mockResolvedValue({
         worktree_paths: { main: "/repo" },
         merged_branches: ["main"],
-        diff_stats: {},
-        last_commit_ts: {},
       });
+      mockRepo.getRepoDiffStats.mockResolvedValue({ diff_stats: {}, last_commit_ts: {} });
 
       await gitOps.refreshAllBranchStats();
 

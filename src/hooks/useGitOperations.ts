@@ -23,6 +23,14 @@ export interface GitOperationsDeps {
       diff_stats: Record<string, { additions: number; deletions: number }>;
       last_commit_ts: Record<string, number | null>;
     }>;
+    getRepoStructure: (repoPath: string) => Promise<{
+      worktree_paths: Record<string, string>;
+      merged_branches: string[];
+    }>;
+    getRepoDiffStats: (repoPath: string) => Promise<{
+      diff_stats: Record<string, { additions: number; deletions: number }>;
+      last_commit_ts: Record<string, number | null>;
+    }>;
     removeWorktree: (repoPath: string, branchName: string, deleteBranch: boolean) => Promise<void>;
     createWorktree: (baseRepo: string, branchName: string, createBranch?: boolean, baseRef?: string) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;
     renameBranch: (repoPath: string, oldName: string, newName: string) => Promise<void>;
@@ -113,8 +121,15 @@ export function useGitOperations(deps: GitOperationsDeps) {
     });
   };
 
+  // Per-repo refresh generation counter — discards stale Phase 2 writes
+  // when a newer refresh has started for the same repo.
+  const refreshGeneration = new Map<string, number>();
+
   const refreshAllBranchStats = async () => {
     await Promise.all(repositoriesStore.getPaths().map(async (repoPath) => {
+      const gen = (refreshGeneration.get(repoPath) ?? 0) + 1;
+      refreshGeneration.set(repoPath, gen);
+
       const repo = repositoriesStore.get(repoPath);
       if (!repo) return;
       // Non-git directories: check if they became a git repo
@@ -138,9 +153,13 @@ export function useGitOperations(deps: GitOperationsDeps) {
         return;
       }
 
-      const summary = await deps.repo.getRepoSummary(repoPath);
-      const worktreePaths = summary.worktree_paths;
-      const mergedSet = new Set(summary.merged_branches);
+      // === PHASE 1: Structure (fast) ===
+      // Returns worktree_paths + merged_branches only — no expensive diff stats.
+      const structure = await deps.repo.getRepoStructure(repoPath);
+      if (refreshGeneration.get(repoPath) !== gen) return; // stale
+
+      const worktreePaths = structure.worktree_paths;
+      const mergedSet = new Set(structure.merged_branches);
 
       const currentRepo = repositoriesStore.get(repoPath);
       if (!currentRepo) return;
@@ -231,29 +250,39 @@ export function useGitOperations(deps: GitOperationsDeps) {
       const updatedRepo = repositoriesStore.get(repoPath);
       if (!updatedRepo) return;
 
-      // Diff stats and last-commit timestamps from the summary.
-      // summary.diff_stats is keyed by worktree path, matching branch.worktreePath.
-      // summary.last_commit_ts is keyed by branch name.
-      batch(() => {
-        for (const branch of Object.values(updatedRepo.branches)) {
-          if (!branch.worktreePath) continue;
-          const stats = summary.diff_stats[branch.worktreePath];
-          if (stats) {
-            repositoriesStore.updateBranchStats(repoPath, branch.name, stats.additions, stats.deletions);
-          }
-          const ts = summary.last_commit_ts?.[branch.name];
-          if (ts !== undefined) {
-            // Rust emits Unix seconds (%ct); JS Date.now() uses milliseconds
-            repositoriesStore.setBranch(repoPath, branch.name, { lastCommitTs: ts !== null ? ts * 1000 : null });
-          }
-        }
-      });
-
-      // Auto-archive merged worktrees when autoArchiveMerged=true
+      // Side effects that only need structure data — run before Phase 2
       await handleAutoArchiveMerged(repoPath, updatedRepo.branches);
-
-      // Orphan worktree cleanup: detached-HEAD linked worktrees whose branch was deleted
       await handleOrphanCleanup(repoPath);
+
+      // === PHASE 2: Stats (slow) ===
+      // Per-worktree diff stats + last-commit timestamps.
+      // Non-fatal: if this fails, UI shows rows from Phase 1 with stale/zero stats.
+      if (refreshGeneration.get(repoPath) !== gen) return; // stale check before Phase 2
+
+      try {
+        const stats = await deps.repo.getRepoDiffStats(repoPath);
+        if (refreshGeneration.get(repoPath) !== gen) return; // stale after await
+
+        const currentRepoForStats = repositoriesStore.get(repoPath);
+        if (!currentRepoForStats) return;
+
+        batch(() => {
+          for (const branch of Object.values(currentRepoForStats.branches)) {
+            if (!branch.worktreePath) continue;
+            const ds = stats.diff_stats[branch.worktreePath];
+            if (ds) {
+              repositoriesStore.updateBranchStats(repoPath, branch.name, ds.additions, ds.deletions);
+            }
+            const ts = stats.last_commit_ts?.[branch.name];
+            if (ts !== undefined) {
+              // Rust emits Unix seconds (%ct); JS Date.now() uses milliseconds
+              repositoriesStore.setBranch(repoPath, branch.name, { lastCommitTs: ts !== null ? ts * 1000 : null });
+            }
+          }
+        });
+      } catch (err) {
+        appLogger.warn("git", `Phase 2 diff stats failed for ${repoPath}`, err);
+      }
     }));
   };
 
