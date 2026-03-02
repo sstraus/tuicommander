@@ -6,7 +6,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "../transport";
 import { findOrphanTerminals } from "../utils/terminalOrphans";
 import { filterValidTerminals } from "../utils/terminalFilter";
-import { AGENTS } from "../agents";
+import { buildResumeCommand } from "../utils/agentSession";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { githubStore } from "../stores/github";
 import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
@@ -459,9 +459,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
         repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
 
         if (terminal.agentType) {
-          const agentConfig = AGENTS[terminal.agentType];
-          if (agentConfig?.resumeCommand) {
-            terminalsStore.update(id, { pendingResumeCommand: agentConfig.resumeCommand });
+          const resumeCmd = buildResumeCommand(terminal.agentType, terminal.claudeSessionId);
+          if (resumeCmd) {
+            terminalsStore.update(id, { pendingResumeCommand: resumeCmd, claudeSessionId: terminal.claudeSessionId ?? null });
           }
         }
 
