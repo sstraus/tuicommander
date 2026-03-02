@@ -80,15 +80,17 @@ async fn post_mcp(body: &str, session_id: Option<&str>) -> Result<(String, Optio
     Ok((response_body.to_string(), sid))
 }
 
-/// Establish an MCP session with the TUIC server. Returns the session ID.
-async fn server_initialize() -> Result<String, String> {
+/// Establish an MCP session with the TUIC server.
+/// Returns (session_id, server_response_body).
+async fn server_initialize() -> Result<(String, String), String> {
     let init_body = serde_json::json!({
         "jsonrpc": "2.0", "id": 0,
         "method": "initialize",
         "params": { "protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": { "name": "tuic-mcp-bridge", "version": env!("CARGO_PKG_VERSION") } }
     });
-    let (_, sid) = post_mcp(&serde_json::to_string(&init_body).unwrap(), None).await?;
-    sid.ok_or_else(|| "server did not return mcp-session-id".into())
+    let (body, sid) = post_mcp(&serde_json::to_string(&init_body).unwrap(), None).await?;
+    let sid = sid.ok_or_else(|| "server did not return mcp-session-id".to_string())?;
+    Ok((sid, body))
 }
 
 struct BridgeState {
@@ -155,6 +157,8 @@ fn start_sse_listener(state: &Arc<BridgeState>) {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    eprintln!("tuic-mcp-bridge v{} starting", env!("CARGO_PKG_VERSION"));
+
     let state = Arc::new(BridgeState {
         session_id: Mutex::new(None),
         connected: AtomicBool::new(false),
@@ -162,7 +166,7 @@ async fn main() {
     });
 
     // Try initial connection
-    if let Ok(sid) = server_initialize().await {
+    if let Ok((sid, _)) = server_initialize().await {
         eprintln!("tuic-mcp-bridge: connected to TUIC");
         *state.session_id.lock().unwrap() = Some(sid);
         state.connected.store(true, Ordering::Relaxed);
@@ -195,7 +199,7 @@ async fn main() {
                 }
             } else {
                 // Try reconnect
-                if let Ok(sid) = server_initialize().await {
+                if let Ok((sid, _)) = server_initialize().await {
                     eprintln!("tuic-mcp-bridge: reconnected to TUIC");
                     *bg_state.session_id.lock().unwrap() = Some(sid);
                     bg_state.connected.store(true, Ordering::Relaxed);
@@ -232,16 +236,56 @@ async fn main() {
         let id = request.get("id").cloned().unwrap_or(Value::Null);
 
         match method {
-            // Handle locally — must work even without TUIC
             "initialize" => {
-                emit(&serde_json::json!({
+                // Proxy to server when connected to get dynamic instructions.
+                // The server response includes intent protocol, active sessions, etc.
+                // Fall back to a minimal local response only when offline.
+                let proxied = if state.connected.load(Ordering::Relaxed) || {
+                    // Try lazy connect if not yet connected
+                    if let Ok((sid, _)) = server_initialize().await {
+                        eprintln!("tuic-mcp-bridge: connected to TUIC");
+                        *state.session_id.lock().unwrap() = Some(sid);
+                        state.connected.store(true, Ordering::Relaxed);
+                        start_sse_listener(&state);
+                        true
+                    } else {
+                        false
+                    }
+                } {
+                    let sid = state.session_id.lock().unwrap().clone();
+                    match post_mcp(&line, sid.as_deref()).await {
+                        Ok((body, new_sid)) => {
+                            if let Some(s) = new_sid {
+                                *state.session_id.lock().unwrap() = Some(s);
+                            }
+                            // Parse server response, inject listChanged capability
+                            // (the server doesn't advertise it but the bridge supports it)
+                            if let Ok(mut resp) = serde_json::from_str::<Value>(&body) {
+                                resp["result"]["capabilities"]["tools"]["listChanged"] = Value::Bool(true);
+                                Some(resp)
+                            } else {
+                                None
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("tuic-mcp-bridge: initialize proxy error: {e}");
+                            state.connected.store(false, Ordering::Relaxed);
+                            *state.session_id.lock().unwrap() = None;
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                emit(&proxied.unwrap_or_else(|| serde_json::json!({
                     "jsonrpc": "2.0", "id": id,
                     "result": {
                         "protocolVersion": "2025-03-26",
                         "capabilities": { "tools": { "listChanged": true } },
                         "serverInfo": { "name": "tuicommander", "version": env!("CARGO_PKG_VERSION") }
                     }
-                }));
+                })));
             }
             "notifications/initialized" => {} // Acknowledgment, no response
 
@@ -249,7 +293,7 @@ async fn main() {
             _ => {
                 // Lazy reconnect attempt if disconnected
                 if !state.connected.load(Ordering::Relaxed)
-                    && let Ok(sid) = server_initialize().await
+                    && let Ok((sid, _)) = server_initialize().await
                 {
                     eprintln!("tuic-mcp-bridge: reconnected to TUIC");
                     *state.session_id.lock().unwrap() = Some(sid);
