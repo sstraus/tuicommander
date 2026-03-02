@@ -62,8 +62,9 @@ Reference for all UI/CSS/layout work. Every visual change MUST follow this guide
 | `--fg-primary` | `#cccccc` | Primary text (max brightness for text) |
 | `--fg-secondary` | `#a0a0a0` | Labels, secondary text |
 | `--fg-muted` | `#9aa1a9` | Section titles, tertiary text |
-| `--accent` | `#59a8dd` | Primary actions, active indicators, links |
-| `--accent-hover` | `#7abde5` | Hover on accent elements |
+| `--accent` | `#59a8dd` | Primary actions, active indicators, links (theme-dependent) |
+| `--accent-hover` | `#7abde5` | Hover on accent elements (theme-dependent) |
+| `--activity` | `#59a8dd` | Busy/activity pulse indicators (fixed, never overridden by themes) |
 | `--success` | `#4ec9b0` | Positive states, open PRs (teal) |
 | `--warning` | `#dcdcaa` | Caution, pending, main branch icon (yellow) |
 | `--error` | `#f48771` | Errors, failures, closed PRs (coral) |
