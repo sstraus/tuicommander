@@ -409,9 +409,11 @@
   font-weight: bold;
 }
 
-/* Question state overrides activity indicator */
-.hasActivity .branchIconQuestion {
+/* Question state overrides busy and activity indicators */
+.hasActivity .branchIconQuestion,
+.shellBusy .branchIconQuestion {
   color: var(--attention);
+  animation: pulse-opacity 1s ease-in-out infinite;
 }
 
 .branchContent {
