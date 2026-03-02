@@ -1,0 +1,31 @@
+src/stores/terminals.ts
+  9391906e2518348a 43,143,146,151-152
+src-tauri/src/mcp_http/mcp_transport.rs
+  9391906e2518348a 799,802
+src/hooks/useAppInit.ts
+  9391906e2518348a 63
+src/__tests__/hooks/useAppInit.test.ts
+  9391906e2518348a 245-294
+src/types/index.ts
+  9391906e2518348a 165-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "78031f72887f1428fe45cda3f4fc4839d72c00e6",
+  "prompts": {
+    "9391906e2518348a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c62acd64-bb36-46eb-b9fb-f1501b220c4e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 81,
+      "total_deletions": 27,
+      "accepted_lines": 60,
+      "overriden_lines": 0
+    }
+  }
+}
