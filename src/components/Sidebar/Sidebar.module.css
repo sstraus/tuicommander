@@ -394,12 +394,12 @@
 }
 
 .shellBusy .branchIcon {
-  color: var(--accent);
+  color: var(--activity);
   animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
 .hasActivity .branchIcon {
-  color: var(--accent);
+  color: var(--activity);
   animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 

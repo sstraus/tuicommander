@@ -226,14 +226,14 @@
 
 /* Tab activity/idle indicators */
 .tab.hasActivity .tabIcon {
-  color: var(--accent);
+  color: var(--activity);
   opacity: 1;
   font-size: 8px;
   animation: pulse-opacity 1.5s ease-in-out 3;
 }
 
 .tab.shellBusy .tabIcon {
-  color: var(--accent);
+  color: var(--activity);
   opacity: 1;
   font-size: 8px;
   animation: pulse-opacity 1.5s ease-in-out infinite;

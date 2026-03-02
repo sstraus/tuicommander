@@ -179,6 +179,7 @@
   --fg-muted: #9aa1a9;
   --accent: #59a8dd;
   --accent-hover: #7abde5;
+  --activity: #59a8dd;  /* semantic: always blue, not overridden by themes */
   --border: #3e3e42;
   --success: #4ec9b0;
   --warning: #dcdcaa;
