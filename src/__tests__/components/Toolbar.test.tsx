@@ -385,6 +385,53 @@ describe("Toolbar", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Repo-scoped plan filtering
+  // -------------------------------------------------------------------------
+  describe("plan items filtered by active repo", () => {
+    beforeEach(() => {
+      activityStore.registerSection({ id: "plan", label: "ACTIVE PLAN", priority: 10, canDismissAll: false });
+      repositoriesStore.add({ path: "/repo/a", displayName: "Repo A" });
+      repositoriesStore.add({ path: "/repo/b", displayName: "Repo B" });
+    });
+
+    it("bell popover shows only plans matching active repo", () => {
+      repositoriesStore.setActive("/repo/a");
+      activityStore.addItem({ id: "p1", pluginId: "plan", sectionId: "plan", title: "Plan A", icon: "<svg/>", dismissible: true, repoPath: "/repo/a" });
+      activityStore.addItem({ id: "p2", pluginId: "plan", sectionId: "plan", title: "Plan B", icon: "<svg/>", dismissible: true, repoPath: "/repo/b" });
+
+      const { container } = render(() => <Toolbar />);
+      fireEvent.click(container.querySelector(".bell")!);
+      const titles = Array.from(container.querySelectorAll(".activityItemTitle")).map((el) => el.textContent);
+      expect(titles).toContain("Plan A");
+      expect(titles).not.toContain("Plan B");
+    });
+
+    it("last-item button shows plan from active repo only", () => {
+      repositoriesStore.setActive("/repo/b");
+      activityStore.addItem({ id: "p1", pluginId: "plan", sectionId: "plan", title: "Plan A", icon: "<svg/>", dismissible: true, repoPath: "/repo/a" });
+      activityStore.addItem({ id: "p2", pluginId: "plan", sectionId: "plan", title: "Plan B", icon: "<svg/>", dismissible: true, repoPath: "/repo/b" });
+
+      const { container } = render(() => <Toolbar />);
+      const btn = container.querySelector(".lastItemBtn");
+      expect(btn?.textContent).toContain("Plan B");
+    });
+
+    it("switching active repo updates visible plans", () => {
+      repositoriesStore.setActive("/repo/a");
+      activityStore.addItem({ id: "p1", pluginId: "plan", sectionId: "plan", title: "Plan A", icon: "<svg/>", dismissible: true, repoPath: "/repo/a" });
+      activityStore.addItem({ id: "p2", pluginId: "plan", sectionId: "plan", title: "Plan B", icon: "<svg/>", dismissible: true, repoPath: "/repo/b" });
+
+      const { container } = render(() => <Toolbar />);
+      const btn1 = container.querySelector(".lastItemBtn");
+      expect(btn1?.textContent).toContain("Plan A");
+
+      repositoriesStore.setActive("/repo/b");
+      const btn2 = container.querySelector(".lastItemBtn");
+      expect(btn2?.textContent).toContain("Plan B");
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Last-item shortcut button
   // -------------------------------------------------------------------------
   describe("last-item shortcut button", () => {

@@ -158,12 +158,12 @@ describe("activityStore", () => {
       expect(activityStore.getForSection("plan")).toHaveLength(0);
     });
 
-    it("filters by repoPath when provided", () => {
+    it("filters by repoPath when provided (includes items without repoPath)", () => {
       activityStore.addItem(makeItem({ id: "rp1", sectionId: "plan", repoPath: "/repo/a" }));
       activityStore.addItem(makeItem({ id: "rp2", sectionId: "plan", repoPath: "/repo/b" }));
-      activityStore.addItem(makeItem({ id: "rp3", sectionId: "plan" })); // no repoPath
+      activityStore.addItem(makeItem({ id: "rp3", sectionId: "plan" })); // no repoPath — always included
       const filtered = activityStore.getForSection("plan", "/repo/a");
-      expect(filtered.map((i) => i.id)).toEqual(["rp1"]);
+      expect(filtered.map((i) => i.id)).toEqual(["rp1", "rp3"]);
     });
 
     it("returns all section items when repoPath filter is omitted", () => {
@@ -204,9 +204,15 @@ describe("activityStore", () => {
       expect(activityStore.getLastItem("/repo/a")?.id).toBe("lr1");
     });
 
-    it("returns null when no items match the repoPath", () => {
+    it("returns null when no items match the repoPath (all have different repoPath)", () => {
       activityStore.addItem(makeItem({ id: "lr3", repoPath: "/repo/a" }));
       expect(activityStore.getLastItem("/repo/z")).toBeNull();
+    });
+
+    it("includes items without repoPath when filtering", () => {
+      activityStore.addItem(makeItem({ id: "lr4" })); // no repoPath
+      activityStore.addItem(makeItem({ id: "lr5", repoPath: "/repo/a" }));
+      expect(activityStore.getLastItem("/repo/x")?.id).toBe("lr4");
     });
   });
 

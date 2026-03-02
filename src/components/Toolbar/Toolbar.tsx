@@ -36,8 +36,8 @@ type LastItemSource =
   | { kind: "update"; version: string };
 
 /** Find the most recently created item across all notification sources. */
-function getLastItemAcrossStores(): LastItemSource | null {
-  const activityItem = activityStore.getLastItem();
+function getLastItemAcrossStores(activeRepoPath: string | null): LastItemSource | null {
+  const activityItem = activityStore.getLastItem(activeRepoPath ?? undefined);
   const prNotifs = prNotificationsStore.getActive();
   const prLast = prNotifs.length > 0
     ? prNotifs.reduce((latest, n) => n.createdAt >= latest.createdAt ? n : latest)
@@ -87,7 +87,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const hasUpdate = () => updaterStore.state.available && !!updaterStore.state.version;
   const totalBadgeCount = () => activeNotifs().length + activeActivityItems().length + (hasUpdate() ? 1 : 0);
   const hasAnyItems = () => totalBadgeCount() > 0;
-  const lastItem = () => getLastItemAcrossStores();
+  const lastItem = () => getLastItemAcrossStores(repositoriesStore.state.activeRepoPath);
 
   const activeBranch = () => {
     const activeRepoPath = repositoriesStore.state.activeRepoPath;
@@ -310,7 +310,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 {/* Plugin activity sections (shown above PR updates) */}
                 <For each={activitySections()}>
                   {(section) => {
-                    const sectionItems = () => activityStore.getForSection(section.id);
+                    const sectionItems = () => activityStore.getForSection(section.id, repositoriesStore.state.activeRepoPath ?? undefined);
                     return (
                       <Show when={sectionItems().length > 0}>
                         <div class={s.sectionHeader}>
