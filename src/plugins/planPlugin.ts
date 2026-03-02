@@ -1,6 +1,7 @@
 import { invoke } from "../invoke";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
+import { activityStore } from "../stores/activityStore";
 import { appLogger } from "../stores/appLogger";
 import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
 
@@ -37,16 +38,33 @@ function contentUri(absolutePath: string): string {
   return `plan:file?path=${encodeURIComponent(absolutePath)}`;
 }
 
-/** Check if a PTY session belongs to the currently active repo. */
-function sessionBelongsToActiveRepo(sessionId: string): boolean {
-  const activeRepo = repositoriesStore.state.activeRepoPath;
-  if (!activeRepo) return true; // no repo selected → show all plans
+/** Get the CWD for a terminal session, or null if not found. */
+function getSessionCwd(sessionId: string): string | null {
   for (const t of Object.values(terminalsStore.state.terminals)) {
     if (t.sessionId === sessionId && t.cwd) {
-      return t.cwd.startsWith(activeRepo);
+      return t.cwd;
     }
   }
-  return false; // unknown session → hide
+  return null;
+}
+
+/** Resolve a plan path to absolute using the session's CWD. */
+function resolvePath(path: string, sessionId: string): string {
+  if (path.startsWith("/")) return path;
+  const cwd = getSessionCwd(sessionId);
+  if (!cwd) return path; // can't resolve without CWD
+  return `${cwd.replace(/\/$/, "")}/${path}`;
+}
+
+/** Derive the repo path for a session by finding which registered repo the CWD belongs to. */
+function deriveRepoPath(sessionId: string): string | null {
+  const cwd = getSessionCwd(sessionId);
+  if (!cwd) return null;
+  for (const repoPath of repositoriesStore.getPaths()) {
+    if (cwd.startsWith(repoPath)) return repoPath;
+  }
+  // No registered repo matches — use the CWD itself as a best-effort repo identifier
+  return cwd;
 }
 
 // ---------------------------------------------------------------------------
@@ -87,12 +105,20 @@ class PlanPlugin implements TuiPlugin {
       canDismissAll: false,
     });
 
+    // Rebuild planItemIds from hydrated activityStore items
+    const existingItems = activityStore.getForSection(SECTION_ID);
+    this.planItemIds = existingItems
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((i) => i.id);
+
     host.registerStructuredEventHandler("plan-file", (payload, sessionId) => {
       if (typeof payload !== "object" || payload === null || typeof (payload as Record<string, unknown>).path !== "string") return;
-      // Only show plans from terminals belonging to the active repo
-      if (!sessionBelongsToActiveRepo(sessionId)) return;
-      const { path } = payload as { path: string };
-      const id = itemId(path);
+      const rawPath = (payload as { path: string }).path;
+
+      // Resolve relative paths to absolute using session CWD
+      const absolutePath = resolvePath(rawPath, sessionId);
+      const repoPath = deriveRepoPath(sessionId);
+      const id = itemId(absolutePath);
 
       // If already tracked, move it to the end (most recent)
       const existingIdx = this.planItemIds.indexOf(id);
@@ -112,11 +138,12 @@ class PlanPlugin implements TuiPlugin {
         id,
         pluginId: PLUGIN_ID,
         sectionId: SECTION_ID,
-        title: displayName(path),
-        subtitle: path,
+        title: displayName(absolutePath),
+        subtitle: absolutePath,
         icon: ICON_SVG,
         dismissible: true,
-        contentUri: contentUri(path),
+        repoPath: repoPath ?? undefined,
+        contentUri: contentUri(absolutePath),
       });
     });
 

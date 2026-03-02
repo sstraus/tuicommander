@@ -9,6 +9,7 @@ vi.mock("../../invoke", () => ({
 import { invoke } from "../../invoke";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { activityStore } from "../../stores/activityStore";
+import { terminalsStore } from "../../stores/terminals";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
 import { planPlugin } from "../../plugins/planPlugin";
 
@@ -17,10 +18,24 @@ const mockedInvoke = vi.mocked(invoke);
 /** Flush pending queueMicrotask callbacks so deferred dispatch handlers run */
 const flushMicrotasks = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 
+/** Create a terminal entry in terminalsStore with the given sessionId and cwd */
+function addTerminalWithSession(sessionId: string, cwd: string): string {
+  const id = terminalsStore.add({ sessionId, cwd, name: "test", awaitingInput: null, fontSize: 14 });
+  return id;
+}
+
+/** Remove all terminals from the store */
+function clearTerminals(): void {
+  for (const id of terminalsStore.getIds()) {
+    terminalsStore.remove(id);
+  }
+}
+
 beforeEach(() => {
   pluginRegistry.clear();
   activityStore.clearAll();
   markdownProviderRegistry.clear();
+  clearTerminals();
   mockedInvoke.mockReset().mockResolvedValue(undefined);
 });
 
@@ -135,6 +150,65 @@ describe("plan-file structured event", () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", "/foo.md", "s1");
     await flushMicrotasks();
     expect(activityStore.getForSection("plan")).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// repoPath attachment and path resolution
+// ---------------------------------------------------------------------------
+
+describe("plan-file repoPath and path resolution", () => {
+  beforeEach(() => {
+    pluginRegistry.register(planPlugin);
+  });
+
+  it("attaches repoPath derived from session CWD to the activity item", async () => {
+    addTerminalWithSession("sess-1", "/Users/dev/my-project");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/Users/dev/my-project/plans/foo.md" }, "sess-1");
+    await flushMicrotasks();
+    const item = activityStore.getForSection("plan")[0];
+    expect(item.repoPath).toBeDefined();
+  });
+
+  it("resolves relative plan path to absolute using session CWD", async () => {
+    addTerminalWithSession("sess-2", "/Users/dev/my-project");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "plans/feature.md" }, "sess-2");
+    await flushMicrotasks();
+    const item = activityStore.getForSection("plan")[0];
+    expect(item.subtitle).toBe("/Users/dev/my-project/plans/feature.md");
+    expect(item.contentUri).toContain(encodeURIComponent("/Users/dev/my-project/plans/feature.md"));
+  });
+
+  it("keeps absolute path unchanged", async () => {
+    addTerminalWithSession("sess-3", "/Users/dev/my-project");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/absolute/plans/bar.md" }, "sess-3");
+    await flushMicrotasks();
+    const item = activityStore.getForSection("plan")[0];
+    expect(item.subtitle).toBe("/absolute/plans/bar.md");
+  });
+
+  it("rebuilds planItemIds from activityStore on re-register (simulates hydrate)", async () => {
+    // Simulate hydrated items by adding directly to activityStore
+    activityStore.addItem({
+      id: "plan:/repo/plans/old.md",
+      pluginId: "plan",
+      sectionId: "plan",
+      title: "old",
+      icon: "<svg/>",
+      dismissible: true,
+      repoPath: "/repo",
+    });
+    // Register the plugin — it should rebuild planItemIds from existing items
+    pluginRegistry.register(planPlugin);
+    // Add MAX_PLAN_ITEMS more — the old one should be evicted
+    for (let i = 1; i <= 3; i++) {
+      pluginRegistry.dispatchStructuredEvent("plan-file", { path: `/repo/plans/new-${i}.md` }, "sess-x");
+      await flushMicrotasks();
+    }
+    const items = activityStore.getForSection("plan");
+    // Should have at most MAX_PLAN_ITEMS (3), the old one evicted
+    expect(items.length).toBeLessThanOrEqual(3);
+    expect(items.find((i) => i.id === "plan:/repo/plans/old.md")).toBeUndefined();
   });
 });
 
