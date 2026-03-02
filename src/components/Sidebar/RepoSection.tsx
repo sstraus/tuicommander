@@ -21,7 +21,6 @@ const BRANCH_ICON_CLASSES: Record<string, string> = {
   worktree: s.branchIconWorktree,
   question: s.branchIconQuestion,
   activity: s.branchIconActivity,
-  idle: s.branchIconIdle,
 };
 
 const PR_BADGE_CLASSES: Record<string, string> = {
@@ -60,7 +59,6 @@ export const BranchIcon: Component<{
   hasQuestion?: boolean;
   hasActivity?: boolean;
   hasBusy?: boolean;
-  hasIdle?: boolean;
 }> = (props) => {
   const iconShape = () => {
     if (props.hasQuestion) return "question";
@@ -70,12 +68,14 @@ export const BranchIcon: Component<{
     return "worktree";
   };
 
-  /** Single source of truth for icon color — priority cascade */
+  /** Single source of truth for icon color — priority cascade.
+   *  Activity/busy override the base color; idle does NOT — the base
+   *  color (yellow for main, green for worktree) is already correct
+   *  when nothing special is happening. */
   const colorClass = () => {
     if (props.hasQuestion) return "question";
     if (props.hasActivity) return "activity";
     if (props.hasBusy) return "activity";
-    if (props.hasIdle) return "idle";
     if (props.isMainBranch) return "main";
     return "worktree";
   };
@@ -185,8 +185,7 @@ export const BranchItem: Component<{
       return t?.activity && t.shellState !== "idle";
     });
 
-  const hasIdle = () =>
-    !hasActivity() && props.branch.terminals.some((id) => terminalsStore.get(id)?.shellState === "idle");
+
 
   const hasQuestion = () =>
     props.branch.terminals.some((id) => terminalsStore.get(id)?.awaitingInput != null);
@@ -271,7 +270,6 @@ export const BranchItem: Component<{
         hasQuestion={hasQuestion()}
         hasActivity={hasActivity()}
         hasBusy={hasBusy()}
-        hasIdle={hasIdle()}
       />
       <div class={s.branchContent}>
         <span

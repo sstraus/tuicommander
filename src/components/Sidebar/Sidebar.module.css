@@ -399,10 +399,6 @@
   animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
-.branchIconIdle {
-  color: var(--success);
-}
-
 .branchIconQuestion {
   color: var(--attention);
   animation: pulse-opacity 1s ease-in-out infinite;
