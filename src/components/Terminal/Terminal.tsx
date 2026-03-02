@@ -181,6 +181,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
     return FONT_FAMILIES[font] || FONT_FAMILIES["JetBrains Mono"];
   };
 
+  /** Preload a font via CSS Font Loading API so canvas/WebGL renderers can use it.
+   *  @font-face fonts only load when referenced by DOM text; canvas-based xterm.js
+   *  never triggers that, so we must load explicitly before applying. */
+  const preloadFont = (fontName: string): Promise<FontFace[]> =>
+    document.fonts.load(`16px "${fontName}"`);
+
+
   /** Process a chunk of PTY output — write to terminal or buffer if not ready */
   const handlePtyData = (data: string) => {
     if (terminal) {
@@ -780,6 +787,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     terminal.open(containerRef);
 
+    // Preload the configured font so the canvas/WebGL renderer can measure
+    // and render it correctly from the start (see preloadFont comment above).
+    preloadFont(settingsStore.state.font).then(() => doFit());
+
     // Load WebGL renderer for 3-5x rendering performance over canvas.
     // CanvasAddon fallback deferred to Story 158 (@xterm/addon-canvas beta has broken exports).
     // On context loss, DOM renderer remains as fallback.
@@ -972,11 +983,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
   });
 
   // Handle font family changes (global setting)
+  // Preload via CSS Font Loading API before applying — canvas/WebGL renderers
+  // cannot trigger @font-face loading on their own.
   createEffect(() => {
-    settingsStore.state.font;
+    const font = settingsStore.state.font;
     if (terminal) {
-      terminal.options.fontFamily = getFontFamily();
-      doFit();
+      preloadFont(font).then(() => {
+        terminal!.options.fontFamily = getFontFamily();
+        doFit();
+      });
     }
   });
 
