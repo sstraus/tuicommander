@@ -51,11 +51,8 @@ const BaseRefDropdown: Component<{
   };
 
   createEffect(() => {
-    if (open()) {
-      document.addEventListener("mousedown", handleDocClick);
-    } else {
-      document.removeEventListener("mousedown", handleDocClick);
-    }
+    if (!open()) return;
+    document.addEventListener("mousedown", handleDocClick);
     onCleanup(() => document.removeEventListener("mousedown", handleDocClick));
   });
 

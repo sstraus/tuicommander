@@ -302,8 +302,12 @@ function createTerminalsStore() {
 
     /** Register a callback fired when a terminal transitions from debounced-busy to idle.
      *  Callback receives (terminalId, busyDurationMs). */
-    onBusyToIdle(callback: (id: string, durationMs: number) => void): void {
+    onBusyToIdle(callback: (id: string, durationMs: number) => void): () => void {
       busyToIdleCallbacks.push(callback);
+      return () => {
+        const idx = busyToIdleCallbacks.indexOf(callback);
+        if (idx >= 0) busyToIdleCallbacks.splice(idx, 1);
+      };
     },
 
     /** Set the complete layout state */

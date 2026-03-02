@@ -32,13 +32,17 @@ export const Dropdown: Component<DropdownProps> = (props) => {
       }
     };
 
-    // Delay to avoid immediate close
-    setTimeout(() => {
+    // Delay to avoid immediate close — use rAF instead of setTimeout
+    // so cleanup can cancel the frame if the component unmounts before it fires
+    let attached = false;
+    const rafId = requestAnimationFrame(() => {
       document.addEventListener("click", handleClickOutside);
-    }, 0);
+      attached = true;
+    });
 
     onCleanup(() => {
-      document.removeEventListener("click", handleClickOutside);
+      cancelAnimationFrame(rafId);
+      if (attached) document.removeEventListener("click", handleClickOutside);
     });
   });
 

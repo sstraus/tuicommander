@@ -365,6 +365,9 @@ describe("plan auto-open", () => {
 
   afterEach(() => {
     repositoriesStore.setActive(null);
+    for (const path of repositoriesStore.getPaths()) {
+      repositoriesStore.remove(path);
+    }
   });
 
   it("auto-opens a new plan as a background virtual tab", async () => {

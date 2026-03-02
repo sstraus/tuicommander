@@ -1,4 +1,4 @@
-import { Component, createEffect, For, JSX, Show } from "solid-js";
+import { Component, createEffect, createMemo, For, JSX, Show } from "solid-js";
 import { Terminal } from "./Terminal";
 import { DiffTab } from "./DiffTab";
 import { MarkdownTab } from "./MarkdownTab";
@@ -31,13 +31,6 @@ export interface TerminalAreaProps {
 }
 
 export const TerminalArea: Component<TerminalAreaProps> = (props) => {
-  /** Get terminal meta hotkeys setting for a terminal's repo */
-  const terminalMetaHotkeys = (termId: string) => {
-    const path = repositoriesStore.getRepoPathForTerminal(termId);
-    if (!path) return undefined;
-    return repoSettingsStore.getEffective(path)?.terminalMetaHotkeys;
-  };
-
   // When a non-terminal tab becomes active, release focus from xterm's textarea.
   // On macOS WKWebView, wheel events follow focus rather than cursor position,
   // so xterm retains focus (even inside display:none) and captures wheel events.
@@ -83,6 +76,12 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
 
             const isDetached = () => terminalsStore.isDetached(id);
 
+            const metaHotkeys = createMemo(() => {
+              const path = repositoriesStore.getRepoPathForTerminal(id);
+              if (!path) return undefined;
+              return repoSettingsStore.getEffective(path)?.terminalMetaHotkeys;
+            });
+
             return (
               <div
                 class="terminal-pane"
@@ -105,7 +104,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                   onFocus={props.onTerminalFocus}
                   onSessionCreated={() => {}}
                   onOpenFilePath={props.onOpenFilePath}
-                  metaHotkeys={terminalMetaHotkeys(id)}
+                  metaHotkeys={metaHotkeys()}
                   onCwdChange={props.onCwdChange}
                 />
               </div>

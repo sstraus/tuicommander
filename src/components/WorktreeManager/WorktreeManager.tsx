@@ -73,23 +73,24 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
 
     let cancelled = false;
     const detectAll = async () => {
-      const allOrphans: OrphanRow[] = [];
-      for (const repo of repos) {
-        if (cancelled) return;
-        try {
-          const paths = await invoke<string[]>("detect_orphan_worktrees", { repoPath: repo.path });
-          for (const wtPath of paths) {
-            allOrphans.push({
+      const results = await Promise.allSettled(
+        repos.map(repo =>
+          invoke<string[]>("detect_orphan_worktrees", { repoPath: repo.path })
+            .then(paths => paths.map(wtPath => ({
               repoPath: repo.path,
               repoName: repo.displayName || displayName(repo.path),
               worktreePath: wtPath,
-            });
-          }
-        } catch (err) {
-          appLogger.warn("git", `detect_orphan_worktrees failed for ${repo.path}`, err);
-        }
+            })))
+        )
+      );
+      if (cancelled) return;
+      const allOrphans: OrphanRow[] = [];
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        if (r.status === "fulfilled") allOrphans.push(...r.value);
+        else appLogger.warn("git", `detect_orphan_worktrees failed for ${repos[i].path}`, r.reason);
       }
-      if (!cancelled) setOrphanRows(allOrphans);
+      setOrphanRows(allOrphans);
     };
     void detectAll();
     onCleanup(() => { cancelled = true; });

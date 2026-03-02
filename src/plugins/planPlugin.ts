@@ -111,7 +111,7 @@ class PlanPlugin implements TuiPlugin {
 
     // Rebuild planItemIds from hydrated activityStore items
     const existingItems = activityStore.getForSection(SECTION_ID);
-    this.planItemIds = existingItems
+    this.planItemIds = [...existingItems]
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((i) => i.id);
 
@@ -134,8 +134,8 @@ class PlanPlugin implements TuiPlugin {
 
       // Evict oldest items beyond the limit
       while (this.planItemIds.length > MAX_PLAN_ITEMS) {
-        const evictId = this.planItemIds.shift()!;
-        host.removeItem(evictId);
+        const evictId = this.planItemIds.shift();
+        if (evictId !== undefined) host.removeItem(evictId);
       }
 
       const fallbackTitle = displayName(absolutePath);

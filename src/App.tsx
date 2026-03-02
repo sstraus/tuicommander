@@ -502,7 +502,7 @@ const App: Component = () => {
     return !!term?.agentType;
   };
 
-  const getContextMenuItems = createMemo((): ContextMenuItem[] => [
+  const getContextMenuItems = (): ContextMenuItem[] => [
     { label: "Copy", shortcut: `${getModifierSymbol()}C`, action: terminalLifecycle.copyFromTerminal },
     { label: "Paste", shortcut: `${getModifierSymbol()}V`, action: terminalLifecycle.pasteToTerminal },
     { label: "Split Right", shortcut: `${getModifierSymbol()}\\`, action: () => splitPanes.handleSplit("vertical"), disabled: isSplit() },
@@ -563,7 +563,7 @@ const App: Component = () => {
       },
       separator: true,
     },
-  ]);
+  ];
 
   /** Open a file path from terminal output — .md/.mdx in MD viewer, others in internal editor */
   const handleOpenFilePath = (absolutePath: string, _line?: number, _col?: number) => {
