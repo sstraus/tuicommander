@@ -5,7 +5,7 @@
  * Zero dependencies — plan frontmatter is intentionally simple.
  */
 
-export interface FrontmatterResult {
+interface FrontmatterResult {
   /** Parsed key-value pairs from the frontmatter block */
   data: Record<string, string | number | boolean>;
   /** Markdown content after the frontmatter block (or full content if no frontmatter) */
@@ -13,13 +13,24 @@ export interface FrontmatterResult {
 }
 
 /**
+ * Strip YAML frontmatter from a markdown string and return the body content.
+ *
+ * Frontmatter must start at the very first line with `---` and end with a
+ * matching `---`. Returns the full input unchanged if no valid frontmatter found.
+ */
+export function stripFrontmatter(input: string): string {
+  return parseFrontmatter(input).content;
+}
+
+/**
  * Parse YAML frontmatter from a markdown string.
  *
+ * Returns parsed key-value data and the body content after the frontmatter block.
  * Frontmatter must start at the very first line with `---` and end with a
  * matching `---`. Content before the first `---` or missing closing `---`
  * results in no frontmatter being parsed.
  */
-export function parseFrontmatter(input: string): FrontmatterResult {
+function parseFrontmatter(input: string): FrontmatterResult {
   if (!input.startsWith("---")) {
     return { data: {}, content: input };
   }

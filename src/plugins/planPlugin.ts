@@ -4,7 +4,7 @@ import { terminalsStore } from "../stores/terminals";
 import { activityStore } from "../stores/activityStore";
 import { mdTabsStore } from "../stores/mdTabs";
 import { appLogger } from "../stores/appLogger";
-import { parseFrontmatter, extractPlanMetadata } from "../utils/frontmatter";
+import { stripFrontmatter, extractPlanMetadata } from "../utils/frontmatter";
 import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -80,8 +80,7 @@ const planMarkdownProvider: MarkdownProvider = {
 
     try {
       const raw = await invoke<string>("plugin_read_file", { path: rawPath, pluginId: PLUGIN_ID });
-      const { content } = parseFrontmatter(raw);
-      return content;
+      return stripFrontmatter(raw);
     } catch (err) {
       appLogger.warn("plugin", `Failed to read plan file: ${rawPath}`, err);
       return null;

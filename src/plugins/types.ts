@@ -204,10 +204,6 @@ export interface TerminalAction {
 }
 
 // ---------------------------------------------------------------------------
-// Capabilities
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Filesystem change events
 // ---------------------------------------------------------------------------
 
@@ -479,24 +475,7 @@ export interface PluginHost {
   // -- Tier 3c: Status bar ticker (capability-gated) --
 
   /**
-   * Post a rotating message to the status bar ticker. Requires "ui:ticker".
-   * If a message with the same id already exists from this plugin, it is replaced.
-   */
-  postTickerMessage(options: {
-    id: string;
-    text: string;
-    icon?: string;
-    priority?: number;
-    ttlMs?: number;
-    onClick?: () => void;
-  }): void;
-
-  /** Remove a ticker message by id. Requires "ui:ticker". */
-  removeTickerMessage(id: string): void;
-
-  /**
    * Set a ticker message in the shared status bar ticker. Requires "ui:ticker".
-   * Preferred over postTickerMessage — adds source label support.
    * If a message with the same id already exists from this plugin, it is replaced.
    */
   setTicker(options: {
