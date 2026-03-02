@@ -700,6 +700,44 @@ export function useGitOperations(deps: GitOperationsDeps) {
     });
   };
 
+  /** Shared post-creation setup: run scripts, open terminal, fetch stats */
+  const setupNewWorktree = async (
+    repoPath: string,
+    result: { name: string; path: string; branch: string; base_repo: string },
+    displayName: string,
+  ) => {
+    repositoriesStore.setBranch(repoPath, result.branch, { worktreePath: result.path });
+    repositoriesStore.setActiveBranch(repoPath, result.branch);
+
+    const effective = repoSettingsStore.getEffective(repoPath);
+    if (effective?.setupScript) {
+      try {
+        deps.setStatusInfo(`Running setup script in ${displayName}...`);
+        const scriptResult = await deps.repo.runSetupScript(effective.setupScript, result.path);
+        if (scriptResult.exit_code !== 0) {
+          appLogger.warn("git", `Setup script failed (exit ${scriptResult.exit_code})`, scriptResult.stderr);
+          deps.setStatusInfo(`Setup script failed (exit ${scriptResult.exit_code})`);
+        }
+      } catch (err) {
+        appLogger.warn("git", "Setup script execution error", err);
+        deps.setStatusInfo(`Setup script failed: ${err}`);
+      }
+    }
+
+    const termId = await handleAddTerminalToBranch(repoPath, result.branch);
+
+    if (termId && effective?.runScript) {
+      terminalsStore.update(termId, { pendingInitCommand: effective.runScript });
+    }
+
+    try {
+      const stats = await deps.repo.getDiffStats(result.path);
+      repositoriesStore.updateBranchStats(repoPath, result.branch, stats.additions, stats.deletions);
+    } catch { /* ignore */ }
+
+    deps.setStatusInfo(`Created worktree ${displayName}`);
+  };
+
   const confirmCreateWorktree = async (options: WorktreeCreateOptions) => {
     const dialogState = worktreeDialogState();
     if (!dialogState) return;
@@ -714,38 +752,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       deps.setStatusInfo(`Creating worktree ${options.branchName}...`);
       const result = await deps.repo.createWorktree(repoPath, options.branchName, options.createBranch, options.baseRef);
 
-      repositoriesStore.setBranch(repoPath, result.branch, { worktreePath: result.path });
-      repositoriesStore.setActiveBranch(repoPath, result.branch);
-
-      // Run setup script if configured (before opening terminal)
-      const effective = repoSettingsStore.getEffective(repoPath);
-      if (effective?.setupScript) {
-        try {
-          deps.setStatusInfo(`Running setup script in ${options.branchName}...`);
-          const scriptResult = await deps.repo.runSetupScript(effective.setupScript, result.path);
-          if (scriptResult.exit_code !== 0) {
-            appLogger.warn("git", `Setup script failed (exit ${scriptResult.exit_code})`, scriptResult.stderr);
-            deps.setStatusInfo(`Setup script failed (exit ${scriptResult.exit_code})`);
-          }
-        } catch (err) {
-          appLogger.warn("git", "Setup script execution error", err);
-          deps.setStatusInfo(`Setup script failed: ${err}`);
-        }
-      }
-
-      const termId = await handleAddTerminalToBranch(repoPath, result.branch);
-
-      // Set run script as pending init command on the new terminal
-      if (termId && effective?.runScript) {
-        terminalsStore.update(termId, { pendingInitCommand: effective.runScript });
-      }
-
-      try {
-        const stats = await deps.repo.getDiffStats(result.path);
-        repositoriesStore.updateBranchStats(repoPath, result.branch, stats.additions, stats.deletions);
-      } catch { /* ignore */ }
-
-      deps.setStatusInfo(`Created worktree ${options.branchName}`);
+      await setupNewWorktree(repoPath, result, options.branchName);
     } catch (err) {
       appLogger.error("git", "Failed to create worktree", err);
       deps.setStatusInfo(`Failed to create worktree: ${err}`);
@@ -771,38 +778,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       deps.setStatusInfo(`Creating worktree ${cloneName}...`);
       const result = await deps.repo.createWorktree(repoPath, cloneName, true, branchName);
 
-      repositoriesStore.setBranch(repoPath, result.branch, { worktreePath: result.path });
-      repositoriesStore.setActiveBranch(repoPath, result.branch);
-
-      // Run setup script if configured (before opening terminal)
-      const effective = repoSettingsStore.getEffective(repoPath);
-      if (effective?.setupScript) {
-        try {
-          deps.setStatusInfo(`Running setup script in ${cloneName}...`);
-          const scriptResult = await deps.repo.runSetupScript(effective.setupScript, result.path);
-          if (scriptResult.exit_code !== 0) {
-            appLogger.warn("git", `Setup script failed (exit ${scriptResult.exit_code})`, scriptResult.stderr);
-            deps.setStatusInfo(`Setup script failed (exit ${scriptResult.exit_code})`);
-          }
-        } catch (err) {
-          appLogger.warn("git", "Setup script execution error", err);
-          deps.setStatusInfo(`Setup script failed: ${err}`);
-        }
-      }
-
-      const termId = await handleAddTerminalToBranch(repoPath, result.branch);
-
-      // Set run script as pending init command on the new terminal
-      if (termId && effective?.runScript) {
-        terminalsStore.update(termId, { pendingInitCommand: effective.runScript });
-      }
-
-      try {
-        const stats = await deps.repo.getDiffStats(result.path);
-        repositoriesStore.updateBranchStats(repoPath, result.branch, stats.additions, stats.deletions);
-      } catch { /* ignore */ }
-
-      deps.setStatusInfo(`Created worktree ${cloneName}`);
+      await setupNewWorktree(repoPath, result, cloneName);
     } catch (err) {
       appLogger.error("git", "Failed to create worktree from branch", err);
       deps.setStatusInfo(`Failed to create worktree: ${err}`);
