@@ -1,5 +1,6 @@
 import { Component, Show, For, createEffect } from "solid-js";
 import { githubStore } from "../../stores/github";
+import { appLogger } from "../../stores/appLogger";
 import { CiRing } from "../ui/CiRing";
 import { relativeTime } from "../../utils/time";
 import { handleOpenUrl } from "../../utils/openUrl";
@@ -48,7 +49,7 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
   createEffect(() => {
     const pr = prData();
     if (pr) {
-      githubStore.loadCheckDetails(props.repoPath, props.branch, pr.number).catch(() => {});
+      githubStore.loadCheckDetails(props.repoPath, props.branch, pr.number).catch((e) => appLogger.warn("github", "Failed to load check details", { error: String(e) }));
     }
   });
 

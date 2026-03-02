@@ -1,6 +1,7 @@
 import { Component, Show, onMount, onCleanup, createEffect, createSignal } from "solid-js";
 import { Terminal } from "./components/Terminal";
 import { settingsStore } from "./stores/settings";
+import { appLogger } from "./stores/appLogger";
 import { terminalsStore } from "./stores/terminals";
 import { applyAppTheme } from "./themes";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -57,7 +58,7 @@ export const FloatingTerminal: Component = () => {
     document.getElementById("splash")?.remove();
 
     // Bootstrap settings so theme and fonts are available
-    await settingsStore.hydrate().catch(() => {});
+    await settingsStore.hydrate().catch((e) => appLogger.warn("settings", "Failed to hydrate floating terminal settings", { error: String(e) }));
 
     // Set window title
     try {
@@ -146,7 +147,7 @@ export const FloatingTerminal: Component = () => {
       await emitTo("main", "reattach-terminal", { tabId, sessionId });
     }).then((unlisten) => {
       unlistenClose = unlisten;
-    }).catch(() => {});
+    }).catch((e) => appLogger.error("terminal", "Failed to close floating terminal", { error: String(e) }));
 
     onCleanup(() => unlistenClose?.());
   });

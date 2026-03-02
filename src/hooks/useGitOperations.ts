@@ -1111,6 +1111,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       deps.setStatusInfo(`Checked out ${branchName}`);
       await refreshAllBranchStatsAndLists();
     } catch (err) {
+      appLogger.error("git", "Failed to checkout remote branch", { error: String(err) });
       deps.setStatusInfo(`Checkout failed: ${err}`);
     }
   };

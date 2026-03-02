@@ -278,7 +278,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           const initCmd = terminalsStore.get(props.id)?.pendingInitCommand;
           if (initCmd && sessionId) {
             terminalsStore.update(props.id, { pendingInitCommand: null });
-            pty.write(sessionId, initCmd + "\r").catch(() => {});
+            pty.write(sessionId, initCmd + "\r").catch((e) => appLogger.error("terminal", "Failed to write init command", { error: String(e) }));
           }
         } else {
           idleTimer = setTimeout(checkIdle, 500 - elapsed);
@@ -1070,7 +1070,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const cmd = terminalsStore.get(props.id)?.pendingResumeCommand;
     if (cmd && sessionId) {
       terminalsStore.update(props.id, { pendingResumeCommand: null });
-      pty.write(sessionId, cmd + "\r").catch(() => {});
+      pty.write(sessionId, cmd + "\r").catch((e) => appLogger.error("terminal", "Failed to write resume command", { error: String(e) }));
     }
   };
 

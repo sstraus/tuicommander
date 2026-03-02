@@ -675,7 +675,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
 
   async function removeUpstream(id: string, name: string) {
     if (!confirm(`Remove upstream "${name}"?`)) return;
-    await rpc("delete_mcp_upstream_credential", { name }).catch(() => {});
+    await rpc("delete_mcp_upstream_credential", { name }).catch((e) => appLogger.error("settings", "Failed to delete MCP upstream credential", { error: String(e) }));
     await saveUpstreams(upstreams().filter(s => s.id !== id));
   }
 
