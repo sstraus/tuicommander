@@ -27,8 +27,9 @@ export function buildAgentLaunchCommand(command: string, agentSessionId?: string
  * For all other cases, falls back to the static resumeCommand from AGENTS config.
  */
 export function buildResumeCommand(agentType: AgentType, agentSessionId?: string | null): string | null {
-  if (agentType === "claude" && agentSessionId) {
-    return `claude --resume ${agentSessionId}`;
+  if (agentSessionId) {
+    const disc = AGENTS[agentType].sessionDiscovery;
+    if (disc) return disc.resumeWithId(agentSessionId);
   }
   return AGENTS[agentType].resumeCommand;
 }

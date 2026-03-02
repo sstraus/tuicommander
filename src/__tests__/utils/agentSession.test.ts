@@ -51,16 +51,24 @@ describe("buildResumeCommand", () => {
     expect(buildResumeCommand("claude")).toBe("claude --continue");
   });
 
-  it("returns static resume for gemini regardless of UUID", () => {
+  it("returns id-based resume for gemini with UUID", () => {
+    expect(buildResumeCommand("gemini", "abc-123")).toBe("gemini --resume abc-123");
+  });
+
+  it("falls back to static resume for gemini without UUID", () => {
     expect(buildResumeCommand("gemini", null)).toBe("gemini --resume");
   });
 
-  it("returns static resume for aider", () => {
-    expect(buildResumeCommand("aider", null)).toBe("aider --restore-chat-history");
+  it("returns id-based resume for codex with UUID", () => {
+    expect(buildResumeCommand("codex", "abc-123")).toBe("codex resume abc-123");
   });
 
-  it("returns static resume for codex", () => {
+  it("falls back to static resume for codex without UUID", () => {
     expect(buildResumeCommand("codex", null)).toBe("codex resume --last");
+  });
+
+  it("returns static resume for aider (no session discovery)", () => {
+    expect(buildResumeCommand("aider", null)).toBe("aider --restore-chat-history");
   });
 
   it("returns static resume for amp", () => {
