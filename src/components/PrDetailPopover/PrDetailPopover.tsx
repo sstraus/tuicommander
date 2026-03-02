@@ -1,4 +1,4 @@
-import { Component, Show, onMount, onCleanup } from "solid-js";
+import { Component, Show, createMemo, onMount, onCleanup } from "solid-js";
 import { githubStore } from "../../stores/github";
 import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
@@ -51,6 +51,12 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     document.removeEventListener("keydown", handleKeyDown);
   });
 
+  const repoColor = createMemo(() =>
+    repoSettingsStore.get(props.repoPath)?.color
+      || repositoriesStore.getGroupForRepo(props.repoPath)?.color
+      || undefined,
+  );
+
   const stateClass = () => {
     if (prData()?.is_draft) return "draft";
     const state = prData()?.state?.toUpperCase();
@@ -78,11 +84,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
               {/* Repo label: GitHub owner/repo (from PR url) with optional repo color */}
               <div
                 class={s.repo}
-                style={(() => {
-                  const color = repoSettingsStore.get(props.repoPath)?.color
-                    || repositoriesStore.getGroupForRepo(props.repoPath)?.color;
-                  return color ? { color } : undefined;
-                })()}
+                style={repoColor() ? { color: repoColor() } : undefined}
               >
                 {extractGithubRepo(pr().url)
                   ?? repositoriesStore.get(props.repoPath)?.displayName

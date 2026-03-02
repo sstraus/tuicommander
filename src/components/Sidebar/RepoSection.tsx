@@ -162,6 +162,9 @@ export const BranchItem: Component<{
 }> = (props) => {
   const ctxMenu = createContextMenu();
 
+  const pr = createMemo(() => activePrStatus(props.repoPath, props.branch.name));
+  const checks = createMemo(() => githubStore.getCheckSummary(props.repoPath, props.branch.name));
+
   const hasActivity = () =>
     props.branch.terminals.some((id) => terminalsStore.get(id)?.activity);
 
@@ -262,32 +265,31 @@ export const BranchItem: Component<{
       <Show when={props.branch.isMerged && !props.branch.isMain}>
         <span class={s.mergedBadge} title="Branch is merged into main">Merged</span>
       </Show>
-      {(() => {
-        const pr = activePrStatus(props.repoPath, props.branch.name);
-        if (!pr) return null;
-        const checks = () => githubStore.getCheckSummary(props.repoPath, props.branch.name);
-        const isTerminal = () => {
-          const st = pr.state?.toLowerCase();
-          return st === "closed" || st === "merged";
-        };
-        return (
-          <span
-            class={isTerminal() ? s.prBadgeDimmed : undefined}
-            onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}
-          >
-            <PrStateBadge
-              prNumber={pr.number}
-              state={pr.state}
-              isDraft={pr.is_draft}
-              mergeable={pr.mergeable}
-              reviewDecision={pr.review_decision}
-              ciPassed={checks()?.passed}
-              ciFailed={checks()?.failed}
-              ciPending={checks()?.pending}
-            />
-          </span>
-        );
-      })()}
+      <Show when={pr()}>
+        {(activePr) => {
+          const isTerminal = () => {
+            const st = activePr().state?.toLowerCase();
+            return st === "closed" || st === "merged";
+          };
+          return (
+            <span
+              class={isTerminal() ? s.prBadgeDimmed : undefined}
+              onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}
+            >
+              <PrStateBadge
+                prNumber={activePr().number}
+                state={activePr().state}
+                isDraft={activePr().is_draft}
+                mergeable={activePr().mergeable}
+                reviewDecision={activePr().review_decision}
+                ciPassed={checks()?.passed}
+                ciFailed={checks()?.failed}
+                ciPending={checks()?.pending}
+              />
+            </span>
+          );
+        }}
+      </Show>
       <StatsBadge additions={props.branch.additions} deletions={props.branch.deletions} />
       <Show when={props.shortcutIndex !== undefined} fallback={
         <div class={s.branchActions}>

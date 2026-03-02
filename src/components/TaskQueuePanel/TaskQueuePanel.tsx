@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { Component, For, Show, createSignal, createMemo } from "solid-js";
 import { tasksStore, type TaskData, type TaskStatus } from "../../stores/tasks";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -30,11 +30,11 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 export const TaskQueuePanel: Component<TaskQueuePanelProps> = (props) => {
   const [draggedId, setDraggedId] = createSignal<string | null>(null);
 
-  const tasks = () => tasksStore.getAll();
-  const pendingTasks = () => tasks().filter((t) => t.status === "pending");
-  const runningTasks = () => tasks().filter((t) => t.status === "running");
-  const completedTasks = () =>
-    tasks().filter((t) => t.status === "completed" || t.status === "failed" || t.status === "cancelled");
+  const tasks = createMemo(() => tasksStore.getAll());
+  const pendingTasks = createMemo(() => tasks().filter((t) => t.status === "pending"));
+  const runningTasks = createMemo(() => tasks().filter((t) => t.status === "running"));
+  const completedTasks = createMemo(() =>
+    tasks().filter((t) => t.status === "completed" || t.status === "failed" || t.status === "cancelled"));
 
   const handleDragStart = (e: DragEvent, taskId: string) => {
     setDraggedId(taskId);
