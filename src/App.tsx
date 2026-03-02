@@ -451,7 +451,7 @@ const App: Component = () => {
           terminalsStore.update(termId, {
             name: agentConfig.name,
             nameIsCustom: true,
-            pendingResumeCommand: finalCmd,
+            pendingInitCommand: finalCmd,
             claudeSessionId,
           });
         }
