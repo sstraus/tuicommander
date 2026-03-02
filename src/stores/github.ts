@@ -231,6 +231,18 @@ function createGitHubStore() {
     const paths = repositoriesStore.getPaths();
     if (paths.length === 0) return;
 
+    // Check circuit breaker upfront to avoid wasted IPC calls
+    try {
+      const circuitOk = await invoke<boolean>("check_github_circuit");
+      if (!circuitOk) {
+        currentInterval = MAX_INTERVAL;
+        scheduleNext();
+        return;
+      }
+    } catch {
+      // If the check itself fails, proceed normally
+    }
+
     const includeMerged = isStartupPoll;
     let hitRateLimit = false;
     let batchSucceeded = false;
@@ -248,9 +260,9 @@ function createGitHubStore() {
       batchSucceeded = true;
     } catch (err) {
       const errStr = String(err);
-      if (errStr.startsWith("rate-limit:")) {
+      if (errStr.startsWith("rate-limit:") || errStr.includes("circuit breaker open")) {
         hitRateLimit = true;
-        appLogger.warn("github", `Rate limited on batch poll: ${errStr}`);
+        appLogger.warn("github", `GitHub API unavailable: ${errStr}`);
       } else {
         appLogger.warn("github", "Batch PR poll failed, falling back to per-repo calls", err);
       }
@@ -261,13 +273,16 @@ function createGitHubStore() {
       await Promise.all(
         paths.map(async (path) => {
           try {
-            const statuses = await invoke<BranchPrStatus[]>("get_repo_pr_statuses", { path });
+            const statuses = await invoke<BranchPrStatus[]>("get_repo_pr_statuses", {
+              path,
+              includeMerged: includeMerged || undefined,
+            });
             updateRepoData(path, statuses);
           } catch (err) {
             const errStr = String(err);
-            if (errStr.startsWith("rate-limit:")) {
+            if (errStr.startsWith("rate-limit:") || errStr.includes("circuit breaker open")) {
               hitRateLimit = true;
-              appLogger.warn("github", `Rate limited: ${errStr}`);
+              appLogger.warn("github", `GitHub API unavailable: ${errStr}`);
             } else {
               appLogger.error("github", `Failed to poll PR statuses for ${path}`, err);
             }
@@ -276,13 +291,12 @@ function createGitHubStore() {
       );
     }
 
-    // Fetch remote tracking status (ahead/behind) for all repos in parallel — cached in Rust
-    await Promise.all(paths.map(pollRemoteStatus));
-
     if (hitRateLimit) {
       currentInterval = MAX_INTERVAL;
       scheduleNext();
     } else {
+      // Only fetch remote status (git ahead/behind) when API is reachable
+      await Promise.all(paths.map(pollRemoteStatus));
       currentInterval = document.hidden ? HIDDEN_INTERVAL : BASE_INTERVAL;
       persistPrState();
     }
@@ -298,12 +312,21 @@ function createGitHubStore() {
 
     const timerId = window.setTimeout(async () => {
       pendingRepoPollTimers.delete(path);
+      // Skip if circuit breaker is known to be open (avoid wasted IPC)
+      if (currentInterval === MAX_INTERVAL) return;
       try {
         const statuses = await invoke<BranchPrStatus[]>("get_repo_pr_statuses", { path });
         updateRepoData(path, statuses);
         await pollRemoteStatus(path);
       } catch (err) {
-        appLogger.debug("github", `Immediate poll failed for ${path}`, err);
+        const errStr = String(err);
+        if (errStr.includes("circuit breaker open") || errStr.startsWith("rate-limit:")) {
+          // API unavailable — back off the main poller too
+          currentInterval = MAX_INTERVAL;
+          scheduleNext();
+        } else {
+          appLogger.debug("github", `Immediate poll failed for ${path}`, err);
+        }
       }
     }, 2000);
 

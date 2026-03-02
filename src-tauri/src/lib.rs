@@ -769,6 +769,7 @@ pub fn run() {
             git::check_is_main_branch,
             git::get_initials,
             git::run_git_command,
+            github::check_github_circuit,
             github::get_ci_checks,
             github::get_repo_pr_statuses,
             github::get_all_pr_statuses,

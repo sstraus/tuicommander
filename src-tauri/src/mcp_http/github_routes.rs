@@ -22,7 +22,7 @@ pub(super) async fn repo_pr_statuses(
 ) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
     let path = q.path;
-    match tokio::task::spawn_blocking(move || crate::github::get_repo_pr_statuses_impl(&path, &state)).await {
+    match tokio::task::spawn_blocking(move || crate::github::get_repo_pr_statuses_impl(&path, false, &state)).await {
         Ok(statuses) => Json(statuses).into_response(),
         Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
     }

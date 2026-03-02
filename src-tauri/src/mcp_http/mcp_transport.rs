@@ -539,6 +539,7 @@ fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Va
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             let statuses = crate::github::get_repo_pr_statuses_impl(
                 &path,
+                false,
                 state,
             );
             to_json_or_error(statuses)

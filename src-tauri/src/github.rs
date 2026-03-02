@@ -679,6 +679,7 @@ fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
 
 /// Parse a GraphQL batch PR response into BranchPrStatus entries.
 /// Input: full GraphQL response JSON (with data.repository.pullRequests.nodes).
+#[cfg(test)]
 pub(crate) fn parse_graphql_prs(response: &serde_json::Value) -> Vec<BranchPrStatus> {
     let nodes = match response["data"]["repository"]["pullRequests"]["nodes"].as_array() {
         Some(arr) => arr,
@@ -688,8 +689,7 @@ pub(crate) fn parse_graphql_prs(response: &serde_json::Value) -> Vec<BranchPrSta
     nodes.iter().filter_map(parse_pr_node).collect()
 }
 
-/// GraphQL query for batch PR data with CI check summary counts.
-/// Uses checkRunCountsByState for efficient aggregation (no per-check iteration).
+#[cfg(test)]
 const BATCH_PR_QUERY: &str = r#"
 query RepoPRs($owner: String!, $repo: String!, $first: Int!) {
   repository(owner: $owner, name: $repo) {
@@ -736,6 +736,7 @@ fn get_github_remote_url(repo_path: &Path) -> Option<String> {
 /// Returns Err for rate limits (prefixed with "rate-limit:") so callers can handle them.
 pub(crate) fn get_repo_pr_statuses_impl(
     path: &str,
+    include_merged: bool,
     state: &AppState,
 ) -> Result<Vec<BranchPrStatus>, String> {
     let repo_path = PathBuf::from(path);
@@ -754,36 +755,46 @@ pub(crate) fn get_repo_pr_statuses_impl(
         None => return Ok(vec![]),
     };
 
-    let variables = serde_json::json!({
-        "owner": owner,
-        "repo": repo,
-        "first": 20,
-    });
+    // Reuse the multi-repo query builder for consistent state filtering
+    let repos = vec![(path.to_string(), owner, repo)];
+    let (query, aliases) = build_multi_repo_pr_query(&repos, include_merged);
 
-    match graphql_with_retry(state, BATCH_PR_QUERY, variables) {
-        Ok(response) => Ok(parse_graphql_prs(&response)),
+    match graphql_with_retry(state, &query, serde_json::Value::Null) {
+        Ok(response) => {
+            let alias = &aliases[0].0;
+            let nodes = response["data"][alias]["pullRequests"]["nodes"]
+                .as_array()
+                .map(|arr| arr.iter().filter_map(parse_pr_node).collect())
+                .unwrap_or_default();
+            Ok(nodes)
+        }
         Err(e) if e.starts_with("rate-limit:") => Err(e),
         Err(e) => {
-            eprintln!("[github] GraphQL batch PR query failed: {e}");
+            eprintln!("[github] GraphQL PR query failed for {path}: {e}");
             Ok(vec![])
         }
     }
 }
 
-/// Get all open PR statuses for a repository (cached, 30s TTL).
+/// Get PR statuses for a repository (cached, 30s TTL).
 /// Runs on a blocking thread to avoid freezing the UI on focus.
 #[tauri::command]
 pub(crate) async fn get_repo_pr_statuses(
     state: State<'_, Arc<AppState>>,
     path: String,
+    include_merged: Option<bool>,
 ) -> Result<Vec<BranchPrStatus>, String> {
+    let include_merged = include_merged.unwrap_or(false);
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || {
-        if let Some(cached) = AppState::get_cached(&state.github_status_cache, &path, GITHUB_CACHE_TTL) {
-            return Ok(cached);
+        // Skip cache when include_merged is true (startup poll only)
+        if !include_merged {
+            if let Some(cached) = AppState::get_cached(&state.github_status_cache, &path, GITHUB_CACHE_TTL) {
+                return Ok(cached);
+            }
         }
 
-        let statuses = get_repo_pr_statuses_impl(&path, &state)?;
+        let statuses = get_repo_pr_statuses_impl(&path, include_merged, &state)?;
         AppState::set_cached(&state.github_status_cache, path.clone(), statuses.clone());
         Ok(statuses)
     })
@@ -958,6 +969,15 @@ pub(crate) async fn get_github_status(
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))
+}
+
+/// Check if the GitHub API circuit breaker is open (rate-limited or failure-based).
+/// Returns Ok(true) if requests are allowed, Ok(false) if blocked.
+#[tauri::command]
+pub(crate) async fn check_github_circuit(
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    Ok(state.github_circuit_breaker.check().is_ok())
 }
 
 const PR_CHECKS_QUERY: &str = r#"
