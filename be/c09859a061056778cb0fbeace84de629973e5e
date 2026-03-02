@@ -1,0 +1,25 @@
+src/components/TabBar/TabBar.tsx
+  c8cd94e095227087 405-409
+src-tauri/src/pty.rs
+  c8cd94e095227087 276-280,282,284,286-292,1258-1293
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "bec09859a061056778cb0fbeace84de629973e5e",
+  "prompts": {
+    "c8cd94e095227087": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7548d0d3-365e-4ba8-b520-25179e736afe",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 56,
+      "total_deletions": 5,
+      "accepted_lines": 68,
+      "overriden_lines": 0
+    }
+  }
+}
