@@ -987,6 +987,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
   onCleanup(() => {
     clearTimeout(resizeTimer);
     clearTimeout(resizeObserverTimer);
+    // Transition shellState to "idle" if it's currently "busy", so the
+    // debounce cooldown starts. Without this, shellState stays "busy"
+    // forever in the store because unsubscribePty() below stops PTY
+    // output and the idleTimer (if pending) is about to be cancelled.
+    if (terminalsStore.get(props.id)?.shellState === "busy") {
+      terminalsStore.update(props.id, { shellState: "idle" });
+    }
     clearTimeout(idleTimer);
     resizeObserver?.disconnect();
     unsubscribePty?.();
