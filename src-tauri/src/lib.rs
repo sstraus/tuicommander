@@ -783,6 +783,7 @@ pub fn run() {
             worktree::checkout_remote_branch,
             worktree::detect_orphan_worktrees,
             worktree::remove_orphan_worktree,
+            worktree::run_setup_script,
             clear_caches,
             get_local_ip,
             get_local_ips,
