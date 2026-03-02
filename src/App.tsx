@@ -74,6 +74,7 @@ import { useAgentPolling } from "./hooks/useAgentPolling";
 import { useAgentDetection } from "./hooks/useAgentDetection";
 import { agentConfigsStore } from "./stores/agentConfigs";
 import { AGENTS } from "./agents";
+import { buildAgentLaunchCommand } from "./utils/agentSession";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { initApp } from "./hooks/useAppInit";
 import { startAutoFetch } from "./hooks/useAutoFetch";
@@ -442,12 +443,15 @@ const App: Component = () => {
       const runConfigs = agentConfigsStore.getRunConfigs(agent.type);
 
       const launchAgent = async (cmd: string) => {
+        const claudeSessionId = agent.type === "claude" ? crypto.randomUUID() : null;
+        const finalCmd = buildAgentLaunchCommand(cmd, claudeSessionId);
         const termId = await gitOps.handleAddTerminalToBranch(repoPath, branchName);
         if (termId) {
           terminalsStore.update(termId, {
             name: agentConfig.name,
             nameIsCustom: true,
-            pendingResumeCommand: cmd,
+            pendingResumeCommand: finalCmd,
+            claudeSessionId,
           });
         }
       };
