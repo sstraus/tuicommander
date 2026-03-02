@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Session-aware Claude Code resume** — When launching Claude Code from the sidebar, TUICommander now assigns a unique session UUID (`--session-id`) and persists it across branch switches and app restarts. On restore, uses `--resume <uuid>` for exact session matching instead of `--continue`, which would always resume the most recent session. Legacy terminals without a UUID gracefully fall back to `--continue`
 - **MCP bridge as Tauri sidecar** — `tuic-mcp-bridge` ships with the app and auto-configures MCP on first launch for Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini
 - **MCP `tools/list_changed` SSE notification** — Connected MCP clients receive live tool-list updates when upstream tool lists change
 - **MCP Proxy Hub** — TUICommander now aggregates upstream MCP servers and exposes them through its own `/mcp` endpoint. Configure HTTP and stdio upstream servers in Settings > Services > MCP Upstreams; their tools are automatically available to any MCP client (Claude Code, Cursor, VS Code) connecting to TUIC. Features: tool namespace prefixing (`{upstream}__{tool}`), per-upstream tool allow/deny filters, circuit breaker (3 failures → open, 1s–60s exponential backoff, 10 retries → permanent failure), 60-second health checks, hot-reload on config save, credential storage via OS keyring, environment sanitization for stdio children, SSE status events, and self-referential URL detection

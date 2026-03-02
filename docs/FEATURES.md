@@ -319,7 +319,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 ### 6.1 Supported Agents
 | Agent | Binary | Resume Command |
 |-------|--------|----------------|
-| Claude Code | `claude` | `claude --continue` |
+| Claude Code | `claude` | `claude --resume <uuid>` (session-aware) / `claude --continue` (fallback) |
 | Gemini CLI | `gemini` | `gemini --resume` |
 | OpenCode | `opencode` | `opencode -c` |
 | Aider | `aider` | `aider --restore-chat-history` |
