@@ -1,0 +1,29 @@
+src/components/Toolbar/Toolbar.tsx
+  c8cd94e095227087 1,84-86,90
+src/components/TaskQueuePanel/TaskQueuePanel.tsx
+  c8cd94e095227087 1,33-37
+src/components/Sidebar/RepoSection.tsx
+  c8cd94e095227087 165-167,268-269,271,280-284,291-292
+src/components/PrDetailPopover/PrDetailPopover.tsx
+  c8cd94e095227087 1,54-59,87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "71b81ad2e9815e9c08116cc0de55c43a7cfe6d5b",
+  "prompts": {
+    "c8cd94e095227087": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7548d0d3-365e-4ba8-b520-25179e736afe",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 47,
+      "total_deletions": 43,
+      "accepted_lines": 32,
+      "overriden_lines": 0
+    }
+  }
+}
