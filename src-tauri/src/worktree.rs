@@ -905,6 +905,37 @@ pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str) -> Result<St
     Ok(archive_dest.to_string_lossy().to_string())
 }
 
+/// Run a shell script in a given directory and return exit code + output.
+///
+/// Used to execute setup/run scripts after worktree creation.
+/// The script is passed to `sh -c` (Unix) or `cmd /C` (Windows).
+#[tauri::command]
+pub(crate) fn run_setup_script(script: String, cwd: String) -> Result<serde_json::Value, String> {
+    let cwd_path = Path::new(&cwd);
+    if !cwd_path.exists() {
+        return Err(format!("Working directory does not exist: {cwd}"));
+    }
+
+    let (shell, flag) = if cfg!(target_os = "windows") {
+        ("cmd", "/C")
+    } else {
+        ("sh", "-c")
+    };
+
+    let output = std::process::Command::new(shell)
+        .arg(flag)
+        .arg(&script)
+        .current_dir(cwd_path)
+        .output()
+        .map_err(|e| format!("Failed to execute script: {e}"))?;
+
+    Ok(serde_json::json!({
+        "exit_code": output.status.code().unwrap_or(-1),
+        "stdout": String::from_utf8_lossy(&output.stdout),
+        "stderr": String::from_utf8_lossy(&output.stderr),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1447,5 +1478,53 @@ branch refs/heads/feat
         let dirty = check_worktree_dirty(repo_path, "bare-branch".to_string());
         assert!(dirty.is_ok());
         assert!(!dirty.unwrap(), "Branch without worktree should not be dirty");
+    }
+
+    #[test]
+    fn run_setup_script_success() {
+        let dir = TempDir::new().expect("temp dir");
+        let cwd = dir.path().to_string_lossy().to_string();
+
+        let result = run_setup_script("echo hello".to_string(), cwd).expect("should succeed");
+        assert_eq!(result["exit_code"], 0);
+        assert_eq!(result["stdout"].as_str().unwrap().trim(), "hello");
+        assert_eq!(result["stderr"].as_str().unwrap(), "");
+    }
+
+    #[test]
+    fn run_setup_script_failure() {
+        let dir = TempDir::new().expect("temp dir");
+        let cwd = dir.path().to_string_lossy().to_string();
+
+        let result = run_setup_script("exit 42".to_string(), cwd).expect("should return result even on non-zero exit");
+        assert_eq!(result["exit_code"], 42);
+    }
+
+    #[test]
+    fn run_setup_script_captures_stderr() {
+        let dir = TempDir::new().expect("temp dir");
+        let cwd = dir.path().to_string_lossy().to_string();
+
+        let result = run_setup_script("echo oops >&2; exit 1".to_string(), cwd).expect("should return result");
+        assert_eq!(result["exit_code"], 1);
+        assert_eq!(result["stderr"].as_str().unwrap().trim(), "oops");
+    }
+
+    #[test]
+    fn run_setup_script_invalid_cwd() {
+        let result = run_setup_script("echo hi".to_string(), "/nonexistent/path/xyz".to_string());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not exist"));
+    }
+
+    #[test]
+    fn run_setup_script_runs_in_cwd() {
+        let dir = TempDir::new().expect("temp dir");
+        fs::write(dir.path().join("marker.txt"), "found").expect("write marker");
+        let cwd = dir.path().to_string_lossy().to_string();
+
+        let result = run_setup_script("cat marker.txt".to_string(), cwd).expect("should succeed");
+        assert_eq!(result["exit_code"], 0);
+        assert_eq!(result["stdout"].as_str().unwrap().trim(), "found");
     }
 }
