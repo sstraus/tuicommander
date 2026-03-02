@@ -443,6 +443,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const existingSessionId = terminalsStore.get(props.id)?.sessionId;
   if (existingSessionId) {
     sessionId = existingSessionId;
+    // Reset stale shellState from previous mount — if the PTY is actually busy,
+    // the next output chunk will set it back to "busy" within milliseconds.
+    if (terminalsStore.get(props.id)?.shellState === "busy") {
+      terminalsStore.update(props.id, { shellState: "idle" });
+    }
     attachSessionListeners(existingSessionId).catch((err) =>
       appLogger.error("terminal", "Failed to attach session listeners", err),
     );
