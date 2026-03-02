@@ -23,6 +23,7 @@ App.tsx (central orchestrator)
 │   ├── MarkdownTab/          # Individual markdown file tab
 │   ├── NotesPanel/           # Ideas/notes panel with edit, send, delete
 │   ├── FileBrowserPanel/     # File tree browser
+│   ├── PlanPanel/            # Plan file browser (repo-scoped, from activity store)
 │   ├── ClaudeUsageDashboard/ # Claude API usage dashboard (SolidJS)
 │   └── StatusBar/            # Status messages, agent badge, toggles
 │       └── ZoomIndicator     # Font size display
@@ -215,6 +216,7 @@ Native SolidJS component (not a plugin) showing Claude API usage data. Displayed
 | Markdown Panel | `Cmd+M` | `uiStore.toggleMarkdownPanel()` |
 | Notes/Ideas Panel | `Cmd+N` | `uiStore.toggleNotesPanel()` |
 | File Browser | `Cmd+E` | `uiStore.toggleFileBrowserPanel()` |
+| Plan Panel | `Cmd+P` | `uiStore.togglePlanPanel()` |
 | Settings | `Cmd+,` | Local state in App.tsx |
 | Help | `Cmd+?` | Local state in App.tsx |
 | Prompt Library | `Cmd+K` | `promptLibraryStore.toggleDrawer()` |

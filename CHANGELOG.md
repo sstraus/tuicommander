@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **MCP workspace tool** — New `workspace` MCP tool with `list` (all open repos with groups, worktrees, branch, dirty status) and `active` (currently focused repo) actions
 - **MCP notify tool** — New `notify` MCP tool with `toast` (temporary notification with info/warn/error level) and `confirm` (blocking confirmation dialog, localhost-only) actions
 - **Plugin context menu actions** — Plugins can register custom actions in the terminal right-click "Actions" submenu via `host.registerTerminalAction()`. Actions receive a context snapshot (sessionId, repoPath) captured at right-click time, support dynamic `disabled` callbacks, and auto-cleanup on plugin unload. Requires new `ui:context-menu` capability
+- **Plan Panel** (`Cmd+P`) — New right-side panel showing plan files for the active repository. Plans are detected from agent output via structured events, filtered by active repo, and auto-open as background tabs on first detection. Frontmatter is stripped from rendered content. Panel visibility and width persist across restarts
 
 ### Changed
 - **MCP Unix socket transport** — MCP server now uses Unix domain socket (`<config_dir>/mcp.sock`) for local connections; port-based infrastructure removed. TCP port only for remote access

@@ -736,6 +736,7 @@ All data persisted to platform config directory via Rust:
 | `Cmd+M` | Toggle markdown panel |
 | `Cmd+N` | Toggle Ideas panel |
 | `Cmd+E` | Toggle file browser |
+| `Cmd+P` | Toggle plan panel |
 | `Cmd+,` | Open settings |
 | `Cmd+?` | Toggle help panel |
 | `Cmd+K` | Prompt library |
