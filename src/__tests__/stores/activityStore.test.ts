@@ -157,6 +157,21 @@ describe("activityStore", () => {
       activityStore.dismissItem("s3");
       expect(activityStore.getForSection("plan")).toHaveLength(0);
     });
+
+    it("filters by repoPath when provided", () => {
+      activityStore.addItem(makeItem({ id: "rp1", sectionId: "plan", repoPath: "/repo/a" }));
+      activityStore.addItem(makeItem({ id: "rp2", sectionId: "plan", repoPath: "/repo/b" }));
+      activityStore.addItem(makeItem({ id: "rp3", sectionId: "plan" })); // no repoPath
+      const filtered = activityStore.getForSection("plan", "/repo/a");
+      expect(filtered.map((i) => i.id)).toEqual(["rp1"]);
+    });
+
+    it("returns all section items when repoPath filter is omitted", () => {
+      activityStore.addItem(makeItem({ id: "rp4", sectionId: "plan", repoPath: "/repo/a" }));
+      activityStore.addItem(makeItem({ id: "rp5", sectionId: "plan", repoPath: "/repo/b" }));
+      const all = activityStore.getForSection("plan");
+      expect(all).toHaveLength(2);
+    });
   });
 
   describe("getLastItem", () => {
@@ -181,6 +196,17 @@ describe("activityStore", () => {
       activityStore.addItem(makeItem({ id: "l5" }));
       activityStore.dismissItem("l5");
       expect(activityStore.getLastItem()).toBeNull();
+    });
+
+    it("filters by repoPath when provided", () => {
+      activityStore.addItem(makeItem({ id: "lr1", repoPath: "/repo/a" }));
+      activityStore.addItem(makeItem({ id: "lr2", repoPath: "/repo/b" }));
+      expect(activityStore.getLastItem("/repo/a")?.id).toBe("lr1");
+    });
+
+    it("returns null when no items match the repoPath", () => {
+      activityStore.addItem(makeItem({ id: "lr3", repoPath: "/repo/a" }));
+      expect(activityStore.getLastItem("/repo/z")).toBeNull();
     });
   });
 
@@ -299,6 +325,15 @@ describe("activityStore persistence", () => {
       await store.hydrate();
       expect(store.getActive()).toHaveLength(1);
       expect(store.getActive()[0].title).toBe("Fresh");
+    });
+
+    it("preserves repoPath through persist/hydrate cycle", async () => {
+      const saved = [
+        { id: "rph", pluginId: "p1", sectionId: "plan", title: "Plan", icon: "<svg/>", dismissible: true, dismissed: false, createdAt: 1000, repoPath: "/repo/project" },
+      ];
+      mockInvoke.mockResolvedValueOnce({ items: saved });
+      await store.hydrate();
+      expect(store.getActive()[0].repoPath).toBe("/repo/project");
     });
   });
 

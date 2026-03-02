@@ -167,14 +167,21 @@ function createActivityStore() {
     return state.items.filter((i) => !i.dismissed);
   }
 
-  function getForSection(sectionId: string): ActivityItem[] {
-    return state.items.filter((i) => i.sectionId === sectionId && !i.dismissed);
+  function getForSection(sectionId: string, repoPath?: string): ActivityItem[] {
+    return state.items.filter((i) => {
+      if (i.sectionId !== sectionId || i.dismissed) return false;
+      if (repoPath !== undefined) return i.repoPath === repoPath;
+      return true;
+    });
   }
 
-  function getLastItem(): ActivityItem | null {
-    const active = getActive();
-    if (active.length === 0) return null;
-    return active.reduce((latest, item) =>
+  function getLastItem(repoPath?: string): ActivityItem | null {
+    let candidates = getActive();
+    if (repoPath !== undefined) {
+      candidates = candidates.filter((i) => i.repoPath === repoPath);
+    }
+    if (candidates.length === 0) return null;
+    return candidates.reduce((latest, item) =>
       item.createdAt >= latest.createdAt ? item : latest,
     );
   }

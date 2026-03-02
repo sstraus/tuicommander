@@ -57,6 +57,8 @@ export interface ActivityItem {
   icon: string;
   /** CSS color for the icon (e.g. "var(--fg-muted)", "#3fb950") */
   iconColor?: string;
+  /** Absolute path of the repository this item belongs to (for repo-scoped filtering) */
+  repoPath?: string;
   /** Whether the user can dismiss this item individually */
   dismissible: boolean;
   /** Whether this item has been dismissed by the user */
