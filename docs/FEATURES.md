@@ -152,7 +152,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 ## 3. Panels
 
 ### 3.1 Panel System
-- File Browser, Markdown, and Diff panels are **mutually exclusive** — opening one closes the others
+- File Browser, Markdown, Diff, and Plan panels are **mutually exclusive** — opening one closes the others
 - Ideas panel is independent (can be open alongside any of the above)
 - Subtle fade transition when closing side panels (opacity + transform animation)
 - All panels have drag-resize handles on their left edge (200-800px)
@@ -249,6 +249,16 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Global error capture: uncaught exceptions and unhandled promise rejections are automatically logged
 - Ring buffer of 1000 entries (oldest dropped when full), Rust-backed — warn/error entries survive webview reloads via `push_log`/`get_logs` Tauri commands
 - Also accessible via Command Palette: "Error log"
+
+### 3.13 Plan Panel (`Cmd+P`)
+- Lists active plan files for the current repository from the activity store
+- Plans are detected via structured `plan-file` events from the output parser
+- Click a plan to open it as a virtual markdown tab (frontmatter auto-stripped)
+- Plan count badge in the header
+- Repo-scoped: only shows plans belonging to the active repository
+- Auto-open: new plans are opened as background tabs on first detection (no focus change)
+- Mutually exclusive with Markdown, Diff, and File Browser panels
+- Panel width and visibility persist across restarts via `UIPrefsConfig`
 
 ---
 
