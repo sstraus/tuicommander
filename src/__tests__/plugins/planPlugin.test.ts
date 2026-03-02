@@ -264,6 +264,95 @@ describe("plan MarkdownProvider", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Metadata enrichment
+// ---------------------------------------------------------------------------
+
+describe("plan-file metadata enrichment", () => {
+  beforeEach(() => {
+    pluginRegistry.register(planPlugin);
+  });
+
+  it("enriches item title with H1 from file content", async () => {
+    mockedInvoke.mockResolvedValue("# Implementation Plan: My Feature\n\n**Status:** Draft\n**Estimated Effort:** M");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/my-feature.md" }, "s1");
+    await flushMicrotasks();
+    // Wait for the async enrichment
+    await flushMicrotasks();
+    const item = activityStore.getForSection("plan")[0];
+    expect(item.title).toBe("My Feature");
+  });
+
+  it("populates metadata with status, effort, priority, story", async () => {
+    mockedInvoke.mockResolvedValue("# Plan: Cool Feature\n\n**Status:** In Progress\n**Estimated Effort:** L-XL\n**Priority:** P1\n**Story:** 420-e0ea");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/cool.md" }, "s1");
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const item = activityStore.getForSection("plan")[0];
+    expect(item.metadata).toEqual({
+      status: "In Progress",
+      effort: "L-XL",
+      priority: "P1",
+      story: "420-e0ea",
+    });
+  });
+
+  it("uses YAML frontmatter status over inline status", async () => {
+    mockedInvoke.mockResolvedValue("---\nstatus: completed\n---\n# Plan\n\n**Status:** Draft\n**Estimated Effort:** S");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/done.md" }, "s1");
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const item = activityStore.getForSection("plan")[0];
+    expect(item.metadata?.status).toBe("completed");
+  });
+
+  it("falls back to basename when file has no H1", async () => {
+    mockedInvoke.mockResolvedValue("No heading here\n\n**Status:** Draft");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/orphan.md" }, "s1");
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const item = activityStore.getForSection("plan")[0];
+    expect(item.title).toBe("orphan");
+  });
+
+  it("keeps basename title when file read fails", async () => {
+    mockedInvoke.mockRejectedValue(new Error("file not found"));
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/missing.md" }, "s1");
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const item = activityStore.getForSection("plan")[0];
+    expect(item.title).toBe("missing");
+  });
+
+  it("enriches hydrated items on plugin load", async () => {
+    // Add an item without metadata (simulating hydration from disk)
+    activityStore.addItem({
+      id: "plan:/repo/plans/old.md",
+      pluginId: "plan",
+      sectionId: "plan",
+      title: "old",
+      subtitle: "/repo/plans/old.md",
+      icon: "<svg/>",
+      dismissible: true,
+      repoPath: "/repo",
+    });
+    // Route plugin_read_file to return plan content, all others resolve normally
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "plugin_read_file") return Promise.resolve("# Implementation Plan: Old Feature\n\n**Status:** Draft\n**Estimated Effort:** S");
+      return Promise.resolve(undefined);
+    });
+
+    pluginRegistry.register(planPlugin);
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const item = activityStore.getForSection("plan").find((i) => i.id === "plan:/repo/plans/old.md");
+    expect(item?.title).toBe("Old Feature");
+    expect(item?.metadata?.status).toBe("Draft");
+    expect(item?.metadata?.effort).toBe("S");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Auto-open new plan in markdown tab
 // ---------------------------------------------------------------------------
 

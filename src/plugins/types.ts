@@ -66,6 +66,11 @@ export interface ActivityItem {
   /** Unix timestamp when this item was created (set by store) */
   createdAt: number;
   /**
+   * Arbitrary key-value metadata for plugin-specific display.
+   * Serializable (persisted with the item). Plugins populate and panels render.
+   */
+  metadata?: Record<string, string>;
+  /**
    * URI resolved by markdownProviderRegistry when user clicks the item.
    * Format: "scheme:path?key=value" — e.g. "plan:file?path=/foo/bar.md"
    * Mutually exclusive with onClick.

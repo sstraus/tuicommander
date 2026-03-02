@@ -31,7 +31,14 @@ import { activityStore } from "../../stores/activityStore";
 import { mdTabsStore } from "../../stores/mdTabs";
 
 /** Add a plan activity item to the store */
-function addPlanItem(opts: { id: string; title: string; repoPath?: string; contentUri?: string; subtitle?: string }) {
+function addPlanItem(opts: {
+  id: string;
+  title: string;
+  repoPath?: string;
+  contentUri?: string;
+  subtitle?: string;
+  metadata?: Record<string, string>;
+}) {
   activityStore.addItem({
     id: opts.id,
     pluginId: "plan",
@@ -42,6 +49,7 @@ function addPlanItem(opts: { id: string; title: string; repoPath?: string; conte
     repoPath: opts.repoPath,
     contentUri: opts.contentUri,
     subtitle: opts.subtitle,
+    metadata: opts.metadata,
   });
 }
 
@@ -128,14 +136,124 @@ describe("PlanPanel plan items", () => {
     expect(badge!.textContent).toBe("2");
   });
 
-  it("shows plan subtitle (file path)", () => {
-    addPlanItem({ id: "plan:/repo/plans/x.md", title: "X", repoPath: "/repo", subtitle: "/repo/plans/x.md" });
+  it("shows plan title (not file path) when metadata present", () => {
+    addPlanItem({
+      id: "plan:/repo/plans/x.md",
+      title: "My Cool Feature",
+      repoPath: "/repo",
+      subtitle: "/repo/plans/x.md",
+      metadata: { status: "Draft" },
+    });
 
     const { container } = render(() => (
       <PlanPanel visible={true} repoPath="/repo" onClose={() => {}} />
     ));
 
-    expect(container.textContent).toContain("/repo/plans/x.md");
+    expect(container.textContent).toContain("My Cool Feature");
+    expect(container.textContent).toContain("Draft");
+    // Path is no longer shown in the panel UI
+    expect(container.textContent).not.toContain("/repo/plans/x.md");
+  });
+
+  it("shows status badge with text", () => {
+    addPlanItem({
+      id: "plan:/repo/a.md",
+      title: "My Feature",
+      repoPath: "/repo",
+      metadata: { status: "Draft", effort: "M" },
+    });
+
+    const { container } = render(() => (
+      <PlanPanel visible={true} repoPath="/repo" onClose={() => {}} />
+    ));
+
+    const badge = container.querySelector("[data-testid='plan-status-badge']");
+    expect(badge).not.toBeNull();
+    expect(badge!.textContent).toBe("Draft");
+  });
+
+  it("shows effort badge", () => {
+    addPlanItem({
+      id: "plan:/repo/a.md",
+      title: "My Feature",
+      repoPath: "/repo",
+      metadata: { status: "Draft", effort: "L-XL" },
+    });
+
+    const { container } = render(() => (
+      <PlanPanel visible={true} repoPath="/repo" onClose={() => {}} />
+    ));
+
+    const badge = container.querySelector("[data-testid='plan-effort-badge']");
+    expect(badge).not.toBeNull();
+    expect(badge!.textContent).toBe("L-XL");
+  });
+
+  it("shows priority badge when present", () => {
+    addPlanItem({
+      id: "plan:/repo/a.md",
+      title: "My Feature",
+      repoPath: "/repo",
+      metadata: { status: "Draft", priority: "P1" },
+    });
+
+    const { container } = render(() => (
+      <PlanPanel visible={true} repoPath="/repo" onClose={() => {}} />
+    ));
+
+    const badge = container.querySelector("[data-testid='plan-priority-badge']");
+    expect(badge).not.toBeNull();
+    expect(badge!.textContent).toBe("P1");
+  });
+
+  it("shows story badge when present", () => {
+    addPlanItem({
+      id: "plan:/repo/a.md",
+      title: "My Feature",
+      repoPath: "/repo",
+      metadata: { status: "Draft", story: "420-e0ea" },
+    });
+
+    const { container } = render(() => (
+      <PlanPanel visible={true} repoPath="/repo" onClose={() => {}} />
+    ));
+
+    const badge = container.querySelector("[data-testid='plan-story-badge']");
+    expect(badge).not.toBeNull();
+    expect(badge!.textContent).toContain("420-e0ea");
+  });
+
+  it("omits metadata badges when no metadata present", () => {
+    addPlanItem({
+      id: "plan:/repo/a.md",
+      title: "My Feature",
+      repoPath: "/repo",
+    });
+
+    const { container } = render(() => (
+      <PlanPanel visible={true} repoPath="/repo" onClose={() => {}} />
+    ));
+
+    expect(container.querySelector("[data-testid='plan-status-badge']")).toBeNull();
+    expect(container.querySelector("[data-testid='plan-effort-badge']")).toBeNull();
+  });
+
+  it("applies completed status class to status badge", () => {
+    addPlanItem({
+      id: "plan:/repo/a.md",
+      title: "Done Feature",
+      repoPath: "/repo",
+      metadata: { status: "completed" },
+    });
+
+    const { container } = render(() => (
+      <PlanPanel visible={true} repoPath="/repo" onClose={() => {}} />
+    ));
+
+    const badge = container.querySelector("[data-testid='plan-status-badge']");
+    expect(badge).not.toBeNull();
+    // The completed status should have a distinct CSS class
+    expect(badge!.classList.toString()).toMatch(/completed/i);
   });
 
   it("includes plans without repoPath (backward compat)", () => {

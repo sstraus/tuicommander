@@ -12,6 +12,14 @@ export interface PlanPanelProps {
   onClose: () => void;
 }
 
+/** Normalize status strings to a CSS class key. */
+function statusClass(status: string): string {
+  const lower = status.toLowerCase();
+  if (lower === "completed" || lower === "done") return s.statusCompleted;
+  if (lower === "in progress" || lower === "in-progress" || lower === "active") return s.statusInProgress;
+  return s.statusDraft;
+}
+
 export const PlanPanel: Component<PlanPanelProps> = (props) => {
   const planItems = createMemo(() => {
     if (!props.repoPath) return [];
@@ -57,8 +65,32 @@ export const PlanPanel: Component<PlanPanelProps> = (props) => {
                 <div class={s.planIcon} innerHTML={item.icon} />
                 <div class={s.planInfo}>
                   <div class={s.planTitle}>{item.title}</div>
-                  <Show when={item.subtitle}>
-                    <div class={s.planSubtitle}>{item.subtitle}</div>
+                  <Show when={item.metadata}>
+                    <div class={s.planMeta}>
+                      <Show when={item.metadata?.status}>
+                        <span
+                          class={cx(s.badge, statusClass(item.metadata!.status!))}
+                          data-testid="plan-status-badge"
+                        >
+                          {item.metadata!.status}
+                        </span>
+                      </Show>
+                      <Show when={item.metadata?.effort}>
+                        <span class={cx(s.badge, s.badgeEffort)} data-testid="plan-effort-badge">
+                          {item.metadata!.effort}
+                        </span>
+                      </Show>
+                      <Show when={item.metadata?.priority}>
+                        <span class={cx(s.badge, s.badgePriority)} data-testid="plan-priority-badge">
+                          {item.metadata!.priority}
+                        </span>
+                      </Show>
+                      <Show when={item.metadata?.story}>
+                        <span class={cx(s.badge, s.badgeStory)} data-testid="plan-story-badge">
+                          #{item.metadata!.story}
+                        </span>
+                      </Show>
+                    </div>
                   </Show>
                 </div>
               </div>

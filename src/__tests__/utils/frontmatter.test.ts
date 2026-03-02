@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFrontmatter } from "../../utils/frontmatter";
+import { parseFrontmatter, extractPlanMetadata } from "../../utils/frontmatter";
 
 describe("parseFrontmatter", () => {
   it("parses valid frontmatter with string values", () => {
@@ -148,5 +148,120 @@ Body`;
     const result = parseFrontmatter(input);
     // Should remain a string, not a Date object
     expect(result.data.created).toBe("2026-03-01");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractPlanMetadata
+// ---------------------------------------------------------------------------
+
+describe("extractPlanMetadata", () => {
+  it("extracts H1 title from markdown", () => {
+    const input = "# Implementation Plan: Auto-delete branch on PR close\n\n**Status:** Draft";
+    const meta = extractPlanMetadata(input);
+    expect(meta.title).toBe("Auto-delete branch on PR close");
+  });
+
+  it("strips common plan title prefixes", () => {
+    const input = "# Implementation Plan: My Feature\n\nBody";
+    expect(extractPlanMetadata(input).title).toBe("My Feature");
+  });
+
+  it("strips 'Plan:' prefix", () => {
+    const input = "# Plan: Something Cool\n\nBody";
+    expect(extractPlanMetadata(input).title).toBe("Something Cool");
+  });
+
+  it("keeps title as-is when no prefix matches", () => {
+    const input = "# Frontend Performance Optimization Plan\n\nBody";
+    expect(extractPlanMetadata(input).title).toBe("Frontend Performance Optimization Plan");
+  });
+
+  it("returns null title when no H1 found", () => {
+    const input = "No heading here\n\nJust body text";
+    expect(extractPlanMetadata(input).title).toBeNull();
+  });
+
+  it("extracts status from inline bold markdown", () => {
+    const input = "# Plan\n\n**Status:** In Progress\n**Effort:** M";
+    const meta = extractPlanMetadata(input);
+    expect(meta.status).toBe("In Progress");
+  });
+
+  it("extracts status from YAML frontmatter (takes precedence)", () => {
+    const input = "---\nstatus: completed\n---\n# Plan\n\n**Status:** Draft";
+    const meta = extractPlanMetadata(input);
+    expect(meta.status).toBe("completed");
+  });
+
+  it("extracts effort from inline bold markdown", () => {
+    const input = "# Plan\n\n**Estimated Effort:** L-XL";
+    const meta = extractPlanMetadata(input);
+    expect(meta.effort).toBe("L-XL");
+  });
+
+  it("extracts priority from inline bold markdown", () => {
+    const input = "# Plan\n\n**Priority:** P1";
+    const meta = extractPlanMetadata(input);
+    expect(meta.priority).toBe("P1");
+  });
+
+  it("extracts story from inline bold markdown", () => {
+    const input = "# Plan\n\n**Story:** 420-e0ea";
+    const meta = extractPlanMetadata(input);
+    expect(meta.story).toBe("420-e0ea");
+  });
+
+  it("extracts created date from inline bold markdown", () => {
+    const input = "# Plan\n\n**Created:** 2026-02-28";
+    const meta = extractPlanMetadata(input);
+    expect(meta.created).toBe("2026-02-28");
+  });
+
+  it("extracts created date from YAML frontmatter", () => {
+    const input = "---\ncreated: 2026-02-28\n---\n# Plan";
+    const meta = extractPlanMetadata(input);
+    expect(meta.created).toBe("2026-02-28");
+  });
+
+  it("handles a full plan file with both frontmatter and inline metadata", () => {
+    const input = `---
+status: completed
+created: 2026-02-27
+completed_at: "2026-02-28T15:46:40.969Z"
+---
+# Implementation Plan: Auto-delete local branch when PR merged/closed
+
+**Created:** 2026-02-27
+**Status:** Draft
+**Story:** 420-e0ea
+**Estimated Effort:** M
+
+## Summary
+
+When the GitHub polling loop detects a PR...`;
+    const meta = extractPlanMetadata(input);
+    expect(meta.title).toBe("Auto-delete local branch when PR merged/closed");
+    expect(meta.status).toBe("completed"); // frontmatter wins
+    expect(meta.effort).toBe("M");
+    expect(meta.story).toBe("420-e0ea");
+    expect(meta.created).toBe("2026-02-27"); // frontmatter wins over inline
+  });
+
+  it("returns all null for empty input", () => {
+    const meta = extractPlanMetadata("");
+    expect(meta.title).toBeNull();
+    expect(meta.status).toBeNull();
+    expect(meta.effort).toBeNull();
+    expect(meta.priority).toBeNull();
+    expect(meta.story).toBeNull();
+    expect(meta.created).toBeNull();
+  });
+
+  it("handles file with only frontmatter, no body", () => {
+    const input = "---\nstatus: draft\n---\n";
+    const meta = extractPlanMetadata(input);
+    expect(meta.status).toBe("draft");
+    expect(meta.title).toBeNull();
   });
 });

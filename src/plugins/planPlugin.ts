@@ -4,7 +4,7 @@ import { terminalsStore } from "../stores/terminals";
 import { activityStore } from "../stores/activityStore";
 import { mdTabsStore } from "../stores/mdTabs";
 import { appLogger } from "../stores/appLogger";
-import { parseFrontmatter } from "../utils/frontmatter";
+import { parseFrontmatter, extractPlanMetadata } from "../utils/frontmatter";
 import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -138,15 +138,15 @@ class PlanPlugin implements TuiPlugin {
         host.removeItem(evictId);
       }
 
-      const title = displayName(absolutePath);
+      const fallbackTitle = displayName(absolutePath);
       const uri = contentUri(absolutePath);
 
-      // Add or update (addItem deduplicates by id)
+      // Add immediately with fallback title (sync), then enrich with file metadata (async)
       host.addItem({
         id,
         pluginId: PLUGIN_ID,
         sectionId: SECTION_ID,
-        title,
+        title: fallbackTitle,
         subtitle: absolutePath,
         icon: ICON_SVG,
         dismissible: true,
@@ -156,11 +156,44 @@ class PlanPlugin implements TuiPlugin {
 
       // Auto-open new plans belonging to the active repo as a background tab
       if (isNew && repoPath && repoPath === repositoriesStore.state.activeRepoPath) {
-        mdTabsStore.addVirtualBackground(title, uri);
+        mdTabsStore.addVirtualBackground(fallbackTitle, uri);
       }
+
+      // Async: read the file and enrich with extracted metadata
+      this.enrichItem(id, absolutePath, host);
     });
 
+    // Enrich any hydrated items that have no metadata yet
+    for (const item of existingItems) {
+      if (!item.metadata) {
+        const path = item.subtitle; // subtitle holds the absolute path
+        if (path) this.enrichItem(item.id, path, host);
+      }
+    }
+
     host.registerMarkdownProvider("plan", planMarkdownProvider);
+  }
+
+  /** Read a plan file and update the ActivityItem with extracted metadata. */
+  private enrichItem(itemId: string, absolutePath: string, host: PluginHost): void {
+    invoke<string>("plugin_read_file", { path: absolutePath, pluginId: PLUGIN_ID })
+      .then((raw) => {
+        const meta = extractPlanMetadata(raw);
+        const updates: Record<string, string> = {};
+        if (meta.status) updates.status = meta.status;
+        if (meta.effort) updates.effort = meta.effort;
+        if (meta.priority) updates.priority = meta.priority;
+        if (meta.story) updates.story = meta.story;
+        if (meta.created) updates.created = meta.created;
+
+        host.updateItem(itemId, {
+          title: meta.title ?? displayName(absolutePath),
+          metadata: Object.keys(updates).length > 0 ? updates : undefined,
+        });
+      })
+      .catch(() => {
+        // File read failed — keep fallback title, no metadata
+      });
   }
 
   onunload(): void {
