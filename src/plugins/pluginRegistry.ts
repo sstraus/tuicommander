@@ -388,24 +388,6 @@ function createPluginRegistry() {
 
       // -- Tier 3c: Status bar ticker --
 
-      postTickerMessage(options) {
-        requireCapability(pluginId, capabilities, "ui:ticker");
-        statusBarTicker.addMessage({
-          id: options.id,
-          pluginId,
-          text: options.text,
-          icon: options.icon,
-          priority: options.priority ?? 0,
-          ttlMs: options.ttlMs ?? 60_000,
-          onClick: options.onClick,
-        });
-      },
-
-      removeTickerMessage(id: string) {
-        requireCapability(pluginId, capabilities, "ui:ticker");
-        statusBarTicker.removeMessage(id, pluginId);
-      },
-
       setTicker(options) {
         requireCapability(pluginId, capabilities, "ui:ticker");
         statusBarTicker.addMessage({
@@ -674,7 +656,6 @@ function createPluginRegistry() {
     lineBuffers.delete(sessionId);
   }
 
-  /** Remove all plugins and registrations (for testing). */
   /** Notify all state change listeners of a terminal/branch state change */
   function notifyStateChange(event: StateChangeEvent): void {
     for (const { callback } of stateChangeListeners) {
@@ -687,6 +668,7 @@ function createPluginRegistry() {
     }
   }
 
+  /** Remove all plugins and registrations (for testing). */
   function clear(): void {
     for (const id of [...plugins.keys()]) {
       unregister(id);
