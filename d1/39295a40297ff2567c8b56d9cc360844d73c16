@@ -1,0 +1,37 @@
+src/__tests__/components/PlanPanel.test.tsx
+  c8cd94e095227087 39-40,52,139,142,144-145,152-155,158-256
+src/__tests__/plugins/planPlugin.test.ts
+  c8cd94e095227087 267-354
+src/plugins/planPlugin.ts
+  c8cd94e095227087 7,141,144,149,159,161-163,166-173,177-198
+src/components/PlanPanel/PlanPanel.tsx
+  c8cd94e095227087 15-22,68-92
+src/__tests__/utils/frontmatter.test.ts
+  c8cd94e095227087 2,153-267
+src/plugins/types.ts
+  c8cd94e095227087 69-72
+src/components/PlanPanel/PlanPanel.module.css
+  c8cd94e095227087 34,36,55,69-76,79-81,83-86,89-121
+src/utils/frontmatter.ts
+  c8cd94e095227087 57-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "d139295a40297ff2567c8b56d9cc360844d73c16",
+  "prompts": {
+    "c8cd94e095227087": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7548d0d3-365e-4ba8-b520-25179e736afe",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 559,
+      "total_deletions": 20,
+      "accepted_lines": 547,
+      "overriden_lines": 0
+    }
+  }
+}
