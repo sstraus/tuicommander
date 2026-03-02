@@ -1,0 +1,40 @@
+src/stores/updater.ts
+  08bbcbd815fb92f9 104
+src/__tests__/stores/updater.test.ts
+  08bbcbd815fb92f9 118-121
+.github/workflows/nightly.yml
+  08bbcbd815fb92f9 28,30-31,37,39,41,145,154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "82dc110841c0c730c089ce6cac1afa2fedc2cb24",
+  "prompts": {
+    "08bbcbd815fb92f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "70ced487-2afd-44ee-b764-391cc8aac120",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 19,
+      "total_deletions": 9,
+      "accepted_lines": 19,
+      "overriden_lines": 0
+    },
+    "9391906e2518348a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c62acd64-bb36-46eb-b9fb-f1501b220c4e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 30,
+      "total_deletions": 0,
+      "accepted_lines": 30,
+      "overriden_lines": 0
+    }
+  }
+}
