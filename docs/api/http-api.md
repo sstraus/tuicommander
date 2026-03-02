@@ -250,6 +250,22 @@ GET /repo/summary?path=/path/to/repo
 
 Aggregate snapshot: worktree paths, merged branches, and per-path diff stats in one round-trip. Replaces 3+ separate IPC calls.
 
+### Repo Structure (Progressive Phase 1)
+
+```
+GET /repo/structure?path=/path/to/repo
+```
+
+Returns `{ "worktree_paths": { "branch": "/path", ... }, "merged_branches": ["branch", ...] }`. Fast path — no diff stats computation.
+
+### Repo Diff Stats (Progressive Phase 2)
+
+```
+GET /repo/diff-stats/batch?path=/path/to/repo
+```
+
+Returns `{ "diff_stats": { "/path": { "additions": N, "deletions": N }, ... }, "last_commit_ts": { "branch": N, ... } }`. Slow path — computes per-worktree diff stats and last commit timestamps.
+
 ### Local Branches
 
 ```

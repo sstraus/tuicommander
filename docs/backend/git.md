@@ -36,6 +36,16 @@ Every git subprocess invocation goes through `git_cmd(cwd: &Path) -> GitCmd`. Th
 | `get_changed_files` | `(path: String) -> Vec<ChangedFile>` | List changed files with per-file stats |
 | `get_file_diff` | `(path: String, file: String) -> String` | Diff for a single file |
 
+### Repository Summary
+
+| Command | Signature | Description |
+|---------|-----------|-------------|
+| `get_repo_summary` | `(repo_path: String) -> RepoSummary` | Aggregate snapshot: worktree paths, merged branches, diff stats, timestamps |
+| `get_repo_structure` | `(repo_path: String) -> RepoStructure` | Fast: worktree paths + merged branches only |
+| `get_repo_diff_stats` | `(repo_path: String) -> RepoDiffStats` | Slow: per-worktree diff stats + last commit timestamps |
+
+The frontend uses `get_repo_structure` (Phase 1) and `get_repo_diff_stats` (Phase 2) for progressive loading — UI rows appear immediately, stats fill in later. `get_repo_summary` remains for backward compatibility.
+
 ### Branch Operations
 
 | Command | Signature | Description |
@@ -74,6 +84,24 @@ struct ChangedFile {
     status: String,     // "M" (modified), "A" (added), "D" (deleted), etc.
     additions: u32,     // Lines added
     deletions: u32,     // Lines deleted
+}
+```
+
+### RepoStructure
+
+```rust
+struct RepoStructure {
+    worktree_paths: HashMap<String, String>,  // branch → worktree path
+    merged_branches: Vec<String>,             // branches merged into default
+}
+```
+
+### RepoDiffStats
+
+```rust
+struct RepoDiffStats {
+    diff_stats: HashMap<String, DiffStats>,       // worktree_path → additions/deletions
+    last_commit_ts: HashMap<String, Option<i64>>,  // branch → unix timestamp (seconds)
 }
 ```
 
