@@ -20,6 +20,8 @@ const BRANCH_ICON_CLASSES: Record<string, string> = {
   main: s.branchIconMain,
   worktree: s.branchIconWorktree,
   question: s.branchIconQuestion,
+  activity: s.branchIconActivity,
+  idle: s.branchIconIdle,
 };
 
 const PR_BADGE_CLASSES: Record<string, string> = {
@@ -35,23 +37,31 @@ const PR_BADGE_CLASSES: Record<string, string> = {
   "ci-pending": s.prCiPending,
 };
 
-/** Branch icon component — shows ? when any terminal in the branch awaits input.
+/** Branch icon component — icon shape and color driven by terminal state.
  *
- *  Icon/color logic:
- *  - Main worktree + main branch → star, yellow (--warning)
- *  - Main worktree + non-main branch (after switch) → branch icon, yellow (--warning)
- *  - Linked worktree → worktree fork icon, green (--success)
+ *  Icon shapes:
+ *  - Main worktree + main branch → star
+ *  - Main worktree + non-main branch (after switch) → branch icon
+ *  - Linked worktree → worktree fork icon
  *  - Shell (non-git dir) → terminal icon
- *  - Question (awaiting input) → "?" with attention color (overrides all)
- *  - Activity → accent color pulse (overrides base via CSS)
+ *  - Question (awaiting input) → "?" (overrides all)
+ *
+ *  Color priority (highest wins):
+ *  1. question  → --attention (pulsing)
+ *  2. activity  → --activity  (pulsing)
+ *  3. busy      → --activity  (pulsing)
+ *  4. idle      → --success
+ *  5. base      → --warning (main) or --success (worktree)
  */
 export const BranchIcon: Component<{
   isMainBranch: boolean;
   isMainWorktree: boolean;
   isShell?: boolean;
   hasQuestion?: boolean;
+  hasActivity?: boolean;
+  hasBusy?: boolean;
+  hasIdle?: boolean;
 }> = (props) => {
-  /** Which icon shape to render */
   const iconShape = () => {
     if (props.hasQuestion) return "question";
     if (props.isShell) return "shell";
@@ -60,9 +70,12 @@ export const BranchIcon: Component<{
     return "worktree";
   };
 
-  /** Which color class to apply (events override via CSS) */
+  /** Single source of truth for icon color — priority cascade */
   const colorClass = () => {
     if (props.hasQuestion) return "question";
+    if (props.hasActivity) return "activity";
+    if (props.hasBusy) return "activity";
+    if (props.hasIdle) return "idle";
     if (props.isMainBranch) return "main";
     return "worktree";
   };
@@ -79,13 +92,11 @@ export const BranchIcon: Component<{
             <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M9.2 1.2v4.4L13 3.2a1.3 1.3 0 1 1 1.3 2.3L10.5 8l3.8 2.5a1.3 1.3 0 1 1-1.3 2.3L9.2 10.4v4.4a1.2 1.2 0 0 1-2.4 0v-4.4L3 13a1.3 1.3 0 1 1-1.3-2.3L5.5 8 1.7 5.5A1.3 1.3 0 0 1 3 3.2l3.8 2.4V1.2a1.2 1.2 0 0 1 2.4 0z"/></svg>
           );
           case "worktree": return (
-            /* Linked worktree icon: split branch — vertical trunk with a fork */
             <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
               <path d="M5 1.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm0 10a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm6-4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM5 5v2.5a2 2 0 0 0 2 2h2.5M5 10.5V8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
           );
           default: return (
-            /* Branch icon (main worktree on non-main branch) */
             <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/></svg>
           );
         }
@@ -165,8 +176,14 @@ export const BranchItem: Component<{
   const pr = createMemo(() => activePrStatus(props.repoPath, props.branch.name));
   const checks = createMemo(() => githubStore.getCheckSummary(props.repoPath, props.branch.name));
 
+  // Sidebar icon reflects live shell state, not the "unread" activity flag.
+  // A terminal that is shellState=idle should show idle even if activity=true
+  // (the activity flag only means the tab hasn't been viewed yet).
   const hasActivity = () =>
-    props.branch.terminals.some((id) => terminalsStore.get(id)?.activity);
+    props.branch.terminals.some((id) => {
+      const t = terminalsStore.get(id);
+      return t?.activity && t.shellState !== "idle";
+    });
 
   const hasIdle = () =>
     !hasActivity() && props.branch.terminals.some((id) => terminalsStore.get(id)?.shellState === "idle");
@@ -243,7 +260,7 @@ export const BranchItem: Component<{
 
   return (
     <div
-      class={cx(s.branchItem, props.isActive && s.active, hasActivity() && s.hasActivity, hasBusy() && s.shellBusy, hasIdle() && s.shellIdle)}
+      class={cx(s.branchItem, props.isActive && s.active)}
       onClick={props.onSelect}
       onContextMenu={ctxMenu.open}
     >
@@ -252,6 +269,9 @@ export const BranchItem: Component<{
         isMainWorktree={props.branch.worktreePath === props.repoPath}
         isShell={props.branch.isShell}
         hasQuestion={hasQuestion()}
+        hasActivity={hasActivity()}
+        hasBusy={hasBusy()}
+        hasIdle={hasIdle()}
       />
       <div class={s.branchContent}>
         <span

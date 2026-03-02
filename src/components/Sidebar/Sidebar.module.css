@@ -393,27 +393,20 @@
   color: var(--success);
 }
 
-.shellBusy .branchIcon {
+/* Terminal state colors — applied directly via BranchIcon colorClass prop */
+.branchIconActivity {
   color: var(--activity);
   animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
-.hasActivity .branchIcon {
-  color: var(--activity);
-  animation: pulse-opacity 1.5s ease-in-out infinite;
+.branchIconIdle {
+  color: var(--success);
 }
 
 .branchIconQuestion {
   color: var(--attention);
   animation: pulse-opacity 1s ease-in-out infinite;
   font-weight: bold;
-}
-
-/* Question state overrides busy and activity indicators */
-.hasActivity .branchIconQuestion,
-.shellBusy .branchIconQuestion {
-  color: var(--attention);
-  animation: pulse-opacity 1s ease-in-out infinite;
 }
 
 .branchContent {
