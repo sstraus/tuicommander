@@ -82,10 +82,17 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   });
 
   const activeNotifs = createMemo(() => prNotificationsStore.getActive());
-  const activeActivityItems = createMemo(() => activityStore.getActive());
   const activitySections = createMemo(() => activityStore.getSections());
   const hasUpdate = () => updaterStore.state.available && !!updaterStore.state.version;
-  const totalBadgeCount = () => activeNotifs().length + activeActivityItems().length + (hasUpdate() ? 1 : 0);
+  /** Count only activity items visible in the popover (filtered by active repo) */
+  const visibleActivityCount = createMemo(() => {
+    const repoPath = repositoriesStore.state.activeRepoPath ?? undefined;
+    return activitySections().reduce(
+      (sum, section) => sum + activityStore.getForSection(section.id, repoPath).length,
+      0,
+    );
+  });
+  const totalBadgeCount = () => activeNotifs().length + visibleActivityCount() + (hasUpdate() ? 1 : 0);
   const hasAnyItems = () => totalBadgeCount() > 0;
   const lastItem = createMemo(() => getLastItemAcrossStores(repositoriesStore.state.activeRepoPath));
 
