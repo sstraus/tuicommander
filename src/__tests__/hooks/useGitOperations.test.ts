@@ -1140,6 +1140,79 @@ describe("useGitOperations", () => {
     });
   });
 
+  describe("handleCreateWorktreeFromBranch", () => {
+    it("runs setupScript after clone-worktree creation", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main");
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { setupScript: "npm ci" });
+
+      mockRepo.generateCloneBranchName.mockResolvedValue("main--wt-42");
+      mockRepo.createWorktree.mockResolvedValue({
+        name: "main--wt-42",
+        path: "/repo/wt/main--wt-42",
+        branch: "main--wt-42",
+        base_repo: "/repo",
+      });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+
+      await gitOps.handleCreateWorktreeFromBranch("/repo", "main");
+
+      expect(mockRepo.runSetupScript).toHaveBeenCalledWith("npm ci", "/repo/wt/main--wt-42");
+    });
+
+    it("sets pendingInitCommand from runScript on clone-worktree", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main");
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { runScript: "make dev" });
+
+      mockRepo.generateCloneBranchName.mockResolvedValue("main--wt-42");
+      mockRepo.createWorktree.mockResolvedValue({
+        name: "main--wt-42",
+        path: "/repo/wt/main--wt-42",
+        branch: "main--wt-42",
+        base_repo: "/repo",
+      });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+
+      await gitOps.handleCreateWorktreeFromBranch("/repo", "main");
+
+      const branch = repositoriesStore.get("/repo")?.branches["main--wt-42"];
+      expect(branch?.terminals.length).toBeGreaterThan(0);
+      const termId = branch!.terminals[0];
+      const terminal = terminalsStore.get(termId);
+      expect(terminal?.pendingInitCommand).toBe("make dev");
+    });
+
+    it("does not run scripts when none configured", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main");
+
+      mockRepo.generateCloneBranchName.mockResolvedValue("main--wt-42");
+      mockRepo.createWorktree.mockResolvedValue({
+        name: "main--wt-42",
+        path: "/repo/wt/main--wt-42",
+        branch: "main--wt-42",
+        base_repo: "/repo",
+      });
+      mockRepo.getDiffStats.mockResolvedValue({ additions: 0, deletions: 0 });
+
+      await gitOps.handleCreateWorktreeFromBranch("/repo", "main");
+
+      expect(mockRepo.runSetupScript).not.toHaveBeenCalled();
+      const branch = repositoriesStore.get("/repo")?.branches["main--wt-42"];
+      const termId = branch!.terminals[0];
+      expect(terminalsStore.get(termId)?.pendingInitCommand).toBeNull();
+    });
+  });
+
   describe("executeRunCommand", () => {
     it("creates terminal and waits for session to send command", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
