@@ -102,6 +102,19 @@ async fn plugin_data_http(
     }
 }
 
+/// Middleware that injects a synthetic `ConnectInfo<SocketAddr>` for Unix socket
+/// connections (which lack a TCP peer address). Always uses 127.0.0.1:0 since
+/// Unix sockets are inherently local.
+#[cfg(unix)]
+async fn inject_localhost_connect_info(
+    mut req: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::extract::connect_info::ConnectInfo;
+    req.extensions_mut().insert(ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 0))));
+    next.run(req).await
+}
+
 /// Build the router (exposed for testing).
 /// When `remote_auth` is true, applies Basic Auth middleware (requires ConnectInfo).
 /// When `mcp_enabled` is false, excludes MCP Streamable HTTP route (/mcp).
@@ -302,6 +315,10 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
             Ok(uds) => {
                 eprintln!("MCP HTTP: Unix socket listening on {}", sock.display());
                 let app = build_router(state.clone(), false, true);
+                // Unix socket connections don't have a SocketAddr, but many route
+                // handlers extract ConnectInfo<SocketAddr> for localhost guards.
+                // Inject a synthetic localhost ConnectInfo so those extractors work.
+                let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
                 Some(tokio::spawn(async move {
                     if let Err(e) = axum::serve(uds, app.into_make_service()).await {
                         eprintln!("MCP HTTP: Unix socket server error: {e}");
