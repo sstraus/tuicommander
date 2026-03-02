@@ -98,7 +98,7 @@ describe("PluginPanel", () => {
     render(() => <PluginPanel tab={tab} />);
 
     const messageCalls = addEventListenerSpy.mock.calls.filter(
-      ([event]) => event === "message",
+      ([event]: [string]) => event === "message",
     );
     expect(messageCalls).toHaveLength(1);
   });
@@ -109,13 +109,13 @@ describe("PluginPanel", () => {
 
     // Capture which handler was registered
     const [, registeredHandler] = addEventListenerSpy.mock.calls.find(
-      ([event]) => event === "message",
+      ([event]: [string]) => event === "message",
     )!;
 
     unmount();
 
     const removeCalls = removeEventListenerSpy.mock.calls.filter(
-      ([event]) => event === "message",
+      ([event]: [string]) => event === "message",
     );
     expect(removeCalls).toHaveLength(1);
     expect(removeCalls[0][1]).toBe(registeredHandler);
@@ -145,7 +145,7 @@ describe("PluginPanel", () => {
 
     // Get the registered handler
     const [, handler] = addEventListenerSpy.mock.calls.find(
-      ([event]) => event === "message",
+      ([event]: [string]) => event === "message",
     )!;
 
     // Simulate a message from an unknown source — handler guards on iframeRef.contentWindow

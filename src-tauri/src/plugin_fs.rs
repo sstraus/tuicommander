@@ -17,6 +17,40 @@ const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
 // Path validation
 // ---------------------------------------------------------------------------
 
+/// Test-only serialization lock for tests that use filesystem operations.
+/// Tests that set a home dir override acquire this lock first to prevent
+/// parallel interference with tests that use the real home dir.
+#[cfg(test)]
+static FS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Test-only override for the home directory used by path validation.
+/// Uses RwLock to avoid deadlock (write tests set it, effective_home_dir reads it).
+#[cfg(test)]
+static HOME_DIR_OVERRIDE: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+/// Set home dir override. Returns a guard that clears the override on drop
+/// and holds the serialization lock.
+#[cfg(test)]
+fn set_home_dir_override(dir: PathBuf) -> impl Drop {
+    let fs_guard = FS_TEST_LOCK.lock().unwrap();
+    *HOME_DIR_OVERRIDE.write().unwrap() = Some(dir);
+    struct Guard(std::sync::MutexGuard<'static, ()>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            *HOME_DIR_OVERRIDE.write().unwrap() = None;
+        }
+    }
+    Guard(fs_guard)
+}
+
+fn effective_home_dir() -> Result<PathBuf, String> {
+    #[cfg(test)]
+    if let Some(dir) = HOME_DIR_OVERRIDE.read().unwrap().clone() {
+        return dir.canonicalize().map_err(|e| format!("Failed to resolve home override: {e}"));
+    }
+    dirs::home_dir().ok_or("Cannot determine home directory".into())
+}
+
 /// Resolve and validate that a path is within $HOME.
 /// Returns the canonicalized path on success.
 fn validate_within_home(raw: &str) -> Result<PathBuf, String> {
@@ -34,7 +68,7 @@ fn validate_within_home(raw: &str) -> Result<PathBuf, String> {
         .canonicalize()
         .map_err(|e| format!("Failed to resolve path: {e}"))?;
 
-    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let home = effective_home_dir()?;
 
     if !canonical.starts_with(&home) {
         return Err("Path must be within the user's home directory".into());
@@ -325,7 +359,7 @@ pub async fn plugin_write_file(
         return Err("Path must be absolute".into());
     }
 
-    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let home = effective_home_dir()?;
 
     if file_path.exists() {
         let canonical = file_path
@@ -370,7 +404,7 @@ pub async fn plugin_rename_path(
         return Err("Destination path must be absolute".into());
     }
 
-    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let home = effective_home_dir()?;
 
     let to_parent = to_path.parent().ok_or("Cannot determine destination parent directory")?;
     if !to_parent.exists() {
@@ -409,8 +443,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_outside_home() {
-        // /tmp is typically not inside $HOME
-        // Skip this test if $HOME happens to be /tmp (unlikely)
+        let _guard = FS_TEST_LOCK.lock().unwrap();
         let home = dirs::home_dir().unwrap();
         if !Path::new("/tmp").starts_with(&home) {
             assert!(validate_within_home("/tmp").is_err());
@@ -419,6 +452,7 @@ mod tests {
 
     #[test]
     fn validate_accepts_home_dir() {
+        let _guard = FS_TEST_LOCK.lock().unwrap();
         let home = dirs::home_dir().unwrap();
         let result = validate_within_home(home.to_str().unwrap());
         assert!(result.is_ok());
@@ -426,6 +460,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_traversal() {
+        let _guard = FS_TEST_LOCK.lock().unwrap();
         let home = dirs::home_dir().unwrap();
         let traversal = format!("{}/../../../etc/passwd", home.display());
         assert!(validate_within_home(&traversal).is_err());
@@ -483,13 +518,10 @@ mod tests {
 
     #[test]
     fn tail_reads_entire_small_file() {
-        let home = dirs::home_dir().unwrap();
-        let test_file = home.join(".tuic-test-tail-small.txt");
-        // Skip test if we can't write to $HOME (e.g. sandbox restrictions)
-        if std::fs::write(&test_file, "line1\nline2\nline3\n").is_err() {
-            eprintln!("Skipping tail_reads_entire_small_file: cannot write to $HOME");
-            return;
-        }
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = set_home_dir_override(tmp.path().to_path_buf());
+        let test_file = tmp.path().join("tail-small.txt");
+        std::fs::write(&test_file, "line1\nline2\nline3\n").unwrap();
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(plugin_read_file_tail(
@@ -497,40 +529,32 @@ mod tests {
             1024,
             "test".to_string(),
         ));
-        let _ = std::fs::remove_file(&test_file);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "line1\nline2\nline3\n");
     }
 
     #[test]
     fn tail_reads_last_bytes_skipping_partial_line() {
-        let home = dirs::home_dir().unwrap();
-        let test_file = home.join(".tuic-test-tail-large.txt");
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = set_home_dir_override(tmp.path().to_path_buf());
+        let test_file = tmp.path().join("tail-large.txt");
         let content = "line1\nline2\nline3\nline4\nline5\n";
-        // Skip test if we can't write to $HOME (e.g. sandbox restrictions)
-        if std::fs::write(&test_file, content).is_err() {
-            eprintln!("Skipping tail_reads_last_bytes_skipping_partial_line: cannot write to $HOME");
-            return;
-        }
+        std::fs::write(&test_file, content).unwrap();
 
         let rt = tokio::runtime::Runtime::new().unwrap();
-        // Request last 12 bytes: "line4\nline5\n" is 12 chars
-        // Seek to len-12 = 18, which is at "4\nline5\n"
-        // First newline at position 1, skip to position 2: "line5\n"
         let result = rt.block_on(plugin_read_file_tail(
             test_file.to_string_lossy().to_string(),
             12,
             "test".to_string(),
         ));
-        let _ = std::fs::remove_file(&test_file);
         assert!(result.is_ok());
         let text = result.unwrap();
-        // Should have skipped partial "4\n" and returned "line5\n"
         assert_eq!(text, "line5\n");
     }
 
     #[test]
     fn tail_rejects_non_file() {
+        let _guard = FS_TEST_LOCK.lock().unwrap();
         let home = dirs::home_dir().unwrap();
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(plugin_read_file_tail(
@@ -566,9 +590,9 @@ mod tests {
 
     #[test]
     fn write_file_creates_new_file() {
-        let home = dirs::home_dir().unwrap();
-        let test_file = home.join(".tuic-test-write-new.txt");
-        let _ = std::fs::remove_file(&test_file);
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = set_home_dir_override(tmp.path().to_path_buf());
+        let test_file = tmp.path().join("write-new.txt");
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(plugin_write_file(
@@ -577,7 +601,6 @@ mod tests {
             "test".to_string(),
         ));
         let content = std::fs::read_to_string(&test_file).unwrap_or_default();
-        let _ = std::fs::remove_file(&test_file);
 
         assert!(result.is_ok(), "write failed: {:?}", result);
         assert_eq!(content, "hello write");
@@ -585,8 +608,9 @@ mod tests {
 
     #[test]
     fn write_file_overwrites_existing() {
-        let home = dirs::home_dir().unwrap();
-        let test_file = home.join(".tuic-test-write-overwrite.txt");
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = set_home_dir_override(tmp.path().to_path_buf());
+        let test_file = tmp.path().join("write-overwrite.txt");
         let _ = std::fs::write(&test_file, "old content");
 
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -596,7 +620,6 @@ mod tests {
             "test".to_string(),
         ));
         let content = std::fs::read_to_string(&test_file).unwrap_or_default();
-        let _ = std::fs::remove_file(&test_file);
 
         assert!(result.is_ok());
         assert_eq!(content, "new content");
@@ -616,6 +639,7 @@ mod tests {
 
     #[test]
     fn write_file_rejects_outside_home() {
+        let _guard = FS_TEST_LOCK.lock().unwrap();
         let home = dirs::home_dir().unwrap();
         if !Path::new("/tmp").starts_with(&home) {
             let rt = tokio::runtime::Runtime::new().unwrap();
@@ -631,8 +655,9 @@ mod tests {
 
     #[test]
     fn write_file_rejects_directory_overwrite() {
-        let home = dirs::home_dir().unwrap();
-        let test_dir = home.join(".tuic-test-write-dir");
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = set_home_dir_override(tmp.path().to_path_buf());
+        let test_dir = tmp.path().join("write-dir");
         let _ = std::fs::create_dir_all(&test_dir);
 
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -641,7 +666,6 @@ mod tests {
             "content".to_string(),
             "test".to_string(),
         ));
-        let _ = std::fs::remove_dir(&test_dir);
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("directory"));
@@ -651,11 +675,11 @@ mod tests {
 
     #[test]
     fn rename_moves_file() {
-        let home = dirs::home_dir().unwrap();
-        let from = home.join(".tuic-test-rename-from.txt");
-        let to = home.join(".tuic-test-rename-to.txt");
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = set_home_dir_override(tmp.path().to_path_buf());
+        let from = tmp.path().join("rename-from.txt");
+        let to = tmp.path().join("rename-to.txt");
         let _ = std::fs::write(&from, "rename me");
-        let _ = std::fs::remove_file(&to);
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(plugin_rename_path(
@@ -665,7 +689,6 @@ mod tests {
         ));
         let content = std::fs::read_to_string(&to).unwrap_or_default();
         let from_exists = from.exists();
-        let _ = std::fs::remove_file(&to);
 
         assert!(result.is_ok(), "rename failed: {:?}", result);
         assert_eq!(content, "rename me");
@@ -674,6 +697,7 @@ mod tests {
 
     #[test]
     fn rename_rejects_source_outside_home() {
+        let _guard = FS_TEST_LOCK.lock().unwrap();
         let home = dirs::home_dir().unwrap();
         if !Path::new("/tmp").starts_with(&home) {
             let rt = tokio::runtime::Runtime::new().unwrap();
@@ -688,8 +712,9 @@ mod tests {
 
     #[test]
     fn rename_rejects_relative_destination() {
-        let home = dirs::home_dir().unwrap();
-        let from = home.join(".tuic-test-rename-rel.txt");
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = set_home_dir_override(tmp.path().to_path_buf());
+        let from = tmp.path().join("rename-rel.txt");
         let _ = std::fs::write(&from, "test");
 
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -698,7 +723,6 @@ mod tests {
             "relative/dest.txt".to_string(),
             "test".to_string(),
         ));
-        let _ = std::fs::remove_file(&from);
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("absolute"));

@@ -28,7 +28,8 @@ export type AppLogSource =
   | "github"
   | "dictation"
   | "store"
-  | "config";
+  | "config"
+  | "settings";
 
 export interface AppLogEntry {
   id: number;

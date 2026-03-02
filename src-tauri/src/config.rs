@@ -2,6 +2,24 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// Test-only override for the config directory.
+#[cfg(test)]
+static CONFIG_DIR_OVERRIDE: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// Override the config directory for testing. Returns a guard that restores the
+/// original value when dropped.
+#[cfg(test)]
+pub(crate) fn set_config_dir_override(dir: PathBuf) -> impl Drop {
+    *CONFIG_DIR_OVERRIDE.lock().unwrap() = Some(dir);
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            *CONFIG_DIR_OVERRIDE.lock().unwrap() = None;
+        }
+    }
+    Guard
+}
+
 /// Get the config directory using platform-appropriate location.
 ///
 /// - macOS: `~/Library/Application Support/tuicommander/`
@@ -13,6 +31,10 @@ use std::path::PathBuf;
 ///   1. `~/.tui-commander/` (legacy dotdir)
 ///   2. `{platform_config}/tui-commander/` (old platform-dir name)
 pub(crate) fn config_dir() -> PathBuf {
+    #[cfg(test)]
+    if let Some(dir) = CONFIG_DIR_OVERRIDE.lock().unwrap().clone() {
+        return dir;
+    }
     let new_dir = dirs::config_dir()
         .map(|d| d.join("tuicommander"))
         .unwrap_or_else(legacy_dotdir);

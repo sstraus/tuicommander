@@ -339,14 +339,6 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn write_json(dir: &std::path::Path, name: &str, value: &serde_json::Value) {
-        let path = dir.join(name);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).unwrap();
-        }
-        std::fs::write(&path, serde_json::to_string_pretty(value).unwrap()).unwrap();
-    }
-
     #[test]
     fn unsupported_agent_returns_not_supported() {
         let status = get_agent_mcp_status("aider".to_string());

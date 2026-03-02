@@ -20,8 +20,6 @@ vi.mock("../../stores/userActivity", () => ({
 describe("activePrStatus / mergedPrGrace", () => {
   let activePrStatus: typeof import("../../utils/mergedPrGrace").activePrStatus;
   let _resetMergedActivityAccum: typeof import("../../utils/mergedPrGrace")._resetMergedActivityAccum;
-  let MERGED_GRACE_MS: typeof import("../../utils/mergedPrGrace").MERGED_GRACE_MS;
-
   beforeEach(async () => {
     vi.resetModules();
     vi.useFakeTimers();
@@ -43,7 +41,6 @@ describe("activePrStatus / mergedPrGrace", () => {
     const mod = await import("../../utils/mergedPrGrace");
     activePrStatus = mod.activePrStatus;
     _resetMergedActivityAccum = mod._resetMergedActivityAccum;
-    MERGED_GRACE_MS = mod.MERGED_GRACE_MS;
   });
 
   afterEach(() => {

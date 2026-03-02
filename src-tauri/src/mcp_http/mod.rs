@@ -1665,6 +1665,9 @@ mod tests {
     /// Changing disabled_native_tools via put_config fires mcp_tools_changed.
     #[tokio::test]
     async fn test_config_change_fires_tools_changed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+
         let state = test_state();
         let mut rx = state.mcp_tools_changed.subscribe();
 

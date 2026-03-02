@@ -788,10 +788,10 @@ pub(crate) async fn get_repo_pr_statuses(
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || {
         // Skip cache when include_merged is true (startup poll only)
-        if !include_merged {
-            if let Some(cached) = AppState::get_cached(&state.github_status_cache, &path, GITHUB_CACHE_TTL) {
-                return Ok(cached);
-            }
+        if !include_merged
+            && let Some(cached) = AppState::get_cached(&state.github_status_cache, &path, GITHUB_CACHE_TTL)
+        {
+            return Ok(cached);
         }
 
         let statuses = get_repo_pr_statuses_impl(&path, include_merged, &state)?;
