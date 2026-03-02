@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect, For, Show, onCleanup } from "solid-js";
+import { Component, createSignal, createEffect, createMemo, For, Show, onCleanup, onMount } from "solid-js";
 import { invoke } from "../../invoke";
 import s from "./ClaudeUsageDashboard.module.css";
 
@@ -201,7 +201,7 @@ const UsageChart: Component<{ timeline: TimelinePoint[]; days: number }> = (prop
   const [hoverIdx, setHoverIdx] = createSignal<number | null>(null);
 
   /** Compute chart data: map hour keys to x/y positions */
-  const chartData = () => {
+  const chartData = createMemo(() => {
     const data = props.timeline;
     if (data.length === 0) return { points: [] as ChartPoint[], yMax: 0, timeLabels: [] as { x: number; label: string }[] };
 
@@ -249,7 +249,7 @@ const UsageChart: Component<{ timeline: TimelinePoint[]; days: number }> = (prop
     }
 
     return { points, yMax, timeLabels: labels };
-  };
+  });
 
   /** Y gridlines */
   const yLines = () => {
@@ -455,24 +455,18 @@ export const ClaudeUsageDashboard: Component = () => {
     }
   };
 
-  // Initial load
-  createEffect(() => {
-    setLoading(true);
-    Promise.all([fetchApi(), fetchStats(scope()), fetchProjects(), fetchTimeline(scope())]).finally(() =>
-      setLoading(false),
-    );
+  // Fetch API usage and project list once on mount (not scope-dependent).
+  onMount(() => {
+    Promise.all([fetchApi(), fetchProjects()]);
   });
 
-  // Re-fetch stats when scope changes (not on initial mount — handled above)
-  let mounted = false;
+  // Re-fetch stats and timeline whenever scope changes.
   createEffect(() => {
     const currentScope = scope();
-    if (!mounted) {
-      mounted = true;
-      return;
-    }
-    fetchStats(currentScope);
-    fetchTimeline(currentScope);
+    setLoading(true);
+    Promise.all([fetchStats(currentScope), fetchTimeline(currentScope)]).finally(() =>
+      setLoading(false),
+    );
   });
 
   // Auto-refresh API + timeline every 5 minutes
