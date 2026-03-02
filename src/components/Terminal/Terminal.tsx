@@ -1100,6 +1100,24 @@ export const Terminal: Component<TerminalProps> = (props) => {
         ref={containerRef}
         class={s.content}
         style={{ width: "100%", height: "100%" }}
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = "copy"; }}
+        onDrop={async (e) => {
+          e.preventDefault();
+          const sid = sessionId;
+          if (!sid) return;
+          const files = e.dataTransfer?.files;
+          if (!files?.length) return;
+          // Write each dropped file path into the PTY so the running process
+          // (e.g. Claude Code) can reference them directly.
+          const paths = Array.from(files).map((f) => (f as any).path as string).filter(Boolean);
+          if (paths.length) {
+            try {
+              await pty.write(sid, paths.join(" "));
+            } catch (err) {
+              appLogger.error("terminal", "Failed to write dropped file paths", err);
+            }
+          }
+        }}
       />
     </div>
   );
