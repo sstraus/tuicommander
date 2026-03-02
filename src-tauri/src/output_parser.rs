@@ -806,16 +806,15 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Colorize `[intent: ...]` tokens in raw PTY output with ANSI yellow (dim).
-/// Called on the raw (ANSI-bearing) data before it is sent to xterm.js so the
-/// intent line stands out visually.  Only invoke when `parse()` returned an
-/// `Intent` event — avoids regex work on every chunk.
+/// Strip brackets from `[intent: ...]` tokens, keeping the text colorized yellow.
+/// `[[intent: Refactoring auth]]` becomes `\e[2;33mintent: Refactoring auth\e[0m`.
+/// Only invoke when `parse()` returned an Intent event to avoid regex on every chunk.
 pub fn colorize_intent(raw: &str) -> String {
     lazy_static::lazy_static! {
         static ref RAW_INTENT_RE: regex::Regex =
-            regex::Regex::new(r"(?:\[\[?|\x{27E6})intent:\s*.+?\s*(?:\]?\]|\x{27E7})").unwrap();
+            regex::Regex::new(r"(?:\[\[?|\x{27E6})(intent:\s*.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
     }
-    RAW_INTENT_RE.replace_all(raw, "\x1b[2;33m$0\x1b[0m").into_owned()
+    RAW_INTENT_RE.replace_all(raw, "\x1b[2;33m$1\x1b[0m").into_owned()
 }
 
 /// Detect agent-declared intent tokens: `[intent: <text>]`, `[[intent: <text>]]`,
@@ -2155,14 +2154,14 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_colorize_intent_single_brackets() {
         let raw = "Some output\n[intent: Refactoring auth]\nMore output";
         let colored = colorize_intent(raw);
-        assert_eq!(colored, "Some output\n\x1b[2;33m[intent: Refactoring auth]\x1b[0m\nMore output");
+        assert_eq!(colored, "Some output\n\x1b[2;33mintent: Refactoring auth\x1b[0m\nMore output");
     }
 
     #[test]
     fn test_colorize_intent_double_brackets() {
         let raw = "Some output\n[[intent: Refactoring auth]]\nMore output";
         let colored = colorize_intent(raw);
-        assert_eq!(colored, "Some output\n\x1b[2;33m[[intent: Refactoring auth]]\x1b[0m\nMore output");
+        assert_eq!(colored, "Some output\n\x1b[2;33mintent: Refactoring auth\x1b[0m\nMore output");
     }
 
     #[test]
