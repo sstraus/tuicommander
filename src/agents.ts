@@ -4,6 +4,12 @@ export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "
 /** Runtime array for validating backend strings against AgentType */
 export const AGENT_TYPES: readonly AgentType[] = ["claude", "gemini", "opencode", "aider", "codex", "amp", "cursor", "warp", "droid", "git"] as const;
 
+/** Session discovery config for agents that persist sessions as local files */
+export interface SessionDiscoveryConfig {
+  /** Build a resume command for a discovered session ID */
+  resumeWithId: (id: string) => string;
+}
+
 /** Agent configuration */
 export interface AgentConfig {
   type: AgentType;
@@ -11,6 +17,12 @@ export interface AgentConfig {
   binary: string;
   description: string;
   resumeCommand: string | null;
+  /**
+   * Session file discovery config. When set, TUICommander will scan the agent's
+   * session storage directory to find the session ID for manually-launched agents.
+   * Null for agents with no local session storage (cloud-only, single-file, SQLite, etc.).
+   */
+  sessionDiscovery: SessionDiscoveryConfig | null;
   spawnArgs: (prompt: string, options?: AgentSpawnOptions) => string[];
   outputFormat: "text" | "jsonl" | "markdown";
   detectPatterns: {
@@ -37,6 +49,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "claude",
     description: "Anthropic's Claude Code CLI",
     resumeCommand: "claude --continue",
+    sessionDiscovery: { resumeWithId: (id) => `claude --resume ${id}` },
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = [];
       if (options.printMode) args.push("--print");
@@ -75,6 +88,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "gemini",
     description: "Google's Gemini CLI",
     resumeCommand: "gemini --resume",
+    sessionDiscovery: { resumeWithId: (id) => `gemini --resume ${id}` },
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = [];
       if (options.model) args.push("--model", options.model);
@@ -108,6 +122,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "opencode",
     description: "OpenAI-based coding assistant",
     resumeCommand: "opencode -c",
+    sessionDiscovery: null, // sessions stored in SQLite DB — not yet supported
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = [];
       if (options.model) args.push("--model", options.model);
@@ -139,6 +154,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "aider",
     description: "AI pair programming in terminal",
     resumeCommand: "aider --restore-chat-history",
+    sessionDiscovery: null, // single .aider.chat.history.md per project, no session IDs
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = ["--yes-always"];
       if (options.model) args.push("--model", options.model);
@@ -172,6 +188,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "codex",
     description: "OpenAI Codex CLI",
     resumeCommand: "codex resume --last",
+    sessionDiscovery: { resumeWithId: (id) => `codex resume ${id}` },
     spawnArgs: (prompt, options = {}) => {
       const args: string[] = [];
       if (options.model) args.push("--model", options.model);
@@ -203,6 +220,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "amp",
     description: "Sourcegraph's AI coding agent",
     resumeCommand: "amp threads continue",
+    sessionDiscovery: null, // cloud-only, no local session files
     spawnArgs: (prompt) => {
       return [prompt];
     },
@@ -232,6 +250,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "cursor-agent",
     description: "Cursor's standalone coding agent CLI",
     resumeCommand: "cursor-agent resume",
+    sessionDiscovery: null, // closed-source, storage path undocumented
     spawnArgs: (prompt) => {
       return [prompt];
     },
@@ -258,6 +277,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "oz",
     description: "Warp's AI agent (local + cloud)",
     resumeCommand: null,
+    sessionDiscovery: null,
     spawnArgs: (prompt) => {
       return ["agent", "run", prompt];
     },
@@ -281,6 +301,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "droid",
     description: "Factory's agent-native software development CLI",
     resumeCommand: null,
+    sessionDiscovery: null,
     spawnArgs: (prompt) => {
       return [prompt];
     },
@@ -307,6 +328,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "git",
     description: "Background git operations (pull, push, fetch, stash)",
     resumeCommand: null,
+    sessionDiscovery: null,
     spawnArgs: () => [],
     outputFormat: "text",
     detectPatterns: {

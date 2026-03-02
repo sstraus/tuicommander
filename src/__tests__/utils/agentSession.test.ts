@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildAgentLaunchCommand, buildResumeCommand } from "../../utils/agentSession";
+import { AGENTS } from "../../agents";
 
 describe("buildAgentLaunchCommand", () => {
   it("injects --session-id for claude when UUID provided", () => {
@@ -70,5 +71,41 @@ describe("buildResumeCommand", () => {
     expect(buildResumeCommand("warp", null)).toBeNull();
     expect(buildResumeCommand("droid", null)).toBeNull();
     expect(buildResumeCommand("git", null)).toBeNull();
+  });
+});
+
+describe("sessionDiscovery in AgentConfig", () => {
+  it("claude has sessionDiscovery with resumeWithId", () => {
+    const disc = AGENTS.claude.sessionDiscovery;
+    expect(disc).not.toBeNull();
+    expect(disc?.resumeWithId("test-uuid")).toBe("claude --resume test-uuid");
+  });
+
+  it("gemini has sessionDiscovery with resumeWithId", () => {
+    const disc = AGENTS.gemini.sessionDiscovery;
+    expect(disc).not.toBeNull();
+    expect(disc?.resumeWithId("test-uuid")).toBe("gemini --resume test-uuid");
+  });
+
+  it("codex has sessionDiscovery with resumeWithId", () => {
+    const disc = AGENTS.codex.sessionDiscovery;
+    expect(disc).not.toBeNull();
+    expect(disc?.resumeWithId("test-uuid")).toBe("codex resume test-uuid");
+  });
+
+  it("aider has null sessionDiscovery (no session IDs)", () => {
+    expect(AGENTS.aider.sessionDiscovery).toBeNull();
+  });
+
+  it("amp has null sessionDiscovery (cloud-only)", () => {
+    expect(AGENTS.amp.sessionDiscovery).toBeNull();
+  });
+
+  it("warp has null sessionDiscovery", () => {
+    expect(AGENTS.warp.sessionDiscovery).toBeNull();
+  });
+
+  it("opencode has null sessionDiscovery (SQLite, not implemented)", () => {
+    expect(AGENTS.opencode.sessionDiscovery).toBeNull();
   });
 });
