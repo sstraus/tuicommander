@@ -1,0 +1,29 @@
+src/stores/terminals.ts
+  c8cd94e095227087 182,188-189
+src/__tests__/stores/batch-coalescing.test.ts
+  c8cd94e095227087 1-216
+src/stores/repositories.ts
+  c8cd94e095227087 355,365
+src/stores/ui.ts
+  c8cd94e095227087 303,308-309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "0b57245e93bb65d40d0cd3a1ffafb7647add9de9",
+  "prompts": {
+    "c8cd94e095227087": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7548d0d3-365e-4ba8-b520-25179e736afe",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 479,
+      "total_deletions": 257,
+      "accepted_lines": 224,
+      "overriden_lines": 0
+    }
+  }
+}
