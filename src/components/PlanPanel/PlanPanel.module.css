@@ -1,0 +1,77 @@
+/* Plan Panel */
+.panel {
+  position: relative;
+  width: 400px;
+  min-width: 300px;
+  max-width: 50%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 150ms ease, display 150ms allow-discrete;
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+.hidden {
+  display: none;
+  opacity: 0;
+}
+
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}
+
+.planItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s ease;
+}
+
+.planItem:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.planItem:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.planIcon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-muted);
+}
+
+.planInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.planTitle {
+  font-size: var(--font-base);
+  font-family: var(--font-mono);
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planSubtitle {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
