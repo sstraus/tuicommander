@@ -1,0 +1,29 @@
+src/utils/frontmatter.ts
+  c8cd94e095227087 16-24,28
+src/__tests__/utils/frontmatter.test.ts
+  c8cd94e095227087 2,4-5,11,14,16,20,23,29,32,38,41,47,50,56,59,65,77-79,82,86,89,95,104,107,113,116,121,238-263
+src/plugins/planPlugin.ts
+  c8cd94e095227087 7,83
+src/plugins/pluginRegistry.ts
+  c8cd94e095227087 671
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "d6ed73712ac5c0967f6b227ff98d2b260df88b89",
+  "prompts": {
+    "c8cd94e095227087": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7548d0d3-365e-4ba8-b520-25179e736afe",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 72,
+      "total_deletions": 103,
+      "accepted_lines": 70,
+      "overriden_lines": 0
+    }
+  }
+}
