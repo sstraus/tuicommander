@@ -54,9 +54,11 @@ async fn post_mcp(body: &str, session_id: Option<&str>) -> Result<(String, Optio
 
     stream.write_all(headers.as_bytes()).await.map_err(|e| format!("write headers: {e}"))?;
     stream.write_all(body.as_bytes()).await.map_err(|e| format!("write body: {e}"))?;
-    stream.shutdown().await.map_err(|e| format!("shutdown: {e}"))?;
 
+    // Read the response first, then shutdown.  Calling shutdown() before read
+    // signals EOF to the server, which may drop the connection before responding.
     let mut buf = Vec::new();
+    // Read until Connection: close triggers server-side EOF
     stream.read_to_end(&mut buf).await.map_err(|e| format!("read: {e}"))?;
     let raw = String::from_utf8_lossy(&buf);
 
