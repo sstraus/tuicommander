@@ -1,0 +1,25 @@
+src/components/PluginPanel/PluginPanel.tsx
+  c8cd94e095227087 80,82-84
+src/__tests__/components/PluginPanel.test.tsx
+  c8cd94e095227087 1-75,77-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "3a60ea6196d453a65b8cb1fe878174310d667c12",
+  "prompts": {
+    "c8cd94e095227087": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7548d0d3-365e-4ba8-b520-25179e736afe",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 240,
+      "total_deletions": 69,
+      "accepted_lines": 174,
+      "overriden_lines": 0
+    }
+  }
+}
