@@ -51,7 +51,7 @@ pub(super) struct PathQuery {
 
 #[derive(Deserialize, Default)]
 pub(super) struct OptionalRepoQuery {
-    #[serde(default)]
+    #[serde(default, rename = "repoPath")]
     pub repo_path: Option<String>,
 }
 
