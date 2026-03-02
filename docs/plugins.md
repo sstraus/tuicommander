@@ -548,7 +548,48 @@ panel.close();
 
 **Security:** The iframe uses `sandbox="allow-scripts"` without `allow-same-origin`, blocking access to Tauri IPC and the parent page DOM. The `close-panel` message type is handled as a system message; all other messages are routed to the `onMessage` callback.
 
-### Tier 3e: Credential Access (capability-gated)
+### Tier 3e: Terminal Context Menu Actions (capability-gated)
+
+#### host.registerTerminalAction(action) -> Disposable
+
+Register an action in the terminal right-click "Actions" submenu. **Requires `"ui:context-menu"` capability.**
+
+The action handler receives a `TerminalActionContext` snapshot captured at right-click time (not at click time), avoiding race conditions if the user switches terminals between opening the menu and clicking.
+
+```typescript
+interface TerminalActionContext {
+  sessionId: string | null;  // PTY session ID of the right-clicked terminal
+  repoPath: string | null;   // Repository path that owns the terminal
+}
+
+interface TerminalAction {
+  id: string;                                              // Unique action ID (scoped to plugin)
+  label: string;                                           // Display label in the menu
+  action: (ctx: TerminalActionContext) => void;             // Handler
+  disabled?: (ctx: TerminalActionContext) => boolean;       // Evaluated at menu-open time
+}
+```
+
+Example:
+
+```typescript
+const d = host.registerTerminalAction({
+  id: "restart-agent",
+  label: "Restart Agent",
+  action: (ctx) => {
+    if (ctx.sessionId) host.writePty(ctx.sessionId, "exit\n");
+  },
+  disabled: (ctx) => !ctx.sessionId,
+});
+```
+
+**Behavior:**
+- Actions from all plugins are shown in a flat list under the "Actions" submenu
+- The submenu is hidden when no actions are registered
+- `disabled` callback is re-evaluated each time the context menu opens
+- On plugin unload, actions are automatically removed; stale handler references are no-ops
+
+### Tier 3f: Credential Access (capability-gated)
 
 #### host.readCredential(serviceName) -> Promise<string | null>
 
@@ -568,7 +609,7 @@ if (credJson) {
 - macOS: Reads from Keychain (`security find-generic-password -s <service> -w`)
 - Linux/Windows: Reads from `~/.claude/.credentials.json`
 
-### Tier 3f: HTTP Requests (capability-gated)
+### Tier 3g: HTTP Requests (capability-gated)
 
 #### host.httpFetch(url, options?) -> Promise<HttpResponse>
 
@@ -609,7 +650,7 @@ interface HttpResponse {
 - `"http://localhost:8080/*"` — allows localhost on that port (required to unblock localhost)
 - The URL must start with the pattern prefix (before `*`) to match
 
-### Tier 3g: File Tail (capability-gated)
+### Tier 3h: File Tail (capability-gated)
 
 #### host.readFileTail(absolutePath, maxBytes) -> Promise<string>
 
@@ -620,7 +661,7 @@ const tail = await host.readFileTail("/Users/me/.claude/hud-tracking.jsonl", 512
 const lines = tail.split("\n").filter(Boolean);
 ```
 
-### Tier 3h: CLI Execution (capability-gated)
+### Tier 3i: CLI Execution (capability-gated)
 
 #### host.execCli(binary, args, cwd?) -> Promise<string>
 
@@ -702,6 +743,7 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `fs:rename` | `host.renamePath()` | Can rename/move files within `$HOME` |
 | `exec:cli` | `host.execCli()` | Can execute whitelisted CLI binaries (see below) |
 | `git:read` | `host.getGitBranches()`, `host.getRecentCommits()`, `host.getGitDiff()` | Read-only access to git repository state |
+| `ui:context-menu` | `host.registerTerminalAction()` | Can add actions to the terminal right-click "Actions" submenu |
 
 Tier 1, Tier 2, and plugin data commands are always available without capabilities.
 

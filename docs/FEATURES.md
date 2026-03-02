@@ -832,7 +832,7 @@ All data persisted to platform config directory via Rust:
 - Built-in plugins (TypeScript, compiled with app) and external plugins (JS, loaded at runtime)
 - Hot-reload: file changes in plugin directories trigger automatic re-import
 - Per-plugin error logging with ring buffer (500 entries)
-- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`
+- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`
 - CLI execution API: sandboxed execution of whitelisted CLI binaries (`mdkb`) with timeout and size limits
 - Filesystem API: sandboxed read, write, rename, list, tail-read, and watch operations restricted to `$HOME`
 - HTTP API: outbound requests scoped to manifest-declared URL patterns (SSRF prevention)
