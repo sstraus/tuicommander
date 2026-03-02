@@ -115,6 +115,16 @@ describe("updaterStore", () => {
       });
     });
 
+    it("maps Safari 'Load failed' to friendly message", async () => {
+      mockCheck.mockRejectedValue(new TypeError("Load failed"));
+
+      await createRoot(async (dispose) => {
+        await store.checkForUpdate();
+        expect(store.state.error).toBe("No published releases found yet");
+        dispose();
+      });
+    });
+
     it("passes through unrecognized errors", async () => {
       mockCheck.mockRejectedValue(new Error("some unexpected error"));
 

@@ -101,7 +101,7 @@ function createUpdaterStore() {
       } catch (err) {
         const raw = err instanceof Error ? err.message : String(err);
         appLogger.error("app", "Update check failed", raw);
-        const message = /fetch|valid release|404|not found/i.test(raw)
+        const message = /fetch|load failed|valid release|404|not found/i.test(raw)
           ? "No published releases found yet"
           : raw;
         setState({ error: message });

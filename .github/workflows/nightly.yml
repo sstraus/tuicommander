@@ -25,20 +25,20 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Move tip tag to current commit
+      - name: Move nightly tag to current commit
         run: |
-          git tag -f tip
-          git push origin tip --force
+          git tag -f nightly
+          git push origin nightly --force
 
       - name: Delete old nightly assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Delete all existing assets from the tip release so only the
+          # Delete all existing assets from the nightly release so only the
           # current build's artifacts remain after the build matrix completes.
-          gh release view tip --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null | while read -r name; do
+          gh release view nightly --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null | while read -r name; do
             echo "Deleting $name"
-            gh release delete-asset tip "$name" --repo "$GITHUB_REPOSITORY" --yes
+            gh release delete-asset nightly "$name" --repo "$GITHUB_REPOSITORY" --yes
           done
 
   build:
@@ -142,7 +142,7 @@ jobs:
           CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
         with:
           tauriScript: npx tauri
-          tagName: tip
+          tagName: nightly
           releaseName: 'TUICommander Nightly'
           releaseBody: |
             **Rolling build from `main` — always the latest code.**
@@ -151,7 +151,7 @@ jobs:
             For stable releases, see the [latest versioned release](https://github.com/sstraus/tuicommander/releases/latest).
           releaseDraft: false
           prerelease: true
-          includeUpdaterJson: false
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
 
       - name: Cleanup macOS keychain
