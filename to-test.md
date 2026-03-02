@@ -2,6 +2,17 @@
 
 Features to test when TUICommander is more usable.
 
+## Plan Panel (515-660c / 516-41a5 / 517-74c2)
+- [ ] `Cmd+P` opens plan panel on right side
+- [ ] Plan panel shows plans only for the active repository
+- [ ] Click plan item opens it as markdown tab (frontmatter stripped)
+- [ ] Switching repos changes visible plans in the panel
+- [ ] New plan detected by agent auto-opens as background tab (no focus steal)
+- [ ] Repeated detection of same plan does not open duplicate tabs
+- [ ] Panel visibility persists across app restart
+- [ ] Plan panel is mutually exclusive with Diff/Markdown/FileBrowser panels
+- [ ] Plan count badge shows correct number
+
 ## PR Detection (071-cc1f)
 - [ ] Run `gh pr view` in terminal - verify PR badge appears in sidebar
 - [ ] Run `gh pr create` - verify PR URL is captured
