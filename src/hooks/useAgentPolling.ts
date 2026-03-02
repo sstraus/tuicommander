@@ -2,7 +2,7 @@ import { createEffect, onCleanup } from "solid-js";
 import { invoke } from "../invoke";
 import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
-import { type AgentType, AGENT_TYPES } from "../agents";
+import { type AgentType, AGENT_TYPES, AGENTS } from "../agents";
 
 /** Polling interval for foreground process detection (ms) */
 const POLL_INTERVAL_MS = 3000;
@@ -17,8 +17,16 @@ function toAgentType(value: string | null): AgentType | null {
  * Polls ALL terminals with active PTY sessions to detect which agent (if any)
  * is running as the foreground process. Updates the terminals store with
  * the detected agentType for each terminal.
+ *
+ * On null→agent transition: attempts to discover the agent session ID from
+ * disk (via discover_agent_session Rust command) if the agent supports it.
+ * On agent→null transition: clears agentSessionId so re-discovery can occur
+ * on the next launch.
  */
 export function useAgentPolling(): void {
+  // Track which terminals we've already attempted discovery for (cleared on agent exit)
+  const discoveryAttempted = new Set<string>();
+
   createEffect(() => {
     // Read all terminal IDs reactively so the effect re-runs when terminals are added/removed
     const allIds = terminalsStore.getIds();
@@ -40,6 +48,14 @@ export function useAgentPolling(): void {
           return { termId, agentType: toAgentType(result) };
         }),
       );
+
+      // Collect UUIDs already claimed by terminals that have a session ID
+      const claimedIds: string[] = [];
+      for (const id of allIds) {
+        const sid = terminalsStore.get(id)?.agentSessionId;
+        if (sid) claimedIds.push(sid);
+      }
+
       for (const r of results) {
         if (r.status === "rejected") {
           appLogger.debug("app", "[AgentPoll] session poll rejected", r.reason);
@@ -47,9 +63,43 @@ export function useAgentPolling(): void {
         }
         const { termId, agentType } = r.value;
         const current = terminalsStore.get(termId);
-        if (current && current.agentType !== agentType) {
-          appLogger.debug("app", `[AgentPoll] ${termId} agentType "${current.agentType}" → "${agentType}"`);
+        if (!current) continue;
+
+        const prevAgentType = current.agentType;
+
+        if (prevAgentType !== agentType) {
+          appLogger.debug("app", `[AgentPoll] ${termId} agentType "${prevAgentType}" → "${agentType}"`);
           terminalsStore.update(termId, { agentType });
+
+          // agent→null: clear session ID so re-discovery fires on next launch
+          if (prevAgentType !== null && agentType === null) {
+            terminalsStore.update(termId, { agentSessionId: null });
+            discoveryAttempted.delete(termId);
+          }
+        }
+
+        // null→agent: attempt session discovery if supported and not yet tried
+        if (agentType !== null && current.agentSessionId === null && !discoveryAttempted.has(termId)) {
+          const disc = AGENTS[agentType].sessionDiscovery;
+          if (disc) {
+            discoveryAttempted.add(termId);
+            // Use cwd from terminal (path to project directory for discovery)
+            const cwd = current.cwd ?? null;
+            try {
+              const found = await invoke<string | null>("discover_agent_session", {
+                agentType,
+                cwd,
+                claimedIds,
+              });
+              if (found) {
+                appLogger.debug("app", `[AgentPoll] ${termId} discovered agentSessionId "${found}"`);
+                terminalsStore.update(termId, { agentSessionId: found });
+                claimedIds.push(found);
+              }
+            } catch (err) {
+              appLogger.debug("app", `[AgentPoll] ${termId} discover_agent_session failed`, err);
+            }
+          }
         }
       }
     };
