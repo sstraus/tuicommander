@@ -228,6 +228,79 @@ describe("terminalsStore", () => {
     });
   });
 
+  describe("sessionToTerminal reverse map", () => {
+    it("getTerminalForSession returns terminal ID when session is assigned", () => {
+      createRoot((dispose) => {
+        const id = store.add({ sessionId: "sess-abc", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        expect(store.getTerminalForSession("sess-abc")).toBe(id);
+        dispose();
+      });
+    });
+
+    it("getTerminalForSession returns null for unknown session", () => {
+      createRoot((dispose) => {
+        store.add({ sessionId: "sess-abc", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        expect(store.getTerminalForSession("not-a-session")).toBeNull();
+        dispose();
+      });
+    });
+
+    it("getTerminalForSession returns null for terminal with null sessionId", () => {
+      createRoot((dispose) => {
+        store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        expect(store.getTerminalForSession("sess-xyz")).toBeNull();
+        dispose();
+      });
+    });
+
+    it("map is updated when setSessionId is called", () => {
+      createRoot((dispose) => {
+        const id = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        expect(store.getTerminalForSession("sess-new")).toBeNull();
+        store.setSessionId(id, "sess-new");
+        expect(store.getTerminalForSession("sess-new")).toBe(id);
+        dispose();
+      });
+    });
+
+    it("map is updated when setSessionId reassigns to a new session", () => {
+      createRoot((dispose) => {
+        const id = store.add({ sessionId: "sess-old", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        store.setSessionId(id, "sess-new");
+        expect(store.getTerminalForSession("sess-old")).toBeNull();
+        expect(store.getTerminalForSession("sess-new")).toBe(id);
+        dispose();
+      });
+    });
+
+    it("map entry is removed when terminal is removed", () => {
+      createRoot((dispose) => {
+        const id = store.add({ sessionId: "sess-abc", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        expect(store.getTerminalForSession("sess-abc")).toBe(id);
+        store.remove(id);
+        expect(store.getTerminalForSession("sess-abc")).toBeNull();
+        dispose();
+      });
+    });
+
+    it("getAgentTypeForSession uses reverse map for O(1) lookup", () => {
+      createRoot((dispose) => {
+        const id = store.add({ sessionId: "sess-agent", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        store.update(id, { agentType: "claude" });
+        expect(store.getAgentTypeForSession("sess-agent")).toBe("claude");
+        dispose();
+      });
+    });
+
+    it("getAgentTypeForSession returns null for unknown session", () => {
+      createRoot((dispose) => {
+        store.add({ sessionId: "sess-agent", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        expect(store.getAgentTypeForSession("unknown-sess")).toBeNull();
+        dispose();
+      });
+    });
+  });
+
   describe("agentType", () => {
     it("initializes agentType as null", () => {
       createRoot((dispose) => {
