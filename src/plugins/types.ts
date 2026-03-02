@@ -346,6 +346,12 @@ export interface PluginHost {
   /** Get the repository path that owns a terminal session, or null if not found */
   getRepoPathForSession(sessionId: string): string | null;
 
+  /** Get the CWD for a terminal session, or null if not found or cwd is unset */
+  getSessionCwd(sessionId: string): string | null;
+
+  /** Get the active repository path, or null if none active */
+  getActiveRepoPath(): string | null;
+
   /** Get active (non-dismissed) PR notifications */
   getPrNotifications(): PrNotificationSnapshot[];
 

@@ -219,6 +219,17 @@ function createPluginRegistry() {
         return null;
       },
 
+      getSessionCwd(sessionId: string): string | null {
+        for (const t of Object.values(terminalsStore.state.terminals)) {
+          if (t.sessionId === sessionId) return t.cwd ?? null;
+        }
+        return null;
+      },
+
+      getActiveRepoPath(): string | null {
+        return repositoriesStore.state.activeRepoPath;
+      },
+
       getPrNotifications(): PrNotificationSnapshot[] {
         return prNotificationsStore.getActive().map((n) => ({
           id: n.id,

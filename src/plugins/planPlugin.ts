@@ -1,6 +1,4 @@
 import { invoke } from "../invoke";
-import { repositoriesStore } from "../stores/repositories";
-import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
 import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
 
@@ -35,18 +33,6 @@ function itemId(absolutePath: string): string {
 /** Build the contentUri for a plan file path. */
 function contentUri(absolutePath: string): string {
   return `plan:file?path=${encodeURIComponent(absolutePath)}`;
-}
-
-/** Check if a PTY session belongs to the currently active repo. */
-function sessionBelongsToActiveRepo(sessionId: string): boolean {
-  const activeRepo = repositoriesStore.state.activeRepoPath;
-  if (!activeRepo) return true; // no repo selected → show all plans
-  for (const t of Object.values(terminalsStore.state.terminals)) {
-    if (t.sessionId === sessionId && t.cwd) {
-      return t.cwd.startsWith(activeRepo);
-    }
-  }
-  return false; // unknown session → hide
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +76,11 @@ class PlanPlugin implements TuiPlugin {
     host.registerStructuredEventHandler("plan-file", (payload, sessionId) => {
       if (typeof payload !== "object" || payload === null || typeof (payload as Record<string, unknown>).path !== "string") return;
       // Only show plans from terminals belonging to the active repo
-      if (!sessionBelongsToActiveRepo(sessionId)) return;
+      const activeRepo = host.getActiveRepoPath();
+      if (activeRepo !== null) {
+        const cwd = host.getSessionCwd(sessionId);
+        if (!cwd || !cwd.startsWith(activeRepo)) return;
+      }
       const { path } = payload as { path: string };
       const id = itemId(path);
 
