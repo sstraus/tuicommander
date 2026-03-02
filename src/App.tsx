@@ -59,6 +59,7 @@ import { prNotificationsStore } from "./stores/prNotifications";
 import { updaterStore } from "./stores/updater";
 import { tasksStore } from "./stores/tasks";
 import { userActivityStore } from "./stores/userActivity";
+import { contextMenuActionsStore } from "./stores/contextMenuActionsStore";
 import { initPlugins } from "./plugins";
 import { usePty } from "./hooks/usePty";
 import { useRepository } from "./hooks/useRepository";
@@ -535,6 +536,24 @@ const App: Component = () => {
       children: buildAgentMenuItems(),
       separator: true,
     }] : []),
+    ...(() => {
+      const pluginActions = contextMenuActionsStore.getActions();
+      if (pluginActions.length === 0) return [];
+      const activeId = terminalsStore.state.activeId;
+      const sessionId = activeId ? terminalsStore.get(activeId)?.sessionId ?? null : null;
+      const repoPath = repositoriesStore.state.activeRepoPath ?? null;
+      const ctx = { sessionId, repoPath };
+      return [{
+        label: "Actions",
+        action: () => {},
+        children: pluginActions.map((a) => ({
+          label: a.label,
+          action: () => a.action(ctx),
+          disabled: a.disabled?.(ctx) ?? false,
+        })),
+        separator: true,
+      }];
+    })(),
     {
       label: "Close Terminal",
       shortcut: `${getModifierSymbol()}W`,
