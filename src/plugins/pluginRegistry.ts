@@ -7,6 +7,7 @@ import { prNotificationsStore } from "../stores/prNotifications";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { notificationsStore } from "../stores/notifications";
 import { mdTabsStore } from "../stores/mdTabs";
+import { contextMenuActionsStore } from "../stores/contextMenuActionsStore";
 
 import { pluginStore } from "../stores/pluginStore";
 import { markdownProviderRegistry } from "./markdownProviderRegistry";
@@ -34,6 +35,7 @@ import type {
   PrNotificationSnapshot,
   RepoSettingsSnapshot,
   StateChangeEvent,
+  TerminalAction,
   TerminalStateSnapshot,
 } from "./types";
 
@@ -293,6 +295,19 @@ function createPluginRegistry() {
       },
 
       // -- Tier 3: Write actions (capability-gated) --
+
+      registerTerminalAction(action: TerminalAction): Disposable {
+        requireCapability(pluginId, capabilities, "ui:context-menu");
+        // Wrap handler in a stale-plugin guard: after unregister, invocations are no-ops
+        const guardedAction: TerminalAction = {
+          ...action,
+          action: (ctx) => {
+            if (!plugins.has(pluginId)) return;
+            action.action(ctx);
+          },
+        };
+        return track(contextMenuActionsStore.registerAction(pluginId, guardedAction));
+      },
 
       async writePty(sessionId: string, data: string): Promise<void> {
         requireCapability(pluginId, capabilities, "pty:write");
