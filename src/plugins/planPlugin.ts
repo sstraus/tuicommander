@@ -132,7 +132,7 @@ class PlanPlugin implements TuiPlugin {
 
       // Auto-open new plans belonging to the active repo as a background tab
       if (isNew && activeRepo) {
-        mdTabsStore.addVirtualBackground(fallbackTitle, uri);
+        mdTabsStore.addVirtualBackground(fallbackTitle, uri, activeRepo);
       }
 
       // Async: read the file and enrich with extracted metadata

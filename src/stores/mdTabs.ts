@@ -88,7 +88,7 @@ function createMdTabsStore() {
     },
 
     /** Add a virtual markdown tab (or return existing if same contentUri already open) */
-    addVirtual(title: string, contentUri: string): string {
+    addVirtual(title: string, contentUri: string, repoPath?: string): string {
       const existing = Object.values(base.state.tabs).find(
         (tab) => tab.type === "virtual" && tab.contentUri === contentUri,
       ) as VirtualTab | undefined;
@@ -99,13 +99,15 @@ function createMdTabsStore() {
       }
 
       const id = base._nextId("md");
-      const tabId = base._addTab({ type: "virtual", id, title, contentUri, pinned: true } as VirtualTab);
+      const tab: VirtualTab = { type: "virtual", id, title, contentUri, pinned: true };
+      if (repoPath) tab.repoPath = repoPath;
+      const tabId = base._addTab(tab);
 
       return tabId;
     },
 
     /** Add a virtual markdown tab without making it active (background tab). Returns tab ID or null if already open. */
-    addVirtualBackground(title: string, contentUri: string): string | null {
+    addVirtualBackground(title: string, contentUri: string, repoPath?: string): string | null {
       const existing = Object.values(base.state.tabs).find(
         (tab) => tab.type === "virtual" && tab.contentUri === contentUri,
       ) as VirtualTab | undefined;
@@ -113,7 +115,9 @@ function createMdTabsStore() {
 
       const id = base._nextId("md");
       // Add to store without changing activeId
-      base._setState("tabs", id, { type: "virtual", id, title, contentUri, pinned: true } as VirtualTab);
+      const tab: VirtualTab = { type: "virtual", id, title, contentUri, pinned: true };
+      if (repoPath) tab.repoPath = repoPath;
+      base._setState("tabs", id, tab);
       return id;
     },
 

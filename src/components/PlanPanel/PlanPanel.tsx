@@ -27,7 +27,7 @@ export const PlanPanel: Component<PlanPanelProps> = (props) => {
   });
 
   const handleClick = (title: string, contentUri: string) => {
-    mdTabsStore.addVirtual(title, contentUri);
+    mdTabsStore.addVirtual(title, contentUri, props.repoPath ?? undefined);
   };
 
   return (

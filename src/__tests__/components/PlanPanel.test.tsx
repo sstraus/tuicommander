@@ -302,7 +302,7 @@ describe("PlanPanel interactions", () => {
     const item = container.querySelector("[data-testid='plan-item']") as HTMLElement;
     item.click();
 
-    expect(addVirtualSpy).toHaveBeenCalledWith("my-plan", "plan:file?path=%2Frepo%2Fplans%2Fmy-plan.md");
+    expect(addVirtualSpy).toHaveBeenCalledWith("my-plan", "plan:file?path=%2Frepo%2Fplans%2Fmy-plan.md", "/repo");
     addVirtualSpy.mockRestore();
   });
 });

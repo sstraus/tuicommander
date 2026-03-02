@@ -94,6 +94,24 @@ describe("mdTabsStore", () => {
         dispose();
       });
     });
+
+    it("sets repoPath on virtual tab when provided", () => {
+      createRoot((dispose) => {
+        const id = store.addVirtual("Plan", "plan:file?path=/repo1/plan.md", "/repo1");
+        const tab = store.get(id);
+        expect(tab?.repoPath).toBe("/repo1");
+        dispose();
+      });
+    });
+
+    it("virtual tab without repoPath has no repoPath field", () => {
+      createRoot((dispose) => {
+        const id = store.addVirtual("Global", "stories:detail?id=1");
+        const tab = store.get(id);
+        expect(tab?.repoPath).toBeUndefined();
+        dispose();
+      });
+    });
   });
 
   // -------------------------------------------------------------------------

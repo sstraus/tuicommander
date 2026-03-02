@@ -144,7 +144,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   /** Open an activity item: virtual content tab or direct action */
   const openActivityItem = (item: ActivityItem) => {
     if (item.contentUri) {
-      mdTabsStore.addVirtual(item.title, item.contentUri);
+      mdTabsStore.addVirtual(item.title, item.contentUri, item.repoPath);
     } else if (item.onClick) {
       item.onClick();
     }

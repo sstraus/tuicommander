@@ -383,7 +383,7 @@ describe("plan auto-open", () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/new.md" }, "sess-auto");
     await flushMicrotasks();
 
-    expect(spy).toHaveBeenCalledWith("new", "plan:file?path=%2Frepo%2Fplans%2Fnew.md");
+    expect(spy).toHaveBeenCalledWith("new", "plan:file?path=%2Frepo%2Fplans%2Fnew.md", "/repo");
     spy.mockRestore();
   });
 

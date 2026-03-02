@@ -147,6 +147,35 @@ describe("createTabManager", () => {
         dispose();
       });
     });
+
+    it("repo-scoped pinned tab is visible only in matching repo", () => {
+      createRoot((dispose) => {
+        mgr._addTab(makeTab("plan-repo1", { pinned: true, repoPath: "/repo1" }));
+        mgr._addTab(makeTab("plan-repo2", { pinned: true, repoPath: "/repo2" }));
+        mgr._addTab(makeTab("global-pinned", { pinned: true })); // no repoPath
+
+        const visibleInRepo1 = mgr.getVisibleIds("/repo1|main");
+        expect(visibleInRepo1).toContain("plan-repo1");
+        expect(visibleInRepo1).not.toContain("plan-repo2");
+        expect(visibleInRepo1).toContain("global-pinned");
+
+        const visibleInRepo2 = mgr.getVisibleIds("/repo2|feature");
+        expect(visibleInRepo2).not.toContain("plan-repo1");
+        expect(visibleInRepo2).toContain("plan-repo2");
+        expect(visibleInRepo2).toContain("global-pinned");
+        dispose();
+      });
+    });
+
+    it("repo-scoped tab is hidden when branchKey is null", () => {
+      createRoot((dispose) => {
+        mgr._addTab(makeTab("repo-scoped", { pinned: true, repoPath: "/repo1" }));
+
+        const visible = mgr.getVisibleIds(null);
+        expect(visible).not.toContain("repo-scoped");
+        dispose();
+      });
+    });
   });
 
   describe("setPinned()", () => {
