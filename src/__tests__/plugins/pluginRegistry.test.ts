@@ -4,6 +4,8 @@ import { activityStore } from "../../stores/activityStore";
 import { pluginStore } from "../../stores/pluginStore";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
+import { terminalsStore } from "../../stores/terminals";
+import { repositoriesStore } from "../../stores/repositories";
 import { PluginCapabilityError } from "../../plugins/types";
 import type { TuiPlugin, PluginHost } from "../../plugins/types";
 
@@ -1088,5 +1090,81 @@ describe("error capture in plugin logger", () => {
     const state = pluginStore.getPlugin("bad");
     expect(state?.loaded).toBe(false);
     expect(state?.error).toBe("fail!");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 2: getSessionCwd and getActiveRepoPath
+// ---------------------------------------------------------------------------
+
+describe("PluginHost — getSessionCwd", () => {
+  beforeEach(() => {
+    // Clean up any terminals added in previous tests
+    for (const id of terminalsStore.getIds()) {
+      terminalsStore.remove(id);
+    }
+  });
+
+  it("returns null when sessionId is not found", () => {
+    let result: string | null = "sentinel";
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      result = host.getSessionCwd("nonexistent-session");
+    }));
+    expect(result).toBeNull();
+  });
+
+  it("returns the cwd for a known sessionId", () => {
+    const termId = terminalsStore.add({
+      sessionId: "sess-abc",
+      fontSize: 14,
+      name: "Test",
+      cwd: "/home/user/project",
+      awaitingInput: null,
+    });
+    let result: string | null = null;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      result = host.getSessionCwd("sess-abc");
+    }));
+    expect(result).toBe("/home/user/project");
+    terminalsStore.remove(termId);
+  });
+
+  it("returns null when terminal cwd is null", () => {
+    const termId = terminalsStore.add({
+      sessionId: "sess-xyz",
+      fontSize: 14,
+      name: "Test",
+      cwd: null,
+      awaitingInput: null,
+    });
+    let result: string | null = "sentinel";
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      result = host.getSessionCwd("sess-xyz");
+    }));
+    expect(result).toBeNull();
+    terminalsStore.remove(termId);
+  });
+});
+
+describe("PluginHost — getActiveRepoPath", () => {
+  it("returns null when no active repo", () => {
+    let result: string | null = "sentinel";
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      result = host.getActiveRepoPath();
+    }));
+    expect(result).toBeNull();
+  });
+
+  it("returns the active repo path when one is set", () => {
+    repositoriesStore.add({ path: "/my/repo", displayName: "my-repo" });
+    repositoriesStore.setActive("/my/repo");
+    let result: string | null = null;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      result = host.getActiveRepoPath();
+    }));
+    expect(result).toBe("/my/repo");
+    // Cleanup
+    repositoriesStore.setActive(null);
+    repositoriesStore.remove("/my/repo");
   });
 });

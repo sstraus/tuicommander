@@ -1,6 +1,4 @@
 import { invoke } from "../invoke";
-import { repositoriesStore } from "../stores/repositories";
-import { terminalsStore } from "../stores/terminals";
 import { activityStore } from "../stores/activityStore";
 import { mdTabsStore } from "../stores/mdTabs";
 import { appLogger } from "../stores/appLogger";
@@ -38,35 +36,6 @@ function itemId(absolutePath: string): string {
 /** Build the contentUri for a plan file path. */
 function contentUri(absolutePath: string): string {
   return `plan:file?path=${encodeURIComponent(absolutePath)}`;
-}
-
-/** Get the CWD for a terminal session, or null if not found. */
-function getSessionCwd(sessionId: string): string | null {
-  for (const t of Object.values(terminalsStore.state.terminals)) {
-    if (t.sessionId === sessionId && t.cwd) {
-      return t.cwd;
-    }
-  }
-  return null;
-}
-
-/** Resolve a plan path to absolute using the session's CWD. */
-function resolvePath(path: string, sessionId: string): string {
-  if (path.startsWith("/")) return path;
-  const cwd = getSessionCwd(sessionId);
-  if (!cwd) return path; // can't resolve without CWD
-  return `${cwd.replace(/\/$/, "")}/${path}`;
-}
-
-/** Derive the repo path for a session by finding which registered repo the CWD belongs to. */
-function deriveRepoPath(sessionId: string): string | null {
-  const cwd = getSessionCwd(sessionId);
-  if (!cwd) return null;
-  for (const repoPath of repositoriesStore.getPaths()) {
-    if (cwd.startsWith(repoPath)) return repoPath;
-  }
-  // No registered repo matches — use the CWD itself as a best-effort repo identifier
-  return cwd;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,9 +87,17 @@ class PlanPlugin implements TuiPlugin {
       if (typeof payload !== "object" || payload === null || typeof (payload as Record<string, unknown>).path !== "string") return;
       const rawPath = (payload as { path: string }).path;
 
-      // Resolve relative paths to absolute using session CWD
-      const absolutePath = resolvePath(rawPath, sessionId);
-      const repoPath = deriveRepoPath(sessionId);
+      // Resolve relative paths to absolute using session CWD via PluginHost
+      const cwd = host.getSessionCwd(sessionId);
+      const absolutePath = rawPath.startsWith("/") ? rawPath
+        : cwd ? `${cwd.replace(/\/$/, "")}/${rawPath}` : rawPath;
+
+      // Only show plans from terminals belonging to the active repo
+      const activeRepo = host.getActiveRepoPath();
+      if (activeRepo !== null) {
+        if (!cwd || !cwd.startsWith(activeRepo)) return;
+      }
+
       const id = itemId(absolutePath);
 
       // If already tracked, move it to the end (most recent)
@@ -149,12 +126,12 @@ class PlanPlugin implements TuiPlugin {
         subtitle: absolutePath,
         icon: ICON_SVG,
         dismissible: true,
-        repoPath: repoPath ?? undefined,
+        repoPath: activeRepo ?? cwd ?? undefined,
         contentUri: uri,
       });
 
       // Auto-open new plans belonging to the active repo as a background tab
-      if (isNew && repoPath && repoPath === repositoriesStore.state.activeRepoPath) {
+      if (isNew && activeRepo) {
         mdTabsStore.addVirtualBackground(fallbackTitle, uri);
       }
 

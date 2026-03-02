@@ -628,6 +628,22 @@ pub(crate) async fn get_merged_branches(
     Ok(result)
 }
 
+/// Lightweight structural snapshot: worktree paths + merged branches.
+/// Returns fast (two git subprocesses, no per-worktree diff stats).
+#[derive(Serialize)]
+pub(crate) struct RepoStructure {
+    worktree_paths: HashMap<String, String>,
+    merged_branches: Vec<String>,
+}
+
+/// Per-worktree diff stats + last-commit timestamps.
+/// Expensive: runs N×`git diff --stat` + 1×`git for-each-ref`.
+#[derive(Serialize)]
+pub(crate) struct RepoDiffStats {
+    diff_stats: HashMap<String, DiffStats>,
+    last_commit_ts: HashMap<String, Option<i64>>,
+}
+
 /// Aggregate repo snapshot returned by `get_repo_summary`.
 /// Collapses the N+2 IPC storm (get_worktree_paths + get_merged_branches + N×get_diff_stats)
 /// into a single round-trip.
@@ -736,6 +752,93 @@ pub(crate) async fn get_repo_summary(
     repo_path: String,
 ) -> Result<RepoSummary, String> {
     get_repo_summary_impl(&state, repo_path).await
+}
+
+/// Fast structural snapshot: worktree paths + merged branches only.
+/// Used by progressive loading Phase 1 — returns before expensive diff stats.
+pub(crate) async fn get_repo_structure_impl(state: &AppState, repo_path: String) -> Result<RepoStructure, String> {
+    let wt_path = repo_path.clone();
+    let worktree_handle = tokio::task::spawn_blocking(move || {
+        crate::worktree::get_worktree_paths(wt_path)
+    });
+
+    let merged_branches = if let Some(cached) = AppState::get_cached(&state.merged_branches_cache, &repo_path, GIT_CACHE_TTL) {
+        cached
+    } else {
+        let mb_path = repo_path.clone();
+        let branches = tokio::task::spawn_blocking(move || {
+            get_merged_branches_impl(Path::new(&mb_path))
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking error: {e}"))??;
+        AppState::set_cached(&state.merged_branches_cache, repo_path.clone(), branches.clone());
+        branches
+    };
+
+    let worktree_paths = worktree_handle
+        .await
+        .map_err(|e| format!("spawn_blocking error: {e}"))?
+        .map_err(|e| format!("get_worktree_paths failed: {e}"))?;
+
+    Ok(RepoStructure { worktree_paths, merged_branches })
+}
+
+#[tauri::command]
+pub(crate) async fn get_repo_structure(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+) -> Result<RepoStructure, String> {
+    get_repo_structure_impl(&state, repo_path).await
+}
+
+/// Per-worktree diff stats + last-commit timestamps.
+/// Used by progressive loading Phase 2 — runs after structure is already displayed.
+pub(crate) async fn get_repo_diff_stats_impl(_state: &AppState, repo_path: String) -> Result<RepoDiffStats, String> {
+    // Need worktree paths to know which directories to diff
+    let wt_path = repo_path.clone();
+    let worktree_paths = tokio::task::spawn_blocking(move || {
+        crate::worktree::get_worktree_paths(wt_path)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking error: {e}"))?
+    .map_err(|e| format!("get_worktree_paths failed: {e}"))?;
+
+    let paths: Vec<String> = worktree_paths.values().cloned().collect();
+    let mut diff_handles = Vec::with_capacity(paths.len());
+    for path in paths {
+        diff_handles.push(tokio::task::spawn_blocking(move || {
+            let stats = get_diff_stats(path.clone(), None);
+            (path, stats)
+        }));
+    }
+
+    let branch_names: Vec<String> = worktree_paths.keys().cloned().collect();
+    let ts_repo_path = repo_path.clone();
+    let ts_handle = tokio::task::spawn_blocking(move || {
+        get_last_commit_timestamps(Path::new(&ts_repo_path), &branch_names)
+    });
+
+    let mut diff_stats = HashMap::new();
+    for handle in diff_handles {
+        let (path, stats) = handle
+            .await
+            .map_err(|e| format!("spawn_blocking error: {e}"))?;
+        diff_stats.insert(path, stats);
+    }
+
+    let last_commit_ts = ts_handle
+        .await
+        .map_err(|e| format!("spawn_blocking error: {e}"))?;
+
+    Ok(RepoDiffStats { diff_stats, last_commit_ts })
+}
+
+#[tauri::command]
+pub(crate) async fn get_repo_diff_stats(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+) -> Result<RepoDiffStats, String> {
+    get_repo_diff_stats_impl(&state, repo_path).await
 }
 
 /// Get git branches for a repository (Story 052)

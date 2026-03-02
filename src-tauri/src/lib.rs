@@ -766,6 +766,8 @@ pub fn run() {
             git::get_git_branches,
             git::get_merged_branches,
             git::get_repo_summary,
+            git::get_repo_structure,
+            git::get_repo_diff_stats,
             git::check_is_main_branch,
             git::get_initials,
             git::run_git_command,

@@ -40,6 +40,11 @@ beforeEach(() => {
   mdTabsStore.clearAll();
   clearTerminals();
   mockedInvoke.mockReset().mockResolvedValue(undefined);
+  // Clean up terminals and repos from previous tests
+  for (const id of terminalsStore.getIds()) {
+    terminalsStore.remove(id);
+  }
+  repositoriesStore.setActive(null);
 });
 
 // ---------------------------------------------------------------------------
@@ -272,6 +277,7 @@ describe("plan-file metadata enrichment", () => {
     pluginRegistry.register(planPlugin);
   });
 
+
   it("enriches item title with H1 from file content", async () => {
     mockedInvoke.mockResolvedValue("# Implementation Plan: My Feature\n\n**Status:** Draft\n**Estimated Effort:** M");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/my-feature.md" }, "s1");
@@ -403,5 +409,57 @@ describe("plan auto-open", () => {
 
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session-to-repo filtering (via host.getSessionCwd / host.getActiveRepoPath)
+// ---------------------------------------------------------------------------
+
+describe("plan-file session filtering", () => {
+  beforeEach(() => {
+    pluginRegistry.register(planPlugin);
+  });
+
+  it("shows plan when no active repo (pass-through)", async () => {
+    const termId = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T", cwd: "/some/path", awaitingInput: null });
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/some/path/plan.md" }, "s1");
+    await flushMicrotasks();
+    expect(activityStore.getForSection("plan")).toHaveLength(1);
+    terminalsStore.remove(termId);
+  });
+
+  it("shows plan when session cwd starts with active repo path", async () => {
+    repositoriesStore.add({ path: "/my/repo", displayName: "repo" });
+    repositoriesStore.setActive("/my/repo");
+    const termId = terminalsStore.add({ sessionId: "s-repo", fontSize: 14, name: "T", cwd: "/my/repo/subdir", awaitingInput: null });
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/my/repo/plan.md" }, "s-repo");
+    await flushMicrotasks();
+    expect(activityStore.getForSection("plan")).toHaveLength(1);
+    terminalsStore.remove(termId);
+    repositoriesStore.setActive(null);
+    repositoriesStore.remove("/my/repo");
+  });
+
+  it("hides plan when session cwd does not belong to active repo", async () => {
+    repositoriesStore.add({ path: "/my/repo", displayName: "repo" });
+    repositoriesStore.setActive("/my/repo");
+    const termId = terminalsStore.add({ sessionId: "s-other", fontSize: 14, name: "T", cwd: "/other/project", awaitingInput: null });
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/other/plan.md" }, "s-other");
+    await flushMicrotasks();
+    expect(activityStore.getForSection("plan")).toHaveLength(0);
+    terminalsStore.remove(termId);
+    repositoriesStore.setActive(null);
+    repositoriesStore.remove("/my/repo");
+  });
+
+  it("hides plan when session is unknown (no terminal with that sessionId)", async () => {
+    repositoriesStore.add({ path: "/my/repo", displayName: "repo" });
+    repositoriesStore.setActive("/my/repo");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/my/repo/plan.md" }, "s-unknown");
+    await flushMicrotasks();
+    expect(activityStore.getForSection("plan")).toHaveLength(0);
+    repositoriesStore.setActive(null);
+    repositoriesStore.remove("/my/repo");
   });
 });
