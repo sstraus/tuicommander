@@ -6,8 +6,8 @@ import { AGENTS, type AgentType } from "../agents";
  * Only Claude Code supports --session-id. For other agents the command is returned unchanged.
  * The command string may include a binary path and extra args (e.g. "claude --model opus").
  */
-export function buildAgentLaunchCommand(command: string, claudeSessionId?: string | null): string {
-  if (!claudeSessionId) return command;
+export function buildAgentLaunchCommand(command: string, agentSessionId?: string | null): string {
+  if (!agentSessionId) return command;
 
   // Only inject for claude — check if the binary name (last segment of path) starts with "claude"
   const parts = command.split(" ");
@@ -17,7 +17,7 @@ export function buildAgentLaunchCommand(command: string, claudeSessionId?: strin
 
   // Insert --session-id right after the binary
   const rest = parts.slice(1);
-  return [binary, "--session-id", claudeSessionId, ...rest].join(" ");
+  return [binary, "--session-id", agentSessionId, ...rest].join(" ");
 }
 
 /**
@@ -26,9 +26,9 @@ export function buildAgentLaunchCommand(command: string, claudeSessionId?: strin
  * For Claude Code with a persisted session UUID, returns "claude --resume <uuid>".
  * For all other cases, falls back to the static resumeCommand from AGENTS config.
  */
-export function buildResumeCommand(agentType: AgentType, claudeSessionId?: string | null): string | null {
-  if (agentType === "claude" && claudeSessionId) {
-    return `claude --resume ${claudeSessionId}`;
+export function buildResumeCommand(agentType: AgentType, agentSessionId?: string | null): string | null {
+  if (agentType === "claude" && agentSessionId) {
+    return `claude --resume ${agentSessionId}`;
   }
   return AGENTS[agentType].resumeCommand;
 }

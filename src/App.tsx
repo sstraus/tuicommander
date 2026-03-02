@@ -444,15 +444,15 @@ const App: Component = () => {
       const runConfigs = agentConfigsStore.getRunConfigs(agent.type);
 
       const launchAgent = async (cmd: string) => {
-        const claudeSessionId = agent.type === "claude" ? crypto.randomUUID() : null;
-        const finalCmd = buildAgentLaunchCommand(cmd, claudeSessionId);
+        const agentSessionId = agent.type === "claude" ? crypto.randomUUID() : null;
+        const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId);
         const termId = await gitOps.handleAddTerminalToBranch(repoPath, branchName);
         if (termId) {
           terminalsStore.update(termId, {
             name: agentConfig.name,
             nameIsCustom: true,
             pendingInitCommand: finalCmd,
-            claudeSessionId,
+            agentSessionId,
           });
         }
       };

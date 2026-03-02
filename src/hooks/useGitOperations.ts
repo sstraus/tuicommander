@@ -489,9 +489,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
         repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
 
         if (terminal.agentType) {
-          const resumeCmd = buildResumeCommand(terminal.agentType, terminal.claudeSessionId);
+          const resumeCmd = buildResumeCommand(terminal.agentType, terminal.agentSessionId);
           if (resumeCmd) {
-            terminalsStore.update(id, { pendingResumeCommand: resumeCmd, claudeSessionId: terminal.claudeSessionId ?? null });
+            terminalsStore.update(id, { pendingResumeCommand: resumeCmd, agentSessionId: terminal.agentSessionId ?? null });
           }
         }
 

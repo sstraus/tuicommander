@@ -242,7 +242,7 @@ describe("initApp", () => {
     expect(deps.handleBranchSelect).toHaveBeenCalledWith("/repo", "main");
   });
 
-  it("snapshots claudeSessionId into savedTerminals on beforeunload", async () => {
+  it("snapshots agentSessionId into savedTerminals on beforeunload", async () => {
     repositoriesStore.add({ path: "/repo", displayName: "Repo" });
     repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
 
@@ -258,19 +258,19 @@ describe("initApp", () => {
 
     await initApp(deps);
 
-    // Set claudeSessionId on the re-adopted terminal
+    // Set agentSessionId on the re-adopted terminal
     const termId = terminalsStore.getIds()[0];
-    terminalsStore.update(termId, { claudeSessionId: "abc-123-uuid" });
+    terminalsStore.update(termId, { agentSessionId: "abc-123-uuid" });
 
     // Trigger beforeunload to snapshot
     window.dispatchEvent(new Event("beforeunload"));
 
     const branch = repositoriesStore.get("/repo")?.branches["main"];
     expect(branch?.savedTerminals?.length).toBe(1);
-    expect(branch?.savedTerminals?.[0].claudeSessionId).toBe("abc-123-uuid");
+    expect(branch?.savedTerminals?.[0].agentSessionId).toBe("abc-123-uuid");
   });
 
-  it("snapshots null claudeSessionId for terminals without it", async () => {
+  it("snapshots null agentSessionId for terminals without it", async () => {
     repositoriesStore.add({ path: "/repo", displayName: "Repo" });
     repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
 
@@ -289,7 +289,7 @@ describe("initApp", () => {
 
     const branch = repositoriesStore.get("/repo")?.branches["main"];
     expect(branch?.savedTerminals?.length).toBe(1);
-    expect(branch?.savedTerminals?.[0].claudeSessionId).toBeNull();
+    expect(branch?.savedTerminals?.[0].agentSessionId).toBeNull();
   });
 
   it("registers beforeunload handler to close PTY sessions", async () => {

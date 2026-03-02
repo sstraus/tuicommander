@@ -60,7 +60,7 @@ function collectTerminalSnapshots(): Map<string, Map<string, SavedTerminal[]>> {
           cwd: t.cwd,
           fontSize: t.fontSize,
           agentType: t.agentType,
-          claudeSessionId: t.claudeSessionId ?? null,
+          agentSessionId: t.agentSessionId ?? null,
         });
       }
 
