@@ -181,12 +181,14 @@ function createTerminalsStore() {
 
     /** Update terminal data */
     update(id: string, data: Partial<TerminalState>): void {
-      if ("shellState" in data) {
-        const prev = state.terminals[id]?.shellState ?? null;
-        const next = data.shellState ?? null;
-        if (prev !== next) handleShellStateChange(id, prev, next);
-      }
-      setState("terminals", id, data);
+      batch(() => {
+        if ("shellState" in data) {
+          const prev = state.terminals[id]?.shellState ?? null;
+          const next = data.shellState ?? null;
+          if (prev !== next) handleShellStateChange(id, prev, next);
+        }
+        setState("terminals", id, data);
+      });
     },
 
     /** Update session ID */

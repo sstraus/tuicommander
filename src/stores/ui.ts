@@ -351,12 +351,14 @@ function createUIStore() {
 
     /** Reset all panel and sidebar widths to defaults */
     resetLayout(): void {
-      setState("sidebarWidth", SIDEBAR_DEFAULT_WIDTH);
-      setState("diffPanelWidth", DIFF_PANEL_DEFAULT_WIDTH);
-      setState("markdownPanelWidth", MARKDOWN_PANEL_DEFAULT_WIDTH);
-      setState("notesPanelWidth", NOTES_PANEL_DEFAULT_WIDTH);
-      setState("planPanelWidth", PLAN_PANEL_DEFAULT_WIDTH);
-      setState("settingsNavWidth", SETTINGS_NAV_DEFAULT_WIDTH);
+      batch(() => {
+        setState("sidebarWidth", SIDEBAR_DEFAULT_WIDTH);
+        setState("diffPanelWidth", DIFF_PANEL_DEFAULT_WIDTH);
+        setState("markdownPanelWidth", MARKDOWN_PANEL_DEFAULT_WIDTH);
+        setState("notesPanelWidth", NOTES_PANEL_DEFAULT_WIDTH);
+        setState("planPanelWidth", PLAN_PANEL_DEFAULT_WIDTH);
+        setState("settingsNavWidth", SETTINGS_NAV_DEFAULT_WIDTH);
+      });
       saveUIPrefs();
     },
 
