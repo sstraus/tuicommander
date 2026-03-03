@@ -33,7 +33,7 @@ type ParsedEvent =
   | { type: "plan-file"; path: string }
   | { type: "user-input"; content: string }
   | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string }
-  | { type: "intent"; text: string };
+  | { type: "intent"; text: string; title?: string };
 
 export interface TerminalProps {
   id: string;
@@ -434,8 +434,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           }
           case "intent":
-            appLogger.debug("terminal", `[ParsedEvent] ${props.id} intent text="${parsed.text}"`);
+            appLogger.debug("terminal", `[ParsedEvent] ${props.id} intent text="${parsed.text}" title="${parsed.title ?? ""}"`);
             terminalsStore.setAgentIntent(props.id, parsed.text);
+            if (parsed.title && settingsStore.state.intentTabTitle) {
+              terminalsStore.update(props.id, { name: parsed.title });
+            }
             break;
         }
 

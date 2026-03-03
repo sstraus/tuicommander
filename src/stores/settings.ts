@@ -29,6 +29,7 @@ interface RustAppConfig {
   update_channel: string;
   session_token_duration_secs: number;
   disabled_agents: string[];
+  intent_tab_title: boolean;
 }
 
 // Default values
@@ -224,6 +225,7 @@ interface SettingsStoreState {
   language: string;
   updateChannel: UpdateChannel;
   disabledAgents: string[];
+  intentTabTitle: boolean;
 }
 
 /** Create the settings store */
@@ -244,6 +246,7 @@ function createSettingsStore() {
     language: "en",
     updateChannel: "stable" as UpdateChannel,
     disabledAgents: [],
+    intentTabTitle: true,
   });
 
   const actions = {
@@ -281,6 +284,7 @@ function createSettingsStore() {
         const channel = config.update_channel;
         setState("updateChannel", (channel === "beta" || channel === "nightly") ? channel : "stable");
         setState("disabledAgents", config.disabled_agents ?? []);
+        setState("intentTabTitle", config.intent_tab_title ?? true);
       } catch (err) {
         appLogger.error("config", "Failed to hydrate settings", err);
       }
@@ -517,6 +521,20 @@ function createSettingsStore() {
     /** Check if an agent type is enabled */
     isAgentEnabled(agentType: string): boolean {
       return !state.disabledAgents.includes(agentType);
+    },
+
+    /** Set intent-as-tab-title preference */
+    async setIntentTabTitle(enabled: boolean): Promise<void> {
+      const prevValue = state.intentTabTitle;
+      setState("intentTabTitle", enabled);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.intent_tab_title = enabled;
+        await invoke("save_config", { config });
+      } catch (err) {
+        appLogger.error("config", "Failed to persist intentTabTitle", err);
+        setState("intentTabTitle", prevValue);
+      }
     },
 
     /** Get CSS font family string */

@@ -353,6 +353,18 @@ export const AgentsTab: Component = () => {
         Configure AI coding agents, manage run configurations, and install MCP bridge integrations.
       </p>
 
+      <div class={s.group}>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={settingsStore.state.intentTabTitle}
+            onChange={(e) => settingsStore.setIntentTabTitle(e.currentTarget.checked)}
+          />
+          <span>Show agent intent as tab title</span>
+        </div>
+        <p class={s.hint}>When agents declare their current work phase, update the tab name with a short title</p>
+      </div>
+
       <div class={a.agentList}>
         <For each={AGENT_TYPES}>
           {(type) => (

@@ -329,6 +329,9 @@ pub(crate) struct AppConfig {
     /// Native MCP tool names disabled by the user (excluded from tools/list response)
     #[serde(default)]
     pub(crate) disabled_native_tools: Vec<String>,
+    /// Show agent intent as tab title (from [[intent: ...(title)]] tokens)
+    #[serde(default = "default_true")]
+    pub(crate) intent_tab_title: bool,
 }
 
 fn default_language() -> String {
@@ -390,6 +393,7 @@ impl Default for AppConfig {
             lan_auth_bypass: false,
             disabled_agents: Vec::new(),
             disabled_native_tools: Vec::new(),
+            intent_tab_title: true,
         }
     }
 }
@@ -895,6 +899,7 @@ mod tests {
             lan_auth_bypass: true,
             disabled_agents: vec!["codex".to_string()],
             disabled_native_tools: vec!["plugin_dev_guide".to_string()],
+            intent_tab_title: false,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -920,6 +925,7 @@ mod tests {
         assert!(loaded.ipv6_enabled);
         assert!(loaded.lan_auth_bypass);
         assert_eq!(loaded.disabled_native_tools, vec!["plugin_dev_guide".to_string()]);
+        assert!(!loaded.intent_tab_title);
     }
 
     #[test]
@@ -949,6 +955,7 @@ mod tests {
         assert_eq!(loaded.session_token_duration_secs, 86400);
         assert!(!loaded.ipv6_enabled);
         assert!(!loaded.lan_auth_bypass);
+        assert!(loaded.intent_tab_title); // defaults to true
     }
 
     #[test]

@@ -57,10 +57,13 @@ pub enum ParsedEvent {
         error_kind: String, // "server", "auth", "unknown"
     },
     /// Agent-declared intent: what the LLM is currently working on.
-    /// Emitted via `[intent: <text>]` token in agent output.
+    /// Emitted via `[intent: <text>]` or `[intent: <text>(tab title)]` token in agent output.
     #[serde(rename = "intent")]
     Intent {
         text: String,
+        /// Optional short title (max ~3 words) for use as tab name
+        #[serde(skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
     },
 }
 
@@ -834,13 +837,23 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
 
 /// Strip brackets from `[intent: ...]` tokens, keeping the text colorized yellow.
 /// `[[intent: Refactoring auth]]` becomes `\e[2;33mintent: Refactoring auth\e[0m`.
+/// Strips the optional `(title)` suffix before colorizing.
 /// Only invoke when `parse()` returned an Intent event to avoid regex on every chunk.
 pub fn colorize_intent(raw: &str) -> String {
     lazy_static::lazy_static! {
         static ref RAW_INTENT_RE: regex::Regex =
-            regex::Regex::new(r"(?:\[\[?|\x{27E6})(intent:\s*.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
+            regex::Regex::new(r"(?:\[\[?|\x{27E6})(intent:\s*)(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
+        // Match optional (title) at end of the intent body
+        static ref STRIP_TITLE_RE: regex::Regex =
+            regex::Regex::new(r"\([^)]+\)\s*$").unwrap();
     }
-    RAW_INTENT_RE.replace_all(raw, "\x1b[2;33m$1\x1b[0m").into_owned()
+    RAW_INTENT_RE.replace_all(raw, |caps: &regex::Captures| {
+        let prefix = &caps[1]; // "intent: "
+        let body = &caps[2];   // "Reading auth module for token flow(Reading auth)"
+        let clean_body = STRIP_TITLE_RE.replace(body, "");
+        let trimmed = clean_body.trim_end();
+        format!("\x1b[2;33m{}{}\x1b[0m", prefix, trimmed)
+    }).into_owned()
 }
 
 /// Detect agent-declared intent tokens: `[intent: <text>]`, `[[intent: <text>]]`,
@@ -855,20 +868,35 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
         // [intent: <text>]  — ASCII single brackets
         // [[intent: <text>]] — ASCII double brackets (also accepted)
         // ⟦intent: <text>⟧ — Unicode mathematical brackets (U+27E6 / U+27E7)
+        // Optional trailing (title) before the closing bracket.
         // (?:^|\s) anchor: the opening bracket must be at line/string start or after whitespace,
         // preventing matches on ANSI-stripped garbage like `]che[[intent:`
         static ref INTENT_RE: regex::Regex =
             regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})intent:\s*(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
+        // Separate regex to split out the optional (title) suffix from the captured text
+        static ref TITLE_RE: regex::Regex =
+            regex::Regex::new(r"^(.*?)\(([^)]+)\)\s*$").unwrap();
     }
     INTENT_RE.captures(clean).and_then(|caps| {
-        let text = caps[1].trim();
+        let raw = caps[1].trim();
         // Filter out meaningless intents: ellipsis, bare punctuation, template placeholders
-        if text == "..." || text == "<text>" || text.len() < 4 {
+        if raw == "..." || raw == "<text>" || raw.len() < 4 {
             return None;
         }
-        Some(ParsedEvent::Intent {
-            text: text.to_string(),
-        })
+        // Try to extract optional (title) from the end
+        let (text, title) = if let Some(tc) = TITLE_RE.captures(raw) {
+            let body = tc[1].trim();
+            let t = tc[2].trim();
+            if body.is_empty() {
+                // No text before title — treat the whole thing as text
+                (raw.to_string(), None)
+            } else {
+                (body.to_string(), Some(t.to_string()))
+            }
+        } else {
+            (raw.to_string(), None)
+        };
+        Some(ParsedEvent::Intent { text, title })
     })
 }
 
@@ -2118,7 +2146,14 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     fn get_intent(events: &[ParsedEvent]) -> Option<String> {
         events.iter().find_map(|e| match e {
-            ParsedEvent::Intent { text } => Some(text.clone()),
+            ParsedEvent::Intent { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+    }
+
+    fn get_intent_title(events: &[ParsedEvent]) -> Option<String> {
+        events.iter().find_map(|e| match e {
+            ParsedEvent::Intent { title, .. } => title.clone(),
             _ => None,
         })
     }
@@ -2270,6 +2305,61 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(get_intent(&parser.parse("]che[[intent: some text]]")).is_none());
         // Must be at line start or after whitespace
         assert!(get_intent(&parser.parse("garbage[[intent: some text]]")).is_none());
+    }
+
+    // --- Intent title tests ---
+
+    #[test]
+    fn test_intent_with_title() {
+        let parser = OutputParser::new();
+        let events = parser.parse("[[intent: Reading auth module for token flow(Reading auth)]]");
+        assert_eq!(get_intent(&events), Some("Reading auth module for token flow".to_string()));
+        assert_eq!(get_intent_title(&events), Some("Reading auth".to_string()));
+    }
+
+    #[test]
+    fn test_intent_with_title_single_brackets() {
+        let parser = OutputParser::new();
+        let events = parser.parse("[intent: Writing parser unit tests(Writing tests)]");
+        assert_eq!(get_intent(&events), Some("Writing parser unit tests".to_string()));
+        assert_eq!(get_intent_title(&events), Some("Writing tests".to_string()));
+    }
+
+    #[test]
+    fn test_intent_with_title_unicode_brackets() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{27E6}intent: Debugging login redirect(Debugging redirect)\u{27E7}");
+        assert_eq!(get_intent(&events), Some("Debugging login redirect".to_string()));
+        assert_eq!(get_intent_title(&events), Some("Debugging redirect".to_string()));
+    }
+
+    #[test]
+    fn test_intent_without_title_still_works() {
+        let parser = OutputParser::new();
+        let events = parser.parse("[[intent: Refactoring the auth module]]");
+        assert_eq!(get_intent(&events), Some("Refactoring the auth module".to_string()));
+        assert_eq!(get_intent_title(&events), None);
+    }
+
+    #[test]
+    fn test_intent_title_trimmed() {
+        let parser = OutputParser::new();
+        let events = parser.parse("[[intent: Some task here(  Tab title  )]]");
+        assert_eq!(get_intent_title(&events), Some("Tab title".to_string()));
+    }
+
+    #[test]
+    fn test_colorize_intent_strips_title() {
+        let raw = "[[intent: Reading auth module for token flow(Reading auth)]]";
+        let colored = colorize_intent(raw);
+        assert_eq!(colored, "\x1b[2;33mintent: Reading auth module for token flow\x1b[0m");
+    }
+
+    #[test]
+    fn test_colorize_intent_without_title_unchanged() {
+        let raw = "[[intent: Refactoring auth]]";
+        let colored = colorize_intent(raw);
+        assert_eq!(colored, "\x1b[2;33mintent: Refactoring auth\x1b[0m");
     }
 
     #[test]
