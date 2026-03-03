@@ -53,6 +53,12 @@
   font-weight: 500;
 }
 
+.disconnected {
+  font-size: 13px;
+  color: var(--error);
+  font-weight: 500;
+}
+
 .toggle {
   position: relative;
   width: 44px;

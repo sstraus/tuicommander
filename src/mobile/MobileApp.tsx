@@ -76,7 +76,7 @@ export default function MobileApp() {
                   <ActivityScreen onNavigateSession={navigateToSession} />
                 </Match>
                 <Match when={activeTab() === "settings"}>
-                  <SettingsScreen />
+                  <SettingsScreen connectionError={error()} />
                 </Match>
               </Switch>
             </main>
