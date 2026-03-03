@@ -28,6 +28,7 @@ pub(crate) mod plugins;
 pub(crate) mod prompt;
 pub(crate) mod registry;
 pub(crate) mod pty;
+pub(crate) mod relay_client;
 pub(crate) mod sleep_prevention;
 pub(crate) mod state;
 pub(crate) mod worktree;
@@ -585,6 +586,7 @@ pub fn run() {
         session_states: dashmap::DashMap::new(),
         mcp_upstream_registry: Arc::new(mcp_proxy::registry::UpstreamRegistry::new()),
         mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+        relay_shutdown: parking_lot::Mutex::new(None),
     });
 
     // Wire the event bus into the upstream registry so status changes emit SSE events.
@@ -606,6 +608,18 @@ pub fn run() {
                 AppState::spawn_session_state_accumulator(accumulator_state);
                 mcp_http::start_server(mcp_state, mcp_enabled, remote_enabled).await;
             });
+        });
+    }
+
+    // Start relay client if configured
+    if config.relay_enabled {
+        let (relay_tx, relay_rx) = tokio::sync::oneshot::channel();
+        *state.relay_shutdown.lock() = Some(relay_tx);
+        let relay_state = state.clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new()
+                .expect("Failed to create tokio runtime for relay client");
+            rt.block_on(relay_client::run(relay_state, relay_rx));
         });
     }
 

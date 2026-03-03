@@ -697,6 +697,8 @@ pub struct AppState {
     /// Broadcast channel for MCP `notifications/tools/list_changed`.
     /// Fired when native tools are toggled or upstream tool lists change.
     pub(crate) mcp_tools_changed: tokio::sync::broadcast::Sender<()>,
+    /// Shutdown sender for the relay client — send () to gracefully stop it
+    pub(crate) relay_shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 }
 
 impl AppState {
@@ -1215,6 +1217,7 @@ mod tests {
             session_states: DashMap::new(),
             mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+            relay_shutdown: parking_lot::Mutex::new(None),
         }
     }
 

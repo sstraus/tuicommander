@@ -460,6 +460,7 @@ mod tests {
             session_states: dashmap::DashMap::new(),
             mcp_upstream_registry: std::sync::Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+            relay_shutdown: parking_lot::Mutex::new(None),
         })
     }
 

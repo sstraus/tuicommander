@@ -926,6 +926,10 @@ mod tests {
             intent_tab_title: false,
             agent_teams_shim: true,
             suggest_followups: false,
+            relay_enabled: false,
+            relay_url: String::new(),
+            relay_token: String::new(),
+            relay_session_id: String::new(),
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
