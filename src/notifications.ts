@@ -84,7 +84,7 @@ const SOUNDS: Record<NotificationSound, SoundSequence> = {
 let audioContext: AudioContext | null = null;
 
 /**
- * Warm up the AudioContext by creating it inside a real user gesture.
+ * Keep the AudioContext alive across user gestures.
  *
  * WebKit (used by Tauri on macOS) requires `new AudioContext()` or
  * `audioContext.resume()` to happen in the **synchronous** call chain
@@ -92,29 +92,25 @@ let audioContext: AudioContext | null = null;
  * events arrive via Tauri's async `listen()` — that's NOT a gesture,
  * so resume() is silently ignored.
  *
- * Call this once at app startup.  It attaches listeners that fire on
- * the very first user interaction and move the context to "running".
- * After that, all subsequent `playSoundSequence` calls just work.
+ * The context can also fall back to "suspended" after a period of
+ * inactivity (WebKit power-saving policy).  We keep the listeners
+ * permanently so every user gesture re-resumes if needed.
+ *
+ * Call this once at app startup.
  */
 export function warmUpAudioContext(): void {
-  const unlock = () => {
+  const keepAlive = () => {
     if (!audioContext) {
       audioContext = new AudioContext();
     }
     if (audioContext.state === "suspended") {
       audioContext.resume();
     }
-    // Once running, remove ourselves — no need to keep firing
-    if (audioContext.state === "running") {
-      document.removeEventListener("click", unlock, true);
-      document.removeEventListener("keydown", unlock, true);
-      document.removeEventListener("pointerdown", unlock, true);
-    }
   };
   // Use capture phase so we fire even if the event is stopped
-  document.addEventListener("click", unlock, true);
-  document.addEventListener("keydown", unlock, true);
-  document.addEventListener("pointerdown", unlock, true);
+  document.addEventListener("click", keepAlive, true);
+  document.addEventListener("keydown", keepAlive, true);
+  document.addEventListener("pointerdown", keepAlive, true);
 }
 
 /** Get or create audio context */

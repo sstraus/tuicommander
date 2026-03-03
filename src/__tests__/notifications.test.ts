@@ -241,33 +241,36 @@ describe("warmUpAudioContext", () => {
     expect(mockCtx.resume).toHaveBeenCalled();
   });
 
-  it("removes listeners once AudioContext is running", async () => {
+  it("re-resumes AudioContext when it falls back to suspended after being running", async () => {
     vi.resetModules();
+    let resumeCallCount = 0;
     const mockCtx = {
       state: "suspended",
-      resume: vi.fn().mockImplementation(function(this: { state: string }) {
-        this.state = "running";
+      resume: vi.fn(() => {
+        resumeCallCount++;
+        mockCtx.state = "running";
         return Promise.resolve();
       }),
     };
-    // Bind resume so `this` works
-    mockCtx.resume = mockCtx.resume.bind(mockCtx);
     globalThis.AudioContext = class {
       constructor() { return mockCtx as unknown as AudioContext; }
     } as unknown as typeof AudioContext;
 
-    const removeSpy = vi.spyOn(document, "removeEventListener");
     const mod = await import("../notifications");
     mod.warmUpAudioContext();
 
+    // First click: context goes suspended → running
     document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(mockCtx.state).toBe("running");
+    const callsAfterFirst = resumeCallCount;
 
-    // Should have removed the three listeners (click, keydown, pointerdown)
-    const removeCalls = removeSpy.mock.calls.filter(
-      ([name]) => name === "click" || name === "keydown" || name === "pointerdown"
-    );
-    expect(removeCalls.length).toBe(3);
-    removeSpy.mockRestore();
+    // Simulate WebKit suspending the context after inactivity
+    mockCtx.state = "suspended";
+
+    // Next click should re-resume it
+    document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(resumeCallCount).toBeGreaterThan(callsAfterFirst);
+    expect(mockCtx.state).toBe("running");
   });
 });
 
