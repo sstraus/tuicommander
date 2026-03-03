@@ -197,8 +197,6 @@ fn streaming_loop(
         std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
     }
 
-    // Append any unprocessed samples still in step_buf
-    all_audio.extend_from_slice(&step_buf);
     all_audio
 }
 
@@ -462,5 +460,46 @@ mod tests {
         assert!(result.is_some());
         let text = result.unwrap();
         assert!(text.contains("samples"));
+    }
+
+    #[test]
+    fn test_all_audio_no_duplication_on_pending_step_buf() {
+        // Regression test: when the loop exits with unprocessed samples in
+        // step_buf, all_audio must NOT contain those samples twice.
+        // (step_buf samples are already in all_audio from the drain at line 141.)
+        let transcriber: Arc<dyn Transcriber> = Arc::new(EchoTranscriber::new());
+        let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (tx, _rx) = mpsc::channel::<String>();
+
+        // Feed exactly 1000ms — less than INITIAL_STEP_MS (1500ms), so the loop
+        // will drain it into step_buf but never process a window. When stop fires,
+        // step_buf still holds those samples.
+        let input_samples = speech_samples(1000);
+        let expected_len = input_samples.len();
+        {
+            let mut buf = buffer.lock();
+            buf.extend(input_samples);
+        }
+
+        let buf_clone = buffer.clone();
+        let stop_clone = stop.clone();
+
+        let handle = std::thread::spawn(move || {
+            streaming_loop(transcriber, buf_clone, tx, stop_clone, None)
+        });
+
+        // Let the loop drain the buffer
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        stop.store(true, Ordering::Release);
+
+        let all_audio = handle.join().expect("Loop should not panic");
+        assert_eq!(
+            all_audio.len(),
+            expected_len,
+            "all_audio should contain each sample exactly once, got {} instead of {}",
+            all_audio.len(),
+            expected_len
+        );
     }
 }
