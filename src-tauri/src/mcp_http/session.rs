@@ -216,7 +216,18 @@ pub(super) async fn create_session(
         }
     };
 
-    let mut cmd = build_shell_command(&shell);
+    let agent_teams = {
+        let cfg = state.config.read();
+        if cfg.agent_teams_shim {
+            Some(crate::pty::AgentTeamsEnv {
+                session_id: session_id.clone(),
+                http_port: cfg.remote_access_port,
+            })
+        } else {
+            None
+        }
+    };
+    let mut cmd = build_shell_command(&shell, agent_teams.as_ref());
     if let Some(ref cwd) = body.cwd {
         cmd.cwd(cwd);
     }
@@ -418,7 +429,18 @@ pub(super) async fn create_session_with_worktree(
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Failed to open PTY: {}", e)}))),
     };
 
-    let mut cmd = build_shell_command(&shell);
+    let agent_teams = {
+        let cfg = state.config.read();
+        if cfg.agent_teams_shim {
+            Some(crate::pty::AgentTeamsEnv {
+                session_id: session_id.clone(),
+                http_port: cfg.remote_access_port,
+            })
+        } else {
+            None
+        }
+    };
+    let mut cmd = build_shell_command(&shell, agent_teams.as_ref());
     cmd.cwd(worktree.path.to_string_lossy().as_ref());
 
     let child = match pair.slave.spawn_command(cmd) {

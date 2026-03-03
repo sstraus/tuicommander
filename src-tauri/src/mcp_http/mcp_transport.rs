@@ -329,7 +329,18 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 Ok(p) => p,
                 Err(e) => return serde_json::json!({"error": format!("Failed to open PTY: {}", e)}),
             };
-            let mut cmd = build_shell_command(&shell);
+            let agent_teams = {
+                let cfg = state.config.read();
+                if cfg.agent_teams_shim {
+                    Some(crate::pty::AgentTeamsEnv {
+                        session_id: session_id.clone(),
+                        http_port: cfg.remote_access_port,
+                    })
+                } else {
+                    None
+                }
+            };
+            let mut cmd = build_shell_command(&shell, agent_teams.as_ref());
             if let Some(ref dir) = cwd { cmd.cwd(dir); }
             let child = match pair.slave.spawn_command(cmd) {
                 Ok(c) => c,

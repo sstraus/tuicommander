@@ -28,8 +28,31 @@ pub(crate) fn default_shell() -> String {
     }
 }
 
+/// Environment overrides for Agent Teams iTerm2 shim mode.
+/// When enabled, these env vars make Claude Code detect an iTerm2 terminal
+/// and find the `it2` shim on PATH, enabling session splitting (Agent Teams).
+pub(crate) struct AgentTeamsEnv {
+    pub session_id: String,
+    pub http_port: u16,
+}
+
+impl AgentTeamsEnv {
+    /// Return the environment variable overrides to inject into the PTY.
+    pub(crate) fn env_overrides(&self) -> Vec<(String, String)> {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
+        let tuic_bin = format!("{home}/.tuicommander/bin");
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        vec![
+            ("ITERM_SESSION_ID".to_string(), format!("w0t0p0:{}", self.session_id)),
+            ("TERM_PROGRAM".to_string(), "iTerm.app".to_string()),
+            ("PATH".to_string(), format!("{tuic_bin}:{current_path}")),
+            ("TUIC_HTTP_PORT".to_string(), self.http_port.to_string()),
+        ]
+    }
+}
+
 /// Build a CommandBuilder for the given shell with platform-appropriate flags.
-pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
+pub(crate) fn build_shell_command(shell: &str, agent_teams: Option<&AgentTeamsEnv>) -> CommandBuilder {
     #[allow(unused_mut)]
     let mut cmd = CommandBuilder::new(shell);
     // Login shell flag is Unix-only; PowerShell/cmd.exe don't support -l
@@ -61,6 +84,13 @@ pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
         } else {
             // Fallback: ensure UTF-8 is available even when LANG is completely unset
             cmd.env("LANG", "en_US.UTF-8");
+        }
+        // Agent Teams shim: override TERM_PROGRAM to iTerm.app, inject
+        // ITERM_SESSION_ID, prepend ~/.tuicommander/bin to PATH, set TUIC_HTTP_PORT
+        if let Some(at) = agent_teams {
+            for (k, v) in at.env_overrides() {
+                cmd.env(k, v);
+            }
         }
     }
     cmd
@@ -521,7 +551,18 @@ pub(crate) async fn create_pty(
             }
         };
 
-        let mut cmd = build_shell_command(&shell);
+        let agent_teams = {
+            let cfg = state.config.read();
+            if cfg.agent_teams_shim {
+                Some(AgentTeamsEnv {
+                    session_id: session_id.clone(),
+                    http_port: cfg.remote_access_port,
+                })
+            } else {
+                None
+            }
+        };
+        let mut cmd = build_shell_command(&shell, agent_teams.as_ref());
 
         if let Some(ref cwd) = config.cwd {
             cmd.cwd(cwd);
@@ -622,7 +663,18 @@ pub(crate) async fn create_pty_with_worktree(
 
         let shell = resolve_shell(pty_config.shell);
 
-        let mut cmd = build_shell_command(&shell);
+        let agent_teams = {
+            let cfg = state.config.read();
+            if cfg.agent_teams_shim {
+                Some(AgentTeamsEnv {
+                    session_id: session_id.clone(),
+                    http_port: cfg.remote_access_port,
+                })
+            } else {
+                None
+            }
+        };
+        let mut cmd = build_shell_command(&shell, agent_teams.as_ref());
         cmd.cwd(&worktree_path);
 
         let child = pair
@@ -1292,5 +1344,39 @@ mod tests {
         // Second resize refreshes the timer
         s.on_resize();
         assert!(s.is_resize_grace(), "second resize should restart grace period");
+    }
+
+    // --- Agent Teams env injection tests ---
+
+    #[test]
+    fn agent_teams_env_sets_iterm_session_id() {
+        let env = AgentTeamsEnv { session_id: "abc-123".to_string(), http_port: 9876 };
+        let vars = env.env_overrides();
+        let val = vars.iter().find(|(k, _)| k == "ITERM_SESSION_ID").map(|(_, v)| v.as_str());
+        assert_eq!(val, Some("w0t0p0:abc-123"));
+    }
+
+    #[test]
+    fn agent_teams_env_sets_term_program() {
+        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 8080 };
+        let vars = env.env_overrides();
+        let val = vars.iter().find(|(k, _)| k == "TERM_PROGRAM").map(|(_, v)| v.as_str());
+        assert_eq!(val, Some("iTerm.app"));
+    }
+
+    #[test]
+    fn agent_teams_env_prepends_tuic_bin_to_path() {
+        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 8080 };
+        let vars = env.env_overrides();
+        let path_val = vars.iter().find(|(k, _)| k == "PATH").map(|(_, v)| v.clone()).unwrap();
+        assert!(path_val.starts_with(&format!("{}/.tuicommander/bin:", std::env::var("HOME").unwrap_or_default())));
+    }
+
+    #[test]
+    fn agent_teams_env_sets_tuic_http_port() {
+        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 9876 };
+        let vars = env.env_overrides();
+        let val = vars.iter().find(|(k, _)| k == "TUIC_HTTP_PORT").map(|(_, v)| v.as_str());
+        assert_eq!(val, Some("9876"));
     }
 }
