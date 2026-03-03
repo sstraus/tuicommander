@@ -1,26 +1,28 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-// Contract tests for BottomTabs frosted glass effect.
-// These document the required CSS properties without parsing the CSS file.
-describe("BottomTabs frosted glass CSS contract", () => {
-  it("background must be semi-transparent for frosted glass", () => {
-    // rgba(37,37,38,0.85) — alpha < 1 lets backdrop-filter blur show through
-    const bg = "rgba(37,37,38,0.85)";
-    expect(bg).toMatch(/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\.\d+\s*\)/);
-    const alpha = parseFloat(bg.match(/[\d.]+\s*\)$/)?.[0] ?? "1");
+const css = readFileSync(
+  resolve(__dirname, "../components/BottomTabs.module.css"),
+  "utf-8",
+);
+
+describe("BottomTabs frosted glass CSS", () => {
+  it("background is semi-transparent (alpha < 1)", () => {
+    const match = css.match(/background:\s*rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)/);
+    expect(match, "rgba background not found in BottomTabs.module.css").toBeTruthy();
+    const alpha = parseFloat(match![1]);
     expect(alpha).toBeLessThan(1);
   });
 
-  it("backdrop-filter blur value must be >= 10px", () => {
-    const blurPx = 20;
+  it("backdrop-filter blur is >= 10px", () => {
+    const match = css.match(/backdrop-filter:[^;]*blur\(\s*(\d+)px\s*\)/);
+    expect(match, "backdrop-filter blur not found in BottomTabs.module.css").toBeTruthy();
+    const blurPx = parseInt(match![1], 10);
     expect(blurPx).toBeGreaterThanOrEqual(10);
   });
 
   it("safe-area-inset-bottom uses max() fallback pattern", () => {
-    // max(0px, env(safe-area-inset-bottom)) ensures a non-negative value
-    // even on browsers that don't support env()
-    const pattern = /max\(\s*\d+px\s*,\s*env\(safe-area-inset-bottom[^)]*\)\s*\)/;
-    const cssValue = "max(0px, env(safe-area-inset-bottom))";
-    expect(cssValue).toMatch(pattern);
+    expect(css).toMatch(/max\(\s*\d+px\s*,\s*env\(safe-area-inset-bottom[^)]*\)\s*\)/);
   });
 });

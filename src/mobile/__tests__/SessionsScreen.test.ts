@@ -1,29 +1,26 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-// Test the pull-to-refresh spinner logic for SessionsScreen.
-// The spinner should only show when refreshing=true AND sessions.length > 0.
-describe("SessionsScreen refresh spinner visibility", () => {
-  function shouldShowSpinner(refreshing: boolean, sessionCount: number): boolean {
-    return refreshing && sessionCount > 0;
-  }
+const source = readFileSync(
+  resolve(__dirname, "../screens/SessionsScreen.tsx"),
+  "utf-8",
+);
 
-  it("hidden when not refreshing and no sessions", () => {
-    expect(shouldShowSpinner(false, 0)).toBe(false);
+describe("SessionsScreen refresh spinner", () => {
+  it("gates spinner on refreshing AND sessions.length > 0", () => {
+    // The spinner must only show when there are already loaded sessions,
+    // otherwise the skeleton handles the empty-loading state.
+    expect(source).toMatch(/props\.refreshing\s*&&\s*props\.sessions\.length\s*>\s*0/);
   });
 
-  it("hidden when not refreshing with sessions", () => {
-    expect(shouldShowSpinner(false, 3)).toBe(false);
+  it("has a pull-to-refresh threshold constant", () => {
+    // PULL_THRESHOLD controls how far user must drag before release triggers refresh.
+    expect(source).toMatch(/PULL_THRESHOLD\s*=\s*\d+/);
   });
 
-  it("hidden when refreshing but no sessions (skeleton handles that case)", () => {
-    expect(shouldShowSpinner(true, 0)).toBe(false);
-  });
-
-  it("visible when refreshing and sessions exist", () => {
-    expect(shouldShowSpinner(true, 1)).toBe(true);
-  });
-
-  it("visible when refreshing and multiple sessions exist", () => {
-    expect(shouldShowSpinner(true, 5)).toBe(true);
+  it("triggers onRefresh when pull distance exceeds threshold", () => {
+    expect(source).toMatch(/pullY\(\)\s*>=\s*PULL_THRESHOLD/);
+    expect(source).toContain("props.onRefresh()");
   });
 });

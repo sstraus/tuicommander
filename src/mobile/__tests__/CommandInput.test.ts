@@ -1,22 +1,28 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-// Test the logical attributes that prevent iOS auto-zoom on CommandInput.
-// iOS Safari zooms when font-size < 16px; inputmode="text" helps suppress zoom.
+const css = readFileSync(
+  resolve(__dirname, "../components/CommandInput.module.css"),
+  "utf-8",
+);
+
+const tsx = readFileSync(
+  resolve(__dirname, "../components/CommandInput.tsx"),
+  "utf-8",
+);
+
 describe("CommandInput iOS auto-zoom prevention", () => {
-  it("font-size must be at least 16px to prevent iOS auto-zoom", () => {
-    // The canonical minimum to prevent zoom on iOS Safari
-    const MIN_IOS_FONT_SIZE = 16;
-    // This is the contract the CSS must satisfy
-    const COMMAND_INPUT_FONT_SIZE = 16;
-    expect(COMMAND_INPUT_FONT_SIZE).toBeGreaterThanOrEqual(MIN_IOS_FONT_SIZE);
+  it("input font-size is >= 16px to prevent iOS auto-zoom", () => {
+    // iOS Safari zooms when the focused input has font-size < 16px.
+    const match = css.match(/\.input\s*\{[^}]*font-size:\s*(\d+)px/s);
+    expect(match, "font-size not found in .input rule of CommandInput.module.css").toBeTruthy();
+    const fontSizePx = parseInt(match![1], 10);
+    expect(fontSizePx).toBeGreaterThanOrEqual(16);
   });
 
-  it("inputmode=text suppresses virtual keyboard type switching", () => {
-    // inputmode="text" on <input type="text"> is a best-practice hint for
-    // mobile keyboards: it prevents Safari from auto-zooming on focus in some
-    // WebKit versions and avoids undesired keyboard layout changes.
-    const validInputModes = ["text", "search", "email", "tel", "url", "numeric", "decimal", "none"];
-    const chosenInputMode = "text";
-    expect(validInputModes).toContain(chosenInputMode);
+  it('input element has inputmode="text"', () => {
+    // inputmode="text" prevents keyboard layout switching on mobile.
+    expect(tsx).toContain('inputmode="text"');
   });
 });
