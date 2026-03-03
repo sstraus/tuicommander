@@ -207,6 +207,70 @@ describe("NotificationManager", () => {
   });
 });
 
+describe("warmUpAudioContext", () => {
+  const OriginalAudioContext = globalThis.AudioContext;
+
+  afterEach(() => {
+    globalThis.AudioContext = OriginalAudioContext;
+  });
+
+  it("creates AudioContext and resumes on first user click", async () => {
+    vi.resetModules();
+    const mockCtx = {
+      state: "suspended",
+      resume: vi.fn().mockResolvedValue(undefined),
+    };
+    // After resume, state becomes "running" so the listeners are removed
+    mockCtx.resume.mockImplementation(() => {
+      mockCtx.state = "running";
+      return Promise.resolve();
+    });
+    globalThis.AudioContext = class {
+      constructor() { return mockCtx as unknown as AudioContext; }
+    } as unknown as typeof AudioContext;
+
+    const mod = await import("../notifications");
+    mod.warmUpAudioContext();
+
+    // Before click — no AudioContext created yet
+    expect(mockCtx.resume).not.toHaveBeenCalled();
+
+    // Simulate user click
+    document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(mockCtx.resume).toHaveBeenCalled();
+  });
+
+  it("removes listeners once AudioContext is running", async () => {
+    vi.resetModules();
+    const mockCtx = {
+      state: "suspended",
+      resume: vi.fn().mockImplementation(function(this: { state: string }) {
+        this.state = "running";
+        return Promise.resolve();
+      }),
+    };
+    // Bind resume so `this` works
+    mockCtx.resume = mockCtx.resume.bind(mockCtx);
+    globalThis.AudioContext = class {
+      constructor() { return mockCtx as unknown as AudioContext; }
+    } as unknown as typeof AudioContext;
+
+    const removeSpy = vi.spyOn(document, "removeEventListener");
+    const mod = await import("../notifications");
+    mod.warmUpAudioContext();
+
+    document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    // Should have removed the three listeners (click, keydown, pointerdown)
+    const removeCalls = removeSpy.mock.calls.filter(
+      ([name]) => name === "click" || name === "keydown" || name === "pointerdown"
+    );
+    expect(removeCalls.length).toBe(3);
+    removeSpy.mockRestore();
+  });
+});
+
 describe("DEFAULT_NOTIFICATION_CONFIG", () => {
   it("has expected defaults", async () => {
     vi.resetModules();

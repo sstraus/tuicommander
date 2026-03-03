@@ -83,15 +83,46 @@ const SOUNDS: Record<NotificationSound, SoundSequence> = {
 /** Audio context for sound generation */
 let audioContext: AudioContext | null = null;
 
-/** Get or create audio context, resuming on every call to catch user gestures */
+/**
+ * Warm up the AudioContext by creating it inside a real user gesture.
+ *
+ * WebKit (used by Tauri on macOS) requires `new AudioContext()` or
+ * `audioContext.resume()` to happen in the **synchronous** call chain
+ * of a user gesture (click, keydown, pointerdown).  Parsed terminal
+ * events arrive via Tauri's async `listen()` — that's NOT a gesture,
+ * so resume() is silently ignored.
+ *
+ * Call this once at app startup.  It attaches listeners that fire on
+ * the very first user interaction and move the context to "running".
+ * After that, all subsequent `playSoundSequence` calls just work.
+ */
+export function warmUpAudioContext(): void {
+  const unlock = () => {
+    if (!audioContext) {
+      audioContext = new AudioContext();
+    }
+    if (audioContext.state === "suspended") {
+      audioContext.resume();
+    }
+    // Once running, remove ourselves — no need to keep firing
+    if (audioContext.state === "running") {
+      document.removeEventListener("click", unlock, true);
+      document.removeEventListener("keydown", unlock, true);
+      document.removeEventListener("pointerdown", unlock, true);
+    }
+  };
+  // Use capture phase so we fire even if the event is stopped
+  document.addEventListener("click", unlock, true);
+  document.addEventListener("keydown", unlock, true);
+  document.addEventListener("pointerdown", unlock, true);
+}
+
+/** Get or create audio context */
 function getAudioContext(): AudioContext {
   if (!audioContext) {
     audioContext = new AudioContext();
   }
-  // Always try to resume synchronously — WebKit requires resume()
-  // to be called in the synchronous call chain of a user gesture.
-  // The { once: true } pattern fails when the listener is consumed
-  // by a non-audio click, leaving the context permanently suspended.
+  // Belt-and-suspenders: still try resume in case warmUp hasn't fired yet
   if (audioContext.state === "suspended") {
     audioContext.resume();
   }
