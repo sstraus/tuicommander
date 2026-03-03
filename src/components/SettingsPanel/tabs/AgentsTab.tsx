@@ -365,6 +365,18 @@ export const AgentsTab: Component = () => {
         <p class={s.hint}>When agents declare their current work phase, update the tab name with a short title</p>
       </div>
 
+      <div class={s.group}>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={settingsStore.state.suggestFollowups}
+            onChange={(e) => settingsStore.setSuggestFollowups(e.currentTarget.checked)}
+          />
+          <span>Show suggested follow-up actions</span>
+        </div>
+        <p class={s.hint}>Display actionable suggestions from agents after completing a task</p>
+      </div>
+
       <div class={a.agentList}>
         <For each={AGENT_TYPES}>
           {(type) => (

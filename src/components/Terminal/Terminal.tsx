@@ -33,7 +33,8 @@ type ParsedEvent =
   | { type: "plan-file"; path: string }
   | { type: "user-input"; content: string }
   | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string }
-  | { type: "intent"; text: string; title?: string };
+  | { type: "intent"; text: string; title?: string }
+  | { type: "suggest"; items: string[] };
 
 export interface TerminalProps {
   id: string;
@@ -356,10 +357,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           }
           case "status-line": {
-            // Agent is working again — clear any question state
+            // Agent is working again — clear any question/suggest state
             terminalsStore.clearAwaitingInput(props.id);
-            // Store current task for Activity Dashboard (not tab title — too noisy)
-            terminalsStore.update(props.id, { currentTask: parsed.task_name });
+            terminalsStore.update(props.id, { currentTask: parsed.task_name, suggestedActions: null });
             break;
           }
           case "rate-limit": {
@@ -438,6 +438,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
             terminalsStore.setAgentIntent(props.id, parsed.text);
             if (parsed.title && settingsStore.state.intentTabTitle) {
               terminalsStore.update(props.id, { name: parsed.title });
+            }
+            break;
+          case "suggest":
+            if (settingsStore.state.suggestFollowups && parsed.items?.length) {
+              terminalsStore.update(props.id, { suggestedActions: parsed.items });
             }
             break;
         }

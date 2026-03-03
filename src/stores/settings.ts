@@ -228,6 +228,7 @@ interface SettingsStoreState {
   updateChannel: UpdateChannel;
   disabledAgents: string[];
   intentTabTitle: boolean;
+  suggestFollowups: boolean;
 }
 
 /** Create the settings store */
@@ -249,6 +250,7 @@ function createSettingsStore() {
     updateChannel: "stable" as UpdateChannel,
     disabledAgents: [],
     intentTabTitle: true,
+    suggestFollowups: true,
   });
 
   const actions = {
@@ -287,6 +289,7 @@ function createSettingsStore() {
         setState("updateChannel", (channel === "beta" || channel === "nightly") ? channel : "stable");
         setState("disabledAgents", config.disabled_agents ?? []);
         setState("intentTabTitle", config.intent_tab_title ?? true);
+        setState("suggestFollowups", config.suggest_followups ?? true);
       } catch (err) {
         appLogger.error("config", "Failed to hydrate settings", err);
       }
@@ -536,6 +539,20 @@ function createSettingsStore() {
       } catch (err) {
         appLogger.error("config", "Failed to persist intentTabTitle", err);
         setState("intentTabTitle", prevValue);
+      }
+    },
+
+    /** Set suggest-followups preference */
+    async setSuggestFollowups(enabled: boolean): Promise<void> {
+      const prevValue = state.suggestFollowups;
+      setState("suggestFollowups", enabled);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.suggest_followups = enabled;
+        await invoke("save_config", { config });
+      } catch (err) {
+        appLogger.error("config", "Failed to persist suggestFollowups", err);
+        setState("suggestFollowups", prevValue);
       }
     },
 
