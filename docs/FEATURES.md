@@ -413,6 +413,23 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 - **Context menu integration:** Right-click terminal > Agents submenu with per-agent run configurations
 - **Busy detection:** Agents submenu disabled when a process is already running in the active terminal
 
+### 6.10 Agent Teams (it2 Shim)
+- **Purpose:** Enables Claude Code's Agent Teams feature to use TUIC tabs instead of tmux panes
+- **it2 shim:** Bash script at `~/.tuicommander/bin/it2` that emulates the iTerm2 `it2` CLI
+- **Supported commands:** `--version`, `session split`, `session run`, `session close`, `session list`
+- **Communication:** Uses `curl --unix-socket` via `TUIC_SOCKET_PATH` to call the TUIC HTTP API
+- **PTY env injection:** Sets `ITERM_SESSION_ID`, `TERM_PROGRAM=iTerm.app`, prepends `~/.tuicommander/bin` to `PATH`
+- **Auto-install:** Shim installed on app startup when `agent_teams_shim` config is enabled
+- **Settings toggle:** General > Agent Teams > Enable it2 shim
+- **Suggest follow-ups:** Agents can propose follow-up actions via `[[suggest: ...]]` tokens, displayed as floating chip bar
+
+### 6.11 Suggest Follow-up Actions
+- **Protocol:** Agents emit `[[suggest: action1 | action2 | action3]]` tokens after completing a task
+- **Desktop:** Floating chip bar (SuggestOverlay) above terminal, auto-dismiss after 30s or on Esc
+- **Mobile:** Horizontal scrollable pill buttons above CommandInput in SessionDetailScreen
+- **Action:** Clicking a chip sends the text to the PTY via `write_pty`
+- **Settings:** Configurable via Settings > Agents > Show suggested follow-up actions
+
 ---
 
 ## 7. Git Integration
