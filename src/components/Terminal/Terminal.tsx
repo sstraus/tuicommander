@@ -158,11 +158,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
 
   /** Fit terminal to container, guarded against undersized containers.
-   *  Skips fit when the container is too small to avoid WebGL rendering artifacts. */
+   *  Preserves viewport scroll position across reflows (e.g. font size zoom). */
   const doFit = () => {
     if (!containerRef || !fitAddon || !terminal) return;
     if (containerRef.offsetWidth < MIN_FIT_WIDTH || containerRef.offsetHeight < MIN_FIT_HEIGHT) return;
+    const buf = terminal.buffer.active;
+    const wasAtBottom = buf.viewportY === buf.baseY;
+    const savedViewportY = buf.viewportY;
     fitAddon.fit();
+    if (!wasAtBottom) {
+      terminal.scrollToLine(savedViewportY);
+    }
   };
 
   // Reset activity flag when this terminal becomes active (store clears activity)
