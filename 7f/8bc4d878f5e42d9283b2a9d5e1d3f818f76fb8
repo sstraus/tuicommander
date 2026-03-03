@@ -1,0 +1,55 @@
+src/components/TipOfTheDay/TipOfTheDay.tsx
+  7a3e1bea8be6638a 1-44
+src/data/tips.ts
+  7a3e1bea8be6638a 1-105
+src/components/TipOfTheDay/TipOfTheDay.module.css
+  7a3e1bea8be6638a 1-117
+src/components/TerminalArea.tsx
+  7a3e1bea8be6638a 9,55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "7f8bc4d878f5e42d9283b2a9d5e1d3f818f76fb8",
+  "prompts": {
+    "3cf58d5cd968e347": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a19c10c-ffc9-4018-97ac-4824ba78e802",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 529,
+      "overriden_lines": 0
+    },
+    "3ee4f1d50e5d6cc6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "68ed8556-3fba-4c5f-83b5-f0867cfa2301",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 57,
+      "total_deletions": 1,
+      "accepted_lines": 56,
+      "overriden_lines": 0
+    },
+    "7a3e1bea8be6638a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc270507-e8e4-421f-8bc5-5cd5dbfee390",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 268,
+      "total_deletions": 0,
+      "accepted_lines": 268,
+      "overriden_lines": 0
+    }
+  }
+}
