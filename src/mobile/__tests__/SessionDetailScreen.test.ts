@@ -133,3 +133,56 @@ describe("rate-limit countdown formatting", () => {
     expect(formatRetryCountdown(1500)).toBe("2s");
   });
 });
+
+describe("rich header field visibility", () => {
+  interface HeaderState {
+    agent_intent?: string;
+    current_task?: string;
+    progress?: number;
+    usage_limit_pct?: number;
+  }
+
+  function getHeaderFields(state: HeaderState) {
+    return {
+      intentLine: !!state.agent_intent,
+      taskLine: !!state.current_task,
+      progressBar: state.progress != null,
+      usageLabel: state.usage_limit_pct != null,
+      usageDanger: (state.usage_limit_pct ?? 0) > 80,
+    };
+  }
+
+  it("shows intent line when agent_intent present", () => {
+    const fields = getHeaderFields({ agent_intent: "Refactoring" });
+    expect(fields.intentLine).toBe(true);
+  });
+
+  it("shows task line when current_task present", () => {
+    const fields = getHeaderFields({ current_task: "Reading files" });
+    expect(fields.taskLine).toBe(true);
+  });
+
+  it("shows progress bar when progress is set", () => {
+    const fields = getHeaderFields({ current_task: "Build", progress: 50 });
+    expect(fields.progressBar).toBe(true);
+  });
+
+  it("shows usage label when usage_limit_pct is set", () => {
+    const fields = getHeaderFields({ usage_limit_pct: 60 });
+    expect(fields.usageLabel).toBe(true);
+    expect(fields.usageDanger).toBe(false);
+  });
+
+  it("marks usage as danger above 80%", () => {
+    const fields = getHeaderFields({ usage_limit_pct: 95 });
+    expect(fields.usageDanger).toBe(true);
+  });
+
+  it("shows no fields when state is empty", () => {
+    const fields = getHeaderFields({});
+    expect(fields.intentLine).toBe(false);
+    expect(fields.taskLine).toBe(false);
+    expect(fields.progressBar).toBe(false);
+    expect(fields.usageLabel).toBe(false);
+  });
+});

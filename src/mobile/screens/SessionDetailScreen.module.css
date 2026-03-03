@@ -132,3 +132,54 @@
 .endedBackBtn:active {
   opacity: 0.7;
 }
+
+.intentLine,
+.taskLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: 13px;
+  color: var(--fg-muted);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.intentLine {
+  font-style: italic;
+}
+
+.intentLine svg,
+.taskLine svg {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.subText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerProgressBar {
+  height: 2px;
+  background: var(--bg-tertiary);
+  flex-shrink: 0;
+}
+
+.headerProgressFill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.usageLabel {
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.usageLabel.danger {
+  color: var(--accent-red, #f44747);
+}
