@@ -36,6 +36,7 @@ export function CommandInput(props: CommandInputProps) {
         autocorrect="off"
         spellcheck={false}
         autocapitalize="off"
+        inputmode="text"
       />
       <button class={styles.send} type="submit">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">

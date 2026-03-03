@@ -18,7 +18,7 @@
   border: 1px solid var(--border);
   background: var(--bg-tertiary);
   color: var(--fg-primary);
-  font-size: 14px;
+  font-size: 16px;
   font-family: var(--font-mono);
 }
 
