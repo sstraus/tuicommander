@@ -867,9 +867,10 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
 /// Strips the optional `(title)` suffix before colorizing.
 /// Only invoke when `parse()` returned an Intent event to avoid regex on every chunk.
 ///
-/// Strategy: match on ANSI-stripped (clean) text per-line to find the tag, then
-/// map the clean match boundaries back to raw-text offsets so only the tag portion
-/// is replaced — surrounding content (bullet prefixes, ANSI formatting) survives.
+/// Strategy: match on ANSI-stripped (clean) text per-line, then replace the tag
+/// in the clean text and emit that. The original ANSI formatting on the intent
+/// line is discarded (we replace it with our own yellow dim), but surrounding
+/// content like bullet prefixes is preserved because it's in the clean text.
 pub fn colorize_intent(raw: &str) -> String {
     lazy_static::lazy_static! {
         static ref INTENT_RE: regex::Regex =
@@ -890,13 +891,12 @@ pub fn colorize_intent(raw: &str) -> String {
             let trimmed = clean_body.trim_end();
             let colored = format!("\x1b[2;33m{}{}\x1b[0m", prefix, trimmed);
 
-            // Map clean match boundaries to raw-text byte offsets
-            let raw_start = clean_offset_to_raw(line_no_cr, m.start());
-            let raw_end = clean_offset_to_raw(line_no_cr, m.end());
-
-            result.push_str(&line_no_cr[..raw_start]);
-            result.push_str(&colored);
-            result.push_str(&line_no_cr[raw_end..]);
+            // Replace the tag in clean text, preserving surrounding clean content
+            let mut clean_line = String::with_capacity(clean.len());
+            clean_line.push_str(&clean[..m.start()]);
+            clean_line.push_str(&colored);
+            clean_line.push_str(&clean[m.end()..]);
+            result.push_str(&clean_line);
             if line.ends_with('\r') {
                 result.push('\r');
             }
@@ -905,73 +905,6 @@ pub fn colorize_intent(raw: &str) -> String {
         }
     }
     result
-}
-
-/// Map a byte offset in ANSI-stripped text to the corresponding offset in raw text.
-/// Walks through raw text, skipping ANSI escape sequences (which don't contribute
-/// to clean-text offsets), until the clean-text position is reached.
-fn clean_offset_to_raw(raw: &str, clean_target: usize) -> usize {
-    let bytes = raw.as_bytes();
-    let mut clean_pos: usize = 0;
-    let mut raw_pos: usize = 0;
-
-    while raw_pos < bytes.len() && clean_pos < clean_target {
-        if bytes[raw_pos] == 0x1b {
-            // Skip ANSI escape sequence
-            raw_pos += 1;
-            if raw_pos < bytes.len() && bytes[raw_pos] == b'[' {
-                // CSI sequence: skip until final byte (0x40-0x7E)
-                raw_pos += 1;
-                while raw_pos < bytes.len() && !(bytes[raw_pos] >= 0x40 && bytes[raw_pos] <= 0x7e) {
-                    raw_pos += 1;
-                }
-                if raw_pos < bytes.len() { raw_pos += 1; }
-            } else if raw_pos < bytes.len() && bytes[raw_pos] == b']' {
-                // OSC sequence: skip until BEL or ST
-                raw_pos += 1;
-                while raw_pos < bytes.len() {
-                    if bytes[raw_pos] == 0x07 { raw_pos += 1; break; }
-                    if bytes[raw_pos] == 0x1b && raw_pos + 1 < bytes.len() && bytes[raw_pos + 1] == b'\\' {
-                        raw_pos += 2; break;
-                    }
-                    raw_pos += 1;
-                }
-            }
-            // else: bare ESC, already skipped
-        } else {
-            // Regular character — advance both pointers
-            let ch_len = utf8_char_width(bytes[raw_pos]);
-            clean_pos += ch_len;
-            raw_pos += ch_len;
-        }
-    }
-
-    // Skip trailing ANSI codes at the boundary so we don't split a sequence
-    while raw_pos < bytes.len() && bytes[raw_pos] == 0x1b {
-        let start = raw_pos;
-        raw_pos += 1;
-        if raw_pos < bytes.len() && bytes[raw_pos] == b'[' {
-            raw_pos += 1;
-            while raw_pos < bytes.len() && !(bytes[raw_pos] >= 0x40 && bytes[raw_pos] <= 0x7e) {
-                raw_pos += 1;
-            }
-            if raw_pos < bytes.len() { raw_pos += 1; }
-        } else {
-            // Not a CSI — put it back, don't skip non-CSI escapes at boundary
-            raw_pos = start;
-            break;
-        }
-    }
-
-    raw_pos
-}
-
-/// Width of a UTF-8 character based on its leading byte.
-fn utf8_char_width(b: u8) -> usize {
-    if b < 0x80 { 1 }
-    else if b < 0xE0 { 2 }
-    else if b < 0xF0 { 3 }
-    else { 4 }
 }
 
 /// Detect agent-declared intent tokens: `[intent: <text>]`, `[[intent: <text>]]`,
