@@ -43,6 +43,8 @@ export function useSessions() {
   const [refreshing, setRefreshing] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
+  let refreshToken = 0;
+
   async function fetchSessions() {
     try {
       const result = await rpc<SessionInfo[]>("list_active_sessions");
@@ -54,7 +56,8 @@ export function useSessions() {
       appLogger.warn("network", `Failed to fetch sessions: ${msg}`);
     } finally {
       setLoading(false);
-      setRefreshing(false);
+      // NOTE: do NOT set refreshing here — refresh() manages its own lifecycle
+      // via the refreshToken guard to avoid race conditions with concurrent fetches.
     }
   }
 
@@ -83,8 +86,11 @@ export function useSessions() {
 
   /** Force an immediate refresh (sets refreshing=true while in-flight) */
   function refresh() {
+    const token = ++refreshToken;
     setRefreshing(true);
-    fetchSessions();
+    fetchSessions().catch(() => {}).finally(() => {
+      if (refreshToken === token) setRefreshing(false);
+    });
   }
 
   /** Count of sessions with pending questions */
