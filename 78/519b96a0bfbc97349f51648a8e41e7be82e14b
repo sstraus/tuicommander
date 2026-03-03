@@ -1,0 +1,23 @@
+tools/relay/README.md
+  f96de85ea1b9fe27 1-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "78519b96a0bfbc97349f51648a8e41e7be82e14b",
+  "prompts": {
+    "f96de85ea1b9fe27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e94d3a09-e54e-4517-96eb-2b090c2a33e2",
+        "model": "unknown"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 157,
+      "total_deletions": 0,
+      "accepted_lines": 157,
+      "overriden_lines": 0
+    }
+  }
+}
