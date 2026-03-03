@@ -4,13 +4,19 @@ All shortcuts use `Cmd` on macOS and `Ctrl` on Windows/Linux unless noted.
 
 ## Customizing Keybindings
 
-You can override any keyboard shortcut by creating a `keybindings.json` file in your TUICommander config directory:
+### From the UI
+
+Open **Help > Keyboard Shortcuts** (or `Cmd+?` → Keyboard Shortcuts). Click the pencil icon next to any shortcut to enter recording mode, then press your new key combination. The app warns you if the combo is already used by another action. Overridden shortcuts are highlighted in accent color with a reset icon to revert individually. A "Reset all to defaults" button is at the bottom.
+
+### By editing the config file
+
+You can also edit the `keybindings.json` file directly in your config directory:
 
 - **macOS:** `~/Library/Application Support/tuicommander/keybindings.json`
 - **Windows:** `%APPDATA%\tuicommander\keybindings.json`
 - **Linux:** `~/.config/tuicommander/keybindings.json`
 
-The file is a JSON array of override objects. Only include shortcuts you want to change:
+The file is a JSON array of override objects. Only include shortcuts you want to change — anything not listed uses the default:
 
 ```json
 [
@@ -21,7 +27,8 @@ The file is a JSON array of override objects. Only include shortcuts you want to
 
 - `"key"` uses `Cmd` as the platform-agnostic modifier (resolved to Meta on macOS, Ctrl on Win/Linux)
 - Set `"key": ""` or `"key": null` to unbind an action
-- The Help panel (`Cmd+?`) always shows your actual keybindings
+- Changes made via the UI are saved to this same file
+- The file is loaded at startup — restart TUICommander to pick up manual edits
 
 See the action table below for all available action names.
 
