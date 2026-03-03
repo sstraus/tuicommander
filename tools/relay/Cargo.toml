@@ -22,8 +22,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 tokio-rusqlite = "0.6"
 argon2 = "0.5"
 getrandom = "0.3"
+web-push-native = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+base64ct = { version = "1", features = ["alloc"] }
+http = "1"
 
 [dev-dependencies]
 tokio-tungstenite = "0.26"
-http = "1"
-reqwest = { version = "0.12", features = ["json"] }
