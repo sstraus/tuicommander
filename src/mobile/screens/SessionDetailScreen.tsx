@@ -45,7 +45,9 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
       </Show>
 
       <OutputView sessionId={props.session.session_id} />
-      <QuickActions sessionId={props.session.session_id} />
+      <Show when={props.session.state?.awaiting_input}>
+        <QuickActions sessionId={props.session.session_id} />
+      </Show>
       <CommandInput sessionId={props.session.session_id} />
     </div>
   );
