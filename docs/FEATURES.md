@@ -924,16 +924,23 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - SSE endpoint (`/events`) and WebSocket JSON framing for real-time updates
 
 ### 18.2 Sessions Screen
-- Session cards with agent icon, status badge, project/branch, relative time
-- Pull-to-refresh via touch events
+- Hero metrics header: active session count + awaiting input count with large tabular-nums display
+- Elevated session cards with agent icon, status badge, project/branch, relative time
+- Rich sub-rows per card: agent intent (crosshair icon) or last prompt (speech bubble), current task (gear icon) with inline progress bar, usage limit percentage
+- Question state highlighted via inset gold box-shadow
+- Pull-to-refresh spinner via touch events
 - Loading skeletons during initial data fetch
 - Empty state with instructional hint
 - Tap card to open session detail
 
 ### 18.3 Session Detail Screen
 - Live output via WebSocket (ANSI-stripped, auto-scrolling, 500-line buffer)
+- Rich header: agent intent line (italic), current task line, progress bar, usage percentage (red above 80%)
+- Error bar (red tint) when `last_error` is set
+- Rate-limit bar (orange tint) with live countdown timer (`formatRetryCountdown`)
+- Suggest follow-up chips: horizontal scrollable pills from `suggested_actions`, tap to send
 - Quick-action chips: Yes, No, y, n, Enter, Ctrl-C
-- Text command input with mobile keyboard optimizations
+- Text command input with 16px font (prevents iOS auto-zoom), `inputmode="text"`
 - Back navigation to session list
 
 ### 18.4 Question Banner
@@ -948,7 +955,8 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - Sticky section headers, tap to navigate to session
 
 ### 18.6 Settings
-- Connection info (server URL, status)
+- Connection status: Connected/Disconnected derived from connection error state
+- Server URL display
 - Notification sound toggle (localStorage-persisted)
 - Open Desktop UI link
 
@@ -960,6 +968,11 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 ### 18.8 Notification Sounds
 - Reuses shared `NotificationManager` (Web Audio API)
 - State transition detection: question, rate-limit, error, completion
+
+### 18.9 Visual Polish
+- Frosted glass bottom tabs: `backdrop-filter: blur(20px) saturate(1.8)` with semi-transparent background
+- Elevated card design: `border-radius: var(--radius-xl)`, `background: var(--bg-secondary)`, margin spacing
+- Safe-area-inset padding for notched devices
 
 ---
 
