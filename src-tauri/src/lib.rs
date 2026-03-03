@@ -621,6 +621,11 @@ pub fn run() {
         }
     }
 
+    // Install the it2 shim when Agent Teams is enabled
+    if config.agent_teams_shim {
+        agent_mcp::install_it2_shim();
+    }
+
     let builder = tauri::Builder::default();
     let builder = plugins::register_plugin_protocol(builder);
     let builder = builder

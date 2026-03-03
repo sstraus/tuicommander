@@ -335,6 +335,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                     Some(crate::pty::AgentTeamsEnv {
                         session_id: session_id.clone(),
                         http_port: cfg.remote_access_port,
+                        socket_path: super::socket_path().to_string_lossy().to_string(),
                     })
                 } else {
                     None

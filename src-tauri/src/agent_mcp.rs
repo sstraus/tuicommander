@@ -242,6 +242,131 @@ pub(crate) fn auto_install_mcp_configs() {
 }
 
 // ---------------------------------------------------------------------------
+// Agent Teams it2 shim
+// ---------------------------------------------------------------------------
+
+/// Shell script content for the `it2` shim.
+/// Translates iTerm2 CLI commands into TUIC HTTP API calls over Unix socket.
+const IT2_SHIM_SCRIPT: &str = r#"#!/bin/bash
+# it2 shim — translates iTerm2 CLI commands to TUICommander HTTP API.
+# Auto-installed by TUICommander when Agent Teams shim is enabled.
+set -euo pipefail
+
+SOCKET="${TUIC_SOCKET_PATH:-}"
+if [ -z "$SOCKET" ]; then
+  echo "Error: TUIC_SOCKET_PATH not set" >&2
+  exit 1
+fi
+
+curl_sock() {
+  curl -sS --unix-socket "$SOCKET" "http://localhost$1" "${@:2}"
+}
+
+case "${1:-}" in
+  --version)
+    echo "it2 (TUICommander shim) 1.0.0"
+    ;;
+  session)
+    case "${2:-}" in
+      split)
+        # Parse flags: -v (vertical), -s <session_id>
+        shift 2
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            -v) shift ;;
+            -s) shift; shift ;;  # parent session id — ignored, TUIC manages layout
+            *) shift ;;
+          esac
+        done
+        RESP=$(curl_sock "/sessions" -X POST -H "Content-Type: application/json" -d '{"rows":24,"cols":80}')
+        SID=$(echo "$RESP" | grep -o '"session_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+        if [ -n "$SID" ]; then
+          echo "Created new pane: $SID"
+        else
+          echo "Error: failed to create session" >&2
+          exit 1
+        fi
+        ;;
+      run)
+        # it2 session run -s <session_id> <command...>
+        shift 2
+        SID=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            -s) SID="$2"; shift 2 ;;
+            *) break ;;
+          esac
+        done
+        CMD="$*"
+        if [ -z "$SID" ] || [ -z "$CMD" ]; then
+          echo "Usage: it2 session run -s <session_id> <command>" >&2
+          exit 1
+        fi
+        # Append newline so the command executes
+        PAYLOAD=$(printf '{"data":"%s\\n"}' "$CMD")
+        curl_sock "/sessions/$SID/write" -X POST -H "Content-Type: application/json" -d "$PAYLOAD" >/dev/null
+        ;;
+      close)
+        # it2 session close -s <session_id>
+        shift 2
+        SID=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            -s) SID="$2"; shift 2 ;;
+            *) shift ;;
+          esac
+        done
+        if [ -z "$SID" ]; then
+          echo "Usage: it2 session close -s <session_id>" >&2
+          exit 1
+        fi
+        curl_sock "/sessions/$SID" -X DELETE >/dev/null
+        ;;
+      list)
+        curl_sock "/sessions"
+        ;;
+      *)
+        echo "Unknown session command: ${2:-}" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  *)
+    echo "it2 (TUICommander shim) — supported: --version, session split|run|close|list" >&2
+    exit 0
+    ;;
+esac
+"#;
+
+/// Install the `it2` shim script to `~/.tuicommander/bin/it2`.
+/// Called on app startup when `agent_teams_shim` is enabled in config.
+pub(crate) fn install_it2_shim() {
+    let Some(home) = dirs::home_dir() else {
+        eprintln!("Agent Teams: cannot determine home directory, skipping it2 shim install");
+        return;
+    };
+    let bin_dir = home.join(".tuicommander").join("bin");
+    if let Err(e) = std::fs::create_dir_all(&bin_dir) {
+        eprintln!("Agent Teams: failed to create {}: {e}", bin_dir.display());
+        return;
+    }
+    let shim_path = bin_dir.join("it2");
+    if let Err(e) = std::fs::write(&shim_path, IT2_SHIM_SCRIPT) {
+        eprintln!("Agent Teams: failed to write {}: {e}", shim_path.display());
+        return;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = std::fs::set_permissions(&shim_path, std::fs::Permissions::from_mode(0o755)) {
+            eprintln!("Agent Teams: failed to chmod {}: {e}", shim_path.display());
+            return;
+        }
+    }
+    eprintln!("Agent Teams: installed it2 shim at {}", shim_path.display());
+}
+
+// ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
 
@@ -485,5 +610,51 @@ mod tests {
         for agent in &["aider", "warp", "opencode", "codex", "droid"] {
             assert!(get_mcp_config_spec(agent).is_none(), "{agent} should not be supported");
         }
+    }
+
+    // --- it2 shim tests ---
+
+    #[test]
+    fn it2_shim_script_contains_created_new_pane() {
+        // Claude Code parses output with regex: /Created new pane:\s*(.+)/
+        assert!(IT2_SHIM_SCRIPT.contains("Created new pane:"));
+    }
+
+    #[test]
+    fn it2_shim_script_starts_with_shebang() {
+        assert!(IT2_SHIM_SCRIPT.starts_with("#!/bin/bash"));
+    }
+
+    #[test]
+    fn it2_shim_script_handles_all_required_commands() {
+        for cmd in &["--version", "split", "run", "close", "list"] {
+            assert!(IT2_SHIM_SCRIPT.contains(cmd), "script must handle {cmd}");
+        }
+    }
+
+    #[test]
+    fn it2_shim_installs_to_disk() {
+        let dir = TempDir::new().unwrap();
+        let bin_dir = dir.path().join(".tuicommander").join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let shim_path = bin_dir.join("it2");
+        std::fs::write(&shim_path, IT2_SHIM_SCRIPT).unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&shim_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let perms = std::fs::metadata(&shim_path).unwrap().permissions().mode();
+            assert_eq!(perms & 0o111, 0o111, "script should be executable");
+        }
+
+        let content = std::fs::read_to_string(&shim_path).unwrap();
+        assert!(content.starts_with("#!/bin/bash"));
+    }
+
+    #[test]
+    fn it2_shim_uses_unix_socket() {
+        assert!(IT2_SHIM_SCRIPT.contains("--unix-socket"));
+        assert!(IT2_SHIM_SCRIPT.contains("TUIC_SOCKET_PATH"));
     }
 }

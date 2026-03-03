@@ -222,6 +222,7 @@ pub(super) async fn create_session(
             Some(crate::pty::AgentTeamsEnv {
                 session_id: session_id.clone(),
                 http_port: cfg.remote_access_port,
+                socket_path: super::socket_path().to_string_lossy().to_string(),
             })
         } else {
             None
@@ -435,6 +436,7 @@ pub(super) async fn create_session_with_worktree(
             Some(crate::pty::AgentTeamsEnv {
                 session_id: session_id.clone(),
                 http_port: cfg.remote_access_port,
+                socket_path: super::socket_path().to_string_lossy().to_string(),
             })
         } else {
             None

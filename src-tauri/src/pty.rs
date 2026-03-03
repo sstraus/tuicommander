@@ -34,6 +34,7 @@ pub(crate) fn default_shell() -> String {
 pub(crate) struct AgentTeamsEnv {
     pub session_id: String,
     pub http_port: u16,
+    pub socket_path: String,
 }
 
 impl AgentTeamsEnv {
@@ -47,6 +48,7 @@ impl AgentTeamsEnv {
             ("TERM_PROGRAM".to_string(), "iTerm.app".to_string()),
             ("PATH".to_string(), format!("{tuic_bin}:{current_path}")),
             ("TUIC_HTTP_PORT".to_string(), self.http_port.to_string()),
+            ("TUIC_SOCKET_PATH".to_string(), self.socket_path.clone()),
         ]
     }
 }
@@ -557,6 +559,7 @@ pub(crate) async fn create_pty(
                 Some(AgentTeamsEnv {
                     session_id: session_id.clone(),
                     http_port: cfg.remote_access_port,
+                    socket_path: crate::mcp_http::socket_path().to_string_lossy().to_string(),
                 })
             } else {
                 None
@@ -669,6 +672,7 @@ pub(crate) async fn create_pty_with_worktree(
                 Some(AgentTeamsEnv {
                     session_id: session_id.clone(),
                     http_port: cfg.remote_access_port,
+                    socket_path: crate::mcp_http::socket_path().to_string_lossy().to_string(),
                 })
             } else {
                 None
@@ -1350,7 +1354,7 @@ mod tests {
 
     #[test]
     fn agent_teams_env_sets_iterm_session_id() {
-        let env = AgentTeamsEnv { session_id: "abc-123".to_string(), http_port: 9876 };
+        let env = AgentTeamsEnv { session_id: "abc-123".to_string(), http_port: 9876, socket_path: "/tmp/mcp.sock".to_string() };
         let vars = env.env_overrides();
         let val = vars.iter().find(|(k, _)| k == "ITERM_SESSION_ID").map(|(_, v)| v.as_str());
         assert_eq!(val, Some("w0t0p0:abc-123"));
@@ -1358,7 +1362,7 @@ mod tests {
 
     #[test]
     fn agent_teams_env_sets_term_program() {
-        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 8080 };
+        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 8080, socket_path: "/tmp/mcp.sock".to_string() };
         let vars = env.env_overrides();
         let val = vars.iter().find(|(k, _)| k == "TERM_PROGRAM").map(|(_, v)| v.as_str());
         assert_eq!(val, Some("iTerm.app"));
@@ -1366,7 +1370,7 @@ mod tests {
 
     #[test]
     fn agent_teams_env_prepends_tuic_bin_to_path() {
-        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 8080 };
+        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 8080, socket_path: "/tmp/mcp.sock".to_string() };
         let vars = env.env_overrides();
         let path_val = vars.iter().find(|(k, _)| k == "PATH").map(|(_, v)| v.clone()).unwrap();
         assert!(path_val.starts_with(&format!("{}/.tuicommander/bin:", std::env::var("HOME").unwrap_or_default())));
@@ -1374,9 +1378,17 @@ mod tests {
 
     #[test]
     fn agent_teams_env_sets_tuic_http_port() {
-        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 9876 };
+        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 9876, socket_path: "/tmp/mcp.sock".to_string() };
         let vars = env.env_overrides();
         let val = vars.iter().find(|(k, _)| k == "TUIC_HTTP_PORT").map(|(_, v)| v.as_str());
         assert_eq!(val, Some("9876"));
+    }
+
+    #[test]
+    fn agent_teams_env_sets_tuic_socket_path() {
+        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 8080, socket_path: "/tmp/test.sock".to_string() };
+        let vars = env.env_overrides();
+        let val = vars.iter().find(|(k, _)| k == "TUIC_SOCKET_PATH").map(|(_, v)| v.as_str());
+        assert_eq!(val, Some("/tmp/test.sock"));
     }
 }
