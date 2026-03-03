@@ -110,6 +110,9 @@ pub(crate) struct SessionState {
     /// Current progress value (0-100); None when no active progress bar
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<u8>,
+    /// Suggested follow-up actions from the agent (from [[suggest: ...]] tokens)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggested_actions: Option<Vec<String>>,
 }
 
 
@@ -815,10 +818,11 @@ impl AppState {
                                     .map(|t| t.to_string());
                             }
                             "status-line" => {
-                                // Agent is working — clear error/rate-limit states
+                                // Agent is working — clear error/rate-limit/suggest states
                                 s.rate_limited = false;
                                 s.retry_after_ms = None;
                                 s.last_error = None;
+                                s.suggested_actions = None;
                                 // Capture current task name from status line
                                 s.current_task = parsed.get("task_name")
                                     .and_then(|v| v.as_str())
@@ -828,6 +832,13 @@ impl AppState {
                                 s.agent_intent = parsed.get("text")
                                     .and_then(|v| v.as_str())
                                     .map(|t| t.to_string());
+                            }
+                            "suggest" => {
+                                s.suggested_actions = parsed.get("items")
+                                    .and_then(|v| v.as_array())
+                                    .map(|arr| arr.iter()
+                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                        .collect());
                             }
                             "progress" => {
                                 let state_val = parsed.get("state").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -1630,5 +1641,25 @@ mod tests {
         let remove_event = make_parsed("progress", serde_json::json!({ "state": 0, "value": 0 }));
         let s = apply(&state, &remove_event);
         assert!(s.progress.is_none());
+    }
+
+    #[test]
+    fn test_session_state_suggest_sets_suggested_actions() {
+        let state = fresh_state();
+        let event = make_parsed("suggest", serde_json::json!({ "items": ["Run tests", "Review diff"] }));
+        let s = apply(&state, &event);
+        assert_eq!(s.suggested_actions, Some(vec!["Run tests".to_string(), "Review diff".to_string()]));
+    }
+
+    #[test]
+    fn test_session_state_status_line_clears_suggested_actions() {
+        let state = fresh_state();
+        // Set suggestions
+        let suggest = make_parsed("suggest", serde_json::json!({ "items": ["Deploy"] }));
+        apply(&state, &suggest);
+        // Status-line should clear them
+        let status = make_parsed("status-line", serde_json::json!({ "task_name": "Working" }));
+        let s = apply(&state, &status);
+        assert!(s.suggested_actions.is_none());
     }
 }

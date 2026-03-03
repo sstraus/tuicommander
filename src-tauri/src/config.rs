@@ -335,6 +335,9 @@ pub(crate) struct AppConfig {
     /// Enable Agent Teams it2 shim for PTY environment injection
     #[serde(default)]
     pub(crate) agent_teams_shim: bool,
+    /// Show suggested follow-up actions from agents (from [[suggest: ...]] tokens)
+    #[serde(default = "default_true")]
+    pub(crate) suggest_followups: bool,
 }
 
 fn default_language() -> String {
@@ -398,6 +401,7 @@ impl Default for AppConfig {
             disabled_native_tools: Vec::new(),
             intent_tab_title: true,
             agent_teams_shim: false,
+            suggest_followups: true,
         }
     }
 }
@@ -905,6 +909,7 @@ mod tests {
             disabled_native_tools: vec!["plugin_dev_guide".to_string()],
             intent_tab_title: false,
             agent_teams_shim: true,
+            suggest_followups: false,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -931,6 +936,7 @@ mod tests {
         assert!(loaded.lan_auth_bypass);
         assert_eq!(loaded.disabled_native_tools, vec!["plugin_dev_guide".to_string()]);
         assert!(!loaded.intent_tab_title);
+        assert!(!loaded.suggest_followups);
     }
 
     #[test]
@@ -961,6 +967,7 @@ mod tests {
         assert!(!loaded.ipv6_enabled);
         assert!(!loaded.lan_auth_bypass);
         assert!(loaded.intent_tab_title); // defaults to true
+        assert!(loaded.suggest_followups); // defaults to true
     }
 
     #[test]

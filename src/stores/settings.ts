@@ -31,6 +31,7 @@ interface RustAppConfig {
   disabled_agents: string[];
   intent_tab_title: boolean;
   agent_teams_shim: boolean;
+  suggest_followups: boolean;
 }
 
 // Default values

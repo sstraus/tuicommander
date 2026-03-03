@@ -91,6 +91,14 @@ fn build_mcp_instructions(state: &Arc<AppState>) -> String {
     out.push_str("[[intent: <action, present tense, <60 chars>(<tab title, max 3 words>)]]\n");
     out.push_str("Examples: `Reading auth module for token flow(Reading auth)` · `Writing parser unit tests(Writing tests)` · `Debugging login redirect(Debugging redirect)`\n");
 
+    // Suggest follow-ups protocol (conditional on config)
+    if state.config.read().suggest_followups {
+        out.push_str("\n## Suggest Follow-ups\n");
+        out.push_str("After completing a task, optionally suggest 2-4 follow-up actions on a single line:\n");
+        out.push_str("[[suggest: Run tests | Review diff | Deploy]]\n");
+        out.push_str("Keep suggestions short (2-5 words each), actionable, and relevant to the completed work.\n");
+    }
+
     out
 }
 
