@@ -24,7 +24,6 @@ export default function MobileApp() {
 
   function navigateToSession(id: string) {
     setSelectedSessionId(id);
-    setActiveTab("sessions");
   }
 
   return (
