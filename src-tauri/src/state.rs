@@ -98,6 +98,18 @@ pub(crate) struct SessionState {
     /// Last API error, if any
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    /// Current agent intent text (from [intent: ...] tokens)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_intent: Option<String>,
+    /// Current task name from the agent status line
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_task: Option<String>,
+    /// Last user prompt with >= 10 words
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_prompt: Option<String>,
+    /// Current progress value (0-100); None when no active progress bar
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<u8>,
 }
 
 
@@ -779,6 +791,12 @@ impl AppState {
                                 // User responded — clear question state
                                 s.awaiting_input = false;
                                 s.question_text = None;
+                                // Capture as last_prompt if >= 10 words
+                                if let Some(content) = parsed.get("content").and_then(|v| v.as_str()) {
+                                    if content.split_whitespace().count() >= 10 {
+                                        s.last_prompt = Some(content.to_string());
+                                    }
+                                }
                             }
                             "rate-limit" => {
                                 s.rate_limited = true;
@@ -801,6 +819,26 @@ impl AppState {
                                 s.rate_limited = false;
                                 s.retry_after_ms = None;
                                 s.last_error = None;
+                                // Capture current task name from status line
+                                s.current_task = parsed.get("task_name")
+                                    .and_then(|v| v.as_str())
+                                    .map(|t| t.to_string());
+                            }
+                            "intent" => {
+                                s.agent_intent = parsed.get("text")
+                                    .and_then(|v| v.as_str())
+                                    .map(|t| t.to_string());
+                            }
+                            "progress" => {
+                                let state_val = parsed.get("state").and_then(|v| v.as_u64()).unwrap_or(0);
+                                if state_val == 0 {
+                                    // state=0 means remove the progress bar
+                                    s.progress = None;
+                                } else {
+                                    s.progress = parsed.get("value")
+                                        .and_then(|v| v.as_u64())
+                                        .map(|v| v as u8);
+                                }
                             }
                             _ => {}
                         }
@@ -1498,5 +1536,99 @@ mod tests {
         let (out, actions) = strip_kitty_sequences(input);
         assert_eq!(out, "漢字日本語");
         assert_eq!(actions, vec![KittyAction::Pop]);
+    }
+
+    // Helpers for session-state accumulator tests
+    fn make_parsed(type_: &str, extra: serde_json::Value) -> AppEvent {
+        let mut obj = serde_json::json!({ "type": type_ });
+        if let (serde_json::Value::Object(m), serde_json::Value::Object(extra_m)) =
+            (&mut obj, extra)
+        {
+            m.extend(extra_m);
+        }
+        AppEvent::PtyParsed {
+            session_id: "s1".to_string(),
+            parsed: obj,
+        }
+    }
+
+    fn apply(state: &Arc<AppState>, event: &AppEvent) -> SessionState {
+        AppState::apply_event_to_session_state(state, event);
+        state.session_states.get("s1").map(|s| s.clone()).unwrap_or_default()
+    }
+
+    fn fresh_state() -> Arc<AppState> {
+        let s = Arc::new(make_test_app_state());
+        // Insert initial entry so and_modify fires
+        s.session_states.insert("s1".to_string(), SessionState {
+            is_busy: true,
+            ..Default::default()
+        });
+        s
+    }
+
+    #[test]
+    fn test_session_state_intent_sets_agent_intent() {
+        let state = fresh_state();
+        let event = make_parsed("intent", serde_json::json!({ "text": "fixing the bug", "title": null }));
+        let s = apply(&state, &event);
+        assert_eq!(s.agent_intent.as_deref(), Some("fixing the bug"));
+    }
+
+    #[test]
+    fn test_session_state_status_line_sets_current_task() {
+        let state = fresh_state();
+        let event = make_parsed("status-line", serde_json::json!({ "task_name": "Reading files", "full_line": "⏺ Reading files" }));
+        let s = apply(&state, &event);
+        assert_eq!(s.current_task.as_deref(), Some("Reading files"));
+        // status-line also clears error and rate-limit
+        assert!(!s.rate_limited);
+        assert!(s.last_error.is_none());
+    }
+
+    #[test]
+    fn test_session_state_user_input_short_does_not_set_last_prompt() {
+        let state = fresh_state();
+        let event = make_parsed("user-input", serde_json::json!({ "content": "yes" }));
+        let s = apply(&state, &event);
+        assert!(s.last_prompt.is_none());
+    }
+
+    #[test]
+    fn test_session_state_user_input_long_sets_last_prompt() {
+        let state = fresh_state();
+        let long = "please refactor this function to use the new API correctly and efficiently";
+        let event = make_parsed("user-input", serde_json::json!({ "content": long }));
+        let s = apply(&state, &event);
+        assert_eq!(s.last_prompt.as_deref(), Some(long));
+    }
+
+    #[test]
+    fn test_session_state_user_input_exactly_10_words_sets_last_prompt() {
+        let state = fresh_state();
+        let ten_words = "one two three four five six seven eight nine ten";
+        let event = make_parsed("user-input", serde_json::json!({ "content": ten_words }));
+        let s = apply(&state, &event);
+        assert_eq!(s.last_prompt.as_deref(), Some(ten_words));
+    }
+
+    #[test]
+    fn test_session_state_progress_normal_sets_value() {
+        let state = fresh_state();
+        let event = make_parsed("progress", serde_json::json!({ "state": 1, "value": 42 }));
+        let s = apply(&state, &event);
+        assert_eq!(s.progress, Some(42));
+    }
+
+    #[test]
+    fn test_session_state_progress_remove_clears_value() {
+        let state = fresh_state();
+        // First set a value
+        let set_event = make_parsed("progress", serde_json::json!({ "state": 1, "value": 75 }));
+        apply(&state, &set_event);
+        // Then remove it
+        let remove_event = make_parsed("progress", serde_json::json!({ "state": 0, "value": 0 }));
+        let s = apply(&state, &remove_event);
+        assert!(s.progress.is_none());
     }
 }

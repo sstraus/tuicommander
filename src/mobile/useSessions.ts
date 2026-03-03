@@ -14,6 +14,10 @@ export interface SessionState {
   last_activity_ms: number;
   agent_type?: string;
   last_error?: string;
+  agent_intent?: string;
+  current_task?: string;
+  last_prompt?: string;
+  progress?: number;
 }
 
 /** Session info returned by GET /sessions (matches Rust SessionInfo) */
