@@ -433,23 +433,39 @@ fn parse_pr_url(text: &str) -> Option<ParsedEvent> {
 /// Strip ANSI escape sequences from text using the strip-ansi-escapes crate.
 /// Handles all ANSI escape types: CSI, OSC, SGR, and simple escapes.
 ///
-/// Pre-processes CUF (Cursor Forward, `\x1b[nC`) sequences by replacing them
-/// with the equivalent number of spaces, since `strip-ansi-escapes` silently
-/// drops cursor movement sequences and concatenates surrounding text.
+/// Pre-processes cursor movement sequences before stripping, because
+/// `strip-ansi-escapes` silently drops them and concatenates surrounding text:
+/// - CUF (`\x1b[nC`, cursor forward) → n spaces
+/// - CUU (`\x1b[nA`, cursor up) → newline
+/// - CUD (`\x1b[nB`, cursor down) → newline
+/// - CUB (`\x1b[nD`, cursor back) → stripped (no replacement)
+///
+/// This preserves line structure for parsers that rely on line-based matching
+/// (intent tokens, status lines, etc.) even when the source uses full-screen
+/// rendering with cursor positioning (e.g. Claude Code's Ink-based TUI).
 pub(crate) fn strip_ansi(text: &str) -> String {
     lazy_static::lazy_static! {
-        static ref CUF_RE: regex::Regex = regex::Regex::new(r"\x1b\[(\d*)C").unwrap();
+        static ref CURSOR_RE: regex::Regex =
+            regex::Regex::new(r"\x1b\[(\d*)([ABCD])").unwrap();
     }
-    // Apply carriage return semantics BEFORE stripping escape codes, because
+    // Replace cursor movement sequences BEFORE carriage-return processing:
+    // CUU/CUD become newlines, so a preceding \r becomes \r\n (normal line ending)
+    // rather than triggering overwrite-from-start semantics that eats content.
+    let cursor_replaced = CURSOR_RE.replace_all(text, |caps: &regex::Captures| {
+        let n: usize = caps[1].parse().unwrap_or(1).max(1);
+        match &caps[2] {
+            "C" => " ".repeat(n),        // CUF → spaces
+            "A" | "B" => "\n".to_string(), // CUU/CUD → newline
+            "D" => String::new(),         // CUB → strip
+            _ => String::new(),
+        }
+    });
+    // Apply carriage return semantics AFTER cursor replacement, because
     // strip_ansi_escapes::strip() silently removes \r without applying its
     // overwrite-from-start-of-line semantics. This is critical for animated
     // status lines (Claude Code, Codex, etc.) that use \r to update in place.
-    let cr_applied = apply_carriage_returns(text);
-    let preprocessed = CUF_RE.replace_all(&cr_applied, |caps: &regex::Captures| {
-        let n: usize = caps[1].parse().unwrap_or(1).max(1);
-        " ".repeat(n)
-    });
-    let stripped = strip_ansi_escapes::strip(preprocessed.as_ref());
+    let cr_applied = apply_carriage_returns(&cursor_replaced);
+    let stripped = strip_ansi_escapes::strip(cr_applied.as_bytes());
     String::from_utf8(stripped).unwrap_or_else(|_| text.to_string())
 }
 
@@ -2517,6 +2533,49 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(!has_rate_limit(&parser.parse(
             "http/\x1b[1C\x1b[39me\x1b[1C\x1b[38;2;177;185;249mstate.rs\x1b[1Cche\x1b[1Csembrano\x1b[1Cprovenire\x1b[1Cda\x1b[1Caltre\x1b[1Csessioni\x1b[1C(story\x1b[1C429"
         )));
+    }
+
+    #[test]
+    fn test_intent_with_cursor_up_down() {
+        // Real Claude Code PTY output: spinner uses CUU (\x1b[8A) to go back up,
+        // then the intent token appears after cursor movements.
+        // strip_ansi must convert CUU/CUD to newlines to preserve line structure.
+        let parser = OutputParser::new();
+        let raw = "\x1b[38;2;215;119;87m\u{273b}\x1b[39m\r\r\n\r\n\r\n\r\n\x1b[?2026l\x1b[?2026h\r\x1b[8A\x1b[38;2;153;153;153m\u{25cf}\x1b[1C\x1b[39m\x1b[1mBash\x1b[22m\r\x1b[1B  \x1b[38;2;177;185;249m[[intent: Fixing strip_ansi cursor handling(Fix strip_ansi)]]\x1b[39m\r\x1b[1Bmore output";
+        let events = parser.parse(raw);
+        assert_eq!(
+            get_intent(&events),
+            Some("Fixing strip_ansi cursor handling".to_string()),
+            "intent must be detected even with CUU/CUD cursor movements in surrounding output"
+        );
+        assert_eq!(
+            get_intent_title(&events),
+            Some("Fix strip_ansi".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_intent_with_cursor_down_only() {
+        // Intent token preceded by CUD (cursor down) — \x1b[nB
+        let parser = OutputParser::new();
+        let raw = "spinner output\x1b[3B[[intent: Running tests(Tests)]]\x1b[2Amore";
+        let events = parser.parse(raw);
+        assert_eq!(
+            get_intent(&events),
+            Some("Running tests".to_string()),
+            "CUD before intent should become newline, making intent matchable"
+        );
+    }
+
+    #[test]
+    fn test_strip_ansi_converts_cursor_movements_to_whitespace() {
+        // CUU and CUD should become newlines, CUB should be stripped
+        let result = strip_ansi("hello\x1b[3Aworld\x1b[2Bfoo\x1b[1Dbar");
+        assert!(result.contains("hello"), "text before CUU preserved");
+        assert!(result.contains("world"), "text after CUU preserved");
+        assert!(result.contains("foo"), "text between movements preserved");
+        // CUU/CUD should insert newlines to separate text from different screen positions
+        assert!(result.contains('\n'), "cursor up/down should produce newlines");
     }
 
     // --- Suggest detection tests ---
