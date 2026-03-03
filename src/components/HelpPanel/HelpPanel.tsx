@@ -2,30 +2,34 @@ import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js
 import { t } from "../../i18n";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { KeyboardShortcutsTab } from "../SettingsPanel/tabs/KeyboardShortcutsTab";
+import { UiLegend } from "./UiLegend";
 import s from "./HelpPanel.module.css";
 
 const GITHUB_URL = "https://github.com/sstraus/tuicommander";
-const DOCS_URL = "https://github.com/sstraus/tuicommander/wiki";
+const DOCS_URL = "https://github.com/sstraus/tuicommander/tree/main/docs/user-guide";
+const WEBSITE_URL = "https://tuicommander.com";
 
 export interface HelpPanelProps {
   visible: boolean;
   onClose: () => void;
 }
 
-export const HelpPanel: Component<HelpPanelProps> = (props) => {
-  const [showShortcuts, setShowShortcuts] = createSignal(false);
+type HelpView = "main" | "shortcuts" | "legend";
 
-  // Close on Escape, reset shortcuts view on close
+export const HelpPanel: Component<HelpPanelProps> = (props) => {
+  const [view, setView] = createSignal<HelpView>("main");
+
+  // Close on Escape, reset view on close
   createEffect(() => {
     if (!props.visible) {
-      setShowShortcuts(false);
+      setView("main");
       return;
     }
 
     const handleKeydown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (showShortcuts()) {
-          setShowShortcuts(false);
+        if (view() !== "main") {
+          setView("main");
         } else {
           props.onClose();
         }
@@ -36,18 +40,26 @@ export const HelpPanel: Component<HelpPanelProps> = (props) => {
     onCleanup(() => document.removeEventListener("keydown", handleKeydown));
   });
 
+  const subViewTitle = () => {
+    switch (view()) {
+      case "shortcuts": return t("helpPanel.keyboardShortcuts", "Keyboard Shortcuts");
+      case "legend": return t("helpPanel.uiLegend", "UI Legend");
+      default: return "";
+    }
+  };
+
   return (
     <Show when={props.visible}>
       <div class={s.overlay} onClick={props.onClose}>
-        <div class={s.panel} classList={{ [s.panelWide]: showShortcuts() }} onClick={(e) => e.stopPropagation()}>
+        <div class={s.panel} classList={{ [s.panelWide]: view() !== "main" }} onClick={(e) => e.stopPropagation()}>
           <div class={s.header}>
-            <Show when={showShortcuts()} fallback={<h2>{t("helpPanel.title", "Help")}</h2>}>
-              <button class={s.backButton} onClick={() => setShowShortcuts(false)}>
+            <Show when={view() !== "main"} fallback={<h2>{t("helpPanel.title", "Help")}</h2>}>
+              <button class={s.backButton} onClick={() => setView("main")}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M10 3L5 8l5 5V3z" />
                 </svg>
               </button>
-              <h2>{t("helpPanel.keyboardShortcuts", "Keyboard Shortcuts")}</h2>
+              <h2>{subViewTitle()}</h2>
             </Show>
             <button class={s.close} onClick={props.onClose}>
               &times;
@@ -55,7 +67,7 @@ export const HelpPanel: Component<HelpPanelProps> = (props) => {
           </div>
 
           <div class={s.content}>
-            <Show when={showShortcuts()} fallback={
+            <Show when={view() === "main"}>
               <>
                 <div class={s.section}>
                   <h3 class={s.sectionTitle}>{t("helpPanel.aboutApp", "TUICommander")}</h3>
@@ -67,11 +79,18 @@ export const HelpPanel: Component<HelpPanelProps> = (props) => {
                 <div class={s.section}>
                   <h3 class={s.sectionTitle}>{t("helpPanel.quickActions", "Quick Actions")}</h3>
                   <div class={s.linkList}>
-                    <button class={s.linkButton} onClick={() => setShowShortcuts(true)}>
+                    <button class={s.linkButton} onClick={() => setView("shortcuts")}>
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M3 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2H3zm2.5 4a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h1zm3 0a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h1zm3 0a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h1zM5 9a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H4.5a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5H5zm6.5 0a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-5a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h5z"/>
                       </svg>
                       {t("helpPanel.keyboardShortcuts", "Keyboard Shortcuts")}
+                    </button>
+                    <button class={s.linkButton} onClick={() => setView("legend")}>
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                        <path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H4z"/>
+                      </svg>
+                      {t("helpPanel.uiLegend", "UI Legend")}
                     </button>
                   </div>
                 </div>
@@ -79,6 +98,12 @@ export const HelpPanel: Component<HelpPanelProps> = (props) => {
                 <div class={s.section}>
                   <h3 class={s.sectionTitle}>{t("helpPanel.resources", "Resources")}</h3>
                   <div class={s.linkList}>
+                    <button class={s.linkButton} onClick={() => handleOpenUrl(WEBSITE_URL)}>
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm7.5-6.923c-.67.204-1.335.82-1.887 1.855A7.97 7.97 0 0 0 5.145 4H7.5V1.077zM4.09 4a9.27 9.27 0 0 1 .64-1.539 6.7 6.7 0 0 1 .597-.933A7.025 7.025 0 0 0 2.255 4H4.09zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a6.958 6.958 0 0 0-.656 2.5h2.49zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5H4.847zM8.5 5v2.5h2.99a12.495 12.495 0 0 0-.337-2.5H8.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5H4.51zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5H8.5zM5.145 12c.138.386.295.744.468 1.068.552 1.035 1.218 1.65 1.887 1.855V12H5.145zm.182 2.472a6.696 6.696 0 0 1-.597-.933A9.268 9.268 0 0 1 4.09 12H2.255a7.024 7.024 0 0 0 3.072 2.472zM3.82 11a13.652 13.652 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5H3.82zm6.853 3.472A7.024 7.024 0 0 0 13.745 12H11.91a9.27 9.27 0 0 1-.64 1.539 6.688 6.688 0 0 1-.597.933zM8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855.173-.324.33-.682.468-1.068H8.5zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.65 13.65 0 0 1-.312 2.5zm2.802-3.5a6.959 6.959 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5h2.49zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7.024 7.024 0 0 0-3.072-2.472c.218.284.418.598.597.933zM10.855 4a7.966 7.966 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4h2.355z"/>
+                      </svg>
+                      {t("helpPanel.website", "Website")}
+                    </button>
                     <button class={s.linkButton} onClick={() => handleOpenUrl(GITHUB_URL)}>
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
@@ -109,8 +134,12 @@ export const HelpPanel: Component<HelpPanelProps> = (props) => {
                   </p>
                 </div>
               </>
-            }>
+            </Show>
+            <Show when={view() === "shortcuts"}>
               <KeyboardShortcutsTab />
+            </Show>
+            <Show when={view() === "legend"}>
+              <UiLegend />
             </Show>
           </div>
         </div>

@@ -37,6 +37,7 @@ describe("HelpPanel", () => {
     ));
     const buttons = container.querySelectorAll("button");
     const buttonTexts = Array.from(buttons).map((b) => b.textContent?.trim());
+    expect(buttonTexts).toContain("Website");
     expect(buttonTexts).toContain("GitHub Project");
     expect(buttonTexts).toContain("Documentation");
     expect(buttonTexts).toContain("Report an Issue");
@@ -92,5 +93,30 @@ describe("HelpPanel", () => {
     expect(container.textContent).toContain("MIT License");
     expect(container.textContent).toContain("Tauri 2");
     expect(container.textContent).toContain("SolidJS");
+  });
+
+  it("shows UI Legend button in quick actions", () => {
+    const { container } = render(() => (
+      <HelpPanel {...defaultProps} />
+    ));
+    const buttons = container.querySelectorAll("button");
+    const buttonTexts = Array.from(buttons).map((b) => b.textContent?.trim());
+    expect(buttonTexts).toContain("UI Legend");
+  });
+
+  it("shows inline legend when UI Legend button is clicked", () => {
+    const { container } = render(() => (
+      <HelpPanel {...defaultProps} />
+    ));
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const legendBtn = buttons.find((b) => b.textContent?.trim() === "UI Legend");
+    expect(legendBtn).not.toBeNull();
+    fireEvent.click(legendBtn!);
+    // After clicking, heading should change to "UI Legend"
+    const heading = container.querySelector("h2");
+    expect(heading!.textContent).toBe("UI Legend");
+    // Legend content should include terminal status dots section
+    expect(container.textContent).toContain("Terminal Status Dots");
+    expect(container.textContent).toContain("PR Status Badges");
   });
 });
