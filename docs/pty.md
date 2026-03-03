@@ -5,17 +5,17 @@ TUICommander exposes terminal sessions, git operations, config, and agent spawni
 ## Architecture
 
 ```
-AI Agent  <--stdio/JSON-RPC-->  tuic-mcp-bridge  <--HTTP over Unix socket-->  TUICommander (axum)
+AI Agent  <--stdio/JSON-RPC-->  tuic-bridge  <--HTTP over Unix socket-->  TUICommander (axum)
 ```
 
 The system has two components:
 
 1. **HTTP API** — Embedded axum server inside TUICommander, always listening on a Unix domain socket at `<config_dir>/mcp.sock`
-2. **MCP Bridge** — Sidecar binary (`tuic-mcp-bridge`) shipped alongside the app, translating MCP stdio transport to HTTP calls over the Unix socket
+2. **MCP Bridge** — Sidecar binary (`tuic-bridge`) shipped alongside the app, translating MCP stdio transport to HTTP calls over the Unix socket
 
 ## How It Works
 
-The bridge binary (`tuic-mcp-bridge`) is a Tauri sidecar — it ships with the app and requires no manual build. It:
+The bridge binary (`tuic-bridge`) is a Tauri sidecar — it ships with the app and requires no manual build. It:
 
 - Reads JSON-RPC messages from stdin (MCP stdio transport)
 - Forwards them as `POST /mcp` requests over the Unix socket to TUICommander
@@ -44,7 +44,7 @@ The installed config entry looks like:
 ```json
 {
   "tuicommander": {
-    "command": "/path/to/tuic-mcp-bridge"
+    "command": "/path/to/tuic-bridge"
   }
 }
 ```
@@ -59,7 +59,7 @@ If auto-install didn't run or you need to configure manually, add the entry to y
 {
   "mcpServers": {
     "tuicommander": {
-      "command": "/Applications/TUICommander.app/Contents/MacOS/tuic-mcp-bridge"
+      "command": "/Applications/TUICommander.app/Contents/MacOS/tuic-bridge"
     }
   }
 }

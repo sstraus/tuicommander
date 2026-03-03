@@ -48,7 +48,7 @@ See [AI Agents](ai-agents.md) for details on agent detection, rate limits, and t
 Enable the HTTP API server for external tool integration:
 - Serves the REST API and MCP protocol for AI agents and automation tools
 - Local MCP connections use a Unix domain socket at `<config_dir>/mcp.sock` — no port configuration needed
-- AI agents connect via the `tuic-mcp-bridge` sidecar (auto-installed on first launch for Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini)
+- AI agents connect via the `tuic-bridge` sidecar (auto-installed on first launch for Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini)
 - Shows server status (running/stopped) and active session count
 
 ### TUIC Tools

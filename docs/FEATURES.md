@@ -698,7 +698,7 @@ All data persisted to platform config directory via Rust:
 - Exposes terminal sessions, git operations, agent spawning
 - WebSocket streaming, Streamable HTTP transport
 - Used by Claude Code, Cursor, and other tools via MCP protocol
-- `tuic-mcp-bridge` ships as a Tauri sidecar; auto-installs MCP configs on first launch for Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini
+- `tuic-bridge` ships as a Tauri sidecar; auto-installs MCP configs on first launch for Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini
 - Local connections use Unix domain socket (`<config_dir>/mcp.sock`); TCP port reserved for remote access only
 
 ### 14.7 macOS Dock Badge

@@ -88,7 +88,7 @@ async fn server_initialize() -> Result<(String, String), String> {
     let init_body = serde_json::json!({
         "jsonrpc": "2.0", "id": 0,
         "method": "initialize",
-        "params": { "protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": { "name": "tuic-mcp-bridge", "version": env!("CARGO_PKG_VERSION") } }
+        "params": { "protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": { "name": "tuic-bridge", "version": env!("CARGO_PKG_VERSION") } }
     });
     let (body, sid) = post_mcp(&serde_json::to_string(&init_body).unwrap(), None).await?;
     let sid = sid.ok_or_else(|| "server did not return mcp-session-id".to_string())?;
@@ -159,7 +159,7 @@ fn start_sse_listener(state: &Arc<BridgeState>) {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    eprintln!("tuic-mcp-bridge v{} starting", env!("CARGO_PKG_VERSION"));
+    eprintln!("tuic-bridge v{} starting", env!("CARGO_PKG_VERSION"));
 
     let state = Arc::new(BridgeState {
         session_id: Mutex::new(None),
@@ -169,12 +169,12 @@ async fn main() {
 
     // Try initial connection
     if let Ok((sid, _)) = server_initialize().await {
-        eprintln!("tuic-mcp-bridge: connected to TUIC");
+        eprintln!("tuic-bridge: connected to TUIC");
         *state.session_id.lock().unwrap() = Some(sid);
         state.connected.store(true, Ordering::Relaxed);
         start_sse_listener(&state);
     } else {
-        eprintln!("tuic-mcp-bridge: TUIC not running, will retry in background");
+        eprintln!("tuic-bridge: TUIC not running, will retry in background");
     }
 
     // Background reconnection loop
@@ -190,7 +190,7 @@ async fn main() {
                     sid.as_deref(),
                 ).await;
                 if health.is_err() {
-                    eprintln!("tuic-mcp-bridge: connection lost");
+                    eprintln!("tuic-bridge: connection lost");
                     *bg_state.session_id.lock().unwrap() = None;
                     bg_state.connected.store(false, Ordering::Relaxed);
                     // Abort SSE listener
@@ -202,7 +202,7 @@ async fn main() {
             } else {
                 // Try reconnect
                 if let Ok((sid, _)) = server_initialize().await {
-                    eprintln!("tuic-mcp-bridge: reconnected to TUIC");
+                    eprintln!("tuic-bridge: reconnected to TUIC");
                     *bg_state.session_id.lock().unwrap() = Some(sid);
                     bg_state.connected.store(true, Ordering::Relaxed);
                     start_sse_listener(&bg_state);
@@ -229,7 +229,7 @@ async fn main() {
         let request: Value = match serde_json::from_str(&line) {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("tuic-mcp-bridge: invalid JSON: {e}");
+                eprintln!("tuic-bridge: invalid JSON: {e}");
                 continue;
             }
         };
@@ -245,7 +245,7 @@ async fn main() {
                 let proxied = if state.connected.load(Ordering::Relaxed) || {
                     // Try lazy connect if not yet connected
                     if let Ok((sid, _)) = server_initialize().await {
-                        eprintln!("tuic-mcp-bridge: connected to TUIC");
+                        eprintln!("tuic-bridge: connected to TUIC");
                         *state.session_id.lock().unwrap() = Some(sid);
                         state.connected.store(true, Ordering::Relaxed);
                         start_sse_listener(&state);
@@ -270,7 +270,7 @@ async fn main() {
                             }
                         }
                         Err(e) => {
-                            eprintln!("tuic-mcp-bridge: initialize proxy error: {e}");
+                            eprintln!("tuic-bridge: initialize proxy error: {e}");
                             state.connected.store(false, Ordering::Relaxed);
                             *state.session_id.lock().unwrap() = None;
                             None
@@ -297,7 +297,7 @@ async fn main() {
                 if !state.connected.load(Ordering::Relaxed)
                     && let Ok((sid, _)) = server_initialize().await
                 {
-                    eprintln!("tuic-mcp-bridge: reconnected to TUIC");
+                    eprintln!("tuic-bridge: reconnected to TUIC");
                     *state.session_id.lock().unwrap() = Some(sid);
                     state.connected.store(true, Ordering::Relaxed);
                     start_sse_listener(&state);
@@ -318,7 +318,7 @@ async fn main() {
                             let _ = stdout.flush();
                         }
                         Err(e) => {
-                            eprintln!("tuic-mcp-bridge: proxy error: {e}");
+                            eprintln!("tuic-bridge: proxy error: {e}");
                             state.connected.store(false, Ordering::Relaxed);
                             *state.session_id.lock().unwrap() = None;
                             // Fall through to offline response

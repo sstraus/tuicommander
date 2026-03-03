@@ -8,7 +8,7 @@ Optional HTTP/WebSocket server that exposes all Tauri commands as REST endpoints
 
 The server has two independent listeners:
 
-- **Unix socket** (always started): Listens at `<config_dir>/mcp.sock` with no authentication. Used by the local `tuic-mcp-bridge` sidecar.
+- **Unix socket** (always started): Listens at `<config_dir>/mcp.sock` with no authentication. Used by the local `tuic-bridge` sidecar.
 - **TCP listener** (opt-in): Only starts when remote access is enabled. Binds to `0.0.0.0:<remote_access_port>` with Basic Auth.
 
 The `mcp_server_enabled` config flag controls whether the `/mcp` protocol route is active (MCP tool discovery and invocation), not whether the server itself starts. The HTTP API endpoints (sessions, git, config, etc.) are always available on the Unix socket.

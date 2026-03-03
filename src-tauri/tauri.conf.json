@@ -46,7 +46,7 @@
     ],
     "createUpdaterArtifacts": true,
     "externalBin": [
-      "binaries/tuic-mcp-bridge"
+      "binaries/tuic-bridge"
     ]
   },
   "plugins": {

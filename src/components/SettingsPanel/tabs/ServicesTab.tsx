@@ -264,7 +264,7 @@ export const ServicesTab: Component = () => {
               <div class={s.group}>
                 <label>{t("services.label.mcpConnection", "MCP Connection")}</label>
                 <p class={s.hint}>
-                  {t("services.hint.mcpConnection", "AI agents connect via the tuic-mcp-bridge sidecar. MCP configs are auto-installed in supported agents (Claude Code, Cursor, etc.).")}
+                  {t("services.hint.mcpConnection", "AI agents connect via the tuic-bridge sidecar. MCP configs are auto-installed in supported agents (Claude Code, Cursor, etc.).")}
                 </p>
               </div>
             </Show>

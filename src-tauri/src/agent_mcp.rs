@@ -134,9 +134,9 @@ fn navigate<'a>(root: &'a serde_json::Value, key_path: &[&str]) -> Option<&'a se
     Some(current)
 }
 
-const BRIDGE_NAME: &str = "tuic-mcp-bridge";
+const BRIDGE_NAME: &str = "tuic-bridge";
 
-/// Detect the tuic-mcp-bridge binary path.
+/// Detect the tuic-bridge binary path.
 /// Priority: sidecar (same dir as main executable) → PATH → bare name.
 fn detect_bridge_binary() -> String {
     // Primary: sidecar bundled alongside the main executable
