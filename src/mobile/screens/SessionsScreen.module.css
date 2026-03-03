@@ -94,6 +94,9 @@
   justify-content: center;
   padding: 8px 0;
   color: var(--accent);
+}
+
+.refreshSpinner > svg {
   animation: spin 0.8s linear infinite;
 }
 
@@ -109,7 +112,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .skeletonIcon,
-  .skeletonLine {
+  .skeletonLine,
+  .refreshSpinner > svg {
     animation: none;
     opacity: 0.6;
   }
