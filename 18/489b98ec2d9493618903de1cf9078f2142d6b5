@@ -1,0 +1,38 @@
+src/components/TipOfTheDay/TipOfTheDay.module.css
+  7a3e1bea8be6638a 10,13-14
+src/data/tips.ts
+  7a3e1bea8be6638a 17,22,27,32,37,42,47,52,57,62,67,72,77,82,87,92,97,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "18489b98ec2d9493618903de1cf9078f2142d6b5",
+  "prompts": {
+    "3cf58d5cd968e347": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a19c10c-ffc9-4018-97ac-4824ba78e802",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 529,
+      "overriden_lines": 0
+    },
+    "7a3e1bea8be6638a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc270507-e8e4-421f-8bc5-5cd5dbfee390",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 21,
+      "total_deletions": 22,
+      "accepted_lines": 21,
+      "overriden_lines": 0
+    }
+  }
+}
