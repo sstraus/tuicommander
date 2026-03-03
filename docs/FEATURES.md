@@ -636,9 +636,12 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 - Reset to defaults
 
 ### 11.6 Keyboard Shortcuts
-- Settings > Keyboard Shortcuts tab (`Cmd+,` to open Settings)
+- Settings > Keyboard Shortcuts tab (`Cmd+,` to open Settings), also accessible from Help > Keyboard Shortcuts
 - All app actions listed with their current keybinding
-- Any action can be rebound by clicking it and pressing the new key combination
+- Click the pencil icon to rebind — inline key recorder with pulsing accent border
+- Conflict detection: warns when the new combo is already bound to another action, with option to replace
+- Overridden shortcuts highlighted with accent color; per-shortcut reset icon to revert to default
+- "Reset all to defaults" button at the bottom
 - Custom bindings stored in `keybindings.json` in the platform config directory
 - Auto-populated from `actionRegistry.ts` (`ACTION_META` map) — new actions appear automatically
 

@@ -159,4 +159,9 @@ export const TIPS: Tip[] = [
     description: "Track API costs, token usage, and session history across all your Claude sessions.",
     shortcut: null,
   },
+  {
+    feature: "Custom Keybindings",
+    description: "Rebind any shortcut from Help → Keyboard Shortcuts — click the pencil icon next to a key.",
+    shortcut: null,
+  },
 ];
