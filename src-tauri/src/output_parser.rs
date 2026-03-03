@@ -867,22 +867,111 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
 /// Strips the optional `(title)` suffix before colorizing.
 /// Only invoke when `parse()` returned an Intent event to avoid regex on every chunk.
 ///
-/// Uses inline `replace_all` so only the matched tag is replaced — all surrounding
-/// content (bullet prefixes, ANSI formatting, line endings) is preserved intact.
+/// Strategy: match on ANSI-stripped (clean) text per-line to find the tag, then
+/// map the clean match boundaries back to raw-text offsets so only the tag portion
+/// is replaced — surrounding content (bullet prefixes, ANSI formatting) survives.
 pub fn colorize_intent(raw: &str) -> String {
     lazy_static::lazy_static! {
-        static ref RAW_INTENT_RE: regex::Regex =
+        static ref INTENT_RE: regex::Regex =
             regex::Regex::new(r"(?:\[\[?|\x{27E6})(intent:\s*)(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
         static ref STRIP_TITLE_RE: regex::Regex =
             regex::Regex::new(r"\([^)]+\)\s*$").unwrap();
     }
-    RAW_INTENT_RE.replace_all(raw, |caps: &regex::Captures| {
-        let prefix = &caps[1]; // "intent: "
-        let body = &caps[2];
-        let clean_body = STRIP_TITLE_RE.replace(body, "");
-        let trimmed = clean_body.trim_end();
-        format!("\x1b[2;33m{}{}\x1b[0m", prefix, trimmed)
-    }).into_owned()
+    let mut result = String::with_capacity(raw.len());
+    for (i, line) in raw.split('\n').enumerate() {
+        if i > 0 { result.push('\n'); }
+        let line_no_cr = line.trim_end_matches('\r');
+        let clean = strip_ansi(line_no_cr);
+        if let Some(m) = INTENT_RE.find(&clean) {
+            let caps = INTENT_RE.captures(&clean).unwrap();
+            let prefix = &caps[1]; // "intent: "
+            let body = &caps[2];
+            let clean_body = STRIP_TITLE_RE.replace(body, "");
+            let trimmed = clean_body.trim_end();
+            let colored = format!("\x1b[2;33m{}{}\x1b[0m", prefix, trimmed);
+
+            // Map clean match boundaries to raw-text byte offsets
+            let raw_start = clean_offset_to_raw(line_no_cr, m.start());
+            let raw_end = clean_offset_to_raw(line_no_cr, m.end());
+
+            result.push_str(&line_no_cr[..raw_start]);
+            result.push_str(&colored);
+            result.push_str(&line_no_cr[raw_end..]);
+            if line.ends_with('\r') {
+                result.push('\r');
+            }
+        } else {
+            result.push_str(line);
+        }
+    }
+    result
+}
+
+/// Map a byte offset in ANSI-stripped text to the corresponding offset in raw text.
+/// Walks through raw text, skipping ANSI escape sequences (which don't contribute
+/// to clean-text offsets), until the clean-text position is reached.
+fn clean_offset_to_raw(raw: &str, clean_target: usize) -> usize {
+    let bytes = raw.as_bytes();
+    let mut clean_pos: usize = 0;
+    let mut raw_pos: usize = 0;
+
+    while raw_pos < bytes.len() && clean_pos < clean_target {
+        if bytes[raw_pos] == 0x1b {
+            // Skip ANSI escape sequence
+            raw_pos += 1;
+            if raw_pos < bytes.len() && bytes[raw_pos] == b'[' {
+                // CSI sequence: skip until final byte (0x40-0x7E)
+                raw_pos += 1;
+                while raw_pos < bytes.len() && !(bytes[raw_pos] >= 0x40 && bytes[raw_pos] <= 0x7e) {
+                    raw_pos += 1;
+                }
+                if raw_pos < bytes.len() { raw_pos += 1; }
+            } else if raw_pos < bytes.len() && bytes[raw_pos] == b']' {
+                // OSC sequence: skip until BEL or ST
+                raw_pos += 1;
+                while raw_pos < bytes.len() {
+                    if bytes[raw_pos] == 0x07 { raw_pos += 1; break; }
+                    if bytes[raw_pos] == 0x1b && raw_pos + 1 < bytes.len() && bytes[raw_pos + 1] == b'\\' {
+                        raw_pos += 2; break;
+                    }
+                    raw_pos += 1;
+                }
+            }
+            // else: bare ESC, already skipped
+        } else {
+            // Regular character — advance both pointers
+            let ch_len = utf8_char_width(bytes[raw_pos]);
+            clean_pos += ch_len;
+            raw_pos += ch_len;
+        }
+    }
+
+    // Skip trailing ANSI codes at the boundary so we don't split a sequence
+    while raw_pos < bytes.len() && bytes[raw_pos] == 0x1b {
+        let start = raw_pos;
+        raw_pos += 1;
+        if raw_pos < bytes.len() && bytes[raw_pos] == b'[' {
+            raw_pos += 1;
+            while raw_pos < bytes.len() && !(bytes[raw_pos] >= 0x40 && bytes[raw_pos] <= 0x7e) {
+                raw_pos += 1;
+            }
+            if raw_pos < bytes.len() { raw_pos += 1; }
+        } else {
+            // Not a CSI — put it back, don't skip non-CSI escapes at boundary
+            raw_pos = start;
+            break;
+        }
+    }
+
+    raw_pos
+}
+
+/// Width of a UTF-8 character based on its leading byte.
+fn utf8_char_width(b: u8) -> usize {
+    if b < 0x80 { 1 }
+    else if b < 0xE0 { 2 }
+    else if b < 0xF0 { 3 }
+    else { 4 }
 }
 
 /// Detect agent-declared intent tokens: `[intent: <text>]`, `[[intent: <text>]]`,
@@ -2465,13 +2554,15 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_colorize_intent_ansi_inside_brackets_passthrough() {
-        // When ANSI codes break the bracket tokens apart, the regex can't match
-        // on raw text. The tag passes through uncolorized — acceptable because
-        // the parser still detects the event via strip_ansi.
+    fn test_colorize_intent_ansi_inside_brackets() {
+        // ANSI codes scattered inside the [[intent:...]] token itself.
+        // The offset-mapping approach matches on clean text and maps back to raw,
+        // so it handles ANSI inside brackets correctly.
         let raw = "\x1b[2m[[\x1b[0mintent: Implementing config(Config field)\x1b[2m]]\x1b[0m";
         let colored = colorize_intent(raw);
-        assert_eq!(colored, raw, "should pass through unchanged when ANSI breaks bracket tokens");
+        assert!(colored.contains("\x1b[2;33m"),
+            "should colorize even with ANSI inside brackets; got: {:?}", colored);
+        assert!(!colored.contains("(Config field)"), "should strip title");
     }
 
     #[test]
