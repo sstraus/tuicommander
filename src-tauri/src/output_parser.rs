@@ -850,21 +850,32 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
 /// `[[intent: Refactoring auth]]` becomes `\e[2;33mintent: Refactoring auth\e[0m`.
 /// Strips the optional `(title)` suffix before colorizing.
 /// Only invoke when `parse()` returned an Intent event to avoid regex on every chunk.
+///
+/// Works on raw PTY output which may contain ANSI codes interleaved with the
+/// intent token. We strip ANSI per-line for matching, then replace the entire
+/// raw line with the colorized clean version.
 pub fn colorize_intent(raw: &str) -> String {
     lazy_static::lazy_static! {
-        static ref RAW_INTENT_RE: regex::Regex =
+        static ref INTENT_RE: regex::Regex =
             regex::Regex::new(r"(?:\[\[?|\x{27E6})(intent:\s*)(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
-        // Match optional (title) at end of the intent body
         static ref STRIP_TITLE_RE: regex::Regex =
             regex::Regex::new(r"\([^)]+\)\s*$").unwrap();
     }
-    RAW_INTENT_RE.replace_all(raw, |caps: &regex::Captures| {
-        let prefix = &caps[1]; // "intent: "
-        let body = &caps[2];   // "Reading auth module for token flow(Reading auth)"
-        let clean_body = STRIP_TITLE_RE.replace(body, "");
-        let trimmed = clean_body.trim_end();
-        format!("\x1b[2;33m{}{}\x1b[0m", prefix, trimmed)
-    }).into_owned()
+    let mut result = String::with_capacity(raw.len());
+    for (i, line) in raw.split('\n').enumerate() {
+        if i > 0 { result.push('\n'); }
+        let clean = strip_ansi(line);
+        if let Some(caps) = INTENT_RE.captures(&clean) {
+            let prefix = &caps[1]; // "intent: "
+            let body = &caps[2];
+            let clean_body = STRIP_TITLE_RE.replace(body, "");
+            let trimmed = clean_body.trim_end();
+            result.push_str(&format!("\x1b[2;33m{}{}\x1b[0m", prefix, trimmed));
+        } else {
+            result.push_str(line);
+        }
+    }
+    result
 }
 
 /// Detect agent-declared intent tokens: `[intent: <text>]`, `[[intent: <text>]]`,
@@ -2405,6 +2416,55 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let raw = "[[intent: Refactoring auth]]";
         let colored = colorize_intent(raw);
         assert_eq!(colored, "\x1b[2;33mintent: Refactoring auth\x1b[0m");
+    }
+
+    #[test]
+    fn test_intent_with_bullet_prefix() {
+        // Claude Code prefixes output lines with ⏺ (U+25CF)
+        let parser = OutputParser::new();
+        let input = "\u{25CF} [[intent: Implementing agentTeamsShim config field(Config field)]]";
+        let events = parser.parse(input);
+        let text = get_intent(&events);
+        let title = get_intent_title(&events);
+        assert_eq!(text, Some("Implementing agentTeamsShim config field".to_string()),
+            "intent text not extracted from bullet-prefixed input");
+        assert_eq!(title, Some("Config field".to_string()),
+            "intent title not extracted from bullet-prefixed input");
+    }
+
+    #[test]
+    fn test_colorize_intent_with_bullet_prefix() {
+        // Verify colorize strips brackets + title even with ⏺ prefix
+        let raw = "\u{25CF} [[intent: Implementing agentTeamsShim config field(Config field)]]";
+        let colored = colorize_intent(raw);
+        assert!(colored.contains("\x1b[2;33m"), "should contain yellow ANSI");
+        assert!(!colored.contains("(Config field)"), "should strip title from visible output");
+        assert!(!colored.contains("[["), "should strip opening brackets");
+        assert!(!colored.contains("]]"), "should strip closing brackets");
+    }
+
+    #[test]
+    fn test_intent_with_ansi_codes_interleaved() {
+        // ANSI codes wrapping bullet + dim around the intent token
+        let parser = OutputParser::new();
+        let raw = "\x1b[1m\u{25CF}\x1b[0m \x1b[2m[[intent: Implementing config(Config field)]]\x1b[0m";
+        let events = parser.parse(raw);
+        assert_eq!(get_intent(&events), Some("Implementing config".to_string()));
+        assert_eq!(get_intent_title(&events), Some("Config field".to_string()));
+        let colored = colorize_intent(raw);
+        assert!(colored.contains("\x1b[2;33m"), "should colorize yellow");
+        assert!(!colored.contains("(Config field)"), "should strip title");
+        assert!(!colored.contains("[["), "should strip brackets");
+    }
+
+    #[test]
+    fn test_colorize_intent_ansi_inside_brackets() {
+        // ANSI codes scattered inside the [[intent:...]] token itself
+        let raw = "\x1b[2m[[\x1b[0mintent: Implementing config(Config field)\x1b[2m]]\x1b[0m";
+        let colored = colorize_intent(raw);
+        assert!(colored.contains("\x1b[2;33m"),
+            "should colorize even with ANSI inside brackets; got: {:?}", colored);
+        assert!(!colored.contains("(Config field)"), "should strip title");
     }
 
     #[test]
