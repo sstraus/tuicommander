@@ -4,7 +4,7 @@ import styles from "./SettingsScreen.module.css";
 const SOUND_KEY = "tuic-mobile-sounds";
 
 interface SettingsScreenProps {
-  connectionError: string | null;
+  isConnected: boolean;
 }
 
 export function SettingsScreen(props: SettingsScreenProps) {
@@ -34,10 +34,10 @@ export function SettingsScreen(props: SettingsScreenProps) {
         <div class={styles.row}>
           <span class={styles.label}>Status</span>
           <span classList={{
-            [styles.connected]: !props.connectionError,
-            [styles.disconnected]: !!props.connectionError,
+            [styles.connected]: props.isConnected,
+            [styles.disconnected]: !props.isConnected,
           }}>
-            {props.connectionError ? "Disconnected" : "Connected"}
+            {props.isConnected ? "Connected" : "Disconnected"}
           </span>
         </div>
       </section>

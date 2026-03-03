@@ -1,32 +1,27 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-// Test the connection status derivation logic for SettingsScreen.
+const source = readFileSync(
+  resolve(__dirname, "../screens/SettingsScreen.tsx"),
+  "utf-8",
+);
+
 describe("SettingsScreen connection status", () => {
-  function deriveConnectionStatus(connectionError: string | null): {
-    label: string;
-    isConnected: boolean;
-  } {
-    if (connectionError) {
-      return { label: "Disconnected", isConnected: false };
-    }
-    return { label: "Connected", isConnected: true };
-  }
-
-  it("shows Connected when no error", () => {
-    const status = deriveConnectionStatus(null);
-    expect(status.label).toBe("Connected");
-    expect(status.isConnected).toBe(true);
+  it("has isConnected boolean prop (not connectionError)", () => {
+    expect(source).toContain("isConnected: boolean");
+    expect(source).not.toContain("connectionError");
   });
 
-  it("shows Disconnected when error is set", () => {
-    const status = deriveConnectionStatus("Network error: connection refused");
-    expect(status.label).toBe("Disconnected");
-    expect(status.isConnected).toBe(false);
+  it("applies connected class when isConnected is true", () => {
+    expect(source).toMatch(/\[styles\.connected\]:\s*props\.isConnected/);
   });
 
-  it("shows Disconnected for any non-null error string", () => {
-    const status = deriveConnectionStatus("timeout");
-    expect(status.label).toBe("Disconnected");
-    expect(status.isConnected).toBe(false);
+  it("applies disconnected class when isConnected is false", () => {
+    expect(source).toMatch(/\[styles\.disconnected\]:\s*!props\.isConnected/);
+  });
+
+  it('shows "Connected" when isConnected is true', () => {
+    expect(source).toMatch(/props\.isConnected\s*\?\s*"Connected"\s*:\s*"Disconnected"/);
   });
 });
