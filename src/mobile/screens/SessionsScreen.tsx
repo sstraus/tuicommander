@@ -1,5 +1,6 @@
 import { For, Index, Show, createSignal } from "solid-js";
 import { SessionCard } from "../components/SessionCard";
+import { HeroMetrics } from "../components/HeroMetrics";
 import type { SessionInfo } from "../useSessions";
 import styles from "./SessionsScreen.module.css";
 
@@ -74,6 +75,13 @@ export function SessionsScreen(props: SessionsScreenProps) {
         <div class={styles.errorBanner}>
           {props.error}
         </div>
+      </Show>
+
+      <Show when={props.sessions.length > 0}>
+        <HeroMetrics
+          activeCount={props.sessions.length}
+          awaitingCount={props.sessions.filter((s) => s.state?.awaiting_input).length}
+        />
       </Show>
 
       <Show when={props.loading && props.sessions.length === 0}>
