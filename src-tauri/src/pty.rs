@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 use crate::input_line_buffer::{InputAction, InputLineBuffer};
-use crate::output_parser::{colorize_intent, extract_last_question_line, OutputParser, ParsedEvent};
+use crate::output_parser::{colorize_intent, extract_last_question_line, strip_suggest, OutputParser, ParsedEvent};
 use crate::state::{
     AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
     OutputRingBuffer, PtyConfig, PtyOutput, PtySession, Utf8ReadBuffer,
@@ -327,6 +327,9 @@ pub(crate) fn spawn_reader_thread(
                         // Colorize [intent: ...] tokens yellow before sending to xterm
                         let has_intent = events.iter().any(|e| matches!(e, ParsedEvent::Intent { .. }));
                         let data = if has_intent { colorize_intent(&data) } else { data };
+
+                        // Strip [[suggest: ...]] tokens before sending to xterm (emitted separately via pty-parsed-*)
+                        let data = strip_suggest(&data);
 
                         let _ = app.emit(
                             &format!("pty-output-{session_id}"),
