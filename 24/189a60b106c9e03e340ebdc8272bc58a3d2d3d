@@ -1,0 +1,33 @@
+src-tauri/src/state.rs
+  565843328bbd8c9a 700-701,1220
+src-tauri/src/config.rs
+  565843328bbd8c9a 929-932
+src-tauri/src/mcp_http/mod.rs
+  565843328bbd8c9a 463
+src-tauri/src/relay_client.rs
+  565843328bbd8c9a 1-273
+src-tauri/src/lib.rs
+  565843328bbd8c9a 31,589,614-625
+src-tauri/Cargo.toml
+  565843328bbd8c9a 61-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "24189a60b106c9e03e340ebdc8272bc58a3d2d3d",
+  "prompts": {
+    "565843328bbd8c9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d951fac9-300b-4db1-8ad9-758f7f2b0e41",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 318,
+      "total_deletions": 20,
+      "accepted_lines": 298,
+      "overriden_lines": 0
+    }
+  }
+}
