@@ -5,14 +5,17 @@ import { MarkdownTab } from "./MarkdownTab";
 import { PluginPanel } from "./PluginPanel";
 import { ClaudeUsageDashboard } from "./ClaudeUsageDashboard";
 import { CodeEditorTab } from "./CodeEditorPanel";
+import SuggestOverlay from "./SuggestOverlay/SuggestOverlay";
 import noTuiOpenImg from "../assets/no-tui-open.png";
 import TipOfTheDay from "./TipOfTheDay/TipOfTheDay";
 import { terminalsStore } from "../stores/terminals";
+import { settingsStore } from "../stores/settings";
 import { repositoriesStore } from "../stores/repositories";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { diffTabsStore } from "../stores/diffTabs";
 import { mdTabsStore } from "../stores/mdTabs";
 import { editorTabsStore } from "../stores/editorTabs";
+import { rpc } from "../transport";
 
 export interface TerminalAreaProps {
   onTerminalFocus: (id: string) => void;
@@ -268,6 +271,32 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
             />
           </div>
         </div>
+      </Show>
+
+      {/* Suggest follow-up actions overlay */}
+      <Show when={settingsStore.state.suggestFollowups}>
+        {(() => {
+          const active = () => terminalsStore.getActive();
+          const actions = () => active()?.suggestedActions;
+          const sessionId = () => active()?.sessionId;
+          return (
+            <Show when={actions()?.length}>
+              <SuggestOverlay
+                items={actions()!}
+                onSelect={(text) => {
+                  const sid = sessionId();
+                  if (sid) rpc("write_pty", { sessionId: sid, data: text + "\n" });
+                  const id = terminalsStore.state.activeId;
+                  if (id) terminalsStore.update(id, { suggestedActions: null });
+                }}
+                onDismiss={() => {
+                  const id = terminalsStore.state.activeId;
+                  if (id) terminalsStore.update(id, { suggestedActions: null });
+                }}
+              />
+            </Show>
+          );
+        })()}
       </Show>
 
       {/* Side panels (must be inside #terminal-container for flex row layout) */}
