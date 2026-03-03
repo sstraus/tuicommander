@@ -7,16 +7,15 @@
   max-width: 480px;
   width: 90%;
   padding: 16px 20px 12px;
-  background: rgba(37, 37, 38, 0.6);
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  opacity: 0.55;
-  transition: opacity 0.15s ease, background 0.15s ease;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
 }
 
 .card:hover {
   opacity: 1;
-  background: rgba(37, 37, 38, 0.9);
 }
 
 .label {
