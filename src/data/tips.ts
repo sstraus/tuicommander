@@ -4,12 +4,9 @@ export interface Tip {
   shortcut: string | null;
 }
 
-const isMac =
-  typeof navigator !== "undefined"
-    ? /Mac|iPhone|iPad|iPod/.test(navigator.platform)
-    : true;
+import { isMacOS } from "../platform";
 
-const mod = isMac ? "Cmd" : "Ctrl";
+const mod = isMacOS() ? "Cmd" : "Ctrl";
 
 export const TIPS: Tip[] = [
   {

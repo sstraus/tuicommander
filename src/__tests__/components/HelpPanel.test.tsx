@@ -72,8 +72,9 @@ describe("HelpPanel", () => {
     const { container } = render(() => (
       <HelpPanel visible={true} onClose={handleClose} />
     ));
-    const closeBtn = container.querySelector(".close")!;
-    fireEvent.click(closeBtn);
+    const closeBtn = container.querySelector(".close");
+    expect(closeBtn).not.toBeNull();
+    fireEvent.click(closeBtn!);
     expect(handleClose).toHaveBeenCalledOnce();
   });
 
