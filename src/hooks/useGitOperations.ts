@@ -823,6 +823,17 @@ export function useGitOperations(deps: GitOperationsDeps) {
   /** Merge a worktree branch into target, then archive/delete based on setting.
    *  When the branch has an open PR, uses GitHub API with the configured merge strategy.
    *  Falls back to local git merge if no PR is found or GitHub API fails. */
+  /** Close all terminals belonging to a branch. */
+  const closeTerminalsForBranch = async (repoPath: string, branchName: string) => {
+    const repoState = repositoriesStore.get(repoPath);
+    const branch = repoState?.branches[branchName];
+    if (branch) {
+      for (const termId of branch.terminals) {
+        await deps.closeTerminal(termId, true);
+      }
+    }
+  };
+
   const handleMergeAndArchive = async (
     repoPath: string,
     branchName: string,
@@ -831,15 +842,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
   ) => {
     try {
       deps.setStatusInfo(`Merging ${branchName} into ${targetBranch}...`);
-
-      // Close terminals for this branch before merge
-      const repoState = repositoriesStore.get(repoPath);
-      const branch = repoState?.branches[branchName];
-      if (branch) {
-        for (const termId of branch.terminals) {
-          await deps.closeTerminal(termId, true);
-        }
-      }
 
       // Use GitHub API when a PR exists for this branch
       const pr = githubStore.getPrStatus(repoPath, branchName);
@@ -853,7 +855,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
           await mergeLocalAndFinalize(repoPath, branchName, targetBranch, afterMerge);
           return;
         }
-        // GitHub merge succeeded — finalize the worktree locally
+        // GitHub merge succeeded — close terminals and finalize the worktree locally
+        await closeTerminalsForBranch(repoPath, branchName);
         if (afterMerge === "ask") {
           deps.setStatusInfo(`Merged ${branchName} via GitHub — choose what to do with the worktree`);
           setMergePendingCtx({ repoPath, branchName });
@@ -883,6 +886,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
     afterMerge: string,
   ) => {
     const result = await deps.repo.mergeAndArchiveWorktree(repoPath, branchName, targetBranch, afterMerge);
+
+    // Merge succeeded — close terminals now (not before, to avoid orphaning the branch on failure)
+    await closeTerminalsForBranch(repoPath, branchName);
 
     if (result.action === "pending") {
       // "ask" mode — merge succeeded, user must choose what to do with the worktree

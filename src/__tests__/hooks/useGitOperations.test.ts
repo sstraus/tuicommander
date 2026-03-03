@@ -580,6 +580,24 @@ describe("useGitOperations", () => {
       expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeDefined();
       expect(gitOps.mergePendingCtx()).toBeNull();
     });
+
+    it("keeps branch and terminals when merge fails", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
+      repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
+      repositoriesStore.addTerminalToBranch("/repo", "feature/x", "term-99");
+      terminalsStore.add("term-99", { cwd: "/repo/.wt/x" });
+      mockRepo.mergeAndArchiveWorktree.mockRejectedValueOnce(new Error("Merge failed (conflicts?)"));
+
+      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "archive");
+
+      // Branch stays in sidebar
+      expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeDefined();
+      // Terminal was NOT closed
+      expect(mockCloseTerminal).not.toHaveBeenCalled();
+      // Error was reported
+      expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("Failed to merge"));
+    });
   });
 
   describe("handleMergeAndArchive - GitHub API path", () => {
