@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 use tokio_rusqlite::Connection;
 use tracing::{info, warn};
 
+use crate::push::VapidConfig;
 use crate::types::{PeerStatus, RelayMessage};
 
 /// Per-session slot holding up to two peer senders.
@@ -26,6 +27,10 @@ pub struct AppState {
     /// Registered token hashes (in-memory cache for fast WS auth verification).
     /// Maps plaintext token → argon2 hash.
     pub token_cache: DashMap<String, String>,
+    /// VAPID config for Web Push. None if push is disabled.
+    pub vapid: Option<VapidConfig>,
+    /// Shared HTTP client for sending push notifications.
+    pub http_client: reqwest::Client,
 }
 
 impl AppState {
@@ -35,6 +40,8 @@ impl AppState {
             sessions: DashMap::new(),
             db: None,
             token_cache: DashMap::new(),
+            vapid: None,
+            http_client: reqwest::Client::new(),
         })
     }
 
@@ -44,6 +51,8 @@ impl AppState {
             sessions: DashMap::new(),
             db: Some(db),
             token_cache: DashMap::new(),
+            vapid: None,
+            http_client: reqwest::Client::new(),
         })
     }
 }
@@ -129,8 +138,13 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
                 forward_to_others(&state, &session_id, peer_index, msg).await;
             }
             Message::Text(text) => {
-                // Could be relay:push hint or other plaintext
-                // Forward as-is to other peers
+                // Check if this is a relay:push hint
+                if let Ok(RelayMessage::Push { reason, session_name }) =
+                    serde_json::from_str::<RelayMessage>(text)
+                {
+                    maybe_send_push(&state, &session_id, &reason, &session_name).await;
+                }
+                // Always forward text to other peers
                 forward_to_others(
                     &state,
                     &session_id,
@@ -150,6 +164,78 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
     writer_handle.abort();
     remove_peer(&state, &session_id, peer_index).await;
     info!(session_id, peer_index, "peer left");
+}
+
+/// If the other peer is offline, send Web Push to all subscriptions for this session's token.
+async fn maybe_send_push(state: &Arc<AppState>, session_id: &str, reason: &str, session_name: &str) {
+    // Check if the other peer is connected (session has 2 peers = both online)
+    let peer_count = state
+        .sessions
+        .get(session_id)
+        .map(|s| s.peers.len())
+        .unwrap_or(0);
+
+    if peer_count >= 2 {
+        // Other peer is connected, no push needed
+        return;
+    }
+
+    let (Some(vapid), Some(conn)) = (state.vapid.clone(), state.db.clone()) else {
+        // Push not configured or no DB
+        return;
+    };
+
+    // Find the token_hash for this session
+    let token_hash = match state.sessions.get(session_id).and_then(|s| s.token_hash.clone()) {
+        Some(h) => h,
+        None => {
+            warn!(session_id, "no token_hash for session, cannot send push");
+            return;
+        }
+    };
+
+    // Get all push subscriptions for this token
+    let subs = match crate::db::list_push_subs(&conn, &token_hash).await {
+        Ok(subs) => subs,
+        Err(e) => {
+            warn!(error = %e, "failed to list push subscriptions");
+            return;
+        }
+    };
+
+    if subs.is_empty() {
+        return;
+    }
+
+    info!(
+        session_id,
+        reason,
+        sub_count = subs.len(),
+        "sending push notifications (mobile peer offline)"
+    );
+
+    let payload = serde_json::to_vec(&serde_json::json!({
+        "title": session_name,
+        "body": reason,
+    }))
+    .expect("json serialization is infallible");
+
+    // Clone everything needed before spawning to satisfy 'static requirement
+    let client = state.http_client.clone();
+    tokio::spawn(async move {
+        for sub in &subs {
+            match crate::push::send_push(&client, &vapid, sub, &payload).await {
+                Ok(false) => {
+                    // Endpoint gone — remove subscription
+                    let _ = crate::db::delete_push_sub(&conn, &token_hash, &sub.endpoint).await;
+                }
+                Err(e) => {
+                    warn!(endpoint = %sub.endpoint, error = %e, "push send error");
+                }
+                Ok(true) => {}
+            }
+        }
+    });
 }
 
 /// Forward a message to all peers in the session except the sender.

@@ -166,6 +166,60 @@ async fn peer_disconnect_notifies_remaining() {
 }
 
 #[tokio::test]
+async fn relay_push_hint_forwarded_to_connected_peer() {
+    let addr = start_relay().await;
+    let session = "test-session-push";
+
+    let mut peer_a = connect_ws(addr, session).await;
+    let _status = read_text(&mut peer_a).await; // waiting
+
+    let mut peer_b = connect_ws(addr, session).await;
+    let _status = read_text(&mut peer_b).await; // connected
+    let _status = read_text(&mut peer_a).await; // connected
+
+    // Peer A sends a relay:push hint
+    let push_msg = r#"{"type":"relay:push","reason":"awaiting_input","session_name":"dev-server"}"#;
+    peer_a
+        .send(Message::Text(push_msg.into()))
+        .await
+        .unwrap();
+
+    // Peer B should receive the push hint forwarded
+    let received = read_text(&mut peer_b).await;
+    assert!(received.contains("relay:push"), "expected relay:push, got: {received}");
+    assert!(received.contains("awaiting_input"));
+}
+
+#[tokio::test]
+async fn relay_push_hint_with_single_peer_does_not_crash() {
+    let addr = start_relay().await;
+    let session = "test-session-push-solo";
+
+    let mut peer_a = connect_ws(addr, session).await;
+    let _status = read_text(&mut peer_a).await; // waiting
+
+    // Peer A sends relay:push — no other peer connected, no VAPID configured
+    // Should not crash or hang
+    let push_msg = r#"{"type":"relay:push","reason":"awaiting_input","session_name":"dev-server"}"#;
+    peer_a
+        .send(Message::Text(push_msg.into()))
+        .await
+        .unwrap();
+
+    // Send a regular text message after to verify the connection is still alive
+    peer_a
+        .send(Message::Text("ping".into()))
+        .await
+        .unwrap();
+
+    // Give the relay a moment to process
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // Connection should still be alive — close cleanly
+    peer_a.close(None).await.unwrap();
+}
+
+#[tokio::test]
 async fn invalid_session_id_rejected() {
     let addr = start_relay().await;
 

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use tracing::{info, warn};
@@ -7,9 +9,10 @@ use web_push_native::{p256, Auth, WebPushBuilder};
 use crate::types::PushSubscription;
 
 /// VAPID configuration for sending Web Push notifications.
+#[derive(Clone)]
 pub struct VapidConfig {
-    /// ES256 key pair for VAPID signing.
-    key_pair: ES256KeyPair,
+    /// ES256 key pair for VAPID signing (shared via Arc since ES256KeyPair is not Clone).
+    key_pair: Arc<ES256KeyPair>,
     /// Contact URI (mailto: or https:) for the VAPID subject claim.
     subject: String,
 }
@@ -22,7 +25,7 @@ impl VapidConfig {
         let key_pair = ES256KeyPair::from_bytes(&key_bytes)
             .map_err(|e| anyhow::anyhow!("invalid ES256 private key: {e}"))?;
         Ok(Self {
-            key_pair,
+            key_pair: Arc::new(key_pair),
             subject: subject.to_owned(),
         })
     }
