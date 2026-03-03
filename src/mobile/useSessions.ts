@@ -40,6 +40,7 @@ const POLL_INTERVAL_MS = 3_000;
 export function useSessions() {
   const [sessions, setSessions] = createSignal<SessionInfo[]>([]);
   const [loading, setLoading] = createSignal(true);
+  const [refreshing, setRefreshing] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
   async function fetchSessions() {
@@ -53,6 +54,7 @@ export function useSessions() {
       appLogger.warn("network", `Failed to fetch sessions: ${msg}`);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
@@ -79,8 +81,9 @@ export function useSessions() {
     unlistenClosed.then((fn) => fn());
   });
 
-  /** Force an immediate refresh */
+  /** Force an immediate refresh (sets refreshing=true while in-flight) */
   function refresh() {
+    setRefreshing(true);
     fetchSessions();
   }
 
@@ -89,5 +92,5 @@ export function useSessions() {
     return sessions().filter((s) => s.state?.awaiting_input).length;
   }
 
-  return { sessions, loading, error, refresh, questionCount };
+  return { sessions, loading, refreshing, error, refresh, questionCount };
 }

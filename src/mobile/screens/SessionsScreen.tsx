@@ -6,6 +6,7 @@ import styles from "./SessionsScreen.module.css";
 interface SessionsScreenProps {
   sessions: SessionInfo[];
   loading: boolean;
+  refreshing: boolean;
   error: string | null;
   onRefresh: () => void;
   onSelectSession: (sessionId: string) => void;
@@ -58,6 +59,14 @@ export function SessionsScreen(props: SessionsScreenProps) {
           >
             {pullY() >= PULL_THRESHOLD ? "Release to refresh" : "Pull to refresh"}
           </span>
+        </div>
+      </Show>
+
+      <Show when={props.refreshing && props.sessions.length > 0}>
+        <div class={styles.refreshSpinner}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+          </svg>
         </div>
       </Show>
 

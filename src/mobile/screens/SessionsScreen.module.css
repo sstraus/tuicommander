@@ -88,6 +88,20 @@
   animation: shimmer 1.5s ease infinite;
 }
 
+/* Pull-to-refresh in-progress spinner */
+.refreshSpinner {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+  color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 @keyframes shimmer {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 0.8; }

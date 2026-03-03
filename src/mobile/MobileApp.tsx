@@ -13,7 +13,7 @@ import styles from "./MobileApp.module.css";
 export default function MobileApp() {
   const [activeTab, setActiveTab] = createSignal<TabId>("sessions");
   const [selectedSessionId, setSelectedSessionId] = createSignal<string | null>(null);
-  const { sessions, loading, error, refresh, questionCount } = useSessions();
+  const { sessions, loading, refreshing, error, refresh, questionCount } = useSessions();
   useMobileNotifications(sessions);
 
   // Keep the last known session data so the detail screen stays mounted
@@ -66,6 +66,7 @@ export default function MobileApp() {
                   <SessionsScreen
                     sessions={sessions()}
                     loading={loading()}
+                    refreshing={refreshing()}
                     error={error()}
                     onRefresh={refresh}
                     onSelectSession={navigateToSession}
