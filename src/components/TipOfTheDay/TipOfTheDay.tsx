@@ -13,7 +13,7 @@ export default function TipOfTheDay() {
       <div class={styles.label}>TIP OF THE DAY</div>
       <div class={styles.body}>
         <button class={styles.arrow} onClick={prev} aria-label="Previous tip">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
             <path d="M10 3L5 8l5 5V3z" />
           </svg>
         </button>
@@ -25,7 +25,7 @@ export default function TipOfTheDay() {
           )}
         </div>
         <button class={styles.arrow} onClick={next} aria-label="Next tip">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
             <path d="M6 3l5 5-5 5V3z" />
           </svg>
         </button>

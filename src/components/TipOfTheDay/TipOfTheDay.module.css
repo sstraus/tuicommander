@@ -20,11 +20,11 @@
 
 .label {
   font-family: var(--font-ui);
-  font-size: var(--font-2xs);
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
 }
 
 .body {
@@ -46,27 +46,27 @@
 
 .feature {
   font-family: var(--font-ui);
-  font-size: var(--font-md);
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--fg-primary);
 }
 
 .description {
   font-family: var(--font-ui);
-  font-size: var(--font-sm);
-  color: var(--fg-secondary);
+  font-size: var(--font-md);
+  color: var(--fg-primary);
   line-height: 1.4;
 }
 
 .shortcut {
   display: inline-block;
   font-family: var(--font-mono);
-  font-size: var(--font-xs);
-  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  color: var(--fg-primary);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 2px 6px;
+  padding: 2px 8px;
   margin-top: 2px;
 }
 
@@ -80,9 +80,9 @@
   background: none;
   border: none;
   border-radius: var(--radius-md);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   cursor: pointer;
-  opacity: 0.4;
+  opacity: 0.6;
   transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
@@ -101,11 +101,11 @@
 }
 
 .dot {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: var(--radius-full);
-  background: var(--fg-muted);
-  opacity: 0.3;
+  background: var(--fg-secondary);
+  opacity: 0.4;
   cursor: pointer;
   transition: opacity 0.15s ease, background 0.15s ease;
 }
