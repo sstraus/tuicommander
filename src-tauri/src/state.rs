@@ -795,11 +795,10 @@ impl AppState {
                                 s.awaiting_input = false;
                                 s.question_text = None;
                                 // Capture as last_prompt if >= 10 words
-                                if let Some(content) = parsed.get("content").and_then(|v| v.as_str()) {
-                                    if content.split_whitespace().count() >= 10 {
+                                if let Some(content) = parsed.get("content").and_then(|v| v.as_str())
+                                    && content.split_whitespace().count() >= 10 {
                                         s.last_prompt = Some(content.to_string());
                                     }
-                                }
                             }
                             "rate-limit" => {
                                 s.rate_limited = true;

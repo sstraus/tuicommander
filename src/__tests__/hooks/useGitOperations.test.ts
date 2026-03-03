@@ -586,7 +586,7 @@ describe("useGitOperations", () => {
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
       repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
       repositoriesStore.addTerminalToBranch("/repo", "feature/x", "term-99");
-      terminalsStore.add("term-99", { cwd: "/repo/.wt/x" });
+      terminalsStore.register("term-99", { sessionId: null, fontSize: 14, name: "T-99", cwd: "/repo/.wt/x", awaitingInput: null });
       mockRepo.mergeAndArchiveWorktree.mockRejectedValueOnce(new Error("Merge failed (conflicts?)"));
 
       await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "archive");
