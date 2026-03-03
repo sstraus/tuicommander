@@ -65,6 +65,32 @@
   flex-shrink: 0;
 }
 
+.errorBar {
+  padding: 8px 12px;
+  background: rgba(255, 80, 80, 0.08);
+  border-bottom: 1px solid rgba(255, 80, 80, 0.2);
+  font-size: 13px;
+  color: var(--fg-primary);
+  flex-shrink: 0;
+}
+
+.rateLimitBar {
+  padding: 8px 12px;
+  background: rgba(255, 165, 0, 0.08);
+  border-bottom: 1px solid rgba(255, 165, 0, 0.2);
+  font-size: 13px;
+  color: var(--fg-primary);
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.rateLimitCountdown {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
 .outputArea {
   position: relative;
   flex: 1;
