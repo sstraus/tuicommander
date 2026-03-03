@@ -1,0 +1,29 @@
+tools/relay/src/push.rs
+  565843328bbd8c9a 1-2,12,14-15,28
+tools/relay/src/main.rs
+  565843328bbd8c9a 1,4,21-29,40-50,53-59
+tools/relay/src/relay.rs
+  565843328bbd8c9a 11,30-33,43-44,54-55,141-147,169-240
+tools/relay/tests/relay_core.rs
+  565843328bbd8c9a 169-221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "56eb980ca23bfb84662e729eb4249f0da52647b9",
+  "prompts": {
+    "565843328bbd8c9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d951fac9-300b-4db1-8ad9-758f7f2b0e41",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 192,
+      "total_deletions": 21,
+      "accepted_lines": 178,
+      "overriden_lines": 0
+    }
+  }
+}
