@@ -30,6 +30,15 @@ pub async fn init(path: &str) -> Result<Connection> {
 
             CREATE INDEX IF NOT EXISTS idx_sessions_token
                 ON sessions(token_hash);
+
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                token_hash  TEXT NOT NULL,
+                endpoint    TEXT NOT NULL,
+                p256dh      TEXT NOT NULL,
+                auth        TEXT NOT NULL,
+                created_at  INTEGER NOT NULL,
+                PRIMARY KEY (token_hash, endpoint)
+            );
             ",
         )?;
         Ok(())
@@ -140,6 +149,80 @@ pub struct TokenStats {
     pub total_bytes: i64,
     pub created_at: i64,
     pub last_seen: i64,
+}
+
+// --- Push subscription CRUD ---
+
+/// Store or update a push subscription for a token.
+pub async fn insert_push_sub(
+    conn: &Connection,
+    token_hash: &str,
+    endpoint: &str,
+    p256dh: &str,
+    auth: &str,
+) -> Result<()> {
+    let hash = token_hash.to_owned();
+    let ep = endpoint.to_owned();
+    let key = p256dh.to_owned();
+    let a = auth.to_owned();
+    let now = now_epoch();
+    conn.call(move |c| {
+        c.execute(
+            "INSERT INTO push_subscriptions (token_hash, endpoint, p256dh, auth, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (token_hash, endpoint) DO UPDATE SET p256dh = ?3, auth = ?4",
+            rusqlite::params![hash, ep, key, a, now],
+        )?;
+        Ok(())
+    })
+    .await?;
+    Ok(())
+}
+
+/// Remove a push subscription. Returns true if a row was deleted.
+pub async fn delete_push_sub(
+    conn: &Connection,
+    token_hash: &str,
+    endpoint: &str,
+) -> Result<bool> {
+    let hash = token_hash.to_owned();
+    let ep = endpoint.to_owned();
+    let deleted = conn
+        .call(move |c| {
+            let count = c.execute(
+                "DELETE FROM push_subscriptions WHERE token_hash = ?1 AND endpoint = ?2",
+                rusqlite::params![hash, ep],
+            )?;
+            Ok(count > 0)
+        })
+        .await?;
+    Ok(deleted)
+}
+
+/// List all push subscriptions for a token.
+pub async fn list_push_subs(
+    conn: &Connection,
+    token_hash: &str,
+) -> Result<Vec<crate::types::PushSubscription>> {
+    let hash = token_hash.to_owned();
+    let subs = conn
+        .call(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE token_hash = ?1",
+            )?;
+            let rows = stmt
+                .query_map(rusqlite::params![hash], |row| {
+                    Ok(crate::types::PushSubscription {
+                        endpoint: row.get(0)?,
+                        p256dh: row.get(1)?,
+                        auth: row.get(2)?,
+                    })
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .await?;
+    Ok(subs)
 }
 
 /// Add relayed bytes to a token's total.

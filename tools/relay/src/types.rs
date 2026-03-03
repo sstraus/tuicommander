@@ -17,6 +17,14 @@ pub enum RelayMessage {
     },
 }
 
+/// Browser push subscription info sent by the mobile PWA.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PushSubscription {
+    pub endpoint: String,
+    pub p256dh: String,
+    pub auth: String,
+}
+
 /// Peer connection state as seen by the relay.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
