@@ -82,6 +82,12 @@
   opacity: 0.7;
 }
 
+.yesBtn:disabled,
+.noBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 @keyframes slide-in {
   from {
     transform: translateY(-100%);
