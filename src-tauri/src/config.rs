@@ -332,6 +332,9 @@ pub(crate) struct AppConfig {
     /// Show agent intent as tab title (from [[intent: ...(title)]] tokens)
     #[serde(default = "default_true")]
     pub(crate) intent_tab_title: bool,
+    /// Enable Agent Teams it2 shim for PTY environment injection
+    #[serde(default)]
+    pub(crate) agent_teams_shim: bool,
 }
 
 fn default_language() -> String {
@@ -394,6 +397,7 @@ impl Default for AppConfig {
             disabled_agents: Vec::new(),
             disabled_native_tools: Vec::new(),
             intent_tab_title: true,
+            agent_teams_shim: false,
         }
     }
 }
@@ -900,6 +904,7 @@ mod tests {
             disabled_agents: vec!["codex".to_string()],
             disabled_native_tools: vec!["plugin_dev_guide".to_string()],
             intent_tab_title: false,
+            agent_teams_shim: true,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -1395,5 +1400,28 @@ mod tests {
             ..RepoSettingsEntry::default()
         };
         assert!(entry.has_custom_settings());
+    }
+
+    #[test]
+    fn agent_teams_shim_defaults_false() {
+        let config = AppConfig::default();
+        assert!(!config.agent_teams_shim);
+    }
+
+    #[test]
+    fn agent_teams_shim_round_trips_via_json() {
+        let mut config = AppConfig::default();
+        config.agent_teams_shim = true;
+        let json = serde_json::to_string(&config).unwrap();
+        let loaded: AppConfig = serde_json::from_str(&json).unwrap();
+        assert!(loaded.agent_teams_shim);
+    }
+
+    #[test]
+    fn agent_teams_shim_absent_in_old_json_defaults_false() {
+        // Old config JSON without agent_teams_shim should default to false
+        let old_json = r#"{"shell":null,"font_family":"JetBrains Mono","font_size":14,"theme":"vscode-dark"}"#;
+        let loaded: AppConfig = serde_json::from_str(old_json).unwrap();
+        assert!(!loaded.agent_teams_shim);
     }
 }

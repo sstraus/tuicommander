@@ -30,6 +30,7 @@ interface RustAppConfig {
   session_token_duration_secs: number;
   disabled_agents: string[];
   intent_tab_title: boolean;
+  agent_teams_shim: boolean;
 }
 
 // Default values
