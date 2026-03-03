@@ -65,6 +65,12 @@ pub enum ParsedEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         title: Option<String>,
     },
+    /// Suggested follow-up actions for the user to choose from.
+    /// Emitted via `[[suggest: A | B | C]]` token in agent output.
+    #[serde(rename = "suggest")]
+    Suggest {
+        items: Vec<String>,
+    },
 }
 
 /// OutputParser: detects structured events in PTY output text.
@@ -152,6 +158,11 @@ impl OutputParser {
 
         // Intent declaration: [intent: <text>] or [[intent: <text>]] or ⟦intent: <text>⟧
         if let Some(evt) = parse_intent(&clean) {
+            events.push(evt);
+        }
+
+        // Suggest follow-up actions: [suggest: A | B | C] or [[suggest: ...]]
+        if let Some(evt) = parse_suggest(&clean) {
             events.push(evt);
         }
 
@@ -898,6 +909,40 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
         };
         Some(ParsedEvent::Intent { text, title })
     })
+}
+
+/// Detect suggested follow-up actions: `[suggest: A | B | C]`, `[[suggest: ...]]`,
+/// or `⟦suggest: ...⟧`. Pipe-separated items. At least one non-empty item required.
+fn parse_suggest(clean: &str) -> Option<ParsedEvent> {
+    if !clean.contains("suggest:") {
+        return None;
+    }
+    lazy_static::lazy_static! {
+        static ref SUGGEST_RE: regex::Regex =
+            regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})suggest:\s*([^\]\x{27E7}]+?)\s*(?:\]?\]|\x{27E7})").unwrap();
+    }
+    SUGGEST_RE.captures(clean).and_then(|caps| {
+        let raw = caps[1].trim();
+        let items: Vec<String> = raw
+            .split('|')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if items.is_empty() {
+            return None;
+        }
+        Some(ParsedEvent::Suggest { items })
+    })
+}
+
+/// Strip suggest tokens from raw PTY output so they don't appear in the terminal.
+/// Removes the entire line containing the token (including surrounding newlines).
+pub fn strip_suggest(raw: &str) -> String {
+    lazy_static::lazy_static! {
+        static ref STRIP_RE: regex::Regex =
+            regex::Regex::new(r"(?m)^[^\S\n]*(?:\[\[?|\x{27E6})suggest:\s*.+?\s*(?:\]?\]|\x{27E7})[^\S\n]*\n?").unwrap();
+    }
+    STRIP_RE.replace_all(raw, "").into_owned()
 }
 
 #[cfg(test)]
@@ -2378,5 +2423,91 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(!has_rate_limit(&parser.parse(
             "http/\x1b[1C\x1b[39me\x1b[1C\x1b[38;2;177;185;249mstate.rs\x1b[1Cche\x1b[1Csembrano\x1b[1Cprovenire\x1b[1Cda\x1b[1Caltre\x1b[1Csessioni\x1b[1C(story\x1b[1C429"
         )));
+    }
+
+    // --- Suggest detection tests ---
+
+    fn get_suggest(events: &[ParsedEvent]) -> Option<Vec<String>> {
+        events.iter().find_map(|e| match e {
+            ParsedEvent::Suggest { items } => Some(items.clone()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn test_suggest_basic() {
+        let parser = OutputParser::new();
+        let events = parser.parse("[[suggest: Fix the test | Refactor code | Add docs]]");
+        let items = get_suggest(&events).expect("should parse suggest");
+        assert_eq!(items, vec!["Fix the test", "Refactor code", "Add docs"]);
+    }
+
+    #[test]
+    fn test_suggest_single_brackets() {
+        let parser = OutputParser::new();
+        let events = parser.parse("[suggest: Option A | Option B]");
+        let items = get_suggest(&events).expect("should parse suggest");
+        assert_eq!(items, vec!["Option A", "Option B"]);
+    }
+
+    #[test]
+    fn test_suggest_unicode_brackets() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{27E6}suggest: Alpha | Beta | Gamma\u{27E7}");
+        let items = get_suggest(&events).expect("should parse suggest");
+        assert_eq!(items, vec!["Alpha", "Beta", "Gamma"]);
+    }
+
+    #[test]
+    fn test_suggest_trims_whitespace() {
+        let parser = OutputParser::new();
+        let events = parser.parse("[[suggest:   Fix test  |  Refactor  |  Add docs  ]]");
+        let items = get_suggest(&events).expect("should parse suggest");
+        assert_eq!(items, vec!["Fix test", "Refactor", "Add docs"]);
+    }
+
+    #[test]
+    fn test_suggest_filters_empty_items() {
+        let parser = OutputParser::new();
+        // Double pipe or trailing pipe should not produce empty items
+        let events = parser.parse("[[suggest: Fix test || Add docs |]]");
+        let items = get_suggest(&events).expect("should parse suggest");
+        assert_eq!(items, vec!["Fix test", "Add docs"]);
+    }
+
+    #[test]
+    fn test_suggest_needs_at_least_one_item() {
+        let parser = OutputParser::new();
+        assert!(get_suggest(&parser.parse("[[suggest: ]]")).is_none());
+        assert!(get_suggest(&parser.parse("[[suggest: |  | ]]")).is_none());
+    }
+
+    #[test]
+    fn test_no_suggest_normal_text() {
+        let parser = OutputParser::new();
+        assert!(get_suggest(&parser.parse("I suggest we refactor")).is_none());
+        assert!(get_suggest(&parser.parse("Building project...")).is_none());
+    }
+
+    #[test]
+    fn test_suggest_no_ansi_garbage() {
+        let parser = OutputParser::new();
+        assert!(get_suggest(&parser.parse("]garbage[[suggest: A | B]]")).is_none());
+    }
+
+    #[test]
+    fn test_strip_suggest_removes_token() {
+        let raw = "Some output\n[[suggest: Fix test | Refactor | Add docs]]\nMore output";
+        let stripped = strip_suggest(raw);
+        // Should remove the entire suggest line, leaving no blank line
+        assert!(!stripped.contains("suggest"));
+        assert!(stripped.contains("Some output"));
+        assert!(stripped.contains("More output"));
+    }
+
+    #[test]
+    fn test_strip_suggest_no_match_unchanged() {
+        let raw = "Normal terminal output";
+        assert_eq!(strip_suggest(raw), raw);
     }
 }
