@@ -6,9 +6,10 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use axum::Router;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::relay::{self, AppState};
+use crate::types::PushSubscription;
 use crate::{auth, db};
 
 /// Build the Axum router with all relay endpoints.
@@ -17,6 +18,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/health", get(health))
         .route("/register", post(register))
         .route("/stats", get(stats))
+        .route("/push/subscribe", post(push_subscribe).delete(push_unsubscribe))
         .route("/ws/{session_id}", get(ws_upgrade))
         .with_state(state)
 }
@@ -118,6 +120,63 @@ async fn stats(
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(e) => {
             tracing::error!(error = %e, "stats query failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+/// Register a browser push subscription (requires bearer auth).
+async fn push_subscribe(
+    headers: axum::http::HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<PushSubscription>,
+) -> Response {
+    let Some(token) = extract_bearer(&headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Some(hash) = verify_bearer(&state, token) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Some(conn) = &state.db else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+
+    match db::insert_push_sub(conn, &hash, &body.endpoint, &body.p256dh, &body.auth).await {
+        Ok(()) => StatusCode::CREATED.into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to store push subscription");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+/// Request body for unsubscribing: only the endpoint is needed.
+#[derive(Deserialize)]
+struct PushUnsubscribeRequest {
+    endpoint: String,
+}
+
+/// Remove a browser push subscription (requires bearer auth).
+async fn push_unsubscribe(
+    headers: axum::http::HeaderMap,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<PushUnsubscribeRequest>,
+) -> Response {
+    let Some(token) = extract_bearer(&headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Some(hash) = verify_bearer(&state, token) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Some(conn) = &state.db else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+
+    match db::delete_push_sub(conn, &hash, &body.endpoint).await {
+        Ok(true) => StatusCode::OK.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to delete push subscription");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

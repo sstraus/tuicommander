@@ -183,3 +183,79 @@ async fn push_sub_isolation_between_tokens() {
     assert_eq!(subs_b.len(), 1);
     assert_eq!(subs_b[0].endpoint, "https://push/b");
 }
+
+// --- Push subscribe/unsubscribe HTTP endpoint tests ---
+
+/// Helper to register a token and return it.
+async fn register_token(client: &reqwest::Client, addr: std::net::SocketAddr) -> String {
+    let resp = client
+        .post(format!("http://{addr}/register"))
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    body["token"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn push_subscribe_requires_auth() {
+    let addr = start_relay_with_db().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("http://{addr}/push/subscribe"))
+        .json(&serde_json::json!({
+            "endpoint": "https://push.example.com/sub",
+            "p256dh": "key",
+            "auth": "secret"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+}
+
+#[tokio::test]
+async fn push_subscribe_and_unsubscribe() {
+    let addr = start_relay_with_db().await;
+    let client = reqwest::Client::new();
+    let token = register_token(&client, addr).await;
+
+    // Subscribe
+    let resp = client
+        .post(format!("http://{addr}/push/subscribe"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({
+            "endpoint": "https://fcm.googleapis.com/fcm/send/test123",
+            "p256dh": "BPk1cGBIaSg",
+            "auth": "authsecret"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+
+    // Unsubscribe
+    let resp = client
+        .delete(format!("http://{addr}/push/subscribe"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({
+            "endpoint": "https://fcm.googleapis.com/fcm/send/test123"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Unsubscribe again — 404
+    let resp = client
+        .delete(format!("http://{addr}/push/subscribe"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({
+            "endpoint": "https://fcm.googleapis.com/fcm/send/test123"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
