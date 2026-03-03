@@ -287,4 +287,103 @@ describe("keybindingsStore", () => {
       expect(all["toggle-diff"]).toBe("Cmd+Y");
     });
   });
+
+  describe("setOverride", () => {
+    it("overrides a binding and updates lookups", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await store.setOverride("toggle-diff", "Cmd+Y");
+
+      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Y");
+      expect(store.getActionForCombo("cmd+y")).toBe("toggle-diff");
+      expect(store.getActionForCombo("cmd+shift+d")).toBeUndefined();
+    });
+
+    it("calls save_keybindings with overrides", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await store.setOverride("toggle-diff", "Cmd+Y");
+
+      expect(mockInvoke).toHaveBeenCalledWith("save_keybindings", {
+        config: [{ action: "toggle-diff", key: "Cmd+Y" }],
+      });
+    });
+
+    it("removes override when set to the default value", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      // First override to something different
+      await store.setOverride("toggle-diff", "Cmd+Y");
+      expect(store.isOverridden("toggle-diff")).toBe(true);
+
+      // Then set back to default
+      await store.setOverride("toggle-diff", "Cmd+Shift+D");
+      expect(store.isOverridden("toggle-diff")).toBe(false);
+      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Shift+D");
+    });
+  });
+
+  describe("resetAction", () => {
+    it("reverts a single action to its default", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await store.setOverride("toggle-diff", "Cmd+Y");
+      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Y");
+
+      await store.resetAction("toggle-diff");
+      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Shift+D");
+      expect(store.isOverridden("toggle-diff")).toBe(false);
+    });
+  });
+
+  describe("resetAll", () => {
+    it("clears all overrides and reverts to defaults", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await store.setOverride("toggle-diff", "Cmd+Y");
+      await store.setOverride("new-terminal", "Cmd+N");
+
+      await store.resetAll();
+
+      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Shift+D");
+      expect(store.getKeyForAction("new-terminal")).toBe("Cmd+T");
+      expect(store.isOverridden("toggle-diff")).toBe(false);
+      expect(store.isOverridden("new-terminal")).toBe(false);
+    });
+
+    it("persists empty overrides array", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await store.setOverride("toggle-diff", "Cmd+Y");
+      await store.resetAll();
+
+      expect(mockInvoke).toHaveBeenLastCalledWith("save_keybindings", {
+        config: [],
+      });
+    });
+  });
+
+  describe("isOverridden", () => {
+    it("returns false for default bindings", () => {
+      expect(store.isOverridden("toggle-diff")).toBe(false);
+    });
+
+    it("returns true after setOverride", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+      await store.setOverride("toggle-diff", "Cmd+Y");
+      expect(store.isOverridden("toggle-diff")).toBe(true);
+    });
+
+    it("returns true after hydrate with overrides", async () => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "load_keybindings") {
+          return Promise.resolve([{ action: "toggle-diff", key: "Cmd+Y" }]);
+        }
+        return Promise.resolve(undefined);
+      });
+
+      await store.hydrate();
+      expect(store.isOverridden("toggle-diff")).toBe(true);
+    });
+  });
 });
