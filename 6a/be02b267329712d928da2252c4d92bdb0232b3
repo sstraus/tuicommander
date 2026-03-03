@@ -1,0 +1,40 @@
+src/mobile/screens/SettingsScreen.tsx
+  52048413a189f3cf 7,37-38,40
+src/mobile/MobileApp.tsx
+  52048413a189f3cf 79
+src/mobile/__tests__/SettingsScreen.test.ts
+  52048413a189f3cf 2-3,5-8,11-14,16-17,20-21,24-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "6abe02b267329712d928da2252c4d92bdb0232b3",
+  "prompts": {
+    "3cf58d5cd968e347": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a19c10c-ffc9-4018-97ac-4824ba78e802",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 529,
+      "overriden_lines": 0
+    },
+    "52048413a189f3cf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a484c24-0a93-411d-bdab-5c39e22f10d8",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 115,
+      "total_deletions": 0,
+      "accepted_lines": 169,
+      "overriden_lines": 0
+    }
+  }
+}
