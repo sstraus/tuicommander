@@ -69,6 +69,50 @@ export function SessionCard(props: SessionCardProps) {
         <Show when={props.session.state?.question_text}>
           <div class={styles.snippet}>{props.session.state!.question_text}</div>
         </Show>
+
+        {/* Intent or last prompt sub-row */}
+        <Show when={props.session.state?.agent_intent} fallback={
+          <Show when={props.session.state?.last_prompt}>
+            <div class={styles.subRow} data-testid="prompt-row">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              <span class={styles.subRowText}>{props.session.state!.last_prompt}</span>
+            </div>
+          </Show>
+        }>
+          <div class={styles.subRow} data-testid="intent-row">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="22" y1="12" x2="18" y2="12" />
+              <line x1="6" y1="12" x2="2" y2="12" />
+              <line x1="12" y1="6" x2="12" y2="2" />
+              <line x1="12" y1="22" x2="12" y2="18" />
+            </svg>
+            <span class={styles.subRowText}>{props.session.state!.agent_intent}</span>
+          </div>
+        </Show>
+
+        {/* Current task sub-row */}
+        <Show when={props.session.state?.current_task}>
+          <div class={styles.subRow} data-testid="task-row">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            <span class={styles.subRowText}>{props.session.state!.current_task}</span>
+            <Show when={props.session.state?.progress != null}>
+              <div class={styles.progressBar} data-testid="progress-bar">
+                <div class={styles.progressFill} style={{ width: `${props.session.state!.progress}%` }} />
+              </div>
+            </Show>
+          </div>
+        </Show>
+
+        {/* Usage limit */}
+        <Show when={props.session.state?.usage_limit_pct != null}>
+          <span class={styles.usageLabel} data-testid="usage-label">{props.session.state!.usage_limit_pct}% used</span>
+        </Show>
       </div>
 
       <div class={styles.time}>
