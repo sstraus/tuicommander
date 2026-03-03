@@ -87,6 +87,11 @@
   z-index: 1001;
 }
 
+.submenuLeft {
+  left: auto;
+  right: 100%;
+}
+
 .submenu .item {
   white-space: nowrap;
 }

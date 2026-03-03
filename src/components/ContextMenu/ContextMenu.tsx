@@ -24,8 +24,21 @@ const MenuItem: Component<{
   item: ContextMenuItem;
   onClose: () => void;
 }> = (props) => {
+  let wrapRef: HTMLDivElement | undefined;
   const [submenuOpen, setSubmenuOpen] = createSignal(false);
+  const [flipLeft, setFlipLeft] = createSignal(false);
   const hasChildren = () => !!(props.item.children && props.item.children.length > 0);
+
+  const openSubmenu = () => {
+    if (props.item.disabled || !hasChildren()) return;
+    // Flip submenu to the left when it would overflow the viewport
+    if (wrapRef) {
+      const rect = wrapRef.getBoundingClientRect();
+      const submenuWidth = 180;
+      setFlipLeft(rect.right + submenuWidth > window.innerWidth);
+    }
+    setSubmenuOpen(true);
+  };
 
   return (
     <>
@@ -33,8 +46,9 @@ const MenuItem: Component<{
         <div class={s.separator} />
       </Show>
       <div
+        ref={wrapRef}
         class={s.itemWrap}
-        onMouseEnter={() => hasChildren() && setSubmenuOpen(true)}
+        onMouseEnter={openSubmenu}
         onMouseLeave={() => setSubmenuOpen(false)}
       >
         <button
@@ -42,7 +56,7 @@ const MenuItem: Component<{
           onClick={() => {
             if (props.item.disabled) return;
             if (hasChildren()) {
-              setSubmenuOpen((prev) => !prev);
+              if (submenuOpen()) { setSubmenuOpen(false); } else { openSubmenu(); }
               return;
             }
             props.item.action();
@@ -59,7 +73,7 @@ const MenuItem: Component<{
           </Show>
         </button>
         <Show when={submenuOpen() && props.item.children}>
-          <div class={s.submenu}>
+          <div class={cx(s.submenu, flipLeft() && s.submenuLeft)}>
             <For each={props.item.children}>
               {(child) => (
                 <MenuItem item={child} onClose={props.onClose} />

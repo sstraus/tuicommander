@@ -266,6 +266,26 @@ describe("ContextMenu submenus", () => {
     expect(handleClose).toHaveBeenCalledOnce();
   });
 
+  it("disabled item with children does not open submenu on hover", () => {
+    const items: ContextMenuItem[] = [
+      {
+        label: "Agents",
+        action: vi.fn(),
+        disabled: true,
+        children: [
+          { label: "Claude Code", action: vi.fn() },
+        ],
+      },
+    ];
+    const { container } = render(() => (
+      <ContextMenu items={items} x={0} y={0} visible={true} onClose={() => {}} />
+    ));
+    const parentWrap = container.querySelector(".itemWrap")!;
+    fireEvent.mouseEnter(parentWrap);
+    const submenu = container.querySelector(".submenu");
+    expect(submenu).toBeNull();
+  });
+
   it("clicking parent item with children does not fire parent action", () => {
     const parentAction = vi.fn();
     const items: ContextMenuItem[] = [
