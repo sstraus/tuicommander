@@ -8,12 +8,16 @@
   outline: none;
 }
 
+.content,
+.content * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .content {
   flex: 1;
   min-width: 0;
   overflow: auto;
   padding: 24px;
-  -webkit-user-select: text;
-  user-select: text;
   cursor: text;
 }
