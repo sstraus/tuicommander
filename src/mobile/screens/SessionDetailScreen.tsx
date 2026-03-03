@@ -2,6 +2,7 @@ import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { StatusBadge } from "../components/StatusBadge";
 import { OutputView } from "../components/OutputView";
 import { QuickActions } from "../components/QuickActions";
+import { SuggestChips } from "../components/SuggestChips";
 import { CommandInput } from "../components/CommandInput";
 import type { SessionInfo } from "../useSessions";
 import { deriveStatus } from "../utils/deriveStatus";
@@ -97,6 +98,9 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
       </div>
       <Show when={props.session.state?.awaiting_input}>
         <QuickActions sessionId={props.session.session_id} />
+      </Show>
+      <Show when={props.session.state?.suggested_actions?.length}>
+        <SuggestChips sessionId={props.session.session_id} items={props.session.state!.suggested_actions!} />
       </Show>
       <CommandInput sessionId={props.session.session_id} />
     </div>
