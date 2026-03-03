@@ -6,6 +6,7 @@ import { PluginPanel } from "./PluginPanel";
 import { ClaudeUsageDashboard } from "./ClaudeUsageDashboard";
 import { CodeEditorTab } from "./CodeEditorPanel";
 import noTuiOpenImg from "../assets/no-tui-open.png";
+import TipOfTheDay from "./TipOfTheDay/TipOfTheDay";
 import { terminalsStore } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { repoSettingsStore } from "../stores/repoSettings";
@@ -51,6 +52,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
       <Show when={!terminalsStore.state.activeId && !diffTabsStore.state.activeId && !mdTabsStore.state.activeId && !editorTabsStore.state.activeId}>
         <div class="empty-terminal-state">
           <img src={noTuiOpenImg} alt="No TUI Open" class="empty-terminal-icon" />
+          <TipOfTheDay />
         </div>
       </Show>
 

@@ -1,0 +1,117 @@
+.card {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 480px;
+  width: 90%;
+  padding: 16px 20px 12px;
+  background: rgba(37, 37, 38, 0.6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  opacity: 0.55;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.card:hover {
+  opacity: 1;
+  background: rgba(37, 37, 38, 0.9);
+}
+
+.label {
+  font-family: var(--font-ui);
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  min-width: 0;
+}
+
+.feature {
+  font-family: var(--font-ui);
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.description {
+  font-family: var(--font-ui);
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+  line-height: 1.4;
+}
+
+.shortcut {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 2px 6px;
+  margin-top: 2px;
+}
+
+.arrow {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.arrow:hover {
+  opacity: 1;
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.dots {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 200px;
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--fg-muted);
+  opacity: 0.3;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.dotActive {
+  opacity: 1;
+  background: var(--accent);
+}
