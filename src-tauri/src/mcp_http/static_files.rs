@@ -1,5 +1,5 @@
-use axum::http::{header, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Redirect, Response};
 use include_dir::{include_dir, Dir};
 
 /// Frontend dist/ embedded at compile time for single-binary distribution.
@@ -16,9 +16,24 @@ pub(super) async fn serve_static(axum::extract::Path(path): axum::extract::Path<
     serve_file(&path)
 }
 
-/// Serve the root index.html.
-pub(super) async fn serve_index() -> Response {
+/// Serve the root: redirect mobile browsers to /mobile, otherwise index.html.
+pub(super) async fn serve_index(headers: HeaderMap) -> Response {
+    if is_mobile_user_agent(&headers) {
+        return Redirect::to("/mobile").into_response();
+    }
     serve_file("index.html")
+}
+
+/// Check if the User-Agent indicates a mobile device.
+fn is_mobile_user_agent(headers: &HeaderMap) -> bool {
+    let ua = match headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()) {
+        Some(s) => s,
+        None => return false,
+    };
+    // Phone-only: "Mobile" covers iPhone and Android phones.
+    // Tablets (iPad, Android tablets) get the desktop UI — their screens are large enough.
+    // Note: modern iPad UA doesn't contain "iPad" anyway (it mimics desktop Safari).
+    ua.contains("Mobile")
 }
 
 /// Determine which SPA shell to serve as fallback for client-side routing.
