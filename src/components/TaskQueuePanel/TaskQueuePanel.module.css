@@ -40,7 +40,7 @@
   background: var(--bg-highlight);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-sm);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -59,7 +59,7 @@
   justify-content: center;
   background: transparent;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: 18px;
   cursor: pointer;
   border-radius: var(--radius-md);
@@ -203,7 +203,7 @@
 }
 
 .itemDrag {
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-md);
   cursor: grab;
   user-select: none;
@@ -221,7 +221,7 @@
   justify-content: center;
   background: transparent;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-md);
   cursor: pointer;
   border-radius: var(--radius-md);

@@ -56,7 +56,7 @@
 
 .arrow {
   font-size: 8px;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
 }
 
 .dropdown {
@@ -132,7 +132,7 @@
 }
 
 .action {
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
 }
 
 .action:hover:not(:disabled) {

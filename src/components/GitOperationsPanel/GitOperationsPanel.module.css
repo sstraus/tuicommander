@@ -37,7 +37,7 @@
   justify-content: center;
   background: transparent;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: 18px;
   cursor: pointer;
   border-radius: var(--radius-md);

@@ -92,7 +92,7 @@
 .modelDelete {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   cursor: pointer;
   font-size: var(--font-xl);
   padding: 0 2px;
@@ -213,7 +213,7 @@
 .correctionDelete {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   cursor: pointer;
   font-size: var(--font-xl);
   padding: 0;

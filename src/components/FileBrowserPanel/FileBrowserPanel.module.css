@@ -43,7 +43,7 @@
 
 .breadcrumbSegment {
   cursor: pointer;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   padding: 1px 3px;
   border-radius: var(--radius-sm);
 }
@@ -103,7 +103,7 @@
 }
 
 .entryUp {
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-style: italic;
 }
 

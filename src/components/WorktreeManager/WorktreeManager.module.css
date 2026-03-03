@@ -39,7 +39,7 @@
 .close {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: 18px;
   cursor: pointer;
   padding: 4px 8px;
@@ -67,7 +67,7 @@
 
 .filterPill {
   font-size: var(--font-xs);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   background: var(--bg-tertiary);
   border: 1px solid transparent;
   padding: 2px 8px;
@@ -269,7 +269,7 @@
 
 .actionBtn {
   font-size: var(--font-xs);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   background: none;
   border: 1px solid transparent;
   padding: 1px 6px;
@@ -308,7 +308,7 @@
 
 .pruneBtn {
   font-size: var(--font-xs);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   padding: 1px 8px;

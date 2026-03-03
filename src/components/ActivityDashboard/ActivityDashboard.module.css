@@ -39,7 +39,7 @@
 .close {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: 18px;
   cursor: pointer;
   padding: 4px 8px;
@@ -170,13 +170,13 @@
 
 .subIcon {
   flex-shrink: 0;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   opacity: 0.6;
 }
 
 .subText {
   font-size: var(--font-xs);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

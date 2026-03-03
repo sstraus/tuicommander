@@ -39,7 +39,7 @@
 .close {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: 18px;
   cursor: pointer;
   padding: 4px 8px;
@@ -83,7 +83,7 @@
   background: var(--bg-tertiary);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-md);
   cursor: pointer;
 }
@@ -186,7 +186,7 @@
 .itemActions button {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   cursor: pointer;
   padding: 4px 6px;
   border-radius: var(--radius-md);

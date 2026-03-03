@@ -217,7 +217,7 @@
 .close {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-xl);
   cursor: pointer;
   padding: 2px 6px;

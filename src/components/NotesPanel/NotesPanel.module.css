@@ -102,7 +102,7 @@
 
 .projectGlobal {
   background: var(--bg-tertiary);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
 }
 
 .projectLabel:hover {
@@ -145,7 +145,7 @@
   cursor: pointer;
   transition: background 0.1s;
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
 }
 
 .editBtn:hover {

@@ -48,7 +48,7 @@
   justify-content: center;
   background: var(--bg-secondary);
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   cursor: pointer;
   z-index: 5;
   padding: 0;
@@ -170,7 +170,7 @@
 .tabClose {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-lg);
   line-height: 1;
   cursor: pointer;
@@ -203,7 +203,7 @@
   justify-content: center;
   background: transparent;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-xl);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;

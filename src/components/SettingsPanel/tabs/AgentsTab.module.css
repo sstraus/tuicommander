@@ -101,7 +101,7 @@
 }
 
 .expandIcon {
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: 12px;
   flex-shrink: 0;
   transition: transform 0.15s;
@@ -193,7 +193,7 @@
 .smallBtn {
   background: none;
   border: 1px solid var(--border);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-sm);
   padding: 2px 6px;
   border-radius: var(--radius-sm);

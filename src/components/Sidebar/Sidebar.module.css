@@ -61,7 +61,7 @@
   background: transparent;
   border: none;
   border-radius: var(--radius-md);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-sm);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -76,11 +76,6 @@
 
 .addRepoIcon {
   flex-shrink: 0;
-  opacity: 0.7;
-}
-
-.addRepo:hover .addRepoIcon {
-  opacity: 1;
 }
 
 .footerIcons {
@@ -99,7 +94,7 @@
   background: transparent;
   border: none;
   border-radius: var(--radius-md);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -196,7 +191,7 @@
 
 .repoChevron {
   font-size: var(--font-lg);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   transition: transform 150ms ease;
   transform: rotate(0deg);
   flex-shrink: 0;
@@ -216,7 +211,7 @@
   background: transparent;
   border: none;
   border-radius: var(--radius-md);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-md);
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
@@ -302,7 +297,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -316,7 +311,7 @@
 
 .groupChevron {
   font-size: var(--font-md);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   transition: transform 150ms ease;
   transform: rotate(0deg);
   flex-shrink: 0;
@@ -495,8 +490,8 @@
 
 .prDraft {
   background: transparent;
-  border: 1px dashed var(--fg-muted);
-  color: var(--fg-muted);
+  border: 1px dashed var(--fg-secondary);
+  color: var(--fg-secondary);
 }
 
 .prConflict {
@@ -572,7 +567,7 @@
 
 .branchRemoveBtn {
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
 }
 
 .branchRemoveBtn:hover {
@@ -600,7 +595,7 @@
 
 .gitQuickLabel {
   flex-shrink: 0;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   align-self: center;
 }
 
@@ -620,7 +615,7 @@
   background: transparent;
   border: none;
   border-radius: var(--radius-md);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-sm);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -716,7 +711,7 @@
   background: none;
   border: none;
   border-radius: var(--radius-sm);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   cursor: pointer;
 }
 
@@ -810,7 +805,7 @@
   background: none;
   border: none;
   border-radius: var(--radius-sm);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   cursor: pointer;
   font-size: var(--font-md);
 }

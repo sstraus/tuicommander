@@ -73,7 +73,7 @@
   background: transparent;
   border: none;
   border-radius: var(--radius-lg);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: 17px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
@@ -105,7 +105,7 @@
 }
 
 .branchIcon {
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   flex-shrink: 0;
 }
 
@@ -221,7 +221,7 @@
 .dismissAll {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-xs);
   cursor: pointer;
   padding: 2px 6px;
@@ -292,7 +292,7 @@
 .notifClose {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-lg);
   cursor: pointer;
   padding: 0 4px;
@@ -334,7 +334,7 @@
 .activityDismissAll {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-xs);
   cursor: pointer;
   padding: 2px 6px;
@@ -408,7 +408,7 @@
 .activityItemDismiss {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-lg);
   cursor: pointer;
   padding: 0 4px;

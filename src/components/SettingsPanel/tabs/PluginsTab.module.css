@@ -40,7 +40,7 @@
 .subTab {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-sm);
   padding: 4px 12px 6px;
   cursor: pointer;
@@ -69,7 +69,7 @@
 .refreshBtn {
   background: none;
   border: 1px solid var(--border);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-sm);
   padding: 2px 8px;
   border-radius: var(--radius-sm);
@@ -231,7 +231,7 @@
 .docsBtn {
   background: none;
   border: 1px solid var(--border);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-sm);
   width: 22px;
   height: 22px;
@@ -254,7 +254,7 @@
 .logsBtn {
   background: none;
   border: 1px solid var(--border);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-sm);
   padding: 2px 8px;
   border-radius: var(--radius-sm);
@@ -341,7 +341,7 @@
 .uninstallBtn {
   background: none;
   border: 1px solid var(--border);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-sm);
   padding: 2px 8px;
   border-radius: var(--radius-sm);

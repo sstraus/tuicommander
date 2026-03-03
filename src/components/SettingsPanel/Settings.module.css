@@ -45,7 +45,7 @@
 .close {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: 20px;
   cursor: pointer;
   padding: 4px 8px;
@@ -78,12 +78,11 @@
   display: block;
   width: 100%;
   text-align: left;
-  padding: 8px 16px;
+  padding: 3px 16px 9px;
   background: transparent;
   border: none;
-  border-left: 2px solid transparent;
   color: var(--fg-secondary);
-  font-size: var(--font-md);
+  font-size: var(--font-lg);
   font-family: var(--font-ui);
   cursor: pointer;
   white-space: nowrap;
@@ -99,9 +98,8 @@
 
 .navItem.active {
   background: var(--bg-highlight);
-  border-left-color: var(--accent);
   color: var(--fg-primary);
-  padding-left: 14px;
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .navSeparator {
@@ -111,8 +109,8 @@
 }
 
 .navLabel {
-  padding: 8px 16px 4px;
-  font-size: 10px;
+  padding: 10px 16px 4px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--fg-muted);
@@ -122,10 +120,6 @@
 
 .navItemRepo {
   padding-left: 24px;
-}
-
-.navItemRepo.active {
-  padding-left: 22px;
 }
 
 .navResizeHandle {
@@ -195,7 +189,7 @@
   background: var(--bg-highlight);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-md);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -409,7 +403,7 @@
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-sm);
   cursor: pointer;
 }
@@ -505,7 +499,7 @@
   background: transparent;
   border: none;
   border-radius: var(--radius-md);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-md);
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
@@ -539,7 +533,7 @@
   align-items: center;
   justify-content: center;
   font-size: var(--font-xs);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   padding: 0;
 }
 
@@ -598,7 +592,7 @@
   background: transparent;
   border: 1px dashed var(--border);
   border-radius: var(--radius-lg);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-sm);
   cursor: pointer;
   transition: background 0.1s, color 0.1s, border-color 0.1s;

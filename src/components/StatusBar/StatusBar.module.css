@@ -47,7 +47,7 @@
 }
 
 .info {
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   flex: 1 1 0;
   min-width: 60px;
   overflow: hidden;
@@ -76,7 +76,7 @@
 }
 
 .cwd {
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-family: var(--font-mono);
   font-size: var(--font-sm);
   cursor: pointer;
@@ -202,7 +202,7 @@
   padding: 0 4px;
   border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-xs);
   cursor: pointer;
   flex-shrink: 0;
@@ -252,7 +252,7 @@
 .tickerPopoverClose {
   background: none;
   border: none;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   font-size: var(--font-lg);
   cursor: pointer;
   padding: 0 4px;
