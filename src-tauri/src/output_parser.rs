@@ -864,13 +864,21 @@ pub fn colorize_intent(raw: &str) -> String {
     let mut result = String::with_capacity(raw.len());
     for (i, line) in raw.split('\n').enumerate() {
         if i > 0 { result.push('\n'); }
-        let clean = strip_ansi(line);
+        // Strip trailing \r before ANSI stripping: PTY output uses \r\n line endings,
+        // and apply_carriage_returns treats a lone trailing \r as "overwrite from start"
+        // which would wipe the entire line content.
+        let line_no_cr = line.trim_end_matches('\r');
+        let clean = strip_ansi(line_no_cr);
         if let Some(caps) = INTENT_RE.captures(&clean) {
             let prefix = &caps[1]; // "intent: "
             let body = &caps[2];
             let clean_body = STRIP_TITLE_RE.replace(body, "");
             let trimmed = clean_body.trim_end();
             result.push_str(&format!("\x1b[2;33m{}{}\x1b[0m", prefix, trimmed));
+            // Preserve trailing \r for xterm line endings
+            if line.ends_with('\r') {
+                result.push('\r');
+            }
         } else {
             result.push_str(line);
         }
@@ -2465,6 +2473,32 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(colored.contains("\x1b[2;33m"),
             "should colorize even with ANSI inside brackets; got: {:?}", colored);
         assert!(!colored.contains("(Config field)"), "should strip title");
+    }
+
+    #[test]
+    fn test_colorize_intent_crlf_line_endings() {
+        // PTY output uses \r\n line endings. The \r at end of line must NOT
+        // cause apply_carriage_returns to wipe the content.
+        let raw = "some output\r\n\u{25CF} [[intent: Removing memory(Cleanup)]]\r\nmore output\r\n";
+        let colored = colorize_intent(raw);
+        assert!(colored.contains("\x1b[2;33m"),
+            "should colorize with CRLF endings; got: {:?}", colored);
+        assert!(!colored.contains("[["), "should strip opening brackets");
+        assert!(!colored.contains("]]"), "should strip closing brackets");
+        assert!(!colored.contains("(Cleanup)"), "should strip title");
+        assert!(colored.contains("some output"), "non-intent lines preserved");
+        assert!(colored.contains("more output"), "non-intent lines preserved");
+    }
+
+    #[test]
+    fn test_colorize_intent_crlf_no_title() {
+        // Same CRLF scenario but without a title suffix
+        let raw = "\x1b[1m\u{25CF}\x1b[0m [[intent: Removing memory: local from reviewer agents]]\r\n";
+        let colored = colorize_intent(raw);
+        assert!(colored.contains("\x1b[2;33m"),
+            "should colorize with CRLF; got: {:?}", colored);
+        assert!(!colored.contains("[["), "should strip brackets");
+        assert!(colored.contains("Removing memory"), "intent text preserved");
     }
 
     #[test]
