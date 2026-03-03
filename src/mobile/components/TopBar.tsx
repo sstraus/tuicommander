@@ -8,7 +8,10 @@ interface TopBarProps {
 export function TopBar(props: TopBarProps) {
   return (
     <header class={styles.topBar}>
-      <span class={styles.appName}>TUICommander</span>
+      <div class={styles.titleGroup}>
+        <span class={styles.appName}>TUICommander</span>
+        <span class={styles.subtitle}>Manage your sessions</span>
+      </div>
       <Show when={(props.notificationCount ?? 0) > 0}>
         <span class={styles.badge}>{props.notificationCount}</span>
       </Show>
