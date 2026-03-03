@@ -20,9 +20,15 @@ struct McpConfigSpec {
 /// Our MCP server entry injected into agent configs
 #[derive(Serialize, Deserialize)]
 struct TuicMcpEntry {
+    #[serde(rename = "type", default = "default_stdio_type")]
+    transport_type: String,
     command: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     args: Vec<String>,
+}
+
+fn default_stdio_type() -> String {
+    "stdio".to_string()
 }
 
 const TUIC_MCP_KEY: &str = "tuicommander";
@@ -215,6 +221,7 @@ pub(crate) fn auto_install_mcp_configs() {
         }
 
         let entry = TuicMcpEntry {
+            transport_type: "stdio".to_string(),
             command: bridge_path.clone(),
             args: vec![],
         };
@@ -417,6 +424,7 @@ pub(crate) fn install_agent_mcp(agent_type: String) -> Result<(), String> {
 
     let bridge_path = detect_bridge_binary();
     let entry = TuicMcpEntry {
+        transport_type: "stdio".to_string(),
         command: bridge_path,
         args: vec![],
     };
@@ -494,6 +502,7 @@ mod tests {
         // Simulate install
         let mut root = read_json_file(&config_path);
         let entry = TuicMcpEntry {
+            transport_type: "stdio".to_string(),
             command: "/usr/local/bin/tui-mcp-bridge".to_string(),
             args: vec![],
         };
@@ -533,6 +542,7 @@ mod tests {
 
         let mut root = read_json_file(&config_path);
         let entry = TuicMcpEntry {
+            transport_type: "stdio".to_string(),
             command: "tui-mcp-bridge".to_string(),
             args: vec![],
         };
@@ -547,6 +557,7 @@ mod tests {
         assert!(servers.contains_key(TUIC_MCP_KEY));
         let entry = servers.get(TUIC_MCP_KEY).unwrap();
         assert_eq!(entry["command"], "tui-mcp-bridge");
+        assert_eq!(entry["type"], "stdio");
     }
 
     #[test]
