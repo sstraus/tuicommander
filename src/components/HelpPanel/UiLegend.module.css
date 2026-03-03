@@ -11,13 +11,13 @@
 }
 
 .groupLabel {
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--fg-primary);
 }
 
 .hint {
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
   color: var(--fg-muted);
   margin: 0 0 4px;
 }
@@ -32,8 +32,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: var(--font-sm);
-  min-height: 22px;
+  font-size: var(--font-base);
+  min-height: 24px;
 }
 
 .dot {
