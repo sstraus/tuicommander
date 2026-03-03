@@ -51,14 +51,6 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
 
   return (
     <div id="terminal-container">
-      {/* Empty state when no tabs are open */}
-      <Show when={!terminalsStore.state.activeId && !diffTabsStore.state.activeId && !mdTabsStore.state.activeId && !editorTabsStore.state.activeId}>
-        <div class="empty-terminal-state">
-          <img src={noTuiOpenImg} alt="No TUI Open" class="empty-terminal-icon" />
-          <TipOfTheDay />
-        </div>
-      </Show>
-
       <div
         id="terminal-panes"
         classList={{
@@ -67,6 +59,14 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
         }}
         onContextMenu={props.onContextMenu}
       >
+        {/* Empty state when no tabs are open */}
+        <Show when={!terminalsStore.state.activeId && !diffTabsStore.state.activeId && !mdTabsStore.state.activeId && !editorTabsStore.state.activeId}>
+          <div class="empty-terminal-state">
+            <img src={noTuiOpenImg} alt="No TUI Open" class="empty-terminal-icon" />
+            <TipOfTheDay />
+          </div>
+        </Show>
+
         {/* Terminal panes */}
         <For each={terminalsStore.getIds()}>
           {(id) => {
