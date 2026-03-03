@@ -844,6 +844,7 @@ pub fn run() {
             agent_mcp::install_agent_mcp,
             agent_mcp::remove_agent_mcp,
             agent_mcp::get_agent_config_path,
+            agent_mcp::install_it2_shim_cmd,
             prompt::extract_prompt_variables,
             prompt::process_prompt_content,
             head_watcher::start_head_watcher,

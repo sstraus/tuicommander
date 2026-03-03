@@ -366,6 +366,12 @@ pub(crate) fn install_it2_shim() {
     eprintln!("Agent Teams: installed it2 shim at {}", shim_path.display());
 }
 
+/// Tauri command to install the it2 shim on demand (e.g. from Settings UI toggle).
+#[tauri::command]
+pub(crate) fn install_it2_shim_cmd() {
+    install_it2_shim();
+}
+
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------

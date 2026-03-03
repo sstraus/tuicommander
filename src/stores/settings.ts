@@ -229,6 +229,7 @@ interface SettingsStoreState {
   disabledAgents: string[];
   intentTabTitle: boolean;
   suggestFollowups: boolean;
+  agentTeamsShim: boolean;
 }
 
 /** Create the settings store */
@@ -251,6 +252,7 @@ function createSettingsStore() {
     disabledAgents: [],
     intentTabTitle: true,
     suggestFollowups: true,
+    agentTeamsShim: false,
   });
 
   const actions = {
@@ -290,6 +292,7 @@ function createSettingsStore() {
         setState("disabledAgents", config.disabled_agents ?? []);
         setState("intentTabTitle", config.intent_tab_title ?? true);
         setState("suggestFollowups", config.suggest_followups ?? true);
+        setState("agentTeamsShim", config.agent_teams_shim ?? false);
       } catch (err) {
         appLogger.error("config", "Failed to hydrate settings", err);
       }
@@ -553,6 +556,21 @@ function createSettingsStore() {
       } catch (err) {
         appLogger.error("config", "Failed to persist suggestFollowups", err);
         setState("suggestFollowups", prevValue);
+      }
+    },
+
+    /** Set Agent Teams it2 shim preference */
+    async setAgentTeamsShim(enabled: boolean): Promise<void> {
+      const prevValue = state.agentTeamsShim;
+      setState("agentTeamsShim", enabled);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.agent_teams_shim = enabled;
+        await invoke("save_config", { config });
+        if (enabled) await invoke("install_it2_shim_cmd");
+      } catch (err) {
+        appLogger.error("config", "Failed to persist agentTeamsShim", err);
+        setState("agentTeamsShim", prevValue);
       }
     },
 
