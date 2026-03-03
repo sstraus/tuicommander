@@ -95,9 +95,8 @@
 .dots {
   display: flex;
   gap: 5px;
-  flex-wrap: wrap;
   justify-content: center;
-  max-width: 200px;
+  align-items: center;
 }
 
 .dot {
@@ -107,7 +106,7 @@
   background: var(--fg-secondary);
   opacity: 0.4;
   cursor: pointer;
-  transition: opacity 0.15s ease, background 0.15s ease;
+  transition: opacity 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
 
 .dotActive {

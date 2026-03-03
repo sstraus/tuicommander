@@ -13,6 +13,7 @@ Every code change that affects user-visible behavior, APIs, or configuration MUS
 - [ ] `SPEC.md` — feature status updated
 - [ ] Domain-specific docs updated (see matrix below)
 - [ ] Screenshot taken (if visual/CSS/layout change)
+- [ ] `src/data/tips.ts` — add a Tip of the Day entry for discoverable features
 
 ### Sync Matrix by Area
 
