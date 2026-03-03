@@ -2,11 +2,13 @@
   display: flex;
   align-items: stretch;
   height: 56px;
-  background: var(--bg-secondary);
+  background: rgba(37, 37, 38, 0.85);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   /* Safe area for home indicator */
-  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding-bottom: max(0px, env(safe-area-inset-bottom));
 }
 
 .tab {
