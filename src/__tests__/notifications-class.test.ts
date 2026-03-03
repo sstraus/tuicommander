@@ -30,6 +30,7 @@ const mockAudioContext = {
   resume: vi.fn().mockResolvedValue(undefined),
   createOscillator: vi.fn().mockReturnValue(mockOscillator),
   createGain: vi.fn().mockReturnValue(mockGainNode),
+  addEventListener: vi.fn(),
 };
 
 // Use a function expression (not arrow) so it can be called with `new`

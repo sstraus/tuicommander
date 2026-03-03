@@ -27,6 +27,7 @@ describe("NotificationManager", () => {
     createOscillator: vi.fn(() => mockOscillator),
     createGain: vi.fn(() => mockGainNode),
     resume: vi.fn().mockResolvedValue(undefined),
+    addEventListener: vi.fn(),
   };
 
   const OriginalAudioContext = globalThis.AudioContext;
@@ -219,8 +220,8 @@ describe("warmUpAudioContext", () => {
     const mockCtx = {
       state: "suspended",
       resume: vi.fn().mockResolvedValue(undefined),
+      addEventListener: vi.fn(),
     };
-    // After resume, state becomes "running" so the listeners are removed
     mockCtx.resume.mockImplementation(() => {
       mockCtx.state = "running";
       return Promise.resolve();
@@ -241,15 +242,19 @@ describe("warmUpAudioContext", () => {
     expect(mockCtx.resume).toHaveBeenCalled();
   });
 
-  it("re-resumes AudioContext when it falls back to suspended after being running", async () => {
+  it("re-resumes AudioContext when statechange fires suspended", async () => {
     vi.resetModules();
     let resumeCallCount = 0;
+    let stateChangeHandler: (() => void) | null = null;
     const mockCtx = {
       state: "suspended",
       resume: vi.fn(() => {
         resumeCallCount++;
         mockCtx.state = "running";
         return Promise.resolve();
+      }),
+      addEventListener: vi.fn((event: string, handler: () => void) => {
+        if (event === "statechange") stateChangeHandler = handler;
       }),
     };
     globalThis.AudioContext = class {
@@ -266,6 +271,9 @@ describe("warmUpAudioContext", () => {
 
     // Simulate WebKit suspending the context after inactivity
     mockCtx.state = "suspended";
+    // Fire the statechange handler to re-arm needsResume
+    expect(stateChangeHandler).not.toBeNull();
+    stateChangeHandler!();
 
     // Next click should re-resume it
     document.dispatchEvent(new MouseEvent("click", { bubbles: true }));

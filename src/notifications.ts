@@ -83,40 +83,56 @@ const SOUNDS: Record<NotificationSound, SoundSequence> = {
 /** Audio context for sound generation */
 let audioContext: AudioContext | null = null;
 
+/** True when the AudioContext needs a user-gesture resume */
+let needsResume = true;
+
 /**
  * Keep the AudioContext alive across user gestures.
  *
- * WebKit (used by Tauri on macOS) requires `new AudioContext()` or
- * `audioContext.resume()` to happen in the **synchronous** call chain
- * of a user gesture (click, keydown, pointerdown).  Parsed terminal
- * events arrive via Tauri's async `listen()` — that's NOT a gesture,
- * so resume() is silently ignored.
+ * WebKit (used by Tauri on macOS) requires `audioContext.resume()` to
+ * happen in the synchronous call chain of a user gesture.  The context
+ * can also fall back to "suspended" after inactivity (power-saving).
  *
- * The context can also fall back to "suspended" after a period of
- * inactivity (WebKit power-saving policy).  We keep the listeners
- * permanently so every user gesture re-resumes if needed.
+ * Instead of checking every gesture, we use a `needsResume` flag:
+ * - Set true initially and whenever `statechange` fires with "suspended"
+ * - Cleared once resume succeeds and state is "running"
  *
- * Call this once at app startup.
+ * Gesture listeners stay attached but short-circuit on a bool check
+ * when the context is healthy (~zero cost for thousands of events).
  */
 export function warmUpAudioContext(): void {
-  const keepAlive = () => {
+  const onGesture = () => {
+    if (!needsResume) return;
     if (!audioContext) {
       audioContext = new AudioContext();
+      watchState(audioContext);
     }
     if (audioContext.state === "suspended") {
       audioContext.resume();
     }
+    if (audioContext.state === "running") {
+      needsResume = false;
+    }
   };
-  // Use capture phase so we fire even if the event is stopped
-  document.addEventListener("click", keepAlive, true);
-  document.addEventListener("keydown", keepAlive, true);
-  document.addEventListener("pointerdown", keepAlive, true);
+  document.addEventListener("click", onGesture, true);
+  document.addEventListener("keydown", onGesture, true);
+  document.addEventListener("pointerdown", onGesture, true);
+}
+
+/** Subscribe to AudioContext statechange to re-arm the gesture listener */
+function watchState(ctx: AudioContext): void {
+  ctx.addEventListener("statechange", () => {
+    if (ctx.state === "suspended") {
+      needsResume = true;
+    }
+  });
 }
 
 /** Get or create audio context */
 function getAudioContext(): AudioContext {
   if (!audioContext) {
     audioContext = new AudioContext();
+    watchState(audioContext);
   }
   // Belt-and-suspenders: still try resume in case warmUp hasn't fired yet
   if (audioContext.state === "suspended") {
