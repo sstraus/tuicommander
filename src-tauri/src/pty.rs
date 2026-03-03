@@ -8,10 +8,10 @@ use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 use crate::input_line_buffer::{InputAction, InputLineBuffer};
-use crate::output_parser::{colorize_intent, extract_last_question_line, strip_suggest, OutputParser, ParsedEvent};
+use crate::output_parser::{colorize_intent, extract_last_question_line, strip_ansi, strip_suggest, OutputParser, ParsedEvent};
 use crate::state::{
     AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
-    OutputRingBuffer, PtyConfig, PtyOutput, PtySession, Utf8ReadBuffer,
+    OutputRingBuffer, PtyConfig, PtyOutput, PtySession, TagBuffer, Utf8ReadBuffer,
     MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY, strip_kitty_sequences,
 };
 use crate::worktree::{create_worktree_internal, remove_worktree_internal, WorktreeConfig, WorktreeResult};
@@ -249,6 +249,7 @@ pub(crate) fn spawn_reader_thread(
         let mut buf = [0u8; 4096];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
+        let mut tag_buf = TagBuffer::new();
         let parser = OutputParser::new();
         // Resolve session CWD once for resolving relative plan-file paths
         let session_cwd: Option<String> = state
@@ -265,6 +266,8 @@ pub(crate) fn spawn_reader_thread(
                     state.metrics.bytes_emitted.fetch_add(n, Ordering::Relaxed);
                     let utf8_data = utf8_buf.push(&buf[..n]);
                     let esc_data = esc_buf.push(&utf8_data);
+                    // Hold back partial intent/suggest tags for cross-chunk reassembly
+                    let esc_data = tag_buf.push(&esc_data);
                     // Strip kitty keyboard protocol sequences from output
                     let (data, kitty_actions) = strip_kitty_sequences(&esc_data);
                     // Process kitty actions: push/pop state, respond to queries
@@ -297,9 +300,10 @@ pub(crate) fn spawn_reader_thread(
                         );
                     }
                     if !data.is_empty() {
-                        // Write to ring buffer for MCP consumers
+                        // Write clean text to ring buffer for MCP consumers (no ANSI)
                         if let Some(ring) = state.output_buffers.get(&session_id) {
-                            ring.lock().write(data.as_bytes());
+                            let clean = strip_ansi(&data);
+                            ring.lock().write(clean.as_bytes());
                         }
                         // Broadcast to WebSocket clients
                         if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
@@ -381,18 +385,24 @@ pub(crate) fn spawn_reader_thread(
         // Signal timer thread to stop
         running.store(false, Ordering::Relaxed);
 
-        // Flush both buffers at EOF
+        // Flush all buffers at EOF
         let utf8_tail = utf8_buf.flush();
-        let remaining = if utf8_tail.is_empty() {
+        let mut remaining = if utf8_tail.is_empty() {
             esc_buf.flush()
         } else {
             let mut flushed = esc_buf.push(&utf8_tail);
             flushed.push_str(&esc_buf.flush());
             flushed
         };
+        // Flush any held-back partial tag lines
+        let tag_tail = tag_buf.flush();
+        if !tag_tail.is_empty() {
+            remaining.push_str(&tag_tail);
+        }
         if !remaining.is_empty() {
             if let Some(ring) = state.output_buffers.get(&session_id) {
-                ring.lock().write(remaining.as_bytes());
+                let clean = strip_ansi(&remaining);
+                ring.lock().write(clean.as_bytes());
             }
             if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
                 clients.retain(|tx| tx.send(remaining.clone()).is_ok());
@@ -439,6 +449,7 @@ pub(crate) fn spawn_headless_reader_thread(
         let mut buf = [0u8; 4096];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
+        let mut tag_buf = TagBuffer::new();
         loop {
             while paused.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -449,6 +460,8 @@ pub(crate) fn spawn_headless_reader_thread(
                     state.metrics.bytes_emitted.fetch_add(n, Ordering::Relaxed);
                     let utf8_data = utf8_buf.push(&buf[..n]);
                     let esc_data = esc_buf.push(&utf8_data);
+                    // Hold back partial intent/suggest tags for cross-chunk reassembly
+                    let esc_data = tag_buf.push(&esc_data);
                     // Strip kitty keyboard protocol sequences
                     let (data, kitty_actions) = strip_kitty_sequences(&esc_data);
                     if !kitty_actions.is_empty() {
@@ -473,8 +486,10 @@ pub(crate) fn spawn_headless_reader_thread(
                         }
                     }
                     if !data.is_empty() {
+                        // Write clean text to ring buffer for MCP consumers (no ANSI)
                         if let Some(ring) = state.output_buffers.get(&session_id) {
-                            ring.lock().write(data.as_bytes());
+                            let clean = strip_ansi(&data);
+                            ring.lock().write(clean.as_bytes());
                         }
                         // Broadcast to WebSocket clients
                         if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
@@ -489,16 +504,21 @@ pub(crate) fn spawn_headless_reader_thread(
             }
         }
         let utf8_tail = utf8_buf.flush();
-        let remaining = if utf8_tail.is_empty() {
+        let mut remaining = if utf8_tail.is_empty() {
             esc_buf.flush()
         } else {
             let mut flushed = esc_buf.push(&utf8_tail);
             flushed.push_str(&esc_buf.flush());
             flushed
         };
+        let tag_tail = tag_buf.flush();
+        if !tag_tail.is_empty() {
+            remaining.push_str(&tag_tail);
+        }
         if !remaining.is_empty() {
             if let Some(ring) = state.output_buffers.get(&session_id) {
-                ring.lock().write(remaining.as_bytes());
+                let clean = strip_ansi(&remaining);
+                ring.lock().write(clean.as_bytes());
             }
             if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
                 clients.retain(|tx| tx.send(remaining.clone()).is_ok());
