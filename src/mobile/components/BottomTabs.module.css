@@ -3,10 +3,11 @@
   align-items: stretch;
   height: 56px;
   background: rgba(37, 37, 38, 0.85);
-  backdrop-filter: blur(20px) saturate(1.8);
-  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(12px) saturate(1.6);
+  -webkit-backdrop-filter: blur(12px) saturate(1.6);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+  will-change: transform;
   /* Safe area for home indicator */
   padding-bottom: max(0px, env(safe-area-inset-bottom));
 }
