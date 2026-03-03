@@ -1,0 +1,42 @@
+src/components/HelpPanel/UiLegend.tsx
+  7a3e1bea8be6638a 1-206
+src/components/HelpPanel/HelpPanel.tsx
+  7a3e1bea8be6638a 5,9-10,17-18,20,25,31-32,43-49,54,56-57,62,70,82,88-93,101-106,137-138,141-142
+src/__tests__/components/HelpPanel.test.tsx
+  7a3e1bea8be6638a 40,97-121
+src/components/HelpPanel/UiLegend.module.css
+  7a3e1bea8be6638a 1-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "66f869a1537885335eb171bd9dc69804c0d72c0b",
+  "prompts": {
+    "3cf58d5cd968e347": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a19c10c-ffc9-4018-97ac-4824ba78e802",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 529,
+      "overriden_lines": 0
+    },
+    "7a3e1bea8be6638a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc270507-e8e4-421f-8bc5-5cd5dbfee390",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 369,
+      "total_deletions": 294,
+      "accepted_lines": 368,
+      "overriden_lines": 0
+    }
+  }
+}
