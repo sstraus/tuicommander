@@ -18,8 +18,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+tokio-rusqlite = "0.6"
+argon2 = "0.5"
+getrandom = "0.3"
 
 [dev-dependencies]
 tokio-tungstenite = "0.26"
 http = "1"
-reqwest = "0.12"
+reqwest = { version = "0.12", features = ["json"] }

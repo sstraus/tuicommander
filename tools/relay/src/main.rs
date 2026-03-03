@@ -1,5 +1,4 @@
-use tuic_relay::relay;
-use tuic_relay::routes;
+use tuic_relay::{db, relay, routes};
 
 use std::net::SocketAddr;
 
@@ -14,6 +13,10 @@ struct Args {
     /// Address to bind the relay server.
     #[arg(long, env = "RELAY_BIND", default_value = "0.0.0.0:8080")]
     bind: SocketAddr,
+
+    /// Path to SQLite database file.
+    #[arg(long, env = "RELAY_DB_PATH", default_value = "./relay.db")]
+    db_path: String,
 }
 
 #[tokio::main]
@@ -23,10 +26,12 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
-    let state = relay::AppState::new();
+
+    let conn = db::init(&args.db_path).await?;
+    let state = relay::AppState::with_db(conn);
     let router = routes::build_router(state);
 
-    info!(addr = %args.bind, "relay server starting");
+    info!(addr = %args.bind, db = %args.db_path, "relay server starting");
 
     let listener = tokio::net::TcpListener::bind(args.bind).await?;
     axum::serve(listener, router).await?;

@@ -5,6 +5,7 @@ use dashmap::DashMap;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
+use tokio_rusqlite::Connection;
 use tracing::{info, warn};
 
 use crate::types::{PeerStatus, RelayMessage};
@@ -13,17 +14,36 @@ use crate::types::{PeerStatus, RelayMessage};
 pub struct SessionSlot {
     /// Bounded channel senders for each connected peer.
     peers: Vec<mpsc::Sender<Message>>,
+    /// Token hash that owns this session (for stats tracking).
+    pub token_hash: Option<String>,
 }
 
 /// Application state shared across all handlers.
 pub struct AppState {
     pub sessions: DashMap<String, SessionSlot>,
+    /// SQLite connection for stats. None in test mode.
+    pub db: Option<Connection>,
+    /// Registered token hashes (in-memory cache for fast WS auth verification).
+    /// Maps plaintext token → argon2 hash.
+    pub token_cache: DashMap<String, String>,
 }
 
 impl AppState {
+    /// Create state without database (for tests).
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             sessions: DashMap::new(),
+            db: None,
+            token_cache: DashMap::new(),
+        })
+    }
+
+    /// Create state with database connection.
+    pub fn with_db(db: Connection) -> Arc<Self> {
+        Arc::new(Self {
+            sessions: DashMap::new(),
+            db: Some(db),
+            token_cache: DashMap::new(),
         })
     }
 }
@@ -66,7 +86,7 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
         let mut entry = state
             .sessions
             .entry(session_id.clone())
-            .or_insert_with(|| SessionSlot { peers: Vec::new() });
+            .or_insert_with(|| SessionSlot { peers: Vec::new(), token_hash: None });
         let slot = entry.value_mut();
         slot.peers.push(tx.clone());
         slot.peers.len() - 1
