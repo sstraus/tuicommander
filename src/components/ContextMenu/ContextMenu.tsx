@@ -40,7 +40,11 @@ const MenuItem: Component<{
         <button
           class={cx(s.item, props.item.disabled && s.disabled)}
           onClick={() => {
-            if (props.item.disabled || hasChildren()) return;
+            if (props.item.disabled) return;
+            if (hasChildren()) {
+              setSubmenuOpen((prev) => !prev);
+              return;
+            }
             props.item.action();
             props.onClose();
           }}

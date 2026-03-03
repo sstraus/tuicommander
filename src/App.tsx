@@ -503,6 +503,13 @@ const App: Component = () => {
   };
 
   const getContextMenuItems = (): ContextMenuItem[] => [
+    ...(agentDetection.getAvailable().length > 0 ? [{
+      label: "Agents",
+      action: () => {},
+      disabled: activeTerminalBusy(),
+      children: buildAgentMenuItems(),
+      separator: true,
+    }] : []),
     { label: "Copy", shortcut: `${getModifierSymbol()}C`, action: terminalLifecycle.copyFromTerminal },
     { label: "Paste", shortcut: `${getModifierSymbol()}V`, action: terminalLifecycle.pasteToTerminal },
     { label: "Split Right", shortcut: `${getModifierSymbol()}\\`, action: () => splitPanes.handleSplit("vertical"), disabled: isSplit() },
@@ -529,13 +536,6 @@ const App: Component = () => {
       separator: true,
     },
     ...(lazygit.lazygitAvailable() ? [{ label: "Open Lazygit", shortcut: `${getModifierSymbol()}G`, action: lazygit.spawnLazygit, separator: true }] : []),
-    ...(agentDetection.getAvailable().length > 0 ? [{
-      label: "Agents",
-      action: () => {},
-      disabled: activeTerminalBusy(),
-      children: buildAgentMenuItems(),
-      separator: true,
-    }] : []),
     ...(() => {
       const pluginActions = contextMenuActionsStore.getActions();
       if (pluginActions.length === 0) return [];
