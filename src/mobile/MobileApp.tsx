@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import { TopBar } from "./components/TopBar";
 import { BottomTabs, type TabId } from "./components/BottomTabs";
 import { SessionsScreen } from "./screens/SessionsScreen";
@@ -16,20 +16,43 @@ export default function MobileApp() {
   const { sessions, loading, error, refresh, questionCount } = useSessions();
   useMobileNotifications(sessions);
 
-  const selectedSession = createMemo(() => {
+  // Keep the last known session data so the detail screen stays mounted
+  // and can show the "Session ended" overlay after a session closes.
+  const [lastKnownSession, setLastKnownSession] = createSignal<ReturnType<typeof sessions>[number] | null>(null);
+
+  const liveSession = createMemo(() => {
     const id = selectedSessionId();
     if (!id) return null;
     return sessions().find((s) => s.session_id === id) ?? null;
+  });
+
+  // Update last known session whenever live data arrives; keep stale value when gone
+  createEffect(() => {
+    const live = liveSession();
+    if (live) setLastKnownSession(live);
+  });
+
+  const sessionExists = createMemo(() => {
+    const id = selectedSessionId();
+    if (!id) return false;
+    return sessions().some((s) => s.session_id === id);
   });
 
   function navigateToSession(id: string) {
     setSelectedSessionId(id);
   }
 
+  function handleBack() {
+    setSelectedSessionId(null);
+    setLastKnownSession(null);
+  }
+
+  const showDetail = () => selectedSessionId() !== null && lastKnownSession() !== null;
+
   return (
     <div class={styles.shell}>
       <Show
-        when={selectedSession()}
+        when={showDetail()}
         fallback={
           <>
             <TopBar notificationCount={questionCount()} />
@@ -60,12 +83,11 @@ export default function MobileApp() {
           </>
         }
       >
-        {(session) => (
-          <SessionDetailScreen
-            session={session()}
-            onBack={() => setSelectedSessionId(null)}
-          />
-        )}
+        <SessionDetailScreen
+          session={lastKnownSession()!}
+          sessionExists={sessionExists()}
+          onBack={handleBack}
+        />
       </Show>
     </div>
   );

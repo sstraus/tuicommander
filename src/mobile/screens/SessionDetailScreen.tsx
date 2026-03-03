@@ -9,6 +9,7 @@ import styles from "./SessionDetailScreen.module.css";
 
 interface SessionDetailScreenProps {
   session: SessionInfo;
+  sessionExists: boolean;
   onBack: () => void;
 }
 
@@ -44,7 +45,15 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
         </div>
       </Show>
 
-      <OutputView sessionId={props.session.session_id} />
+      <div class={styles.outputArea}>
+        <OutputView sessionId={props.session.session_id} />
+        <Show when={!props.sessionExists}>
+          <div class={styles.endedOverlay}>
+            <span class={styles.endedText}>Session ended</span>
+            <button class={styles.endedBackBtn} onClick={props.onBack}>Back</button>
+          </div>
+        </Show>
+      </div>
       <Show when={props.session.state?.awaiting_input}>
         <QuickActions sessionId={props.session.session_id} />
       </Show>
