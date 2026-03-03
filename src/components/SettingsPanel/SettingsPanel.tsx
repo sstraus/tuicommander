@@ -13,10 +13,8 @@ import {
   NotificationsTab,
   ServicesTab,
   AppearanceTab,
-  KeyboardShortcutsTab,
   PluginsTab,
   AgentsTab,
-  AboutTab,
   RepoWorktreeTab,
   RepoScriptsTab,
 } from "./tabs";
@@ -38,13 +36,11 @@ export interface SettingsPanelProps {
 const GLOBAL_TABS: SettingsShellTab[] = [
   { key: "general", label: t("settings.general", "General") },
   { key: "appearance", label: t("settings.appearance", "Appearance") },
-  { key: "shortcuts", label: t("settings.keyboardShortcuts", "Keyboard Shortcuts") },
   { key: "notifications", label: t("settings.notifications", "Notifications") },
   { key: "dictation", label: t("settings.dictation", "Dictation") },
   { key: "services", label: t("settings.services", "Services") },
   { key: "plugins", label: t("settings.plugins", "Plugins") },
   { key: "agents", label: t("settings.agents", "Agents") },
-  { key: "about", label: t("settings.about", "About") },
 ];
 
 function defaultTab(ctx: SettingsContext): string {
@@ -174,12 +170,6 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
       </Show>
       <Show when={activeTab() === "agents"}>
         <AgentsTab />
-      </Show>
-      <Show when={activeTab() === "shortcuts"}>
-        <KeyboardShortcutsTab />
-      </Show>
-      <Show when={activeTab() === "about"}>
-        <AboutTab />
       </Show>
     </SettingsShell>
   );

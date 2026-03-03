@@ -18,6 +18,11 @@
   box-shadow: var(--shadow-popup);
   display: flex;
   flex-direction: column;
+  transition: width 0.15s ease;
+}
+
+.panelWide {
+  width: 560px;
 }
 
 .header {
@@ -45,6 +50,24 @@
 }
 
 .close:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.backButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  margin-right: 4px;
+}
+
+.backButton:hover {
   background: var(--bg-highlight);
   color: var(--fg-primary);
 }

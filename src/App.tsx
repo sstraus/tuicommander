@@ -957,7 +957,7 @@ const App: Component = () => {
         case "activity-dashboard": activityDashboardStore.toggle(); break;
         case "error-log": errorLogStore.toggle(); break;
         case "check-for-updates": updaterStore.checkForUpdate().catch((err) => appLogger.warn("app", "Updater manual check failed", err)); break;
-        case "about": openSettings("about"); break;
+        case "about": setHelpPanelVisible(true); break;
 
         default: {
           // switch-tab-1 through switch-tab-9
@@ -1354,10 +1354,6 @@ const App: Component = () => {
       <HelpPanel
         visible={helpPanelVisible()}
         onClose={() => setHelpPanelVisible(false)}
-        onOpenShortcuts={() => {
-          setHelpPanelVisible(false);
-          openSettings("shortcuts");
-        }}
       />
 
       {/* Quit confirmation dialog (Story 057) */}

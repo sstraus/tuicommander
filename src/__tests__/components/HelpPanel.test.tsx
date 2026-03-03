@@ -10,12 +10,11 @@ describe("HelpPanel", () => {
   const defaultProps = {
     visible: true,
     onClose: vi.fn(),
-    onOpenShortcuts: vi.fn(),
   };
 
   it("renders nothing when not visible", () => {
     const { container } = render(() => (
-      <HelpPanel visible={false} onClose={() => {}} onOpenShortcuts={() => {}} />
+      <HelpPanel visible={false} onClose={() => {}} />
     ));
     const overlay = container.querySelector(".overlay");
     expect(overlay).toBeNull();
@@ -52,24 +51,26 @@ describe("HelpPanel", () => {
     expect(buttonTexts).toContain("Keyboard Shortcuts");
   });
 
-  it("calls onOpenShortcuts and onClose when keyboard shortcuts button is clicked", () => {
-    const onClose = vi.fn();
-    const onOpenShortcuts = vi.fn();
+  it("shows inline shortcuts when keyboard shortcuts button is clicked", () => {
     const { container } = render(() => (
-      <HelpPanel visible={true} onClose={onClose} onOpenShortcuts={onOpenShortcuts} />
+      <HelpPanel {...defaultProps} />
     ));
     const buttons = Array.from(container.querySelectorAll("button"));
     const shortcutsBtn = buttons.find((b) => b.textContent?.trim() === "Keyboard Shortcuts");
     expect(shortcutsBtn).not.toBeNull();
     fireEvent.click(shortcutsBtn!);
-    expect(onClose).toHaveBeenCalledOnce();
-    expect(onOpenShortcuts).toHaveBeenCalledOnce();
+    // After clicking, heading should change to "Keyboard Shortcuts"
+    const heading = container.querySelector("h2");
+    expect(heading!.textContent).toBe("Keyboard Shortcuts");
+    // And shortcut sections should render (kbd elements from KeyboardShortcutsTab)
+    const kbds = container.querySelectorAll("kbd");
+    expect(kbds.length).toBeGreaterThan(0);
   });
 
   it("calls onClose when close button is clicked", () => {
     const handleClose = vi.fn();
     const { container } = render(() => (
-      <HelpPanel visible={true} onClose={handleClose} onOpenShortcuts={() => {}} />
+      <HelpPanel visible={true} onClose={handleClose} />
     ));
     const closeBtn = container.querySelector(".close")!;
     fireEvent.click(closeBtn);
@@ -81,5 +82,14 @@ describe("HelpPanel", () => {
       <HelpPanel {...defaultProps} />
     ));
     expect(container.textContent).toContain("Version");
+  });
+
+  it("displays license and credits", () => {
+    const { container } = render(() => (
+      <HelpPanel {...defaultProps} />
+    ));
+    expect(container.textContent).toContain("MIT License");
+    expect(container.textContent).toContain("Tauri 2");
+    expect(container.textContent).toContain("SolidJS");
   });
 });
