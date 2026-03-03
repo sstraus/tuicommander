@@ -1,23 +1,14 @@
 import { Show } from "solid-js";
 import { AgentIcon } from "../../components/ui/AgentIcon";
 import { AGENT_DISPLAY, type AgentType, AGENT_TYPES } from "../../agents";
-import { StatusBadge, type SessionStatus } from "./StatusBadge";
+import { StatusBadge } from "./StatusBadge";
 import type { SessionInfo } from "../useSessions";
+import { deriveStatus } from "../utils/deriveStatus";
 import styles from "./SessionCard.module.css";
 
 interface SessionCardProps {
   session: SessionInfo;
   onSelect: (sessionId: string) => void;
-}
-
-function deriveStatus(session: SessionInfo): SessionStatus {
-  const s = session.state;
-  if (!s) return "idle";
-  if (s.rate_limited) return "rate-limited";
-  if (s.last_error) return "error";
-  if (s.awaiting_input) return "question";
-  if (s.is_busy) return "busy";
-  return "idle";
 }
 
 function formatTime(ms: number): string {
