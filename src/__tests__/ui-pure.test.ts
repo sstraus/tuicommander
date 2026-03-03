@@ -241,4 +241,21 @@ describe("cleanOscTitle", () => {
   it("strips env vars with empty values", () => {
     expect(cleanOscTitle("FOO= bar")).toBe("bar");
   });
+
+  it("strips braille spinner characters", () => {
+    expect(cleanOscTitle("\u2800Claude Code")).toBe("Claude Code");
+    expect(cleanOscTitle("\u28FFClaude Code")).toBe("Claude Code");
+    expect(cleanOscTitle("\u2801 claude")).toBe("claude");
+  });
+
+  it("strips bullet and dot operator characters", () => {
+    expect(cleanOscTitle("\u2022 intent")).toBe("intent");
+    expect(cleanOscTitle("\u2219 Claude Code")).toBe("Claude Code");
+    expect(cleanOscTitle("\u22C5 npm test")).toBe("npm test");
+  });
+
+  it("strips geometric shape spinners", () => {
+    expect(cleanOscTitle("\u25D0 building")).toBe("building");
+    expect(cleanOscTitle("\u25CB loading")).toBe("loading");
+  });
 });

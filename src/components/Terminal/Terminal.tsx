@@ -73,8 +73,9 @@ export function cleanOscTitle(title: string): string {
   // Reject titles that look like shell scripts before any processing
   if (SHELL_SCRIPT_RE.test(title)) return "";
 
-  // Strip leading agent spinner symbols: * · (U+00B7) and dingbats U+2720-273F (✳ ✢ ✶ etc.)
-  let cleaned = title.replace(/^[\s*\u00B7\u2720-\u273F]+/, "");
+  // Strip leading spinner/symbol noise: *, middle dots, bullets, braille patterns,
+  // dingbats, geometric shapes, and other non-alphanumeric decorators agents prepend.
+  let cleaned = title.replace(/^[\s*\u00B7\u2022\u2219\u22C5\u2027\u25A0-\u25FF\u2800-\u28FF\u2720-\u273F\u2580-\u259F]+/, "");
   // Strip "user@host:" or bare "user@host" prefix
   cleaned = cleaned.replace(/^[^@\s]+@[^:\s]+(:\s*)?/, "");
   // Strip leading env var assignments (KEY=value pairs, including empty values)
