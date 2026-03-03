@@ -18,6 +18,7 @@ export interface SessionState {
   current_task?: string;
   last_prompt?: string;
   progress?: number;
+  suggested_actions?: string[];
 }
 
 /** Session info returned by GET /sessions (matches Rust SessionInfo) */
