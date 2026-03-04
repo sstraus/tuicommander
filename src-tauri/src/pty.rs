@@ -301,6 +301,11 @@ pub(crate) fn spawn_reader_thread(
                         );
                     }
                     if !data.is_empty() {
+                        // Feed raw data (post-kitty-strip) into VT100 log buffer.
+                        // Called before ring buffer so log captures the same bytes.
+                        if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+                            vt_log.lock().process(data.as_bytes());
+                        }
                         // Write clean text to ring buffer for MCP consumers (no ANSI)
                         if let Some(ring) = state.output_buffers.get(&session_id) {
                             let clean = strip_ansi(&data);
@@ -488,6 +493,10 @@ pub(crate) fn spawn_headless_reader_thread(
                         }
                     }
                     if !data.is_empty() {
+                        // Feed raw data into VT100 log buffer
+                        if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+                            vt_log.lock().process(data.as_bytes());
+                        }
                         // Write clean text to ring buffer for MCP consumers (no ANSI)
                         if let Some(ring) = state.output_buffers.get(&session_id) {
                             let clean = strip_ansi(&data);
@@ -902,6 +911,10 @@ pub(crate) fn resize_pty(
             pixel_height: 0,
         })
         .map_err(|e| format!("Failed to resize PTY: {e}"))?;
+    // Resize VT log buffer dimensions to match new terminal size.
+    if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+        vt_log.lock().resize(rows, cols);
+    }
     // Mark resize in silence state so the reader thread suppresses re-parsed events
     // from the shell's prompt redraw triggered by SIGWINCH.
     if let Some(ss) = state.silence_states.get(&session_id) {

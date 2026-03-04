@@ -103,6 +103,11 @@ pub(super) async fn resize_session(
             Json(serde_json::json!({"error": format!("Resize failed: {}", e)})),
         );
     }
+    drop(session);
+    // Resize VT log buffer to match new terminal dimensions.
+    if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+        vt_log.lock().resize(body.rows, body.cols);
+    }
     (StatusCode::OK, Json(serde_json::json!({"ok": true})))
 }
 
