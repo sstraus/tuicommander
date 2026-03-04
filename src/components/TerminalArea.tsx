@@ -287,18 +287,18 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
               <SuggestOverlay
                 items={actions()!}
                 onSelect={async (text) => {
+                  const id = terminalsStore.state.activeId;
+                  if (id) terminalsStore.update(id, { suggestedActions: null, suggestDismissedAt: Date.now() });
                   const term = active();
                   const sid = term?.sessionId;
                   if (sid) {
                     await rpc("write_pty", { sessionId: sid, data: text });
                     await rpc("write_pty", { sessionId: sid, data: "\r" });
                   }
-                  const id = terminalsStore.state.activeId;
-                  if (id) terminalsStore.update(id, { suggestedActions: null });
                 }}
                 onDismiss={() => {
                   const id = terminalsStore.state.activeId;
-                  if (id) terminalsStore.update(id, { suggestedActions: null });
+                  if (id) terminalsStore.update(id, { suggestedActions: null, suggestDismissedAt: Date.now() });
                 }}
               />
             </Show>

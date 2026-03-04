@@ -43,6 +43,7 @@ export interface TerminalData {
   isRemote: boolean; // Created via HTTP/MCP (not locally by the UI)
   agentSessionId: string | null; // Agent session ID for session-specific resume (claude, gemini, codex)
   suggestedActions: string[] | null; // Follow-up suggestions from [[suggest: ...]] tokens
+  suggestDismissedAt: number; // Timestamp of last suggest dismiss (prevents re-show from parser re-emit)
 }
 
 /** Terminal component ref interface */
@@ -147,17 +148,17 @@ function createTerminalsStore() {
 
   const actions = {
     /** Add a new terminal */
-    add(data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions"> & { isRemote?: boolean }): string {
+    add(data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissedAt"> & { isRemote?: boolean }): string {
       const id = `term-${state.counter + 1}`;
       setState("counter", (c) => c + 1);
-      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, ...data });
+      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissedAt: 0, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
       return id;
     },
 
     /** Register a terminal with a specific ID (used by floating windows to reconnect to existing PTY sessions) */
-    register(id: string, data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions"> & { isRemote?: boolean }): void {
-      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, ...data });
+    register(id: string, data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissedAt"> & { isRemote?: boolean }): void {
+      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissedAt: 0, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
     },
 

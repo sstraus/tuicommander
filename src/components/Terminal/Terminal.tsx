@@ -444,7 +444,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           case "suggest":
             if (settingsStore.state.suggestFollowups && parsed.items?.length) {
-              terminalsStore.update(props.id, { suggestedActions: parsed.items });
+              const t = terminalsStore.get(props.id);
+              // Don't re-show if user recently dismissed/selected (parser re-emits from buffer)
+              if (t && Date.now() - t.suggestDismissedAt > 5_000) {
+                terminalsStore.update(props.id, { suggestedActions: parsed.items });
+              }
             }
             break;
         }
