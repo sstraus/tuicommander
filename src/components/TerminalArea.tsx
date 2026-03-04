@@ -263,8 +263,11 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
               onSessionCreated={(id, _sid) => {
                 requestAnimationFrame(() => {
                   const lgTerm = terminalsStore.get(id);
-                  if (lgTerm?.ref && props.lazygitCmd) {
-                    lgTerm.ref.write(`${props.lazygitCmd}\r`);
+                  if (lgTerm?.ref) {
+                    if (props.lazygitCmd) {
+                      lgTerm.ref.write(`${props.lazygitCmd}\r`);
+                    }
+                    lgTerm.ref.focus();
                   }
                 });
               }}

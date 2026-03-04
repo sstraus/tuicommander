@@ -1371,6 +1371,11 @@ const App: Component = () => {
               id={lazygit.lazygitTermId()!}
               cwd={gitOps.currentRepoPath() || null}
               alwaysVisible
+              onSessionCreated={(id) => {
+                requestAnimationFrame(() => {
+                  terminalsStore.get(id)?.ref?.focus();
+                });
+              }}
             />
           </div>
         </div>
