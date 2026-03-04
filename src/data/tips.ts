@@ -164,4 +164,9 @@ export const TIPS: Tip[] = [
     description: "Rebind any shortcut from Help → Keyboard Shortcuts — click the pencil icon next to a key.",
     shortcut: null,
   },
+  {
+    feature: "Move Terminal to Worktree",
+    description: "Right-click a terminal tab → Move to Worktree to move it to a different worktree. Also available via Command Palette.",
+    shortcut: null,
+  },
 ];

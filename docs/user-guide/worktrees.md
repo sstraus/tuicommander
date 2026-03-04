@@ -78,6 +78,12 @@ Right-click a worktree branch → **Merge & Archive** to:
 
 The merge uses `--no-edit` for a clean fast-forward or merge commit. If conflicts are detected, the merge is aborted and the worktree is left intact.
 
+## Moving Terminals Between Worktrees
+
+Right-click a terminal tab → **Move to Worktree** to move it to a different worktree. The terminal will `cd` into the target worktree path, and the tab automatically reassigns to the new branch in the sidebar.
+
+Also available via **Command Palette** — type "move to worktree" to see available targets for the active terminal.
+
 ## Removing Worktrees
 
 - **Sidebar `×` button** on a non-main branch — Removes worktree and branch entry

@@ -81,13 +81,19 @@
 - Terminal handles international keyboard input correctly
 - Rate-limit false positives reduced for non-ASCII input
 
-### 1.10 OSC 7 CWD Tracking
+### 1.10 Move Terminal to Worktree
+- Right-click a terminal tab → "Move to Worktree" submenu lists available worktrees (excluding the current one)
+- Selecting a worktree sends `cd` to the PTY; OSC 7 auto-reassigns the terminal to the target branch
+- Also available via Command Palette: dynamic "Move to worktree: <branch>" entries appear when the active terminal belongs to a repo with multiple worktrees
+- Only shown when the repo has more than one worktree
+
+### 1.11 OSC 7 CWD Tracking
 - Terminals report their current working directory via OSC 7 escape sequences
 - Parsed in the frontend via xterm.js `registerOscHandler(7, ...)`, then sent to Rust via `update_session_cwd` IPC and stored per-session as `session_cwd`
 - When a terminal's CWD falls inside a known worktree path, the session is automatically reassigned to the correct branch in the sidebar
 - Enables accurate branch association even when the user `cd`s into a different worktree from a single terminal
 
-### 1.11 Kitty Keyboard Protocol
+### 1.12 Kitty Keyboard Protocol
 - Supports Kitty keyboard protocol flag 1 (disambiguate escape codes)
 - Per-session flag tracking via `get_kitty_flags` Tauri command
 - Enables correct handling of `Shift+Enter` (multi-line input), `Ctrl+Backspace`, and modifier key combinations in agents that request the protocol (e.g. Claude Code)
