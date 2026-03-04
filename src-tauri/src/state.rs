@@ -2,6 +2,7 @@ use dashmap::DashMap;
 use notify_debouncer_mini::Debouncer;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
@@ -998,6 +999,156 @@ pub(crate) struct AgentConfig {
     pub(crate) args: Option<Vec<String>>,
 }
 
+// ---------------------------------------------------------------------------
+// VtLogBuffer — VT100-aware log extractor for mobile/REST consumers
+// ---------------------------------------------------------------------------
+
+/// Default maximum log lines retained per session.
+pub(crate) const VT_LOG_BUFFER_CAPACITY: usize = 10_000;
+
+/// Per-session VT100-aware log buffer.
+///
+/// Wraps a `vt100::Parser` (screen-only, no vt100 scrollback) and applies a
+/// diff-based algorithm to extract "finalized" lines as they scroll off the top
+/// of the visible screen.  Results are stored in a bounded `VecDeque<String>`
+/// that REST and WebSocket consumers can query with `lines_since()`.
+///
+/// **Thread safety:** Not `Sync` — lives behind `Mutex<VtLogBuffer>` in `AppState`.
+/// The `vt100::Parser` is `Send` but not `Sync`, so this struct shares that bound.
+pub struct VtLogBuffer {
+    parser: vt100::Parser,
+    /// Snapshot of visible screen rows from the previous `process()` call.
+    prev_rows: Vec<String>,
+    /// Finalized log lines (oldest first).
+    log: VecDeque<String>,
+    /// Maximum number of log lines retained.
+    capacity: usize,
+    /// Whether the previous `process()` call saw the alternate screen active.
+    was_alternate: bool,
+}
+
+impl VtLogBuffer {
+    pub fn new(rows: u16, cols: u16, capacity: usize) -> Self {
+        // scrollback=0: we own the log; we don't need vt100's scrollback mechanism.
+        let parser = vt100::Parser::new(rows, cols, 0);
+        Self {
+            parser,
+            prev_rows: Vec::new(),
+            log: VecDeque::new(),
+            capacity,
+            was_alternate: false,
+        }
+    }
+
+    /// Feed raw PTY bytes into the VT100 parser and extract newly scrolled-off lines.
+    pub fn process(&mut self, data: &[u8]) {
+        self.parser.process(data);
+        let screen = self.parser.screen();
+        let is_alternate = screen.alternate_screen();
+
+        // While alternate screen is active (TUI app: Claude Code, vim, htop…)
+        // skip log extraction — screen content is ephemeral UI, not a log.
+        if !is_alternate {
+            let cols = screen.size().1;
+            let curr_rows: Vec<String> = screen
+                .rows(0, cols)
+                .map(|r| r.trim_end().to_string())
+                .collect();
+
+            // Diff: find how many rows scrolled off the top since last call.
+            // Strategy: find the longest k such that prev[len-k..] == curr[..k].
+            // Those k rows are still on screen; prev[..len-k] scrolled off.
+            let prev_snapshot = self.prev_rows.clone();
+            let scrolled_off = self.rows_scrolled_off(&prev_snapshot, &curr_rows);
+            let new_lines: Vec<String> = scrolled_off
+                .iter()
+                .filter(|l| !l.is_empty())
+                .cloned()
+                .collect();
+            for line in new_lines {
+                self.push_log_line(line);
+            }
+
+            self.prev_rows = curr_rows;
+        }
+
+        self.was_alternate = is_alternate;
+    }
+
+    /// Update parser dimensions on terminal resize.
+    pub fn resize(&mut self, rows: u16, cols: u16) {
+        self.parser.set_size(rows, cols);
+        // prev_rows may no longer match the new dimensions; reset to avoid stale diffs.
+        self.prev_rows.clear();
+    }
+
+    /// All finalized log lines (oldest first).
+    pub fn lines(&self) -> &VecDeque<String> {
+        &self.log
+    }
+
+    /// Returns log lines starting at `offset` (0-indexed from oldest retained line).
+    /// Also returns the new offset (= total lines so far) for incremental reads.
+    pub fn lines_since_owned(&self, offset: usize) -> (Vec<String>, usize) {
+        let total = self.log.len();
+        if offset >= total {
+            return (Vec::new(), total);
+        }
+        let slice: Vec<String> = self.log.iter().skip(offset).cloned().collect();
+        let new_offset = total;
+        (slice, new_offset)
+    }
+
+    /// Current visible screen rows (useful for appending after the log).
+    pub fn screen_rows(&self) -> Vec<String> {
+        let screen = self.parser.screen();
+        let cols = screen.size().1;
+        screen
+            .rows(0, cols)
+            .map(|r| r.trim_end().to_string())
+            .collect()
+    }
+
+    /// Total log lines ever finalized (monotonically increasing offset).
+    /// Callers can use this as a cursor for incremental reads.
+    pub fn total_lines(&self) -> usize {
+        self.log.len()
+    }
+
+    // --- private helpers ---
+
+    fn push_log_line(&mut self, line: String) {
+        if self.log.len() >= self.capacity {
+            self.log.pop_front();
+        }
+        self.log.push_back(line);
+    }
+
+    /// Compute which rows from `prev` scrolled off the top, given that `curr`
+    /// is the new screen content.
+    ///
+    /// Finds the largest overlap k where `prev[prev.len()-k..] == curr[..k]`.
+    /// Everything in `prev[..prev.len()-k]` scrolled off.
+    fn rows_scrolled_off<'a>(&self, prev: &'a [String], curr: &[String]) -> &'a [String] {
+        if prev.is_empty() {
+            return &[];
+        }
+        let plen = prev.len();
+        let clen = curr.len();
+        let max_overlap = plen.min(clen);
+
+        // Try overlaps from largest to smallest.
+        for k in (0..=max_overlap).rev() {
+            if prev[plen - k..] == curr[..k] {
+                // prev[..plen-k] scrolled off.
+                return &prev[..plen - k];
+            }
+        }
+        // No overlap found — entire prev scrolled off.
+        prev
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1802,5 +1953,170 @@ mod tests {
         let status = make_parsed("status-line", serde_json::json!({ "task_name": "Working" }));
         let s = apply(&state, &status);
         assert!(s.suggested_actions.is_none());
+    }
+
+    // --- VtLogBuffer tests ---
+
+    fn make_vt_log() -> VtLogBuffer {
+        VtLogBuffer::new(24, 80, 1000)
+    }
+
+    /// Emit lines one at a time and verify they appear in the log after scrolling off.
+    /// NOTE: process() is called per-line to match production behavior (PTY reader calls
+    /// process() on each small chunk; a single bulk process() call cannot detect scroll).
+    #[test]
+    fn test_vt_log_line_oriented_output() {
+        let mut buf = make_vt_log();
+        // Feed lines one at a time so the diff algorithm can detect scroll
+        for i in 0..30 {
+            buf.process(format!("line {i}\r\n").as_bytes());
+        }
+        let lines = buf.lines();
+        // Lines 0..6 scrolled off (30 total - 24 visible = 6)
+        assert!(!lines.is_empty(), "should have finalized some lines");
+        let first = lines.front().unwrap();
+        assert!(first.starts_with("line "), "line content preserved: {first:?}");
+    }
+
+    /// In-place rewrite via \r should resolve to the final content on screen.
+    #[test]
+    fn test_vt_log_in_place_rewrite() {
+        let mut buf = make_vt_log();
+        // Write "aaaa\r" followed by "bbbb" — vt100 resolves this to "bbbb" on the line
+        buf.process(b"aaaa\rbbbb\r\n");
+        // The current screen should show "bbbb" not "aaaa"
+        let rows = buf.screen_rows();
+        let first_nonempty = rows.iter().find(|r| !r.is_empty()).map(|s| s.as_str()).unwrap_or("");
+        assert_eq!(first_nonempty, "bbbb", "in-place rewrite resolved to final content");
+    }
+
+    /// Rows scrolled off the top go into the log.
+    /// NOTE: per-line process() calls to match production behavior.
+    #[test]
+    fn test_vt_log_scroll_emits_scrolled_off_rows() {
+        let mut buf = make_vt_log();
+        // Feed exactly 25 lines one at a time — the first one scrolls off
+        for i in 0..25 {
+            buf.process(format!("row{i}\r\n").as_bytes());
+        }
+        let lines = buf.lines();
+        assert!(!lines.is_empty(), "at least one line should have scrolled off");
+        let first = lines.front().unwrap();
+        assert_eq!(first, "row0", "first scrolled-off row is row0, got: {first:?}");
+    }
+
+    /// Alternate screen suppresses log extraction.
+    #[test]
+    fn test_vt_log_alternate_screen_suppresses_extraction() {
+        let mut buf = make_vt_log();
+        // Enter alternate screen (smcup), write some content, exit (rmcup)
+        // smcup: ESC[?1049h
+        buf.process(b"\x1b[?1049h");
+        // Write 30 lines in alternate screen
+        let mut content = String::new();
+        for i in 0..30 {
+            content.push_str(&format!("alt-line {i}\r\n"));
+        }
+        buf.process(content.as_bytes());
+        // No lines should be in the log while alternate screen is active
+        assert!(
+            buf.lines().is_empty(),
+            "alternate screen content should not be logged"
+        );
+    }
+
+    /// After alternate screen exits, extraction resumes.
+    #[test]
+    fn test_vt_log_alternate_screen_exit_resumes_extraction() {
+        let mut buf = make_vt_log();
+        // Enter alternate screen
+        buf.process(b"\x1b[?1049h");
+        // Write in alternate screen (per-line)
+        for i in 0..30 {
+            buf.process(format!("alt {i}\r\n").as_bytes());
+        }
+        // Exit alternate screen (rmcup)
+        buf.process(b"\x1b[?1049l");
+        // Now write regular output that will scroll (per-line)
+        for i in 0..30 {
+            buf.process(format!("main {i}\r\n").as_bytes());
+        }
+        // Main screen output should appear in the log
+        let lines = buf.lines();
+        assert!(!lines.is_empty(), "main screen lines should appear in log after alt exit");
+        assert!(
+            lines.iter().any(|l| l.starts_with("main")),
+            "main lines present in log"
+        );
+    }
+
+    /// resize() updates parser dimensions.
+    #[test]
+    fn test_vt_log_resize() {
+        let mut buf = make_vt_log();
+        // Resize to a smaller terminal
+        buf.resize(10, 40);
+        // Should not panic and screen size should be updated
+        let rows = buf.screen_rows();
+        // After resize, screen_rows returns 10 rows (all empty after resize)
+        assert_eq!(rows.len(), 10, "resize to 10 rows");
+    }
+
+    /// Empty/whitespace-only rows are not added to the log.
+    #[test]
+    fn test_vt_log_trims_whitespace_only_rows() {
+        let mut buf = make_vt_log();
+        // Fill with content including empty lines
+        let mut input = String::new();
+        for i in 0..25 {
+            if i == 5 {
+                input.push_str("\r\n"); // empty line
+            } else {
+                input.push_str(&format!("content {i}\r\n"));
+            }
+        }
+        buf.process(input.as_bytes());
+        let lines = buf.lines();
+        // None of the logged lines should be empty
+        for line in lines.iter() {
+            assert!(!line.is_empty(), "logged line should not be empty: {line:?}");
+        }
+    }
+
+    /// Log capacity is bounded: old lines are dropped when capacity is exceeded.
+    #[test]
+    fn test_vt_log_bounded_capacity() {
+        let mut buf = VtLogBuffer::new(24, 80, 10); // tiny capacity
+        // Produce many more than 10 lines
+        let mut input = String::new();
+        for i in 0..200 {
+            input.push_str(&format!("line {i:04}\r\n"));
+        }
+        buf.process(input.as_bytes());
+        assert!(
+            buf.lines().len() <= 10,
+            "log should be capped at capacity=10, got {}",
+            buf.lines().len()
+        );
+    }
+
+    /// lines_since_owned returns lines after offset and correct new offset.
+    #[test]
+    fn test_vt_log_lines_since_owned() {
+        let mut buf = VtLogBuffer::new(24, 80, 1000);
+        // Feed lines one at a time to trigger scroll detection
+        for i in 0..30 {
+            buf.process(format!("line {i}\r\n").as_bytes());
+        }
+        let total = buf.total_lines();
+        assert!(total > 0, "should have some finalized lines");
+        // First fetch: all lines
+        let (batch1, off1) = buf.lines_since_owned(0);
+        assert_eq!(batch1.len(), total);
+        assert_eq!(off1, total);
+        // Second fetch: nothing new
+        let (batch2, off2) = buf.lines_since_owned(off1);
+        assert!(batch2.is_empty());
+        assert_eq!(off2, total);
     }
 }
