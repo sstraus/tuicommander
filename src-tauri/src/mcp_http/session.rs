@@ -116,8 +116,35 @@ pub(super) async fn get_output(
     Path(session_id): Path<String>,
     Query(query): Query<OutputQuery>,
 ) -> impl IntoResponse {
+    let format = query.format.as_deref().unwrap_or("raw");
+
+    // format=log: return VT100-extracted clean log lines (best for mobile/REST consumers)
+    if format == "log" {
+        let vt_log = match state.vt_log_buffers.get(&session_id) {
+            Some(b) => b,
+            None => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({"error": "Session not found"})),
+                )
+            }
+        };
+        let buf = vt_log.lock();
+        let limit = query.limit.unwrap_or(usize::MAX);
+        let total = buf.total_lines();
+        let offset = if limit < total { total - limit } else { 0 };
+        let (lines, _) = buf.lines_since_owned(offset);
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "lines": lines,
+                "total_lines": total,
+            })),
+        );
+    }
+
     let limit = query.limit.unwrap_or(8192);
-    let strip = query.format.as_deref() == Some("text");
+    let strip = format == "text";
     let ring = match state.output_buffers.get(&session_id) {
         Some(r) => r,
         None => {
