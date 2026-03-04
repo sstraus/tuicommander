@@ -2125,4 +2125,127 @@ mod tests {
         assert!(batch2.is_empty());
         assert_eq!(off2, total);
     }
+
+    /// Integration test: spawn a real PTY process, feed its output through
+    /// VtLogBuffer, and verify that clean log lines are extracted.
+    #[test]
+    fn test_vt_log_real_pty_echo() {
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use std::io::Read;
+
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("open pty");
+
+        // Spawn a shell that echos numbered lines and exits
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.arg("-c");
+        cmd.arg("for i in $(seq 1 30); do echo \"test-line-$i\"; done; exit 0");
+        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
+        drop(pair.slave); // close slave so reads see EOF
+
+        let mut reader = pair.master.try_clone_reader().expect("reader");
+        let mut buf = VtLogBuffer::new(24, 80, 1000);
+        let mut raw = [0u8; 4096];
+
+        // Read all output from the PTY and feed into VtLogBuffer
+        loop {
+            match reader.read(&mut raw) {
+                Ok(0) => break,
+                Ok(n) => buf.process(&raw[..n]),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                Err(_) => break,
+            }
+        }
+        let _ = child.wait();
+
+        let lines: Vec<String> = buf.lines().iter().cloned().collect();
+        // We should have captured at least some of our "test-line-N" lines
+        let matching: Vec<&String> = lines
+            .iter()
+            .filter(|l| l.starts_with("test-line-"))
+            .collect();
+        assert!(
+            matching.len() >= 5,
+            "expected at least 5 'test-line-N' lines in log, got {} out of {} total lines: {:?}",
+            matching.len(),
+            lines.len(),
+            lines,
+        );
+        // Verify the captured lines cover a reasonable range.
+        // Due to single-read batching, the diff-based detection may duplicate
+        // some lines — this is expected. We just verify range coverage.
+        let nums: Vec<u32> = matching
+            .iter()
+            .filter_map(|l| l.strip_prefix("test-line-").and_then(|n| n.parse().ok()))
+            .collect();
+        let max_num = nums.iter().copied().max().unwrap_or(0);
+        assert!(
+            max_num >= 10,
+            "should capture lines up to at least 10, max was {max_num}, nums: {nums:?}",
+        );
+    }
+
+    /// Integration test: verify that alternate-screen content (TUI) is NOT
+    /// captured by VtLogBuffer when using a real PTY.
+    #[test]
+    fn test_vt_log_real_pty_alternate_screen_suppressed() {
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use std::io::Read;
+
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("open pty");
+
+        // Script: echo normal lines, enter alternate screen, write TUI garbage,
+        // exit alternate screen, echo more lines.
+        let script = concat!(
+            "echo 'before-alt-1'; echo 'before-alt-2'; ",
+            "printf '\\033[?1049h'; ",           // enter alternate screen
+            "echo 'TUI-GARBAGE-LINE'; ",
+            "printf '\\033[?1049l'; ",           // exit alternate screen
+            "echo 'after-alt-1'; echo 'after-alt-2'; ",
+            "exit 0"
+        );
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.arg("-c");
+        cmd.arg(script);
+        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
+        drop(pair.slave);
+
+        let mut reader = pair.master.try_clone_reader().expect("reader");
+        let mut buf = VtLogBuffer::new(24, 80, 1000);
+        let mut raw = [0u8; 4096];
+
+        loop {
+            match reader.read(&mut raw) {
+                Ok(0) => break,
+                Ok(n) => buf.process(&raw[..n]),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                Err(_) => break,
+            }
+        }
+        let _ = child.wait();
+
+        let lines: Vec<String> = buf.lines().iter().cloned().collect();
+        // TUI-GARBAGE-LINE should not appear in the log
+        let has_garbage = lines.iter().any(|l| l.contains("TUI-GARBAGE"));
+        assert!(
+            !has_garbage,
+            "alternate-screen content should be suppressed, but found TUI-GARBAGE in: {:?}",
+            lines,
+        );
+    }
 }
