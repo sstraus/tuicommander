@@ -24,7 +24,6 @@ dashmap = "6"
 parking_lot = "0.12"
 regex = "1"
 lazy_static = "1"
-strip-ansi-escapes = "0.2"
 uuid = { version = "1", features = ["v4"] }
 dirs = "5"
 tauri-plugin-dialog = "2.6.0"

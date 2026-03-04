@@ -110,6 +110,10 @@ impl OutputParser {
     }
 
     /// Parse a chunk of PTY output and return any detected events.
+    ///
+    /// Strips ANSI escape sequences via the vt100 crate before parsing.
+    /// Only available in tests — the production pipeline uses [`parse_clean_lines`].
+    #[cfg(test)]
     pub fn parse(&self, text: &str) -> Vec<ParsedEvent> {
         let mut events = Vec::new();
 
@@ -123,8 +127,10 @@ impl OutputParser {
             events.push(evt);
         }
 
-        // Strip ANSI once for all parsers that need clean text
-        let clean = strip_ansi(text);
+        // Strip ANSI escape sequences for parsers that need clean text.
+        // Uses the vt100 crate (already a dependency) to render a virtual screen
+        // and extract clean rows, avoiding the strip_ansi_escapes crate.
+        let clean = strip_ansi_via_vt100(text);
 
         // Status line detection
         if let Some(evt) = parse_status_line(&clean) {
@@ -489,64 +495,23 @@ fn parse_pr_url(text: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Strip ANSI escape sequences from text using the strip-ansi-escapes crate.
-/// Handles all ANSI escape types: CSI, OSC, SGR, and simple escapes.
+/// Strip ANSI escape sequences from raw PTY text using the vt100 crate.
 ///
-/// Pre-processes cursor movement sequences before stripping, because
-/// `strip-ansi-escapes` silently drops them and concatenates surrounding text:
-/// - CUF (`\x1b[nC`, cursor forward) → n spaces
-/// - CUU (`\x1b[nA`, cursor up) → newline
-/// - CUD (`\x1b[nB`, cursor down) → newline
-/// - CUB (`\x1b[nD`, cursor back) → stripped (no replacement)
-///
-/// This preserves line structure for parsers that rely on line-based matching
-/// (intent tokens, status lines, etc.) even when the source uses full-screen
-/// rendering with cursor positioning (e.g. Claude Code's Ink-based TUI).
-pub(crate) fn strip_ansi(text: &str) -> String {
-    lazy_static::lazy_static! {
-        static ref CURSOR_RE: regex::Regex =
-            regex::Regex::new(r"\x1b\[(\d*)([ABCD])").unwrap();
-    }
-    // Replace cursor movement sequences BEFORE carriage-return processing:
-    // CUU/CUD become newlines, so a preceding \r becomes \r\n (normal line ending)
-    // rather than triggering overwrite-from-start semantics that eats content.
-    let cursor_replaced = CURSOR_RE.replace_all(text, |caps: &regex::Captures| {
-        let n: usize = caps[1].parse().unwrap_or(1).max(1);
-        match &caps[2] {
-            "C" => " ".repeat(n),        // CUF → spaces
-            "A" | "B" => "\n".to_string(), // CUU/CUD → newline
-            "D" => String::new(),         // CUB → strip
-            _ => String::new(),
-        }
-    });
-    // Apply carriage return semantics AFTER cursor replacement, because
-    // strip_ansi_escapes::strip() silently removes \r without applying its
-    // overwrite-from-start-of-line semantics. This is critical for animated
-    // status lines (Claude Code, Codex, etc.) that use \r to update in place.
-    let cr_applied = apply_carriage_returns(&cursor_replaced);
-    let stripped = strip_ansi_escapes::strip(cr_applied.as_bytes());
-    String::from_utf8(stripped).unwrap_or_else(|_| text.to_string())
-}
-
-/// Simulate carriage return semantics: for each line, text after `\r`
-/// overwrites from the beginning of the line. `\r\n` is treated as a
-/// normal line ending (not an overwrite).
-fn apply_carriage_returns(text: &str) -> String {
-    // Normalize \r\n to \n first so they don't trigger overwrite logic
-    let normalized = text.replace("\r\n", "\n");
-    let mut result = String::with_capacity(normalized.len());
-    for (i, line) in normalized.split('\n').enumerate() {
-        if i > 0 {
-            result.push('\n');
-        }
-        if let Some(last_cr) = line.rfind('\r') {
-            // Take the segment after the last \r — it overwrites everything before
-            result.push_str(&line[last_cr + 1..]);
-        } else {
-            result.push_str(line);
-        }
-    }
-    result
+/// Renders the text through a virtual 220×50 screen and extracts the visible
+/// rows, correctly handling cursor movement, carriage returns, and all CSI/OSC
+/// sequences. Only used by the test-only [`OutputParser::parse`] method.
+#[cfg(test)]
+fn strip_ansi_via_vt100(text: &str) -> String {
+    let mut parser = vt100::Parser::new(50, 220, 0);
+    parser.process(text.as_bytes());
+    let screen = parser.screen();
+    let cols = screen.size().1;
+    screen
+        .rows(0, cols)
+        .map(|r| r.trim_end().to_string())
+        .filter(|r| !r.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Parse status line patterns from pre-stripped terminal output.
@@ -756,30 +721,6 @@ fn parse_question(clean: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Extract the last non-empty line ending with `?` from a chunk of text.
-/// Used by the silence-based question detector: if an agent prints a line ending
-/// with `?` and then goes silent, it's likely waiting for input.
-/// Returns None if no line ends with `?` or if the line looks like code/markdown
-/// rather than a genuine interactive prompt.
-pub(crate) fn extract_last_question_line(text: &str) -> Option<String> {
-    let clean = strip_ansi(text);
-    // Only check the last non-empty line — a question buried mid-output
-    // with more content after it is not an unanswered prompt.
-    let last_clean = clean.lines().rev().find(|l| !l.trim().is_empty())?;
-    let trimmed = last_clean.trim();
-    if !trimmed.ends_with('?') {
-        return None;
-    }
-    // Find the raw line for structural checks (tabs, indentation).
-    // strip_ansi removes control chars like \t, so we need the original text.
-    let last_raw = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or(last_clean);
-    // Reject lines that look like source code, comments, or markdown prose
-    // rather than genuine interactive prompts.
-    if line_is_likely_not_a_prompt(last_raw) {
-        return None;
-    }
-    Some(trimmed.to_string())
-}
 
 /// Returns true if a line looks like diff output, code context, or documentation
 /// Returns true if a line looks like diff output, code context, or documentation
@@ -858,40 +799,6 @@ fn line_is_diff_or_code_context(line: &str) -> bool {
     false
 }
 
-/// Returns true if a `?`-ending line is likely agent prose, code, or documentation
-/// rather than an interactive prompt waiting for user input.
-fn line_is_likely_not_a_prompt(line: &str) -> bool {
-    let trimmed = line.trim();
-    // Indented code (4+ spaces or tab prefix = code block)
-    if line.starts_with("    ") || line.starts_with('\t') {
-        return true;
-    }
-    // Code comments
-    if trimmed.starts_with("//")
-        || trimmed.starts_with('#')
-        || trimmed.starts_with("/*")
-        || trimmed.starts_with('*')
-    {
-        return true;
-    }
-    // Markdown list items or blockquotes
-    if trimmed.starts_with("- ") || trimmed.starts_with("> ") {
-        return true;
-    }
-    // Lines containing backtick-wrapped code fragments
-    if trimmed.contains('`') {
-        return true;
-    }
-    // Long lines (>120 chars) are almost always prose, not prompts
-    if trimmed.len() > 120 {
-        return true;
-    }
-    // Lines with markdown bold/italic markers
-    if trimmed.contains("**") || trimmed.contains("__") {
-        return true;
-    }
-    false
-}
 
 /// Detect plan file paths in pre-stripped terminal output.
 /// Matches paths like `plans/foo.md`, `.claude/plans/bar.md`, absolute paths ending in plans/*.md
@@ -1380,47 +1287,6 @@ mod tests {
     }
 
     #[test]
-    fn test_strip_ansi() {
-        assert_eq!(strip_ansi("\x1b[32mhello\x1b[0m"), "hello");
-        assert_eq!(strip_ansi("no escapes"), "no escapes");
-    }
-
-    #[test]
-    fn test_strip_ansi_cuf_replaced_with_spaces() {
-        // CUF (Cursor Forward) \x1b[nC should become n spaces, not be silently dropped.
-        // Without this fix, "hello" and "world" would be concatenated as "helloworld".
-        assert_eq!(strip_ansi("hello\x1b[3Cworld"), "hello   world");
-        // CUF with n=1 (implicit and explicit)
-        assert_eq!(strip_ansi("a\x1b[Cb"), "a b");
-        assert_eq!(strip_ansi("a\x1b[1Cb"), "a b");
-        // Multiple CUF sequences
-        assert_eq!(strip_ansi("x\x1b[2Cy\x1b[4Cz"), "x  y    z");
-    }
-
-    #[test]
-    fn test_strip_ansi_carriage_return_overwrites_line() {
-        // Claude Code animated status line: \r overwrites the current line
-        assert_eq!(strip_ansi("old text\rnew text"), "new text");
-        // Multiple \r — only last segment survives
-        assert_eq!(strip_ansi("first\rsecond\rthird"), "third");
-        // \r followed by shorter text — overwrites only the beginning
-        assert_eq!(strip_ansi("long content here\rhi"), "hi");
-        // Mixed: newlines + carriage returns
-        assert_eq!(strip_ansi("line1\nold\rnew\nline3"), "line1\nnew\nline3");
-        // No \r — unchanged
-        assert_eq!(strip_ansi("hello\nworld"), "hello\nworld");
-        // \r\n is a normal line ending — should not collapse
-        assert_eq!(strip_ansi("line1\r\nline2"), "line1\nline2");
-    }
-
-    #[test]
-    fn test_strip_ansi_claude_status_line_realistic() {
-        // Realistic Claude Code output: colored status line overwritten by \r
-        let input = "\x1b[33m* Reading files...\x1b[0m\r\x1b[33m* Writing code...\x1b[0m\r\x1b[33m* Done\x1b[0m\n";
-        assert_eq!(strip_ansi(input), "* Done\n");
-    }
-
-    #[test]
     fn test_question_would_you_like() {
         let parser = OutputParser::new();
         let events = parser.parse("Would you like to proceed?");
@@ -1509,120 +1375,6 @@ mod tests {
         let parser = OutputParser::new();
         let events = parser.parse("You\u{2019}ve used 50% of your weekly limit");
         assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { percentage: 50, .. })));
-    }
-
-    // --- extract_last_question_line tests ---
-
-    #[test]
-    fn test_extract_question_line_simple() {
-        assert_eq!(
-            extract_last_question_line("Do you want to continue?"),
-            Some("Do you want to continue?".to_string())
-        );
-    }
-
-    #[test]
-    fn test_extract_question_line_last_line_is_question() {
-        let text = "First line\nSecond line\nThird question?";
-        assert_eq!(
-            extract_last_question_line(text),
-            Some("Third question?".to_string())
-        );
-    }
-
-    #[test]
-    fn test_extract_question_line_question_mid_output_ignored() {
-        // Question buried mid-output with non-question content after — not a prompt
-        let text = "Do you want to continue?\n- [ ] Task 1\n- [ ] Task 2";
-        assert_eq!(extract_last_question_line(text), None);
-    }
-
-    #[test]
-    fn test_extract_question_line_no_question() {
-        assert_eq!(extract_last_question_line("Normal output here"), None);
-    }
-
-    #[test]
-    fn test_extract_question_line_ansi_wrapped() {
-        assert_eq!(
-            extract_last_question_line("\x1b[33mContinue?\x1b[0m"),
-            Some("Continue?".to_string())
-        );
-    }
-
-    #[test]
-    fn test_extract_question_line_url_with_query_not_matched() {
-        // A URL with ? in the middle of a line, but the line itself doesn't end with ?
-        assert_eq!(
-            extract_last_question_line("Fetching https://example.com/api?foo=bar done"),
-            None,
-        );
-    }
-
-    #[test]
-    fn test_extract_question_line_empty_lines_skipped() {
-        assert_eq!(
-            extract_last_question_line("Ready?\n\n\n"),
-            Some("Ready?".to_string())
-        );
-    }
-
-    // --- Silence detector false-positive guard tests ---
-
-    #[test]
-    fn test_extract_question_rejects_code_comments() {
-        assert_eq!(extract_last_question_line("// should we handle this case?"), None);
-        assert_eq!(extract_last_question_line("# what about edge cases?"), None);
-        assert_eq!(extract_last_question_line("/* is this correct?"), None);
-        assert_eq!(extract_last_question_line("* should we retry?"), None);
-    }
-
-    #[test]
-    fn test_extract_question_rejects_indented_code() {
-        assert_eq!(extract_last_question_line("    if condition.is_valid?"), None);
-        assert_eq!(extract_last_question_line("\tis_ready?"), None);
-    }
-
-    #[test]
-    fn test_extract_question_rejects_markdown_prose() {
-        assert_eq!(extract_last_question_line("- What should we do about this?"), None);
-        assert_eq!(extract_last_question_line("> Do you agree with this approach?"), None);
-        assert_eq!(extract_last_question_line("Have you tried using `foo.bar()?` instead?"), None);
-        assert_eq!(extract_last_question_line("**Should we refactor this?**"), None);
-    }
-
-    #[test]
-    fn test_extract_question_rejects_long_prose() {
-        let long_line = format!("{}?", "a".repeat(121));
-        assert_eq!(extract_last_question_line(&long_line), None);
-    }
-
-    #[test]
-    fn test_extract_question_accepts_real_prompts() {
-        // Short, plain prompts that ARE genuine interactive questions
-        assert!(extract_last_question_line("Continue?").is_some());
-        assert!(extract_last_question_line("Do you want to continue?").is_some());
-        assert!(extract_last_question_line("Apply changes?").is_some());
-        assert!(extract_last_question_line("Proceed with deletion?").is_some());
-        assert!(extract_last_question_line("Enter filename?").is_some());
-    }
-
-    #[test]
-    fn test_line_is_likely_not_a_prompt_fn() {
-        // Should be filtered (not prompts)
-        assert!(line_is_likely_not_a_prompt("// is this a question?"));
-        assert!(line_is_likely_not_a_prompt("# what about this?"));
-        assert!(line_is_likely_not_a_prompt("    indented code question?"));
-        assert!(line_is_likely_not_a_prompt("\tindented code question?"));
-        assert!(line_is_likely_not_a_prompt("- list item question?"));
-        assert!(line_is_likely_not_a_prompt("> blockquote question?"));
-        assert!(line_is_likely_not_a_prompt("uses `backticks` question?"));
-        assert!(line_is_likely_not_a_prompt("**bold** question?"));
-
-        // Should pass (real prompts)
-        assert!(!line_is_likely_not_a_prompt("Continue?"));
-        assert!(!line_is_likely_not_a_prompt("Apply changes?"));
-        assert!(!line_is_likely_not_a_prompt("Do you want to proceed?"));
     }
 
     // --- Ink SelectInput / broadened question detection tests ---
@@ -2569,43 +2321,49 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_intent_with_cursor_up_down() {
         // Real Claude Code PTY output: spinner uses CUU (\x1b[8A) to go back up,
         // then the intent token appears after cursor movements.
-        // strip_ansi must convert CUU/CUD to newlines to preserve line structure.
+        // VtLogBuffer renders the VT100 and produces the clean row; we simulate that here.
         let parser = OutputParser::new();
-        let raw = "\x1b[38;2;215;119;87m\u{273b}\x1b[39m\r\r\n\r\n\r\n\r\n\x1b[?2026l\x1b[?2026h\r\x1b[8A\x1b[38;2;153;153;153m\u{25cf}\x1b[1C\x1b[39m\x1b[1mBash\x1b[22m\r\x1b[1B  \x1b[38;2;177;185;249m[[intent: Fixing strip_ansi cursor handling(Fix strip_ansi)]]\x1b[39m\r\x1b[1Bmore output";
-        let events = parser.parse(raw);
+        let raw = "\x1b[38;2;215;119;87m\u{273b}\x1b[39m\r\r\n\r\n\r\n\r\n\x1b[?2026l\x1b[?2026h\r\x1b[8A\x1b[38;2;153;153;153m\u{25cf}\x1b[1C\x1b[39m\x1b[1mBash\x1b[22m\r\x1b[1B  \x1b[38;2;177;185;249m[[intent: Fixing cursor handling(Fix cursor)]]\x1b[39m\r\x1b[1Bmore output";
+        let mut vt_parser = vt100::Parser::new(50, 220, 0);
+        vt_parser.process(raw.as_bytes());
+        let screen = vt_parser.screen();
+        let rows: Vec<crate::state::ChangedRow> = screen.rows(0, screen.size().1)
+            .enumerate()
+            .filter(|(_, r)| !r.trim_end().is_empty())
+            .map(|(i, r)| crate::state::ChangedRow { row_index: i, text: r.trim_end().to_string() })
+            .collect();
+        let events = parser.parse_clean_lines(&rows);
         assert_eq!(
             get_intent(&events),
-            Some("Fixing strip_ansi cursor handling".to_string()),
-            "intent must be detected even with CUU/CUD cursor movements in surrounding output"
+            Some("Fixing cursor handling".to_string()),
+            "intent must be detected via VtLogBuffer-rendered rows; got: {:?}", events
         );
         assert_eq!(
             get_intent_title(&events),
-            Some("Fix strip_ansi".to_string()),
+            Some("Fix cursor".to_string()),
         );
     }
 
     #[test]
     fn test_intent_with_cursor_down_only() {
         // Intent token preceded by CUD (cursor down) — \x1b[nB
+        // VtLogBuffer renders this to clean rows; simulate the result.
         let parser = OutputParser::new();
         let raw = "spinner output\x1b[3B[[intent: Running tests(Tests)]]\x1b[2Amore";
-        let events = parser.parse(raw);
+        let mut vt_parser = vt100::Parser::new(50, 220, 0);
+        vt_parser.process(raw.as_bytes());
+        let screen = vt_parser.screen();
+        let rows: Vec<crate::state::ChangedRow> = screen.rows(0, screen.size().1)
+            .enumerate()
+            .filter(|(_, r)| !r.trim_end().is_empty())
+            .map(|(i, r)| crate::state::ChangedRow { row_index: i, text: r.trim_end().to_string() })
+            .collect();
+        let events = parser.parse_clean_lines(&rows);
         assert_eq!(
             get_intent(&events),
             Some("Running tests".to_string()),
-            "CUD before intent should become newline, making intent matchable"
+            "intent must be detected via VtLogBuffer-rendered rows; got: {:?}", events
         );
-    }
-
-    #[test]
-    fn test_strip_ansi_converts_cursor_movements_to_whitespace() {
-        // CUU and CUD should become newlines, CUB should be stripped
-        let result = strip_ansi("hello\x1b[3Aworld\x1b[2Bfoo\x1b[1Dbar");
-        assert!(result.contains("hello"), "text before CUU preserved");
-        assert!(result.contains("world"), "text after CUU preserved");
-        assert!(result.contains("foo"), "text between movements preserved");
-        // CUU/CUD should insert newlines to separate text from different screen positions
-        assert!(result.contains('\n'), "cursor up/down should produce newlines");
     }
 
     // --- Suggest detection tests ---
