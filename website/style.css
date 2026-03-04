@@ -94,10 +94,62 @@ section {
 }
 
 /* ============================================
+   NAV
+   ============================================ */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(17, 17, 17, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0;
+}
+.nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg-primary);
+  font-weight: 700;
+  font-size: 0.95rem;
+  font-family: var(--font-mono);
+}
+.nav-logo:hover {
+  color: var(--fg-primary);
+}
+.nav-logo img {
+  border-radius: 6px;
+}
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.nav-links a {
+  color: var(--fg-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+.nav-links a:hover {
+  color: var(--fg-primary);
+}
+.btn-sm {
+  padding: 8px 16px;
+  font-size: 0.8rem;
+}
+
+/* ============================================
    HERO
    ============================================ */
 .hero {
-  padding: 100px 0 80px;
+  padding: 80px 0 80px;
   text-align: center;
   position: relative;
 }
@@ -120,18 +172,43 @@ section {
 }
 .hero h1 {
   font-family: var(--font-mono);
-  font-size: 3rem;
+  font-size: 2.8rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+  line-height: 1.15;
 }
 .hero-tagline {
-  font-size: 1.35rem;
+  font-size: 1.2rem;
   color: var(--fg-secondary);
-  max-width: 600px;
+  max-width: 620px;
   margin: 0 auto 32px;
   line-height: 1.5;
 }
+
+/* Hero pillars */
+.hero-pillars {
+  display: flex;
+  gap: 32px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 40px;
+}
+.pillar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.pillar svg {
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
 .hero-ctas {
   display: flex;
   gap: 12px;
@@ -201,9 +278,15 @@ section {
 }
 .agent-bar h2 {
   text-align: center;
-  font-size: 1rem;
-  color: var(--fg-secondary);
-  font-weight: 400;
+  font-size: 1.2rem;
+  color: var(--fg-primary);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.agent-bar-sub {
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 0.9rem;
   margin-bottom: 32px;
 }
 .agent-grid {
@@ -247,6 +330,86 @@ section {
 .agent-card span:last-child {
   font-size: 0.75rem;
   color: var(--fg-secondary);
+}
+
+/* ============================================
+   VISUAL ARCHITECTURE
+   ============================================ */
+.architecture {
+  padding: var(--section-gap) 0;
+  text-align: center;
+}
+.architecture h2 {
+  font-size: 1.8rem;
+  margin-bottom: 40px;
+}
+.architecture-diagram {
+  max-width: 600px;
+  margin: 0 auto;
+}
+.architecture-diagram .diagram {
+  text-align: left;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.8;
+  color: var(--fg-secondary);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ============================================
+   WORKFLOW (How it works)
+   ============================================ */
+.workflow {
+  padding: var(--section-gap) 0;
+  background: var(--bg-secondary);
+}
+.workflow h2 {
+  text-align: center;
+  font-size: 1.8rem;
+  margin-bottom: 48px;
+}
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.workflow-step {
+  padding: 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  margin-bottom: 12px;
+}
+.workflow-step h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.workflow-step p {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  line-height: 1.5;
 }
 
 /* ============================================
@@ -410,6 +573,12 @@ section {
 .comparison h2 {
   text-align: center;
   font-size: 1.8rem;
+  margin-bottom: 12px;
+}
+.comparison-note {
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 0.9rem;
   margin-bottom: 48px;
 }
 .comparison-table-wrap {
@@ -444,6 +613,13 @@ section {
 .comparison-table td:first-child {
   font-weight: 500;
 }
+.comparison-table .highlight-col {
+  background: rgba(89, 168, 221, 0.06);
+}
+.comparison-table th.highlight-col {
+  color: var(--accent);
+  font-weight: 600;
+}
 .check {
   color: var(--success);
 }
@@ -456,7 +632,7 @@ section {
 }
 
 /* ============================================
-   TERMINAL FEATURES (collapsible)
+   TERMINAL FEATURES
    ============================================ */
 .terminal-features {
   padding: 80px 0;
@@ -601,14 +777,22 @@ section {
     padding: 60px 0 40px;
   }
   .hero h1 {
-    font-size: 2rem;
+    font-size: 1.8rem;
   }
   .hero-tagline {
-    font-size: 1.1rem;
+    font-size: 1.05rem;
   }
   .hero-screenshot {
     margin: 0 -12px;
     border-radius: 8px;
+  }
+  .hero-pillars {
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+  }
+  .nav-links a:not(.btn) {
+    display: none;
   }
   .feature-pair-grid {
     grid-template-columns: 1fr;
@@ -623,6 +807,10 @@ section {
   }
   .feature:nth-child(even) .feature-inner {
     direction: ltr;
+  }
+  .workflow-steps {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
   .comparison-table {
     font-size: 0.8rem;
@@ -642,7 +830,7 @@ section {
 
 @media (max-width: 480px) {
   .hero h1 {
-    font-size: 1.6rem;
+    font-size: 1.5rem;
   }
   .hero-ctas {
     flex-direction: column;
@@ -652,5 +840,8 @@ section {
     width: 100%;
     max-width: 280px;
     justify-content: center;
+  }
+  .workflow-steps {
+    grid-template-columns: 1fr;
   }
 }
