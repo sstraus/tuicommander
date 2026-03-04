@@ -11,8 +11,9 @@ use crate::input_line_buffer::{InputAction, InputLineBuffer};
 use crate::output_parser::{colorize_intent, extract_last_question_line, strip_ansi, strip_suggest, OutputParser, ParsedEvent};
 use crate::state::{
     AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
-    OutputRingBuffer, PtyConfig, PtyOutput, PtySession, TagBuffer, Utf8ReadBuffer,
-    MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY, strip_kitty_sequences,
+    OutputRingBuffer, PtyConfig, PtyOutput, PtySession, TagBuffer, Utf8ReadBuffer, VtLogBuffer,
+    MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY, VT_LOG_BUFFER_CAPACITY,
+    strip_kitty_sequences,
 };
 use crate::worktree::{create_worktree_internal, remove_worktree_internal, WorktreeConfig, WorktreeResult};
 
@@ -430,6 +431,7 @@ pub(crate) fn spawn_reader_thread(
             state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
         }
         state.output_buffers.remove(&session_id);
+        state.vt_log_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
@@ -528,6 +530,7 @@ pub(crate) fn spawn_headless_reader_thread(
             state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
         }
         state.output_buffers.remove(&session_id);
+        state.vt_log_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
@@ -633,10 +636,14 @@ pub(crate) async fn create_pty(
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
     state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
 
-    // Create ring buffer for this session
+    // Create ring buffer and VT log buffer for this session
     state.output_buffers.insert(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+    state.vt_log_buffers.insert(
+        session_id.clone(),
+        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
 
     spawn_reader_thread(
@@ -749,10 +756,14 @@ pub(crate) async fn create_pty_with_worktree(
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
     state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
 
-    // Create ring buffer for this session
+    // Create ring buffer and VT log buffer for this session
     state.output_buffers.insert(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+    state.vt_log_buffers.insert(
+        session_id.clone(),
+        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
 
     spawn_reader_thread(
@@ -945,6 +956,7 @@ pub(crate) fn close_pty(
 ) -> Result<(), String> {
     if let Some((_, session_mutex)) = state.sessions.remove(&session_id) {
         state.output_buffers.remove(&session_id);
+        state.vt_log_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);

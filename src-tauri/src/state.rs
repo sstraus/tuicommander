@@ -732,6 +732,9 @@ pub struct AppState {
     pub(crate) app_handle: parking_lot::RwLock<Option<AppHandle>>,
     /// Plugin filesystem watchers: watch_id → (plugin_id, watcher)
     pub plugin_watchers: DashMap<String, (String, notify::RecommendedWatcher)>,
+    /// Per-session VT100 log buffers for clean mobile/REST output (session_id → buffer).
+    /// Separate DashMap to avoid writer contention on PtySession.
+    pub(crate) vt_log_buffers: DashMap<String, Mutex<VtLogBuffer>>,
     /// Per-session kitty keyboard protocol state (session_id → state).
     /// Separate DashMap (not inside PtySession) to avoid writer contention.
     pub(crate) kitty_states: DashMap<String, Mutex<KittyKeyboardState>>,
@@ -1496,6 +1499,7 @@ mod tests {
             session_token: parking_lot::RwLock::new(String::from("test-token")),
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
+            vt_log_buffers: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),

@@ -9,7 +9,8 @@ use uuid::Uuid;
 
 use crate::pty::spawn_reader_thread;
 use crate::state::{
-    AgentConfig, AppState, OutputRingBuffer, PtyConfig, PtySession, OUTPUT_RING_BUFFER_CAPACITY,
+    AgentConfig, AppState, OutputRingBuffer, PtyConfig, PtySession, VtLogBuffer,
+    OUTPUT_RING_BUFFER_CAPACITY, VT_LOG_BUFFER_CAPACITY,
 };
 
 // resolve_cli and has_cli are now in crate::cli — re-export for backwards compatibility
@@ -608,10 +609,14 @@ pub(crate) async fn spawn_agent(
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
     state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
 
-    // Create ring buffer for this session
+    // Create ring buffer and VT log buffer for this session
     state.output_buffers.insert(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+    state.vt_log_buffers.insert(
+        session_id.clone(),
+        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
 
     spawn_reader_thread(

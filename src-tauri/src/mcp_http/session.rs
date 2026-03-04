@@ -1,6 +1,6 @@
 use crate::pty::{build_shell_command, resolve_shell, spawn_headless_reader_thread, spawn_reader_thread};
 use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
-use crate::state::OUTPUT_RING_BUFFER_CAPACITY;
+use crate::state::{OUTPUT_RING_BUFFER_CAPACITY, VtLogBuffer, VT_LOG_BUFFER_CAPACITY};
 use tauri::Emitter;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
@@ -141,6 +141,7 @@ pub(super) async fn close_session(
 ) -> impl IntoResponse {
     if let Some((_, session_mutex)) = state.sessions.remove(&session_id) {
         state.output_buffers.remove(&session_id);
+        state.vt_log_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
@@ -281,6 +282,10 @@ pub(super) async fn create_session(
     state.output_buffers.insert(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+    state.vt_log_buffers.insert(
+        session_id.clone(),
+        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
 
     // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
@@ -477,6 +482,10 @@ pub(super) async fn create_session_with_worktree(
     state.output_buffers.insert(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+    state.vt_log_buffers.insert(
+        session_id.clone(),
+        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
 
     // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
