@@ -1216,6 +1216,60 @@ pub(crate) async fn get_ci_checks(
     .map_err(|e| format!("Task failed: {e}"))
 }
 
+/// Fetch the unified diff for a PR via GitHub REST API.
+/// Uses Accept: application/vnd.github.diff to get raw diff text.
+pub(crate) fn get_pr_diff_impl(
+    repo_path: &str,
+    pr_number: i64,
+    state: &AppState,
+) -> Result<String, String> {
+    let token = state
+        .github_token
+        .read()
+        .clone()
+        .ok_or_else(|| "No GitHub token available".to_string())?;
+
+    let remote_url = get_github_remote_url(std::path::Path::new(repo_path))
+        .ok_or_else(|| "No GitHub remote URL found for this repository".to_string())?;
+
+    let (owner, repo) = parse_remote_url(&remote_url)
+        .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
+
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}");
+
+    let response = state
+        .http_client
+        .get(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "tuicommander")
+        .header("Accept", "application/vnd.github.diff")
+        .send()
+        .map_err(|e| format!("GitHub API request failed: {e}"))?;
+
+    let status = response.status();
+    if status.is_success() {
+        response
+            .text()
+            .map_err(|e| format!("Failed to read diff body: {e}"))
+    } else {
+        let body = response.text().unwrap_or_default();
+        Err(format!("GitHub diff request failed ({status}): {body}"))
+    }
+}
+
+/// Fetch PR diff via GitHub REST API (Tauri command).
+#[tauri::command]
+pub(crate) async fn get_pr_diff(
+    repo_path: String,
+    pr_number: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || get_pr_diff_impl(&repo_path, pr_number, &state))
+        .await
+        .map_err(|e| format!("Task failed: {e}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

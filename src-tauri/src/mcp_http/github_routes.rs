@@ -4,7 +4,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 
 use crate::state::AppState;
-use super::types::{CiChecksQuery, PathQuery};
+use super::types::{CiChecksQuery, PathQuery, PrDiffQuery};
 use super::validate_repo_path;
 
 pub(super) async fn repo_github_status(Query(q): Query<PathQuery>) -> Response {
@@ -50,6 +50,20 @@ pub(super) async fn repo_ci_checks(
     let pr_number = q.pr_number;
     match tokio::task::spawn_blocking(move || crate::github::get_ci_checks_impl(&path, pr_number, &state)).await {
         Ok(checks) => Json(checks).into_response(),
+        Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+    }
+}
+
+pub(super) async fn repo_pr_diff(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<PrDiffQuery>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    let path = q.path;
+    let pr = q.pr;
+    match tokio::task::spawn_blocking(move || crate::github::get_pr_diff_impl(&path, pr, &state)).await {
+        Ok(Ok(diff)) => diff.into_response(),
+        Ok(Err(e)) => (axum::http::StatusCode::BAD_GATEWAY, e).into_response(),
         Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
     }
 }

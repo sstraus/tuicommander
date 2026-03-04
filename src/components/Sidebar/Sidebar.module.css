@@ -920,3 +920,41 @@
   font-size: var(--font-2xs);
   color: var(--error);
 }
+
+.remoteOnlyViewDiff {
+  padding: 4px 12px;
+  font-size: var(--font-xs);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.remoteOnlyViewDiff:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-color: var(--accent);
+}
+
+.remoteOnlyViewDiffActive {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+  border-color: var(--accent);
+}
+
+.remoteOnlyViewDiff:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.remoteOnlyDiffViewer {
+  max-height: 400px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  padding: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--font-2xs);
+  line-height: 1.4;
+}

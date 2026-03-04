@@ -329,6 +329,12 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
         body: { repoPath: args.repoPath, prNumber: args.prNumber, mergeMethod: args.mergeMethod },
       };
 
+    case "get_pr_diff":
+      return {
+        method: "GET",
+        path: `/repo/pr-diff?path=${p("repoPath")}&pr=${args.prNumber}`,
+      };
+
     case "list_local_branches":
       return { method: "GET", path: `/repo/local-branches?path=${p("repoPath")}` };
 
@@ -583,10 +589,16 @@ export interface SubscribePtyOptions {
   stripAnsi?: boolean;
   /**
    * Use VT100-extracted log lines (`format=log`).
-   * `onData` is called once per batch with a `\n`-joined string of clean lines.
+   * When `onLogLines` is set, structured LogLine objects are delivered there.
+   * Otherwise `onData` is called with `\n`-joined plain text (backward compat).
    * Overrides `stripAnsi` when set.
    */
   format?: "log";
+  /**
+   * Receive structured LogLine objects from `format=log` frames.
+   * Each LogLine has `spans: [{text, fg?, bg?, bold?, italic?, underline?}]`.
+   */
+  onLogLines?: (lines: unknown[]) => void;
   onParsed?: (event: WsParsedEvent) => void;
 }
 
@@ -633,10 +645,22 @@ export async function subscribePty(
             onData(frame.data as string);
             break;
           case "log": {
-            // VT100-extracted lines batch — join and deliver as plain text
-            const lines = frame.lines as string[] | undefined;
+            const lines = frame.lines as unknown[] | undefined;
             if (lines && lines.length > 0) {
-              onData(lines.join("\n"));
+              if (opts.onLogLines) {
+                opts.onLogLines(lines);
+              } else {
+                // Backward compat: join span texts as plain string
+                const texts = lines.map((l) => {
+                  if (typeof l === "string") return l;
+                  if (l && typeof l === "object" && "spans" in l) {
+                    return ((l as { spans: { text: string }[] }).spans || [])
+                      .map((s) => s.text).join("");
+                  }
+                  return String(l);
+                });
+                onData(texts.join("\n"));
+              }
             }
             break;
           }

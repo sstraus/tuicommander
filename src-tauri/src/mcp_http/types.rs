@@ -62,6 +62,12 @@ pub(super) struct CiChecksQuery {
 }
 
 #[derive(Deserialize)]
+pub(super) struct PrDiffQuery {
+    pub path: String,
+    pub pr: i64,
+}
+
+#[derive(Deserialize)]
 pub(super) struct SpawnAgentRequest {
     pub rows: Option<u16>,
     pub cols: Option<u16>,
