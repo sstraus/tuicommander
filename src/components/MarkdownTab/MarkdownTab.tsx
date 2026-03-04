@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, Show, onMount } from "solid-js";
+import { Component, createEffect, createSignal, Show, onMount, onCleanup } from "solid-js";
 import { MarkdownRenderer } from "../ui";
 import { appLogger } from "../../stores/appLogger";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
@@ -39,6 +39,13 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     if (mdTabsStore.state.activeId === props.tab.id) focusWrapper();
   });
 
+  /** Read file content for the current tab */
+  const readFileContent = async (repoPath: string | undefined, filePath: string): Promise<string> => {
+    return repoPath
+      ? await repo.readFile(repoPath, filePath)
+      : await invoke<string>("plugin_read_file", { path: filePath, pluginId: "_system" });
+  };
+
   createEffect(() => {
     const tab = props.tab;
 
@@ -57,10 +64,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 
       (async () => {
         try {
-          // Absolute path without repo (e.g. plugin README) — read directly
-          const fileContent = repoPath
-            ? await repo.readFile(repoPath, filePath)
-            : await invoke<string>("plugin_read_file", { path: filePath, pluginId: "_system" });
+          const fileContent = await readFileContent(repoPath, filePath);
           setContent(fileContent);
         } catch (err) {
           setError(String(err));
@@ -97,6 +101,25 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
       setContent("");
       setLoading(false);
     }
+  });
+
+  // Poll for file changes (external edits, agent modifications).
+  // Skip while tab is hidden to avoid unnecessary I/O.
+  createEffect(() => {
+    const tab = props.tab;
+    if (tab.type !== "file" || !tab.filePath) return;
+    const { repoPath, filePath } = tab;
+
+    const timer = setInterval(async () => {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const diskContent = await readFileContent(repoPath, filePath);
+        if (diskContent !== content()) setContent(diskContent);
+      } catch {
+        // File may have been deleted — ignore, next interval will retry
+      }
+    }, 5000);
+    onCleanup(() => clearInterval(timer));
   });
 
   /** Resolve a relative .md href against the current file's directory and open it.
