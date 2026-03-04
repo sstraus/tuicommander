@@ -1144,7 +1144,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
     try {
       await deps.repo.checkoutRemoteBranch(repoPath, branchName);
       deps.setStatusInfo(`Checked out ${branchName}`);
+      migrateMainWorktreeBranches(repoPath, branchName);
       await refreshAllBranchStatsAndLists();
+      await handleBranchSelectInner(repoPath, branchName);
     } catch (err) {
       appLogger.error("git", "Failed to checkout remote branch", { error: String(err) });
       deps.setStatusInfo(`Checkout failed: ${err}`);

@@ -111,10 +111,12 @@ describe("BranchSwitcher", () => {
       expect(container.querySelectorAll("[data-testid='branch-item']").length).toBeGreaterThan(0);
     });
 
-    // First item should be current branch (feat/login)
+    // First item is current branch (feat/login) — skip it.
+    // Navigate to a non-current local branch and select it.
+    fireEvent.keyDown(document, { key: "ArrowDown" }); // main
     fireEvent.keyDown(document, { key: "Enter" });
 
-    expect(props.onSelect).toHaveBeenCalledWith("/repo", "feat/login");
+    expect(props.onSelect).toHaveBeenCalledWith("/repo", "main");
   });
 
   it("calls onCheckoutRemote for remote branch on Enter", async () => {
@@ -148,6 +150,24 @@ describe("BranchSwitcher", () => {
     });
 
     fireEvent.keyDown(document, { key: "Escape" });
+    expect(branchSwitcherStore.state.isOpen).toBe(false);
+  });
+
+  it("does not call any callback when selecting current branch", async () => {
+    branchSwitcherStore.open();
+    const props = defaultProps();
+    const { container } = render(() => <BranchSwitcher {...props} />);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll("[data-testid='branch-item']").length).toBe(5);
+    });
+
+    // feat/login is current and sorted first — click it
+    const items = container.querySelectorAll("[data-testid='branch-item']");
+    fireEvent.click(items[0]);
+
+    expect(props.onSelect).not.toHaveBeenCalled();
+    expect(props.onCheckoutRemote).not.toHaveBeenCalled();
     expect(branchSwitcherStore.state.isOpen).toBe(false);
   });
 

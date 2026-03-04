@@ -126,6 +126,9 @@ export const BranchSwitcher: Component<BranchSwitcherProps> = (props) => {
 
     branchSwitcherStore.close();
 
+    // Current branch — nothing to do
+    if (branch.is_current) return;
+
     if (branch.is_remote) {
       // Strip "origin/" prefix for checkout
       const localName = branch.name.replace(/^origin\//, "");
