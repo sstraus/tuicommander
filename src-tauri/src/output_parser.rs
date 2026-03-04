@@ -71,6 +71,20 @@ pub enum ParsedEvent {
     Suggest {
         items: Vec<String>,
     },
+    /// Slash command autocomplete menu detected on bottom screen rows.
+    /// Fired when the user types / in an agent TUI and a menu appears.
+    #[serde(rename = "slash-menu")]
+    SlashMenu {
+        items: Vec<SlashMenuItem>,
+    },
+}
+
+/// A single item in a slash command autocomplete menu.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct SlashMenuItem {
+    pub command: String,
+    pub description: String,
+    pub highlighted: bool,
 }
 
 /// OutputParser: detects structured events in PTY output text.
@@ -952,6 +966,67 @@ fn parse_suggest(clean: &str) -> Option<ParsedEvent> {
         }
         Some(ParsedEvent::Suggest { items })
     })
+}
+
+/// Detect a slash command autocomplete menu from screen bottom rows.
+///
+/// Called separately from `parse_clean_lines` because it needs the *full*
+/// screen snapshot (not just changed rows) — navigating the menu with arrows
+/// only changes the highlighted row while the rest stays unchanged.
+///
+/// Expected format (Claude Code / Codex):
+/// ```text
+///    /help      Get help with using Claude Code
+///  ❯ /review    Review your code
+///    /clear     Clear conversation history
+/// ```
+///
+/// Requires at least 2 consecutive matching rows from the bottom of the screen.
+/// Highlighted item: detected by `❯` prefix or falls back to first item.
+pub fn parse_slash_menu(screen_rows: &[String]) -> Option<ParsedEvent> {
+    lazy_static::lazy_static! {
+        // Each menu row: optional leading whitespace, optional ❯ marker, /command, 2+ spaces, description
+        static ref MENU_ROW_RE: regex::Regex =
+            regex::Regex::new(r"^\s*(?:❯\s+)?(/\S+)\s{2,}(.+)$").unwrap();
+    }
+
+    // Scan from the bottom to find the contiguous block of menu rows.
+    // Menu items are at the bottom of the screen; stop at the first non-matching row.
+    let mut items: Vec<SlashMenuItem> = Vec::new();
+    for row in screen_rows.iter().rev() {
+        let trimmed = row.trim();
+        if trimmed.is_empty() {
+            // Skip trailing empty rows at screen bottom
+            if items.is_empty() {
+                continue;
+            }
+            break;
+        }
+        if let Some(caps) = MENU_ROW_RE.captures(row) {
+            let command = caps[1].to_string();
+            let description = caps[2].trim().to_string();
+            let highlighted = row.contains('❯');
+            items.push(SlashMenuItem { command, description, highlighted });
+        } else {
+            break;
+        }
+    }
+
+    // Reverse to restore top-to-bottom order (we scanned bottom-to-top).
+    items.reverse();
+
+    if items.len() < 2 {
+        return None;
+    }
+
+    // Fallback: if no item has ❯, highlight the first item.
+    if !items.iter().any(|it| it.highlighted) {
+        if let Some(first) = items.first_mut() {
+            first.highlighted = true;
+        }
+    }
+
+    Some(ParsedEvent::SlashMenu { items })
 }
 
 #[cfg(test)]
@@ -2716,6 +2791,148 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let has_status = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
         assert!(has_intent, "expected Intent event, got: {:?}", events);
         assert!(has_status, "expected StatusLine event, got: {:?}", events);
+    }
+
+    // --- parse_slash_menu tests ---
+
+    fn make_screen(rows: &[&str], total: usize) -> Vec<String> {
+        let mut screen: Vec<String> = vec![String::new(); total.saturating_sub(rows.len())];
+        screen.extend(rows.iter().map(|r| r.to_string()));
+        screen
+    }
+
+    #[test]
+    fn test_slash_menu_claude_code_basic() {
+        let screen = make_screen(&[
+            "   /help      Get help with using Claude Code",
+            " ❯ /review    Review your code",
+            "   /clear     Clear conversation history",
+        ], 24);
+        let evt = parse_slash_menu(&screen).expect("should detect slash menu");
+        match evt {
+            ParsedEvent::SlashMenu { items } => {
+                assert_eq!(items.len(), 3);
+                assert_eq!(items[0].command, "/help");
+                assert_eq!(items[0].description, "Get help with using Claude Code");
+                assert!(!items[0].highlighted);
+                assert_eq!(items[1].command, "/review");
+                assert!(items[1].highlighted);
+                assert_eq!(items[2].command, "/clear");
+                assert!(!items[2].highlighted);
+            }
+            _ => panic!("Expected SlashMenu event"),
+        }
+    }
+
+    #[test]
+    fn test_slash_menu_no_highlight_fallback_first() {
+        let screen = make_screen(&[
+            "   /help      Get help with using Claude Code",
+            "   /review    Review your code",
+        ], 24);
+        let evt = parse_slash_menu(&screen).expect("should detect slash menu");
+        match evt {
+            ParsedEvent::SlashMenu { items } => {
+                assert_eq!(items.len(), 2);
+                assert!(items[0].highlighted, "first item should be highlighted as fallback");
+                assert!(!items[1].highlighted);
+            }
+            _ => panic!("Expected SlashMenu event"),
+        }
+    }
+
+    #[test]
+    fn test_slash_menu_single_row_not_detected() {
+        let screen = make_screen(&[
+            "   /help      Get help with using Claude Code",
+        ], 24);
+        assert!(parse_slash_menu(&screen).is_none(), "single row should not trigger menu");
+    }
+
+    #[test]
+    fn test_slash_menu_no_match() {
+        let screen = make_screen(&[
+            "some random output",
+            "another line",
+        ], 24);
+        assert!(parse_slash_menu(&screen).is_none());
+    }
+
+    #[test]
+    fn test_slash_menu_trailing_empty_rows() {
+        let screen = make_screen(&[
+            "   /help      Get help",
+            " ❯ /review    Review code",
+            "   /clear     Clear history",
+            "",
+            "",
+        ], 24);
+        let evt = parse_slash_menu(&screen).expect("should skip trailing empty rows");
+        match evt {
+            ParsedEvent::SlashMenu { items } => {
+                assert_eq!(items.len(), 3);
+            }
+            _ => panic!("Expected SlashMenu event"),
+        }
+    }
+
+    #[test]
+    fn test_slash_menu_mixed_content_below() {
+        // Menu rows are at bottom, non-menu content above
+        let mut screen: Vec<String> = vec![String::new(); 20];
+        screen.push("$ claude-code".to_string());  // non-menu line
+        screen.push("   /help      Get help".to_string());
+        screen.push(" ❯ /review    Review code".to_string());
+        screen.push("   /clear     Clear history".to_string());
+        let evt = parse_slash_menu(&screen).expect("should detect menu below non-menu content");
+        match evt {
+            ParsedEvent::SlashMenu { items } => {
+                assert_eq!(items.len(), 3);
+            }
+            _ => panic!("Expected SlashMenu event"),
+        }
+    }
+
+    #[test]
+    fn test_slash_menu_codex_style_no_arrow() {
+        // Codex-style: no ❯, just indented /commands
+        let screen = make_screen(&[
+            "  /help        Show help information",
+            "  /edit        Edit a file",
+            "  /run         Run a command",
+        ], 24);
+        let evt = parse_slash_menu(&screen).expect("should detect codex-style menu");
+        match evt {
+            ParsedEvent::SlashMenu { items } => {
+                assert_eq!(items.len(), 3);
+                assert!(items[0].highlighted, "first should be highlighted fallback");
+                assert!(!items[1].highlighted);
+                assert!(!items[2].highlighted);
+            }
+            _ => panic!("Expected SlashMenu event"),
+        }
+    }
+
+    #[test]
+    fn test_slash_menu_description_with_spaces() {
+        let screen = make_screen(&[
+            "   /compact   Compact the conversation to reduce context window usage",
+            "   /review    Review a pull request with detailed feedback",
+        ], 24);
+        let evt = parse_slash_menu(&screen).expect("should parse long descriptions");
+        match evt {
+            ParsedEvent::SlashMenu { items } => {
+                assert_eq!(items[0].command, "/compact");
+                assert_eq!(items[0].description, "Compact the conversation to reduce context window usage");
+            }
+            _ => panic!("Expected SlashMenu event"),
+        }
+    }
+
+    #[test]
+    fn test_slash_menu_empty_screen() {
+        let screen: Vec<String> = vec![String::new(); 24];
+        assert!(parse_slash_menu(&screen).is_none());
     }
 
 }

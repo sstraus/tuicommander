@@ -4,7 +4,6 @@ import {
   spanStyle,
   normalizeLogLine,
   type LogColor,
-  type LogSpan,
   type LogLine,
 } from "../utils/logLine";
 

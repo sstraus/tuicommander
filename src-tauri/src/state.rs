@@ -1253,9 +1253,15 @@ impl VtLogBuffer {
         (slice, new_offset)
     }
 
-    /// Current visible screen rows (useful for appending after the log).
-    #[allow(dead_code)]
+    /// Current visible screen rows.
+    ///
+    /// Returns the cached `prev_rows` snapshot (from the last `process()` call)
+    /// when available — no re-parsing needed.  Falls back to reading from the
+    /// parser when `prev_rows` is empty (before any `process()` or after `resize()`).
     pub fn screen_rows(&self) -> Vec<String> {
+        if !self.prev_rows.is_empty() {
+            return self.prev_rows.clone();
+        }
         let screen = self.parser.screen();
         let cols = screen.size().1;
         screen

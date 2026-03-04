@@ -327,6 +327,21 @@ pub(crate) fn spawn_reader_thread(
                         }
                         // All other events come from clean VtLogBuffer rows (no strip_ansi).
                         events.extend(parser.parse_clean_lines(&changed_rows));
+
+                        // Slash menu detection: only when the session is in slash_mode
+                        // (user typed / in the agent's input). Reads the full screen
+                        // snapshot because arrow navigation only changes 1-2 rows.
+                        if state.slash_mode.get(&session_id)
+                            .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
+                        {
+                            if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+                                let screen = vt_log.lock().screen_rows();
+                                if let Some(evt) = crate::output_parser::parse_slash_menu(&screen) {
+                                    events.push(evt);
+                                }
+                            }
+                        }
+
                         let regex_found_question = if in_resize_grace { false } else {
                             events.iter().any(|e| matches!(e, ParsedEvent::Question { .. }))
                         };
@@ -525,6 +540,19 @@ pub(crate) fn spawn_headless_reader_thread(
                             events.push(evt);
                         }
                         events.extend(parser.parse_clean_lines(&changed_rows));
+
+                        // Slash menu detection (same as desktop reader)
+                        if state.slash_mode.get(&session_id)
+                            .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
+                        {
+                            if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+                                let screen = vt_log.lock().screen_rows();
+                                if let Some(evt) = crate::output_parser::parse_slash_menu(&screen) {
+                                    events.push(evt);
+                                }
+                            }
+                        }
+
                         let regex_found_question = events.iter()
                             .any(|e| matches!(e, ParsedEvent::Question { .. }));
                         for event in &events {
