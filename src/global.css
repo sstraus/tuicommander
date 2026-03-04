@@ -200,13 +200,13 @@
   --radius-full: 50%;
 
   /* Font size scale */
-  --font-2xs: 9px;
-  --font-xs: 10px;
-  --font-sm: 11px;
-  --font-md: 12px;
-  --font-base: 13px;
-  --font-lg: 14px;
-  --font-xl: 16px;
+  --font-2xs: 10px;
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-md: 13px;
+  --font-base: 14px;
+  --font-lg: 15px;
+  --font-xl: 17px;
 
   /* Elevation */
   --shadow-popup: 0 8px 32px rgba(0, 0, 0, 0.4);
