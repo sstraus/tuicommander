@@ -885,6 +885,20 @@ const App: Component = () => {
       });
     }
 
+    // Dynamic: worktree move targets for the active terminal
+    const activeTermId = terminalsStore.state.activeId;
+    if (activeTermId) {
+      for (const wt of gitOps.getWorktreeTargets(activeTermId)) {
+        entries.push({
+          id: `move-to-worktree:${wt.path}`,
+          label: `Move to worktree: ${wt.branchName}`,
+          category: "Terminal",
+          keybinding: "",
+          execute: () => gitOps.moveTerminalToWorktree(activeTermId, wt.path),
+        });
+      }
+    }
+
     return entries;
   });
 
