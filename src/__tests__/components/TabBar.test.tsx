@@ -892,4 +892,93 @@ describe("TabBar", () => {
       expect(handleClose).not.toHaveBeenCalled();
     });
   });
+
+  describe("move to worktree context menu", () => {
+    function setupRepoWithWorktrees() {
+      // Create a repo with main branch and a worktree branch
+      repositoriesStore.add({ path: "/repo", displayName: "repo" });
+      repositoriesStore.setBranch("/repo", "main", { isMain: true, worktreePath: null });
+      repositoriesStore.setBranch("/repo", "feature-a", { isMain: false, worktreePath: "/repo-wt/feature-a" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main");
+    }
+
+    it("shows Move to Worktree submenu when repo has multiple worktrees", () => {
+      setupRepoWithWorktrees();
+      const termId = addTerminal({ name: "T1", sessionId: "sess-1" });
+      repositoriesStore.addTerminalToBranch("/repo", "main", termId);
+      terminalsStore.setActive(termId);
+
+      const getTargets = () => [{ branchName: "feature-a", path: "/repo-wt/feature-a" }];
+      const { container } = render(() => (
+        <TabBar
+          onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}}
+          getWorktreeTargets={getTargets}
+        />
+      ));
+      const tab = container.querySelector(".tab")!;
+      fireEvent.contextMenu(tab);
+
+      const menuItems = container.querySelectorAll(".menu .item");
+      const moveItem = Array.from(menuItems).find(i => i.textContent?.includes("Move to Worktree"));
+      expect(moveItem).not.toBeNull();
+    });
+
+    it("hides Move to Worktree when no worktree targets available", () => {
+      repositoriesStore.add({ path: "/repo", displayName: "repo" });
+      repositoriesStore.setBranch("/repo", "main", { isMain: true, worktreePath: null });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main");
+      const termId = addTerminal({ name: "T1", sessionId: "sess-1" });
+      repositoriesStore.addTerminalToBranch("/repo", "main", termId);
+      terminalsStore.setActive(termId);
+
+      const getTargets = () => [] as Array<{ branchName: string; path: string }>;
+      const { container } = render(() => (
+        <TabBar
+          onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}}
+          getWorktreeTargets={getTargets}
+        />
+      ));
+      const tab = container.querySelector(".tab")!;
+      fireEvent.contextMenu(tab);
+
+      const menuItems = container.querySelectorAll(".menu .item");
+      const moveItem = Array.from(menuItems).find(i => i.textContent?.includes("Move to Worktree"));
+      expect(moveItem).toBeUndefined();
+    });
+
+    it("calls onMoveToWorktree with correct args when worktree is selected", () => {
+      setupRepoWithWorktrees();
+      const handleMove = vi.fn();
+      const termId = addTerminal({ name: "T1", sessionId: "sess-1" });
+      repositoriesStore.addTerminalToBranch("/repo", "main", termId);
+      terminalsStore.setActive(termId);
+
+      const getTargets = () => [{ branchName: "feature-a", path: "/repo-wt/feature-a" }];
+      const { container } = render(() => (
+        <TabBar
+          onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}}
+          getWorktreeTargets={getTargets}
+          onMoveToWorktree={handleMove}
+        />
+      ));
+      const tab = container.querySelector(".tab")!;
+      fireEvent.contextMenu(tab);
+
+      // Find the "Move to Worktree" parent item and hover to open submenu
+      const menuItems = container.querySelectorAll(".menu .itemWrap");
+      const moveWrap = Array.from(menuItems).find(i => i.textContent?.includes("Move to Worktree"));
+      expect(moveWrap).not.toBeNull();
+      fireEvent.mouseEnter(moveWrap!);
+
+      // Find the submenu item "feature-a"
+      const submenuItems = moveWrap!.querySelectorAll(".submenu .item");
+      const featureItem = Array.from(submenuItems).find(i => i.textContent?.includes("feature-a"));
+      expect(featureItem).not.toBeNull();
+      fireEvent.click(featureItem!);
+
+      expect(handleMove).toHaveBeenCalledWith(termId, "/repo-wt/feature-a");
+    });
+  });
 });

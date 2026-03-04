@@ -29,11 +29,13 @@ import { MergePostActionDialog } from "./components/MergePostActionDialog";
 import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
 import { CommandPalette } from "./components/CommandPalette";
+import { BranchSwitcher } from "./components/BranchSwitcher/BranchSwitcher";
 import { ActivityDashboard } from "./components/ActivityDashboard";
 import { WorktreeManager, type WorktreeActions } from "./components/WorktreeManager";
 import { ErrorLogPanel } from "./components/ErrorLogPanel";
 import { DictationToast } from "./components/DictationToast/DictationToast";
 import { commandPaletteStore } from "./stores/commandPalette";
+import { branchSwitcherStore } from "./stores/branchSwitcher";
 import { activityDashboardStore } from "./stores/activityDashboard";
 import { worktreeManagerStore } from "./stores/worktreeManager";
 import { errorLogStore } from "./stores/errorLog";
@@ -1102,6 +1104,8 @@ const App: Component = () => {
               }
             }}
             onDetachTab={handleDetachTab}
+            getWorktreeTargets={gitOps.getWorktreeTargets}
+            onMoveToWorktree={gitOps.moveTerminalToWorktree}
           />
         </div>
 

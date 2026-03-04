@@ -31,6 +31,8 @@ export interface TabBarProps {
   onSplitHorizontal?: () => void;
   onReorder?: (fromIndex: number, toIndex: number) => void;
   onDetachTab?: (id: string) => void;
+  onMoveToWorktree?: (terminalId: string, worktreePath: string) => void;
+  getWorktreeTargets?: (terminalId: string) => Array<{ branchName: string; path: string }>;
 }
 
 export const TabBar: Component<TabBarProps> = (props) => {
@@ -117,7 +119,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
     const ids = activeTerminals();
     const idx = ids.indexOf(id);
     const hasSession = !!terminalsStore.get(id)?.sessionId;
-    return [
+    const worktreeTargets = props.getWorktreeTargets?.(id) ?? [];
+    const items: ContextMenuItem[] = [
       { label: t("tabBar.closeTab", "Close Tab"), shortcut: `${getModifierSymbol()}W`, action: () => props.onTabClose(id) },
       { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
       { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
@@ -125,6 +128,20 @@ export const TabBar: Component<TabBarProps> = (props) => {
       { label: t("tabBar.renameTab", "Rename Tab"), action: () => setEditingId(id) },
       { label: t("tabBar.detachToWindow", "Detach to Window"), action: () => props.onDetachTab?.(id), disabled: !hasSession },
     ];
+    if (worktreeTargets.length > 0) {
+      items.push(
+        { label: "", separator: true, action: () => {} },
+        {
+          label: t("tabBar.moveToWorktree", "Move to Worktree"),
+          action: () => {},
+          children: worktreeTargets.map((wt) => ({
+            label: wt.branchName,
+            action: () => props.onMoveToWorktree?.(id, wt.path),
+          })),
+        },
+      );
+    }
+    return items;
   };
 
   const openTabContextMenu = (e: MouseEvent, id: string) => {

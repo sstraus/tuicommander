@@ -1260,6 +1260,43 @@ export function useGitOperations(deps: GitOperationsDeps) {
     }
   };
 
+  /** Get available worktree targets for moving a terminal (excludes current branch). */
+  const getWorktreeTargets = (terminalId: string): Array<{ branchName: string; path: string }> => {
+    const repoPath = repositoriesStore.getRepoPathForTerminal(terminalId);
+    if (!repoPath) return [];
+    const repo = repositoriesStore.get(repoPath);
+    if (!repo) return [];
+
+    // Find current branch for this terminal
+    let currentBranchName: string | null = null;
+    for (const [name, branch] of Object.entries(repo.branches)) {
+      if (branch.terminals.includes(terminalId)) {
+        currentBranchName = name;
+        break;
+      }
+    }
+
+    const targets: Array<{ branchName: string; path: string }> = [];
+    for (const [name, branch] of Object.entries(repo.branches)) {
+      if (name === currentBranchName) continue;
+      const wtPath = branch.worktreePath ?? (branch.isMain ? repoPath : null);
+      if (wtPath) {
+        targets.push({ branchName: name, path: wtPath });
+      }
+    }
+    return targets;
+  };
+
+  /** Move a terminal to a different worktree by sending cd to the PTY. */
+  const moveTerminalToWorktree = async (terminalId: string, worktreePath: string): Promise<void> => {
+    const terminal = terminalsStore.get(terminalId);
+    if (!terminal?.sessionId) return;
+    // Single-quote the path to handle spaces safely
+    const escaped = "'" + worktreePath.replace(/'/g, "'\\''") + "'";
+    await deps.pty.write(terminal.sessionId, `cd ${escaped}\n`);
+    appLogger.info("terminal", `[MoveToWorktree] ${terminalId} → cd ${worktreePath}`);
+  };
+
   return {
     currentRepoPath,
     setCurrentRepoPath,
@@ -1300,5 +1337,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     switchBranchLists,
     currentBranches,
     refreshBranchLists,
+    getWorktreeTargets,
+    moveTerminalToWorktree,
   };
 }
