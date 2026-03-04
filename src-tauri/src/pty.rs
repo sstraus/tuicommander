@@ -11,8 +11,9 @@ use crate::input_line_buffer::{InputAction, InputLineBuffer};
 use crate::output_parser::{colorize_intent, extract_last_question_line, OutputParser, ParsedEvent};
 use crate::state::{
     AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
-    OutputRingBuffer, PtyConfig, PtyOutput, PtySession, Utf8ReadBuffer,
-    MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY, strip_kitty_sequences,
+    OutputRingBuffer, PtyConfig, PtyOutput, PtySession, TagBuffer, Utf8ReadBuffer, VtLogBuffer,
+    MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY, VT_LOG_BUFFER_CAPACITY,
+    strip_kitty_sequences,
 };
 use crate::worktree::{create_worktree_internal, remove_worktree_internal, WorktreeConfig, WorktreeResult};
 
@@ -298,7 +299,12 @@ pub(crate) fn spawn_reader_thread(
                         );
                     }
                     if !data.is_empty() {
-                        // Write to ring buffer for MCP consumers
+                        // Feed raw data (post-kitty-strip) into VT100 log buffer.
+                        // Called before ring buffer so log captures the same bytes.
+                        if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+                            vt_log.lock().process(data.as_bytes());
+                        }
+                        // Write clean text to ring buffer for MCP consumers (no ANSI)
                         if let Some(ring) = state.output_buffers.get(&session_id) {
                             ring.lock().write(data.as_bytes());
                         }
@@ -429,6 +435,7 @@ pub(crate) fn spawn_reader_thread(
             state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
         }
         state.output_buffers.remove(&session_id);
+        state.vt_log_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
@@ -483,6 +490,11 @@ pub(crate) fn spawn_headless_reader_thread(
                         }
                     }
                     if !data.is_empty() {
+                        // Feed raw data into VT100 log buffer
+                        if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+                            vt_log.lock().process(data.as_bytes());
+                        }
+                        // Write clean text to ring buffer for MCP consumers (no ANSI)
                         if let Some(ring) = state.output_buffers.get(&session_id) {
                             ring.lock().write(data.as_bytes());
                         }
@@ -519,6 +531,7 @@ pub(crate) fn spawn_headless_reader_thread(
             state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
         }
         state.output_buffers.remove(&session_id);
+        state.vt_log_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
@@ -624,10 +637,14 @@ pub(crate) async fn create_pty(
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
     state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
 
-    // Create ring buffer for this session
+    // Create ring buffer and VT log buffer for this session
     state.output_buffers.insert(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+    state.vt_log_buffers.insert(
+        session_id.clone(),
+        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
 
     spawn_reader_thread(
@@ -740,10 +757,14 @@ pub(crate) async fn create_pty_with_worktree(
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
     state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
 
-    // Create ring buffer for this session
+    // Create ring buffer and VT log buffer for this session
     state.output_buffers.insert(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+    state.vt_log_buffers.insert(
+        session_id.clone(),
+        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
 
     spawn_reader_thread(
@@ -882,6 +903,10 @@ pub(crate) fn resize_pty(
             pixel_height: 0,
         })
         .map_err(|e| format!("Failed to resize PTY: {e}"))?;
+    // Resize VT log buffer dimensions to match new terminal size.
+    if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+        vt_log.lock().resize(rows, cols);
+    }
     // Mark resize in silence state so the reader thread suppresses re-parsed events
     // from the shell's prompt redraw triggered by SIGWINCH.
     if let Some(ss) = state.silence_states.get(&session_id) {
@@ -936,6 +961,7 @@ pub(crate) fn close_pty(
 ) -> Result<(), String> {
     if let Some((_, session_mutex)) = state.sessions.remove(&session_id) {
         state.output_buffers.remove(&session_id);
+        state.vt_log_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);

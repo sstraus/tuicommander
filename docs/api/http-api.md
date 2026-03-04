@@ -84,12 +84,20 @@ Content-Type: application/json
 GET /sessions/:id/output?limit=4096&format=text
 ```
 
-Returns recent output from the ring buffer (up to 64KB).
+Returns recent output. Format controls what is returned:
+
+| `format` | Response shape | Description |
+|----------|----------------|-------------|
+| (omit) | `{ "data": "<bytes>" }` | Raw PTY bytes, base64-encoded |
+| `text` | `{ "data": "<string>" }` | ANSI-stripped plain text from ring buffer |
+| `log` | `{ "lines": [...], "total_lines": N }` | VT100-extracted clean lines (no ANSI, no TUI garbage) |
 
 | Param | Default | Description |
 |-------|---------|-------------|
-| `limit` | `8192` | Max bytes to read |
-| `format` | (raw) | `text` strips ANSI escape codes |
+| `limit` | (all) | `raw`/`text`: max bytes; `log`: max lines to return (newest N) |
+| `format` | (raw) | See table above |
+
+`format=log` reads from `VtLogBuffer` — a VT100-aware buffer that extracts only scrolled-off lines, suppressing alternate-screen TUI apps (vim, htop, claude). Ideal for mobile clients.
 
 ### Kitty Protocol Flags
 
@@ -142,10 +150,22 @@ WebSocket connections to `/sessions/:id/stream` receive JSON-framed messages:
 ```
 
 Frame types:
-- `output` — Raw PTY output (ANSI-stripped in mobile mode)
+- `output` — Raw PTY output (ANSI-stripped when `?format=text`)
+- `log` — VT100-extracted clean lines batch (when `?format=log`): `{"type":"log","lines":[...],"offset":N}`
 - `parsed` — Structured events (questions, rate limits, errors) from the output parser
 - `exit` — Session process exited
 - `closed` — Session was closed
+
+#### WebSocket format=log
+
+```
+WS /sessions/:id/stream?format=log
+```
+
+When `?format=log` is specified, the connection streams VT100-extracted log lines instead of raw PTY chunks:
+- On connect: sends all accumulated lines as a single catch-up frame
+- While running: polls every 200ms and sends new lines batched by offset
+- PTY input passthrough is still available (write text/binary frames to send to PTY)
 
 ### Server-Sent Events (SSE)
 

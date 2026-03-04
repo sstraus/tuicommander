@@ -581,6 +581,12 @@ export interface WsParsedEvent {
 export interface SubscribePtyOptions {
   /** Request ANSI-stripped plain text from the server (for non-terminal views like mobile) */
   stripAnsi?: boolean;
+  /**
+   * Use VT100-extracted log lines (`format=log`).
+   * `onData` is called once per batch with a `\n`-joined string of clean lines.
+   * Overrides `stripAnsi` when set.
+   */
+  format?: "log";
   onParsed?: (event: WsParsedEvent) => void;
 }
 
@@ -611,7 +617,8 @@ export async function subscribePty(
 
   // Browser mode: WebSocket with JSON framing
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const query = opts.stripAnsi ? "?format=text" : "";
+  const queryFormat = opts.format === "log" ? "log" : opts.stripAnsi ? "text" : null;
+  const query = queryFormat ? `?format=${queryFormat}` : "";
   const wsUrl = `${protocol}//${window.location.host}/sessions/${sessionId}/stream${query}`;
   const ws = new WebSocket(wsUrl);
 
@@ -625,6 +632,14 @@ export async function subscribePty(
           case "output":
             onData(frame.data as string);
             break;
+          case "log": {
+            // VT100-extracted lines batch — join and deliver as plain text
+            const lines = frame.lines as string[] | undefined;
+            if (lines && lines.length > 0) {
+              onData(lines.join("\n"));
+            }
+            break;
+          }
           case "parsed":
             onParsed?.(frame);
             break;

@@ -574,6 +574,7 @@ pub fn run() {
         session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
         app_handle: parking_lot::RwLock::new(None),
         plugin_watchers: DashMap::new(),
+        vt_log_buffers: DashMap::new(),
         kitty_states: DashMap::new(),
         input_buffers: DashMap::new(),
         last_prompts: DashMap::new(),

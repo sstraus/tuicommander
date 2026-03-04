@@ -1,6 +1,6 @@
 use crate::pty::{build_shell_command, resolve_shell, spawn_headless_reader_thread, spawn_reader_thread};
 use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
-use crate::state::OUTPUT_RING_BUFFER_CAPACITY;
+use crate::state::{OUTPUT_RING_BUFFER_CAPACITY, VtLogBuffer, VT_LOG_BUFFER_CAPACITY};
 use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
@@ -370,6 +370,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
             state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
             state.output_buffers.insert(session_id.clone(), Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)));
+            state.vt_log_buffers.insert(session_id.clone(), Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)));
             spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
             serde_json::json!({"session_id": session_id})
         }
@@ -449,6 +450,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             };
             if let Some((_, session_mutex)) = state.sessions.remove(session_id) {
                 state.output_buffers.remove(session_id);
+                state.vt_log_buffers.remove(session_id);
                 state.ws_clients.remove(session_id);
                 state.kitty_states.remove(session_id);
                 state.input_buffers.remove(session_id);
@@ -671,6 +673,7 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
             state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
             state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
             state.output_buffers.insert(session_id.clone(), Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)));
+            state.vt_log_buffers.insert(session_id.clone(), Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)));
 
             let app_handle = state.app_handle.read().clone();
             if let Some(ref app) = app_handle {

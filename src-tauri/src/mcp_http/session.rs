@@ -1,6 +1,6 @@
 use crate::pty::{build_shell_command, resolve_shell, spawn_headless_reader_thread, spawn_reader_thread};
 use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
-use crate::state::OUTPUT_RING_BUFFER_CAPACITY;
+use crate::state::{OUTPUT_RING_BUFFER_CAPACITY, VtLogBuffer, VT_LOG_BUFFER_CAPACITY};
 use tauri::Emitter;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
@@ -103,6 +103,11 @@ pub(super) async fn resize_session(
             Json(serde_json::json!({"error": format!("Resize failed: {}", e)})),
         );
     }
+    drop(session);
+    // Resize VT log buffer to match new terminal dimensions.
+    if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+        vt_log.lock().resize(body.rows, body.cols);
+    }
     (StatusCode::OK, Json(serde_json::json!({"ok": true})))
 }
 
@@ -111,8 +116,35 @@ pub(super) async fn get_output(
     Path(session_id): Path<String>,
     Query(query): Query<OutputQuery>,
 ) -> impl IntoResponse {
+    let format = query.format.as_deref().unwrap_or("raw");
+
+    // format=log: return VT100-extracted clean log lines (best for mobile/REST consumers)
+    if format == "log" {
+        let vt_log = match state.vt_log_buffers.get(&session_id) {
+            Some(b) => b,
+            None => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({"error": "Session not found"})),
+                )
+            }
+        };
+        let buf = vt_log.lock();
+        let limit = query.limit.unwrap_or(usize::MAX);
+        let total = buf.total_lines();
+        let offset = total.saturating_sub(limit);
+        let (lines, _) = buf.lines_since_owned(offset);
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "lines": lines,
+                "total_lines": total,
+            })),
+        );
+    }
+
     let limit = query.limit.unwrap_or(8192);
-    let strip = query.format.as_deref() == Some("text");
+    let strip = format == "text";
     let ring = match state.output_buffers.get(&session_id) {
         Some(r) => r,
         None => {
@@ -141,6 +173,7 @@ pub(super) async fn close_session(
 ) -> impl IntoResponse {
     if let Some((_, session_mutex)) = state.sessions.remove(&session_id) {
         state.output_buffers.remove(&session_id);
+        state.vt_log_buffers.remove(&session_id);
         state.ws_clients.remove(&session_id);
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
@@ -281,6 +314,10 @@ pub(super) async fn create_session(
     state.output_buffers.insert(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+    state.vt_log_buffers.insert(
+        session_id.clone(),
+        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
 
     // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
@@ -478,6 +515,10 @@ pub(super) async fn create_session_with_worktree(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
+    state.vt_log_buffers.insert(
+        session_id.clone(),
+        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
+    );
 
     // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
     let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
@@ -512,7 +553,7 @@ pub(super) async fn create_session_with_worktree(
 
 /// WebSocket upgrade handler for streaming PTY output.
 /// Bidirectional: server sends PTY output, client sends PTY input.
-/// Supports `?format=text` query param to strip ANSI escape sequences.
+/// Supports `?format=text` to strip ANSI, `?format=log` for VT100 log lines.
 pub(super) async fn ws_stream(
     ws: WebSocketUpgrade,
     Path(id): Path<String>,
@@ -522,8 +563,10 @@ pub(super) async fn ws_stream(
     if !state.sessions.contains_key(&id) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    let strip = query.format.as_deref() == Some("text");
-    ws.on_upgrade(move |socket| handle_ws_session(socket, id, state, strip))
+    let format = query.format.as_deref().unwrap_or("raw");
+    let strip_ansi = format == "text";
+    let log_mode = format == "log";
+    ws.on_upgrade(move |socket| handle_ws_session(socket, id, state, strip_ansi, log_mode))
 }
 
 /// Handle a WebSocket connection for a PTY session.
@@ -532,9 +575,24 @@ pub(super) async fn ws_stream(
 /// 1. Raw PTY output via mpsc channel → `{"type":"output","data":"..."}`
 /// 2. Parsed events via broadcast channel → `{"type":"parsed","event":{...}}`
 ///
+/// When `log_mode` is true, instead of raw PTY output the client receives
+/// VT100-extracted log lines: `{"type":"log","lines":[...],"offset":N}`
+///
 /// Client → server messages are written to the PTY as input.
-async fn handle_ws_session(socket: WebSocket, session_id: String, state: Arc<AppState>, strip_ansi: bool) {
+async fn handle_ws_session(
+    socket: WebSocket,
+    session_id: String,
+    state: Arc<AppState>,
+    strip_ansi: bool,
+    log_mode: bool,
+) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
+
+    if log_mode {
+        // Log mode: stream VT100-extracted lines, no raw PTY chunks
+        handle_ws_log_session(ws_sender, ws_receiver, session_id, state).await;
+        return;
+    }
 
     // Register a channel for receiving PTY output broadcasts
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -662,5 +720,100 @@ async fn handle_ws_session(socket: WebSocket, session_id: String, state: Arc<App
     }
 
     // Client disconnected — abort the send task
+    send_task.abort();
+}
+
+/// Handle a WebSocket connection in log mode (`?format=log`).
+///
+/// Sends VT100-extracted log lines: catch-up on connect, then polls for new
+/// lines every 200 ms and batches them as `{"type":"log","lines":[...],"offset":N}`.
+/// The client can still send PTY input (written as-is to the PTY).
+async fn handle_ws_log_session(
+    mut ws_sender: futures_util::stream::SplitSink<WebSocket, Message>,
+    mut ws_receiver: futures_util::stream::SplitStream<WebSocket>,
+    session_id: String,
+    state: Arc<AppState>,
+) {
+    // Send catch-up: all lines accumulated so far.
+    // Lock is dropped before the .await to satisfy Send bound.
+    let initial_offset = {
+        if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+            let (total, catchup_frame) = {
+                let buf = vt_log.lock();
+                let total = buf.total_lines();
+                let frame = if total > 0 {
+                    let (lines, _) = buf.lines_since_owned(0);
+                    Some(serde_json::json!({"type": "log", "lines": lines, "offset": 0}).to_string())
+                } else {
+                    None
+                };
+                (total, frame)
+            }; // lock released here
+            if let Some(frame_str) = catchup_frame {
+                let _ = futures_util::SinkExt::send(
+                    &mut ws_sender,
+                    Message::Text(frame_str.into()),
+                ).await;
+            }
+            total
+        } else {
+            0
+        }
+    };
+
+    // Spawn polling task: check for new lines every 200ms
+    let sid_poll = session_id.clone();
+    let state_poll = state.clone();
+    let send_task = tokio::spawn(async move {
+        let mut offset = initial_offset;
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+            let Some(vt_log) = state_poll.vt_log_buffers.get(&sid_poll) else {
+                // Session was removed
+                break;
+            };
+            let (lines, new_offset) = vt_log.lock().lines_since_owned(offset);
+            if !lines.is_empty() {
+                let frame = serde_json::json!({"type": "log", "lines": lines, "offset": offset});
+                if futures_util::SinkExt::send(
+                    &mut ws_sender,
+                    Message::Text(frame.to_string().into()),
+                ).await.is_err() {
+                    break;
+                }
+                offset = new_offset;
+            }
+        }
+    });
+
+    // Read messages from the client and write to PTY (input passthrough)
+    while let Some(Ok(msg)) = ws_receiver.next().await {
+        match msg {
+            Message::Text(text) => {
+                if let Some(session) = state.sessions.get(&session_id) {
+                    let mut s = session.lock();
+                    if let Err(e) = s.writer.write_all(text.as_bytes()) {
+                        eprintln!("[ws/log] PTY write failed for session {session_id}: {e}");
+                        break;
+                    }
+                    let _ = s.writer.flush();
+                }
+            }
+            Message::Binary(data) => {
+                if let Some(session) = state.sessions.get(&session_id) {
+                    let mut s = session.lock();
+                    if let Err(e) = s.writer.write_all(&data) {
+                        eprintln!("[ws/log] PTY write failed for session {session_id}: {e}");
+                        break;
+                    }
+                    let _ = s.writer.flush();
+                }
+            }
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
+
     send_task.abort();
 }

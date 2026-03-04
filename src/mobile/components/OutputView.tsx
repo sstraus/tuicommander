@@ -13,11 +13,11 @@ export function OutputView(props: OutputViewProps) {
 
   async function fetchInitialOutput() {
     try {
-      const resp = await fetch(`/sessions/${props.sessionId}/output?format=text&limit=8192`);
+      const resp = await fetch(`/sessions/${props.sessionId}/output?format=log`);
       if (resp.ok) {
-        const json = await resp.json() as { data: string };
-        if (json.data) {
-          setLines(json.data.split("\n"));
+        const json = await resp.json() as { lines: string[] };
+        if (json.lines && json.lines.length > 0) {
+          setLines(json.lines.slice(-500));
           scrollToBottom();
         }
       }
@@ -41,13 +41,7 @@ export function OutputView(props: OutputViewProps) {
       props.sessionId,
       (data) => {
         setLines((prev) => {
-          const newLines = data.split("\n");
-          // Append to last line if no newline at start
-          if (prev.length > 0 && newLines.length > 0) {
-            const merged = [...prev];
-            merged[merged.length - 1] += newLines[0];
-            return [...merged, ...newLines.slice(1)].slice(-500);
-          }
+          const newLines = data.split("\n").filter((l) => l.length > 0);
           return [...prev, ...newLines].slice(-500);
         });
         scrollToBottom();
@@ -55,7 +49,7 @@ export function OutputView(props: OutputViewProps) {
       () => {
         setLines((prev) => [...prev, "--- session exited ---"]);
       },
-      { stripAnsi: true },
+      { format: "log" },
     )) ?? null;
   });
 

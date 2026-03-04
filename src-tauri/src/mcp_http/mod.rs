@@ -449,6 +449,7 @@ mod tests {
             session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: DashMap::new(),
+            vt_log_buffers: DashMap::new(),
             kitty_states: DashMap::new(),
             input_buffers: DashMap::new(),
             last_prompts: DashMap::new(),
@@ -1786,5 +1787,101 @@ mod tests {
         server.abort();
         let _ = std::fs::remove_file(&sock_path);
         let _ = std::fs::remove_dir(&tmp_dir);
+    }
+
+    // ---- VtLogBuffer HTTP integration tests ----
+
+    #[tokio::test]
+    async fn test_get_output_format_log_returns_lines() {
+        use crate::state::{VtLogBuffer, VT_LOG_BUFFER_CAPACITY};
+
+        let state = test_state();
+        let sid = "test-log-session";
+
+        // Pre-populate a VtLogBuffer with some lines
+        let mut vt_log = VtLogBuffer::new(24, 80, VT_LOG_BUFFER_CAPACITY);
+        for i in 0..30 {
+            vt_log.process(format!("log-line-{i}\r\n").as_bytes());
+        }
+        let expected_total = vt_log.total_lines();
+        assert!(expected_total > 0, "should have captured some lines");
+        state
+            .vt_log_buffers
+            .insert(sid.to_string(), parking_lot::Mutex::new(vt_log));
+
+        let app = build_router(state, false, true);
+        let resp = app
+            .oneshot(
+                Request::get(&format!("/sessions/{sid}/output?format=log"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let lines = json["lines"].as_array().expect("lines should be an array");
+        let total = json["total_lines"].as_u64().expect("total_lines should be u64");
+        assert_eq!(total, expected_total as u64);
+        assert_eq!(lines.len(), expected_total);
+        // Lines should contain our log-line-N entries
+        let has_expected = lines
+            .iter()
+            .any(|l| l.as_str().unwrap_or("").starts_with("log-line-"));
+        assert!(has_expected, "should contain log-line-N entries, got: {json}");
+    }
+
+    #[tokio::test]
+    async fn test_get_output_format_log_with_limit() {
+        use crate::state::{VtLogBuffer, VT_LOG_BUFFER_CAPACITY};
+
+        let state = test_state();
+        let sid = "test-log-limit";
+
+        let mut vt_log = VtLogBuffer::new(24, 80, VT_LOG_BUFFER_CAPACITY);
+        for i in 0..30 {
+            vt_log.process(format!("lim-{i}\r\n").as_bytes());
+        }
+        let total = vt_log.total_lines();
+        state
+            .vt_log_buffers
+            .insert(sid.to_string(), parking_lot::Mutex::new(vt_log));
+
+        // Request only 3 lines
+        let app = build_router(state, false, true);
+        let resp = app
+            .oneshot(
+                Request::get(&format!("/sessions/{sid}/output?format=log&limit=3"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let lines = json["lines"].as_array().expect("lines should be an array");
+        assert_eq!(lines.len(), 3, "limit=3 should return 3 lines");
+        assert_eq!(json["total_lines"].as_u64().unwrap(), total as u64);
+    }
+
+    #[tokio::test]
+    async fn test_get_output_format_log_unknown_session_404() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        let resp = app
+            .oneshot(
+                Request::get("/sessions/nonexistent/output?format=log")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 }
