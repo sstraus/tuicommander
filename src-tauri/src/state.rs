@@ -945,6 +945,19 @@ pub(crate) struct AgentConfig {
 /// Default maximum log lines retained per session.
 pub(crate) const VT_LOG_BUFFER_CAPACITY: usize = 10_000;
 
+/// A screen row that changed after a `VtLogBuffer::process()` call.
+///
+/// Consumers (output parsers) iterate these to detect status lines, intent
+/// tokens, and other structured events — regardless of whether the terminal
+/// is in normal or alternate screen mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangedRow {
+    /// Zero-based row index on the visible screen.
+    pub row_index: usize,
+    /// Clean text content of the row (ANSI sequences stripped by the vt100 parser).
+    pub text: String,
+}
+
 /// Per-session VT100-aware log buffer.
 ///
 /// Wraps a `vt100::Parser` (screen-only, no vt100 scrollback) and applies a
@@ -979,24 +992,47 @@ impl VtLogBuffer {
         }
     }
 
-    /// Feed raw PTY bytes into the VT100 parser and extract newly scrolled-off lines.
-    pub fn process(&mut self, data: &[u8]) {
+    /// Feed raw PTY bytes into the VT100 parser.
+    ///
+    /// Returns the screen rows that changed since the previous call.  Changed
+    /// rows are detected for **both** normal and alternate screen so that
+    /// output parsers can match status lines and intent tokens emitted by
+    /// agents that use the alternate screen (e.g. Claude Code / Ink).
+    ///
+    /// Log extraction (scrolled-off lines) remains **normal-screen-only**.
+    pub fn process(&mut self, data: &[u8]) -> Vec<ChangedRow> {
         self.parser.process(data);
         let screen = self.parser.screen();
         let is_alternate = screen.alternate_screen();
 
-        // While alternate screen is active (TUI app: Claude Code, vim, htop…)
-        // skip log extraction — screen content is ephemeral UI, not a log.
-        if !is_alternate {
-            let cols = screen.size().1;
-            let curr_rows: Vec<String> = screen
-                .rows(0, cols)
-                .map(|r| r.trim_end().to_string())
-                .collect();
+        // On screen switch reset prev_rows so the first frame of the new
+        // screen reports all non-empty rows as changed.
+        if is_alternate != self.was_alternate {
+            self.prev_rows.clear();
+        }
 
-            // Diff: find how many rows scrolled off the top since last call.
-            // Strategy: find the longest k such that prev[len-k..] == curr[..k].
-            // Those k rows are still on screen; prev[..len-k] scrolled off.
+        let cols = screen.size().1;
+        let curr_rows: Vec<String> = screen
+            .rows(0, cols)
+            .map(|r| r.trim_end().to_string())
+            .collect();
+
+        // Compute changed rows by diffing curr vs prev (both screens).
+        let changed: Vec<ChangedRow> = curr_rows
+            .iter()
+            .enumerate()
+            .filter_map(|(i, curr)| {
+                let prev = self.prev_rows.get(i).map(String::as_str).unwrap_or("");
+                if curr != prev {
+                    Some(ChangedRow { row_index: i, text: curr.clone() })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Log extraction: scrolled-off lines on normal screen only.
+        if !is_alternate {
             let prev_snapshot = self.prev_rows.clone();
             let scrolled_off = self.rows_scrolled_off(&prev_snapshot, &curr_rows);
             let new_lines: Vec<String> = scrolled_off
@@ -1007,11 +1043,11 @@ impl VtLogBuffer {
             for line in new_lines {
                 self.push_log_line(line);
             }
-
-            self.prev_rows = curr_rows;
         }
 
+        self.prev_rows = curr_rows;
         self.was_alternate = is_alternate;
+        changed
     }
 
     /// Update parser dimensions on terminal resize.
@@ -2182,7 +2218,7 @@ mod tests {
         loop {
             match reader.read(&mut raw) {
                 Ok(0) => break,
-                Ok(n) => buf.process(&raw[..n]),
+                Ok(n) => { buf.process(&raw[..n]); }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
                 Err(_) => break,
             }
@@ -2253,7 +2289,7 @@ mod tests {
         loop {
             match reader.read(&mut raw) {
                 Ok(0) => break,
-                Ok(n) => buf.process(&raw[..n]),
+                Ok(n) => { buf.process(&raw[..n]); }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
                 Err(_) => break,
             }
@@ -2267,6 +2303,111 @@ mod tests {
             !has_garbage,
             "alternate-screen content should be suppressed, but found TUI-GARBAGE in: {:?}",
             lines,
+        );
+    }
+
+    // --- ChangedRow / process() return value tests ---
+
+    /// process() returns the rows that changed on the normal screen.
+    #[test]
+    fn test_vt_log_changed_rows_basic() {
+        let mut buf = make_vt_log();
+        let changed = buf.process(b"hello world");
+        assert!(
+            changed.iter().any(|r| r.text == "hello world"),
+            "expected 'hello world' in changed rows, got: {:?}",
+            changed,
+        );
+    }
+
+    /// CR-based overwrite: process() returns the final overwritten row text.
+    #[test]
+    fn test_vt_log_changed_rows_overwrite() {
+        let mut buf = make_vt_log();
+        // "aaaa\r" moves cursor to column 0; "bbbb" overwrites — vt100 renders "bbbb"
+        let changed = buf.process(b"aaaa\rbbbb");
+        assert!(
+            changed.iter().any(|r| r.text.contains("bbbb")),
+            "expected 'bbbb' after CR overwrite, got: {:?}",
+            changed,
+        );
+        assert!(
+            !changed.iter().any(|r| r.text == "aaaa"),
+            "should not see raw 'aaaa' (overwritten), got: {:?}",
+            changed,
+        );
+    }
+
+    /// Alternate screen: changed rows are reported even when alternate screen is active.
+    #[test]
+    fn test_vt_log_changed_rows_alternate_screen() {
+        let mut buf = make_vt_log();
+        buf.process(b"\x1b[?1049h");
+        let changed = buf.process(b"status: running");
+        assert!(
+            changed.iter().any(|r| r.text.contains("status: running")),
+            "changed rows must be reported during alternate screen, got: {:?}",
+            changed,
+        );
+        assert_eq!(buf.total_lines(), 0, "log must remain empty during alternate screen");
+    }
+
+    /// Cursor movement: changed rows reflect the final rendered state.
+    #[test]
+    fn test_vt_log_changed_rows_cursor_movement() {
+        let mut buf = make_vt_log();
+        buf.process(b"line0\r\nline1\r\nline2");
+        // Move cursor up 1 row (CUU 1) and overwrite line1
+        let changed = buf.process(b"\x1b[1Aupdated");
+        assert!(
+            changed.iter().any(|r| r.text.contains("updated")),
+            "expected 'updated' in changed rows after CUU overwrite, got: {:?}",
+            changed,
+        );
+    }
+
+    /// No change: a second process() with no new data returns empty Vec.
+    #[test]
+    fn test_vt_log_changed_rows_empty_on_no_change() {
+        let mut buf = make_vt_log();
+        buf.process(b"hello");
+        let changed = buf.process(b"");
+        assert!(
+            changed.is_empty(),
+            "expected no changed rows when no data written, got: {:?}",
+            changed,
+        );
+    }
+
+    /// resize() clears prev_rows so the next process() reports all non-empty rows.
+    #[test]
+    fn test_vt_log_changed_rows_resize_clears_prev() {
+        let mut buf = make_vt_log();
+        buf.process(b"hello");
+        buf.process(b""); // stabilise prev_rows
+        buf.resize(24, 80);
+        let changed = buf.process(b"");
+        assert!(
+            changed.iter().any(|r| r.text.contains("hello")),
+            "expected 'hello' after resize clears prev, got: {:?}",
+            changed,
+        );
+    }
+
+    /// Screen switch resets prev_rows so first frame reports all non-empty rows.
+    #[test]
+    fn test_vt_log_changed_rows_screen_switch_resets_prev() {
+        let mut buf = make_vt_log();
+        buf.process(b"normal line");
+        buf.process(b""); // stabilise
+        buf.process(b"\x1b[?1049h"); // enter alternate
+        buf.process(b"alt content");
+        // Exit alternate — should reset prev for normal screen
+        let changed = buf.process(b"\x1b[?1049l");
+        assert!(
+            changed.iter().any(|r| r.text.contains("normal line")),
+            "expected 'normal line' after screen switch resets prev, got: {:?}",
+            changed,
         );
     }
 }
