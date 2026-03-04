@@ -65,10 +65,14 @@ fn validate_repo_path(path: &str) -> Result<(), (StatusCode, Json<serde_json::Va
         .map_err(|msg| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg}))))
 }
 
-/// Unix socket path for local MCP bridge connections: <config_dir>/mcp.sock
-#[cfg(unix)]
+/// IPC endpoint path for local MCP bridge connections.
+/// Unix: `<config_dir>/mcp.sock` (Unix domain socket)
+/// Windows: `\\.\pipe\tuicommander-mcp` (named pipe — reserved for future use)
 pub(crate) fn socket_path() -> std::path::PathBuf {
-    crate::config::config_dir().join("mcp.sock")
+    #[cfg(unix)]
+    { crate::config::config_dir().join("mcp.sock") }
+    #[cfg(windows)]
+    { std::path::PathBuf::from(r"\\.\pipe\tuicommander-mcp") }
 }
 
 /// Return the plugin development guide as JSON.

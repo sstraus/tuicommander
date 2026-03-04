@@ -72,6 +72,12 @@ jobs:
         shell: bash
         run: mkdir -p dist && echo '<html></html>' > dist/index.html
 
+      - name: Create sidecar stub for Tauri build.rs
+        shell: bash
+        run: |
+          target=$(rustc --print host-tuple)
+          touch "src-tauri/binaries/tuic-bridge-${target}"
+
       - name: Clippy
         working-directory: src-tauri
         env:
