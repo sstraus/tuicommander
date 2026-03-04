@@ -407,7 +407,7 @@
 
 .branchName {
   display: block;
-  font-size: var(--font-base);
+  font-size: var(--font-md);
   font-weight: 500;
   color: var(--fg-primary);
   white-space: nowrap;
