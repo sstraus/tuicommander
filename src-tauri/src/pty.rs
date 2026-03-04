@@ -11,7 +11,7 @@ use crate::input_line_buffer::{InputAction, InputLineBuffer};
 use crate::output_parser::{colorize_intent, extract_last_question_line, OutputParser, ParsedEvent};
 use crate::state::{
     AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
-    OutputRingBuffer, PtyConfig, PtyOutput, PtySession, TagBuffer, Utf8ReadBuffer, VtLogBuffer,
+    OutputRingBuffer, PtyConfig, PtyOutput, PtySession, Utf8ReadBuffer, VtLogBuffer,
     MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY, VT_LOG_BUFFER_CAPACITY,
     strip_kitty_sequences,
 };

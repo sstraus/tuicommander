@@ -952,24 +952,6 @@ fn parse_suggest(clean: &str) -> Option<ParsedEvent> {
     })
 }
 
-/// Strip suggest tokens from raw PTY output so they don't appear in the terminal.
-/// Removes the entire line containing the token (including surrounding newlines).
-/// The regex tolerates any CSI escape codes (cursor movements, SGR, etc.)
-/// interleaved within and before the token structure.
-pub fn strip_suggest(raw: &str) -> String {
-    lazy_static::lazy_static! {
-        static ref STRIP_RE: regex::Regex = {
-            // Any CSI sequence that may appear between structural elements
-            let c = r"(?:\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e])*";
-            regex::Regex::new(&format!(
-                r"(?:\[\[?|\x{{27E6}}){C}suggest:\s*.+?\s*{C}(?:\]?\]|\x{{27E7}})",
-                C = c
-            )).unwrap()
-        };
-    }
-    STRIP_RE.replace_all(raw, "").into_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2639,22 +2621,6 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_strip_suggest_removes_token() {
-        let raw = "Some output\n[[suggest: Fix test | Refactor | Add docs]]\nMore output";
-        let stripped = strip_suggest(raw);
-        // Should remove the entire suggest line, leaving no blank line
-        assert!(!stripped.contains("suggest"));
-        assert!(stripped.contains("Some output"));
-        assert!(stripped.contains("More output"));
-    }
-
-    #[test]
-    fn test_strip_suggest_no_match_unchanged() {
-        let raw = "Normal terminal output";
-        assert_eq!(strip_suggest(raw), raw);
-    }
-
-    #[test]
     fn test_colorize_intent_preserves_cursor_movements() {
         // Cursor movements (CUU, CUD, CUF) must survive colorize_intent unchanged.
         // The old line-replace approach lost these; replace_all only touches the token.
@@ -2682,23 +2648,4 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(!colored.contains("[["), "brackets stripped");
     }
 
-    #[test]
-    fn test_strip_suggest_with_ansi_wrapping() {
-        // SGR codes wrapping the suggest token — replace_all must still match
-        let raw = "output\n\x1b[38;2;177;185;249m[[suggest: Fix | Review]]\x1b[39m\nmore";
-        let stripped = strip_suggest(raw);
-        assert!(!stripped.contains("suggest"), "suggest token removed");
-        assert!(stripped.contains("output"), "surrounding text preserved");
-        assert!(stripped.contains("more"), "surrounding text preserved");
-    }
-
-    #[test]
-    fn test_strip_suggest_with_cursor_movements_prefix() {
-        // Cursor movements (CUD, CR) before the suggest token on the line
-        let raw = "output\n\r\x1b[1B  \x1b[38;2;177;185;249m[[suggest: Fix tests | Review diff]]\x1b[39m\r\n";
-        let stripped = strip_suggest(raw);
-        assert!(!stripped.contains("suggest"),
-            "suggest token must be stripped even with cursor prefix; got: {:?}", stripped);
-        assert!(stripped.contains("output"));
-    }
 }

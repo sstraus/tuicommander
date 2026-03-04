@@ -1197,7 +1197,7 @@ const App: Component = () => {
 
       {/* Quick branch switcher */}
       <BranchSwitcher
-        activeRepoPath={repositoriesStore.state.activeRepoPath}
+        activeRepoPath={repositoriesStore.state.activeRepoPath ?? undefined}
         onSelect={gitOps.handleBranchSelect}
         onCheckoutRemote={gitOps.handleCheckoutRemoteBranch}
       />
