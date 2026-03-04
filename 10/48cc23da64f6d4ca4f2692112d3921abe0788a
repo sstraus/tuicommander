@@ -1,0 +1,25 @@
+src/mobile/components/OutputView.tsx
+  76a2baf8ac1260dd 16,18-20,44,52
+src/transport.ts
+  76a2baf8ac1260dd 584-589,620-621,635-642
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "1048cc23da64f6d4ca4f2692112d3921abe0788a",
+  "prompts": {
+    "76a2baf8ac1260dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "15d6d929-641f-46f0-930b-2ca7c650d8a1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 22,
+      "total_deletions": 13,
+      "accepted_lines": 22,
+      "overriden_lines": 0
+    }
+  }
+}
