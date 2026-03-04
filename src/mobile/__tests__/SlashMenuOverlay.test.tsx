@@ -70,7 +70,6 @@ describe("SlashMenuOverlay", () => {
       <SlashMenuOverlay sessionId="s1" items={ITEMS} onDismiss={onDismiss} />
     ));
     // Click a button — onDismiss is called from select(), not from backdrop
-    const buttons = container.querySelectorAll("button");
     vi.clearAllMocks(); // clear any prior calls
     // Click inside the sheet (not the backdrop)
     const sheet = container.querySelector("button")!.parentElement!;
