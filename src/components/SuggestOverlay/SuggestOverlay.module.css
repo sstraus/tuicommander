@@ -1,17 +1,18 @@
 .overlay {
   position: absolute;
-  bottom: 15px;
+  bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   gap: 8px;
-  padding: 6px 12px;
-  background: var(--bg-tertiary);
+  padding: 8px 12px;
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   z-index: 10;
   animation: fadeIn 0.15s ease-out;
   pointer-events: auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -32,20 +33,44 @@
 }
 
 .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-ui);
-  font-size: var(--font-xs);
-  padding: 4px 12px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
-  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+  transition: background 0.1s ease, border-color 0.1s ease;
 }
 
 .chip:hover {
   background: var(--accent);
-  color: var(--fg-on-accent);
+  color: var(--text-on-accent);
   border-color: var(--accent);
+}
+
+.chip:hover .shortcut {
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text-on-accent);
+}
+
+.shortcut {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-highlight);
+  color: var(--fg-secondary);
 }

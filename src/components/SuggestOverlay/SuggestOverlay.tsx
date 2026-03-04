@@ -15,6 +15,13 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       props.onDismiss();
+      return;
+    }
+    // Number keys 1-4 select the corresponding suggestion
+    const num = parseInt(e.key, 10);
+    if (num >= 1 && num <= 4 && num <= props.items.length) {
+      e.preventDefault();
+      props.onSelect(props.items[num - 1]);
     }
   };
 
@@ -31,8 +38,11 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
   return (
     <div class={styles.overlay}>
       <For each={props.items}>
-        {(item) => (
+        {(item, index) => (
           <button class={styles.chip} onClick={() => props.onSelect(item)}>
+            <span class={styles.shortcut} data-shortcut>
+              {index() + 1}
+            </span>
             {item}
           </button>
         )}
