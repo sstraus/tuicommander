@@ -852,6 +852,32 @@ pub fn colorize_intent(raw: &str) -> String {
     }).into_owned()
 }
 
+/// Hide `[[suggest: ...]]` tokens from the xterm stream by wrapping them in SGR
+/// conceal/reveal sequences (`\x1b[8m` … `\x1b[28m`).
+///
+/// Stripping the token entirely causes layout corruption because the surrounding
+/// cursor-movement sequences (CUF, CUU, CUD) remain and mis-position subsequent output.
+/// Concealing instead keeps the character count intact so cursor positions are unaffected,
+/// while xterm.js renders the token invisible.
+///
+/// The regex tolerates CSI sequences between structural bracket/keyword elements — the
+/// same technique used by `colorize_intent` — to handle re-rendered lines that contain
+/// partial ANSI codes mid-token.
+pub fn conceal_suggest(raw: &str) -> String {
+    lazy_static::lazy_static! {
+        static ref SUGGEST_CONCEAL_RE: regex::Regex = {
+            let c = r"(?:\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e])*";
+            regex::Regex::new(&format!(
+                r"(?:\[\[?|\x{{27E6}}){C}suggest:\s*[^\]\x{{27E7}}]+?\s*{C}(?:\]?\]|\x{{27E7}})",
+                C = c
+            )).unwrap()
+        };
+    }
+    SUGGEST_CONCEAL_RE.replace_all(raw, |caps: &regex::Captures| {
+        format!("\x1b[8m{}\x1b[28m", &caps[0])
+    }).into_owned()
+}
+
 /// Detect agent-declared intent tokens: `[intent: <text>]`, `[[intent: <text>]]`,
 /// or `⟦intent: <text>⟧`. Agents are instructed (via MCP) to emit this token when
 /// starting a new action, so the activity board can show what the agent is currently doing.
@@ -2436,6 +2462,53 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(get_suggest(&parser.parse("]garbage[[suggest: A | B]]")).is_none());
     }
 
+    // --- conceal_suggest tests ---
+
+    #[test]
+    fn test_conceal_suggest_basic() {
+        let raw = "[[suggest: Fix the test | Refactor code | Add docs]]";
+        let out = conceal_suggest(raw);
+        assert!(out.contains("\x1b[8m"), "should start conceal");
+        assert!(out.contains("\x1b[28m"), "should end conceal");
+        assert!(out.contains("[[suggest:"), "token content preserved for layout");
+        assert!(out.contains("Fix the test"), "items preserved inside conceal");
+    }
+
+    #[test]
+    fn test_conceal_suggest_preserves_surrounding_text() {
+        let raw = "some text [[suggest: A | B]] more text";
+        let out = conceal_suggest(raw);
+        assert!(out.starts_with("some text "), "prefix preserved");
+        assert!(out.contains("more text"), "suffix preserved");
+        assert!(out.contains("\x1b[8m"), "conceal applied to token");
+    }
+
+    #[test]
+    fn test_conceal_suggest_no_change_when_absent() {
+        let raw = "normal output without suggest token";
+        let out = conceal_suggest(raw);
+        assert_eq!(out, raw, "unchanged when no suggest token");
+    }
+
+    #[test]
+    fn test_conceal_suggest_single_brackets() {
+        let raw = "[suggest: Option A | Option B]";
+        let out = conceal_suggest(raw);
+        assert!(out.contains("\x1b[8m"), "single brackets also concealed");
+    }
+
+    #[test]
+    fn test_conceal_suggest_preserves_cursor_movements() {
+        // Cursor movements around and inside the token must survive unchanged.
+        let raw = "\x1b[8A text \x1b[1C[[suggest: A | B]]\x1b[1B more";
+        let out = conceal_suggest(raw);
+        assert!(out.contains("\x1b[8A"), "CUU must survive");
+        assert!(out.contains("\x1b[1C"), "CUF must survive");
+        assert!(out.contains("\x1b[1B"), "CUD must survive");
+        assert!(out.contains("\x1b[8m"), "conceal applied to token");
+        assert!(out.contains("more"), "text after token preserved");
+    }
+
     #[test]
     fn test_colorize_intent_preserves_cursor_movements() {
         // Cursor movements (CUU, CUD, CUF) must survive colorize_intent unchanged.
@@ -2522,6 +2595,31 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { .. })),
             "expected UsageLimit, got: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_intent_with_bullet_prefix() {
+        // Claude Code emits: ⏺ [[intent: text(title)]]
+        // After vt100 rendering, CUF codes become spaces.
+        let parser = OutputParser::new();
+        let rows = vec![row(0, "\u{25CF} [[intent: Implementing feature(My title)]]")];
+        let events = parser.parse_clean_lines(&rows);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::Intent { title: Some(t), .. } if t == "My title")),
+            "expected Intent with title='My title', got: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_intent_with_extra_spaces() {
+        // CUF codes rendered as multiple spaces between words
+        let parser = OutputParser::new();
+        let rows = vec![row(0, "\u{25CF}  [[intent: Project  onboarding  and  understanding(Prime session)]]")];
+        let events = parser.parse_clean_lines(&rows);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::Intent { title: Some(t), .. } if t == "Prime session")),
+            "expected Intent with title='Prime session', got: {:?}", events
         );
     }
 

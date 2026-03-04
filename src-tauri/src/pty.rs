@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 use crate::input_line_buffer::{InputAction, InputLineBuffer};
-use crate::output_parser::{colorize_intent, OutputParser, ParsedEvent};
+use crate::output_parser::{colorize_intent, conceal_suggest, OutputParser, ParsedEvent};
 use crate::state::{
     AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
     OutputRingBuffer, PtyConfig, PtyOutput, PtySession, Utf8ReadBuffer, VtLogBuffer,
@@ -382,12 +382,10 @@ pub(crate) fn spawn_reader_thread(
                         // may contain the token without detection (cursor-split text).
                         let data = if data.contains("[intent:") { colorize_intent(&data) } else { data };
 
-                        // NOTE: suggest tokens are NOT stripped from the xterm stream.
-                        // Stripping them causes layout corruption because the regex removes
-                        // text from a 2D cursor-positioned render without removing the
-                        // surrounding cursor movements. The visible [[suggest:...]] token
-                        // is acceptable — the overlay buttons still appear when parse()
-                        // detects the Suggest event.
+                        // Conceal [[suggest: ...]] tokens so they are invisible in xterm but
+                        // still occupy their original character positions (preserving cursor layout).
+                        // SGR 8 (conceal) hides text without altering width; SGR 28 (reveal) restores.
+                        let data = if data.contains("suggest:") { conceal_suggest(&data) } else { data };
 
                         let _ = app.emit(
                             &format!("pty-output-{session_id}"),
