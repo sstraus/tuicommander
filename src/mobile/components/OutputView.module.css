@@ -16,3 +16,7 @@
   word-break: break-all;
   margin: 0;
 }
+
+.line {
+  min-height: 1.5em;
+}

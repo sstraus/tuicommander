@@ -1,13 +1,16 @@
-import { createSignal, onMount, onCleanup } from "solid-js";
+import { createSignal, onMount, onCleanup, For, Index } from "solid-js";
 import { subscribePty } from "../../transport";
+import { type LogLine, normalizeLogLine, spanStyle } from "../utils/logLine";
 import styles from "./OutputView.module.css";
+
+const MAX_LINES = 500;
 
 interface OutputViewProps {
   sessionId: string;
 }
 
 export function OutputView(props: OutputViewProps) {
-  const [lines, setLines] = createSignal<string[]>([]);
+  const [lines, setLines] = createSignal<LogLine[]>([]);
   let containerEl: HTMLDivElement | undefined;
   let unsubscribe: (() => void) | null = null;
 
@@ -15,9 +18,9 @@ export function OutputView(props: OutputViewProps) {
     try {
       const resp = await fetch(`/sessions/${props.sessionId}/output?format=log`);
       if (resp.ok) {
-        const json = await resp.json() as { lines: string[] };
+        const json = await resp.json() as { lines: unknown[] };
         if (json.lines && json.lines.length > 0) {
-          setLines(json.lines.slice(-500));
+          setLines(json.lines.slice(-MAX_LINES).map(normalizeLogLine));
           scrollToBottom();
         }
       }
@@ -39,17 +42,20 @@ export function OutputView(props: OutputViewProps) {
 
     unsubscribe = (await subscribePty(
       props.sessionId,
-      (data) => {
-        setLines((prev) => {
-          const newLines = data.split("\n").filter((l) => l.length > 0);
-          return [...prev, ...newLines].slice(-500);
-        });
-        scrollToBottom();
-      },
+      () => {}, // unused — onLogLines handles log delivery
       () => {
-        setLines((prev) => [...prev, "--- session exited ---"]);
+        setLines((prev) => [...prev, { spans: [{ text: "--- session exited ---" }] }]);
       },
-      { format: "log" },
+      {
+        format: "log",
+        onLogLines(rawLines) {
+          setLines((prev) => {
+            const incoming = rawLines.map(normalizeLogLine);
+            return [...prev, ...incoming].slice(-MAX_LINES);
+          });
+          scrollToBottom();
+        },
+      },
     )) ?? null;
   });
 
@@ -60,7 +66,20 @@ export function OutputView(props: OutputViewProps) {
   return (
     <div ref={containerEl} class={styles.output}>
       <pre class={styles.text}>
-        {lines().join("\n")}
+        <For each={lines()}>
+          {(line) => (
+            <div class={styles.line}>
+              <Index each={line.spans}>
+                {(span) => {
+                  const st = spanStyle(span());
+                  return st
+                    ? <span style={st}>{span().text}</span>
+                    : <>{span().text}</>;
+                }}
+              </Index>
+            </div>
+          )}
+        </For>
       </pre>
     </div>
   );
