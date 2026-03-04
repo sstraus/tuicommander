@@ -31,12 +31,12 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
   };
 
   onMount(() => {
-    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown, true);
     timer = setTimeout(() => props.onDismiss(), DISMISS_TIMEOUT_MS);
   });
 
   onCleanup(() => {
-    document.removeEventListener("keydown", handleKeyDown);
+    document.removeEventListener("keydown", handleKeyDown, true);
     if (timer) clearTimeout(timer);
   });
 
