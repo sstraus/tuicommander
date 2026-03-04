@@ -101,7 +101,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 
   const terminals = createMemo(() => {
     const ids = terminalsStore.getAttachedIds();
-    return ids.map((id) => {
+    const filtered = ids.map((id) => {
       const term = terminalsStore.get(id);
       if (!term) return null;
       const status = getTerminalStatus(term.shellState, term.awaitingInput, term.sessionId);
@@ -130,7 +130,8 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
       currentTask: string | null;
       isActive: boolean;
     }>;
-  }).sort((a, b) => (b.lastDataAt ?? 0) - (a.lastDataAt ?? 0));
+    return filtered.sort((a, b) => (b.lastDataAt ?? 0) - (a.lastDataAt ?? 0));
+  });
 
   return (
     <Show when={isOpen()}>
