@@ -467,6 +467,10 @@ pub(crate) fn spawn_headless_reader_thread(
         let mut buf = [0u8; 4096];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
+        // Silence-based question detection (mirrors main reader)
+        let silence = Arc::new(Mutex::new(SilenceState::new()));
+        state.silence_states.insert(session_id.clone(), silence.clone());
+        let parser = OutputParser::new();
         loop {
             while paused.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -502,10 +506,12 @@ pub(crate) fn spawn_headless_reader_thread(
                         }
                     }
                     if !data.is_empty() {
-                        // Feed raw data into VT100 log buffer
-                        if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
-                            vt_log.lock().process(data.as_bytes());
-                        }
+                        // Feed raw data into VT100 log buffer; capture changed rows for parsing.
+                        let changed_rows = if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+                            vt_log.lock().process(data.as_bytes())
+                        } else {
+                            Vec::new()
+                        };
                         // Write clean text to ring buffer for MCP consumers (no ANSI)
                         if let Some(ring) = state.output_buffers.get(&session_id) {
                             ring.lock().write(data.as_bytes());
@@ -514,6 +520,28 @@ pub(crate) fn spawn_headless_reader_thread(
                         if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
                             clients.retain(|tx| tx.send(data.clone()).is_ok());
                         }
+                        // Emit structured events via event_bus (no Tauri IPC for headless).
+                        // OSC 9;4 progress stays on raw stream.
+                        let mut events = Vec::new();
+                        if let Some(evt) = crate::output_parser::parse_osc94(&data) {
+                            events.push(evt);
+                        }
+                        events.extend(parser.parse_clean_lines(&changed_rows));
+                        let regex_found_question = events.iter()
+                            .any(|e| matches!(e, ParsedEvent::Question { .. }));
+                        for event in &events {
+                            if let Ok(json) = serde_json::to_value(event) {
+                                let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
+                                    session_id: session_id.clone(),
+                                    parsed: json,
+                                });
+                            }
+                        }
+                        // Update silence state for fallback question detection.
+                        let last_q_line = changed_rows.iter().rev()
+                            .find(|r| !r.text.is_empty())
+                            .and_then(|r| if r.text.ends_with('?') { Some(r.text.clone()) } else { None });
+                        silence.lock().on_chunk(regex_found_question, last_q_line);
                     }
                 }
                 Err(e) => {
@@ -1504,5 +1532,45 @@ mod tests {
         let changed = vt_log.process(b"Would you like to proceed?");
         let last_q = changed.iter().rev().find(|r| !r.text.is_empty()).map(|r| r.text.clone());
         assert_eq!(last_q.as_deref(), Some("Would you like to proceed?"));
+    }
+
+    // --- Headless reader structured event tests ---
+
+    /// The headless reader logic: after process(), parse_clean_lines produces events.
+    /// This verifies the core data flow without spawning a full AppState.
+    #[test]
+    fn test_headless_reader_intent_event_logic() {
+        use crate::state::VtLogBuffer;
+        use crate::output_parser::{OutputParser, ParsedEvent};
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        let parser = OutputParser::new();
+
+        let changed = vt_log.process(b"[[intent: Testing headless reader]]");
+        let events = parser.parse_clean_lines(&changed);
+
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::Intent { .. })),
+            "expected Intent from headless reader logic, got: {:?}", events
+        );
+    }
+
+    /// The headless reader emits events for alternate screen content (e.g. Claude Code).
+    #[test]
+    fn test_headless_reader_alternate_screen_events() {
+        use crate::state::VtLogBuffer;
+        use crate::output_parser::{OutputParser, ParsedEvent};
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        let parser = OutputParser::new();
+
+        vt_log.process(b"\x1b[?1049h"); // enter alternate screen
+        let changed = vt_log.process(b"* Reading files...");
+        let events = parser.parse_clean_lines(&changed);
+
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
+            "headless reader must detect StatusLine during alternate screen, got: {:?}", events
+        );
     }
 }
