@@ -169,6 +169,65 @@ impl OutputParser {
         events
     }
 
+    /// Parse already-clean VtLogBuffer rows and return any detected events.
+    ///
+    /// Unlike [`parse`], this method receives rows that have already been rendered
+    /// by the VT100 parser — no ANSI stripping is needed.  Each row is processed
+    /// independently so parsers see a single, stable line rather than a raw chunk
+    /// that may span cursor movements.
+    ///
+    /// OSC 9;4 progress events are NOT emitted here: those sequences are consumed
+    /// by the vt100 crate and invisible in clean rows; they remain on the raw stream.
+    pub fn parse_clean_lines(&self, rows: &[crate::state::ChangedRow]) -> Vec<ParsedEvent> {
+        let mut events = Vec::new();
+        // Join rows into a single string so multi-line parsers (rate_limit, etc.) work.
+        // Individual row texts are already clean — no stripping required.
+        let joined: String = rows.iter().map(|r| r.text.as_str()).collect::<Vec<_>>().join("\n");
+
+        // PR/MR URL detection (operates on text directly)
+        if let Some(evt) = parse_pr_url(&joined) {
+            events.push(evt);
+        }
+
+        // Status line — iterates lines internally
+        if let Some(evt) = parse_status_line(&joined) {
+            events.push(evt);
+        }
+
+        // Rate limit and API error — pattern-match on joined text
+        if let Some(evt) = self.parse_rate_limit(&joined) {
+            events.push(evt);
+        }
+        if let Some(evt) = self.parse_api_error(&joined) {
+            events.push(evt);
+        }
+
+        // Usage limit
+        if let Some(evt) = parse_usage_limit(&joined) {
+            events.push(evt);
+        }
+
+        // Question/attention — iterates lines internally
+        if let Some(evt) = parse_question(&joined) {
+            events.push(evt);
+        }
+
+        // Plan file
+        if let Some(evt) = parse_plan_file(&joined) {
+            events.push(evt);
+        }
+
+        // Intent and suggest
+        if let Some(evt) = parse_intent(&joined) {
+            events.push(evt);
+        }
+        if let Some(evt) = parse_suggest(&joined) {
+            events.push(evt);
+        }
+
+        events
+    }
+
     fn parse_rate_limit(&self, text: &str) -> Option<ParsedEvent> {
         // Fast path: every rate-limit pattern requires at least one of these keywords.
         if !text.contains("rate_limit") && !text.contains("overloaded")
@@ -191,7 +250,7 @@ impl OutputParser {
                     .unwrap_or(text);
                 let match_line = match_line.lines().next().unwrap_or(match_line);
                 if line_is_source_code(match_line)
-                    || line_is_diff_or_code_context(match_line, match_line.trim())
+                    || line_is_diff_or_code_context(match_line)
                 {
                     continue;
                 }
@@ -234,7 +293,7 @@ impl OutputParser {
                     .unwrap_or(text);
                 let match_line = match_line.lines().next().unwrap_or(match_line);
                 if line_is_source_code(match_line)
-                    || line_is_diff_or_code_context(match_line, match_line.trim())
+                    || line_is_diff_or_code_context(match_line)
                 {
                     continue;
                 }
@@ -546,7 +605,7 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
     for line in clean.lines() {
         let trimmed = line.trim();
         // Skip lines that look like diff output, code, or documentation
-        if line_is_diff_or_code_context(line, trimmed) {
+        if line_is_diff_or_code_context(line) {
             continue;
         }
         // Skip C-style block comment lines (/* ... */ or lines ending with */)
@@ -659,7 +718,7 @@ fn parse_question(clean: &str) -> Option<ParsedEvent> {
 
         // Skip lines that look like diff output, code, or documentation —
         // they may contain question-like patterns as content, not real prompts.
-        if line_is_diff_or_code_context(line, trimmed) {
+        if line_is_diff_or_code_context(line) {
             continue;
         }
 
@@ -711,28 +770,31 @@ pub(crate) fn extract_last_question_line(text: &str) -> Option<String> {
     if !trimmed.ends_with('?') {
         return None;
     }
-    // Find the corresponding raw line for structural checks (indentation, tabs).
+    // Find the raw line for structural checks (tabs, indentation).
     // strip_ansi removes control chars like \t, so we need the original text.
     let last_raw = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or(last_clean);
     // Reject lines that look like source code, comments, or markdown prose
     // rather than genuine interactive prompts.
-    if line_is_likely_not_a_prompt(last_raw, trimmed) {
+    if line_is_likely_not_a_prompt(last_raw) {
         return None;
     }
     Some(trimmed.to_string())
 }
 
 /// Returns true if a line looks like diff output, code context, or documentation
+/// Returns true if a line looks like diff output, code context, or documentation
 /// rather than a genuine interactive prompt. Applied to ALL question regex matches
 /// to prevent false positives from diff hunks containing question-like patterns.
-fn line_is_diff_or_code_context(raw_line: &str, clean_trimmed: &str) -> bool {
+fn line_is_diff_or_code_context(line: &str) -> bool {
+    let trimmed = line.trim();
+
     // Line-number prefix from code listings: "462 -...", "75 +-...", "465 //...", "1226    assert!(..."
     // Distinguished from HTTP status codes ("429 Too Many Requests") by requiring either:
     //   - diff markers (+, -, //) after the number, OR
     //   - 2+ spaces after the number (code listing indentation)
-    if clean_trimmed.len() > 3 && clean_trimmed.as_bytes()[0].is_ascii_digit()
-        && let Some(pos) = clean_trimmed.find(|c: char| !c.is_ascii_digit()) {
-            let after_digits = &clean_trimmed[pos..];
+    if trimmed.len() > 3 && trimmed.as_bytes()[0].is_ascii_digit()
+        && let Some(pos) = trimmed.find(|c: char| !c.is_ascii_digit()) {
+            let after_digits = &trimmed[pos..];
             let rest = after_digits.trim_start();
             // Diff markers after line number
             if rest.starts_with('+') || rest.starts_with('-') || rest.starts_with("//") {
@@ -749,9 +811,9 @@ fn line_is_diff_or_code_context(raw_line: &str, clean_trimmed: &str) -> bool {
 
     // Unified diff lines: start with + or - followed by content
     // Real diff lines: "+  code", "- old line", "++ file", "-- file"
-    if raw_line.len() > 1 {
-        let first = raw_line.as_bytes()[0];
-        let second = raw_line.as_bytes()[1];
+    if line.len() > 1 {
+        let first = line.as_bytes()[0];
+        let second = line.as_bytes()[1];
         if (first == b'+' || first == b'-')
             && (second == b' ' || second == b'\t' || second == first)
         {
@@ -760,35 +822,35 @@ fn line_is_diff_or_code_context(raw_line: &str, clean_trimmed: &str) -> bool {
     }
 
     // Claude Code diff summary blocks: "⏺⎿ Added16lines..."
-    if clean_trimmed.contains("⏺⎿") {
+    if trimmed.contains("⏺⎿") {
         return true;
     }
     // Diff summary: "Added16lines" or "removed2lines" (no space between number and "lines")
     // Pattern: keyword followed immediately by digits then "lines" — unique to diff summaries
-    if (clean_trimmed.contains("Added") || clean_trimmed.contains("removed"))
-        && clean_trimmed.contains("lines")
-        && clean_trimmed.chars().any(|c| c.is_ascii_digit())
+    if (trimmed.contains("Added") || trimmed.contains("removed"))
+        && trimmed.contains("lines")
+        && trimmed.chars().any(|c| c.is_ascii_digit())
     {
         // Extra check: the digit must be adjacent to "lines" (no space)
-        if let Some(pos) = clean_trimmed.find("lines")
-            && pos > 0 && clean_trimmed.as_bytes()[pos - 1].is_ascii_digit() {
+        if let Some(pos) = trimmed.find("lines")
+            && pos > 0 && trimmed.as_bytes()[pos - 1].is_ascii_digit() {
                 return true;
             }
     }
 
     // Lines containing "//" as code comments (but not URLs like http://)
-    if clean_trimmed.starts_with("//")
-        || clean_trimmed.contains(" //")
+    if trimmed.starts_with("//")
+        || trimmed.contains(" //")
     {
         return true;
     }
 
     // Lines with markdown bold/italic containing question-pattern keywords
     // (e.g., "**Hardcoded prompts**: ...")
-    if clean_trimmed.contains("**") && (
-        clean_trimmed.contains("prompts")
-        || clean_trimmed.contains("patterns")
-        || clean_trimmed.contains("detection")
+    if trimmed.contains("**") && (
+        trimmed.contains("prompts")
+        || trimmed.contains("patterns")
+        || trimmed.contains("detection")
     ) {
         return true;
     }
@@ -798,35 +860,34 @@ fn line_is_diff_or_code_context(raw_line: &str, clean_trimmed: &str) -> bool {
 
 /// Returns true if a `?`-ending line is likely agent prose, code, or documentation
 /// rather than an interactive prompt waiting for user input.
-/// `raw_line`: the original PTY line (may contain tabs, ANSI), used for indentation checks.
-/// `clean_trimmed`: the ANSI-stripped, trimmed content, used for content-based checks.
-fn line_is_likely_not_a_prompt(raw_line: &str, clean_trimmed: &str) -> bool {
-    // Indented code (4+ spaces or tab prefix = code block) — check raw line for structural indent
-    if raw_line.starts_with("    ") || raw_line.starts_with('\t') {
+fn line_is_likely_not_a_prompt(line: &str) -> bool {
+    let trimmed = line.trim();
+    // Indented code (4+ spaces or tab prefix = code block)
+    if line.starts_with("    ") || line.starts_with('\t') {
         return true;
     }
-    // Code comments (check trimmed content since indent is already handled above)
-    if clean_trimmed.starts_with("//")
-        || clean_trimmed.starts_with('#')
-        || clean_trimmed.starts_with("/*")
-        || clean_trimmed.starts_with('*')
+    // Code comments
+    if trimmed.starts_with("//")
+        || trimmed.starts_with('#')
+        || trimmed.starts_with("/*")
+        || trimmed.starts_with('*')
     {
         return true;
     }
     // Markdown list items or blockquotes
-    if clean_trimmed.starts_with("- ") || clean_trimmed.starts_with("> ") {
+    if trimmed.starts_with("- ") || trimmed.starts_with("> ") {
         return true;
     }
     // Lines containing backtick-wrapped code fragments
-    if clean_trimmed.contains('`') {
+    if trimmed.contains('`') {
         return true;
     }
     // Long lines (>120 chars) are almost always prose, not prompts
-    if clean_trimmed.len() > 120 {
+    if trimmed.len() > 120 {
         return true;
     }
     // Lines with markdown bold/italic markers
-    if clean_trimmed.contains("**") || clean_trimmed.contains("__") {
+    if trimmed.contains("**") || trimmed.contains("__") {
         return true;
     }
     false
@@ -1548,23 +1609,20 @@ mod tests {
 
     #[test]
     fn test_line_is_likely_not_a_prompt_fn() {
-        // Helper: for non-indented lines, raw and trimmed are the same
-        let check = |line: &str| line_is_likely_not_a_prompt(line, line.trim());
-
         // Should be filtered (not prompts)
-        assert!(check("// is this a question?"));
-        assert!(check("# what about this?"));
-        assert!(line_is_likely_not_a_prompt("    indented code question?", "indented code question?"));
-        assert!(line_is_likely_not_a_prompt("\tindented code question?", "indented code question?"));
-        assert!(check("- list item question?"));
-        assert!(check("> blockquote question?"));
-        assert!(check("uses `backticks` question?"));
-        assert!(check("**bold** question?"));
+        assert!(line_is_likely_not_a_prompt("// is this a question?"));
+        assert!(line_is_likely_not_a_prompt("# what about this?"));
+        assert!(line_is_likely_not_a_prompt("    indented code question?"));
+        assert!(line_is_likely_not_a_prompt("\tindented code question?"));
+        assert!(line_is_likely_not_a_prompt("- list item question?"));
+        assert!(line_is_likely_not_a_prompt("> blockquote question?"));
+        assert!(line_is_likely_not_a_prompt("uses `backticks` question?"));
+        assert!(line_is_likely_not_a_prompt("**bold** question?"));
 
         // Should pass (real prompts)
-        assert!(!check("Continue?"));
-        assert!(!check("Apply changes?"));
-        assert!(!check("Do you want to proceed?"));
+        assert!(!line_is_likely_not_a_prompt("Continue?"));
+        assert!(!line_is_likely_not_a_prompt("Apply changes?"));
+        assert!(!line_is_likely_not_a_prompt("Do you want to proceed?"));
     }
 
     // --- Ink SelectInput / broadened question detection tests ---
@@ -2646,6 +2704,114 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             "raw CUF must be preserved in body; got: {:?}", colored);
         assert!(!colored.contains("(Prime session)"), "title stripped");
         assert!(!colored.contains("[["), "brackets stripped");
+    }
+
+    // --- parse_clean_lines tests ---
+
+    fn row(i: usize, text: &str) -> crate::state::ChangedRow {
+        crate::state::ChangedRow { row_index: i, text: text.to_string() }
+    }
+
+    #[test]
+    fn test_parse_clean_lines_status_line() {
+        let parser = OutputParser::new();
+        let rows = vec![row(0, "* Reading files...")];
+        let events = parser.parse_clean_lines(&rows);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
+            "expected StatusLine, got: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_intent_with_title() {
+        let parser = OutputParser::new();
+        let rows = vec![row(0, "[[intent: Implementing feature(My title)]]")];
+        let events = parser.parse_clean_lines(&rows);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::Intent { title: Some(_), .. })),
+            "expected Intent with title, got: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_suggest() {
+        let parser = OutputParser::new();
+        let rows = vec![row(0, "[[suggest: Run tests | Review diff | Deploy]]")];
+        let events = parser.parse_clean_lines(&rows);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::Suggest { items } if items.len() == 3)),
+            "expected Suggest with 3 items, got: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_question() {
+        let parser = OutputParser::new();
+        let rows = vec![row(0, "Would you like to proceed?")];
+        let events = parser.parse_clean_lines(&rows);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "expected Question, got: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_usage_limit() {
+        let parser = OutputParser::new();
+        let rows = vec![row(0, "You've used 78% of your weekly limit")];
+        let events = parser.parse_clean_lines(&rows);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { .. })),
+            "expected UsageLimit, got: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_rate_limit() {
+        let parser = OutputParser::new();
+        let rows = vec![row(0, "Error: rate_limit_error - please try again")];
+        let events = parser.parse_clean_lines(&rows);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::RateLimit { .. })),
+            "expected RateLimit, got: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_plan_file() {
+        let parser = OutputParser::new();
+        let rows = vec![row(0, "Reading plans/vt100-clean-parsing.md")];
+        let events = parser.parse_clean_lines(&rows);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::PlanFile { .. })),
+            "expected PlanFile, got: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_pr_url() {
+        let parser = OutputParser::new();
+        let rows = vec![row(0, "Pull request: https://github.com/owner/repo/pull/42")];
+        let events = parser.parse_clean_lines(&rows);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::PrUrl { .. })),
+            "expected PrUrl, got: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_multiple_events() {
+        let parser = OutputParser::new();
+        let rows = vec![
+            row(0, "[[intent: Working on feature(Test)]]"),
+            row(1, "* Reading files..."),
+        ];
+        let events = parser.parse_clean_lines(&rows);
+        let has_intent = events.iter().any(|e| matches!(e, ParsedEvent::Intent { .. }));
+        let has_status = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
+        assert!(has_intent, "expected Intent event, got: {:?}", events);
+        assert!(has_status, "expected StatusLine event, got: {:?}", events);
     }
 
 }
