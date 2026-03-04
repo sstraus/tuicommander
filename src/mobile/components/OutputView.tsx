@@ -14,19 +14,22 @@ export function OutputView(props: OutputViewProps) {
   let containerEl: HTMLDivElement | undefined;
   let unsubscribe: (() => void) | null = null;
 
-  async function fetchInitialOutput() {
+  /** Fetch initial log lines via HTTP; returns the total_lines offset for WS catch-up. */
+  async function fetchInitialOutput(): Promise<number> {
     try {
       const resp = await fetch(`/sessions/${props.sessionId}/output?format=log`);
       if (resp.ok) {
-        const json = await resp.json() as { lines: unknown[] };
+        const json = await resp.json() as { lines: unknown[]; total_lines: number };
         if (json.lines && json.lines.length > 0) {
           setLines(json.lines.slice(-MAX_LINES).map(normalizeLogLine));
           scrollToBottom();
         }
+        return json.total_lines ?? 0;
       }
     } catch {
       // Silently fail — live stream will populate
     }
+    return 0;
   }
 
   function scrollToBottom() {
@@ -38,7 +41,7 @@ export function OutputView(props: OutputViewProps) {
   }
 
   onMount(async () => {
-    await fetchInitialOutput();
+    const offset = await fetchInitialOutput();
 
     unsubscribe = (await subscribePty(
       props.sessionId,
@@ -48,6 +51,7 @@ export function OutputView(props: OutputViewProps) {
       },
       {
         format: "log",
+        logOffset: offset,
         onLogLines(rawLines) {
           setLines((prev) => {
             const incoming = rawLines.map(normalizeLogLine);

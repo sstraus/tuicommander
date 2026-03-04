@@ -606,6 +606,8 @@ export interface SubscribePtyOptions {
    * Each LogLine has `spans: [{text, fg?, bg?, bold?, italic?, underline?}]`.
    */
   onLogLines?: (lines: unknown[]) => void;
+  /** Starting offset for log-mode catch-up (skip lines already fetched via HTTP). */
+  logOffset?: number;
   onParsed?: (event: WsParsedEvent) => void;
 }
 
@@ -637,7 +639,10 @@ export async function subscribePty(
   // Browser mode: WebSocket with JSON framing
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const queryFormat = opts.format === "log" ? "log" : opts.stripAnsi ? "text" : null;
-  const query = queryFormat ? `?format=${queryFormat}` : "";
+  const params = new URLSearchParams();
+  if (queryFormat) params.set("format", queryFormat);
+  if (opts.logOffset != null) params.set("offset", String(opts.logOffset));
+  const query = params.size > 0 ? `?${params}` : "";
   const wsUrl = `${protocol}//${window.location.host}/sessions/${sessionId}/stream${query}`;
   const ws = new WebSocket(wsUrl);
 

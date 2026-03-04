@@ -42,6 +42,8 @@ pub(super) struct OutputQuery {
     pub limit: Option<usize>,
     /// When set to "text", ANSI escape sequences are stripped from the output.
     pub format: Option<String>,
+    /// Starting offset for log-mode WebSocket catch-up (skip lines already fetched via HTTP).
+    pub offset: Option<usize>,
 }
 
 #[derive(Deserialize)]

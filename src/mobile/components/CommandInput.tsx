@@ -10,13 +10,14 @@ interface CommandInputProps {
 export function CommandInput(props: CommandInputProps) {
   const [value, setValue] = createSignal("");
 
-  async function handleSubmit(e: Event) {
-    e.preventDefault();
+  async function send() {
     const text = value().trim();
     if (!text) return;
 
     try {
-      await rpc("write_pty", { sessionId: props.sessionId, data: text + "\n" });
+      // PTY expects \r (carriage return) for Enter — \n is a line feed
+      // and won't trigger command submission in raw-mode programs (Ink, etc.)
+      await rpc("write_pty", { sessionId: props.sessionId, data: text + "\r" });
       setValue("");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -24,25 +25,34 @@ export function CommandInput(props: CommandInputProps) {
     }
   }
 
+  function handleKeyDown(e: KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+    // Shift+Enter: default textarea behavior (insert newline)
+  }
+
   return (
-    <form class={styles.form} onSubmit={handleSubmit}>
-      <input
+    <div class={styles.form}>
+      <textarea
         class={styles.input}
-        type="text"
         placeholder="Type a command..."
         value={value()}
         onInput={(e) => setValue(e.currentTarget.value)}
+        onKeyDown={handleKeyDown}
         autocomplete="off"
         autocorrect="off"
         spellcheck={false}
         autocapitalize="off"
         inputmode="text"
+        rows={1}
       />
-      <button class={styles.send} type="submit">
+      <button class={styles.send} type="button" onClick={send}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
           <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
         </svg>
       </button>
-    </form>
+    </div>
   );
 }

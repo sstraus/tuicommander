@@ -599,7 +599,8 @@ pub(super) async fn ws_stream(
     let format = query.format.as_deref().unwrap_or("raw");
     // format=text and format=log both serve clean VtLogBuffer rows (no strip_ansi).
     let log_mode = format == "log" || format == "text";
-    ws.on_upgrade(move |socket| handle_ws_session(socket, id, state, log_mode))
+    let initial_offset = query.offset;
+    ws.on_upgrade(move |socket| handle_ws_session(socket, id, state, log_mode, initial_offset))
 }
 
 /// Handle a WebSocket connection for a PTY session.
@@ -618,12 +619,13 @@ async fn handle_ws_session(
     session_id: String,
     state: Arc<AppState>,
     log_mode: bool,
+    initial_offset: Option<usize>,
 ) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     if log_mode {
         // Log/text mode: stream clean VtLogBuffer rows, no raw PTY chunks
-        handle_ws_log_session(ws_sender, ws_receiver, session_id, state).await;
+        handle_ws_log_session(ws_sender, ws_receiver, session_id, state, initial_offset.unwrap_or(0)).await;
         return;
     }
 
@@ -756,17 +758,23 @@ async fn handle_ws_log_session(
     mut ws_receiver: futures_util::stream::SplitStream<WebSocket>,
     session_id: String,
     state: Arc<AppState>,
+    skip_offset: usize,
 ) {
-    // Send catch-up: all lines accumulated so far.
-    // Lock is dropped before the .await to satisfy Send bound.
+    // Send catch-up: only lines accumulated AFTER skip_offset.
+    // When the client already fetched lines via HTTP, skip_offset = total_lines
+    // from that response, so the catch-up only sends the delta.
     let initial_offset = {
         if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
             let (total, catchup_frame) = {
                 let buf = vt_log.lock();
                 let total = buf.total_lines();
-                let frame = if total > 0 {
-                    let (lines, _) = buf.lines_since_owned(0);
-                    Some(serde_json::json!({"type": "log", "lines": lines, "offset": 0}).to_string())
+                let frame = if total > skip_offset {
+                    let (lines, _) = buf.lines_since_owned(skip_offset);
+                    if !lines.is_empty() {
+                        Some(serde_json::json!({"type": "log", "lines": lines, "offset": skip_offset}).to_string())
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 };
