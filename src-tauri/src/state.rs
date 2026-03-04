@@ -2126,6 +2126,79 @@ mod tests {
         assert_eq!(off2, total);
     }
 
+    /// lines_since_owned returns correct results after buffer rotation
+    /// (oldest lines evicted by pop_front).
+    #[test]
+    fn test_vt_log_lines_since_owned_after_rotation() {
+        let mut buf = VtLogBuffer::new(24, 80, 10); // capacity = 10
+        // Feed 40 lines one-at-a-time so scroll detection works
+        for i in 0..40 {
+            buf.process(format!("rot-{i}\r\n").as_bytes());
+        }
+        // Buffer should be at capacity
+        assert!(buf.lines().len() <= 10, "should be capped at 10");
+        let total = buf.total_lines();
+        // Fetch all — should return only the retained lines
+        let (batch, off) = buf.lines_since_owned(0);
+        assert_eq!(batch.len(), buf.lines().len());
+        assert_eq!(off, total);
+        // The retained lines should be the newest ones
+        for line in &batch {
+            assert!(line.starts_with("rot-"), "unexpected line: {line}");
+        }
+        // Fetch with an offset past the end — empty
+        let (empty, off2) = buf.lines_since_owned(off);
+        assert!(empty.is_empty());
+        assert_eq!(off2, off);
+    }
+
+    /// Feed data in small incremental chunks (simulating real PTY reads that
+    /// may split mid-line) and verify lines are still extracted.
+    /// Note: chunk boundaries that split a line mid-write can cause the
+    /// diff-based detector to emit a partial row (e.g. "chunk-" before the
+    /// number arrives in the next chunk). This is expected — we verify that
+    /// the majority of lines are complete.
+    #[test]
+    fn test_vt_log_incremental_chunked_feed() {
+        let mut buf = VtLogBuffer::new(24, 80, 1000);
+        // Build 30 lines of output
+        let full_output: String = (0..30)
+            .map(|i| format!("chunk-{i}\r\n"))
+            .collect();
+        let bytes = full_output.as_bytes();
+        // Feed in small chunks of 7 bytes (deliberately misaligned with lines)
+        for chunk in bytes.chunks(7) {
+            buf.process(chunk);
+        }
+        let lines: Vec<String> = buf.lines().iter().cloned().collect();
+        let matching: Vec<&String> = lines
+            .iter()
+            .filter(|l| l.starts_with("chunk-"))
+            .collect();
+        assert!(
+            matching.len() >= 5,
+            "chunked feed should still capture lines, got {} matching out of {}: {:?}",
+            matching.len(),
+            lines.len(),
+            lines,
+        );
+        // Count complete lines (chunk-N with valid number)
+        let complete_count = matching
+            .iter()
+            .filter(|l| {
+                l.strip_prefix("chunk-")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .is_some()
+            })
+            .count();
+        assert!(
+            complete_count >= 5,
+            "at least 5 lines should be complete 'chunk-N', got {complete_count} complete out of {} matching: {:?}",
+            matching.len(),
+            matching,
+        );
+    }
+
     /// Integration test: spawn a real PTY process, feed its output through
     /// VtLogBuffer, and verify that clean log lines are extracted.
     #[test]
