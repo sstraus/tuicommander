@@ -57,6 +57,7 @@ export interface ShortcutHandlers {
   toggleCommandPalette: () => void;
   toggleActivityDashboard: () => void;
   toggleWorktreeManager: () => void;
+  toggleBranchSwitcher: () => void;
   toggleErrorLog: () => void;
 }
 
@@ -132,6 +133,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "command-palette": handlers.toggleCommandPalette(); return true;
     case "activity-dashboard": handlers.toggleActivityDashboard(); return true;
     case "worktree-manager": handlers.toggleWorktreeManager(); return true;
+    case "quick-branch-switch": handlers.toggleBranchSwitcher(); return true;
     case "toggle-error-log": handlers.toggleErrorLog(); return true;
 
     // Tab navigation

@@ -37,6 +37,7 @@ function createMockHandlers(): ShortcutHandlers {
     toggleCommandPalette: vi.fn(),
     toggleActivityDashboard: vi.fn(),
     toggleWorktreeManager: vi.fn(),
+    toggleBranchSwitcher: vi.fn(),
     toggleErrorLog: vi.fn(),
   };
 }
@@ -69,6 +70,14 @@ describe("actionRegistry", () => {
       expect(ids).toContain("zoom-in");
       expect(ids).toContain("toggle-sidebar");
       expect(ids).toContain("command-palette");
+      expect(ids).toContain("quick-branch-switch");
+    });
+
+    it("quick-branch-switch has correct category", () => {
+      const entry = entries.find((e) => e.id === "quick-branch-switch");
+      expect(entry).toBeDefined();
+      expect(entry?.label).toBe("Quick branch switch");
+      expect(entry?.category).toBe("Git");
     });
 
     it("entries have correct categories", () => {
