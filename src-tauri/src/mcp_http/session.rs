@@ -143,8 +143,40 @@ pub(super) async fn get_output(
         );
     }
 
-    let limit = query.limit.unwrap_or(8192);
-    let strip = format == "text";
+    // format=text: serve clean rows from VtLogBuffer (no strip_ansi needed)
+    if format == "text" {
+        let vt_log = match state.vt_log_buffers.get(&session_id) {
+            Some(b) => b,
+            None => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({"error": "Session not found"})),
+                )
+            }
+        };
+        let buf = vt_log.lock();
+        let limit = query.limit.unwrap_or(usize::MAX);
+        let total = buf.total_lines();
+        let offset = total.saturating_sub(limit);
+        let (log_lines, _) = buf.lines_since_owned(offset);
+        // Append current visible screen rows (non-empty) after the log
+        let screen: Vec<String> = buf.screen_rows()
+            .into_iter()
+            .filter(|r| !r.is_empty())
+            .collect();
+        let mut all_lines = log_lines;
+        all_lines.extend(screen);
+        let data = all_lines.join("\n");
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "data": data,
+                "data_length": data.len(),
+                "total_written": total,
+            })),
+        );
+    }
+
     let ring = match state.output_buffers.get(&session_id) {
         Some(r) => r,
         None => {
@@ -154,9 +186,10 @@ pub(super) async fn get_output(
             )
         }
     };
+    let limit = query.limit.unwrap_or(8192);
     let (bytes, total_written) = ring.lock().read_last(limit);
     let raw = String::from_utf8_lossy(&bytes).to_string();
-    let data = if strip { crate::output_parser::strip_ansi(&raw) } else { raw };
+    let data = raw;
     (
         StatusCode::OK,
         Json(serde_json::json!({
@@ -564,9 +597,9 @@ pub(super) async fn ws_stream(
         return StatusCode::NOT_FOUND.into_response();
     }
     let format = query.format.as_deref().unwrap_or("raw");
-    let strip_ansi = format == "text";
-    let log_mode = format == "log";
-    ws.on_upgrade(move |socket| handle_ws_session(socket, id, state, strip_ansi, log_mode))
+    // format=text and format=log both serve clean VtLogBuffer rows (no strip_ansi).
+    let log_mode = format == "log" || format == "text";
+    ws.on_upgrade(move |socket| handle_ws_session(socket, id, state, log_mode))
 }
 
 /// Handle a WebSocket connection for a PTY session.
@@ -575,21 +608,21 @@ pub(super) async fn ws_stream(
 /// 1. Raw PTY output via mpsc channel → `{"type":"output","data":"..."}`
 /// 2. Parsed events via broadcast channel → `{"type":"parsed","event":{...}}`
 ///
-/// When `log_mode` is true, instead of raw PTY output the client receives
-/// VT100-extracted log lines: `{"type":"log","lines":[...],"offset":N}`
+/// When `log_mode` is true (`?format=log` or `?format=text`), instead of raw PTY
+/// output the client receives VT100-extracted log lines:
+/// `{"type":"log","lines":[...],"offset":N}`
 ///
 /// Client → server messages are written to the PTY as input.
 async fn handle_ws_session(
     socket: WebSocket,
     session_id: String,
     state: Arc<AppState>,
-    strip_ansi: bool,
     log_mode: bool,
 ) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     if log_mode {
-        // Log mode: stream VT100-extracted lines, no raw PTY chunks
+        // Log/text mode: stream clean VtLogBuffer rows, no raw PTY chunks
         handle_ws_log_session(ws_sender, ws_receiver, session_id, state).await;
         return;
     }
@@ -609,10 +642,7 @@ async fn handle_ws_session(
     if let Some(ring) = state.output_buffers.get(&session_id) {
         let (data, _) = ring.lock().read_last(OUTPUT_RING_BUFFER_CAPACITY);
         if !data.is_empty() {
-            let mut text = String::from_utf8_lossy(&data).into_owned();
-            if strip_ansi {
-                text = crate::output_parser::strip_ansi(&text);
-            }
+            let text = String::from_utf8_lossy(&data).into_owned();
             if !text.is_empty() {
                 let frame = serde_json::json!({"type": "output", "data": text});
                 let _ = futures_util::SinkExt::send(
@@ -631,14 +661,7 @@ async fn handle_ws_session(
                 // Raw PTY output from mpsc channel
                 data = rx.recv() => {
                     let Some(data) = data else { break };
-                    let out = if strip_ansi {
-                        let stripped = crate::output_parser::strip_ansi(&data);
-                        if stripped.is_empty() { continue; }
-                        stripped
-                    } else {
-                        data
-                    };
-                    let frame = serde_json::json!({"type": "output", "data": out});
+                    let frame = serde_json::json!({"type": "output", "data": data});
                     if futures_util::SinkExt::send(
                         &mut ws_sender,
                         Message::Text(frame.to_string().into()),

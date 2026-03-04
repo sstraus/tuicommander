@@ -409,19 +409,32 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 Err(e) => return e,
             };
             let limit = args["limit"].as_u64().unwrap_or(8192) as usize;
+            // Default: serve clean rows from VtLogBuffer (no strip_ansi needed).
+            // Pass format="raw" to get the raw ring buffer content with ANSI.
+            if args["format"].as_str() != Some("raw") {
+                let vt_log = match state.vt_log_buffers.get(session_id) {
+                    Some(b) => b,
+                    None => return serde_json::json!({"error": "Session not found"}),
+                };
+                let buf = vt_log.lock();
+                let total = buf.total_lines();
+                let offset = total.saturating_sub(limit);
+                let (log_lines, _) = buf.lines_since_owned(offset);
+                let screen: Vec<String> = buf.screen_rows()
+                    .into_iter()
+                    .filter(|r| !r.is_empty())
+                    .collect();
+                let mut all_lines = log_lines;
+                all_lines.extend(screen);
+                let data = all_lines.join("\n");
+                return serde_json::json!({"data": data, "data_length": data.len(), "total_written": total});
+            }
             let ring = match state.output_buffers.get(session_id) {
                 Some(r) => r,
                 None => return serde_json::json!({"error": "Session not found"}),
             };
             let (bytes, total_written) = ring.lock().read_last(limit);
-            let raw = String::from_utf8_lossy(&bytes).to_string();
-            // Strip ANSI by default — AI agents don't need escape codes.
-            // Pass format="raw" to preserve them (e.g. for terminal rendering).
-            let data = if args["format"].as_str() == Some("raw") {
-                raw
-            } else {
-                crate::output_parser::strip_ansi(&raw)
-            };
+            let data = String::from_utf8_lossy(&bytes).to_string();
             serde_json::json!({"data": data, "data_length": data.len(), "total_written": total_written})
         }
         "resize" => {
