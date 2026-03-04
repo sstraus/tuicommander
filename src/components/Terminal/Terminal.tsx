@@ -421,6 +421,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           case "user-input":
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} user-input content="${parsed.content.slice(0, 80)}"`);
+            // New user input means a new agent cycle — allow the same suggest to re-appear
+            terminalsStore.update(props.id, { lastDismissedSuggest: null });
             // Refresh last relevant prompt from Rust (word-count filtering happens backend-side)
             invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
               if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
@@ -445,7 +447,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           case "suggest":
             if (settingsStore.state.suggestFollowups && parsed.items?.length) {
               const t = terminalsStore.get(props.id);
-              const key = JSON.stringify(parsed.items);
+              const key = JSON.stringify([...parsed.items]);
               // Don't re-show the same suggest after user dismissed/selected it
               if (!t || t.lastDismissedSuggest !== key) {
                 terminalsStore.update(props.id, { suggestedActions: parsed.items });
