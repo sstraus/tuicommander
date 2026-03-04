@@ -19,26 +19,49 @@ export interface ContextMenuProps {
   onClose: () => void;
 }
 
+/** Clamp a submenu position so it stays within the viewport (8px margin). */
+const clampSubmenu = (wrapEl: HTMLDivElement, submenuEl: HTMLDivElement) => {
+  const parentRect = wrapEl.getBoundingClientRect();
+  const subRect = submenuEl.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const margin = 8;
+
+  // Horizontal: prefer right of parent, flip left if needed, clamp to viewport
+  let left = parentRect.right;
+  if (left + subRect.width > vw - margin) {
+    left = parentRect.left - subRect.width;
+  }
+  left = Math.max(margin, Math.min(left, vw - subRect.width - margin));
+
+  // Vertical: align top with parent item, clamp to viewport
+  let top = parentRect.top;
+  if (top + subRect.height > vh - margin) {
+    top = vh - subRect.height - margin;
+  }
+  top = Math.max(margin, top);
+
+  submenuEl.style.left = `${left}px`;
+  submenuEl.style.top = `${top}px`;
+};
+
 /** Single menu item — handles both leaf items and items with submenus */
 const MenuItem: Component<{
   item: ContextMenuItem;
   onClose: () => void;
 }> = (props) => {
   let wrapRef: HTMLDivElement | undefined;
+  let submenuRef: HTMLDivElement | undefined;
   const [submenuOpen, setSubmenuOpen] = createSignal(false);
-  const [flipLeft, setFlipLeft] = createSignal(false);
   const hasChildren = () => !!(props.item.children && props.item.children.length > 0);
 
   const openSubmenu = () => {
     if (props.item.disabled || !hasChildren()) return;
-    // Flip submenu to the left when it would overflow the viewport
-    if (wrapRef) {
-      const rect = wrapRef.getBoundingClientRect();
-      // Submenu uses width: max-content; estimate conservatively
-      const submenuWidth = 240;
-      setFlipLeft(rect.right + submenuWidth > window.innerWidth);
-    }
     setSubmenuOpen(true);
+    // Position after render
+    requestAnimationFrame(() => {
+      if (wrapRef && submenuRef) clampSubmenu(wrapRef, submenuRef);
+    });
   };
 
   return (
@@ -74,7 +97,7 @@ const MenuItem: Component<{
           </Show>
         </button>
         <Show when={submenuOpen() && props.item.children}>
-          <div class={cx(s.submenu, flipLeft() && s.submenuLeft)}>
+          <div ref={submenuRef} class={s.submenu}>
             <For each={props.item.children}>
               {(child) => (
                 <MenuItem item={child} onClose={props.onClose} />
