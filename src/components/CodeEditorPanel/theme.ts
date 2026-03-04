@@ -58,6 +58,60 @@ const editorTheme = EditorView.theme(
       border: "1px solid var(--border)",
       color: "var(--fg-primary)",
     },
+    /* Search/replace panel */
+    ".cm-panels": {
+      backgroundColor: "var(--bg-secondary)",
+      color: "var(--fg-primary)",
+      borderTop: "1px solid var(--border)",
+    },
+    ".cm-panels.cm-panels-bottom": {
+      borderTop: "1px solid var(--border)",
+      borderBottom: "none",
+    },
+    ".cm-panels.cm-panels-top": {
+      borderBottom: "1px solid var(--border)",
+      borderTop: "none",
+    },
+    ".cm-search": {
+      padding: "4px 8px",
+      gap: "4px",
+      fontSize: "var(--font-sm)",
+      fontFamily: "var(--font-ui)",
+    },
+    ".cm-search label": {
+      fontSize: "var(--font-xs)",
+      color: "var(--fg-secondary)",
+    },
+    ".cm-textfield": {
+      backgroundColor: "var(--bg-tertiary)",
+      border: "1px solid var(--border)",
+      borderRadius: "var(--radius-sm)",
+      color: "var(--fg-primary)",
+      fontFamily: "var(--font-mono)",
+      fontSize: "var(--font-sm)",
+      outline: "none",
+      padding: "2px 6px",
+    },
+    ".cm-textfield:focus": {
+      borderColor: "var(--accent)",
+    },
+    ".cm-button": {
+      backgroundColor: "var(--bg-tertiary)",
+      border: "1px solid var(--border)",
+      borderRadius: "var(--radius-sm)",
+      color: "var(--fg-secondary)",
+      fontSize: "var(--font-xs)",
+      cursor: "pointer",
+      padding: "2px 8px",
+      backgroundImage: "none",
+    },
+    ".cm-button:hover": {
+      backgroundColor: "var(--bg-highlight)",
+      color: "var(--fg-primary)",
+    },
+    ".cm-button:active": {
+      backgroundImage: "none",
+    },
   },
   { dark: true },
 );
