@@ -1,0 +1,23 @@
+src-tauri/src/state.rs
+  76a2baf8ac1260dd 2128-2250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "72081aef4f4e3d569c6fa25efba10b2c851af15a",
+  "prompts": {
+    "76a2baf8ac1260dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "15d6d929-641f-46f0-930b-2ca7c650d8a1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 145,
+      "total_deletions": 22,
+      "accepted_lines": 123,
+      "overriden_lines": 0
+    }
+  }
+}
