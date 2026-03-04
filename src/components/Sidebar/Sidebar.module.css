@@ -161,7 +161,7 @@
 
 .repoName {
   flex: 1;
-  font-size: var(--font-md);
+  font-size: var(--font-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
