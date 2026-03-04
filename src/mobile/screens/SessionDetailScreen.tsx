@@ -3,6 +3,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { OutputView } from "../components/OutputView";
 import { QuickActions } from "../components/QuickActions";
 import { SuggestChips } from "../components/SuggestChips";
+import { SlashMenuOverlay } from "../components/SlashMenuOverlay";
 import { CommandInput } from "../components/CommandInput";
 import type { SessionInfo } from "../useSessions";
 import { deriveStatus } from "../utils/deriveStatus";
@@ -23,6 +24,19 @@ function projectName(cwd: string | null): string {
 
 export function SessionDetailScreen(props: SessionDetailScreenProps) {
   const status = () => deriveStatus(props.session);
+
+  // Local dismiss flag for the slash menu overlay (resets when new items arrive)
+  const [slashMenuDismissed, setSlashMenuDismissed] = createSignal(false);
+  let lastSlashMenuItems: unknown = null;
+  const showSlashMenu = () => {
+    const items = props.session.state?.slash_menu_items;
+    // Reset dismiss flag when items change
+    if (items !== lastSlashMenuItems) {
+      lastSlashMenuItems = items;
+      setSlashMenuDismissed(false);
+    }
+    return !slashMenuDismissed() && items != null && items.length > 0;
+  };
 
   // Live countdown for rate limit retry_after_ms
   const [retryRemaining, setRetryRemaining] = createSignal(0);
@@ -140,6 +154,13 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
         <SuggestChips sessionId={props.session.session_id} items={props.session.state!.suggested_actions!} />
       </Show>
       <CommandInput sessionId={props.session.session_id} />
+      <Show when={showSlashMenu()}>
+        <SlashMenuOverlay
+          sessionId={props.session.session_id}
+          items={props.session.state!.slash_menu_items!}
+          onDismiss={() => setSlashMenuDismissed(true)}
+        />
+      </Show>
     </div>
   );
 }

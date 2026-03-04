@@ -19,6 +19,14 @@ export interface SessionState {
   last_prompt?: string;
   progress?: number;
   suggested_actions?: string[];
+  slash_menu_items?: SlashMenuItem[];
+}
+
+/** A single slash command menu item (matches Rust output_parser::SlashMenuItem) */
+export interface SlashMenuItem {
+  command: string;
+  description: string;
+  highlighted: boolean;
 }
 
 /** Session info returned by GET /sessions (matches Rust SessionInfo) */

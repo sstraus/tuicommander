@@ -1,0 +1,54 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+}
+
+.sheet {
+  width: 100%;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: rgba(37, 37, 38, 0.85);
+  backdrop-filter: blur(12px) saturate(1.6);
+  -webkit-backdrop-filter: blur(12px) saturate(1.6);
+  border-top: 1px solid var(--border);
+  border-radius: 12px 12px 0 0;
+  padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+}
+
+.item {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  color: var(--foreground);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.item:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.itemHighlighted {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.command {
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.description {
+  color: var(--foreground-muted);
+  font-family: var(--font-ui);
+}

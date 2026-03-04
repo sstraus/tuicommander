@@ -114,6 +114,9 @@ pub(crate) struct SessionState {
     /// Suggested follow-up actions from the agent (from [[suggest: ...]] tokens)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_actions: Option<Vec<String>>,
+    /// Slash command menu items (from slash-menu parsed events)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slash_menu_items: Option<Vec<crate::output_parser::SlashMenuItem>>,
 }
 
 
@@ -798,9 +801,10 @@ impl AppState {
                                     .map(|t| t.to_string());
                             }
                             "user-input" => {
-                                // User responded — clear question state
+                                // User responded — clear question + slash menu state
                                 s.awaiting_input = false;
                                 s.question_text = None;
+                                s.slash_menu_items = None;
                                 // Capture as last_prompt if >= 10 words
                                 if let Some(content) = parsed.get("content").and_then(|v| v.as_str())
                                     && content.split_whitespace().count() >= 10 {
@@ -824,11 +828,12 @@ impl AppState {
                                     .map(|t| t.to_string());
                             }
                             "status-line" => {
-                                // Agent is working — clear error/rate-limit/suggest states
+                                // Agent is working — clear error/rate-limit/suggest/menu states
                                 s.rate_limited = false;
                                 s.retry_after_ms = None;
                                 s.last_error = None;
                                 s.suggested_actions = None;
+                                s.slash_menu_items = None;
                                 // Capture current task name from status line
                                 s.current_task = parsed.get("task_name")
                                     .and_then(|v| v.as_str())
@@ -845,6 +850,10 @@ impl AppState {
                                     .map(|arr| arr.iter()
                                         .filter_map(|v| v.as_str().map(|s| s.to_string()))
                                         .collect());
+                            }
+                            "slash-menu" => {
+                                s.slash_menu_items = parsed.get("items")
+                                    .and_then(|v| serde_json::from_value::<Vec<crate::output_parser::SlashMenuItem>>(v.clone()).ok());
                             }
                             "progress" => {
                                 let state_val = parsed.get("state").and_then(|v| v.as_u64()).unwrap_or(0);

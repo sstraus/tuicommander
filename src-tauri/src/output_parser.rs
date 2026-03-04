@@ -80,7 +80,7 @@ pub enum ParsedEvent {
 }
 
 /// A single item in a slash command autocomplete menu.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct SlashMenuItem {
     pub command: String,
     pub description: String,
