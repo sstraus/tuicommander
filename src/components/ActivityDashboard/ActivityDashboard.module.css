@@ -67,7 +67,8 @@
 .row {
   display: flex;
   flex-direction: column;
-  padding: 8px 16px;
+  padding: 12px 16px;
+  gap: 6px;
   cursor: pointer;
   border-left: 3px solid transparent;
 }
@@ -97,8 +98,9 @@
 }
 
 .termName {
-  font-size: var(--font-base);
+  font-size: var(--font-lg);
   color: var(--fg-primary);
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

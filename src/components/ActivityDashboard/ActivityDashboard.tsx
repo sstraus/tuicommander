@@ -130,7 +130,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
       currentTask: string | null;
       isActive: boolean;
     }>;
-  });
+  }).sort((a, b) => (b.lastDataAt ?? 0) - (a.lastDataAt ?? 0));
 
   return (
     <Show when={isOpen()}>
