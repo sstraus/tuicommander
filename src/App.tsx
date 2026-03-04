@@ -412,28 +412,33 @@ const App: Component = () => {
   };
 
   const buildAgentMenuItems = (): ContextMenuItem[] => {
-    const available = agentDetection.getAvailable();
+    const available = agentDetection.getAvailable()
+      .filter((a) => a.type !== "git");
     if (available.length === 0) return [];
 
     return available.map((agent) => {
       const agentConfig = AGENTS[agent.type];
       const runConfigs = agentConfigsStore.getRunConfigs(agent.type);
 
-      // Build sub-items: one per run config, or a single "(Default)" if none
-      const children: ContextMenuItem[] = runConfigs.length > 0
-        ? runConfigs.map((rc) => ({
+      // Multiple run configs: submenu with each config
+      if (runConfigs.length > 1) {
+        return {
+          label: agentConfig.name,
+          action: () => {},
+          children: runConfigs.map((rc) => ({
             label: rc.name + (rc.is_default ? " (Default)" : ""),
             action: () => launchAgentInActiveTerminal(agent.type, [rc.command, ...rc.args].join(" ")),
-          }))
-        : [{
-            label: "(Default)",
-            action: () => launchAgentInActiveTerminal(agent.type, agentConfig.binary),
-          }];
+          })),
+        };
+      }
 
+      // 0-1 run configs: flat item, click launches directly
+      const cmd = runConfigs.length === 1
+        ? [runConfigs[0].command, ...runConfigs[0].args].join(" ")
+        : agentConfig.binary;
       return {
         label: agentConfig.name,
-        action: () => {},
-        children,
+        action: () => launchAgentInActiveTerminal(agent.type, cmd),
       };
     });
   };
