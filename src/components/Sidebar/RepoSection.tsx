@@ -4,12 +4,14 @@ import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 import { githubStore } from "../../stores/github";
 import { appLogger } from "../../stores/appLogger";
+import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { activePrStatus, _resetMergedActivityAccum } from "../../utils/mergedPrGrace";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
 import { PromptDialog } from "../PromptDialog";
 import { getModifierSymbol } from "../../platform";
 import { compareBranches } from "../../utils/branchSort";
+import { invoke } from "../../invoke";
 import { cx } from "../../utils";
 import { t } from "../../i18n";
 import type { BranchPrStatus } from "../../types";
@@ -348,6 +350,15 @@ export const BranchItem: Component<{
   );
 };
 
+/** Whether a PR is eligible for merge: open, approved, CI all green */
+export function canMergePr(pr: BranchPrStatus): boolean {
+  return pr.state?.toUpperCase() === "OPEN"
+    && !pr.is_draft
+    && pr.review_decision === "APPROVED"
+    && (pr.checks?.failed ?? 0) === 0
+    && (pr.checks?.pending ?? 0) === 0;
+}
+
 /** Popover listing open PRs on remote-only branches with inline accordion detail */
 const RemoteOnlyPrPopover: Component<{
   prs: BranchPrStatus[];
@@ -357,6 +368,8 @@ const RemoteOnlyPrPopover: Component<{
   onCreateWorktree?: (branchName: string) => void;
 }> = (props) => {
   const [expandedBranch, setExpandedBranch] = createSignal<string | null>(null);
+  const [mergingPr, setMergingPr] = createSignal<number | null>(null);
+  const [mergeError, setMergeError] = createSignal<string | null>(null);
 
   const handleRowClick = (branch: string) => {
     setExpandedBranch((prev) => prev === branch ? null : branch);
@@ -369,6 +382,27 @@ const RemoteOnlyPrPopover: Component<{
       } else {
         props.onClose();
       }
+    }
+  };
+
+  const handleMerge = async (pr: BranchPrStatus) => {
+    setMergingPr(pr.number);
+    setMergeError(null);
+    try {
+      const method = repoDefaultsStore.state.prMergeStrategy;
+      await invoke("merge_pr_via_github", {
+        repoPath: props.repoPath,
+        prNumber: pr.number,
+        mergeMethod: method,
+      });
+      appLogger.info("github", `Merged PR #${pr.number} via ${method}`);
+      githubStore.pollRepo(props.repoPath);
+    } catch (e) {
+      const msg = String(e);
+      setMergeError(msg);
+      appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: msg });
+    } finally {
+      setMergingPr(null);
     }
   };
 
@@ -417,7 +451,22 @@ const RemoteOnlyPrPopover: Component<{
                             {t("sidebar.worktree", "Worktree")}
                           </button>
                         </Show>
+                        <Show when={canMergePr(pr)}>
+                          <button
+                            class={s.remoteOnlyMerge}
+                            onClick={() => handleMerge(pr)}
+                            disabled={mergingPr() === pr.number}
+                            title={t("sidebar.mergePr", "Merge this pull request")}
+                          >
+                            {mergingPr() === pr.number
+                              ? t("sidebar.merging", "Merging...")
+                              : t("sidebar.merge", "Merge")}
+                          </button>
+                        </Show>
                       </div>
+                      <Show when={mergeError()}>
+                        <div class={s.remoteOnlyMergeError}>{mergeError()}</div>
+                      </Show>
                     </PrDetailContent>
                   </div>
                 </Show>

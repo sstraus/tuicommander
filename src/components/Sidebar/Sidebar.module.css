@@ -893,3 +893,30 @@
   background: var(--bg-tertiary);
   color: var(--fg-primary);
 }
+
+.remoteOnlyMerge {
+  padding: 4px 12px;
+  font-size: var(--font-xs);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--success);
+  background: none;
+  color: var(--success);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.remoteOnlyMerge:hover {
+  background: var(--success);
+  color: var(--text-on-success);
+}
+
+.remoteOnlyMerge:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.remoteOnlyMergeError {
+  padding: 4px 8px;
+  font-size: var(--font-2xs);
+  color: var(--error);
+}
