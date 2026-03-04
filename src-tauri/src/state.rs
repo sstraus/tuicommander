@@ -1040,7 +1040,8 @@ impl VtLogBuffer {
                 .filter(|l| !l.is_empty())
                 .cloned()
                 .collect();
-            for line in new_lines {
+            let screen_rows = self.parser.screen().size().0 as usize;
+            for line in trim_agent_chrome(new_lines, screen_rows) {
                 self.push_log_line(line);
             }
         }
@@ -1123,6 +1124,53 @@ impl VtLogBuffer {
         }
         // No overlap found — entire prev scrolled off.
         prev
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Agent chrome trimming — removes prompt lines and UI chrome from full-screen
+// redraw batches so they don't pollute the mobile log.
+// ---------------------------------------------------------------------------
+
+/// Number of rows from the bottom of a batch to scan for a prompt line.
+const CHROME_SCAN_ROWS: usize = 8;
+
+/// Returns the index of the first line to discard when a prompt line is found
+/// in the last [`CHROME_SCAN_ROWS`] rows of `lines`, scanning from the bottom.
+///
+/// Prompt patterns (at line start after trimming whitespace):
+/// - `❯` (U+276F) — used by Claude Code / Ink
+/// - `> ` (greater-than + space) — used by Codex and Gemini
+/// - `>` alone
+///
+/// Returns `None` if no prompt line is found in the scan window.
+fn find_prompt_cutoff(lines: &[String]) -> Option<usize> {
+    let scan_start = lines.len().saturating_sub(CHROME_SCAN_ROWS);
+    for i in (scan_start..lines.len()).rev() {
+        let t = lines[i].trim_start();
+        if t.starts_with('❯') || t == ">" || t.starts_with("> ") {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Trims agent prompt and chrome from a batch of scrolled-off lines.
+///
+/// Only applied to "large batches" where `lines.len() >= screen_rows * 2 / 3`,
+/// which indicates a full-screen redraw rather than normal terminal scrolling.
+/// Small batches (real scroll events) pass through unchanged.
+///
+/// When a prompt line is found in the last [`CHROME_SCAN_ROWS`] rows, everything
+/// from that line to the end (inclusive) is discarded.
+fn trim_agent_chrome(lines: Vec<String>, screen_rows: usize) -> Vec<String> {
+    let threshold = (screen_rows * 2 / 3).max(4);
+    if lines.len() < threshold {
+        return lines;
+    }
+    match find_prompt_cutoff(&lines) {
+        Some(cutoff) => lines[..cutoff].to_vec(),
+        None => lines,
     }
 }
 
@@ -2409,5 +2457,121 @@ mod tests {
             "expected 'normal line' after screen switch resets prev, got: {:?}",
             changed,
         );
+    }
+
+    // --- trim_agent_chrome / find_prompt_cutoff tests ---
+
+    fn make_lines(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// ❯ prompt found in last 8 rows → cutoff at that index.
+    #[test]
+    fn test_find_prompt_cutoff_ink_prompt() {
+        let lines = make_lines(&[
+            "real output 1",
+            "real output 2",
+            "❯ some command",
+            "",
+            "Model: claude",
+        ]);
+        assert_eq!(find_prompt_cutoff(&lines), Some(2));
+    }
+
+    /// `> ` prompt (Codex/Gemini style) found → cutoff at that index.
+    #[test]
+    fn test_find_prompt_cutoff_gt_space_prompt() {
+        let lines = make_lines(&["real output", "> some command", "model info"]);
+        assert_eq!(find_prompt_cutoff(&lines), Some(1));
+    }
+
+    /// `>` alone (bare prompt) found → cutoff at that index.
+    #[test]
+    fn test_find_prompt_cutoff_gt_alone() {
+        let lines = make_lines(&["content", ">", "chrome"]);
+        assert_eq!(find_prompt_cutoff(&lines), Some(1));
+    }
+
+    /// No prompt-like line → None.
+    #[test]
+    fn test_find_prompt_cutoff_no_prompt() {
+        let lines = make_lines(&["line 1", "line 2", "line 3"]);
+        assert_eq!(find_prompt_cutoff(&lines), None);
+    }
+
+    /// Prompt-in-content false-positive guard: `> ` in rows above the scan window
+    /// is not mistaken for a prompt.  Only the last 8 rows are scanned.
+    #[test]
+    fn test_find_prompt_cutoff_prompt_outside_scan_window_ignored() {
+        // 16 lines: prompt at index 5 (scan window = indices 8-15, no prompt there)
+        let mut items: Vec<&str> = vec!["content"; 16];
+        items[5] = "> git diff output";
+        let lines = make_lines(&items);
+        assert_eq!(
+            find_prompt_cutoff(&lines),
+            None,
+            "prompt outside last 8 rows must not trigger cutoff"
+        );
+    }
+
+    /// When scanning bottom-to-top, the bottom-most prompt in the scan window
+    /// is used as the cutoff (not an earlier one).
+    #[test]
+    fn test_find_prompt_cutoff_uses_bottom_most_prompt_in_window() {
+        // scan window (last 8 of 12) = indices 4-11
+        // prompts at indices 5 and 9 → bottom-most in window is 9
+        let mut items: Vec<&str> = vec!["content"; 12];
+        items[5] = "❯ earlier";
+        items[9] = "❯ later";
+        let lines = make_lines(&items);
+        assert_eq!(find_prompt_cutoff(&lines), Some(9));
+    }
+
+    /// Large batch (>= 2/3 of screen height) with an Ink prompt → chrome trimmed.
+    #[test]
+    fn test_trim_agent_chrome_large_batch_ink_prompt() {
+        // 21 lines for a 24-row screen (threshold = 16) — large batch
+        let mut items: Vec<&str> = vec!["real content"; 18];
+        items.push("❯ command"); // index 18
+        items.push("");           // index 19
+        items.push("Model: x");  // index 20
+        let lines = make_lines(&items);
+        let result = trim_agent_chrome(lines, 24);
+        assert_eq!(result.len(), 18, "lines before prompt kept");
+        assert!(result.iter().all(|l| l == "real content"));
+    }
+
+    /// Large batch with `> ` prompt → chrome trimmed.
+    #[test]
+    fn test_trim_agent_chrome_large_batch_gt_prompt() {
+        let mut items: Vec<&str> = vec!["output"; 17];
+        items.push("> ");    // index 17 — bare "> " treated as prompt
+        items.push("chrome"); // index 18
+        let lines = make_lines(&items);
+        let result = trim_agent_chrome(lines, 24);
+        assert_eq!(result.len(), 17);
+    }
+
+    /// Small batch (below threshold) passes through unchanged even if it contains a prompt.
+    #[test]
+    fn test_trim_agent_chrome_small_batch_passthrough() {
+        let lines = make_lines(&["line 1", "❯ command", "chrome"]);
+        let result = trim_agent_chrome(lines.clone(), 24);
+        assert_eq!(result, lines, "small batch must not be filtered");
+    }
+
+    /// Large batch without any prompt → all lines kept.
+    #[test]
+    fn test_trim_agent_chrome_large_batch_no_prompt_passthrough() {
+        let items: Vec<&str> = vec!["output line"; 20];
+        let lines = make_lines(&items);
+        let result = trim_agent_chrome(lines.clone(), 24);
+        assert_eq!(result, lines);
+    }
+
+    /// Empty batch → no panic, returns empty.
+    #[test]
+    fn test_trim_agent_chrome_empty_batch() {
+        assert!(trim_agent_chrome(vec![], 24).is_empty());
     }
 }
