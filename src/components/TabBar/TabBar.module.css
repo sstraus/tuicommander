@@ -135,7 +135,7 @@
 }
 
 .tabIcon {
-  font-size: var(--font-3xs);
+  font-size: 6px;
   color: var(--fg-muted);
   flex-shrink: 0;
   opacity: 0.3;
