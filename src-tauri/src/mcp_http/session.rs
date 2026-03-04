@@ -164,7 +164,7 @@ pub(super) async fn get_output(
             .into_iter()
             .filter(|r| !r.is_empty())
             .collect();
-        let mut all_lines = log_lines;
+        let mut all_lines: Vec<String> = log_lines.iter().map(|ll| ll.text()).collect();
         all_lines.extend(screen);
         let data = all_lines.join("\n");
         return (

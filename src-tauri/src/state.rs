@@ -945,6 +945,156 @@ pub(crate) struct AgentConfig {
 /// Default maximum log lines retained per session.
 pub(crate) const VT_LOG_BUFFER_CAPACITY: usize = 10_000;
 
+/// Terminal color extracted from vt100 cells.
+///
+/// Serializes as `{"idx": N}` for 256-color palette or `{"rgb": [r,g,b]}` for
+/// 24-bit color.  Default color is omitted (serialized as `null` / skipped).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogColor {
+    Idx(u8),
+    Rgb(u8, u8, u8),
+}
+
+impl LogColor {
+    fn from_vt100(c: vt100::Color) -> Option<Self> {
+        match c {
+            vt100::Color::Default => None,
+            vt100::Color::Idx(i) => Some(LogColor::Idx(i)),
+            vt100::Color::Rgb(r, g, b) => Some(LogColor::Rgb(r, g, b)),
+        }
+    }
+}
+
+/// A contiguous run of text with uniform formatting attributes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LogSpan {
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fg: Option<LogColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg: Option<LogColor>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub bold: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub italic: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub underline: bool,
+}
+
+/// A single log line composed of styled spans.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LogLine {
+    pub spans: Vec<LogSpan>,
+}
+
+impl LogLine {
+    /// Returns the plain-text content (all span texts concatenated).
+    pub fn text(&self) -> String {
+        let mut s = String::new();
+        for span in &self.spans {
+            s.push_str(&span.text);
+        }
+        s
+    }
+}
+
+/// Extract a styled `LogLine` from a vt100 screen row by iterating cells.
+///
+/// Consecutive cells with the same (fg, bg, bold, italic, underline) attributes
+/// are grouped into a single `LogSpan`.  Trailing whitespace-only spans with
+/// default attributes are trimmed.
+fn extract_log_line(screen: &vt100::Screen, row: u16) -> LogLine {
+    let cols = screen.size().1;
+    let mut spans: Vec<LogSpan> = Vec::new();
+
+    // Current span accumulator state
+    let mut cur_fg: Option<LogColor> = None;
+    let mut cur_bg: Option<LogColor> = None;
+    let mut cur_bold = false;
+    let mut cur_italic = false;
+    let mut cur_underline = false;
+    let mut cur_text = String::new();
+
+    for col in 0..cols {
+        let cell = match screen.cell(row, col) {
+            Some(c) => c,
+            None => break,
+        };
+        // Skip wide-char continuation cells
+        if cell.is_wide_continuation() {
+            continue;
+        }
+
+        let fg = LogColor::from_vt100(cell.fgcolor());
+        let bg = LogColor::from_vt100(cell.bgcolor());
+        let bold = cell.bold();
+        let italic = cell.italic();
+        let underline = cell.underline();
+
+        // If attributes changed, flush current span and start new one
+        if !cur_text.is_empty()
+            && (fg != cur_fg || bg != cur_bg || bold != cur_bold
+                || italic != cur_italic || underline != cur_underline)
+        {
+            spans.push(LogSpan {
+                text: std::mem::take(&mut cur_text),
+                fg: cur_fg,
+                bg: cur_bg,
+                bold: cur_bold,
+                italic: cur_italic,
+                underline: cur_underline,
+            });
+        }
+
+        cur_fg = fg;
+        cur_bg = bg;
+        cur_bold = bold;
+        cur_italic = italic;
+        cur_underline = underline;
+
+        let contents = cell.contents();
+        if contents.is_empty() {
+            cur_text.push(' ');
+        } else {
+            cur_text.push_str(&contents);
+        }
+    }
+
+    // Flush last span
+    if !cur_text.is_empty() {
+        spans.push(LogSpan {
+            text: cur_text,
+            fg: cur_fg,
+            bg: cur_bg,
+            bold: cur_bold,
+            italic: cur_italic,
+            underline: cur_underline,
+        });
+    }
+
+    // Trim trailing whitespace-only spans with default attrs, then trim the last span's trailing whitespace
+    while let Some(last) = spans.last() {
+        if last.fg.is_none() && last.bg.is_none() && !last.bold && !last.italic && !last.underline
+            && last.text.trim_end().is_empty()
+        {
+            spans.pop();
+        } else {
+            break;
+        }
+    }
+    if let Some(last) = spans.last_mut() {
+        let trimmed = last.text.trim_end().to_string();
+        if trimmed.is_empty() && last.fg.is_none() && last.bg.is_none() && !last.bold && !last.italic && !last.underline {
+            spans.pop();
+        } else {
+            last.text = trimmed;
+        }
+    }
+
+    LogLine { spans }
+}
+
 /// A screen row that changed after a `VtLogBuffer::process()` call.
 ///
 /// Consumers (output parsers) iterate these to detect status lines, intent
@@ -962,17 +1112,19 @@ pub struct ChangedRow {
 ///
 /// Wraps a `vt100::Parser` (screen-only, no vt100 scrollback) and applies a
 /// diff-based algorithm to extract "finalized" lines as they scroll off the top
-/// of the visible screen.  Results are stored in a bounded `VecDeque<String>`
+/// of the visible screen.  Results are stored in a bounded `VecDeque<LogLine>`
 /// that REST and WebSocket consumers can query with `lines_since()`.
 ///
 /// **Thread safety:** Not `Sync` — lives behind `Mutex<VtLogBuffer>` in `AppState`.
 /// The `vt100::Parser` is `Send` but not `Sync`, so this struct shares that bound.
 pub struct VtLogBuffer {
     parser: vt100::Parser,
-    /// Snapshot of visible screen rows from the previous `process()` call.
+    /// Plain text snapshot of visible rows from the previous `process()` call (for diffing).
     prev_rows: Vec<String>,
+    /// Styled LogLine snapshot from the previous `process()` call (for attribute-preserving log).
+    prev_log_lines: Vec<LogLine>,
     /// Finalized log lines (oldest first).
-    log: VecDeque<String>,
+    log: VecDeque<LogLine>,
     /// Maximum number of log lines retained.
     capacity: usize,
     /// Whether the previous `process()` call saw the alternate screen active.
@@ -986,6 +1138,7 @@ impl VtLogBuffer {
         Self {
             parser,
             prev_rows: Vec::new(),
+            prev_log_lines: Vec::new(),
             log: VecDeque::new(),
             capacity,
             was_alternate: false,
@@ -1002,51 +1155,71 @@ impl VtLogBuffer {
     /// Log extraction (scrolled-off lines) remains **normal-screen-only**.
     pub fn process(&mut self, data: &[u8]) -> Vec<ChangedRow> {
         self.parser.process(data);
-        let screen = self.parser.screen();
-        let is_alternate = screen.alternate_screen();
 
-        // On screen switch reset prev_rows so the first frame of the new
-        // screen reports all non-empty rows as changed.
+        // Read everything we need from the screen in a single borrow scope.
+        let (is_alternate, rows, curr_rows, curr_log_lines, changed) = {
+            let screen = self.parser.screen();
+            let is_alternate = screen.alternate_screen();
+            let (rows, cols) = screen.size();
+
+            let curr_rows: Vec<String> = screen
+                .rows(0, cols)
+                .map(|r| r.trim_end().to_string())
+                .collect();
+
+            // On screen switch we need fresh prev_rows for changed-row detection.
+            let prev_rows_ref = if is_alternate != self.was_alternate {
+                &[][..]
+            } else {
+                &self.prev_rows[..]
+            };
+
+            let changed: Vec<ChangedRow> = curr_rows
+                .iter()
+                .enumerate()
+                .filter_map(|(i, curr)| {
+                    let prev = prev_rows_ref.get(i).map(String::as_str).unwrap_or("");
+                    if curr != prev {
+                        Some(ChangedRow { row_index: i, text: curr.clone() })
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let curr_log_lines: Vec<LogLine> = (0..rows)
+                .map(|row| extract_log_line(screen, row))
+                .collect();
+
+            (is_alternate, rows, curr_rows, curr_log_lines, changed)
+        }; // screen borrow ends here
+
         if is_alternate != self.was_alternate {
             self.prev_rows.clear();
+            self.prev_log_lines.clear();
         }
-
-        let cols = screen.size().1;
-        let curr_rows: Vec<String> = screen
-            .rows(0, cols)
-            .map(|r| r.trim_end().to_string())
-            .collect();
-
-        // Compute changed rows by diffing curr vs prev (both screens).
-        let changed: Vec<ChangedRow> = curr_rows
-            .iter()
-            .enumerate()
-            .filter_map(|(i, curr)| {
-                let prev = self.prev_rows.get(i).map(String::as_str).unwrap_or("");
-                if curr != prev {
-                    Some(ChangedRow { row_index: i, text: curr.clone() })
-                } else {
-                    None
-                }
-            })
-            .collect();
 
         // Log extraction: scrolled-off lines on normal screen only.
         if !is_alternate {
             let prev_snapshot = self.prev_rows.clone();
-            let scrolled_off = self.rows_scrolled_off(&prev_snapshot, &curr_rows);
-            let new_lines: Vec<String> = scrolled_off
-                .iter()
-                .filter(|l| !l.is_empty())
-                .cloned()
-                .collect();
-            let screen_rows = self.parser.screen().size().0 as usize;
-            for line in trim_agent_chrome(new_lines, screen_rows) {
-                self.push_log_line(line);
+            let scrolled_off_count = self.rows_scrolled_off(&prev_snapshot, &curr_rows).len();
+
+            if scrolled_off_count > 0 && !self.prev_log_lines.is_empty() {
+                let count = scrolled_off_count.min(self.prev_log_lines.len());
+                let scrolled_log: Vec<LogLine> = self.prev_log_lines[..count]
+                    .iter()
+                    .filter(|ll| !ll.text().is_empty())
+                    .cloned()
+                    .collect();
+                let screen_rows = rows as usize;
+                for ll in trim_agent_chrome(scrolled_log, screen_rows) {
+                    self.push_log_line(ll);
+                }
             }
         }
 
         self.prev_rows = curr_rows;
+        self.prev_log_lines = curr_log_lines;
         self.was_alternate = is_alternate;
         changed
     }
@@ -1056,22 +1229,23 @@ impl VtLogBuffer {
         self.parser.set_size(rows, cols);
         // prev_rows may no longer match the new dimensions; reset to avoid stale diffs.
         self.prev_rows.clear();
+        self.prev_log_lines.clear();
     }
 
     /// All finalized log lines (oldest first).
     #[allow(dead_code)]
-    pub fn lines(&self) -> &VecDeque<String> {
+    pub fn lines(&self) -> &VecDeque<LogLine> {
         &self.log
     }
 
     /// Returns log lines starting at `offset` (0-indexed from oldest retained line).
     /// Also returns the new offset (= total lines so far) for incremental reads.
-    pub fn lines_since_owned(&self, offset: usize) -> (Vec<String>, usize) {
+    pub fn lines_since_owned(&self, offset: usize) -> (Vec<LogLine>, usize) {
         let total = self.log.len();
         if offset >= total {
             return (Vec::new(), total);
         }
-        let slice: Vec<String> = self.log.iter().skip(offset).cloned().collect();
+        let slice: Vec<LogLine> = self.log.iter().skip(offset).cloned().collect();
         let new_offset = total;
         (slice, new_offset)
     }
@@ -1095,7 +1269,7 @@ impl VtLogBuffer {
 
     // --- private helpers ---
 
-    fn push_log_line(&mut self, line: String) {
+    fn push_log_line(&mut self, line: LogLine) {
         if self.log.len() >= self.capacity {
             self.log.pop_front();
         }
@@ -1135,6 +1309,12 @@ impl VtLogBuffer {
 /// Number of rows from the bottom of a batch to scan for a prompt line.
 const CHROME_SCAN_ROWS: usize = 8;
 
+/// Returns true if `text` looks like an agent prompt line.
+fn is_prompt_line(text: &str) -> bool {
+    let t = text.trim_start();
+    t.starts_with('❯') || t == ">" || t.starts_with("> ")
+}
+
 /// Returns the index of the first line to discard when a prompt line is found
 /// in the last [`CHROME_SCAN_ROWS`] rows of `lines`, scanning from the bottom.
 ///
@@ -1144,15 +1324,16 @@ const CHROME_SCAN_ROWS: usize = 8;
 /// - `>` alone
 ///
 /// Returns `None` if no prompt line is found in the scan window.
+#[cfg(test)]
 fn find_prompt_cutoff(lines: &[String]) -> Option<usize> {
     let scan_start = lines.len().saturating_sub(CHROME_SCAN_ROWS);
-    for i in (scan_start..lines.len()).rev() {
-        let t = lines[i].trim_start();
-        if t.starts_with('❯') || t == ">" || t.starts_with("> ") {
-            return Some(i);
-        }
-    }
-    None
+    (scan_start..lines.len()).rev().find(|&i| is_prompt_line(&lines[i]))
+}
+
+/// Like `find_prompt_cutoff` but works on `LogLine` slices.
+fn find_prompt_cutoff_loglines(lines: &[LogLine]) -> Option<usize> {
+    let scan_start = lines.len().saturating_sub(CHROME_SCAN_ROWS);
+    (scan_start..lines.len()).rev().find(|&i| is_prompt_line(&lines[i].text()))
 }
 
 /// Trims agent prompt and chrome from a batch of scrolled-off lines.
@@ -1163,12 +1344,12 @@ fn find_prompt_cutoff(lines: &[String]) -> Option<usize> {
 ///
 /// When a prompt line is found in the last [`CHROME_SCAN_ROWS`] rows, everything
 /// from that line to the end (inclusive) is discarded.
-fn trim_agent_chrome(lines: Vec<String>, screen_rows: usize) -> Vec<String> {
+fn trim_agent_chrome(lines: Vec<LogLine>, screen_rows: usize) -> Vec<LogLine> {
     let threshold = (screen_rows * 2 / 3).max(4);
     if lines.len() < threshold {
         return lines;
     }
-    match find_prompt_cutoff(&lines) {
+    match find_prompt_cutoff_loglines(&lines) {
         Some(cutoff) => lines[..cutoff].to_vec(),
         None => lines,
     }
@@ -1909,6 +2090,11 @@ mod tests {
         VtLogBuffer::new(24, 80, 1000)
     }
 
+    /// Helper: extract plain text from log lines for easy assertion.
+    fn log_texts(buf: &VtLogBuffer) -> Vec<String> {
+        buf.lines().iter().map(|ll| ll.text()).collect()
+    }
+
     /// Emit lines one at a time and verify they appear in the log after scrolling off.
     /// NOTE: process() is called per-line to match production behavior (PTY reader calls
     /// process() on each small chunk; a single bulk process() call cannot detect scroll).
@@ -1919,11 +2105,10 @@ mod tests {
         for i in 0..30 {
             buf.process(format!("line {i}\r\n").as_bytes());
         }
-        let lines = buf.lines();
+        let texts = log_texts(&buf);
         // Lines 0..6 scrolled off (30 total - 24 visible = 6)
-        assert!(!lines.is_empty(), "should have finalized some lines");
-        let first = lines.front().unwrap();
-        assert!(first.starts_with("line "), "line content preserved: {first:?}");
+        assert!(!texts.is_empty(), "should have finalized some lines");
+        assert!(texts[0].starts_with("line "), "line content preserved: {:?}", texts[0]);
     }
 
     /// In-place rewrite via \r should resolve to the final content on screen.
@@ -1947,10 +2132,9 @@ mod tests {
         for i in 0..25 {
             buf.process(format!("row{i}\r\n").as_bytes());
         }
-        let lines = buf.lines();
-        assert!(!lines.is_empty(), "at least one line should have scrolled off");
-        let first = lines.front().unwrap();
-        assert_eq!(first, "row0", "first scrolled-off row is row0, got: {first:?}");
+        let texts = log_texts(&buf);
+        assert!(!texts.is_empty(), "at least one line should have scrolled off");
+        assert_eq!(texts[0], "row0", "first scrolled-off row is row0, got: {:?}", texts[0]);
     }
 
     /// Alternate screen suppresses log extraction.
@@ -1990,10 +2174,10 @@ mod tests {
             buf.process(format!("main {i}\r\n").as_bytes());
         }
         // Main screen output should appear in the log
-        let lines = buf.lines();
-        assert!(!lines.is_empty(), "main screen lines should appear in log after alt exit");
+        let texts = log_texts(&buf);
+        assert!(!texts.is_empty(), "main screen lines should appear in log after alt exit");
         assert!(
-            lines.iter().any(|l| l.starts_with("main")),
+            texts.iter().any(|l| l.starts_with("main")),
             "main lines present in log"
         );
     }
@@ -2024,9 +2208,9 @@ mod tests {
             }
         }
         buf.process(input.as_bytes());
-        let lines = buf.lines();
+        let texts = log_texts(&buf);
         // None of the logged lines should be empty
-        for line in lines.iter() {
+        for line in &texts {
             assert!(!line.is_empty(), "logged line should not be empty: {line:?}");
         }
     }
@@ -2086,7 +2270,7 @@ mod tests {
         assert_eq!(off, total);
         // The retained lines should be the newest ones
         for line in &batch {
-            assert!(line.starts_with("rot-"), "unexpected line: {line}");
+            assert!(line.text().starts_with("rot-"), "unexpected line: {:?}", line.text());
         }
         // Fetch with an offset past the end — empty
         let (empty, off2) = buf.lines_since_owned(off);
@@ -2112,7 +2296,7 @@ mod tests {
         for chunk in bytes.chunks(7) {
             buf.process(chunk);
         }
-        let lines: Vec<String> = buf.lines().iter().cloned().collect();
+        let lines = log_texts(&buf);
         let matching: Vec<&String> = lines
             .iter()
             .filter(|l| l.starts_with("chunk-"))
@@ -2168,7 +2352,7 @@ mod tests {
             after > before,
             "scroll region output should produce new log lines: before={before}, after={after}"
         );
-        let lines: Vec<String> = buf.lines().iter().cloned().collect();
+        let lines = log_texts(&buf);
         let region_lines: Vec<&String> = lines
             .iter()
             .filter(|l| l.starts_with("region-"))
@@ -2191,7 +2375,7 @@ mod tests {
         // Move cursor up 3 rows (CUU) and overwrite with "REPLACED"
         buf.process(b"\x1b[3A");            // CUU 3: move up 3
         buf.process(b"REPLACED\r\n");       // overwrite current line
-        let lines: Vec<String> = buf.lines().iter().cloned().collect();
+        let lines = log_texts(&buf);
         // "REPLACED" should NOT appear in the log — it was written via cursor
         // movement within the viewport, not as new scrolled-off output.
         // (The diff detector may emit the displaced orig-N lines, but the
@@ -2212,7 +2396,7 @@ mod tests {
             // ESC[31m = red, ESC[1m = bold, ESC[0m = reset
             buf.process(format!("\x1b[1;31mcolor-{i}\x1b[0m\r\n").as_bytes());
         }
-        let lines: Vec<String> = buf.lines().iter().cloned().collect();
+        let lines = log_texts(&buf);
         let color_lines: Vec<&String> = lines
             .iter()
             .filter(|l| l.contains("color-"))
@@ -2273,7 +2457,7 @@ mod tests {
         }
         let _ = child.wait();
 
-        let lines: Vec<String> = buf.lines().iter().cloned().collect();
+        let lines = log_texts(&buf);
         // We should have captured at least some of our "test-line-N" lines
         let matching: Vec<&String> = lines
             .iter()
@@ -2344,7 +2528,7 @@ mod tests {
         }
         let _ = child.wait();
 
-        let lines: Vec<String> = buf.lines().iter().cloned().collect();
+        let lines = log_texts(&buf);
         // TUI-GARBAGE-LINE should not appear in the log
         let has_garbage = lines.iter().any(|l| l.contains("TUI-GARBAGE"));
         assert!(
@@ -2465,6 +2649,21 @@ mod tests {
         items.iter().map(|s| s.to_string()).collect()
     }
 
+    /// Helper: create plain LogLine vec from string slices for testing.
+    fn make_log_lines(items: &[&str]) -> Vec<LogLine> {
+        items.iter().map(|s| LogLine {
+            spans: if s.is_empty() {
+                vec![]
+            } else {
+                vec![LogSpan {
+                    text: s.to_string(),
+                    fg: None, bg: None,
+                    bold: false, italic: false, underline: false,
+                }]
+            },
+        }).collect()
+    }
+
     /// ❯ prompt found in last 8 rows → cutoff at that index.
     #[test]
     fn test_find_prompt_cutoff_ink_prompt() {
@@ -2535,10 +2734,10 @@ mod tests {
         items.push("❯ command"); // index 18
         items.push("");           // index 19
         items.push("Model: x");  // index 20
-        let lines = make_lines(&items);
+        let lines = make_log_lines(&items);
         let result = trim_agent_chrome(lines, 24);
         assert_eq!(result.len(), 18, "lines before prompt kept");
-        assert!(result.iter().all(|l| l == "real content"));
+        assert!(result.iter().all(|l| l.text() == "real content"));
     }
 
     /// Large batch with `> ` prompt → chrome trimmed.
@@ -2547,7 +2746,7 @@ mod tests {
         let mut items: Vec<&str> = vec!["output"; 17];
         items.push("> ");    // index 17 — bare "> " treated as prompt
         items.push("chrome"); // index 18
-        let lines = make_lines(&items);
+        let lines = make_log_lines(&items);
         let result = trim_agent_chrome(lines, 24);
         assert_eq!(result.len(), 17);
     }
@@ -2555,7 +2754,7 @@ mod tests {
     /// Small batch (below threshold) passes through unchanged even if it contains a prompt.
     #[test]
     fn test_trim_agent_chrome_small_batch_passthrough() {
-        let lines = make_lines(&["line 1", "❯ command", "chrome"]);
+        let lines = make_log_lines(&["line 1", "❯ command", "chrome"]);
         let result = trim_agent_chrome(lines.clone(), 24);
         assert_eq!(result, lines, "small batch must not be filtered");
     }
@@ -2564,7 +2763,7 @@ mod tests {
     #[test]
     fn test_trim_agent_chrome_large_batch_no_prompt_passthrough() {
         let items: Vec<&str> = vec!["output line"; 20];
-        let lines = make_lines(&items);
+        let lines = make_log_lines(&items);
         let result = trim_agent_chrome(lines.clone(), 24);
         assert_eq!(result, lines);
     }
@@ -2573,5 +2772,128 @@ mod tests {
     #[test]
     fn test_trim_agent_chrome_empty_batch() {
         assert!(trim_agent_chrome(vec![], 24).is_empty());
+    }
+
+    // --- LogLine / extract_log_line tests ---
+
+    /// Plain text produces a single span with no color attributes.
+    #[test]
+    fn test_extract_log_line_plain_text_single_span() {
+        let parser = vt100::Parser::new(4, 80, 0);
+        // Feed plain text to row 0 (no escape sequences)
+        // Actually we need to use a mutable parser, but extract_log_line takes a Screen ref.
+        // Use a local parser.
+        let mut p = vt100::Parser::new(4, 80, 0);
+        p.process(b"Hello world");
+        let line = extract_log_line(p.screen(), 0);
+        assert_eq!(line.spans.len(), 1, "plain text = single span");
+        assert_eq!(line.spans[0].text, "Hello world");
+        assert_eq!(line.spans[0].fg, None);
+        assert_eq!(line.spans[0].bg, None);
+        assert!(!line.spans[0].bold);
+        assert!(!line.spans[0].italic);
+        assert!(!line.spans[0].underline);
+        drop(parser); // suppress unused warning
+    }
+
+    /// Colored text (ANSI escape for red) produces a span with fg color.
+    #[test]
+    fn test_extract_log_line_colored_text() {
+        let mut p = vt100::Parser::new(4, 80, 0);
+        // ESC[31m = red foreground, ESC[0m = reset
+        p.process(b"\x1b[31mERROR\x1b[0m ok");
+        let line = extract_log_line(p.screen(), 0);
+        assert!(line.spans.len() >= 2, "should have at least 2 spans: {:?}", line.spans);
+        // First span: "ERROR" with red fg
+        assert_eq!(line.spans[0].text, "ERROR");
+        assert_eq!(line.spans[0].fg, Some(LogColor::Idx(1))); // ANSI red = idx 1
+        // Second span: " ok" with default color
+        assert_eq!(line.spans[1].text, " ok");
+        assert_eq!(line.spans[1].fg, None);
+    }
+
+    /// Multi-span line with bold + color changes.
+    #[test]
+    fn test_extract_log_line_multi_span_bold_color() {
+        let mut p = vt100::Parser::new(4, 80, 0);
+        // Bold green then normal
+        p.process(b"\x1b[1;32m+added\x1b[0m context");
+        let line = extract_log_line(p.screen(), 0);
+        assert!(line.spans.len() >= 2, "multi-span: {:?}", line.spans);
+        assert_eq!(line.spans[0].text, "+added");
+        assert!(line.spans[0].bold);
+        assert_eq!(line.spans[0].fg, Some(LogColor::Idx(2))); // green = idx 2
+        // Rest is plain
+        let last = line.spans.last().unwrap();
+        assert_eq!(last.text, " context");
+        assert!(!last.bold);
+        assert_eq!(last.fg, None);
+    }
+
+    /// Trailing whitespace spans are trimmed.
+    #[test]
+    fn test_extract_log_line_trims_trailing_whitespace() {
+        let mut p = vt100::Parser::new(4, 80, 0);
+        p.process(b"text");
+        let line = extract_log_line(p.screen(), 0);
+        // Should not have trailing spaces filling to column 80
+        let total_len: usize = line.spans.iter().map(|s| s.text.len()).sum();
+        assert_eq!(total_len, 4, "no trailing whitespace: {:?}", line.spans);
+    }
+
+    /// Empty row produces an empty spans vec.
+    #[test]
+    fn test_extract_log_line_empty_row() {
+        let p = vt100::Parser::new(4, 80, 0);
+        let line = extract_log_line(p.screen(), 0);
+        assert!(line.spans.is_empty(), "empty row = empty spans: {:?}", line.spans);
+    }
+
+    /// LogLine.text() concatenates all span texts.
+    #[test]
+    fn test_log_line_text_method() {
+        let line = LogLine {
+            spans: vec![
+                LogSpan { text: "hello".into(), fg: Some(LogColor::Idx(1)), bg: None, bold: true, italic: false, underline: false },
+                LogSpan { text: " world".into(), fg: None, bg: None, bold: false, italic: false, underline: false },
+            ],
+        };
+        assert_eq!(line.text(), "hello world");
+    }
+
+    /// Colored lines scrolled off are preserved as LogLine with attributes.
+    #[test]
+    fn test_vt_log_colored_lines_preserved_in_log() {
+        let mut buf = VtLogBuffer::new(4, 80, 100); // small 4-row screen
+        // Feed colored lines that will scroll off
+        for i in 0..6 {
+            buf.process(format!("\x1b[31mred-{i}\x1b[0m\r\n").as_bytes());
+        }
+        let log = buf.lines();
+        assert!(!log.is_empty(), "should have scrolled-off lines");
+        // At least one line should have a colored span
+        let has_color = log.iter().any(|ll| ll.spans.iter().any(|s| s.fg.is_some()));
+        assert!(has_color, "scrolled-off lines should preserve color: {:?}", log);
+    }
+
+    /// Serialize LogLine to JSON matches expected format.
+    #[test]
+    fn test_log_line_serialization() {
+        let line = LogLine {
+            spans: vec![
+                LogSpan { text: "hello".into(), fg: Some(LogColor::Idx(1)), bg: None, bold: true, italic: false, underline: false },
+                LogSpan { text: " world".into(), fg: None, bg: None, bold: false, italic: false, underline: false },
+            ],
+        };
+        let json = serde_json::to_value(&line).unwrap();
+        let spans = json["spans"].as_array().unwrap();
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0]["text"], "hello");
+        assert_eq!(spans[0]["fg"], serde_json::json!({"idx": 1}));
+        assert!(spans[0]["bold"].as_bool().unwrap());
+        // Second span has no color fields (skipped by serde)
+        assert_eq!(spans[1]["text"], " world");
+        assert!(spans[1].get("fg").is_none() || spans[1]["fg"].is_null());
+        assert!(spans[1].get("bold").is_none() || !spans[1]["bold"].as_bool().unwrap_or(true));
     }
 }

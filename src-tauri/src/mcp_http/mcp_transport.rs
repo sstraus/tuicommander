@@ -424,7 +424,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                     .into_iter()
                     .filter(|r| !r.is_empty())
                     .collect();
-                let mut all_lines = log_lines;
+                let mut all_lines: Vec<String> = log_lines.iter().map(|ll| ll.text()).collect();
                 all_lines.extend(screen);
                 let data = all_lines.join("\n");
                 return serde_json::json!({"data": data, "data_length": data.len(), "total_written": total});

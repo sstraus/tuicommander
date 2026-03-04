@@ -1827,10 +1827,14 @@ mod tests {
         let total = json["total_lines"].as_u64().expect("total_lines should be u64");
         assert_eq!(total, expected_total as u64);
         assert_eq!(lines.len(), expected_total);
-        // Lines should contain our log-line-N entries
-        let has_expected = lines
-            .iter()
-            .any(|l| l.as_str().unwrap_or("").starts_with("log-line-"));
+        // Lines are LogLine objects: {spans: [{text: "log-line-N", ...}]}
+        let has_expected = lines.iter().any(|l| {
+            l["spans"].as_array()
+                .and_then(|spans| spans.first())
+                .and_then(|s| s["text"].as_str())
+                .map(|t| t.starts_with("log-line-"))
+                .unwrap_or(false)
+        });
         assert!(has_expected, "should contain log-line-N entries, got: {json}");
     }
 
