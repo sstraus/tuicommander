@@ -867,12 +867,12 @@ pub fn colorize_intent(raw: &str) -> String {
 }
 
 /// Hide `[[suggest: ...]]` tokens from the xterm stream by wrapping them in SGR
-/// conceal/reveal sequences (`\x1b[8m` … `\x1b[28m`).
+/// Replaces the matched token with spaces of the same visible width so cursor
+/// positions stay intact while xterm.js shows nothing.
 ///
-/// Stripping the token entirely causes layout corruption because the surrounding
-/// cursor-movement sequences (CUF, CUU, CUD) remain and mis-position subsequent output.
-/// Concealing instead keeps the character count intact so cursor positions are unaffected,
-/// while xterm.js renders the token invisible.
+/// We cannot use SGR 8 (conceal) because xterm.js does not support it.
+/// We cannot strip entirely because surrounding cursor-movement sequences
+/// (CUF, CUU, CUD) would mis-position subsequent output.
 ///
 /// The regex tolerates CSI sequences between structural bracket/keyword elements — the
 /// same technique used by `colorize_intent` — to handle re-rendered lines that contain
@@ -886,9 +886,13 @@ pub fn conceal_suggest(raw: &str) -> String {
                 C = c
             )).unwrap()
         };
+        static ref ANSI_RE: regex::Regex =
+            regex::Regex::new(r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]").unwrap();
     }
     SUGGEST_CONCEAL_RE.replace_all(raw, |caps: &regex::Captures| {
-        format!("\x1b[8m{}\x1b[28m", &caps[0])
+        // Count visible characters (strip ANSI sequences from the matched token)
+        let visible_len = ANSI_RE.replace_all(&caps[0], "").chars().count();
+        " ".repeat(visible_len)
     }).into_owned()
 }
 
@@ -1020,10 +1024,10 @@ pub fn parse_slash_menu(screen_rows: &[String]) -> Option<ParsedEvent> {
     }
 
     // Fallback: if no item has ❯, highlight the first item.
-    if !items.iter().any(|it| it.highlighted) {
-        if let Some(first) = items.first_mut() {
-            first.highlighted = true;
-        }
+    if !items.iter().any(|it| it.highlighted)
+        && let Some(first) = items.first_mut()
+    {
+        first.highlighted = true;
     }
 
     Some(ParsedEvent::SlashMenu { items })
@@ -2551,10 +2555,10 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_conceal_suggest_basic() {
         let raw = "[[suggest: Fix the test | Refactor code | Add docs]]";
         let out = conceal_suggest(raw);
-        assert!(out.contains("\x1b[8m"), "should start conceal");
-        assert!(out.contains("\x1b[28m"), "should end conceal");
-        assert!(out.contains("[[suggest:"), "token content preserved for layout");
-        assert!(out.contains("Fix the test"), "items preserved inside conceal");
+        // Token replaced with spaces of same visible length
+        assert!(!out.contains("suggest:"), "token text should be gone");
+        assert_eq!(out.len(), raw.len(), "output length matches input (all ASCII)");
+        assert!(out.trim().is_empty(), "should be only spaces");
     }
 
     #[test]
@@ -2562,8 +2566,8 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let raw = "some text [[suggest: A | B]] more text";
         let out = conceal_suggest(raw);
         assert!(out.starts_with("some text "), "prefix preserved");
-        assert!(out.contains("more text"), "suffix preserved");
-        assert!(out.contains("\x1b[8m"), "conceal applied to token");
+        assert!(out.ends_with(" more text"), "suffix preserved");
+        assert!(!out.contains("suggest:"), "token text replaced");
     }
 
     #[test]
@@ -2577,7 +2581,8 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_conceal_suggest_single_brackets() {
         let raw = "[suggest: Option A | Option B]";
         let out = conceal_suggest(raw);
-        assert!(out.contains("\x1b[8m"), "single brackets also concealed");
+        assert!(!out.contains("suggest:"), "single brackets also replaced");
+        assert_eq!(out.chars().count(), raw.chars().count(), "visible width preserved");
     }
 
     #[test]
@@ -2588,7 +2593,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(out.contains("\x1b[8A"), "CUU must survive");
         assert!(out.contains("\x1b[1C"), "CUF must survive");
         assert!(out.contains("\x1b[1B"), "CUD must survive");
-        assert!(out.contains("\x1b[8m"), "conceal applied to token");
+        assert!(!out.contains("suggest:"), "token replaced with spaces");
         assert!(out.contains("more"), "text after token preserved");
     }
 
