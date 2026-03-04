@@ -1086,6 +1086,7 @@ impl VtLogBuffer {
     }
 
     /// All finalized log lines (oldest first).
+    #[allow(dead_code)]
     pub fn lines(&self) -> &VecDeque<String> {
         &self.log
     }
@@ -1103,6 +1104,7 @@ impl VtLogBuffer {
     }
 
     /// Current visible screen rows (useful for appending after the log).
+    #[allow(dead_code)]
     pub fn screen_rows(&self) -> Vec<String> {
         let screen = self.parser.screen();
         let cols = screen.size().1;

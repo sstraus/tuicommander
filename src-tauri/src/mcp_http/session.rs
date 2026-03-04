@@ -132,7 +132,7 @@ pub(super) async fn get_output(
         let buf = vt_log.lock();
         let limit = query.limit.unwrap_or(usize::MAX);
         let total = buf.total_lines();
-        let offset = if limit < total { total - limit } else { 0 };
+        let offset = total.saturating_sub(limit);
         let (lines, _) = buf.lines_since_owned(offset);
         return (
             StatusCode::OK,

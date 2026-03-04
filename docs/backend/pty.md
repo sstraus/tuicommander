@@ -68,11 +68,13 @@ spawn_reader_thread(reader, paused, session_id, app, state)
 **Processing pipeline per read:**
 
 1. Read raw bytes from PTY master (up to 8KB buffer)
-2. Push through `Utf8ReadBuffer` — accumulates bytes until valid UTF-8 boundary, returns safe string
-3. Push through `EscapeAwareBuffer` — holds incomplete ANSI escape sequences (CSI, OSC, etc.)
-4. Write to `OutputRingBuffer` (64KB circular buffer for MCP access)
-5. Broadcast to WebSocket clients (if any connected)
-6. Emit Tauri event `pty-output` with `{session_id, data}`
+2. Strip Kitty keyboard protocol sequences (non-printable noise for consumers)
+3. Push through `Utf8ReadBuffer` — accumulates bytes until valid UTF-8 boundary, returns safe string
+4. Push through `EscapeAwareBuffer` — holds incomplete ANSI escape sequences (CSI, OSC, etc.)
+5. Feed into `VtLogBuffer` for VT100-aware log extraction (mobile/MCP consumers)
+6. Write to `OutputRingBuffer` (64KB circular buffer for MCP access)
+7. Broadcast to WebSocket clients (if any connected)
+8. Emit Tauri event `pty-output` with `{session_id, data}`
 
 **Pause behavior:** When `paused` flag is set (`AtomicBool`), the reader thread sleeps for 50ms instead of reading. This prevents output flooding during background operations.
 
@@ -135,6 +137,34 @@ impl OutputRingBuffer {
     fn read_last(&self, limit: usize) -> (Vec<u8>, u64) // Read last N bytes
 }
 ```
+
+### VtLogBuffer
+
+**Module:** `src-tauri/src/state.rs`
+
+VT100-aware extractor that captures clean log lines from PTY output. Designed for mobile/browser clients that need readable text without ANSI noise or TUI screen garbage.
+
+```rust
+impl VtLogBuffer {
+    fn new(rows: u16, cols: u16, capacity: usize) -> Self  // Create with terminal size
+    fn process(&mut self, data: &[u8])                      // Feed raw PTY bytes
+    fn resize(&mut self, rows: u16, cols: u16)              // Update terminal dimensions
+    fn lines_since_owned(&self, offset: usize) -> (Vec<String>, usize) // Incremental reads
+    fn total_lines(&self) -> usize                          // Total accumulated lines
+}
+```
+
+**How it works:**
+
+1. Maintains a `vt100::Parser` — a full VT100 screen emulator (24 rows × 220 cols default)
+2. On each `process()` call, compares current screen rows against previous snapshot
+3. Lines that have scrolled off the top are emitted to the log (diff-based detection)
+4. **Alternate screen suppression:** When a TUI app activates alternate screen (`ESC[?1049h`), extraction is paused — no garbage from vim, htop, or Claude Code's TUI surfaces
+5. Bounded by `VT_LOG_BUFFER_CAPACITY` (10,000 lines); oldest lines are dropped when full
+
+**Resize:** When the PTY is resized, `VtLogBuffer.resize()` is called to keep the parser in sync and clear the prev-row snapshot (avoids false scroll detection after resize).
+
+Each session gets its own `VtLogBuffer` stored in `AppState.vt_log_buffers: DashMap<String, Mutex<VtLogBuffer>>`.
 
 ## OSC 7 CWD Tracking
 
