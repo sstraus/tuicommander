@@ -54,6 +54,20 @@ pub(super) async fn repo_ci_checks(
     }
 }
 
+pub(super) async fn repo_approve_pr(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<super::types::ApprovePrRequest>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
+    let path = body.repo_path;
+    let pr = body.pr_number;
+    match tokio::task::spawn_blocking(move || crate::github::approve_pr_impl(&path, pr, &state)).await {
+        Ok(Ok(())) => Json(serde_json::json!({"ok": true})).into_response(),
+        Ok(Err(e)) => (axum::http::StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+    }
+}
+
 pub(super) async fn repo_pr_diff(
     State(state): State<Arc<AppState>>,
     Query(q): Query<PrDiffQuery>,

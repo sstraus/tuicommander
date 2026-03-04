@@ -335,6 +335,13 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
         path: `/repo/pr-diff?path=${p("repoPath")}&pr=${args.prNumber}`,
       };
 
+    case "approve_pr":
+      return {
+        method: "POST",
+        path: "/repo/approve-pr",
+        body: { repoPath: args.repoPath, prNumber: args.prNumber },
+      };
+
     case "list_local_branches":
       return { method: "GET", path: `/repo/local-branches?path=${p("repoPath")}` };
 

@@ -68,6 +68,14 @@ pub(super) struct PrDiffQuery {
 }
 
 #[derive(Deserialize)]
+pub(super) struct ApprovePrRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "prNumber")]
+    pub pr_number: i64,
+}
+
+#[derive(Deserialize)]
 pub(super) struct SpawnAgentRequest {
     pub rows: Option<u16>,
     pub cols: Option<u16>,

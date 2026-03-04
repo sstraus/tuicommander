@@ -894,6 +894,27 @@
   color: var(--fg-primary);
 }
 
+.remoteOnlyApprove {
+  padding: 4px 12px;
+  font-size: var(--font-xs);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.remoteOnlyApprove:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.remoteOnlyApprove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .remoteOnlyMerge {
   padding: 4px 12px;
   font-size: var(--font-xs);

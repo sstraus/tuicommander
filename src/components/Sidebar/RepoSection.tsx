@@ -375,6 +375,8 @@ const RemoteOnlyPrPopover: Component<{
   const [diffContent, setDiffContent] = createSignal<string | null>(null);
   const [diffLoading, setDiffLoading] = createSignal(false);
   const [diffError, setDiffError] = createSignal<string | null>(null);
+  const [approvingPr, setApprovingPr] = createSignal<number | null>(null);
+  const [approveError, setApproveError] = createSignal<string | null>(null);
 
   const handleRowClick = (branch: string) => {
     setExpandedBranch((prev) => prev === branch ? null : branch);
@@ -408,6 +410,25 @@ const RemoteOnlyPrPopover: Component<{
       appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: msg });
     } finally {
       setMergingPr(null);
+    }
+  };
+
+  const handleApprove = async (pr: BranchPrStatus) => {
+    setApprovingPr(pr.number);
+    setApproveError(null);
+    try {
+      await invoke("approve_pr", {
+        repoPath: props.repoPath,
+        prNumber: pr.number,
+      });
+      appLogger.info("github", `Approved PR #${pr.number}`);
+      githubStore.pollRepo(props.repoPath);
+    } catch (e) {
+      const msg = String(e);
+      setApproveError(msg);
+      appLogger.error("github", `Failed to approve PR #${pr.number}`, { error: msg });
+    } finally {
+      setApprovingPr(null);
     }
   };
 
@@ -480,6 +501,18 @@ const RemoteOnlyPrPopover: Component<{
                             {t("sidebar.worktree", "Worktree")}
                           </button>
                         </Show>
+                        <Show when={pr.state?.toUpperCase() === "OPEN" && !pr.is_draft && pr.review_decision !== "APPROVED"}>
+                          <button
+                            class={s.remoteOnlyApprove}
+                            onClick={() => handleApprove(pr)}
+                            disabled={approvingPr() === pr.number}
+                            title={t("sidebar.approvePr", "Approve this pull request")}
+                          >
+                            {approvingPr() === pr.number
+                              ? t("sidebar.approving", "Approving...")
+                              : t("sidebar.approve", "Approve")}
+                          </button>
+                        </Show>
                         <Show when={canMergePr(pr)}>
                           <button
                             class={s.remoteOnlyMerge}
@@ -503,6 +536,9 @@ const RemoteOnlyPrPopover: Component<{
                             : t("sidebar.viewDiff", "View Diff")}
                         </button>
                       </div>
+                      <Show when={approveError()}>
+                        <div class={s.remoteOnlyMergeError}>{approveError()}</div>
+                      </Show>
                       <Show when={mergeError()}>
                         <div class={s.remoteOnlyMergeError}>{mergeError()}</div>
                       </Show>
