@@ -442,7 +442,7 @@ fn ae(name: &'static str, pattern: &str, error_kind: &'static str) -> ApiErrorPa
 }
 
 /// Parse OSC 9;4 progress sequences: \x1b]9;4;STATE;VALUE\x07
-fn parse_osc94(text: &str) -> Option<ParsedEvent> {
+pub(crate) fn parse_osc94(text: &str) -> Option<ParsedEvent> {
     // Fast path: check for ESC ] before running regex
     if !text.contains("\x1b]9;4;") {
         return None;

@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 use crate::input_line_buffer::{InputAction, InputLineBuffer};
-use crate::output_parser::{colorize_intent, extract_last_question_line, OutputParser, ParsedEvent};
+use crate::output_parser::{colorize_intent, OutputParser, ParsedEvent};
 use crate::state::{
     AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
     OutputRingBuffer, PtyConfig, PtyOutput, PtySession, Utf8ReadBuffer, VtLogBuffer,
@@ -300,10 +300,12 @@ pub(crate) fn spawn_reader_thread(
                     }
                     if !data.is_empty() {
                         // Feed raw data (post-kitty-strip) into VT100 log buffer.
-                        // Called before ring buffer so log captures the same bytes.
-                        if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
-                            vt_log.lock().process(data.as_bytes());
-                        }
+                        // Capture changed rows for clean-text parsing (both normal and alternate screen).
+                        let changed_rows = if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
+                            vt_log.lock().process(data.as_bytes())
+                        } else {
+                            Vec::new()
+                        };
                         // Write clean text to ring buffer for MCP consumers (no ANSI)
                         if let Some(ring) = state.output_buffers.get(&session_id) {
                             ring.lock().write(data.as_bytes());
@@ -317,7 +319,14 @@ pub(crate) fn spawn_reader_thread(
                         // the shell redraws visible output after SIGWINCH, which would
                         // re-trigger Question/RateLimit/ApiError for content already on screen.
                         let in_resize_grace = silence.lock().is_resize_grace();
-                        let events = parser.parse(&data);
+                        // OSC 9;4 progress events stay on the raw stream — they are consumed
+                        // by the vt100 crate and invisible in clean rows.
+                        let mut events = Vec::new();
+                        if let Some(evt) = crate::output_parser::parse_osc94(&data) {
+                            events.push(evt);
+                        }
+                        // All other events come from clean VtLogBuffer rows (no strip_ansi).
+                        events.extend(parser.parse_clean_lines(&changed_rows));
                         let regex_found_question = if in_resize_grace { false } else {
                             events.iter().any(|e| matches!(e, ParsedEvent::Question { .. }))
                         };
@@ -359,15 +368,18 @@ pub(crate) fn spawn_reader_thread(
                             );
                         }
 
-                        // Update silence state for fallback question detection
-                        let last_q_line = extract_last_question_line(&data);
+                        // Update silence state for fallback question detection.
+                        // Feed from the last non-empty changed row (clean text, no strip_ansi).
+                        let last_q_line = changed_rows.iter().rev()
+                            .find(|r| !r.text.is_empty())
+                            .and_then(|r| if r.text.ends_with('?') { Some(r.text.clone()) } else { None });
                         silence.lock().on_chunk(regex_found_question, last_q_line);
 
                         // Colorize [intent: ...] tokens yellow before sending to xterm.
-                        // Run on every chunk containing "intent:" — not just when parse()
-                        // detected the Intent event — because Claude Code re-renders lines
-                        // with CUU/CUD cursor movements, and re-render chunks may contain
-                        // the token without parse_intent detecting it (cursor-split text).
+                        // Run on every chunk containing "intent:" — not just when
+                        // parse_clean_lines detected the Intent event — because Claude Code
+                        // re-renders lines with CUU/CUD cursor movements, and re-render chunks
+                        // may contain the token without detection (cursor-split text).
                         let data = if data.contains("[intent:") { colorize_intent(&data) } else { data };
 
                         // NOTE: suggest tokens are NOT stripped from the xterm stream.
@@ -1427,5 +1439,70 @@ mod tests {
         let vars = env.env_overrides();
         let val = vars.iter().find(|(k, _)| k == "TUIC_SOCKET_PATH").map(|(_, v)| v.as_str());
         assert_eq!(val, Some("/tmp/test.sock"));
+    }
+
+    // --- VtLogBuffer + parse_clean_lines pipeline tests ---
+
+    /// VtLogBuffer changed rows feed parse_clean_lines and produce a StatusLine event
+    /// for normal screen output.
+    #[test]
+    fn test_vt_log_pipeline_status_line_normal_screen() {
+        use crate::state::VtLogBuffer;
+        use crate::output_parser::{OutputParser, ParsedEvent};
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        let parser = OutputParser::new();
+
+        let changed = vt_log.process(b"* Reading files...");
+        let events = parser.parse_clean_lines(&changed);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
+            "expected StatusLine from normal screen, got: {:?}", events
+        );
+    }
+
+    /// VtLogBuffer changed rows feed parse_clean_lines and produce an Intent event
+    /// during alternate screen (e.g. Claude Code / Ink).
+    #[test]
+    fn test_vt_log_pipeline_intent_alternate_screen() {
+        use crate::state::VtLogBuffer;
+        use crate::output_parser::{OutputParser, ParsedEvent};
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        let parser = OutputParser::new();
+
+        // Enter alternate screen (smcup: ESC[?1049h)
+        vt_log.process(b"\x1b[?1049h");
+        let changed = vt_log.process(b"[[intent: Doing work(Test)]]");
+        let events = parser.parse_clean_lines(&changed);
+        assert!(
+            events.iter().any(|e| matches!(e, ParsedEvent::Intent { .. })),
+            "expected Intent from alternate screen, got: {:?}", events
+        );
+    }
+
+    /// parse_osc94 is called on raw data (OSC 9;4 is invisible in clean rows).
+    #[test]
+    fn test_osc94_from_raw_stream() {
+        use crate::output_parser::{parse_osc94, ParsedEvent};
+
+        let raw = "\x1b]9;4;1;50\x07"; // OSC 9;4 progress 50%
+        let event = parse_osc94(raw);
+        assert!(
+            matches!(event, Some(ParsedEvent::Progress { .. })),
+            "expected Progress from raw OSC 9;4, got: {:?}", event
+        );
+    }
+
+    /// extract_last_question_line_from_changed_rows: given changed rows, we can derive
+    /// the silence-tracker question line from the last non-empty row.
+    #[test]
+    fn test_silence_question_from_changed_rows() {
+        use crate::state::VtLogBuffer;
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        let changed = vt_log.process(b"Would you like to proceed?");
+        let last_q = changed.iter().rev().find(|r| !r.text.is_empty()).map(|r| r.text.clone());
+        assert_eq!(last_q.as_deref(), Some("Would you like to proceed?"));
     }
 }
