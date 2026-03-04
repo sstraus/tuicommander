@@ -1,0 +1,1063 @@
+src/components/SuggestOverlay/SuggestOverlay.module.css
+  608b0ae814542c3d 3,7-8,15,38,40-41,66-67,69
+src-tauri/src/output_parser.rs
+  608b0ae814542c3d 870-871,873-875,889-890,893-895,2558-2561,2569-2570,2584-2585,2596
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "cc0d0a3f8c4fac6441e9155ac73f1338bdc31b55",
+  "prompts": {
+    "089263f7d761d5ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f4ffe8f8-502e-40a5-8ee9-edc3c1da002e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 28,
+      "overriden_lines": 0
+    },
+    "0ab84ff25f16f0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45d73e90-6d26-4793-aa16-63971bd2504a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 24,
+      "total_deletions": 1,
+      "accepted_lines": 72,
+      "overriden_lines": 0
+    },
+    "2bddf5a94845e865": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0602e11c-ac39-4020-8612-6caa1938a17c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 41,
+      "total_deletions": 17,
+      "accepted_lines": 41,
+      "overriden_lines": 0
+    },
+    "3cf58d5cd968e347": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a19c10c-ffc9-4018-97ac-4824ba78e802",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [
+        {
+          "type": "user",
+          "text": "come funziona la gestione di claude code che orchestra più instanze con tmux?",
+          "timestamp": "2026-03-03T06:13:00.800Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nBuona domanda, Boss. Fammi cercare come funziona questa funzionalità.",
+          "timestamp": "2026-03-03T06:13:15.903Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Claude Code tmux multi-instance",
+            "prompt": "How does Claude Code orchestrate multiple instances using tmux? I want to understand the multi-instance/parallel execution architecture. Specifically:\n\n1. How does Claude Code spawn and manage multiple parallel instances?\n2. What role does tmux play in this orchestration?\n3. How do the instances communicate or coordinate?\n4. What commands or flags enable this behavior?\n5. Is there a \"headless\" or \"background\" mode for spawned instances?\n\nSearch for documentation about tmux integration, multi-instance orchestration, parallel execution, and any related CLI flags or configuration options.",
+            "subagent_type": "claude-code-guide"
+          },
+          "timestamp": "2026-03-03T06:13:20.079Z"
+        },
+        {
+          "type": "assistant",
+          "text": "## Come funziona Claude Code con tmux (multi-istanza)\n\nCi sono due meccanismi principali:\n\n### 1. Agent Teams (sperimentale)\n\nAbilitato con `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. Una sessione fa da **team lead** e coordina i **teammate**, ognuno con il proprio context window.\n\n**Coordinamento tramite:**\n- **Task list condivisa** — file in `~/.claude/tasks/{team-name}/`\n- **Mailbox** — messaggistica diretta tra istanze\n- **File locking** — previene race condition sui task\n\n**tmux fa da backend di visualizzazione** — ogni teammate va in una pane separata:\n\n```\n┌──────────────────┬──────────────────┐\n│ Team Lead        │ Teammate 1       │\n│ (orchestra)      │ (frontend work)  │  ← tmux split-pane\n├──────────────────┼──────────────────┤\n│ Teammate 2       │ Teammate 3       │\n│ (backend work)   │ (tests)          │\n└──────────────────┴──────────────────┘\n```\n\nConfigurazione:\n```json\n{ \"teammateMode\": \"tmux\" }\n```\n\nO via CLI: `claude --teammate-mode tmux`\n\nTre backend disponibili: `in-process` (default, tutto nello stesso terminale), `tmux`, `iTerm2`.\n\n### 2. Git Worktrees (più stabile)\n\nOgni istanza lavora su un checkout isolato del repo:\n```bash\nclaude --worktree feature-auth\n```\n\nQuesto crea un worktree Git separato, quindi nessun conflitto su file modificati simultaneamente. Non serve coordinamento esplicito — ogni istanza è indipendente.\n\n### Headless mode (per scripting)\n\n```bash\nclaude -p \"Fix the bug in auth.py\" --allowedTools \"Read,Edit,Bash\"\n```\n\nUtile per lanciare istanze programmaticamente, magari da uno script che usa tmux per parallelizzare.\n\n### Considerazioni pratiche\n\n- **Agent teams** = più token (N context window separati), utile quando i teammate devono comunicarsi risultati\n- **Worktrees** = più economico, meglio per lavoro indipendente/parallelizzabile\n- **Costo**: ogni teammate consuma il suo budget di token separatamente\n- La feature Agent Teams è ancora **sperimentale** — il flag lo dice chiaramente\n\nVuoi approfondire qualche aspetto in particolare?",
+          "timestamp": "2026-03-03T06:14:16.154Z"
+        },
+        {
+          "type": "user",
+          "text": "si voglio capire come adattare quest alogica a funzionare in tuic, come intercettare la logica tmus e replicarla usando le nostre tab",
+          "timestamp": "2026-03-03T06:15:49.757Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nOttima idea, Boss. Fammi prima capire bene cosa abbiamo già e come funziona il sistema di tab/terminali in TUICommander, poi cerco i dettagli dell'implementazione tmux di Claude Code.",
+          "timestamp": "2026-03-03T06:15:54.525Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Explore TUIC terminal/tab architecture",
+            "prompt": "I need to understand how TUICommander manages terminal tabs and sessions. Explore thoroughly:\n\n1. How terminals are created, managed, and displayed (tab system)\n2. The PTY session lifecycle - how terminals are spawned and connected\n3. How the sidebar/tab UI works for switching between terminals\n4. Any existing agent detection or agent-specific terminal handling\n5. The MCP server session management (how external tools can create/manage terminals)\n6. The terminal store and state management\n\nFocus on these areas:\n- src/stores/ (terminal-related stores)\n- src/components/ (terminal UI, sidebar, tabs)\n- src-tauri/src/ (PTY management, session creation)\n- src/plugins/ (PluginHost API for terminal management)\n\nI want to understand the full flow from \"create a new terminal\" to \"display it in a tab\" to \"switch between terminals\".\n\nThoroughness: very thorough",
+            "subagent_type": "Explore"
+          },
+          "timestamp": "2026-03-03T06:16:00.576Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Claude Code tmux teammate implementation",
+            "prompt": "I need deep technical details about how Claude Code's Agent Teams feature works with tmux specifically. I want to understand:\n\n1. **The tmux integration protocol**: How does Claude Code detect that it should use tmux? What tmux commands does it issue?\n2. **Pane management**: How does it create panes, name them, track which pane belongs to which teammate?\n3. **The teammate lifecycle**: How is a teammate spawned? Is it a separate `claude` process? What CLI args?\n4. **Communication protocol**: How do teammates communicate? File-based? Unix sockets? What's the mailbox implementation?\n5. **The interception point**: If I wanted to replace tmux with my own terminal multiplexer, where would I hook in? Is there an abstraction layer or interface?\n6. **Environment variables and configuration**: What env vars control team behavior? How does a teammate know it's a teammate vs a lead?\n\nI'm building a terminal multiplexer app (TUICommander/Tauri) and want to replace tmux as the pane backend while keeping Claude Code's agent team orchestration. I need to understand the exact interface between Claude Code and tmux so I can replicate it.\n\nSearch for source code references, configuration schemas, and any plugin/extension points related to tmux integration in Claude Code.",
+            "subagent_type": "claude-code-guide"
+          },
+          "timestamp": "2026-03-03T06:16:09.043Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Eccellente, ho un quadro molto chiaro ora. Lascia che ti sintetizzi l'analisi.\n\n## Come funziona Agent Teams di Claude Code e come intercettarlo in TUIC\n\n### Il meccanismo tmux di Claude Code\n\nClaude Code fa cose molto semplici con tmux:\n\n1. **Spawn teammate**: `tmux split-window -h` per creare una pane\n2. **Avvia processo**: `tmux send-keys -t {pane} \"cd /path && env CLAUDE_CODE_TEAM_NAME=... claude --session {id}\" Enter`\n3. **Tracking**: salva il mapping `agent_id → pane_id` in `~/.claude/teams/{team-name}/config.json`\n\nIl teammate sa di essere un teammate perché riceve queste env vars:\n```bash\nCLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\nCLAUDE_CODE_TEAM_NAME=my-team\nCLAUDE_CODE_AGENT_ID=uuid\nCLAUDE_CODE_AGENT_NAME=reviewer-1\nCLAUDE_CODE_AGENT_TYPE=security-reviewer\nCLAUDE_CODE_PARENT_SESSION_ID=lead-session-uuid\n```\n\n### La comunicazione è file-based (non dipende da tmux!)\n\nQuesto è il punto chiave — tutta la coordinazione è **indipendente dal multiplexer**:\n\n- **Mailbox**: `~/.claude/teams/{team-name}/messages/{session-id}/from-{sender}.json`\n- **Task list**: `~/.claude/teams/{team-name}/` con file JSON + file lock\n- **Polling**: ogni teammate fa polling della sua cartella messaggi\n\ntmux serve **solo** come backend di visualizzazione e spawn. La logica di coordinazione è tutta su filesystem.\n\n### Strategia per TUIC\n\nCi sono due approcci:\n\n**Approccio A — Intercettare lo spawn (low effort)**\n\nTUIC già ha l'MCP server con `session create/input/output`. Basterebbe:\n\n1. Rilevare quando Claude Code (il lead) in una tab TUIC tenta di creare un teammate\n2. Intercettare il `tmux split-window` (tramite output parsing o env detection) \n3. Creare una nuova tab TUIC al posto della pane tmux\n4. Iniettare il comando `claude --session {id}` con le env vars corrette nella nuova PTY\n\n**Approccio B — Diventare un teammate backend nativo (più pulito)**\n\nClaude Code ha 3 backend: `in-process`, `tmux`, `iTerm2`. Potremmo:\n\n1. Esporre una CLI `tuic pane create/exec/list` che replica l'interfaccia tmux\n2. Proporre una PR ad Anthropic per aggiungere un backend \"custom\" o \"external\"\n3. Oppure, dato che Claude Code auto-detecta tmux con `which tmux`, creare un wrapper `tuic-tmux` che traduce i comandi tmux in chiamate HTTP al nostro MCP server\n\n### Bug noti nel design tmux (che TUIC risolverebbe gratis)\n\n- **Race condition**: `send-keys` arriva prima che la shell sia pronta → TUIC crea la PTY e aspetta il prompt\n- **pane-base-index mismatch**: tmux config utente può rompere gli indici → TUIC usa session IDs\n- **IME corruption**: `send-keys` si corrompe con input method attivi → TUIC scrive direttamente nella PTY\n\n---\n\nVuoi che formalizzi questo in un'idea in `ideas/` o preferisci ragionare prima su quale approccio ha più senso? Il B è più ambizioso ma risolve i problemi strutturali, l'A è più pragmatico e potrebbe funzionare con poche centinaia di righe.",
+          "timestamp": "2026-03-03T06:24:54.493Z"
+        },
+        {
+          "type": "user",
+          "text": "si dubito che anthropic ci consideri. proviamo a capire se A può funzionare. da considerare che noi abbiamo anche mcp pridge che è già installato, quindi valutiamo anche come si potrebbe usare quello",
+          "timestamp": "2026-03-03T06:31:36.935Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nGiusto, il bridge MCP è un asset importante. Fammi capire cosa abbiamo già a disposizione.",
+          "timestamp": "2026-03-03T06:32:01.729Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Explore MCP bridge and session management",
+            "prompt": "I need to understand how TUICommander's MCP bridge works, specifically for terminal/session management. Explore thoroughly:\n\n1. The MCP HTTP server - what endpoints exist for session management\n2. The MCP transport layer - how external tools (like Claude Code) connect\n3. The `session` MCP tool - all actions (create, input, output, list, etc.)\n4. How Claude Code connects to TUICommander via MCP - the bridge configuration\n5. Any agent-related MCP tools (agent detect, spawn, stats)\n6. The plugin_docs.rs - what's exposed to AI agents about session management\n\nKey files to look at:\n- src-tauri/src/mcp_http/ (all route files, especially session.rs, mcp_transport.rs)\n- src-tauri/src/mcp_http/plugin_docs.rs (the PLUGIN_DOCS const)\n- Any MCP server configuration or manifest files\n- src-tauri/src/agent.rs or agent_session.rs (agent detection/spawning)\n\nI want to understand: if Claude Code is running inside a TUIC terminal and wants to spawn a teammate, what MCP tools does it already have access to? Can it create new sessions via MCP?\n\nThoroughness: very thorough",
+            "subagent_type": "Explore"
+          },
+          "timestamp": "2026-03-03T06:32:10.981Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Claude Code MCP teammate spawning",
+            "prompt": "I need to understand exactly what happens when Claude Code's Agent Teams feature spawns a teammate. Specifically:\n\n1. What is the exact sequence of system calls / commands that Claude Code executes to create a teammate in tmux mode? Does it literally call `tmux split-window`? Or does it use a different mechanism?\n\n2. Is there a way to configure Claude Code to use a CUSTOM command instead of tmux for teammate spawning? For example, could I set an environment variable or config option that says \"use this command to create panes instead of tmux\"?\n\n3. When Claude Code detects it's running inside a tmux session, what exact detection does it perform? Does it check $TMUX env var? Does it run `tmux display-message -p '#S'`?\n\n4. Most importantly: Can Claude Code's agent teams work through MCP? If Claude Code has an MCP server configured that provides a \"session\" tool (to create terminal sessions), could it use that MCP tool to spawn teammates instead of tmux? Or is the tmux spawning completely separate from MCP?\n\n5. What happens if Claude Code is NOT in tmux and NOT in iTerm2? Does it fall back to in-process mode where teammates run as subagents in the same process? How does that work technically?\n\n6. Is there any way to trick Claude Code into thinking it has tmux available when it doesn't, by providing a compatible CLI wrapper?\n\nI'm building a terminal multiplexer (TUICommander) that provides terminal sessions via MCP. Claude Code already connects to it via MCP bridge. I want to make teammate spawning use my terminal tabs instead of tmux panes.",
+            "subagent_type": "claude-code-guide"
+          },
+          "timestamp": "2026-03-03T06:32:21.530Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nOk Boss, ora ho un quadro completo. Lasciami sintetizzare la situazione reale e le opzioni concrete.\n\n## La situazione\n\n**Cosa fa Claude Code per i teammate:**\n1. Controlla `$TMUX` → se presente, usa `tmux split-window` per creare pane\n2. Se no tmux, controlla iTerm2 → usa `it2` CLI\n3. Fallback → `in-process` (subagent nello stesso processo)\n\n**Lo spawning NON passa da MCP.** È hardcoded su tmux/iTerm2. La comunicazione tra teammate (mailbox, task list) è file-based in `~/.claude/teams/` — quella funziona indipendentemente dal multiplexer.\n\n**Cosa ha TUIC già pronto:**\n- MCP bridge installato in `~/.claude.json` → Claude Code ha già accesso ai tool `session`, `agent`, `workspace`\n- `agent action=spawn` → crea una PTY, spawna un agente con prompt, ritorna `session_id`\n- `session action=create/input/output` → gestione completa PTY\n- Il frontend crea automaticamente tab per ogni nuova sessione\n\n## Le opzioni reali\n\n### Opzione 1: Fake tmux wrapper\n\nCreare un binario `tmux` (o un wrapper shell) che intercetta i comandi di Claude Code e li traduce in chiamate al nostro MCP/HTTP server.\n\nClaude Code fa essenzialmente:\n```bash\ntmux split-window -h 'cd /path && env CLAUDE_CODE_TEAM_NAME=... claude --session ...'\n```\n\nIl nostro wrapper farebbe:\n```\nIntercetta \"split-window\" → POST /sessions { shell: bash, cwd: /path }\nInietta il comando claude con le env vars nella nuova PTY\n```\n\n**Pro:** Funziona senza modifiche a Claude Code\n**Contro:** Fragile — dipende da API tmux non documentate che CC usa internamente. Se cambiano un flag, si rompe. Inoltre Claude Code potrebbe usare altri comandi tmux (capture-pane, send-keys) per monitorare i teammate.\n\n### Opzione 2: Sfruttare il MCP bridge che abbiamo già\n\nQuesta è la cosa interessante. Claude Code, quando gira dentro una tab TUIC, ha **già** il tool `agent action=spawn`. In teoria:\n\n1. Claude Code lead decide di parallelizzare\n2. Invece di usare Agent Teams (che triggera tmux), **usa direttamente il tool MCP `agent spawn`** per creare teammate in tab TUIC\n3. Usa `session input/output` per coordinare\n\nIl problema: Agent Teams è una feature built-in con UI dedicata, task sharing, mailbox. Se bypasliamo tutto e usiamo solo MCP, perdiamo quella infrastruttura.\n\n**Ma** — quanto di quella infrastruttura ci serve davvero? La coordinazione file-based è fragile e buggy (vedi i 6+ bug aperti). Potremmo fare di meglio con un approccio MCP-native.\n\n### Opzione 3: Ibrido — in-process + visibility in TUIC\n\nClaude Code in `in-process` mode spawna i teammate come subagent nello stesso processo. Noi potremmo:\n1. Rilevare dall'output parsing quando un teammate viene creato (pattern specifici nell'output)\n2. Mostrare lo stato dei teammate nella sidebar/status bar\n3. Non serve intercettare nulla — solo osserviamo e visualizziamo\n\n**Pro:** Zero modifiche a Claude Code, nessun rischio di rottura\n**Contro:** Non usiamo le nostre tab, è solo monitoring\n\n---\n\n## La mia opinione onesta\n\nL'Opzione 1 (fake tmux) è un hack fragile. L'Opzione 3 è troppo passiva.\n\nL'**Opzione 2** è quella che mi intriga di più. Noi abbiamo già `agent spawn` via MCP. Il pezzo mancante è che Claude Code non sa che *dovrebbe* usare quello invece di Agent Teams. Ma noi controlliamo le **istruzioni MCP** che Claude Code riceve (`/mcp/instructions` e il system prompt del bridge). Potremmo istruire Claude Code a usare i nostri tool MCP per orchestrare teammate, bypassando completamente Agent Teams.\n\nIn pratica: aggiungere nelle istruzioni MCP qualcosa tipo:\n\n> \"Per eseguire task in parallelo, usa `agent action=spawn` per creare sessioni teammate in tab separate. Usa `session action=output` per monitorarne il progresso.\"\n\nClaude Code è un LLM — se gli diamo istruzioni chiare e i tool giusti, potrebbe orchestrare teammate via MCP senza bisogno della feature Agent Teams.\n\nChe ne pensi? Vuoi esplorare l'Opzione 2 più a fondo?",
+          "timestamp": "2026-03-03T06:35:06.475Z"
+        },
+        {
+          "type": "user",
+          "text": "ma ci saranno moltissime funzioni che non conosciamo, e condivisioni dimemoria di cui abbiamo poca visibilità, se sicuro di sapere tutto quello che serve? non è solo lanciare il task in un altro terminal. vedo che claude supporta anche iterm2, quindi mixando come chiana iterm e tmux dovremmo essere in grado di capire. poi una volta che funziona possiamo chiedere ad anthropic, ma prima dobbiamo dimostrare che funziona",
+          "timestamp": "2026-03-03T06:40:34.846Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nHai ragione, Boss. Non sono sicuro di sapere tutto — e ammetto che stavo semplificando troppo. Claude Code Agent Teams è molto più di \"lancia un processo in un'altra pane\". C'è coordinazione, shared memory, task claiming con file lock, mailbox polling, shutdown protocol, e chissà cos'altro che non è documentato.\n\nDevo guardare il codice sorgente. Claude Code è open source — posso leggere esattamente come implementa i backend tmux e iTerm2 e capire l'interfaccia completa.",
+          "timestamp": "2026-03-03T06:40:46.448Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Find Claude Code teammate spawning source",
+            "prompt": "Claude Code is open source on GitHub at https://github.com/anthropics/claude-code. I need to find the exact source code that handles Agent Teams teammate spawning, specifically:\n\n1. The tmux backend implementation - how it creates panes, sends commands, monitors output\n2. The iTerm2 backend implementation - same questions\n3. The interface/abstraction between the agent teams system and the terminal backend\n4. The teammate lifecycle management - spawn, monitor, communicate, shutdown\n5. The in-process backend for comparison\n\nSearch the Claude Code GitHub repository. The code is likely in TypeScript/JavaScript. Look for files related to:\n- \"teammate\" or \"team\" in filenames\n- \"tmux\" in filenames or content\n- \"iterm\" in filenames or content  \n- \"split-pane\" or \"splitpane\"\n- \"agent-teams\" or \"agentTeams\"\n- Any abstraction layer for terminal multiplexing\n\nUse the GitHub API (gh command) or web search to find these files. Once found, read their contents thoroughly. I need the FULL implementation details, not summaries.\n\nSpecifically I want to see:\n- The exact tmux commands used (split-window args, send-keys, capture-pane, etc.)\n- The exact iTerm2 API calls used\n- How the backend is selected (auto-detection logic)\n- The TypeScript interface that backends must implement\n- How teammates are tracked after spawning\n- How communication happens between lead and teammates through the backend\n\nPlease fetch and read the actual source code files - don't summarize from documentation.",
+            "subagent_type": "general-purpose"
+          },
+          "timestamp": "2026-03-03T06:40:56.883Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nQuesto è oro, Boss. L'agent ha estratto l'intera implementazione dal binario compilato. E la tua intuizione su `it2` è brillante — lasciami spiegare perché.\n\n## L'interfaccia che dobbiamo implementare\n\nDal codice sorgente, il backend iTerm2 usa **solo 5 comandi `it2`**:\n\n| Operazione | Comando `it2` |\n|---|---|\n| Verifica disponibilità | `it2 --version` |\n| Primo split | `it2 session split -v -s <leaderSessionId>` |\n| Split successivi | `it2 session split -s <lastPaneId>` |\n| Invio comando | `it2 session run -s <paneId> <command>` |\n| Chiudi pane | `it2 session close -s <paneId>` |\n\nE il backend iTerm2 ha **tutte le operazioni cosmetiche come no-op**:\n- `setPaneBorderColor()` → no-op\n- `setPaneTitle()` → no-op  \n- `enablePaneBorderStatus()` → no-op\n- `rebalancePanes()` → no-op\n- `hidePane()` → `return false`\n- `showPane()` → `return false`\n\nQuesto è **enormemente più semplice** del backend tmux (che ha 15+ comandi diversi).\n\n## La strategia: fake `it2` CLI\n\nLa detection di Claude Code funziona così:\n1. Controlla `$TMUX` → se presente, usa tmux (priorità 1)\n2. Controlla `TERM_PROGRAM` o `ITERM_SESSION_ID` → se iTerm2, cerca `it2` nel PATH\n3. Se `it2 --version` funziona → usa backend iTerm2\n\nQuindi il piano è:\n\n1. **Creare un binario `it2`** (o script) che implementa i 5 comandi\n2. **Settare `ITERM_SESSION_ID`** (o `TERM_PROGRAM=iTerm.app`) nell'env della PTY quando creiamo sessioni in TUIC\n3. **Mettere il nostro `it2` nel PATH** prima del vero (che tanto quasi nessuno ha)\n4. Quando Claude Code fa `it2 session split`, il nostro wrapper chiama il MCP server di TUIC per creare una nuova tab\n5. Il wrapper ritorna un `paneId` (il nostro `session_id`) nel formato che Claude Code si aspetta\n\nLa comunicazione teammate (mailbox, task list, shutdown) è **tutta file-based** e **non dipende dal backend** — funziona identicamente qualunque sia il multiplexer. Non dobbiamo toccare nulla di quello.\n\n## Cosa deve fare il nostro `it2`\n\n```\nit2 --version           → stampa \"0.1.0\" (o simile), exit 0\nit2 session split -v -s <id>  → crea tab TUIC, stampa \"Created new pane: <session_id>\"\nit2 session split -s <id>     → crea tab TUIC, stampa \"Created new pane: <session_id>\"\nit2 session run -s <id> <cmd> → inietta comando nella PTY\nit2 session close -s <id>     → chiude la sessione PTY\nit2 session list              → lista sessioni (usato per setup check)\n```\n\nIl wrapper `it2` comunica con TUIC tramite:\n- **Unix socket** (`~/.tuicommander/mcp.sock`) — lo stesso che usa il bridge MCP\n- Oppure **HTTP localhost:9876** direttamente\n\n## Vantaggi di questo approccio\n\n- **Zero modifiche a Claude Code** — si convince di essere in iTerm2\n- **L'interfaccia è minimale** — 5 comandi vs 15+ di tmux\n- **Il mailbox/task system funziona gratis** — è file-based, indipendente\n- **Nessun conflitto con tmux reale** — se l'utente usa tmux, Claude Code lo preferisce (priorità 1), ma dentro TUIC non c'è `$TMUX`\n- **Dimostrabile** — possiamo fare un POC funzionante e poi proporlo ad Anthropic come nuovo backend ufficiale\n\n## Rischi da considerare\n\n1. **Il formato output di `it2 session split`** — devo verificare esattamente cosa parsa Claude Code (la regex `ZW8`). Se si aspetta un formato specifico tipo `\"Created new pane: sess-abc123\"`, dobbiamo matcharlo\n2. **`ITERM_SESSION_ID`** — Claude Code potrebbe estrarre il leader session ID da questa env var (funzione `IW8()`). Dobbiamo settarla con un valore valido\n3. **`it2 session list`** — usato per verificare il setup. Dobbiamo implementarlo\n4. **Aggiornamenti di Claude Code** — se cambiano l'interfaccia `it2`, si rompe. Ma è meno probabile di cambiamenti tmux dato che iTerm2 ha un'API stabile\n\nVuoi che formalizzi questo come idea in `ideas/` o partiamo direttamente con un POC?",
+          "timestamp": "2026-03-03T06:53:26.377Z"
+        },
+        {
+          "type": "user",
+          "text": "non possiamo usare tuic-mcp-bridge con un alias? non voglio un altro binary",
+          "timestamp": "2026-03-03T06:56:45.080Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nCerto, ha senso. Il bridge è già un binario che parla con TUIC via socket. Basterebbe fargli capire se è invocato come `it2`.\n\nIl meccanismo classico: il binario controlla `argv[0]` (o il nome del symlink) e cambia comportamento. Tipo come `busybox` funziona — lo chiami `ls` e fa `ls`, lo chiami `cat` e fa `cat`.\n\nQuindi:\n\n1. `tuic-mcp-bridge` controlla `argv[0]`\n2. Se finisce con `it2` → entra in modalità \"it2 compat\", parsa i subcomandi (`session split`, `session run`, etc.) e li traduce in chiamate al socket TUIC\n3. Symlink: `ln -s tuic-mcp-bridge ~/.tuicommander/bin/it2`\n4. TUIC mette `~/.tuicommander/bin` nel PATH delle PTY che crea (prima del resto)\n5. Setta `ITERM_SESSION_ID=tuic-<session_id>` nell'env della PTY\n\nNessun binario nuovo. Solo una nuova code path dentro il bridge esistente + un symlink.\n\nIl pezzo più delicato è capire esattamente il formato di output che Claude Code parsa dalla risposta di `it2 session split`. Devo verificare la regex `ZW8` che è stata estratta dal binario.\n\nVuoi che parta con il design dettagliato o hai domande sull'approccio?",
+          "timestamp": "2026-03-03T06:56:57.941Z"
+        },
+        {
+          "type": "user",
+          "text": "Fai un plan dettagliato, raccogli anche tutte le info che hai su come usa tmux, potrebbe servire in futuro, tieni un dcumento di riferimento e anche i files significativi nel codice di claude code cosi possiamo controllare se hanno fatto changes. segnati anche le date, creiamo un sistema che sia facilmente riverificabile. documentazione completa di tutte le discovery, cosi poi proporremo di implementare tuic bridge. dire che dovremmo togliere mcp da nome del bridge.",
+          "timestamp": "2026-03-03T07:00:00.560Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nPerfetto, Boss. Fammi prima raccogliere le info mancanti — il formato esatto dell'output `it2` e verificare il codice del bridge attuale — poi scrivo la documentazione completa e il piano.",
+          "timestamp": "2026-03-03T07:00:04.967Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Verify it2 CLI output format",
+            "prompt": "I need to understand the exact output format of the `it2` CLI tool (iTerm2's command line integration). Specifically:\n\n1. What does `it2 --version` output exactly? Format and content.\n2. What does `it2 session split -v` output? I need the EXACT format of the pane ID line.\n3. What does `it2 session split -s <id>` output?\n4. What does `it2 session list` output? Format of the listing.\n5. What does `it2 session run -s <id> <command>` output?\n6. What does `it2 session close -s <id>` output?\n\nSearch for:\n- iTerm2 it2 CLI documentation\n- it2 command reference\n- iTerm2 Python API / CLI integration docs\n- Any examples of it2 output in GitHub issues or docs\n\nAlso search the Claude Code GitHub issues for any references to the `it2` output parsing, specifically:\n- How Claude Code extracts the pane ID from `it2 session split` output\n- The regex or parsing function used (referenced as ZW8 in decompiled code)\n- Any issues related to it2 output format changes\n\nI need the EXACT strings that it2 outputs so I can replicate them in a fake it2 wrapper.",
+            "subagent_type": "general-purpose"
+          },
+          "timestamp": "2026-03-03T07:00:12.340Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/stefano.straus/Gits/personal/tuicommander/src-tauri/src/bin/tuic_mcp_bridge.rs"
+          },
+          "timestamp": "2026-03-03T07:00:13.275Z"
+        },
+        {
+          "type": "user",
+          "text": "[Request interrupted by user for tool use]",
+          "timestamp": "2026-03-03T07:20:19.047Z"
+        },
+        {
+          "type": "user",
+          "text": "visto che claude code gira in una nostra pty, non possiamo intercettare it2 direttamente senza tutto il giro dei symclink e path?",
+          "timestamp": "2026-03-03T07:20:20.824Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nAh, ottimo punto. Noi controlliamo la PTY. Quando Claude Code fa `it2 session split`, quel comando viene eseguito nella shell che gira nella nostra PTY. Potremmo:\n\n1. **Nel reader thread** del PTY, intercettare il comando `it2` prima che venga eseguito dalla shell\n2. Oppure meglio — **iniettare una shell function `it2()`** nell'env della PTY al momento della creazione, che sovrascrive qualsiasi binario `it2` nel PATH\n\nLa shell function ha priorità su qualsiasi binario nel PATH. Tipo:\n\n```bash\nit2() {\n  # Chiama direttamente il nostro bridge/handler\n  curl -s http://localhost:9876/it2-compat -d \"{\\\"args\\\": \\\"$*\\\"}\"\n}\n```\n\nOppure ancora più semplice — dato che il reader thread in Rust già parsa l'output per agent detection, potremmo intercettare a livello di **output parser**... no, aspetta, il comando viene *eseguito* dalla shell, non è solo output.\n\nFammi pensare meglio. Il flusso è:\n\n```\nClaude Code (processo nella PTY) \n  → chiama execSync(\"it2\", [\"session\", \"split\", ...])\n  → la shell cerca \"it2\" nel PATH\n  → esegue il binario\n  → legge stdout per il pane ID\n```\n\nNoi non controlliamo cosa `execSync` fa — è un child process. Ma controlliamo l'**environment** della PTY. Le opzioni reali sono:\n\n1. **Shell function/alias** — iniettata via `.bashrc` o `ENV` della PTY. Ma Claude Code usa `execSync` che bypassa la shell interattiva (chiama il binario diretto)\n2. **PATH manipulation** — mettiamo il nostro `it2` (symlink al bridge) prima nel PATH. Ma Boss non vuole un altro binario, e un symlink al bridge richiede che il bridge sappia gestire `argv[0]`\n3. **Shell wrapper script** — un semplice script bash `~/.tuicommander/bin/it2` che fa curl al nostro server. Non è un binario compilato, è uno script di 10 righe\n\nL'opzione 3 è la più leggera — nessun binary nuovo, solo uno script shell. Ma è comunque un file in più.\n\nOppure... stai pensando a qualcosa di più radicale? Tipo intercettare a livello di PTY master le syscall `exec`? Quello sarebbe troppo invasivo.\n\nQual è il tuo pensiero, Boss? Lo script shell in `~/.tuicommander/bin/it2` ti sembra accettabile? Sono 10 righe di bash, non un binary compilato.",
+          "timestamp": "2026-03-03T07:20:44.563Z"
+        },
+        {
+          "type": "user",
+          "text": "ti sei bloccato qui\n Agent(Verify it2 CLI output format)                                                      \n  ⎿                                                                                        \n     Fetch(https://it2.tmc.dev/)                                                           \n                                                                                       \n     +5 more tool uses (ctrl+o to expand)                                                  \n  ⎿  Interrupted · What should Claude do instead?",
+          "timestamp": "2026-03-03T07:20:44.719Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nHai ragione, quell'agent si è bloccato. Lasciami rilanciare la ricerca sul formato output di `it2` e nel frattempo raccogliere il resto delle info che servono.",
+          "timestamp": "2026-03-03T07:20:49.626Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Find it2 CLI output format",
+            "prompt": "I need to find the exact output format of iTerm2's `it2` CLI tool. This is critical for building a compatible wrapper.\n\nApproach 1: Check if it2 is installed on this machine:\n- Run: which it2\n- Run: pip show iterm2\n- If found, run: it2 --version, it2 --help, it2 session --help, it2 session split --help\n\nApproach 2: Search the iTerm2 source code on GitHub for the it2 CLI implementation:\n- The repo is https://github.com/gnachman/iTerm2 \n- Use `gh api` or `gh search code` to find the `it2` CLI source\n- Also check https://github.com/iterm2/it2 if it exists as a separate repo\n- Look for the Python source that implements `session split`, `session run`, `session close`, `session list`\n- Find the exact print/output statements that produce the pane ID after a split\n\nApproach 3: Search for the it2 Python package on PyPI:\n- Search for \"iterm2\" on pypi.org\n- The it2 CLI might be part of the `iterm2` Python package\n\nApproach 4: Search Claude Code issues/source for the parsing regex:\n- Search GitHub issues in anthropics/claude-code for \"it2\" output parsing\n- The decompiled code shows a function ZW8 that parses the output - search for what format it expects\n\nI need the EXACT string format that `it2 session split` outputs when it creates a new pane. Something like:\n\"Session ID: xxx\" or \"Created session xxx\" or just \"xxx\" on a line.\n\nDo NOT try to fetch https://it2.tmc.dev/ - that's not the right URL.",
+            "subagent_type": "general-purpose"
+          },
+          "timestamp": "2026-03-03T07:21:00.249Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Find TUIC PTY env injection points",
+            "prompt": "I need to understand how TUICommander sets up the environment for PTY sessions. Specifically:\n\n1. In src-tauri/src/pty.rs - how is the shell command built? What env vars are set? Where is `build_shell_command` defined? How could we inject additional env vars or PATH entries?\n\n2. How does the PTY spawn process work - does it use a login shell? Does it source .bashrc/.zshrc? \n\n3. Is there already a mechanism to inject custom env vars per-session?\n\n4. Look at the TERM_PROGRAM env var - what is it currently set to? (I saw \"ghostty\" mentioned earlier)\n\n5. Is there a way to set ITERM_SESSION_ID in the PTY env?\n\n6. Look for any existing PATH manipulation in the PTY setup\n\nFocus on:\n- src-tauri/src/pty.rs (build_shell_command, create_pty, env setup)\n- Any config that controls PTY environment\n\nThoroughness: medium",
+            "subagent_type": "Explore"
+          },
+          "timestamp": "2026-03-03T07:21:07.282Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nOra ho tutto. E la tua idea di intercettare `it2` direttamente nella PTY è la strada giusta. Ricapitoliamo:\n\n## Il quadro completo\n\n**Claude Code detection chain:**\n1. `$TMUX` presente? → tmux backend\n2. `TERM_PROGRAM === \"iTerm.app\"` o `$ITERM_SESSION_ID` presente? → cerca `it2` nel PATH → iTerm2 backend\n3. Fallback → in-process\n\n**Noi controlliamo l'env della PTY** in `build_shell_command()` (pty.rs). Attualmente settiamo `TERM_PROGRAM=ghostty`. Se cambiassimo a:\n- `TERM_PROGRAM=iTerm.app` + `ITERM_SESSION_ID=w0t0p0:<session_id>`\n\n...Claude Code penserebbe di essere in iTerm2 e cercherebbe `it2` nel PATH.\n\n**L'output che Claude Code parsa:**\n```\nCreated new pane: <session_id>\n```\nRegex: `/Created new pane:\\s*(.+)/`\n\n**Ma tu hai chiesto:** possiamo intercettare `it2` senza symlink/PATH? \n\nSì — dato che è una login shell (`-l`), possiamo iniettare una **shell function** nel profilo. Ma `execSync` in Node.js usa `/bin/sh -c \"it2 ...\"` che **carica la shell function** se definita in `ENV` (per sh) o `.bashrc` (per bash con `-c`). Anzi, il modo più pulito: iniettare la function direttamente nell'env della PTY con una variabile `BASH_ENV` o `ENV` che punta a un file nostro.\n\nOppure, ancora più semplice: **mettiamo uno script shell `it2` in `~/.tuicommander/bin/`** e prepend al PATH nella PTY. Non è un binary — è 15 righe di bash che fa curl al nostro HTTP server. E il PATH lo controlliamo già in `build_shell_command()`.\n\nFammi scrivere la documentazione completa e il piano. Creo tutto ora.",
+          "timestamp": "2026-03-03T07:37:00.327Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Write",
+          "input": {
+            "content": "# Claude Code Agent Teams — Implementation Research\n\n> **Research date:** 2026-03-03\n> **Claude Code version analyzed:** v2.1.63 (Bun compiled binary)\n> **Source:** Decompiled from installed binary (CC is NOT open source — GitHub repo is issue tracker only)\n> **Verification:** Re-run decompilation after CC updates to check for interface changes\n\n## Table of Contents\n\n1. [Architecture Overview](#architecture-overview)\n2. [Backend Detection Logic](#backend-detection-logic)\n3. [Backend Interface](#backend-interface)\n4. [tmux Backend — Full Implementation](#tmux-backend)\n5. [iTerm2 Backend — Full Implementation](#iterm2-backend)\n6. [In-Process Backend](#in-process-backend)\n7. [PaneBackendExecutor — Lifecycle Wrapper](#panebackendexecutor)\n8. [Teammate Spawn Flow](#teammate-spawn-flow)\n9. [Communication — Mailbox System](#mailbox-system)\n10. [Environment Variables](#environment-variables)\n11. [Known Bugs](#known-bugs)\n12. [TUIC Integration Strategy](#tuic-integration-strategy)\n\n---\n\n## Architecture Overview\n\nClaude Code Agent Teams has three layers:\n\n```\n┌─────────────────────────────────────────┐\n│  Team Lead (orchestrator)               │\n│  - Decides to spawn teammates           │\n│  - Assigns tasks via shared task list   │\n│  - Sends messages via mailbox           │\n├─────────────────────────────────────────┤\n│  PaneBackendExecutor (lifecycle)        │\n│  - Wraps any backend                    │\n│  - Manages spawn/kill/message/terminate │\n│  - Tracks teammates in Map              │\n├─────────────────────────────────────────┤\n│  Backend (terminal multiplexer)         │\n│  - tmux | iTerm2 | in-process           │\n│  - Creates panes, sends commands        │\n│  - Visual management (borders, titles)  │\n└─────────────────────────────────────────┘\n\nCommunication (file-based, backend-independent):\n  ~/.claude/teams/{teamName}/config.json     — team config\n  ~/.claude/teams/{teamName}/messages/       — mailbox\n  ~/.claude/tasks/{teamName}/                — shared task list\n```\n\n**Key insight:** The mailbox/task system is entirely file-based and independent of the terminal backend. Replacing the backend does NOT affect communication.\n\n---\n\n## Backend Detection Logic\n\n```\nFunction: aTT() — detectAndGetBackend()\n\nPriority 1: $TMUX env var present?\n  → YES: TmuxBackend (isNative=true)\n\nPriority 2: TERM_PROGRAM === \"iTerm.app\" OR $ITERM_SESSION_ID present?\n  → YES: User prefers tmux over iTerm2? (config check)\n    → YES: skip to Priority 3\n    → NO: `it2 --version` succeeds?\n      → YES: ITermBackend (isNative=true)\n      → NO: fall through\n\nPriority 3: `tmux -V` succeeds?\n  → YES: TmuxBackend (isNative=false)\n  → NO: throw Error(\"install tmux or it2\")\n\nIn-process check (separate function Bu()):\n  - Non-interactive mode → always in-process\n  - teammateMode === \"in-process\" → in-process\n  - teammateMode === \"tmux\" → never in-process\n  - teammateMode === \"auto\" → in-process if NOT inside tmux\n```\n\n**Detection functions:**\n- `Sk()` — checks `process.env.TMUX` (variable name: `TPB`)\n- `nTT()` — checks `process.env.TERM_PROGRAM === \"iTerm.app\"` OR `process.env.ITERM_SESSION_ID` exists\n\n---\n\n## Backend Interface\n\nImplicit interface (duck-typed, no explicit TypeScript interface):\n\n```typescript\ninterface PaneBackend {\n  type: string;                    // \"tmux\" | \"iterm2\"\n  displayName: string;             // \"tmux\" | \"iTerm2\"\n  supportsHideShow: boolean;       // tmux=true, iterm2=false\n\n  isAvailable(): Promise<boolean>;\n  isRunningInside(): Promise<boolean>;\n  createTeammatePaneInSwarmView(name: string, color: string): Promise<{\n    paneId: string;\n    isFirstTeammate: boolean;\n  }>;\n  sendCommandToPane(paneId: string, command: string, isExternal?: boolean): Promise<void>;\n  setPaneBorderColor(paneId: string, color: string, isExternal?: boolean): Promise<void>;\n  setPaneTitle(paneId: string, title: string, color: string, isExternal?: boolean): Promise<void>;\n  enablePaneBorderStatus(windowTarget?: string, isExternal?: boolean): Promise<void>;\n  rebalancePanes(windowTarget: string, withLeader: boolean): Promise<void>;\n  killPane(paneId: string, isExternal?: boolean): Promise<boolean>;\n  hidePane(paneId: string, isExternal?: boolean): Promise<boolean>;\n  showPane(paneId: string, targetWindow: string, isExternal?: boolean): Promise<boolean>;\n}\n```\n\n---\n\n## tmux Backend\n\n### Commands Used\n\n| Operation | Command |\n|---|---|\n| Version check | `tmux -V` |\n| First split (with leader) | `tmux split-window -t <leaderPane> -h -l 70% -P -F \"#{pane_id}\"` |\n| Subsequent splits | `tmux split-window -t <midPane> [-v\\|-h] -P -F \"#{pane_id}\"` |\n| External session create | `tmux -L <socket> new-session -d -s claude-swarm -n swarm-view -P -F \"#{pane_id}\"` |\n| Send command | `tmux send-keys -t <paneId> <command> Enter` |\n| Border color | `tmux select-pane -t <pane> -P \"bg=default,fg=<color>\"` |\n| Border style | `tmux set-option -p -t <pane> pane-border-style \"fg=<color>\"` |\n| Active border | `tmux set-option -p -t <pane> pane-active-border-style \"fg=<color>\"` |\n| Pane title | `tmux select-pane -t <pane> -T <name>` |\n| Title format | `tmux set-option -p -t <pane> pane-border-format \"#[fg=<color>,bold] #{pane_title} #[default]\"` |\n| Border status | `tmux set-option -w -t <window> pane-border-status top` |\n| Layout (leader) | `tmux select-layout -t <window> main-vertical` + `tmux resize-pane -t <leader> -x 30%` |\n| Layout (tiled) | `tmux select-layout -t <window> tiled` |\n| Kill pane | `tmux kill-pane -t <paneId>` |\n| Hide pane | `tmux break-pane -d -s <pane> -t claude-hidden:` |\n| Show pane | `tmux join-pane -h -s <pane> -t <window>` |\n| Get pane ID | `tmux display-message -p \"#{pane_id}\"` (or `$TMUX_PANE`) |\n| Get window target | `tmux display-message [-t <pane>] -p \"#{session_name}:#{window_index}\"` |\n| List panes | `tmux list-panes -t <window> -F \"#{pane_id}\"` |\n| Pane count | `tmux list-panes -t <window> \\| wc -l` |\n\n### Split Strategy\n\n- **First teammate:** Horizontal split (`-h`), 70% width for teammate, 30% for leader\n- **Subsequent teammates:** Alternate vertical/horizontal, split from the **middle** pane of existing teammates\n  ```\n  midIndex = Math.floor((existingCount - 1) / 2)\n  isOdd = existingCount % 2 === 1  → alternate -v / -h\n  ```\n- **Rebalance after each split:** `main-vertical` layout, leader pane resized to 30%\n\n### External Session (outside tmux)\n\nWhen Claude Code is NOT inside tmux but tmux is available:\n- Creates a **separate tmux session** named `claude-swarm` with window `swarm-view`\n- Uses a **dedicated socket** (`-L <socketName>`)\n- All teammate commands use `tmux -L <socketName> ...` instead of plain `tmux`\n- Layout: `tiled` (equal distribution, no leader pane)\n\n### Color Mapping\n\n```javascript\nconst tmuxColorMap = {\n  red: \"red\",\n  blue: \"blue\",\n  green: \"green\",\n  yellow: \"yellow\",\n  purple: \"magenta\",      // tmux uses magenta for purple\n  orange: \"colour208\",\n  pink: \"colour205\",\n  cyan: \"cyan\"\n};\n```\n\n### Serialization\n\nAll pane creation operations are serialized through a **mutex** (promise chain `KW8()`) to prevent race conditions when multiple teammates are spawned simultaneously.\n\n---\n\n## iTerm2 Backend\n\n### Commands Used\n\n| Operation | Command | Output |\n|---|---|---|\n| Version check | `it2 --version` | Version string, exit 0 |\n| First split | `it2 session split -v -s <leaderSessionId>` | `Created new pane: <sessionId>` |\n| Subsequent splits | `it2 session split -s <lastPaneId>` | `Created new pane: <sessionId>` |\n| Run command | `it2 session run -s <paneId> <command>` | (empty on success) |\n| Close pane | `it2 session close -s <paneId>` | (empty on success) |\n| List sessions | `it2 session list` | Session listing (used for setup check) |\n\n### Output Parsing\n\nClaude Code parses the split output with regex:\n\n```javascript\n// Function: ZW8\nfunction parsePaneId(stdout) {\n  let match = stdout.match(/Created new pane:\\s*(.+)/);\n  if (match && match[1]) return match[1].trim();\n  return \"\";\n}\n// Empty string → throws: \"Failed to parse session ID from split output: ...\"\n```\n\n### Leader Session ID Extraction\n\nFrom `$ITERM_SESSION_ID` (format: `w0t1p12:UUID`):\n\n```javascript\n// Function: IW8\nfunction getLeaderSessionId() {\n  let envVar = process.env.ITERM_SESSION_ID;\n  if (!envVar) return null;\n  let colonIndex = envVar.indexOf(\":\");\n  if (colonIndex === -1) return null;\n  return envVar.slice(colonIndex + 1);  // extracts UUID part only\n}\n```\n\n### No-Op Operations\n\niTerm2 backend does NOT implement (all are no-ops):\n- `setPaneBorderColor()` — empty function\n- `setPaneTitle()` — empty function\n- `enablePaneBorderStatus()` — empty function\n- `rebalancePanes()` — logs \"not implemented\"\n- `hidePane()` → `return false`\n- `showPane()` → `return false`\n\n### Pane Tracking\n\n```javascript\nlet createdPanes = [];       // JPR — array of pane IDs in creation order\nlet firstPaneUsed = false;   // KPB — flag for first teammate\n\n// First split: uses leader session ID from ITERM_SESSION_ID\n// Subsequent: splits from last element in createdPanes array\n```\n\n### Serialization\n\nSame pattern as tmux — mutex via promise chain (`NW8()`) for sequential pane creation.\n\n---\n\n## In-Process Backend\n\nNo terminal multiplexer involved. Teammates run as subagents in the same Node.js process.\n\n```\n- spawn(): Creates teammate context, starts runner loop\n- Runner loop: process prompt → idle → poll mailbox → process next message\n- Auto-compaction when token limit reached\n- Shift+Down to cycle between teammates in the terminal buffer\n```\n\n---\n\n## PaneBackendExecutor\n\nWraps either TmuxBackend or ITermBackend:\n\n```typescript\nclass PaneBackendExecutor {\n  type: string;\n  backend: PaneBackend;\n  spawnedTeammates: Map<string, {paneId: string, insideTmux: boolean}>;\n\n  spawn(config): Promise<void> {\n    // 1. Generate agentId: \"sanitizedName@teamName\"\n    // 2. Assign color round-robin from: red,blue,green,yellow,purple,orange,pink,cyan\n    // 3. backend.createTeammatePaneInSwarmView(name, color)\n    // 4. If first teammate + inside tmux: enablePaneBorderStatus\n    // 5. Build full CLI command (see below)\n    // 6. backend.sendCommandToPane(paneId, command)\n    // 7. Register exit cleanup if not done\n    // 8. Send initial prompt via mailbox: n8(name, message, teamName)\n  }\n\n  sendMessage(agentId, message): Promise<void>\n  terminate(agentId, reason): Promise<void>  // graceful shutdown via mailbox\n  kill(agentId): Promise<void>               // force kill pane\n  isActive(agentId): Promise<boolean>\n}\n```\n\n---\n\n## Teammate Spawn Flow\n\n### CLI Command Built for Teammate\n\n```bash\ncd <cwd> && env CLAUDECODE=1 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 \\\n  <execPath> \\\n  --agent-id <agentId> \\\n  --agent-name <name> \\\n  --team-name <teamName> \\\n  --agent-color <color> \\\n  --parent-session-id <sessionId> \\\n  [--plan-mode-required] \\\n  [--dangerously-skip-permissions | --permission-mode acceptEdits] \\\n  [--model <model>] \\\n  [--settings <path>] \\\n  [--plugin-dir <dir>] \\\n  --teammate-mode <mode> \\\n  [--chrome | --no-chrome]\n```\n\n### Decision Tree\n\n```\nhandleSpawn(config, context):\n  if isInProcessEnabled() → handleSpawnInProcess()\n  elif config.use_splitpane !== false → handleSpawnSplitPane()  // pane in current window\n  else → handleSpawnTmuxWindow()                                 // separate tmux window\n```\n\n### Agent ID Format\n\n```javascript\nagentId = `${sanitizedName}@${teamName}`\n// @ in name replaced with -\n// Name uniqueness: append -2, -3, etc. if duplicate\n```\n\n---\n\n## Mailbox System\n\n### File Structure\n\n```\n~/.claude/teams/{teamName}/\n├── config.json                           — team configuration\n└── messages/\n    ├── {lead-session-id}/\n    │   ├── from-teammate-1.json\n    │   └── from-teammate-2.json\n    ├── {teammate-1-session-id}/\n    │   └── from-lead.json\n    └── {teammate-2-session-id}/\n        └── from-lead.json\n```\n\n### Message Format\n\n```json\n{\n  \"text\": \"Your task description here\",\n  \"from\": \"team-lead\",\n  \"color\": \"blue\",\n  \"timestamp\": \"2026-03-03T10:00:00.000Z\"\n}\n```\n\n### Special Messages\n\n- **Shutdown request:**\n  ```json\n  {\n    \"type\": \"shutdown_request\",\n    \"requestId\": \"shutdown-<agentId>-<timestamp>\",\n    \"from\": \"team-lead\",\n    \"reason\": \"Task complete\"\n  }\n  ```\n\n### Polling\n\nTeammates poll their mailbox directory periodically via `JW8()`. Messages are read, processed, then deleted.\n\n---\n\n## Environment Variables\n\n### Set by Lead When Spawning Teammate\n\n| Variable | Value | Purpose |\n|---|---|---|\n| `CLAUDECODE` | `1` | Identifies as Claude Code process |\n| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | `1` | Enables agent teams feature |\n\n### CLI Flags (not env vars)\n\n| Flag | Purpose |\n|---|---|\n| `--agent-id` | Unique ID: `name@teamName` |\n| `--agent-name` | Display name |\n| `--team-name` | Team identifier |\n| `--agent-color` | Color assignment |\n| `--parent-session-id` | Lead's session ID for mailbox routing |\n| `--teammate-mode` | `tmux` / `in-process` / `auto` |\n| `--plan-mode-required` | Force plan mode |\n| `--permission-mode` | `acceptEdits` or similar |\n| `--model` | LLM model to use |\n\n### Detection: \"Am I a teammate?\"\n\n```javascript\nif (process.env.CLAUDE_CODE_AGENT_ID && process.env.CLAUDE_CODE_TEAM_NAME) {\n  // I'm a teammate — enter team mode\n}\n```\n\nWait — these are passed as CLI flags (`--agent-id`, `--team-name`), not env vars. The detection likely uses the parsed CLI args, not env vars directly. The env block in the spawn command only sets `CLAUDECODE=1` and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`.\n\n---\n\n## Known Bugs\n\n| Issue | Description | Relevance |\n|---|---|---|\n| [#23513](https://github.com/anthropics/claude-code/issues/23513) | `send-keys` race condition: command sent before shell initialization completes | tmux only — TUIC immune |\n| [#23527](https://github.com/anthropics/claude-code/issues/23527) | `pane-base-index` mismatch: CC assumes index 0 | tmux only — TUIC immune |\n| [#23615](https://github.com/anthropics/claude-code/issues/23615) | Split pane breaks user's tmux layout | tmux only — TUIC immune |\n| [#24108](https://github.com/anthropics/claude-code/issues/24108) | Teammate stuck polling mailbox, never becomes idle | All backends |\n| [#24122](https://github.com/anthropics/claude-code/issues/24122) | Zellij support request (not implemented) | Shows demand for custom backends |\n| [#24384](https://github.com/anthropics/claude-code/issues/24384) | Windows Terminal backend request | Shows demand for custom backends |\n| [#24189](https://github.com/anthropics/claude-code/issues/24189) | Ghostty backend request | Shows demand for custom backends |\n| [#24292](https://github.com/anthropics/claude-code/issues/24292) | iTerm2 split panes not created | it2 CLI issues |\n| [#24385](https://github.com/anthropics/claude-code/issues/24385) | iTerm2 panes not closed on shutdown | Cleanup issue |\n| [#24771](https://github.com/anthropics/claude-code/issues/24771) | Teammate disconnect from messaging | Mailbox polling |\n| [#29478](https://github.com/anthropics/claude-code/issues/29478) | Korean IME corruption with `send-keys` | tmux only — TUIC immune |\n\n---\n\n## TUIC Integration Strategy\n\n### Approach: Emulate iTerm2 Backend via `it2` Shell Script\n\nThe iTerm2 backend is the simplest (5 commands, all cosmetic ops are no-ops). We emulate it by:\n\n1. **Setting PTY env vars** in `build_shell_command()`:\n   - `ITERM_SESSION_ID=w0t0p0:<pty-session-id>` — triggers iTerm2 detection\n   - `TERM_PROGRAM=iTerm.app` — satisfies TERM_PROGRAM check\n   - Prepend `~/.tuicommander/bin` to `PATH` — so our `it2` script is found\n\n2. **Providing `~/.tuicommander/bin/it2`** shell script that:\n   - `it2 --version` → prints version, exits 0\n   - `it2 session split [-v] [-s <id>]` → calls TUIC HTTP API to create session, prints `Created new pane: <session_id>`\n   - `it2 session run -s <id> <command>` → calls TUIC HTTP API to write to session\n   - `it2 session close -s <id>` → calls TUIC HTTP API to close session\n   - `it2 session list` → calls TUIC HTTP API to list sessions\n\n3. **The `it2` script communicates with TUIC via:**\n   - HTTP: `curl http://localhost:9876/sessions` (REST API already exists)\n   - Or Unix socket: direct to `~/.tuicommander/mcp.sock`\n\n### Why iTerm2 Backend (not tmux)\n\n- **5 commands** vs 15+ for tmux\n- **All visual ops are no-ops** — TUIC handles its own tab styling\n- **No layout management needed** — TUIC handles tab layout natively\n- **No `send-keys` race condition** — TUIC creates PTY first, then runs command\n- **No `pane-base-index` issues** — TUIC uses session UUIDs\n- **Simpler parsing** — just `Created new pane: <id>`\n\n### What This Gives Us\n\n- Claude Code Agent Teams works inside TUIC tabs instead of tmux panes\n- Each teammate gets its own TUIC tab with full agent detection, output parsing, sidebar icon\n- The mailbox/task system works unchanged (file-based, backend-independent)\n- TUIC can show team status in sidebar, aggregate notifications, etc.\n\n### Risks\n\n1. **CC updates may change it2 interface** — monitor decompiled binary after updates\n2. **TERM_PROGRAM change from ghostty to iTerm.app** — may affect other terminal detection\n3. **it2 version expectations** — CC may start checking version compatibility\n4. **execSync vs shell** — need to verify that `it2` shell script is found by Node.js `execSync`\n\n### Future: Proposing a TUIC Backend to Anthropic\n\nOnce the it2 emulation works, we can propose adding TUICommander as a native backend. Evidence: GitHub issues #24122 (Zellij), #24384 (Windows Terminal), #24189 (Ghostty) show demand for custom backends.\n\n---\n\n## Verification Checklist\n\nAfter Claude Code updates, verify these haven't changed:\n\n- [ ] `it2 session split` output format: `Created new pane: <id>`\n- [ ] `IW8()` extracts UUID from `ITERM_SESSION_ID` after `:`\n- [ ] `nTT()` checks `TERM_PROGRAM === \"iTerm.app\"` or `ITERM_SESSION_ID`\n- [ ] Backend detection priority: TMUX → iTerm2 → tmux external → error\n- [ ] CLI flags for teammate spawn (--agent-id, --team-name, etc.)\n- [ ] Mailbox directory structure: `~/.claude/teams/{name}/messages/`\n\n### How to Re-Verify\n\nThe binary is installed at `~/.claude/local/bin/claude`. It's a Bun compiled JS bundle. To extract and search:\n\n```bash\n# Find the binary\nls -la ~/.claude/local/bin/claude\n\n# Search for key strings in the binary\nstrings ~/.claude/local/bin/claude | grep -i \"Created new pane\"\nstrings ~/.claude/local/bin/claude | grep -i \"session split\"\nstrings ~/.claude/local/bin/claude | grep -i \"ITERM_SESSION_ID\"\nstrings ~/.claude/local/bin/claude | grep -i \"pane-border-status\"\nstrings ~/.claude/local/bin/claude | grep -i \"teammate-mode\"\n```\n\n---\n\n## it2 CLI Reference (mkusaka/it2 — Python)\n\nThe `it2` tool used by Claude Code is [mkusaka/it2](https://github.com/mkusaka/it2) (Python, pip install).\n\n**NOT** [tmc/it2](https://github.com/tmc/it2) (Go) which has different output format (`Session split successfully. New session ID: ...`).\n\n### Installation\n\n```bash\npip install it2\n```\n\n### Key Source Files\n\n- `src/it2/commands/session.py` — implements split, run, close, list\n- Output on split: `click.echo(f\"Created new pane: {new_session.session_id}\")`\n",
+            "file_path": "/Users/stefano.straus/Gits/personal/tuicommander/docs/research/claude-code-agent-teams.md"
+          },
+          "timestamp": "2026-03-03T07:38:54.531Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Ora l'idea e il piano.",
+          "timestamp": "2026-03-03T07:39:02.087Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Write",
+          "input": {
+            "content": "# Agent Teams Bridge — TUIC as Claude Code Teammate Backend\n\n**Status:** `validated`\n**Created:** 2026-03-03\n**Priority:** P1\n\n## Problem\n\nClaude Code Agent Teams spawns teammates in tmux panes or iTerm2 splits. When running inside TUICommander, teammates should open as TUIC tabs instead — giving users full agent detection, output parsing, sidebar integration, and terminal management.\n\n## Solution\n\nEmulate the iTerm2 `it2` CLI interface so Claude Code uses TUIC tabs as its teammate backend. The iTerm2 backend is the simplest (5 commands, all visual ops are no-ops) and maps cleanly to TUIC's existing HTTP API.\n\n## Implementation\n\n### Phase 1: PTY Environment (Rust)\n\nModify `build_shell_command()` in `pty.rs` to:\n- Set `ITERM_SESSION_ID=w0t0p0:<session_id>` — triggers iTerm2 detection\n- Change `TERM_PROGRAM` from `ghostty` to `iTerm.app`  — satisfies check\n- Prepend `~/.tuicommander/bin` to `PATH`\n\n**Risk:** Changing `TERM_PROGRAM` may affect other terminal detection. Need conditional logic — only set when agent teams feature is enabled.\n\n### Phase 2: `it2` Shell Script\n\nCreate `~/.tuicommander/bin/it2` — a ~30 line shell script:\n\n```bash\n#!/bin/bash\n# TUIC it2 compatibility shim\nTUIC_PORT=\"${TUIC_HTTP_PORT:-9876}\"\ncase \"$1 $2\" in\n  \"--version\")     echo \"1.0.0\"; exit 0 ;;\n  \"session split\") # parse -v, -s flags → POST /sessions → print \"Created new pane: <id>\" ;;\n  \"session run\")   # parse -s flag + command → POST /sessions/{id}/write ;;\n  \"session close\") # parse -s flag → DELETE /sessions/{id} ;;\n  \"session list\")  # GET /sessions → format output ;;\nesac\n```\n\n### Phase 3: Frontend Integration\n\nWhen a session is created via the it2 shim:\n- Sidebar auto-creates tab (already works for HTTP-created sessions)\n- Agent detection kicks in when Claude Code starts in the new tab\n- Team status visible in sidebar icons\n\n### Phase 4: Rename Binary\n\nRename `tuic-mcp-bridge` → `tuic-bridge` (drop \"mcp\" from name since it now serves multiple protocols).\n\n## Research\n\nFull technical documentation: `docs/research/claude-code-agent-teams.md`\n\n## Open Questions\n\n- Should the it2 emulation be opt-in (config toggle) or always-on?\n- How to handle `TERM_PROGRAM` change — ghostty was chosen for Claude Code compat, but iTerm.app is needed for agent teams detection\n- Should we propose this to Anthropic as a new native backend?\n",
+            "file_path": "/Users/stefano.straus/Gits/personal/tuicommander/ideas/agent-teams-bridge.md"
+          },
+          "timestamp": "2026-03-03T07:39:16.382Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Ora aggiorno l'index delle idee e salvo in memory.",
+          "timestamp": "2026-03-03T07:39:20.200Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/stefano.straus/Gits/personal/tuicommander/ideas/index.md"
+          },
+          "timestamp": "2026-03-03T07:39:20.631Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Vedo che c'è già un'idea `agent-teams-tmux-shim.md` con status `designed`. Fammi leggere quella per capire se devo aggiornare o sostituire.",
+          "timestamp": "2026-03-03T07:39:24.320Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/stefano.straus/Gits/personal/tuicommander/ideas/agent-teams-tmux-shim.md"
+          },
+          "timestamp": "2026-03-03T07:39:24.842Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Perfetto — c'era già un design precedente basato su tmux shim. Ora lo aggiorniamo con la strategia migliore (it2 instead of tmux). Aggiorno il file idea e l'index.",
+          "timestamp": "2026-03-03T07:39:29.147Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Write",
+          "input": {
+            "content": "# Agent Teams Integration (it2 Shim)\n\n**Status:** `designed`\n**Source:** Claude Code Agent Teams feature (experimental, Feb 2026)\n**Updated:** 2026-03-03 — switched from tmux shim to it2 (iTerm2 CLI) shim\n**Research:** [`docs/research/claude-code-agent-teams.md`](../docs/research/claude-code-agent-teams.md)\n\n## What\n\nTUICommander replaces tmux/iTerm2 as the display layer for Claude Code Agent Teams. When a lead Claude Code instance spawns teammates, a scoped `it2` shim intercepts the call and creates TUIC tabs instead.\n\n## Why it2 Instead of tmux\n\nThe previous design shimmed `tmux` (15+ commands, complex layout management, `send-keys` race conditions). The **iTerm2 backend is far simpler:**\n\n| | tmux backend | iTerm2 backend |\n|---|---|---|\n| Commands to implement | 15+ | **5** |\n| Visual ops (borders, titles) | Must implement | **All no-ops** |\n| Layout management | Must implement | **No-op** |\n| Race conditions | `send-keys` before shell init | **None** (direct `session run`) |\n| Pane ID format | `%0`, `%1` (tmux-specific) | **Any string** (UUID works) |\n| Dependencies | `socat` or `/dev/tcp` for IPC | **Just `curl`** |\n\n## Architecture\n\n```\nClaude Code (lead in TUI tab)\n  → detects ITERM_SESSION_ID in env → selects iTerm2 backend\n  → calls `it2 session split -v -s <leader-id>`\n  → calls `it2 session run -s <pane-id> <command>`\n\n~/.tuicommander/bin/it2  (shell script shim, ~30 lines)\n  |-- --version                        → echo \"1.0.0\"\n  |-- session split [-v] [-s <id>]     → curl POST /sessions → print \"Created new pane: <id>\"\n  |-- session run -s <id> <command>    → curl POST /sessions/<id>/write\n  |-- session close -s <id>            → curl DELETE /sessions/<id>\n  \\-- session list                     → curl GET /sessions\n```\n\n### Communication (unchanged, file-based)\n\nThe mailbox and task list are completely independent of the terminal backend:\n```\n~/.claude/teams/{teamName}/messages/  — teammate ↔ lead messages\n~/.claude/tasks/{teamName}/           — shared task list with file locking\n```\n\n## PTY Environment Changes\n\nIn `build_shell_command()` (pty.rs), when agent teams shim is enabled:\n\n```rust\n// Trigger iTerm2 detection in Claude Code\ncmd.env(\"ITERM_SESSION_ID\", format!(\"w0t0p0:{}\", session_id));\ncmd.env(\"TERM_PROGRAM\", \"iTerm.app\");\n\n// Ensure our it2 shim is found first\nlet tuic_bin = config_dir().join(\"bin\");\nlet path = format!(\"{}:{}\", tuic_bin.display(), std::env::var(\"PATH\").unwrap_or_default());\ncmd.env(\"PATH\", path);\n\n// Also pass HTTP port so the shim knows where to call\ncmd.env(\"TUIC_HTTP_PORT\", http_port.to_string());\n```\n\n**TERM_PROGRAM concern:** Changing from `ghostty` to `iTerm.app` may affect Claude Code's terminal capability detection. The change MUST be conditional — only when agent teams shim is enabled in settings.\n\n## The `it2` Shim Script\n\n```bash\n#!/bin/bash\n# TUICommander it2 compatibility shim for Claude Code Agent Teams\n# Emulates mkusaka/it2 (Python) CLI interface\nset -euo pipefail\n\nTUIC_PORT=\"${TUIC_HTTP_PORT:-9876}\"\nTUIC_URL=\"http://127.0.0.1:${TUIC_PORT}\"\n\ncase \"${1:-}\" in\n  --version)\n    echo \"1.0.0\"\n    exit 0\n    ;;\n  session)\n    shift\n    case \"${1:-}\" in\n      split)\n        shift\n        # Parse flags: -v (vertical, ignored), -s <session_id>\n        while [[ $# -gt 0 ]]; do\n          case \"$1\" in\n            -v) shift ;;\n            -s) shift; PARENT_ID=\"$1\"; shift ;;\n            *) shift ;;\n          esac\n        done\n        # Create new session via TUIC HTTP API\n        RESP=$(curl -sf \"${TUIC_URL}/sessions\" \\\n          -H \"Content-Type: application/json\" \\\n          -d '{\"rows\": 24, \"cols\": 80}')\n        SESSION_ID=$(echo \"$RESP\" | grep -o '\"session_id\":\"[^\"]*\"' | cut -d'\"' -f4)\n        echo \"Created new pane: ${SESSION_ID}\"\n        ;;\n      run)\n        shift\n        # Parse: -s <session_id> <command...>\n        SESSION_ID=\"\"\n        while [[ $# -gt 0 ]]; do\n          case \"$1\" in\n            -s) shift; SESSION_ID=\"$1\"; shift ;;\n            *) break ;;\n          esac\n        done\n        COMMAND=\"$*\"\n        curl -sf \"${TUIC_URL}/sessions/${SESSION_ID}/write\" \\\n          -H \"Content-Type: application/json\" \\\n          -d \"{\\\"data\\\": \\\"${COMMAND}\\n\\\"}\" > /dev/null\n        ;;\n      close)\n        shift\n        SESSION_ID=\"\"\n        while [[ $# -gt 0 ]]; do\n          case \"$1\" in\n            -s) shift; SESSION_ID=\"$1\"; shift ;;\n            *) shift ;;\n          esac\n        done\n        curl -sf -X DELETE \"${TUIC_URL}/sessions/${SESSION_ID}\" > /dev/null\n        ;;\n      list)\n        curl -sf \"${TUIC_URL}/sessions\"\n        ;;\n      *)\n        echo \"Unknown session subcommand: ${1:-}\" >&2\n        exit 1\n        ;;\n    esac\n    ;;\n  *)\n    echo \"Unknown command: ${1:-}\" >&2\n    exit 1\n    ;;\nesac\n```\n\n## Components Needed\n\n| Component | Location | Purpose |\n|-----------|----------|---------|\n| it2 shim script | `~/.tuicommander/bin/it2` | Intercepts it2 commands, calls TUIC HTTP |\n| PTY env injection | `src-tauri/src/pty.rs` | Sets ITERM_SESSION_ID, TERM_PROGRAM, PATH |\n| Settings config | Settings store | Persists agent-teams toggle |\n| Settings UI | SettingsPanel | Toggle switch |\n| Auto-install | `src-tauri/src/agent_mcp.rs` | Creates bin dir + writes it2 script |\n| Integration tests | `tests/it2-shim/` | Verify shim handles known CC it2 commands |\n\n## Configurable via Settings\n\n- **Enable Agent Teams shim** (toggle, off by default) — Controls env injection + shim installation\n- **Team tab grouping** (toggle) — Visual distinction for teammate tabs (e.g., colored border)\n- **Auto-focus new teammates** (toggle) — Switch to new tab when teammate spawns\n\n## Bridge Rename\n\nAs part of this work, rename `tuic-mcp-bridge` → `tuic-bridge` since it now serves multiple protocols (MCP stdio + it2 compat potential).\n\n## Risks\n\n1. **CC's it2 interface is internal** — can change without notice. Mitigation: verification script + integration tests\n2. **Agent Teams feature may be redesigned** — it's still experimental. Monitor CC releases.\n3. **TERM_PROGRAM change** — must be conditional, not global\n4. **curl dependency** — available on all platforms, minimal risk\n\n## NOT in Scope (YAGNI)\n\n- Task list UI visualization (CC manages via `~/.claude/tasks/`)\n- Inter-teammate message UI (filesystem-based, works without us)\n- Custom team creation UI (user types naturally in Claude Code)\n- tmux backend shim (abandoned in favor of simpler it2 approach)\n- Contributing upstream to CC (separate effort, after we demonstrate it works)\n",
+            "file_path": "/Users/stefano.straus/Gits/personal/tuicommander/ideas/agent-teams-tmux-shim.md"
+          },
+          "timestamp": "2026-03-03T07:40:03.482Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Ora aggiorno l'index e rimuovo il file idea duplicato che avevo creato prima.",
+          "timestamp": "2026-03-03T07:40:08.482Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Edit",
+          "input": {
+            "file_path": "/Users/stefano.straus/Gits/personal/tuicommander/ideas/index.md",
+            "new_string": "| `designed` | Agent Teams Integration (it2 Shim) | [agent-teams-tmux-shim.md](agent-teams-tmux-shim.md) |",
+            "old_string": "| `designed` | Agent Teams Integration (tmux Shim) | [agent-teams-tmux-shim.md](agent-teams-tmux-shim.md) |",
+            "replace_all": false
+          },
+          "timestamp": "2026-03-03T07:40:10.212Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Bash",
+          "input": {
+            "command": "rm /Users/stefano.straus/Gits/personal/tuicommander/ideas/agent-teams-bridge.md",
+            "description": "Remove duplicate idea file"
+          },
+          "timestamp": "2026-03-03T07:40:10.904Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Ora salvo in mdkb memory per le sessioni future.",
+          "timestamp": "2026-03-03T07:40:16.086Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "mcp__mdkb__memory_write",
+          "input": {
+            "content": "# Agent Teams it2 Shim Strategy\n\n## Decision\nEmulate iTerm2's `it2` CLI (5 commands) instead of tmux (15+ commands) to intercept Claude Code Agent Teams teammate spawning.\n\n## Key Facts\n- CC detects iTerm2 via: `TERM_PROGRAM === \"iTerm.app\"` OR `$ITERM_SESSION_ID` present\n- CC extracts leader session ID from `$ITERM_SESSION_ID` format `w0t0p0:<UUID>` (takes part after `:`)\n- CC parses split output with regex: `/Created new pane:\\s*(.+)/`\n- CC uses mkusaka/it2 (Python), NOT tmc/it2 (Go) — different output format\n- iTerm2 backend has ALL visual ops as no-ops (borders, titles, layout — all empty functions)\n- Backend detection priority: $TMUX → iTerm2 → tmux external → in-process\n- Mailbox/task communication is file-based in `~/.claude/teams/` — backend-independent\n\n## Implementation\n1. Set `ITERM_SESSION_ID=w0t0p0:<session_id>` + `TERM_PROGRAM=iTerm.app` in PTY env (conditional on setting)\n2. Shell script `~/.tuicommander/bin/it2` (~30 lines bash) calls TUIC HTTP API\n3. Prepend `~/.tuicommander/bin` to PATH in PTY sessions\n4. it2 script output: `Created new pane: <session_id>` (matches CC regex)\n\n## Research doc\n`docs/research/claude-code-agent-teams.md` — full decompiled implementation details\n\n## Verification\nAfter CC updates, run: `strings ~/.claude/local/bin/claude | grep \"Created new pane\"`\n",
+            "entry_type": "decision",
+            "id": "agent-teams-it2-shim-strategy",
+            "tags": [
+              "agent-teams",
+              "it2",
+              "claude-code",
+              "teammate",
+              "iTerm2",
+              "shim",
+              "architecture"
+            ],
+            "title": "Agent Teams: it2 shim strategy"
+          },
+          "timestamp": "2026-03-03T07:40:27.920Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Ora torniamo alla tua domanda sull'intercettare `it2` direttamente nella PTY.\n\n---\n\n## Riepilogo di dove siamo\n\nHo creato:\n\n1. **`docs/research/claude-code-agent-teams.md`** — documentazione completa di tutto il reverse engineering (backend interface, tmux commands, it2 commands, mailbox protocol, env vars, parsing regex, known bugs, verification checklist)\n\n2. **`ideas/agent-teams-tmux-shim.md`** — aggiornato da \"tmux shim\" a \"it2 shim\" con il design completo\n\n3. **mdkb memory** — decisione persistente per sessioni future\n\n## Sulla tua domanda: intercettare it2 senza symlink\n\nCi sono tre vie:\n\n**A. Shell script in `~/.tuicommander/bin/it2` + PATH prepend** (design attuale)\n- Lo script è ~30 righe di bash con `curl`\n- PATH prepend in `build_shell_command()` — già scoped solo alle nostre PTY\n- Pro: semplice, debuggabile, nessun binary\n- Contro: un file extra sul filesystem\n\n**B. Shell function iniettata via `BASH_ENV`/`ENV`**\n- Settiamo `BASH_ENV=~/.tuicommander/it2-func.sh` nell'env della PTY\n- Il file definisce `it2() { ... }` come shell function\n- Pro: nessun file nel PATH\n- Contro: `BASH_ENV` funziona solo per bash non-interattivo. Ma Node.js `execSync` usa `/bin/sh -c \"it2 ...\"` — dipende da quale shell è `/bin/sh` e se legge `ENV`\n\n**C. Aggiungere la modalità it2 dentro `tuic-bridge`** (il tuo suggerimento originale)\n- Il bridge controlla `argv[0]`: se è \"it2\" → modalità compat\n- Symlink: `~/.tuicommander/bin/it2 → tuic-bridge`\n- Pro: più robusto di uno shell script, nessun dipendenza da `curl`\n- Contro: serve un symlink (ma lo creiamo noi automaticamente)\n\nBoss, l'opzione **A** (shell script) è la più leggera e debuggabile. L'opzione **C** è più robusta ma richiede il rename del bridge + la logica argv[0]. Quale preferisci?",
+          "timestamp": "2026-03-03T07:40:46.211Z"
+        },
+        {
+          "type": "user",
+          "text": "partiamo da a ma neniamo c come landing ideale quando A funziona",
+          "timestamp": "2026-03-03T07:44:11.475Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nPerfetto. A come POC, C come target finale. Aggiorno l'idea con questa roadmap.",
+          "timestamp": "2026-03-03T07:44:15.693Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/stefano.straus/Gits/personal/tuicommander/ideas/agent-teams-tmux-shim.md",
+            "limit": 20,
+            "offset": 1
+          },
+          "timestamp": "2026-03-03T07:44:16.307Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Edit",
+          "input": {
+            "file_path": "/Users/stefano.straus/Gits/personal/tuicommander/ideas/agent-teams-tmux-shim.md",
+            "new_string": "## Phased Rollout\n\n### Phase A: Shell Script POC (first)\n\nStandalone bash script `~/.tuicommander/bin/it2` that calls TUIC HTTP API via `curl`.\nGoal: validate the approach works end-to-end with real Claude Code Agent Teams.\n\n- Easiest to debug (just bash + curl)\n- No binary changes needed\n- Disposable if approach doesn't work\n\n### Phase B: Merge into `tuic-bridge` (target)\n\nOnce Phase A proves the concept:\n1. Rename `tuic-mcp-bridge` → `tuic-bridge`\n2. Add `argv[0]` detection: if invoked as `it2` → enter it2 compat mode\n3. Replace shell script with symlink: `~/.tuicommander/bin/it2 → tuic-bridge`\n4. Communicate via Unix socket (no curl dependency, no HTTP overhead)\n\nBenefits over Phase A:\n- No `curl` dependency\n- Direct socket communication (faster, more reliable)\n- Single binary for all TUIC adapter needs\n- Cleaner for distribution\n\n## Risks\n\n1. **CC's it2 interface is internal** — can change without notice. Mitigation: verification script + integration tests\n2. **Agent Teams feature may be redesigned** — it's still experimental. Monitor CC releases.\n3. **TERM_PROGRAM change** — must be conditional, not global\n4. **curl dependency** — Phase A only, eliminated in Phase B\n\n## NOT in Scope (YAGNI)\n\n- Task list UI visualization (CC manages via `~/.claude/tasks/`)\n- Inter-teammate message UI (filesystem-based, works without us)\n- Custom team creation UI (user types naturally in Claude Code)\n- tmux backend shim (abandoned in favor of simpler it2 approach)\n- Contributing upstream to CC (separate effort, after we demonstrate it works)",
+            "old_string": "## Risks\n\n1. **CC's it2 interface is internal** — can change without notice. Mitigation: verification script + integration tests\n2. **Agent Teams feature may be redesigned** — it's still experimental. Monitor CC releases.\n3. **TERM_PROGRAM change** — must be conditional, not global\n4. **curl dependency** — available on all platforms, minimal risk\n\n## NOT in Scope (YAGNI)\n\n- Task list UI visualization (CC manages via `~/.claude/tasks/`)\n- Inter-teammate message UI (filesystem-based, works without us)\n- Custom team creation UI (user types naturally in Claude Code)\n- tmux backend shim (abandoned in favor of simpler it2 approach)\n- Contributing upstream to CC (separate effort, after we demonstrate it works)",
+            "replace_all": false
+          },
+          "timestamp": "2026-03-03T07:44:29.865Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Fatto. Il piano è:\n\n- **Phase A** — shell script `it2` + env vars nella PTY + curl al nostro HTTP. Validiamo che funziona.\n- **Phase B** — merge la logica in `tuic-bridge` (rename da `tuic-mcp-bridge`), `argv[0]` detection, symlink, socket diretto.\n\nTutto documentato in `docs/research/claude-code-agent-teams.md` con la checklist di verifica per quando CC si aggiorna. Vuoi partire con l'implementazione della Phase A?",
+          "timestamp": "2026-03-03T07:44:36.515Z"
+        },
+        {
+          "type": "user",
+          "text": "anche B però mi pare solida come soluzione senza files aggiuntivi, direi che il target e B+C",
+          "timestamp": "2026-03-03T07:45:38.276Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nHai ragione — B (merge in tuic-bridge con argv[0]) è il target reale, A è solo per validare velocemente. Aggiorno.",
+          "timestamp": "2026-03-03T07:45:42.719Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Edit",
+          "input": {
+            "file_path": "/Users/stefano.straus/Gits/personal/tuicommander/ideas/agent-teams-tmux-shim.md",
+            "new_string": "## Phased Rollout\n\n### Phase A: Shell Script POC (throwaway)\n\nStandalone bash script `~/.tuicommander/bin/it2` that calls TUIC HTTP API via `curl`.\nGoal: validate the it2 emulation approach works end-to-end with real Claude Code Agent Teams.\n**Disposable** — exists only to prove the concept before investing in the real implementation.\n\n### Phase B+C: `tuic-bridge` with argv[0] detection (target)\n\nThe real implementation — no extra files, just a symlink:\n\n1. Rename `tuic-mcp-bridge` → `tuic-bridge`\n2. Add `argv[0]` detection in `main()`:\n   - Invoked as `tuic-bridge` → MCP stdio transport (current behavior)\n   - Invoked as `it2` → it2 compat mode (parse session subcommands)\n3. Auto-create symlink: `~/.tuicommander/bin/it2 → <path-to>/tuic-bridge`\n4. Communicate via Unix socket directly (no curl, no HTTP overhead)\n5. PTY env injection (ITERM_SESSION_ID, TERM_PROGRAM, PATH prepend)\n\nBenefits:\n- **Zero extra files** — just a symlink to the existing binary\n- No `curl` dependency\n- Direct socket communication (faster, more reliable)\n- Single binary for all TUIC adapter needs\n- Clean for distribution — installer just creates the symlink",
+            "old_string": "## Phased Rollout\n\n### Phase A: Shell Script POC (first)\n\nStandalone bash script `~/.tuicommander/bin/it2` that calls TUIC HTTP API via `curl`.\nGoal: validate the approach works end-to-end with real Claude Code Agent Teams.\n\n- Easiest to debug (just bash + curl)\n- No binary changes needed\n- Disposable if approach doesn't work\n\n### Phase B: Merge into `tuic-bridge` (target)\n\nOnce Phase A proves the concept:\n1. Rename `tuic-mcp-bridge` → `tuic-bridge`\n2. Add `argv[0]` detection: if invoked as `it2` → enter it2 compat mode\n3. Replace shell script with symlink: `~/.tuicommander/bin/it2 → tuic-bridge`\n4. Communicate via Unix socket (no curl dependency, no HTTP overhead)\n\nBenefits over Phase A:\n- No `curl` dependency\n- Direct socket communication (faster, more reliable)\n- Single binary for all TUIC adapter needs\n- Cleaner for distribution",
+            "replace_all": false
+          },
+          "timestamp": "2026-03-03T07:45:52.062Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Chiaro. Il target è:\n\n- **A** — script bash usa-e-getta per validare che l'approccio it2 funziona\n- **B+C** — `tuic-bridge` (rename) con `argv[0]` detection + symlink. Zero file extra, zero dipendenze. Questa è la soluzione definitiva.",
+          "timestamp": "2026-03-03T07:45:57.734Z"
+        },
+        {
+          "type": "user",
+          "text": "di b mi piaceva che non ci fosser symlink, non mi piacciono",
+          "timestamp": "2026-03-03T07:49:26.547Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nCapisco. Senza symlink, il bridge deve essere invocabile direttamente come `it2`. Due opzioni:\n\n1. **Hardlink** — stessa cosa di un symlink ma è una copia del file descriptor. Stessi problemi concettuali.\n\n2. **Lo script di auto-install copia il binary** — `cp tuic-bridge ~/.tuicommander/bin/it2`. Ma poi hai due copie da tenere in sync.\n\n3. **Un wrapper script minimo** — ma è quello che volevi evitare.\n\n4. **PATH ha il bridge, e il bridge si chiama `it2`** — ma allora non è più anche il bridge MCP.\n\nAspetta — torniamo al punto. Claude Code fa `execSync(\"it2\", [...])`. Node.js cerca `it2` nel PATH. Il PATH dentro la nostra PTY lo controlliamo noi. \n\nE se il bridge **supportasse subcommand routing** direttamente? Non serve che il nome del binario sia `it2`. Serve che nel PATH ci sia *qualcosa* chiamato `it2`. L'unico modo senza symlink e senza file extra è che `build_shell_command()` crei una **shell function** nell'env:\n\n```rust\ncmd.env(\"BASH_ENV\", \"/path/to/tuic-it2-env.sh\");  \n// dove quel file definisce: it2() { tuic-bridge it2-compat \"$@\"; }\n```\n\nMa questo richiede comunque un file...\n\nBoss, senza un symlink, un hardlink, una copia, o uno script, non c'è modo di fare apparire un eseguibile `it2` nel PATH. Il filesystem ha bisogno di *qualcosa* con quel nome. Il symlink è la soluzione più pulita — è un puntatore di 1 byte, creato automaticamente dall'installer, sempre in sync. Perché non ti piacciono?",
+          "timestamp": "2026-03-03T07:49:41.628Z"
+        },
+        {
+          "type": "user",
+          "text": "ma il file va bene, tuic bridge come dicevamo",
+          "timestamp": "2026-03-03T07:57:59.172Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nAh, scusa — ho capito male. Il **file va bene**, quello che non ti piace è il **symlink** (come meccanismo). Vuoi che `~/.tuicommander/bin/it2` sia direttamente il binary `tuic-bridge`, non un symlink che punta altrove.\n\nQuindi: il build produce **un binary** (`tuic-bridge`), e l'installer lo copia in **due posti** (o uno solo con il nome giusto):\n\n- `~/.tuicommander/bin/tuic-bridge` — per MCP stdio\n- `~/.tuicommander/bin/it2` — stessa build, stesso binary, copia diretta\n\nOppure ancora più semplice: **un solo file** `~/.tuicommander/bin/tuic-bridge`, e la PTY env ha un alias via PATH + un wrapper one-liner... no, torniamo in circolo.\n\nOk, la via più pulita: **il build produce un singolo binary `tuic-bridge`**. L'auto-install di TUIC **copia** quel binary come `~/.tuicommander/bin/it2`. Sono due file identici, ma il costo è ~2MB e l'installer li tiene in sync ad ogni avvio di TUIC. Nessun symlink.\n\nVa bene così?",
+          "timestamp": "2026-03-03T07:58:10.858Z"
+        }
+      ],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 529,
+      "overriden_lines": 0
+    },
+    "3ee4f1d50e5d6cc6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "68ed8556-3fba-4c5f-83b5-f0867cfa2301",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 27,
+      "total_deletions": 23,
+      "accepted_lines": 43,
+      "overriden_lines": 0
+    },
+    "3f286127a046b141": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e84667c-f247-4e48-8bdd-8a0c22ac6f4a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 9,
+      "total_deletions": 0,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    },
+    "516195b9dcc3e9a3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b1dd1e3-f834-40be-9459-7c9632ff46fb",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 1047,
+      "total_deletions": 2,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "608b0ae814542c3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0f7ff646-8eff-4236-936c-a5aff808d9e4",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 29,
+      "total_deletions": 24,
+      "accepted_lines": 293,
+      "overriden_lines": 0
+    },
+    "618b1252172f44b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bc65e7b9-9f59-4361-b9ca-78409bce5cf7",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 55,
+      "total_deletions": 2,
+      "accepted_lines": 129,
+      "overriden_lines": 0
+    },
+    "77b5d513999037d0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fe7cbda9-e15e-44a7-9951-5979344beed7",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 107,
+      "overriden_lines": 0
+    },
+    "9391906e2518348a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c62acd64-bb36-46eb-b9fb-f1501b220c4e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 12,
+      "overriden_lines": 0
+    },
+    "a2ee18c16fe483dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "990c2ef5-e426-4176-b953-7562a4614f84",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 191,
+      "overriden_lines": 0
+    },
+    "aa000eaefb982dc8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48c58664-e38c-40cc-91e1-ef391ccd48f8",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 36,
+      "total_deletions": 0,
+      "accepted_lines": 306,
+      "overriden_lines": 0
+    },
+    "c8e5dad4dacdaf05": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "588a3777-6f69-41aa-a7de-74a97ca85a2d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 29,
+      "total_deletions": 6,
+      "accepted_lines": 16,
+      "overriden_lines": 0
+    },
+    "e3ca4d0058d00469": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "42352b04-30bf-4506-a424-3ce23f302512",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 23,
+      "total_deletions": 11,
+      "accepted_lines": 13,
+      "overriden_lines": 0
+    },
+    "f96de85ea1b9fe27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e94d3a09-e54e-4517-96eb-2b090c2a33e2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [
+        {
+          "type": "user",
+          "text": "https://github.com/slopus/happy fai uno studio di come si potrebbe usare la stessa strategia di tunneling per accedere con il mobile da remoto e non esporre l'applicazione.",
+          "timestamp": "2026-03-03T15:54:09.776Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\n[[intent: Research happy tunneling for mobile remote access(Research tunneling)]]\n\nPerfetto Boss, analizzo il repo `happy` per capire la strategia di tunneling e come potrebbe applicarsi al nostro caso mobile remoto.",
+          "timestamp": "2026-03-03T15:54:22.385Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Research happy tunneling repo",
+            "prompt": "Research the GitHub repository https://github.com/slopus/happy thoroughly. I need to understand:\n\n1. What the project does - its core purpose\n2. How the tunneling mechanism works (architecture, protocols, components)\n3. What technologies it uses (e.g., Cloudflare Tunnel, ngrok, custom solution, SSH tunneling, etc.)\n4. The security model - how it prevents exposing the application publicly\n5. Authentication/authorization flow\n6. Any client-server architecture details\n7. How traffic flows from the mobile/remote client to the local application\n\nUse `gh` CLI to fetch the repo README, look at the code structure, and understand the full architecture. Run:\n- `gh api repos/slopus/happy` for repo metadata\n- `gh api repos/slopus/happy/readme --jq .content | base64 -d` for README\n- `gh api repos/slopus/happy/contents` for file listing\n- Read key source files to understand the tunneling implementation\n\nProvide a comprehensive technical analysis.",
+            "subagent_type": "general-purpose"
+          },
+          "timestamp": "2026-03-03T15:54:28.912Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Ottima ricerca. Ora analizzo come applicare questa strategia al nostro caso TUICommander.",
+          "timestamp": "2026-03-03T15:59:43.951Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Explore TUICommander remote access",
+            "prompt": "Quick exploration: Find all files related to remote access, HTTP server, MCP server, and mobile app in TUICommander. I need to understand:\n\n1. The current HTTP/MCP server architecture (src-tauri/src/mcp_http/)\n2. How the mobile app connects (any WebSocket, HTTP client code)\n3. Current authentication/security for remote access\n4. The mobile app architecture (look at mobile/ or similar directories)\n\nSearch for: \"http server\", \"mcp_http\", \"remote\", \"mobile\", WebSocket references, and any tunnel/proxy related code.",
+            "subagent_type": "Explore"
+          },
+          "timestamp": "2026-03-03T15:59:47.996Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Adesso ho un quadro completo di entrambi i sistemi. Ecco l'analisi comparativa.\n\n---\n\n## Studio: Tunneling E2E per accesso mobile remoto in TUICommander\n\n### Come funziona Happy (in sintesi)\n\nHappy **non** usa tunneling di rete (no Cloudflare Tunnel, no ngrok, no SSH). Usa un pattern completamente diverso: **relay server con crittografia end-to-end**.\n\n```\nComputer                  Server Relay (cloud)              Telefono\n happy-cli  ──Socket.IO──►  happy-server  ◄──Socket.IO──  happy-app\n                          (blob opachi E2E)\n```\n\n- Il server è un **relay cieco**: vede solo blob criptati, non decripta mai nulla\n- Pairing tramite **QR code** che condivide la chiave segreta (NaCl/AES-256-GCM)\n- Il computer non espone nessuna porta — il server cloud fa da intermediario\n- Push notifications quando l'agent richiede attenzione\n\n### Dove siamo oggi (TUICommander)\n\nTUICommander espone un **server HTTP Axum** su `0.0.0.0:9876` con:\n- Auth: Basic Auth + session token QR + cookie\n- Mobile PWA su `/mobile` (SolidJS, WebSocket PTY, SSE events)\n- Funziona perfettamente su **rete locale** (LAN, Tailscale)\n\n**Il problema**: per accesso da fuori casa/ufficio, il server è esposto direttamente a internet (o serve una VPN tipo Tailscale).\n\n---\n\n### Tre strategie per adottare il pattern Happy\n\n#### Opzione A: Relay server self-hosted (stile Happy)\n\n```\nTUICommander ──WebSocket──► Relay Server (VPS/cloud) ◄──WebSocket── Mobile browser\n                            (blob E2E criptati)\n```\n\n**Pro**: Nessuna porta aperta sul computer, sicurezza E2E, funziona da qualsiasi rete\n**Contro**: Serve un server relay (anche piccolo), complessità infrastrutturale, latenza aggiuntiva\n\n**Implementazione**:\n1. Modulo `relay-client` in Rust che mantiene WebSocket persistente verso il relay\n2. Relay server minimale (potrebbe essere un semplice proxy WebSocket su Deno/Bun, ~200 righe)\n3. Crittografia E2E con `x25519-dalek` + `aes-gcm` (già disponibili nel Rust ecosystem)\n4. Il relay non ha nessuna logica applicativa — solo forward di pacchetti\n5. Il mobile si connette al relay invece che direttamente al computer\n\n#### Opzione B: Cloudflare Tunnel (zero infrastruttura propria)\n\n```\nTUICommander ──cloudflared──► Cloudflare Edge ◄──HTTPS── Mobile browser\n                              (tunnel criptato)\n```\n\n**Pro**: Zero server da gestire, HTTPS automatico, protezione DDoS, Cloudflare Access per auth\n**Contro**: Dipendenza da Cloudflare, `cloudflared` deve essere installato, il traffico transita (decrittato) dai server Cloudflare\n\n**Implementazione**:\n1. TUICommander spawna `cloudflared tunnel` come child process\n2. Il tunnel espone `localhost:9876` su un URL tipo `tuic-abc123.cfargotunnel.com`\n3. L'URL viene mostrato come QR code nella UI (come già facciamo)\n4. Auth: possiamo usare Cloudflare Access (SSO, OTP) oppure il nostro Basic Auth esistente\n5. Il mobile apre direttamente l'URL HTTPS — la nostra PWA funziona così com'è\n\n#### Opzione C: Approccio ibrido (relay leggero + E2E)\n\n```\nTUICommander ──WSS──► relay leggero (Cloudflare Worker / Deno Deploy)\n                       │\n                       └──► Connessioni mobile autenticate (E2E)\n```\n\n**Pro**: Serverless (costo ~$0), E2E encryption, scalabile\n**Contro**: Complessità di sviluppo, limiti di connessione dei worker, WebSocket duration limits\n\n---\n\n### La mia raccomandazione\n\n**Opzione B (Cloudflare Tunnel)** per il breve termine, con possibilità di evolvere verso A/C:\n\n| Criterio | A (Relay) | B (CF Tunnel) | C (Hybrid) |\n|----------|-----------|---------------|------------|\n| Effort implementativo | Alto | Basso | Medio |\n| Infrastruttura da gestire | VPS | Zero | Serverless |\n| Sicurezza E2E | Si | No (CF vede traffico) | Si |\n| La nostra PWA funziona? | Da adattare | Si, così com'è | Da adattare |\n| Costo | ~$5/mese VPS | Free (CF free tier) | Free-$5 |\n| Latenza | +10-50ms | +5-15ms | +10-30ms |\n\n**Perché B**: la nostra app mobile è già una PWA completa con auth, WebSocket, SSE. Con Cloudflare Tunnel, tutto funziona senza modifiche al codice. Basta:\n\n1. Un bottone \"Enable Remote Tunnel\" in Settings → Services\n2. TUICommander spawna `cloudflared tunnel --url http://localhost:9876`\n3. Cattura l'URL pubblico dall'output di cloudflared\n4. Lo mostra come QR code (sostituendo l'IP locale)\n5. Il mobile scansiona e accede via HTTPS — la PWA si carica identica\n\nL'implementazione è ~100 righe Rust per gestire il processo `cloudflared`.\n\nSe in futuro volessimo E2E pura (il relay non vede il traffico), potremmo aggiungere il layer di crittografia del pattern Happy sopra il tunnel, ma sinceramente per un tool di sviluppo personale non è strettamente necessario.\n\n---\n\nVuoi che approfondisca una delle tre opzioni, Boss? O preferisci che esplori anche l'approccio **Tailscale Funnel** come quarta via (sfruttando WireGuard)?",
+          "timestamp": "2026-03-03T16:02:19.317Z"
+        },
+        {
+          "type": "user",
+          "text": "con tailscale già funziona. l'opzione c ha costo zero",
+          "timestamp": "2026-03-03T17:35:30.122Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nHai ragione Boss, se Tailscale già funziona il problema \"accesso da rete locale/VPN\" è risolto. Il punto è l'accesso **senza Tailscale** — tipo dal telefono di un amico, da una rete guest, o quando Tailscale non è installato sul dispositivo.\n\nRicalibro sull'Opzione C dato che il costo zero è un vantaggio reale.\n\n## Opzione C: Relay E2E su Cloudflare Workers\n\n### Perché costa zero\n\n- **Cloudflare Workers free tier**: 100k req/giorno, 10ms CPU/req\n- **Durable Objects** (per WebSocket persistenti): free tier include 1M req/mese\n- **Nessun server da gestire**, nessun VPS, nessun dominio obbligatorio (`.workers.dev` gratis)\n\n### Architettura\n\n```\nTUICommander ──WSS──► Cloudflare Worker (Durable Object) ◄──WSS── Mobile browser\n  (Rust)              relay cieco, blob E2E opachi           (PWA esistente)\n```\n\n### Come funzionerebbe\n\n**1. Pairing (una tantum)**\n- TUICommander genera keypair X25519 + session ID\n- Mostra QR code con: `https://tuic-relay.workers.dev/s/{sessionId}#{secretKey_base64url}`\n- Il fragment (`#key=...`) **non viene mai inviato al server** — resta solo nel browser\n- Il mobile scansiona, estrae la chiave dal fragment\n\n**2. Connessione**\n- TUICommander apre WSS verso il Worker con `sessionId`\n- Il mobile apre WSS verso lo stesso Worker con lo stesso `sessionId`\n- Il Worker tiene una Durable Object per sessionId: quando riceve un messaggio da un lato, lo inoltra all'altro\n- Il Worker è ~50 righe di codice, non ha logica applicativa\n\n**3. Crittografia E2E**\n- Ogni messaggio viene criptato con AES-256-GCM (chiave derivata dal segreto condiviso)\n- Il Worker vede solo blob opachi\n- Anche se Cloudflare fosse compromesso, non può leggere il traffico\n\n**4. Cosa transita**\n- I nostri endpoint REST attuali vengono \"tunnelati\": il mobile manda richieste HTTP-over-WebSocket\n- Formato: `{id, method, path, body}` → criptato → relay → decriptato → eseguito localmente → risposta criptata → relay → mobile\n- Il WebSocket PTY streaming funziona nativamente (è già WebSocket)\n\n### Delta rispetto a oggi\n\n| Componente | Modifiche |\n|---|---|\n| **Rust backend** | Nuovo modulo `relay_client.rs`: connessione WSS persistente, crypto E2E con `x25519-dalek` + `aes-gcm`, multiplexing richieste HTTP |\n| **Mobile PWA** | Nuovo transport mode \"relay\": crypto JS lato client (`SubtleCrypto` nativo del browser, zero dipendenze), WebSocket verso Worker invece che diretto |\n| **Worker** | ~50-80 righe TypeScript: Durable Object con due WebSocket, forward bidirezionale |\n| **UI Settings** | Toggle \"Remote Tunnel\" + QR code con URL Worker |\n\n### Cosa NON cambia\n\n- Tutta la logica REST/WebSocket esistente\n- Auth (il pairing con chiave è l'auth)\n- La PWA mobile (solo il layer di trasporto cambia)\n\n### Limiti da considerare\n\n- **WebSocket duration**: Workers ha un limite di idle timeout (riconnettiamo con backoff)\n- **CPU limit 10ms**: il relay non fa crypto, solo forward — ampiamente sufficiente\n- **Latenza**: +10-30ms rispetto a connessione diretta (trascurabile per un terminale)\n- **SubtleCrypto** nel browser è async ma performante per AES-256-GCM\n\n### Confronto con Happy\n\n| | Happy | La nostra Opzione C |\n|---|---|---|\n| Server relay | Self-hosted (Postgres + Redis + S3) | Cloudflare Worker (zero infra) |\n| Costo | VPS o K8s | $0 |\n| Crypto | tweetnacl + AES-256-GCM | x25519-dalek + AES-256-GCM (stessa roba) |\n| App mobile | React Native nativa | PWA esistente (zero lavoro extra) |\n| Complessità | Alta (9 pacchetti, DB, coda) | Bassa (1 Worker + 1 modulo Rust + 1 transport JS) |\n\nHappy è sovradimensionato per il nostro caso: loro gestiscono multi-utente, account, OAuth terze parti, push notifications. Noi abbiamo un singolo utente che vuole accedere al suo computer — il relay è drasticamente più semplice.\n\n---\n\nVuoi che lo trasformi in un piano implementativo con stories, Boss? O preferisci prima validare qualche aspetto (tipo i limiti effettivi dei Durable Objects per WebSocket)?",
+          "timestamp": "2026-03-03T17:36:09.202Z"
+        },
+        {
+          "type": "user",
+          "text": "perchè zero?",
+          "timestamp": "2026-03-03T17:36:09.410Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nHai ragione a chiedere, lasciami verificare i numeri reali invece di sparare \"zero\".",
+          "timestamp": "2026-03-03T17:36:13.304Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "WebSearch",
+          "input": {
+            "query": "Cloudflare Workers Durable Objects WebSocket pricing free tier 2026"
+          },
+          "timestamp": "2026-03-03T17:36:13.758Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "WebSearch",
+          "input": {
+            "query": "Cloudflare Workers free plan limits WebSocket duration 2026"
+          },
+          "timestamp": "2026-03-03T17:36:14.148Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Buona domanda. Non è esattamente zero. Mi correggo:\n\n## I numeri reali\n\n### Free tier Cloudflare Workers + Durable Objects\n\n| Risorsa | Limite free | Il nostro uso stimato |\n|---|---|---|\n| Requests | 100k/giorno | Una sessione mobile ~qualche centinaio di req/giorno — ok |\n| Duration (GB-s) | 313k GB-s/giorno | Con **Hibernation API** il DO dorme tra i messaggi → trascurabile |\n| Storage | 5 GB (SQLite) | Non ci serve storage persistente → ~0 |\n| WebSocket messages | 20:1 ratio (20 msg WS = 1 request) | Ok per uso singolo utente |\n| Outgoing WS messages | **Gratis** | Il grosso del traffico (output terminale) è outgoing |\n\n### Il catch\n\nIl free tier **resetta a mezzanotte UTC**. Se superi i 100k req/giorno, smette di funzionare fino al giorno dopo. Per un singolo utente che controlla i suoi terminali dal telefono è abbondante. Ma:\n\n- **Non è garantito per sempre** — Cloudflare può cambiare i limiti\n- **Runtime updates** qualche volta a settimana interrompono le WebSocket (30s grace period, bisogna gestire riconnessione)\n- Se non usi la **Hibernation API** correttamente, accumuli duration charges che sforano il free tier velocemente\n\n### Quindi\n\nPer un uso personale singolo utente → **effettivamente $0/mese** sul free tier, con buona probabilità.\n\nSe volessi garanzie (niente interruzioni giornaliere, SLA) → **$5/mese** il piano paid, che per il nostro caso d'uso calcolano ~$5.08/mese totali.\n\nAvevo detto \"costo zero\" troppo categoricamente — è più corretto dire **\"$0 per uso personale nel free tier, $5/mese se vuoi affidabilità\"**.\n\nVuoi procedere con il piano oppure stavi valutando anche alternative tipo un relay minimale su Deno Deploy o Fly.io?\n\nSources:\n- [Cloudflare Durable Objects Pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/)\n- [Cloudflare Workers Pricing](https://developers.cloudflare.com/workers/platform/pricing/)\n- [Cloudflare Durable Objects Limits](https://developers.cloudflare.com/durable-objects/platform/limits/)\n- [Cloudflare Workers Limits](https://developers.cloudflare.com/workers/platform/limits/)",
+          "timestamp": "2026-03-03T17:37:06.695Z"
+        },
+        {
+          "type": "user",
+          "text": "e se facessimo un docker che permette di fornire il servizio ad utenti multipli, più tipo happy? un server lo ho, se facciamo una cosa leggera ed efficiente siamo a cavallo, ma non voglio s3 o postgress non ne vedo il beneficio. anche avessi migliaia di utenti quale è il fine?",
+          "timestamp": "2026-03-03T17:40:22.834Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nOttimo ragionamento Boss. Happy usa Postgres+Redis+S3 perché gestisce account, OAuth di terze parti, storage avatar, metriche Prometheus — roba che a noi non serve.\n\nIl nostro relay deve fare **una cosa sola**: connettere due WebSocket e forwardare blob opachi. Nessuno stato persistente necessario.\n\n## Relay E2E minimale — architettura\n\n```\nMobile ──WSS──► Relay Docker ◄──WSS── TUICommander\n                    │\n                 In-memory only\n                 Zero database\n                 Zero storage\n```\n\n### Cosa serve davvero in memoria\n\nPer ogni sessione attiva:\n\n```\nsessionId → { ws_a, ws_b, created_at, last_activity }\n```\n\nFine. Niente account, niente utenti, niente persistenza. Se il relay si riavvia, i client riconnettono e ri-stabiliscono la sessione. I dati E2E non passano mai in chiaro.\n\n### Perché non serve un DB nemmeno con migliaia di utenti\n\n- **Nessun account**: l'auth è il possesso della chiave. Chi ha il QR ha accesso. Punto.\n- **Nessuna sessione persistente**: se il relay muore, i client riconnettono. L'unico stato che conta è sul computer dell'utente (TUICommander) e sul telefono (chiave in memoria/localStorage).\n- **Nessun blob da storare**: i messaggi transitano e basta. Non c'è storico, non c'è replay.\n- **Nessun avatar/profilo/setting**: zero UI lato server.\n\n### Dimensionamento\n\nUna singola connessione relay = 2 WebSocket + qualche KB di buffer.\n\n| Utenti concorrenti | RAM stimata | CPU |\n|---|---|---|\n| 100 | ~50 MB | trascurabile |\n| 1.000 | ~500 MB | un core basta |\n| 10.000 | ~5 GB | 2-4 core |\n\nUn VPS da $5/mese (1 core, 1GB RAM) regge tranquillamente centinaia di utenti concorrenti. Il tuo server probabilmente ne regge migliaia.\n\n### Stack proposto\n\n**Rust con tokio + tungstenite** — linguaggio che già usiamo, binario statico ~5MB, consumo memoria minimale:\n\n```\nrelay-server/\n├── Dockerfile          # FROM scratch, binario statico\n├── Cargo.toml\n└── src/\n    └── main.rs         # ~200-300 righe totali\n```\n\nFunzionalità:\n- `GET /health` — healthcheck\n- `WS /s/{sessionId}` — WebSocket relay, accetta max 2 connessioni per sessionId\n- Sessioni in-memory con `DashMap<SessionId, Session>`\n- Timeout automatico sessioni inattive (es. 1h)\n- Rate limiting base per IP (evitare abusi)\n- TLS terminato dal reverse proxy davanti (nginx/caddy) o direttamente con `rustls`\n\n### Cosa NON fa il relay\n\n- Non decripta nulla\n- Non autentica utenti (la chiave E2E è l'auth)\n- Non salva nulla su disco\n- Non ha admin panel\n- Non ha dipendenze esterne (zero DB, zero Redis, zero S3)\n\n### Docker\n\n```dockerfile\nFROM rust:1-alpine AS build\n# ... build statico\nFROM scratch\nCOPY relay /relay\nEXPOSE 8080\nENTRYPOINT [\"/relay\"]\n```\n\nImmagine finale: **~10MB**. Si deploya ovunque: il tuo server, un Raspberry Pi, Fly.io, qualsiasi VPS.\n\n### Confronto finale\n\n| | Happy | Il nostro relay |\n|---|---|---|\n| Dipendenze | Postgres + Redis + S3 + Node.js | Zero. Solo il binario. |\n| Docker image | Centinaia di MB | ~10 MB |\n| RAM per 100 utenti | GB (Node + Postgres) | ~50 MB |\n| Complessità | 9 pacchetti, migliaia di righe | ~300 righe Rust |\n| Cosa sa del traffico | Niente (E2E) | Niente (E2E) |\n| Persistenza | Postgres per tutto | Niente. In-memory. |\n\nVuoi che ne faccia un piano implementativo, Boss? Pensavo a tre pezzi paralleli:\n1. **Relay server** (Rust, standalone repo o sotto `tools/relay/`)\n2. **Modulo relay-client** in TUICommander (Rust, connessione WSS + crypto E2E)\n3. **Transport relay** nella PWA mobile (JS, `SubtleCrypto` + WebSocket)",
+          "timestamp": "2026-03-03T17:40:55.929Z"
+        },
+        {
+          "type": "user",
+          "text": "ottimo, ma sarebbe utile poter contare le sessioni per sapere quanti lo usano, cosa potremmo usare?",
+          "timestamp": "2026-03-03T17:45:42.959Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nUn contatore atomico in memoria + un endpoint `/stats` è sufficiente per il 90% dei casi. Ma se vuoi dati che sopravvivano a un restart senza aggiungere un DB...\n\n## Opzioni\n\n### 1. Contatori atomici in-memory + file append-only\n\n```rust\nstruct Stats {\n    active_sessions: AtomicU64,      // gauge: su/giù in tempo reale\n    total_sessions: AtomicU64,       // counter: solo su, mai giù\n    total_bytes_relayed: AtomicU64,  // traffico totale\n}\n```\n\nPer persistenza: flush periodico (ogni 5 min) su un singolo file JSON tipo `stats.json`. Al restart, rilegge i counter. Se perdi 5 min di dati, pazienza.\n\n**Pro**: zero dipendenze, zero complessità\n**Contro**: perdi granularità temporale (non sai \"quanti utenti a marzo\")\n\n### 2. SQLite embedded\n\nUn file `relay.db` con una tabella:\n\n```sql\nCREATE TABLE sessions (\n    id TEXT PRIMARY KEY,\n    started_at INTEGER,\n    ended_at INTEGER,\n    bytes_relayed INTEGER\n);\n```\n\nCon `rusqlite` (zero server, è un file). Puoi fare query tipo \"quante sessioni questa settimana\", \"durata media\", \"picco concorrente\".\n\n**Pro**: query flessibili, sopravvive a restart, singolo file, zero infra\n**Contro**: aggiunge una dipendenza (~1MB al binario), bisogna gestire WAL/cleanup\n\n### 3. Prometheus metrics endpoint\n\n```\n# GET /metrics\nrelay_active_sessions 42\nrelay_total_sessions 1583\nrelay_bytes_relayed_total 2.8e9\nrelay_session_duration_seconds_bucket{le=\"60\"} 120\n```\n\nEsponi un `/metrics` in formato Prometheus. Se vuoi grafici, punti Grafana Cloud free tier (50 metriche, 14 giorni retention, $0). Se no, lo scrapi tu con un cron.\n\n**Pro**: standard de facto, Grafana Cloud free tier basta, metriche ricche (istogrammi, percentili)\n**Contro**: se vuoi i grafici devi collegare qualcosa di esterno\n\n---\n\n### La mia raccomandazione\n\n**SQLite embedded**. Una riga per sessione, un file da gestire, zero infra. Sono ~20 righe di codice in più rispetto ai contatori atomici ma ti danno:\n\n- Quanti utenti unici (per IP hash o per sessionId pattern)\n- Serie temporale (sessioni/giorno, settimana, mese)\n- Durata media sessioni\n- Traffico relayed\n- Sopravvive a restart\n- Un `sqlite3 relay.db \"SELECT count(*) FROM sessions WHERE started_at > ...\"` dalla shell per query ad-hoc\n\nIl file pesa niente, non richiede cleanup (le sessioni di un relay sono record piccoli — anche 100k sessioni sono pochi MB), e `rusqlite` è matura e affidabile.\n\nL'endpoint diventa:\n\n```\nGET /stats\n{\n  \"active_sessions\": 42,\n  \"total_sessions\": 1583,\n  \"total_bytes_relayed\": 2800000000,\n  \"uptime_secs\": 86400\n}\n\nGET /stats?period=7d    // ultimi 7 giorni\n{\n  \"sessions\": 312,\n  \"unique_clients\": 48,\n  \"avg_duration_secs\": 1240,\n  \"peak_concurrent\": 12\n}\n```\n\nChe ne pensi Boss?",
+          "timestamp": "2026-03-03T17:46:09.467Z"
+        },
+        {
+          "type": "user",
+          "text": "poi se il tuic non è connesso cosa succede?",
+          "timestamp": "2026-03-03T17:46:12.792Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nBuon punto. Se il mobile si connette al relay ma TUICommander non c'è, dobbiamo gestirlo in modo pulito.\n\n## Flusso\n\n```\nMobile ──WSS──► Relay    ◄──(nessuno)\n                  │\n                  └─ sessionId esiste ma solo 1 peer\n```\n\n### Comportamento semplice\n\nIl relay sa quanti peer ha per ogni sessionId. Se ne arriva uno solo:\n\n1. **Accetta la connessione** — il WebSocket resta aperto\n2. **Invia un messaggio di stato** (non criptato, è metadata del relay):\n   ```json\n   {\"type\": \"relay:status\", \"peer\": \"waiting\", \"since\": 1709500000}\n   ```\n3. **Quando l'altro peer si connette** → notifica entrambi:\n   ```json\n   {\"type\": \"relay:status\", \"peer\": \"connected\"}\n   ```\n4. **Se il peer non arriva entro un timeout** (es. 5 min) → chiude con un close frame:\n   ```json\n   {\"type\": \"relay:status\", \"peer\": \"timeout\"}\n   ```\n\n### Lato mobile PWA\n\nLa UI mostra semplicemente lo stato:\n\n- **\"Connecting...\"** → WebSocket aperto, attende relay status\n- **\"Waiting for TUICommander...\"** → peer=waiting, il computer non è online\n- **\"Connected\"** → peer=connected, tutto funziona\n- **\"Disconnected\"** → peer andato via durante la sessione, retry automatico\n\nSono 3-4 righe di logica nel transport. Niente di complesso.\n\n### E se TUICommander si disconnette durante l'uso?\n\nStesso meccanismo al contrario: il relay manda `{\"type\": \"relay:status\", \"peer\": \"disconnected\"}` al mobile. La PWA mostra \"TUICommander went offline\" e ritenta la connessione. Quando TUICommander torna, riconnette al relay, il relay notifica il mobile, tutto riprende.\n\nI messaggi `relay:status` sono gli **unici** messaggi non-E2E — è metadata di connettività del relay, non contiene dati utente. Tutto il resto è blob opaco.\n\nVuoi che formalizzi il tutto in un piano, Boss?",
+          "timestamp": "2026-03-03T17:46:29.532Z"
+        },
+        {
+          "type": "user",
+          "text": "si ma ci vuole un auth base, basta un bearer direi",
+          "timestamp": "2026-03-03T17:47:21.233Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nSì, un bearer token per autenticare la connessione al relay. Semplice ed efficace.\n\n## Auth del relay\n\n### Registrazione (self-service, una tantum)\n\nTUICommander chiama il relay per ottenere un token:\n\n```\nPOST /register\n→ 201 { \"token\": \"tuic_xxxxxxxxxxxx\" }\n```\n\nIl relay genera un token random, lo salva in SQLite (hash, non plaintext), e lo restituisce. TUICommander lo salva in config.\n\n### Connessione\n\nEntrambi i peer (TUICommander e mobile) si autenticano con lo stesso token:\n\n```\nWS /s/{sessionId}?token=tuic_xxxxxxxxxxxx\n```\n\nIl relay verifica il token, se invalido → 401 e chiude. Il token identifica anche \"l'utente\" per le stats — non serve nient'altro.\n\n### Flusso completo\n\n```\n1. TUICommander → POST /register → riceve token, lo salva\n2. TUICommander → apre WS con token\n3. TUICommander → genera QR code che include:\n   - URL relay + sessionId\n   - Token relay (per autenticarsi)  \n   - Chiave E2E (nel fragment #, mai inviata al server)\n   \n   wss://relay.example.com/s/{sessionId}?token=tuic_xxx#{e2e_key_base64}\n   \n4. Mobile → scansiona QR → estrae token + chiave E2E\n5. Mobile → apre WS con lo stesso token → relay accetta\n6. Relay → vede 2 peer con stesso token → inizia il forward\n```\n\n### Cosa il token dà al relay\n\n- **Conteggio per-utente**: sessioni, traffico, durata — aggregati per token\n- **Rate limiting per-utente**: max N sessioni concorrenti per token\n- **Revoca**: se qualcuno abusa, si cancella il token\n- **Zero password, zero email, zero account**: solo un token opaco\n\n### SQLite\n\n```sql\nCREATE TABLE tokens (\n    token_hash TEXT PRIMARY KEY,\n    created_at INTEGER,\n    last_seen INTEGER,\n    total_sessions INTEGER DEFAULT 0,\n    total_bytes INTEGER DEFAULT 0\n);\n```\n\nBasta. Una riga per utente, neanche serve un campo \"username\".\n\n---\n\nProcedo con il piano implementativo?",
+          "timestamp": "2026-03-03T17:47:36.881Z"
+        },
+        {
+          "type": "user",
+          "text": "poi vorrei poter mandare notifiche al pwa quando il client e in attesa come già facciamo, serve un canale che non c'è oggi o è già previsto?",
+          "timestamp": "2026-03-03T17:48:09.303Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nBuona domanda. Lasciami verificare cosa abbiamo già.",
+          "timestamp": "2026-03-03T17:48:12.966Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Grep",
+          "input": {
+            "output_mode": "files_with_matches",
+            "path": "src/mobile",
+            "pattern": "push|notification|serviceWorker|service-worker"
+          },
+          "timestamp": "2026-03-03T17:48:14.438Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Grep",
+          "input": {
+            "output_mode": "files_with_matches",
+            "path": "src-tauri/src/mcp_http",
+            "pattern": "awaiting_input|question_text|PtyParsed"
+          },
+          "timestamp": "2026-03-03T17:48:15.633Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/stefano.straus/Gits/personal/tuicommander/src/mobile/useMobileNotifications.ts"
+          },
+          "timestamp": "2026-03-03T17:48:21.234Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Grep",
+          "input": {
+            "output_mode": "content",
+            "path": "src-tauri/src/mcp_http/sse_routes.rs",
+            "pattern": "awaiting_input|question|parsed.*question"
+          },
+          "timestamp": "2026-03-03T17:48:22.252Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Grep",
+          "input": {
+            "output_mode": "content",
+            "path": "src-tauri/src/mcp_http/sse_routes.rs",
+            "pattern": "PtyParsed|session-state|awaiting"
+          },
+          "timestamp": "2026-03-03T17:48:26.448Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Grep",
+          "input": {
+            "output_mode": "content",
+            "path": "src/mobile",
+            "pattern": "ServiceWorker|service.worker|push.*notification|Notification\\.permission"
+          },
+          "timestamp": "2026-03-03T17:48:27.095Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Ok, quadro chiaro.\n\n## Cosa abbiamo oggi\n\n**`useMobileNotifications.ts`** — già detecta i cambi di stato (question, rate-limited, error, completion) e **suona** un audio. Ma funziona solo **mentre la PWA è in foreground**, perché è un `createEffect` SolidJS che gira nel browser tab.\n\n**Cosa manca**: nessun Service Worker, nessuna Push API, nessun `Notification.permission`. Se il telefono ha lo schermo spento o la PWA è in background → nessuna notifica.\n\n## Cosa serve\n\nUn solo pezzo mancante: **Web Push Notifications via Service Worker**.\n\n```\nTUICommander → stato \"awaiting_input\" → relay → Mobile\n                                                  │\n                                          se PWA in foreground → suono (già funziona)\n                                          se PWA in background → Push Notification\n```\n\n### Il canale esiste già\n\nGli eventi SSE (`PtyParsed`, session state) transitano già nel relay come blob E2E. Il mobile li riceve. Il problema è che **se il browser è in background, il WebSocket si chiude** (iOS è aggressivo su questo).\n\n### Due approcci\n\n**A) Web Push API (standard W3C)** — serve un push server\n\n```\nTUICommander → relay → push server (VAPID) → OS push service → Mobile notification\n```\n\n- Serve generare chiavi VAPID (gratuito, sono solo una keypair)\n- Il relay stesso fa da push server: quando riceve un messaggio E2E e il peer mobile non è connesso (WS chiuso), invia una Push generica tipo \"TUICommander needs attention\"\n- Il **contenuto** della push è generico (il relay non sa cosa c'è nel blob E2E) — serve solo come \"sveglia\"\n- Il Service Worker riceve la push, mostra la notifica, l'utente clicca, la PWA si apre, riconnette WS, riceve lo stato reale\n\n**B) Relay fa da push proxy con contenuto minimo**\n\nVariante: TUICommander invia al relay un **secondo messaggio non-E2E** quando serve attenzione:\n\n```json\n{\"type\": \"relay:push\", \"reason\": \"question\", \"session_name\": \"claude-code\"}\n```\n\nIl relay lo usa per confezionare la push notification con un testo utile (\"Claude is asking a question in claude-code\"). Questo non compromette la sicurezza E2E — il contenuto effettivo della domanda resta criptato, il relay sa solo **che** c'è una domanda, non **quale**.\n\n### Raccomandazione\n\n**Opzione B** — il relay manda push con metadata minimale non-criptato (`reason` + `session_name`), il contenuto reale resta E2E. Il costo è zero (Web Push API è gratuita, VAPID keys sono una keypair locale). Serve:\n\n1. Un **Service Worker** nella PWA (~30 righe) per ricevere push e mostrare notifiche\n2. **Push subscription** salvata nel relay (in SQLite, associata al token bearer)\n3. Logica nel relay: \"se ricevo un messaggio e il peer mobile non ha WS attivo → invio push\"\n4. TUICommander manda un hint `relay:push` insieme al blob E2E quando `awaiting_input` diventa true\n\nNessun servizio esterno, nessun costo, nessun Firebase.\n\nProcedo con il piano completo, Boss?",
+          "timestamp": "2026-03-03T17:48:55.594Z"
+        },
+        {
+          "type": "user",
+          "text": "ma se il pwa è in background perchè iphone è in tasca?",
+          "timestamp": "2026-03-03T17:51:07.359Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\nHai ragione, è il punto critico. iOS **uccide** le WebSocket delle PWA in background dopo pochi secondi. E anche le Web Push Notifications su iOS PWA hanno una storia travagliata.",
+          "timestamp": "2026-03-03T17:51:12.343Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "WebSearch",
+          "input": {
+            "query": "iOS PWA web push notifications background 2025 2026 Safari limitations"
+          },
+          "timestamp": "2026-03-03T17:51:13.054Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Tocchi il punto dolente. La situazione reale:\n\n## iOS PWA in background\n\n| Cosa | Funziona? |\n|---|---|\n| WebSocket in background | **No** — iOS la uccide in secondi |\n| Web Push Notification (PWA installata) | **Sì** — da iOS 16.4, ma solo se \"Add to Home Screen\" |\n| Background Sync | **No** — Apple non lo supporta |\n| Service Worker riceve push mentre PWA è chiusa | **Sì** — funziona come app nativa |\n\nQuindi: la WebSocket muore, ma la **Push Notification arriva** anche con telefono in tasca, **a patto che** la PWA sia installata sulla Home Screen con `\"display\": \"standalone\"` nel manifest.\n\n### Il flusso reale\n\n```\nTelefono in tasca, PWA chiusa/background:\n\n1. TUICommander → \"awaiting_input\" → relay\n2. Relay vede: peer mobile non ha WS attiva\n3. Relay → Web Push (VAPID) → Apple Push Service → iPhone\n4. iPhone mostra notifica: \"Claude is asking a question\"\n5. Utente tocca notifica → PWA si apre → riconnette WS → vede la domanda\n```\n\nFunziona. Ma il vincolo è **\"Add to Home Screen\"** — senza quello, niente push su iOS.\n\n### Cosa abbiamo già nel manifest\n\nIl nostro `mobile-manifest.json` ha già `\"display\": \"standalone\"`, quindi siamo a posto su quel fronte. Serve solo aggiungere il Service Worker per gestire il push event.\n\n### Il limite onesto\n\nNon possiamo mantenere una connessione live in background su iOS. Il pattern è necessariamente **push-to-wake**: notifica → utente tocca → PWA si riapre → riconnette. È lo stesso pattern che usa Happy con la loro app React Native, solo che loro passano per APNs nativo e noi per Web Push. Il risultato per l'utente è identico.\n\nSu **Android** invece la PWA può mantenere la WebSocket più a lungo in background, e le push funzionano anche senza installazione. Meno problemi.\n\nVuoi che proceda col piano completo, Boss?\n\nSources:\n- [PWA on iOS - Limitations 2025](https://brainhub.eu/library/pwa-on-ios)\n- [Apple Web Push Documentation](https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers)\n- [PWA iOS Complete Guide](https://www.magicbell.com/blog/pwa-ios-limitations-safari-support-complete-guide)\n- [PWA iOS 2026 Guide](https://www.mobiloud.com/blog/progressive-web-apps-ios)",
+          "timestamp": "2026-03-03T17:52:03.618Z"
+        },
+        {
+          "type": "user",
+          "text": "si e prevediamo tutti e due i meccanismi, se è connesso arriva il push dal proxy altrimenti dal web push.\nprima di proseguire passa la branch proxy che esiste già",
+          "timestamp": "2026-03-03T17:53:59.583Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Bash",
+          "input": {
+            "command": "git branch -a | grep -i proxy",
+            "description": "Find proxy branch"
+          },
+          "timestamp": "2026-03-03T17:54:04.190Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Bash",
+          "input": {
+            "command": "git log --oneline -5 Proxy",
+            "description": "Check Proxy branch recent commits"
+          },
+          "timestamp": "2026-03-03T17:54:08.988Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Bash",
+          "input": {
+            "command": "echo '=== STATUS ===' && git status && echo '=== DIFF ===' && git diff --staged && git diff && echo '=== LOG ===' && git log --oneline -5",
+            "description": "Check current state before switching"
+          },
+          "timestamp": "2026-03-03T17:54:13.692Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Hai una modifica non committata in `src/mobile/useSessions.ts` (aggiunta `suggested_actions` al `SessionState`) e la cartella `docs/research/` non tracciata. Vuoi che committo la modifica prima di switchare al branch `Proxy`, oppure la porto con me?",
+          "timestamp": "2026-03-03T17:54:19.956Z"
+        },
+        {
+          "type": "user",
+          "text": "commit",
+          "timestamp": "2026-03-03T17:54:33.165Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Bash",
+          "input": {
+            "command": "git add src/mobile/useSessions.ts && git commit -m \"$(cat <<'EOF'\nfeat(mobile): add suggested_actions to SessionState type\nEOF\n)\"",
+            "description": "Commit useSessions change"
+          },
+          "timestamp": "2026-03-03T17:54:38.692Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Fatto. Switcho al branch `Proxy`:",
+          "timestamp": "2026-03-03T17:54:44.310Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Bash",
+          "input": {
+            "command": "git checkout Proxy",
+            "description": "Switch to Proxy branch"
+          },
+          "timestamp": "2026-03-03T17:54:44.690Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Il branch `Proxy` è già in uso in un worktree a `/Users/stefano.straus/Gits/personal/tuicommander__wt/proxy`. Vuoi che lavori direttamente da quel worktree, Boss?",
+          "timestamp": "2026-03-03T17:54:48.717Z"
+        },
+        {
+          "type": "user",
+          "text": "si",
+          "timestamp": "2026-03-03T17:54:59.572Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Bash",
+          "input": {
+            "command": "cd /Users/stefano.straus/Gits/personal/tuicommander__wt/proxy && git log --oneline -5 && echo '---' && git status",
+            "description": "Check Proxy worktree state"
+          },
+          "timestamp": "2026-03-03T17:55:03.224Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Ok, sono sul worktree `Proxy` — branch pulito, uguale a main meno l'ultimo commit (`suggested_actions`). Procedo col piano.",
+          "timestamp": "2026-03-03T17:55:07.667Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Skill",
+          "input": {
+            "args": "/Users/stefano.straus/Gits/personal/tuicommander__wt/proxy",
+            "skill": "wiz:plan"
+          },
+          "timestamp": "2026-03-03T17:55:08.465Z"
+        },
+        {
+          "type": "user",
+          "text": "## Context (automatically captured)\n\n- Git branch: main\n- Existing plans: plans/agent-session-resume-v2.md\nplans/auto-delete-branch-on-pr-close.md\nplans/claude-session-aware-resume.md\nplans/code-review-inline-comments.md\nplans/frontend-performance-optimization.md\n- Project languages: TS\n- Recent commits: 07fd5bf feat(mobile): add suggested_actions to SessionState type\n624ecae feat(settings): Agent Teams it2 shim toggle in General tab (#579-c579)\ndaec974 feat(mobile): error and rate-limit info bars in SessionDetailScreen (#556-0507)\n- Stories: | ID  | Status | Pri | Title |\n|-----|--------|-----|-------|\n| 559-9506 | ready | P2 | Visual upgrade: Hero metrics header in SessionsScreen |\n| 560-8eed | ready | P2 | Visual upgrade: SessionCard elevated design with rich sub-rows |\n| 561-beb6 | ready | P2 | Rich data display in SessionDetailScreen header |\n| 570-e8c1 | ready | P2 | Integration test: it2 shim responds correctly to CC commands |\n| 571-1a98 | ready | P2 | Docs: Agent Teams it2 shim feature documentation |\n| 585-783a | in_progress | P2 | Mobile UI suggest chips in SessionDetailScreen |\n| 566-b22e | ready | P3 | Mobile UI docs update after redesign |\n\n---\n\n# Feature Planning Command\n\n**Purpose:** Transform feature descriptions, bug reports, or improvement ideas into comprehensive, well-researched implementation plans.\n\n**Methodology:** Apply `wiz:brainstorming` skill - sequential questioning, explore 2-3 approaches with trade-offs, YAGNI check before finalizing. See: [wiz:brainstorming](../../skills/brainstorming/SKILL.md)\n\n**The current year is 2026.**\n\n---\n\n## What This Command Does\n\n1. **Research Phase** - Understand the codebase and external patterns\n2. **Specification Analysis** - Identify flows, edge cases, and gaps\n3. **Plan Generation** - Create actionable implementation plan\n4. **Review Preparation** - Set up for `/wiz:work` execution\n\n---\n\n## Planning Phases\n\n### Phase 0: Environment Check\n\n```bash\ngit status\n```\n\n**Fallback notes:**\n- If Context7 MCP calls fail → use WebSearch only\n- If not a git repo → skip repo-specific research\n\n---\n\n### Phase 0.5: Codebase Exploration\n\n**Before external research, understand the existing codebase:**\n\n```xml\n<invoke name=\"Task\">\n<parameter name=\"description\">Codebase Exploration</parameter>\n<parameter name=\"subagent_type\">Explore</parameter>\n<parameter name=\"model\">sonnet</parameter>\n<parameter name=\"prompt\">\nAnalyze the codebase for: /Users/stefano.straus/Gits/personal/tuicommander__wt/proxy\n\nFocus on:\n1. Entry points related to this feature area\n2. Similar existing implementations - trace their execution paths\n3. Architecture layers that will be affected\n4. Key abstractions and patterns in use\n\nOutput MUST include:\n- **Essential Files (5-10)** - Files to read before planning, with file:line references\n- **Execution Flow** - How similar features work end-to-end\n- **Pattern Summary** - Conventions this feature should follow\n- **Architecture Layers** - presentation → business → data mapping\n</parameter>\n</invoke>\n```\n\n**Output feeds into:**\n- Phase 4 architecture recommendations\n- Implementation step ordering\n- Pattern consistency validation\n\n---\n\n### Phase 1: Repository Research\n\nSpawn the research agent to understand the codebase context:\n\n```xml\n<invoke name=\"Task\">\n<parameter name=\"description\">Repository Research</parameter>\n<parameter name=\"subagent_type\">wiz:research:repo-research-researcher</parameter>\n<parameter name=\"model\">sonnet</parameter>\n<parameter name=\"prompt\">\nAnalyze the repository for patterns relevant to: /Users/stefano.straus/Gits/personal/tuicommander__wt/proxy\n\nFocus on:\n1. Existing implementations of similar features\n2. Architectural patterns and conventions\n3. Testing patterns and requirements\n4. Documentation structure\n\nOutput a Repository Research Summary.\n</parameter>\n</invoke>\n```\n\n**Key Research Areas:**\n- How similar features are implemented\n- What patterns the codebase uses\n- What testing expectations exist\n- What documentation format is expected\n\n### Phase 2: External Best Practices\n\nIf the feature involves frameworks or libraries, research best practices:\n\n```xml\n<invoke name=\"Task\">\n<parameter name=\"description\">Framework Docs Research</parameter>\n<parameter name=\"subagent_type\">wiz:research:framework-docs-researcher</parameter>\n<parameter name=\"model\">sonnet</parameter>\n<parameter name=\"prompt\">\nResearch current best practices for implementing: /Users/stefano.straus/Gits/personal/tuicommander__wt/proxy\n\nUse Context7 MCP to look up:\n- Official documentation patterns\n- Recommended approaches for 2026\n- Known pitfalls to avoid\n\nFocus on Go and TypeScript implementations.\n</parameter>\n</invoke>\n```\n\n**Context7 Usage:** See [Context7 Setup](../../shared/commands/context7-setup.md) for MCP tools to fetch current documentation for frameworks and libraries.\n\n**Additionally, for broader industry context:**\n\n```xml\n<invoke name=\"Task\">\n<parameter name=\"description\">Best Practices Research</parameter>\n<parameter name=\"subagent_type\">wiz:research:best-practices-researcher</parameter>\n<parameter name=\"model\">sonnet</parameter>\n<parameter name=\"prompt\">\nResearch industry best practices for: /Users/stefano.straus/Gits/personal/tuicommander__wt/proxy\n\nUse Context7 and WebSearch to find:\n- Industry standards and conventions\n- Community best practices (2026)\n- Common patterns from successful projects\n- Known anti-patterns to avoid\n\nFocus on Go and TypeScript implementations.\n</parameter>\n</invoke>\n```\n\n**Library Standards (when NEW dependencies needed):**\n- **TypeScript:** jest, zod, express, pino, got\n- **Go:** testify, zerolog, cobra, pgx\n- **C#:** NUnit, FluentAssertions, Serilog, MediatR\n\nSee `wiz/standards/libraries/{language}.md` for full lists. Never use libraries from \"Avoid\" lists.\n\n### Phase 3: Specification Flow Analysis\n\nSpawn the spec flow analyzer to identify gaps:\n\n```xml\n<invoke name=\"Task\">\n<parameter name=\"description\">Spec Flow Analysis</parameter>\n<parameter name=\"subagent_type\">wiz:workflow:spec-flow-analyzer</parameter>\n<parameter name=\"model\">sonnet</parameter>\n<parameter name=\"prompt\">\nAnalyze the specification for: /Users/stefano.straus/Gits/personal/tuicommander__wt/proxy\n\nIdentify:\n1. All user flows and permutations\n2. Edge cases and error scenarios\n3. Gaps in the specification\n4. Critical questions that need answers\n\nOutput a Specification Flow Analysis.\n</parameter>\n</invoke>\n```\n\n**Analysis Dimensions:**\n\n| Dimension | Consider |\n|-----------|----------|\n| User types | Admin, regular user, API consumer |\n| Entry points | Direct, navigation, deep link, API |\n| Error scenarios | Invalid input, timeout, conflict, auth failure |\n| Data states | Empty, single, many, max limit |\n\n### Phase 4: Interactive Clarification (When Needed)\n\nWhen research reveals ambiguity or multiple valid approaches, use `AskUserQuestion` tool for structured clarification **before** generating the plan.\n\n**Trigger Conditions:**\n- Research found 2-4 viable approaches with trade-offs\n- Key architectural decision required\n- Scope is unclear (minimal vs comprehensive)\n- Technology choice impacts implementation significantly\n\n**IMPORTANT: Always recommend one option and explain why others are less suitable.**\n\nBased on codebase exploration (Phase 0.5) and research, present options with:\n1. **Recommended option** - marked with \"(Recommended)\" and listed first\n2. **Why recommended** - tie to patterns found in exploration\n3. **Why not others** - brief cons in each option's description\n\n**Example - Architecture Decision:**\n\n```\nAskUserQuestion:\n  question: \"The codebase has mixed patterns. Which approach should we follow?\"\n  header: \"Approach\"\n  options:\n    - label: \"Follow v2 pattern (Recommended)\"\n      description: \"Aligns with newer code in src/api/v2/. Con: less test coverage\"\n    - label: \"Follow v1 pattern\"\n      description: \"More tests, but older conventions. Con: inconsistent with recent work\"\n    - label: \"New unified pattern\"\n      description: \"Clean design. Con: requires migration, higher risk\"\n  multiSelect: false\n```\n\n**Example - Scope Decision:**\n\n```\nAskUserQuestion:\n  question: \"What level of implementation do you need?\"\n  header: \"Scope\"\n  options:\n    - label: \"Minimal (Recommended)\"\n      description: \"Core functionality only. Con: may need iteration later\"\n    - label: \"Standard\"\n      description: \"Common features included. Con: longer implementation\"\n    - label: \"Comprehensive\"\n      description: \"Full feature set. Con: risk of over-engineering\"\n  multiSelect: false\n```\n\n**Key principle:** You have the context from exploration - guide the user's decision, don't just present options neutrally.\n\n### Phase 5: Confident Synthesis (Conditional)\n\n**Automatically spawn confident-synthesizer agent when ANY of these criteria are met:**\n\n1. **Conflicting Recommendations** - Research agents returned contradictory approaches\n   - Example: Framework docs recommend Pattern A, but repo analysis shows Pattern B in use\n\n2. **Multiple Competing Technologies** - Two or more viable technology choices identified\n   - Example: REST vs GraphQL, Redis vs Memcached, PostgreSQL vs MongoDB\n\n3. **High-Stakes Markers** - Feature description or research contains keywords indicating critical decisions:\n   - Keywords: \"critical\", \"production\", \"security-sensitive\", \"authentication\", \"payment\", \"data integrity\"\n   - Impact areas: user data, financial transactions, access control\n\n4. **Multi-Component Architectural Decision** - Change affects 3+ components or layers\n   - Example: Adding authentication affects API, database, frontend, middleware\n\n**If criteria are met, spawn the confident-synthesizer agent:**\n\n```xml\n<invoke name=\"Task\">\n<parameter name=\"description\">Confident Synthesis</parameter>\n<parameter name=\"subagent_type\">wiz:workflow:confident-synthesizer</parameter>\n<parameter name=\"model\">sonnet</parameter>\n<parameter name=\"prompt\">\nApply confident synthesis methodology to research findings\n\nContext:\n- Repository research from Phase 1\n- External best practices from Phase 2\n- Specification analysis from Phase 3\n\nResearch outputs to synthesize:\n[List specific research findings that need synthesis]\n\nConflicting points to resolve:\n[Enumerate specific conflicts or ambiguities]\n\nDecision criteria for this feature:\n- Performance requirements\n- Security requirements\n- Maintainability requirements\n- Team expertise constraints\n\nOutput: Synthesis Report with confidence scores, recommendation, and risk assessment.\n</parameter>\n</invoke>\n```\n\nSee [confident-synthesizer](../../agents/workflow/confident-synthesizer.md) for full methodology.\n\n**If confidence < 0.6:** Additional research required.\n\n**Skip this phase if:**\n- Feature is straightforward with clear precedent\n- Research findings are consistent and unambiguous\n- Time constraints require faster planning\n\n### Phase 6: Plan Generation\n\nBased on research, clarification, and synthesis (if performed), generate the implementation plan.\n\n---\n\n## Detail Levels\n\n| Level | Content |\n|-------|---------|\n| MINIMAL | High-level steps, key decisions, critical dependencies |\n| MORE (default) | Detailed steps, file-by-file changes, test cases, acceptance criteria |\n| A LOT | Line-by-line guidance, all edge cases, complete test specs, perf/security items |\n\n---\n\n## Resume Mode\n\nIf `/Users/stefano.straus/Gits/personal/tuicommander__wt/proxy` is a path to an existing plan file (e.g. `plans/my-feature.md`), this is a **resume**:\n\n1. Read the plan file\n2. Assess current status — what phases are done, what remains\n3. Continue from where it left off\n4. Do NOT restart research if findings are already documented\n\n## Plan Tracking\n\nAfter saving the plan file, register it as the active plan:\n\n```bash\nnode $WIZ_SCRIPTS/plan-tracker.js set \"plans/<filename>.md\"\n```\n\nWhen a plan is completed (via `/wiz:work` or manually), clear the tracker:\n\n```bash\nnode $WIZ_SCRIPTS/plan-tracker.js clear\n```\n\n## Context Cleanup\n\nAfter saving the plan and setting the tracker, if context usage is **above 55%**, suggest to the user:\n\n> The plan is saved and tracked. Context is at X% — recommend running `/clear` to free context. The plan will be detected automatically on restart and you can resume with `/wiz:plan plans/<filename>.md`.\n\nDo NOT auto-clear. Always let the user decide.\n\n## Plan Output Format\n\nSave the plan to `plans/<issue_title>.md`:\n\n```markdown\n# Implementation Plan: [Feature Title]\n\n**Created:** [Date]\n**Status:** Draft\n**Estimated Effort:** [T-shirt size: XS/S/M/L/XL]\n\n## Summary\n\n[1-2 paragraph description of what will be built]\n\n## Research Findings\n\n### Repository Patterns\n[Summary of relevant patterns found in codebase]\n\n### Best Practices\n[Key insights from framework documentation]\n\n### Gaps Identified\n[Missing specifications or unclear requirements]\n\n## Questions to Resolve\n\n**Risk Classification:** Use the standardized priority system for feature risk assessment. See [Priority Levels](../../shared/commands/priority-levels.md#planning-context) for P1/P2/P3 definitions.\n\n### Critical (P1 - Blockers)\n1. [Question] - [Suggested default if no answer]\n\n### Important (P2 - Affects implementation)\n2. [Question]\n\n## Implementation Order (TDD)\n\n**This section defines execution order.** `/wiz:work` executes steps in the sequence below. Each step follows red-green-refactor: write failing test → implement → refactor.\n\n### Step 1: [Component/Layer name]\n- **Test:** `path/to/component_test.ext` - [What the test verifies]\n- **Implement:** `path/to/component.ext` - [What to build]\n- **Validation:** [How to confirm this step is green]\n\n### Step 2: [Component/Layer name]\n- **Test:** `path/to/next_test.ext` - [What the test verifies]\n- **Implement:** `path/to/next.ext` - [What to build]\n- **Depends on:** Step 1\n- **Validation:** [How to confirm this step is green]\n\n### Step N: [Integration/Wiring]\n- **Test:** `path/to/integration_test.ext` - [End-to-end scenario]\n- **Implement:** `path/to/wiring.ext` - [Wire components together]\n- **Depends on:** Steps 1..N-1\n- **Validation:** Full test suite passes\n\n### Final: Documentation & Cleanup\n- [ ] Update README/docs if needed\n- [ ] Remove TODOs\n- **Validation:** Lint clean, all tests pass\n\n## Acceptance Criteria\n\n- [ ] [Measurable outcome 1]\n- [ ] [Measurable outcome 2]\n- [ ] [All tests passing]\n\n## Security Considerations\n\n[Any security implications identified]\n\n## Performance Considerations\n\n[Any performance implications identified]\n\n## Related Files\n\n[List of files that will be touched]\n\n---\n\n## Next Steps\n\nWhen ready to implement, run:\n- `/wiz:work plans/[this-file].md` - Execute the plan\n- `/wiz:deepen-plan` - Get more detail on specific sections\n- `/wiz:brainstorming` - discuss the plan details\n```\n\n## Example Usage\n\n**User Input:**\n```\n/wiz:plan Add rate limiting to our API endpoints\n```\n\n**Research Phase:**\n1. Analyze existing middleware patterns in codebase\n2. Look up rate limiting best practices for Go (gin/echo) or TypeScript (express/fastify)\n3. Identify all endpoints that need protection\n4. Analyze current auth/middleware chain\n\n**Output:**\n- `plans/api-rate-limiting.md` with complete implementation plan\n\n## Integration with Agents\n\nThis command orchestrates multiple agents:\n\n| Agent | Purpose |\n|-------|---------|\n| `Explore` | Codebase exploration before research (Phase 0.5) |\n| `repo-research-researcher` | Understand codebase patterns |\n| `framework-docs-researcher` | External documentation lookup |\n| `best-practices-researcher` | Industry patterns and standards |\n| `spec-flow-analyzer` | Gap and flow analysis |\n\n\n## Error Handling\n\n| Situation | Action |\n|-----------|--------|\n| Vague request | Use `AskUserQuestion` with 2-4 options (>4 options → text discussion) |\n| Research agent fails | Flag as \"needs research\" or use `/wiz:deepen-plan` with Context7 |\n| Conflicting patterns | Recommend newer pattern, document inconsistency for cleanup |\n\n\n## CRITICAL\n\n**NEVER CODE!**\n\nThis command is for research and planning ONLY. Do not:\n- Write implementation code\n- Create source files\n- Modify existing code\n\nThe output is a plan document. Implementation happens with `/wiz:work`.",
+          "timestamp": "2026-03-03T17:55:08.714Z"
+        },
+        {
+          "type": "assistant",
+          "text": "\n\n[[intent: Planning E2E relay server for mobile remote access(Planning relay)]]\n\nDevo pianificare il relay server E2E per accesso mobile remoto. Lascio partire le ricerche in parallelo sul worktree proxy.",
+          "timestamp": "2026-03-03T17:55:16.533Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Explore relay-related code",
+            "model": "sonnet",
+            "prompt": "Analyze the codebase at /Users/stefano.straus/Gits/personal/tuicommander__wt/proxy for patterns relevant to building an E2E encrypted WebSocket relay server for mobile remote access.\n\nFocus on:\n1. The current HTTP/MCP server architecture in src-tauri/src/mcp_http/ — especially mod.rs (router setup, Axum patterns), auth.rs (authentication flow), session.rs (WebSocket PTY streaming, JSON framing)\n2. The mobile PWA in src/mobile/ — especially useSessions.ts (polling/SSE), MobileApp.tsx, components/SessionDetail*, transport layer\n3. src/transport.ts — the dual Tauri/HTTP transport abstraction\n4. The mobile manifest (mobile-manifest.json) — PWA configuration, display mode\n5. Any existing Service Worker, push notification, or crypto-related code\n6. The SSE routes in sse_routes.rs — event broadcasting pattern\n7. Config handling in config_routes.rs — how settings are loaded/saved\n\nOutput MUST include:\n- **Essential Files (10-15)** with file:line references for key patterns\n- **Execution Flow** — how mobile currently connects, authenticates, and streams PTY\n- **Pattern Summary** — Axum router setup, middleware chain, WebSocket upgrade, JSON framing conventions\n- **Architecture Layers** — presentation → transport → backend mapping for mobile\n- **Crypto landscape** — any existing crypto dependencies in Cargo.toml or package.json",
+            "subagent_type": "Explore"
+          },
+          "timestamp": "2026-03-03T17:55:26.620Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Research E2E relay patterns",
+            "model": "sonnet",
+            "prompt": "Research best practices for building a lightweight E2E encrypted WebSocket relay server in Rust (2026). The relay:\n\n1. Pairs two WebSocket clients per session (TUICommander desktop app + mobile PWA browser)\n2. Forwards opaque encrypted blobs between them — zero knowledge of content\n3. Uses bearer token auth (stored as hash in SQLite)\n4. Tracks session stats in embedded SQLite (rusqlite)\n5. Sends Web Push notifications (VAPID) when one peer is offline\n\nResearch specifically:\n- **Rust WebSocket relay**: best crates (tokio-tungstenite vs axum vs warp), connection management patterns, backpressure\n- **E2E crypto for browser↔Rust**: X25519 key exchange + AES-256-GCM — what Rust crates (x25519-dalek, aes-gcm, chacha20poly1305) and browser Web Crypto API patterns work well together\n- **Web Push from Rust**: VAPID key generation, web-push crate maturity, alternatives\n- **SQLite in async Rust**: rusqlite with tokio (spawn_blocking pattern), alternatives like sqlx-sqlite\n- **Docker deployment**: minimal Rust binary in scratch/distroless, health checks\n- **PWA Service Worker**: push event handling, notification display, click-to-open pattern\n- **QR code key delivery**: encoding symmetric key in URL fragment (never sent to server)\n\nFocus on lightweight, zero-dependency patterns. No Postgres, no Redis, no S3.",
+            "subagent_type": "wiz:research:best-practices-researcher"
+          },
+          "timestamp": "2026-03-03T17:59:00.442Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Analyze relay spec flows",
+            "model": "sonnet",
+            "prompt": "Analyze the specification for an E2E encrypted WebSocket relay server that connects TUICommander (desktop) to a mobile PWA for remote terminal access.\n\n## System Description\n\n### Components\n1. **Relay Server** (Rust, Docker) — blind relay, forwards encrypted blobs between two WebSocket peers per session\n2. **Relay Client** (Rust module in TUICommander) — maintains persistent WSS connection to relay\n3. **Mobile PWA** (existing SolidJS app) — connects via WSS to relay instead of directly to TUICommander\n\n### Authentication\n- Self-registration: POST /register → bearer token (hashed in SQLite)\n- Both peers authenticate with same bearer token on WebSocket upgrade\n- Max 2 peers per session (desktop + mobile)\n\n### Encryption (E2E)\n- Key delivered via QR code URL fragment (#key=base64) — never sent to relay\n- X25519 key exchange OR direct symmetric key sharing\n- AES-256-GCM for message encryption\n- Relay sees only opaque blobs\n\n### Notification Channels (dual)\n- **In-band (WebSocket connected)**: relay:push message forwarded directly to mobile\n- **Out-of-band (WebSocket disconnected)**: Web Push notification via VAPID to wake the PWA Service Worker\n\n### Session Lifecycle\n1. TUICommander registers token (one-time)\n2. TUICommander opens relay WS, creates session\n3. QR code shown with: relay URL + sessionId + bearer token + E2E key (in fragment)\n4. Mobile scans QR, connects to same session on relay\n5. Messages flow bidirectionally, E2E encrypted\n6. If mobile disconnects → relay sends Web Push on next incoming message\n7. Session closes when TUICommander disconnects or timeout\n\n### Stats (SQLite)\n- tokens table: token_hash, created_at, last_seen, total_sessions, total_bytes\n- sessions table: id, token_hash, started_at, ended_at, bytes_relayed\n- GET /stats endpoint for monitoring\n\nIdentify:\n1. All user flows and permutations (first use, reconnection, peer offline, both offline, token revocation)\n2. Edge cases and error scenarios (relay restart, network flap, stale session, QR expired, rate limiting)\n3. Gaps in the specification\n4. Security considerations (token brute-force, replay attacks, session hijacking, DoS)\n5. Critical questions that need answers before implementation",
+            "subagent_type": "wiz:workflow:spec-flow-analyzer"
+          },
+          "timestamp": "2026-03-03T17:59:15.650Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Boss, budget al limite (5h: 100%).\n\nHo già completato la ricerca esplorativa del codebase — ho un quadro completo dell'architettura attuale. Mancano solo le due ricerche parallele (best practices relay Rust + spec flow analysis) per completare il piano.",
+          "timestamp": "2026-03-03T17:59:20.979Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "AskUserQuestion",
+          "input": {
+            "questions": [
+              {
+                "header": "Budget",
+                "multiSelect": false,
+                "options": [
+                  {
+                    "description": "Completo le ricerche e scrivo il piano (~15-20 min extra)",
+                    "label": "Override budget"
+                  },
+                  {
+                    "description": "Salvo le note raccolte finora e riprendo nella prossima sessione",
+                    "label": "Stop qui"
+                  }
+                ],
+                "question": "Budget 5h al 100%. Vuoi fare override per completare il piano (~15-20 min)?"
+              }
+            ]
+          },
+          "timestamp": "2026-03-03T17:59:24.224Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Boss, budget 5h al 100%. Due opzioni:\n\n1. **Override budget** — completo le ricerche e scrivo il piano (~15-20 min). Se scegli questa, eseguo: `node /Users/stefano.straus/.claude/plugins/cache/lansweeper-tools/wiz/4.0.0/scripts/budget-override.js enable \"complete relay plan\" 20`\n\n2. **Stop qui** — salvo le note raccolte finora in un journal handoff e riprendo nella prossima sessione. La ricerca esplorativa del codebase è già completa, mancano solo best practices + spec flow + scrittura piano.\n\nCosa preferisci?",
+          "timestamp": "2026-03-03T17:59:31.245Z"
+        },
+        {
+          "type": "user",
+          "text": "override 30 mins",
+          "timestamp": "2026-03-03T18:00:00.647Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Bash",
+          "input": {
+            "command": "node /Users/stefano.straus/.claude/plugins/cache/lansweeper-tools/wiz/4.0.0/scripts/budget-override.js enable \"complete E2E relay plan research and writing\" 30",
+            "description": "Enable budget override for 30 minutes"
+          },
+          "timestamp": "2026-03-03T18:00:04.578Z"
+        },
+        {
+          "type": "assistant",
+          "text": "Override attivato. Lancio le due ricerche in parallelo.",
+          "timestamp": "2026-03-03T18:00:09.517Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Research E2E relay patterns",
+            "model": "sonnet",
+            "prompt": "Research best practices for building a lightweight E2E encrypted WebSocket relay server in Rust (2026). The relay:\n\n1. Pairs two WebSocket clients per session (desktop app + mobile PWA browser)\n2. Forwards opaque encrypted blobs between them — zero knowledge of content\n3. Uses bearer token auth (stored as hash in SQLite)\n4. Tracks session stats in embedded SQLite (rusqlite)\n5. Sends Web Push notifications (VAPID) when one peer is offline\n\nResearch specifically:\n- **Rust WebSocket relay**: best crates (tokio-tungstenite vs axum vs warp), connection management patterns, backpressure\n- **E2E crypto for browser↔Rust**: X25519 key exchange + AES-256-GCM — what Rust crates (x25519-dalek, aes-gcm, chacha20poly1305) and browser Web Crypto API patterns work well together. IMPORTANT: the Rust side does NOT do crypto — only the browser and desktop app do. The relay is blind.\n- **Web Push from Rust**: VAPID key generation, web-push crate maturity, alternatives\n- **SQLite in async Rust**: rusqlite with tokio (spawn_blocking pattern), alternatives like sqlx-sqlite\n- **Docker deployment**: minimal Rust binary in scratch/distroless, health checks\n- **PWA Service Worker**: push event handling, notification display, click-to-open pattern\n- **QR code key delivery**: encoding symmetric key in URL fragment (never sent to server)\n\nFocus on lightweight, zero-dependency patterns. No Postgres, no Redis, no S3.",
+            "subagent_type": "wiz:research:best-practices-researcher"
+          },
+          "timestamp": "2026-03-03T18:00:13.715Z"
+        },
+        {
+          "type": "tool_use",
+          "name": "Agent",
+          "input": {
+            "description": "Analyze relay spec flows",
+            "model": "sonnet",
+            "prompt": "Analyze the specification for an E2E encrypted WebSocket relay server that connects TUICommander (desktop) to a mobile PWA for remote terminal access.\n\n## System Description\n\n### Components\n1. **Relay Server** (Rust, Docker) — blind relay, forwards encrypted blobs between two WebSocket peers per session\n2. **Relay Client** (Rust module in TUICommander) — maintains persistent WSS connection to relay\n3. **Mobile PWA** (existing SolidJS app) — connects via WSS to relay instead of directly to TUICommander\n\n### Authentication\n- Self-registration: POST /register → bearer token (hashed in SQLite)\n- Both peers authenticate with same bearer token on WebSocket upgrade\n- Max 2 peers per session (desktop + mobile)\n\n### Encryption (E2E)\n- Key delivered via QR code URL fragment (#key=base64) — never sent to relay\n- X25519 key exchange OR direct symmetric key sharing\n- AES-256-GCM for message encryption\n- Relay sees only opaque blobs\n\n### Notification Channels (dual)\n- **In-band (WebSocket connected)**: relay forwards status hints directly to mobile peer\n- **Out-of-band (WebSocket disconnected)**: Web Push notification via VAPID to wake the PWA Service Worker\n\n### Session Lifecycle\n1. TUICommander registers token (one-time)\n2. TUICommander opens relay WS, creates session\n3. QR code shown with: relay URL + sessionId + bearer token + E2E key (in fragment)\n4. Mobile scans QR, connects to same session on relay\n5. Messages flow bidirectionally, E2E encrypted\n6. If mobile disconnects → relay sends Web Push on next incoming message from TUICommander\n7. Session closes when TUICommander disconnects or timeout\n\n### Stats (SQLite)\n- tokens table: token_hash, created_at, last_seen, total_sessions, total_bytes\n- sessions table: id, token_hash, started_at, ended_at, bytes_relayed\n- GET /stats endpoint for monitoring\n\nIdentify:\n1. All user flows and permutations (first use, reconnection, peer offline, both offline, token revocation)\n2. Edge cases and error scenarios (relay restart, network flap, stale session, QR expired, rate limiting)\n3. Gaps in the specification\n4. Security considerations (token brute-force, replay attacks, session hijacking, DoS)\n5. Critical questions that need answers before implementation",
+            "subagent_type": "wiz:workflow:spec-flow-analyzer"
+          },
+          "timestamp": "2026-03-03T18:00:18.810Z"
+        }
+      ],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 457,
+      "overriden_lines": 0
+    }
+  }
+}
