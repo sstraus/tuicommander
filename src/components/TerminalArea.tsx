@@ -288,7 +288,8 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                 items={actions()!}
                 onSelect={async (text) => {
                   const id = terminalsStore.state.activeId;
-                  if (id) terminalsStore.update(id, { suggestedActions: null, suggestDismissedAt: Date.now() });
+                  const key = JSON.stringify(actions());
+                  if (id) terminalsStore.update(id, { suggestedActions: null, lastDismissedSuggest: key });
                   const term = active();
                   const sid = term?.sessionId;
                   if (sid) {
@@ -298,7 +299,8 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                 }}
                 onDismiss={() => {
                   const id = terminalsStore.state.activeId;
-                  if (id) terminalsStore.update(id, { suggestedActions: null, suggestDismissedAt: Date.now() });
+                  const key = JSON.stringify(actions());
+                  if (id) terminalsStore.update(id, { suggestedActions: null, lastDismissedSuggest: key });
                 }}
               />
             </Show>
