@@ -781,6 +781,7 @@ const App: Component = () => {
     toggleCommandPalette: () => commandPaletteStore.toggle(),
     toggleActivityDashboard: () => activityDashboardStore.toggle(),
     toggleWorktreeManager: () => worktreeManagerStore.toggle(),
+    toggleBranchSwitcher: () => branchSwitcherStore.toggle(),
     toggleErrorLog: () => errorLogStore.toggle(),
   };
 
@@ -1179,6 +1180,13 @@ const App: Component = () => {
       <Show when={isTauri()}>
         <CommandPalette actions={actionEntries()} />
       </Show>
+
+      {/* Quick branch switcher */}
+      <BranchSwitcher
+        activeRepoPath={repositoriesStore.state.activeRepoPath}
+        onSelect={gitOps.handleBranchSelect}
+        onCheckoutRemote={gitOps.handleCheckoutRemoteBranch}
+      />
 
       {/* Activity dashboard */}
       <ActivityDashboard onSelect={terminalLifecycle.handleTerminalSelect} />
