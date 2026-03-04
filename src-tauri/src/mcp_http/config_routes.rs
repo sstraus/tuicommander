@@ -174,14 +174,13 @@ pub(super) async fn put_notes(
 }
 
 pub(super) async fn get_mcp_status_http(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let config = state.config.read().clone();
     #[cfg(unix)]
     let socket_exists = super::socket_path().exists();
     #[cfg(not(unix))]
     let socket_exists = false;
     let running = socket_exists;
     Json(serde_json::json!({
-        "enabled": config.mcp_server_enabled,
+        "enabled": true,
         "running": running,
         "active_sessions": state.sessions.len(),
         "mcp_clients": state.mcp_sessions.len(),

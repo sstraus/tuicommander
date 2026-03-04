@@ -62,7 +62,6 @@ export const ServicesTab: Component = () => {
   const [status, setStatus] = createSignal<McpStatus | null>(null);
   const [localIps] = createResource(() => rpc<LocalIpEntry[]>("get_local_ips"));
   const [selectedIp, setSelectedIp] = createSignal<string>("");
-  const [saving, setSaving] = createSignal(false);
 
   // Remote access form state
   const [raEnabled, setRaEnabled] = createSignal(false);
@@ -149,20 +148,6 @@ export const ServicesTab: Component = () => {
     onCleanup(() => clearInterval(interval));
   });
 
-  const toggleMcp = async (enabled: boolean) => {
-    setSaving(true);
-    try {
-      const config = await rpc<AppConfig>("load_config");
-      config.mcp_server_enabled = enabled;
-      await rpc("save_config", { config });
-      await refreshStatus();
-    } catch (e) {
-      appLogger.error("config", "Failed to save MCP config", e);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   /** Save a single config field (load-modify-save pattern matching other tabs) */
   const saveConfigField = async (updater: (config: AppConfig) => void) => {
     try {
@@ -224,53 +209,30 @@ export const ServicesTab: Component = () => {
       <h3>{t("services.heading.httpApiServer", "HTTP API Server")}</h3>
 
       <div class={s.group}>
-        <div class={s.toggle}>
-          <input
-            type="checkbox"
-            checked={status()?.enabled ?? false}
-            disabled={saving()}
-            onChange={(e) => toggleMcp(e.currentTarget.checked)}
-          />
-          <span>{t("services.toggle.enableHttpServer", "Enable HTTP API server")}</span>
-        </div>
         <p class={s.hint}>
           {t("services.hint.httpDescription", "Serves the REST API and MCP protocol for AI agents and automation tools")}
         </p>
       </div>
 
       <div class={s.group}>
-        <p class={s.hint}>
-          {t("services.hint.socketInfo", "Local MCP connections use a Unix socket. No port configuration needed.")}
-        </p>
+        <label>{t("services.label.serverStatus", "Server Status")}</label>
+        <div class={s.mcpStatusRow}>
+          <span class={cx(s.mcpStatusDot, status()?.running && s.running)} />
+          <span class={s.mcpStatusText}>
+            {status()?.running ? t("services.status.running", "Running") : t("services.status.starting", "Starting...")}
+          </span>
+          <Show when={status()?.running}>
+            <span class={s.mcpStatusPort}>{t("services.label.socket", "Socket")}</span>
+          </Show>
+        </div>
       </div>
 
-      <Show when={status()}>
-        {(st) => (
-          <>
-            <div class={s.group}>
-              <label>{t("services.label.serverStatus", "Server Status")}</label>
-              <div class={s.mcpStatusRow}>
-                <span class={cx(s.mcpStatusDot, st().running && s.running)} />
-                <span class={s.mcpStatusText}>
-                  {st().running ? t("services.status.running", "Running") : st().enabled ? t("services.status.pendingRestart", "Pending restart") : t("services.status.stopped", "Stopped")}
-                </span>
-                <Show when={st().running}>
-                  <span class={s.mcpStatusPort}>{t("services.label.socket", "Socket")}</span>
-                </Show>
-              </div>
-            </div>
-
-            <Show when={st().running}>
-              <div class={s.group}>
-                <label>{t("services.label.mcpConnection", "MCP Connection")}</label>
-                <p class={s.hint}>
-                  {t("services.hint.mcpConnection", "AI agents connect via the tuic-bridge sidecar. MCP configs are auto-installed in supported agents (Claude Code, Cursor, etc.).")}
-                </p>
-              </div>
-            </Show>
-          </>
-        )}
-      </Show>
+      <div class={s.group}>
+        <label>{t("services.label.mcpConnection", "MCP Connection")}</label>
+        <p class={s.hint}>
+          {t("services.hint.mcpConnection", "AI agents connect via the tuic-bridge sidecar. MCP configs are auto-installed in supported agents (Claude Code, Cursor, etc.).")}
+        </p>
+      </div>
 
       <h3 style={{ "margin-top": "24px" }}>{t("services.heading.remoteAccess", "Remote Access")}</h3>
 

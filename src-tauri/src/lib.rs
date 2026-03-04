@@ -102,15 +102,13 @@ fn load_config(state: State<'_, Arc<AppState>>) -> config::AppConfig {
 #[tauri::command]
 fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Result<(), String> {
     let old = state.config.read().clone();
-    let server_changed = old.mcp_server_enabled != config.mcp_server_enabled
-        || old.remote_access_enabled != config.remote_access_enabled
+    let server_changed = old.remote_access_enabled != config.remote_access_enabled
         || old.remote_access_port != config.remote_access_port
         || old.remote_access_username != config.remote_access_username
         || old.remote_access_password_hash != config.remote_access_password_hash
         || old.ipv6_enabled != config.ipv6_enabled;
 
     // Capture flags before moving config into state
-    let mcp_server_enabled = config.mcp_server_enabled;
     let remote_access_enabled = config.remote_access_enabled;
 
     let tools_changed = old.disabled_native_tools != config.disabled_native_tools;
@@ -128,19 +126,16 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
             let _ = tx.send(());
         }
 
-        // Start fresh server if either mode is now enabled
-        if mcp_server_enabled || remote_access_enabled {
-            let mcp_enabled = mcp_server_enabled;
-            let remote_enabled = remote_access_enabled;
-            let state_arc = state.inner().clone();
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Runtime::new()
-                    .expect("tokio runtime for HTTP server restart");
-                rt.block_on(async move {
-                    mcp_http::start_server(state_arc, mcp_enabled, remote_enabled).await;
-                });
+        // Always restart with Unix socket on; TCP only if remote access enabled
+        let remote_enabled = remote_access_enabled;
+        let state_arc = state.inner().clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new()
+                .expect("tokio runtime for HTTP server restart");
+            rt.block_on(async move {
+                mcp_http::start_server(state_arc, true, remote_enabled).await;
             });
-        }
+        });
     }
 
     Ok(())
@@ -476,11 +471,10 @@ fn read_external_file(path: String) -> Result<String, String> {
 #[tauri::command]
 async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
     // Collect config and session count synchronously first (fast, no I/O)
-    let (remote_enabled, mcp_enabled, active_sessions, mcp_protocol_sessions, session_token) = {
+    let (remote_enabled, active_sessions, mcp_protocol_sessions, session_token) = {
         let cfg = state.config.read();
         (
             cfg.remote_access_enabled,
-            cfg.mcp_server_enabled,
             state.sessions.len(),
             state.mcp_sessions.len(),
             state.session_token.read().clone(),
@@ -521,7 +515,7 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
     };
 
     Ok(serde_json::json!({
-        "enabled": mcp_enabled,
+        "enabled": true,
         "running": running,
         "remote_port": if remote_enabled { Some(remote_port) } else { None },
         "active_sessions": active_sessions,
@@ -593,9 +587,8 @@ pub fn run() {
     // Wire the MCP tools_changed signal so upstream changes notify MCP bridge clients.
     state.mcp_upstream_registry.set_mcp_tools_tx(state.mcp_tools_changed.clone());
 
-    // Start HTTP API server if either MCP or Remote Access is enabled
-    if config.mcp_server_enabled || config.remote_access_enabled {
-        let mcp_enabled = config.mcp_server_enabled;
+    // Always start HTTP API server (Unix socket is always on; TCP only if remote access enabled)
+    {
         let remote_enabled = config.remote_access_enabled;
         let mcp_state = state.clone();
         let accumulator_state = state.clone();
@@ -605,7 +598,7 @@ pub fn run() {
             rt.block_on(async move {
                 // Start session state accumulator (consumes broadcast events)
                 AppState::spawn_session_state_accumulator(accumulator_state);
-                mcp_http::start_server(mcp_state, mcp_enabled, remote_enabled).await;
+                mcp_http::start_server(mcp_state, true, remote_enabled).await;
             });
         });
     }
