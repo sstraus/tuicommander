@@ -235,7 +235,7 @@ Use this **before asking Boss** to paste logs — check the ring buffer yourself
 
 When Boss asks to tag a release:
 
-1. **Update version** in `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`
+1. **Update version**: run `make bump V=x.y.z` (updates `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `package.json`)
 2. **Update SPEC.md** header version and date
 3. **Update CHANGELOG.md** — move Unreleased items under the new version heading
 4. **Commit** with message `chore: bump version to vX.Y.Z`

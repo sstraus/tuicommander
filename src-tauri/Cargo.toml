@@ -1,6 +1,6 @@
 [package]
 name = "tuicommander"
-version = "0.6.2"
+version = "0.6.3"
 description = "TUICommander - Native platform for AI coding agents"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"
@@ -18,52 +18,52 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-portable-pty = "0.8"
+portable-pty = "0.9"
 tokio = { version = "1", features = ["full"] }
 dashmap = "6"
 parking_lot = "0.12"
 regex = "1"
 lazy_static = "1"
 uuid = { version = "1", features = ["v4"] }
-dirs = "5"
+dirs = "6"
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-single-instance = "2"
 whisper-rs = "0.15"
-cpal = "0.15"
+cpal = "0.17"
 hound = "3.5"
-reqwest = { version = "0.12", features = ["stream", "json", "blocking"] }
+reqwest = { version = "0.13", features = ["stream", "json", "blocking"] }
 anyhow = "1"
 futures-util = "0.3"
 tauri-plugin-global-shortcut = "2"
 axum = { version = "0.8", features = ["ws"] }
 async-stream = "0.3"
 tauri-plugin-window-state = "2.4.1"
-bcrypt = "0.17"
+bcrypt = "0.19"
 base64 = "0.22"
 include_dir = { version = "0.7.4", features = ["glob"] }
 mime_guess = "2.0.5"
 tower-http = { version = "0.6.8", features = ["cors"] }
-rand = "0.9"
+rand = "0.10"
 libc = "0.2"
-notify = "7"
-notify-debouncer-mini = "0.5"
+notify = "8"
+notify-debouncer-mini = "0.7"
 gh-token = "0.1"
 keepawake = "0.6"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-deep-link = "2"
-zip = "2"
+zip = "8"
 glob = "0.3"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 url = "2"
 chrono = { version = "0.4", features = ["serde"] }
-vt100 = "0.15"
+vt100 = "0.16"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.15", features = ["metal"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Diagnostics_ToolHelp", "Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Diagnostics_ToolHelp", "Win32_Foundation"] }
 
 [dev-dependencies]
 tempfile = "3"

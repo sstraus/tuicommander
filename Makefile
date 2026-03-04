@@ -193,7 +193,7 @@ preview:
 	@echo "Building TUIC-preview $(VERSION) (debug mode)..."
 	npm run tauri build -- --debug --bundles app --config '{"productName":"TUIC-preview","identifier":"com.tuic.preview","bundle":{"createUpdaterArtifacts":false},"app":{"windows":[{"title":"TUIC-preview","width":1200,"height":800,"minWidth":800,"minHeight":600,"decorations":true,"transparent":false,"resizable":true,"fullscreen":false,"hiddenTitle":true,"titleBarStyle":"Overlay","trafficLightPosition":{"x":13,"y":20},"backgroundColor":"#000000","dragDropEnabled":false}]}}'
 	@echo "Launching TUIC-preview..."
-	open "$(TAURI_TARGET)/TUIC-preview.app"
+	open "src-tauri/target/debug/bundle/macos/TUIC-preview.app"
 
 # Clean build artifacts
 clean:
