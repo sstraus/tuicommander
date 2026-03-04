@@ -893,11 +893,15 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
         // Optional trailing (title) before the closing bracket.
         // (?:^|\s) anchor: the opening bracket must be at line/string start or after whitespace,
         // preventing matches on ANSI-stripped garbage like `]che[[intent:`
+        // (?s:.+?) — DOTALL mode for the body so the token can span multiple joined rows.
+        // When VtLogBuffer rows are joined with '\n' (parse_clean_lines), long tokens that
+        // wrap at 80 cols would otherwise not match because '.' skips '\n' by default.
         static ref INTENT_RE: regex::Regex =
-            regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})intent:\s*(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
-        // Separate regex to split out the optional (title) suffix from the captured text
+            regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})intent:\s*(?s:(.+?))\s*(?:\]?\]|\x{27E7})").unwrap();
+        // Separate regex to split out the optional (title) suffix from the captured text.
+        // (?s) enables DOTALL so the body can span multiple lines (wrapped tokens).
         static ref TITLE_RE: regex::Regex =
-            regex::Regex::new(r"^(.*?)\(([^)]+)\)\s*$").unwrap();
+            regex::Regex::new(r"(?s)^(.*?)\(([^)]+)\)\s*$").unwrap();
     }
     INTENT_RE.captures(clean).and_then(|caps| {
         let raw = caps[1].trim();
@@ -2643,6 +2647,28 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             Some("Project onboarding and understanding"),
             "extra spaces should be collapsed; got: {:?}", text
         );
+    }
+
+    #[test]
+    fn test_parse_intent_wraps_across_rows() {
+        // When [[intent: very long text(title)]] exceeds 80 cols it splits across two
+        // VtLogBuffer rows joined with \n. INTENT_RE must cross the newline to extract both
+        // text and title.
+        let parser = OutputParser::new();
+        // Simulate two rows: first row ends mid-token, second row has the closing bracket.
+        let rows = vec![
+            row(0, "⏺ [[intent: Implementing a very long feature description that wraps"),
+            row(1, "across terminal rows(Long Feature)]]"),
+        ];
+        let events = parser.parse_clean_lines(&rows);
+        let intent = events.iter().find_map(|e| match e {
+            ParsedEvent::Intent { text, title } => Some((text.clone(), title.clone())),
+            _ => None,
+        });
+        assert!(intent.is_some(), "intent must be detected even when token wraps; got: {:?}", events);
+        let (text, title) = intent.unwrap();
+        assert!(text.contains("Implementing"), "text should contain intent body; got: {:?}", text);
+        assert_eq!(title.as_deref(), Some("Long Feature"), "title must be extracted; got: {:?}", title);
     }
 
     #[test]
