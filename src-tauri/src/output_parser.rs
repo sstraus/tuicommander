@@ -918,6 +918,10 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
         } else {
             (raw.to_string(), None)
         };
+        // Normalize whitespace: VtLogBuffer renders CUF cursor-forward codes as
+        // multiple spaces when it renders the VT100 screen buffer to text.
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let title = title.map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "));
         Some(ParsedEvent::Intent { text, title })
     })
 }
@@ -2620,6 +2624,24 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::Intent { title: Some(t), .. } if t == "Prime session")),
             "expected Intent with title='Prime session', got: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_parse_intent_normalizes_whitespace() {
+        // VtLogBuffer renders CUF cursor-forward codes as multiple spaces.
+        // parse_intent must collapse them so agentIntent text is clean.
+        let parser = OutputParser::new();
+        let rows = vec![row(0, "[[intent: Project   onboarding   and   understanding]]")];
+        let events = parser.parse_clean_lines(&rows);
+        let text = events.iter().find_map(|e| match e {
+            ParsedEvent::Intent { text, .. } => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            text.as_deref(),
+            Some("Project onboarding and understanding"),
+            "extra spaces should be collapsed; got: {:?}", text
         );
     }
 
