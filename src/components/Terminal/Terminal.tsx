@@ -357,9 +357,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           }
           case "status-line": {
-            // Agent is working again — clear any question/suggest state
+            // Agent is working again — clear question state (but NOT suggest:
+            // suggested actions persist until the user selects one, dismisses, or
+            // sends new input via write_pty).
             terminalsStore.clearAwaitingInput(props.id);
-            terminalsStore.update(props.id, { currentTask: parsed.task_name, suggestedActions: null });
+            terminalsStore.update(props.id, { currentTask: parsed.task_name });
             break;
           }
           case "rate-limit": {
@@ -1073,6 +1075,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       }
     },
     writeln: (data: string) => terminal?.writeln(data),
+    input: (data: string) => terminal?.input(data, true),
     clear: () => terminal?.clear(),
     focus: () => terminal?.focus(),
     getSessionId: () => sessionId,

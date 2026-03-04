@@ -50,6 +50,7 @@ export interface TerminalRef {
   fit: () => void;
   write: (data: string) => void;
   writeln: (data: string) => void;
+  input: (data: string) => void;
   clear: () => void;
   focus: () => void;
   getSessionId: () => string | null;

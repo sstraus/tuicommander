@@ -6,6 +6,7 @@ import { PluginPanel } from "./PluginPanel";
 import { ClaudeUsageDashboard } from "./ClaudeUsageDashboard";
 import { CodeEditorTab } from "./CodeEditorPanel";
 import SuggestOverlay from "./SuggestOverlay/SuggestOverlay";
+import { rpc } from "../transport";
 import noTuiOpenImg from "../assets/no-tui-open.png";
 import TipOfTheDay from "./TipOfTheDay/TipOfTheDay";
 import { terminalsStore } from "../stores/terminals";
@@ -15,7 +16,7 @@ import { repoSettingsStore } from "../stores/repoSettings";
 import { diffTabsStore } from "../stores/diffTabs";
 import { mdTabsStore } from "../stores/mdTabs";
 import { editorTabsStore } from "../stores/editorTabs";
-import { rpc } from "../transport";
+
 
 export interface TerminalAreaProps {
   onTerminalFocus: (id: string) => void;
@@ -281,14 +282,17 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
         {(() => {
           const active = () => terminalsStore.getActive();
           const actions = () => active()?.suggestedActions;
-          const sessionId = () => active()?.sessionId;
           return (
             <Show when={actions()?.length}>
               <SuggestOverlay
                 items={actions()!}
-                onSelect={(text) => {
-                  const sid = sessionId();
-                  if (sid) rpc("write_pty", { sessionId: sid, data: text + "\n" });
+                onSelect={async (text) => {
+                  const term = active();
+                  const sid = term?.sessionId;
+                  if (sid) {
+                    await rpc("write_pty", { sessionId: sid, data: text });
+                    await rpc("write_pty", { sessionId: sid, data: "\r" });
+                  }
                   const id = terminalsStore.state.activeId;
                   if (id) terminalsStore.update(id, { suggestedActions: null });
                 }}

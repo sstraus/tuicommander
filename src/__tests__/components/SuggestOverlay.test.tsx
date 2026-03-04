@@ -78,6 +78,24 @@ describe("SuggestOverlay", () => {
     vi.useRealTimers();
   });
 
+  it("dismisses when user types a printable character", () => {
+    const onDismiss = vi.fn();
+    render(() => (
+      <SuggestOverlay items={["Run tests"]} onSelect={() => {}} onDismiss={onDismiss} />
+    ));
+    fireEvent.keyDown(document, { key: "h" });
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
+  it("does not dismiss on modifier-only keys", () => {
+    const onDismiss = vi.fn();
+    render(() => (
+      <SuggestOverlay items={["Run tests"]} onSelect={() => {}} onDismiss={onDismiss} />
+    ));
+    fireEvent.keyDown(document, { key: "a", ctrlKey: true });
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
   it("renders empty when items array is empty", () => {
     const { container } = render(() => (
       <SuggestOverlay items={[]} onSelect={() => {}} onDismiss={() => {}} />

@@ -22,6 +22,11 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
     if (num >= 1 && num <= 4 && num <= props.items.length) {
       e.preventDefault();
       props.onSelect(props.items[num - 1]);
+      return;
+    }
+    // Any printable key (typing) dismisses the overlay
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      props.onDismiss();
     }
   };
 

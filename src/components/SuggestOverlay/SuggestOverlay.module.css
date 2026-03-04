@@ -37,7 +37,7 @@
   align-items: center;
   gap: 8px;
   font-family: var(--font-ui);
-  font-size: var(--font-base);
+  font-size: var(--font-sm);
   padding: 8px 16px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
