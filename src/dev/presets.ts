@@ -37,6 +37,7 @@ const basePr: BranchPrStatus = {
   labels: [],
   is_draft: false,
   base_ref_name: "main",
+  head_ref_oid: "abc1234567890",
   created_at: new Date(Date.now() - 86400000).toISOString(),
   updated_at: new Date().toISOString(),
   merge_state_label: { label: "Ready to merge", css_class: "clean" },

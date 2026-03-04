@@ -39,7 +39,7 @@ function mockPr(overrides: Partial<BranchPrStatus> & Pick<BranchPrStatus, "numbe
     checks: { passed: 0, failed: 0, pending: 0, total: 0 },
     check_details: [], author: "", commits: 0, mergeable: "UNKNOWN",
     merge_state_status: "UNKNOWN", review_decision: "", labels: [],
-    is_draft: false, base_ref_name: "main", created_at: "", updated_at: "",
+    is_draft: false, base_ref_name: "main", head_ref_oid: "", created_at: "", updated_at: "",
     merge_state_label: null, review_state_label: null,
     ...overrides,
   };

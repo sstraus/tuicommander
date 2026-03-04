@@ -107,6 +107,7 @@ function makePrData(overrides: Record<string, unknown> = {}) {
     labels: [],
     is_draft: false,
     base_ref_name: "main",
+    head_ref_oid: "abc1234",
     created_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-02T00:00:00Z",
     merge_state_label: null,

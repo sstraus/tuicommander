@@ -130,6 +130,7 @@ export interface BranchPrStatus {
   labels: PrLabel[];
   is_draft: boolean;
   base_ref_name: string;
+  head_ref_oid: string;
   created_at: string;
   updated_at: string;
   merge_state_label: { label: string; css_class: string } | null;

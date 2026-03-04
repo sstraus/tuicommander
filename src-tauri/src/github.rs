@@ -566,6 +566,7 @@ pub(crate) struct BranchPrStatus {
     pub(crate) labels: Vec<PrLabel>,
     pub(crate) is_draft: bool,
     pub(crate) base_ref_name: String,
+    pub(crate) head_ref_oid: String,
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
     pub(crate) merge_state_label: Option<StateLabel>,
@@ -641,6 +642,7 @@ fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
         .unwrap_or_default();
 
     let base_ref_name = v["baseRefName"].as_str().unwrap_or("").to_string();
+    let head_ref_oid = v["headRefOid"].as_str().unwrap_or("").to_string();
     let created_at = v["createdAt"].as_str().unwrap_or("").to_string();
     let updated_at = v["updatedAt"].as_str().unwrap_or("").to_string();
 
@@ -670,6 +672,7 @@ fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
         labels,
         is_draft,
         base_ref_name,
+        head_ref_oid,
         created_at,
         updated_at,
         merge_state_label,
@@ -762,10 +765,25 @@ pub(crate) fn get_repo_pr_statuses_impl(
     match graphql_with_retry(state, &query, serde_json::Value::Null) {
         Ok(response) => {
             let alias = &aliases[0].0;
-            let nodes = response["data"][alias]["pullRequests"]["nodes"]
+            let mut nodes: Vec<BranchPrStatus> = response["data"][alias]["pullRequests"]["nodes"]
                 .as_array()
                 .map(|arr| arr.iter().filter_map(parse_pr_node).collect())
                 .unwrap_or_default();
+
+            // Filter stale merged PRs (same logic as batch endpoint)
+            if include_merged && nodes.iter().any(|s| s.state == "MERGED") {
+                let branch_tips = local_branch_tips(&repo_path);
+                nodes.retain(|s| {
+                    if s.state != "MERGED" || s.head_ref_oid.is_empty() {
+                        return true;
+                    }
+                    match branch_tips.get(&s.branch) {
+                        Some(tip) => tip == &s.head_ref_oid,
+                        None => true,
+                    }
+                });
+            }
+
             Ok(nodes)
         }
         Err(e) if e.starts_with("rate-limit:") => Err(e),
@@ -802,6 +820,23 @@ pub(crate) async fn get_repo_pr_statuses(
     .map_err(|e| format!("Task failed: {e}"))?
 }
 
+/// Read local branch tips (name → commit SHA) via `git for-each-ref`.
+/// Returns an empty map on any error (no git, not a repo, etc.).
+fn local_branch_tips(repo_path: &Path) -> std::collections::HashMap<String, String> {
+    let mut tips = std::collections::HashMap::new();
+    let output = crate::git_cli::git_cmd(repo_path)
+        .args(["for-each-ref", "--format=%(refname:short)\t%(objectname)", "refs/heads/"])
+        .run_silent();
+    if let Some(out) = output {
+        for line in out.stdout.lines() {
+            if let Some((name, sha)) = line.split_once('\t') {
+                tips.insert(name.to_string(), sha.to_string());
+            }
+        }
+    }
+    tips
+}
+
 /// Build a single aliased GraphQL query that fetches PRs for multiple repos in one HTTP call.
 /// Each repo gets an alias `r{i}` to avoid field name collisions.
 /// Returns (query_string, Vec<(alias, repo_path)>) for result extraction.
@@ -810,7 +845,7 @@ fn build_multi_repo_pr_query(
     include_merged: bool,
 ) -> (String, Vec<(String, String)>) {
     let states = if include_merged { "[OPEN, MERGED]" } else { "[OPEN]" };
-    let node_fields = r#"number title state url headRefName baseRefName isDraft
+    let node_fields = r#"number title state url headRefName headRefOid baseRefName isDraft
         additions deletions mergeable mergeStateStatus reviewDecision
         createdAt updatedAt
         author { login }
@@ -881,7 +916,24 @@ pub(crate) fn get_all_pr_statuses_impl(
             Some(arr) => arr,
             None => continue,
         };
-        let statuses: Vec<BranchPrStatus> = nodes.iter().filter_map(parse_pr_node).collect();
+        let mut statuses: Vec<BranchPrStatus> = nodes.iter().filter_map(parse_pr_node).collect();
+
+        // Filter stale merged PRs: if a branch was recreated (e.g. new worktree from
+        // scratch), its local tip won't match the PR's headRefOid.  Without this filter
+        // the UI shows a "merged" badge on a freshly created worktree.
+        if include_merged && statuses.iter().any(|s| s.state == "MERGED") {
+            let branch_tips = local_branch_tips(Path::new(path));
+            statuses.retain(|s| {
+                if s.state != "MERGED" || s.head_ref_oid.is_empty() {
+                    return true; // keep non-merged and PRs missing the OID
+                }
+                match branch_tips.get(&s.branch) {
+                    Some(tip) => tip == &s.head_ref_oid,
+                    None => true, // branch deleted locally — keep PR visible
+                }
+            });
+        }
+
         // Update the per-repo cache so get_repo_pr_statuses hits cache on next individual call
         AppState::set_cached(&state.github_status_cache, path.clone(), statuses.clone());
         results.insert(path.clone(), statuses);
@@ -1387,6 +1439,7 @@ mod tests {
             "state": state,
             "url": format!("https://github.com/org/repo/pull/{number}"),
             "headRefName": branch,
+            "headRefOid": format!("abc{number:04}"),
             "baseRefName": base_ref_name,
             "isDraft": is_draft,
             "additions": additions,
@@ -1600,6 +1653,19 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].state, "MERGED");
         assert_eq!(result[1].state, "CLOSED");
+    }
+
+    #[test]
+    fn test_parse_graphql_prs_head_ref_oid() {
+        let response = graphql_response(vec![
+            graphql_pr_node(42, "With OID", "OPEN", "feature/oid",
+                0, 0, "alice", 1,
+                &[], &[],
+                "UNKNOWN", "UNKNOWN", None, false, &[], "main"),
+        ]);
+        let result = parse_graphql_prs(&response);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].head_ref_oid, "abc0042", "headRefOid must be parsed");
     }
 
     // --- parse_remote_url tests ---

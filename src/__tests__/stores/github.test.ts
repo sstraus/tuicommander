@@ -52,6 +52,7 @@ describe("githubStore", () => {
       labels: [],
       is_draft: false,
       base_ref_name: "main",
+      head_ref_oid: "abc1234",
       created_at: "2026-01-15T10:00:00Z",
       updated_at: "2026-01-15T12:00:00Z",
       merge_state_label: { label: "Ready to merge", css_class: "clean" },
