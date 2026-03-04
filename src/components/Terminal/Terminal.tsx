@@ -828,7 +828,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Update tab title from shell OSC 0/2 escape sequences (e.g. user@host:~/path)
     // OSC titles take priority over status-line parsing
     terminal.onTitleChange((title) => {
-      if (title && !terminalsStore.get(props.id)?.nameIsCustom) {
+      const term = terminalsStore.get(props.id);
+      // Skip OSC title updates when tab name was set by an intent title
+      if (title && !term?.nameIsCustom && !(term?.agentIntent && settingsStore.state.intentTabTitle)) {
         const cleaned = cleanOscTitle(title);
         if (cleaned) {
           if (!originalName) {

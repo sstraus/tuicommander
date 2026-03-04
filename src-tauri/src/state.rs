@@ -188,6 +188,112 @@ impl Utf8ReadBuffer {
     }
 }
 
+/// Buffer that prevents `[[intent: ...]]` and `[[suggest: ...]]` tokens from being
+/// split across chunk boundaries. Scans the tail of each chunk for an unclosed tag
+/// opening and holds it for the next push(), so colorize_intent / strip_suggest
+/// always see complete tokens.
+pub(crate) struct TagBuffer {
+    remainder: String,
+}
+
+/// Maximum bytes to scan backwards from the end of a chunk for tag openings.
+const TAG_SCAN_LIMIT: usize = 512;
+
+impl TagBuffer {
+    pub(crate) fn new() -> Self {
+        Self { remainder: String::new() }
+    }
+
+    /// Append new data, returning text safe to process. Any trailing partial
+    /// intent/suggest token is held for the next call.
+    pub(crate) fn push(&mut self, input: &str) -> String {
+        if input.is_empty() && self.remainder.is_empty() {
+            return String::new();
+        }
+        let mut combined = std::mem::take(&mut self.remainder);
+        combined.push_str(input);
+
+        if let Some(hold_pos) = find_unclosed_tag(&combined) {
+            self.remainder = combined[hold_pos..].to_string();
+            combined.truncate(hold_pos);
+            combined
+        } else {
+            combined
+        }
+    }
+
+    /// Flush remaining bytes at EOF — emit even if incomplete.
+    pub(crate) fn flush(&mut self) -> String {
+        std::mem::take(&mut self.remainder)
+    }
+}
+
+/// Find the byte offset of a potential unclosed `[[intent:` / `[[suggest:` /
+/// `[intent:` / `[suggest:` / `⟦intent:` / `⟦suggest:` near the end of `text`.
+/// Returns `None` if no unclosed tag is found.
+fn find_unclosed_tag(text: &str) -> Option<usize> {
+    let search_start = text.len().saturating_sub(TAG_SCAN_LIMIT);
+
+    // Scan backwards for the rightmost `[` or `⟦` in the search region.
+    for (rel, ch) in text[search_start..].char_indices().rev() {
+        if ch != '[' && ch != '\u{27E6}' {
+            continue;
+        }
+        let abs = search_start + rel;
+        // Include a preceding `[` for the `[[` double-bracket variant
+        let hold_start = if abs > 0 && text.as_bytes().get(abs - 1) == Some(&b'[') {
+            abs - 1
+        } else {
+            abs
+        };
+        let after = &text[hold_start..];
+
+        // Strip ANSI to check if the text starting here could be a tag
+        let clean = String::from_utf8(strip_ansi_escapes::strip(after.as_bytes()))
+            .unwrap_or_default();
+
+        if is_tag_candidate(&clean) && !has_tag_closing(&clean) {
+            return Some(hold_start);
+        }
+    }
+    None
+}
+
+/// Check if `clean` (ANSI-stripped, starting from `[` or `⟦`) could be the
+/// opening of an intent/suggest tag. Matches both complete keywords
+/// (`[[intent: body`) and partial prefixes (`[[int`, `[su`, etc.).
+fn is_tag_candidate(clean: &str) -> bool {
+    // Complete keyword — tag opened but body not yet closed
+    if clean.starts_with("[[intent:") || clean.starts_with("[intent:")
+        || clean.starts_with("[[suggest:") || clean.starts_with("[suggest:")
+        || clean.starts_with("\u{27E6}intent:") || clean.starts_with("\u{27E6}suggest:")
+    {
+        return true;
+    }
+    // Partial keyword prefix — chunk ended mid-keyword.
+    // Require len >= 3 to avoid false-positives on `[[` (bash conditionals,
+    // ANSI-stripped brackets, etc.) which caused terminal freezes.
+    if clean.len() < 3 { return false; }
+    const OPENINGS: &[&str] = &[
+        "[[intent:", "[[suggest:", "[intent:", "[suggest:",
+        "\u{27E6}intent:", "\u{27E6}suggest:",
+    ];
+    OPENINGS.iter().any(|o| o.starts_with(clean))
+}
+
+/// Check if the ANSI-stripped text contains a closing bracket for the tag.
+fn has_tag_closing(clean: &str) -> bool {
+    // Find the colon (keyword end) — closing must appear after it
+    if let Some(colon) = clean.find(':') {
+        let after_keyword = &clean[colon..];
+        after_keyword.contains("]]") || after_keyword.contains('\u{27E7}')
+            || after_keyword.ends_with(']')
+    } else {
+        // No colon yet → still typing keyword prefix → definitely unclosed
+        false
+    }
+}
+
 /// Buffer that prevents escape sequences from being split across write boundaries.
 /// Detects incomplete ANSI/OSC sequences at the end of a chunk and carries them
 /// to the next call, so xterm.js always receives complete sequences.
@@ -240,70 +346,6 @@ impl EscapeAwareBuffer {
     pub(crate) fn flush(&mut self) -> String {
         std::mem::take(&mut self.remainder)
     }
-}
-
-/// Buffer that holds back partial intent/suggest tag lines across PTY chunks.
-///
-/// When Claude Code streams tokens, `[[intent: ...]]` may arrive split across
-/// multiple PTY reads. This buffer detects incomplete tag lines (containing
-/// `[intent:` or `[suggest:` without a closing `]]`) and holds them until
-/// the next chunk completes them.
-///
-/// Only the trailing incomplete line is inspected — complete lines (ending with
-/// `\n`) pass through immediately. Non-tag incomplete lines also pass through.
-pub(crate) struct TagBuffer {
-    pending: String,
-}
-
-impl TagBuffer {
-    pub(crate) fn new() -> Self {
-        Self {
-            pending: String::new(),
-        }
-    }
-
-    pub(crate) fn push(&mut self, input: &str) -> String {
-        if input.is_empty() && self.pending.is_empty() {
-            return String::new();
-        }
-
-        let mut combined = std::mem::take(&mut self.pending);
-        combined.push_str(input);
-
-        // Cap: if pending grows too large, emit raw to avoid unbounded buffering
-        if combined.len() > 512 && !combined.contains("]]") {
-            return combined;
-        }
-
-        // Find the last newline — everything before it is safe to emit
-        let safe_end = combined.rfind('\n').map(|p| p + 1).unwrap_or(0);
-        let tail = &combined[safe_end..];
-
-        if !tail.is_empty() && looks_like_partial_tag(tail) {
-            self.pending = tail.to_string();
-            combined.truncate(safe_end);
-            combined
-        } else {
-            combined
-        }
-    }
-
-    pub(crate) fn flush(&mut self) -> String {
-        std::mem::take(&mut self.pending)
-    }
-}
-
-/// Check if a line fragment looks like an incomplete intent or suggest tag.
-/// Returns true if it contains an opening `[intent:` or `[suggest:` pattern
-/// but no closing `]]` or `]`.
-fn looks_like_partial_tag(line: &str) -> bool {
-    let clean = crate::output_parser::strip_ansi(line);
-    let has_open = clean.contains("[intent:") || clean.contains("[suggest:");
-    if !has_open {
-        return false;
-    }
-    // Check for any closing bracket pattern
-    !clean.contains("]]") && !clean.ends_with(']')
 }
 
 /// Find the last byte position where the string is not inside an incomplete escape sequence.
@@ -1243,84 +1285,6 @@ mod tests {
         assert_eq!(out, long_fake);
     }
 
-    // --- TagBuffer tests ---
-
-    #[test]
-    fn test_tag_buffer_plain_text_passthrough() {
-        let mut buf = TagBuffer::new();
-        assert_eq!(buf.push("hello world\n"), "hello world\n");
-    }
-
-    #[test]
-    fn test_tag_buffer_complete_intent_passthrough() {
-        let mut buf = TagBuffer::new();
-        assert_eq!(
-            buf.push("[[intent: Doing stuff(Stuff)]]\n"),
-            "[[intent: Doing stuff(Stuff)]]\n"
-        );
-    }
-
-    #[test]
-    fn test_tag_buffer_holds_partial_intent() {
-        let mut buf = TagBuffer::new();
-        // Partial intent tag — no closing brackets
-        let out1 = buf.push("[[intent: Testing intent");
-        assert_eq!(out1, "", "partial intent should be held back");
-        // Complete it in next chunk
-        let out2 = buf.push(" parsing after fix(Testing)]]\nmore text");
-        assert!(out2.contains("[[intent:"), "should contain reassembled intent");
-        assert!(out2.contains("]]"), "should contain closing brackets");
-        assert!(out2.contains("more text"), "should contain following text");
-    }
-
-    #[test]
-    fn test_tag_buffer_holds_partial_suggest() {
-        let mut buf = TagBuffer::new();
-        let out1 = buf.push("[[suggest: Run tests | Review");
-        assert_eq!(out1, "", "partial suggest should be held back");
-        let out2 = buf.push(" diff | Deploy]]\n");
-        assert!(out2.contains("[[suggest:"), "reassembled suggest");
-        assert!(out2.contains("]]"), "closing brackets present");
-    }
-
-    #[test]
-    fn test_tag_buffer_passes_complete_lines_before_partial() {
-        let mut buf = TagBuffer::new();
-        let out = buf.push("complete line\n[[intent: partial");
-        assert_eq!(out, "complete line\n", "complete line emitted, partial held");
-    }
-
-    #[test]
-    fn test_tag_buffer_no_hold_without_tag() {
-        let mut buf = TagBuffer::new();
-        // Incomplete line but no tag pattern — pass through immediately
-        let out = buf.push("just some text without newline");
-        assert_eq!(out, "just some text without newline");
-    }
-
-    #[test]
-    fn test_tag_buffer_flush() {
-        let mut buf = TagBuffer::new();
-        let _ = buf.push("[[intent: partial stuff");
-        let flushed = buf.flush();
-        assert_eq!(flushed, "[[intent: partial stuff");
-    }
-
-    #[test]
-    fn test_tag_buffer_cap_prevents_unbounded_growth() {
-        let mut buf = TagBuffer::new();
-        // Fake tag-like content that never closes — over 512 bytes
-        let long = format!("[[intent: {}", "x".repeat(600));
-        let out = buf.push(&long);
-        assert_eq!(out, long, "oversized partial should be emitted raw");
-    }
-
-    #[test]
-    fn test_tag_buffer_empty_input() {
-        let mut buf = TagBuffer::new();
-        assert_eq!(buf.push(""), "");
-    }
-
     // --- Cached config in AppState tests ---
 
     fn make_test_app_state() -> AppState {
@@ -1802,5 +1766,84 @@ mod tests {
         let status = make_parsed("status-line", serde_json::json!({ "task_name": "Working" }));
         let s = apply(&state, &status);
         assert!(s.suggested_actions.is_none());
+    }
+
+    // --- TagBuffer tests ---
+
+    #[test]
+    fn tag_buffer_complete_token_passes_through() {
+        let mut buf = TagBuffer::new();
+        let out = buf.push("before [[intent: Fixing bug(Fix)]] after");
+        assert_eq!(out, "before [[intent: Fixing bug(Fix)]] after");
+        assert_eq!(buf.flush(), "");
+    }
+
+    #[test]
+    fn tag_buffer_holds_partial_token() {
+        let mut buf = TagBuffer::new();
+        // Chunk 1: token opened but not closed
+        let out1 = buf.push("some output\n[[intent: Fixing");
+        assert_eq!(out1, "some output\n");
+        // Chunk 2: token completed
+        let out2 = buf.push(" bug(Fix)]]\nmore");
+        assert!(out2.contains("[[intent: Fixing bug(Fix)]]"), "got: {:?}", out2);
+        assert!(out2.contains("more"));
+    }
+
+    #[test]
+    fn tag_buffer_holds_partial_keyword() {
+        let mut buf = TagBuffer::new();
+        // Chunk ends mid-keyword: [[inte
+        let out1 = buf.push("output\n[[inte");
+        assert_eq!(out1, "output\n");
+        // Next chunk completes it
+        let out2 = buf.push("nt: Running tests(Tests)]]\n");
+        assert!(out2.contains("[[intent: Running tests(Tests)]]"), "got: {:?}", out2);
+    }
+
+    #[test]
+    fn tag_buffer_holds_suggest_token() {
+        let mut buf = TagBuffer::new();
+        let out1 = buf.push("output\n[[suggest: Fix | Review");
+        assert_eq!(out1, "output\n");
+        let out2 = buf.push("]]\nmore");
+        assert!(out2.contains("[[suggest: Fix | Review]]"));
+    }
+
+    #[test]
+    fn tag_buffer_no_false_positive_on_brackets_in_code() {
+        let mut buf = TagBuffer::new();
+        // [1] in output — should NOT be held (not a tag prefix)
+        let out = buf.push("line [1]: error at foo\n");
+        assert_eq!(out, "line [1]: error at foo\n");
+    }
+
+    #[test]
+    fn tag_buffer_lone_bracket_not_held() {
+        let mut buf = TagBuffer::new();
+        // Single [ at end — too short to be a tag prefix (len < 2 after stripping)
+        let out = buf.push("array[");
+        assert_eq!(out, "array[");
+    }
+
+    #[test]
+    fn tag_buffer_ansi_inside_partial_token() {
+        let mut buf = TagBuffer::new();
+        // SGR before token: the hold starts from [[ not from the SGR prefix
+        let out1 = buf.push("output\n\x1b[33m[[intent: Fix");
+        // SGR \x1b[33m is emitted (it's before the tag opening), token held
+        assert_eq!(out1, "output\n\x1b[33m");
+        let out2 = buf.push("ing bug]]\x1b[0m\n");
+        assert!(out2.contains("[[intent: Fixing bug]]"), "got: {:?}", out2);
+    }
+
+    #[test]
+    fn tag_buffer_flush_emits_remainder() {
+        let mut buf = TagBuffer::new();
+        let out = buf.push("text [[intent: incomplete");
+        assert_eq!(out, "text ");
+        // At EOF, flush emits the held data
+        let flushed = buf.flush();
+        assert_eq!(flushed, "[[intent: incomplete");
     }
 }

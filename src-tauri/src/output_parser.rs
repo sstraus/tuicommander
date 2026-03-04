@@ -862,49 +862,26 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Strip brackets from `[intent: ...]` tokens, keeping the text colorized yellow.
-/// `[[intent: Refactoring auth]]` becomes `\e[2;33mintent: Refactoring auth\e[0m`.
-/// Strips the optional `(title)` suffix before colorizing.
-/// Only invoke when `parse()` returned an Intent event to avoid regex on every chunk.
-///
-/// Strategy: match on ANSI-stripped (clean) text per-line, then replace the tag
-/// in the clean text and emit that. The original ANSI formatting on the intent
-/// line is discarded (we replace it with our own yellow dim), but surrounding
-/// content like bullet prefixes is preserved because it's in the clean text.
+/// Colorize intent tokens yellow: `[[intent: text(title)]]` → `\e[2;33mintent: text\e[0m`.
+/// Operates on raw PTY text via replace_all — only the matched token span is replaced,
+/// preserving surrounding cursor movements (CUU/CUD) that position the text on screen.
+/// The body stays raw (ANSI codes intact) so xterm.js renders it faithfully.
+/// Brackets and the optional `(title)` suffix are stripped.
 pub fn colorize_intent(raw: &str) -> String {
     lazy_static::lazy_static! {
-        static ref INTENT_RE: regex::Regex =
-            regex::Regex::new(r"(?:\[\[?|\x{27E6})(intent:\s*)(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
-        static ref STRIP_TITLE_RE: regex::Regex =
-            regex::Regex::new(r"\([^)]+\)\s*$").unwrap();
+        static ref INTENT_REPLACE_RE: regex::Regex = {
+            // Any CSI sequence that may appear between structural elements
+            let c = r"(?:\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e])*";
+            regex::Regex::new(&format!(
+                r"(?:\[\[?|\x{{27E6}}){C}intent:\s*(.+?)(?:\s*\([^)]*\))?\s*{C}(?:\]?\]|\x{{27E7}})",
+                C = c
+            )).unwrap()
+        };
     }
-    let mut result = String::with_capacity(raw.len());
-    for (i, line) in raw.split('\n').enumerate() {
-        if i > 0 { result.push('\n'); }
-        let line_no_cr = line.trim_end_matches('\r');
-        let clean = strip_ansi(line_no_cr);
-        if let Some(m) = INTENT_RE.find(&clean) {
-            let caps = INTENT_RE.captures(&clean).unwrap();
-            let prefix = &caps[1]; // "intent: "
-            let body = &caps[2];
-            let clean_body = STRIP_TITLE_RE.replace(body, "");
-            let trimmed = clean_body.trim_end();
-            let colored = format!("\x1b[2;33m{}{}\x1b[0m", prefix, trimmed);
-
-            // Replace the tag in clean text, preserving surrounding clean content
-            let mut clean_line = String::with_capacity(clean.len());
-            clean_line.push_str(&clean[..m.start()]);
-            clean_line.push_str(&colored);
-            clean_line.push_str(&clean[m.end()..]);
-            result.push_str(&clean_line);
-            if line.ends_with('\r') {
-                result.push('\r');
-            }
-        } else {
-            result.push_str(line);
-        }
-    }
-    result
+    INTENT_REPLACE_RE.replace_all(raw, |caps: &regex::Captures| {
+        let body = &caps[1]; // raw body, ANSI codes intact for xterm.js
+        format!("\x1b[2;33mintent: {}\x1b[0m", body)
+    }).into_owned()
 }
 
 /// Detect agent-declared intent tokens: `[intent: <text>]`, `[[intent: <text>]]`,
@@ -977,10 +954,18 @@ fn parse_suggest(clean: &str) -> Option<ParsedEvent> {
 
 /// Strip suggest tokens from raw PTY output so they don't appear in the terminal.
 /// Removes the entire line containing the token (including surrounding newlines).
+/// The regex tolerates any CSI escape codes (cursor movements, SGR, etc.)
+/// interleaved within and before the token structure.
 pub fn strip_suggest(raw: &str) -> String {
     lazy_static::lazy_static! {
-        static ref STRIP_RE: regex::Regex =
-            regex::Regex::new(r"(?m)^[^\S\n]*(?:\[\[?|\x{27E6})suggest:\s*.+?\s*(?:\]?\]|\x{27E7})[^\S\n]*\n?").unwrap();
+        static ref STRIP_RE: regex::Regex = {
+            // Any CSI sequence that may appear between structural elements
+            let c = r"(?:\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e])*";
+            regex::Regex::new(&format!(
+                r"(?:\[\[?|\x{{27E6}}){C}suggest:\s*.+?\s*{C}(?:\]?\]|\x{{27E7}})",
+                C = c
+            )).unwrap()
+        };
     }
     STRIP_RE.replace_all(raw, "").into_owned()
 }
@@ -2488,9 +2473,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_colorize_intent_ansi_inside_brackets() {
-        // ANSI codes scattered inside the [[intent:...]] token itself.
-        // The offset-mapping approach matches on clean text and maps back to raw,
-        // so it handles ANSI inside brackets correctly.
+        // ANSI codes scattered inside the [[intent:...]] token itself
         let raw = "\x1b[2m[[\x1b[0mintent: Implementing config(Config field)\x1b[2m]]\x1b[0m";
         let colored = colorize_intent(raw);
         assert!(colored.contains("\x1b[2;33m"),
@@ -2522,33 +2505,6 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             "should colorize with CRLF; got: {:?}", colored);
         assert!(!colored.contains("[["), "should strip brackets");
         assert!(colored.contains("Removing memory"), "intent text preserved");
-    }
-
-    #[test]
-    fn test_colorize_intent_preserves_surrounding_content() {
-        // colorize_intent must only replace the tag, not the entire line.
-        // The bullet prefix and any ANSI formatting around it must survive.
-        let raw = "\x1b[1m\u{25CF}\x1b[0m \x1b[2m[[intent: Implementing config(Config field)]]\x1b[0m";
-        let colored = colorize_intent(raw);
-        // Bullet must be preserved
-        assert!(colored.contains("\u{25CF}"), "bullet prefix must survive; got: {:?}", colored);
-        // Intent text must be colorized
-        assert!(colored.contains("\x1b[2;33mintent: Implementing config\x1b[0m"),
-            "intent must be colorized yellow; got: {:?}", colored);
-        // Title must be stripped
-        assert!(!colored.contains("(Config field)"), "title must be stripped");
-        // Brackets must be stripped
-        assert!(!colored.contains("[["), "opening brackets must be stripped");
-    }
-
-    #[test]
-    fn test_colorize_intent_preserves_multiline_context() {
-        // Lines before and after the intent must be completely untouched
-        let raw = "line one\n\u{25CF} [[intent: Doing stuff(Stuff)]]\nline three";
-        let colored = colorize_intent(raw);
-        assert!(colored.starts_with("line one\n"), "first line untouched; got: {:?}", colored);
-        assert!(colored.ends_with("\nline three"), "third line untouched; got: {:?}", colored);
-        assert!(colored.contains("\u{25CF}"), "bullet preserved; got: {:?}", colored);
     }
 
     #[test]
@@ -2696,5 +2652,53 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_strip_suggest_no_match_unchanged() {
         let raw = "Normal terminal output";
         assert_eq!(strip_suggest(raw), raw);
+    }
+
+    #[test]
+    fn test_colorize_intent_preserves_cursor_movements() {
+        // Cursor movements (CUU, CUD, CUF) must survive colorize_intent unchanged.
+        // The old line-replace approach lost these; replace_all only touches the token.
+        let raw = "\x1b[8A\x1b[38;2;153;153;153m\u{25cf}\x1b[1C\x1b[39m \x1b[38;2;177;185;249m[[intent: Fixing bug(Fix)]]\x1b[39m\x1b[1Bmore";
+        let colored = colorize_intent(raw);
+        assert!(colored.contains("\x1b[2;33m"), "should colorize intent");
+        assert!(colored.contains("\x1b[8A"), "CUU must survive");
+        assert!(colored.contains("\x1b[1C"), "CUF must survive");
+        assert!(colored.contains("\x1b[1B"), "CUD must survive");
+        assert!(colored.contains("more"), "text after cursor movement preserved");
+        assert!(!colored.contains("(Fix)"), "title stripped");
+        assert!(!colored.contains("[["), "brackets stripped");
+    }
+
+    #[test]
+    fn test_colorize_intent_cuf_between_words() {
+        // Claude Code emits \x1b[1C (CUF) instead of spaces between words.
+        // The body is kept raw (CUF intact) — xterm.js renders them as cursor movement.
+        let raw = "[[intent: Project\x1b[1Conboarding\x1b[1Cand\x1b[1Cunderstanding(Prime session)]]";
+        let colored = colorize_intent(raw);
+        // Body should contain the raw CUF codes (xterm.js renders them correctly)
+        assert!(colored.contains("Project\x1b[1Conboarding"),
+            "raw CUF must be preserved in body; got: {:?}", colored);
+        assert!(!colored.contains("(Prime session)"), "title stripped");
+        assert!(!colored.contains("[["), "brackets stripped");
+    }
+
+    #[test]
+    fn test_strip_suggest_with_ansi_wrapping() {
+        // SGR codes wrapping the suggest token — replace_all must still match
+        let raw = "output\n\x1b[38;2;177;185;249m[[suggest: Fix | Review]]\x1b[39m\nmore";
+        let stripped = strip_suggest(raw);
+        assert!(!stripped.contains("suggest"), "suggest token removed");
+        assert!(stripped.contains("output"), "surrounding text preserved");
+        assert!(stripped.contains("more"), "surrounding text preserved");
+    }
+
+    #[test]
+    fn test_strip_suggest_with_cursor_movements_prefix() {
+        // Cursor movements (CUD, CR) before the suggest token on the line
+        let raw = "output\n\r\x1b[1B  \x1b[38;2;177;185;249m[[suggest: Fix tests | Review diff]]\x1b[39m\r\n";
+        let stripped = strip_suggest(raw);
+        assert!(!stripped.contains("suggest"),
+            "suggest token must be stripped even with cursor prefix; got: {:?}", stripped);
+        assert!(stripped.contains("output"));
     }
 }

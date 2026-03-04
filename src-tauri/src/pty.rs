@@ -8,10 +8,10 @@ use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 use crate::input_line_buffer::{InputAction, InputLineBuffer};
-use crate::output_parser::{colorize_intent, extract_last_question_line, strip_ansi, strip_suggest, OutputParser, ParsedEvent};
+use crate::output_parser::{colorize_intent, extract_last_question_line, OutputParser, ParsedEvent};
 use crate::state::{
     AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
-    OutputRingBuffer, PtyConfig, PtyOutput, PtySession, TagBuffer, Utf8ReadBuffer,
+    OutputRingBuffer, PtyConfig, PtyOutput, PtySession, Utf8ReadBuffer,
     MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY, strip_kitty_sequences,
 };
 use crate::worktree::{create_worktree_internal, remove_worktree_internal, WorktreeConfig, WorktreeResult};
@@ -249,7 +249,6 @@ pub(crate) fn spawn_reader_thread(
         let mut buf = [0u8; 4096];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
-        let mut tag_buf = TagBuffer::new();
         let parser = OutputParser::new();
         // Resolve session CWD once for resolving relative plan-file paths
         let session_cwd: Option<String> = state
@@ -266,10 +265,9 @@ pub(crate) fn spawn_reader_thread(
                     state.metrics.bytes_emitted.fetch_add(n, Ordering::Relaxed);
                     let utf8_data = utf8_buf.push(&buf[..n]);
                     let esc_data = esc_buf.push(&utf8_data);
-                    // Hold back partial intent/suggest tags for cross-chunk reassembly
-                    let esc_data = tag_buf.push(&esc_data);
                     // Strip kitty keyboard protocol sequences from output
-                    let (data, kitty_actions) = strip_kitty_sequences(&esc_data);
+                    let (kitty_clean, kitty_actions) = strip_kitty_sequences(&esc_data);
+                    let data = kitty_clean;
                     // Process kitty actions: push/pop state, respond to queries
                     if !kitty_actions.is_empty() {
                         let entry = state.kitty_states
@@ -300,10 +298,9 @@ pub(crate) fn spawn_reader_thread(
                         );
                     }
                     if !data.is_empty() {
-                        // Write clean text to ring buffer for MCP consumers (no ANSI)
+                        // Write to ring buffer for MCP consumers
                         if let Some(ring) = state.output_buffers.get(&session_id) {
-                            let clean = strip_ansi(&data);
-                            ring.lock().write(clean.as_bytes());
+                            ring.lock().write(data.as_bytes());
                         }
                         // Broadcast to WebSocket clients
                         if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
@@ -360,12 +357,19 @@ pub(crate) fn spawn_reader_thread(
                         let last_q_line = extract_last_question_line(&data);
                         silence.lock().on_chunk(regex_found_question, last_q_line);
 
-                        // Colorize [intent: ...] tokens yellow before sending to xterm
-                        let has_intent = events.iter().any(|e| matches!(e, ParsedEvent::Intent { .. }));
-                        let data = if has_intent { colorize_intent(&data) } else { data };
+                        // Colorize [intent: ...] tokens yellow before sending to xterm.
+                        // Run on every chunk containing "intent:" — not just when parse()
+                        // detected the Intent event — because Claude Code re-renders lines
+                        // with CUU/CUD cursor movements, and re-render chunks may contain
+                        // the token without parse_intent detecting it (cursor-split text).
+                        let data = if data.contains("[intent:") { colorize_intent(&data) } else { data };
 
-                        // Strip [[suggest: ...]] tokens before sending to xterm (emitted separately via pty-parsed-*)
-                        let data = strip_suggest(&data);
+                        // NOTE: suggest tokens are NOT stripped from the xterm stream.
+                        // Stripping them causes layout corruption because the regex removes
+                        // text from a 2D cursor-positioned render without removing the
+                        // surrounding cursor movements. The visible [[suggest:...]] token
+                        // is acceptable — the overlay buttons still appear when parse()
+                        // detects the Suggest event.
 
                         let _ = app.emit(
                             &format!("pty-output-{session_id}"),
@@ -387,22 +391,17 @@ pub(crate) fn spawn_reader_thread(
 
         // Flush all buffers at EOF
         let utf8_tail = utf8_buf.flush();
-        let mut remaining = if utf8_tail.is_empty() {
+        let esc_remaining = if utf8_tail.is_empty() {
             esc_buf.flush()
         } else {
             let mut flushed = esc_buf.push(&utf8_tail);
             flushed.push_str(&esc_buf.flush());
             flushed
         };
-        // Flush any held-back partial tag lines
-        let tag_tail = tag_buf.flush();
-        if !tag_tail.is_empty() {
-            remaining.push_str(&tag_tail);
-        }
+        let remaining = esc_remaining;
         if !remaining.is_empty() {
             if let Some(ring) = state.output_buffers.get(&session_id) {
-                let clean = strip_ansi(&remaining);
-                ring.lock().write(clean.as_bytes());
+                ring.lock().write(remaining.as_bytes());
             }
             if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
                 clients.retain(|tx| tx.send(remaining.clone()).is_ok());
@@ -449,7 +448,6 @@ pub(crate) fn spawn_headless_reader_thread(
         let mut buf = [0u8; 4096];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
-        let mut tag_buf = TagBuffer::new();
         loop {
             while paused.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -460,10 +458,9 @@ pub(crate) fn spawn_headless_reader_thread(
                     state.metrics.bytes_emitted.fetch_add(n, Ordering::Relaxed);
                     let utf8_data = utf8_buf.push(&buf[..n]);
                     let esc_data = esc_buf.push(&utf8_data);
-                    // Hold back partial intent/suggest tags for cross-chunk reassembly
-                    let esc_data = tag_buf.push(&esc_data);
                     // Strip kitty keyboard protocol sequences
-                    let (data, kitty_actions) = strip_kitty_sequences(&esc_data);
+                    let (kitty_clean, kitty_actions) = strip_kitty_sequences(&esc_data);
+                    let data = kitty_clean;
                     if !kitty_actions.is_empty() {
                         let entry = state.kitty_states
                             .entry(session_id.clone())
@@ -486,10 +483,8 @@ pub(crate) fn spawn_headless_reader_thread(
                         }
                     }
                     if !data.is_empty() {
-                        // Write clean text to ring buffer for MCP consumers (no ANSI)
                         if let Some(ring) = state.output_buffers.get(&session_id) {
-                            let clean = strip_ansi(&data);
-                            ring.lock().write(clean.as_bytes());
+                            ring.lock().write(data.as_bytes());
                         }
                         // Broadcast to WebSocket clients
                         if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
@@ -504,21 +499,17 @@ pub(crate) fn spawn_headless_reader_thread(
             }
         }
         let utf8_tail = utf8_buf.flush();
-        let mut remaining = if utf8_tail.is_empty() {
+        let esc_remaining = if utf8_tail.is_empty() {
             esc_buf.flush()
         } else {
             let mut flushed = esc_buf.push(&utf8_tail);
             flushed.push_str(&esc_buf.flush());
             flushed
         };
-        let tag_tail = tag_buf.flush();
-        if !tag_tail.is_empty() {
-            remaining.push_str(&tag_tail);
-        }
+        let remaining = esc_remaining;
         if !remaining.is_empty() {
             if let Some(ring) = state.output_buffers.get(&session_id) {
-                let clean = strip_ansi(&remaining);
-                ring.lock().write(clean.as_bytes());
+                ring.lock().write(remaining.as_bytes());
             }
             if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
                 clients.retain(|tx| tx.send(remaining.clone()).is_ok());
