@@ -34,7 +34,8 @@ const MenuItem: Component<{
     // Flip submenu to the left when it would overflow the viewport
     if (wrapRef) {
       const rect = wrapRef.getBoundingClientRect();
-      const submenuWidth = 180;
+      // Submenu uses width: max-content; estimate conservatively
+      const submenuWidth = 240;
       setFlipLeft(rect.right + submenuWidth > window.innerWidth);
     }
     setSubmenuOpen(true);

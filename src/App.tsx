@@ -77,7 +77,7 @@ import { useSplitPanes } from "./hooks/useSplitPanes";
 import { useAgentPolling } from "./hooks/useAgentPolling";
 import { useAgentDetection } from "./hooks/useAgentDetection";
 import { agentConfigsStore } from "./stores/agentConfigs";
-import { AGENTS } from "./agents";
+import { AGENTS, type AgentType } from "./agents";
 import { buildAgentLaunchCommand } from "./utils/agentSession";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { initApp } from "./hooks/useAppInit";
@@ -397,6 +397,20 @@ const App: Component = () => {
   };
 
   // Build agent submenu items for the context menu
+  /** Launch an agent in the active terminal, injecting --session-id when supported */
+  const launchAgentInActiveTerminal = (agentType: AgentType, cmd: string) => {
+    const active = terminalsStore.getActive();
+    if (!active?.ref) return;
+    const agentSessionId = agentType === "claude" ? crypto.randomUUID() : null;
+    const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId);
+    active.ref.write(`${finalCmd}\r`);
+    terminalsStore.update(active.id, {
+      name: AGENTS[agentType].name,
+      nameIsCustom: true,
+      agentSessionId,
+    });
+  };
+
   const buildAgentMenuItems = (): ContextMenuItem[] => {
     const available = agentDetection.getAvailable();
     if (available.length === 0) return [];
@@ -409,22 +423,11 @@ const App: Component = () => {
       const children: ContextMenuItem[] = runConfigs.length > 0
         ? runConfigs.map((rc) => ({
             label: rc.name + (rc.is_default ? " (Default)" : ""),
-            action: () => {
-              const active = terminalsStore.getActive();
-              if (!active?.ref) return;
-              const cmd = [rc.command, ...rc.args].join(" ");
-              active.ref.write(`${cmd}\r`);
-              terminalsStore.update(active.id, { name: agentConfig.name, nameIsCustom: true });
-            },
+            action: () => launchAgentInActiveTerminal(agent.type, [rc.command, ...rc.args].join(" ")),
           }))
         : [{
             label: "(Default)",
-            action: () => {
-              const active = terminalsStore.getActive();
-              if (!active?.ref) return;
-              active.ref.write(`${agentConfig.binary}\r`);
-              terminalsStore.update(active.id, { name: agentConfig.name, nameIsCustom: true });
-            },
+            action: () => launchAgentInActiveTerminal(agent.type, agentConfig.binary),
           }];
 
       return {
@@ -1198,7 +1201,16 @@ const App: Component = () => {
       {/* Quick branch switcher */}
       <BranchSwitcher
         activeRepoPath={repositoriesStore.state.activeRepoPath ?? undefined}
-        onSelect={gitOps.handleBranchSelect}
+        onSelect={(repoPath, branchName) => {
+          // If the branch exists in the store (has a worktree), just switch UI view.
+          // Otherwise it's a regular branch needing a real git checkout.
+          const branch = repositoriesStore.get(repoPath)?.branches[branchName];
+          if (branch) {
+            gitOps.handleBranchSelect(repoPath, branchName);
+          } else {
+            gitOps.handleSwitchBranch(repoPath, branchName);
+          }
+        }}
         onCheckoutRemote={gitOps.handleCheckoutRemoteBranch}
       />
 
