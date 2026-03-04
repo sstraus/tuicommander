@@ -701,6 +701,9 @@ pub struct AppState {
     /// Broadcast channel for MCP `notifications/tools/list_changed`.
     /// Fired when native tools are toggled or upstream tool lists change.
     pub(crate) mcp_tools_changed: tokio::sync::broadcast::Sender<()>,
+    /// Per-session slash command mode (true when input starts with `/`).
+    /// Used to suppress false-positive slash menu detection on PTY output.
+    pub(crate) slash_mode: DashMap<String, std::sync::atomic::AtomicBool>,
 }
 
 impl AppState {
@@ -1636,6 +1639,7 @@ mod tests {
             session_states: DashMap::new(),
             mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+            slash_mode: DashMap::new(),
         }
     }
 

@@ -864,10 +864,13 @@ pub(crate) fn write_pty(
             .input_buffers
             .entry(session_id.clone())
             .or_insert_with(|| parking_lot::Mutex::new(InputLineBuffer::new()));
-        let actions = input_entry.lock().feed(&data);
+        let mut buf = input_entry.lock();
+        let actions = buf.feed(&data);
+        let mut line_submitted = false;
         for action in actions {
             match action {
                 InputAction::Line(content) => {
+                    line_submitted = true;
                     if !content.is_empty() {
                         // Store as last relevant prompt if >= 10 words
                         let word_count = content.split_whitespace().count();
@@ -897,10 +900,22 @@ pub(crate) fn write_pty(
                     }
                 }
                 InputAction::Interrupt => {
-                    // Ctrl+C — could emit if needed, but no content to show
+                    line_submitted = true;
                 }
             }
         }
+
+        // Track slash command mode: true when the input buffer starts with /
+        let in_slash = if line_submitted {
+            false
+        } else {
+            buf.content().starts_with('/')
+        };
+        state
+            .slash_mode
+            .entry(session_id.clone())
+            .or_insert_with(|| std::sync::atomic::AtomicBool::new(false))
+            .store(in_slash, std::sync::atomic::Ordering::Relaxed);
 
         Ok(())
     } else {

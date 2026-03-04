@@ -64,8 +64,7 @@ impl InputLineBuffer {
         actions
     }
 
-    /// Get the current buffer content (for debugging/inspection).
-    #[cfg(test)]
+    /// Get the current buffer content.
     pub(crate) fn content(&self) -> String {
         self.chars.iter().collect()
     }
@@ -1566,5 +1565,48 @@ mod tests {
         let actions = buf.feed("");
         assert!(actions.is_empty());
         assert_eq!(buf.content(), "");
+    }
+
+    // --- slash_mode detection via content().starts_with('/') ---
+
+    #[test]
+    fn test_slash_mode_active_when_slash_typed() {
+        let mut buf = InputLineBuffer::new();
+        buf.feed("/");
+        assert!(buf.content().starts_with('/'));
+    }
+
+    #[test]
+    fn test_slash_mode_active_with_command() {
+        let mut buf = InputLineBuffer::new();
+        buf.feed("/hel");
+        assert!(buf.content().starts_with('/'));
+        assert_eq!(buf.content(), "/hel");
+    }
+
+    #[test]
+    fn test_slash_mode_cleared_after_submit() {
+        let mut buf = InputLineBuffer::new();
+        buf.feed("/help\r");
+        // After submit, buffer is cleared
+        assert!(!buf.content().starts_with('/'));
+        assert_eq!(buf.content(), "");
+    }
+
+    #[test]
+    fn test_slash_mode_cleared_by_backspace_past_slash() {
+        let mut buf = InputLineBuffer::new();
+        buf.feed("/");
+        assert!(buf.content().starts_with('/'));
+        // Backspace removes the /
+        buf.feed("\x7f");
+        assert!(!buf.content().starts_with('/'));
+    }
+
+    #[test]
+    fn test_no_slash_mode_for_normal_input() {
+        let mut buf = InputLineBuffer::new();
+        buf.feed("hello");
+        assert!(!buf.content().starts_with('/'));
     }
 }
