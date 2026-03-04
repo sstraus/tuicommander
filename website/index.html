@@ -548,39 +548,39 @@
       <div class="faq-list">
         <details>
           <summary>Is it free?</summary>
-          <div class="faq-answer">Yes. TUICommander is MIT licensed and free to use.</div>
+          <div class="faq-answer">Yes. TUICommander is MIT licensed, open source, and free forever. No subscriptions, no feature gates.</div>
         </details>
         <details>
           <summary>Does it work on Windows and Linux?</summary>
-          <div class="faq-answer">Yes. TUICommander is cross-platform — macOS, Windows, and Linux. macOS builds are signed and notarized.</div>
+          <div class="faq-answer">Yes. TUICommander is cross-platform — macOS, Windows, and Linux. macOS builds are signed and notarized for one-click install.</div>
         </details>
         <details>
           <summary>Can I use it without AI agents?</summary>
-          <div class="faq-answer">Yes. TUICommander is a fully featured terminal manager with git integration, split panes, and 50 sessions. Agent orchestration is a bonus, not a requirement.</div>
+          <div class="faq-answer">Yes. TUICommander is a powerful terminal manager on its own — 50 sessions, split panes, git worktrees, find-in-terminal, session persistence, and more. Agent orchestration is a bonus, not a requirement.</div>
         </details>
         <details>
-          <summary>How do worktrees work?</summary>
-          <div class="faq-answer">When you click a branch in the sidebar, TUICommander creates a git worktree — a separate checkout of the same repo with its own working directory. Each branch gets its own isolated copy. Terminals are preserved when you switch branches and restored when you switch back.</div>
+          <summary>Can I monitor agents from my phone?</summary>
+          <div class="faq-answer">Yes. TUICommander includes a mobile companion web app you can add to your home screen. See which agents need input, answer questions with one tap, track rate limits, and watch live output — all from your phone or tablet.</div>
+        </details>
+        <details>
+          <summary>What happens when I restart the app?</summary>
+          <div class="faq-answer">Everything comes back. Terminals, tabs, split layouts, and scroll history are persisted across restarts. Agent sessions are detected automatically — you get a clickable banner to resume exactly where you left off.</div>
         </details>
         <details>
           <summary>How does voice dictation work?</summary>
-          <div class="faq-answer">Press a hotkey and talk. Your speech is transcribed locally and injected into the active terminal. You can give detailed, nuanced prompts to your AI agents in seconds instead of spending minutes typing. GPU-accelerated on macOS, no cloud service required.</div>
+          <div class="faq-answer">Press a hotkey and talk. Your speech is transcribed locally and injected into the active terminal. Give detailed, nuanced prompts to AI agents in seconds instead of spending minutes typing. GPU-accelerated on macOS, no cloud service needed.</div>
         </details>
         <details>
-          <summary>What's the MCP server?</summary>
-          <div class="faq-answer">TUICommander exposes a Model Context Protocol server on localhost. External AI tools like Claude Code, Cursor, and others can read terminal output, send commands, and check status through REST, WebSocket, and SSE endpoints.</div>
+          <summary>What's the MCP Proxy Hub?</summary>
+          <div class="faq-answer">Connect your MCP servers to TUICommander once, and every AI agent you run gets access to all of them automatically. No per-agent configuration. Includes circuit breakers, health checks, and hot-reload — add or remove servers without restarting anything.</div>
         </details>
         <details>
-          <summary>Can I write plugins?</summary>
-          <div class="faq-answer">Yes. TUICommander has an Obsidian-style plugin system with hot reload, 4 capability tiers, terminal output watchers, and a community registry. See the <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin Authoring Guide</a>.</div>
-        </details>
-        <details>
-          <summary>Do I need a GitHub token?</summary>
-          <div class="faq-answer">Optional. A GitHub token enables PR status badges, CI rings, and PR notifications. Without it, you still get the full terminal experience.</div>
+          <summary>Can I extend it with plugins?</summary>
+          <div class="faq-answer">Yes. TUICommander has an Obsidian-style plugin system with hot reload and a community registry. Plugins can watch terminal output, add status bar widgets, create panels, and respond to agent events. See the <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin Authoring Guide</a>.</div>
         </details>
         <details>
           <summary>Is my data sent anywhere?</summary>
-          <div class="faq-answer">No. TUICommander has zero telemetry. Everything runs locally. The only network calls are to GitHub's API (if you provide a token) and optionally to the plugin registry.</div>
+          <div class="faq-answer">No. Zero telemetry, zero analytics, zero cloud dependencies. Everything runs locally on your machine. The only optional network calls are to GitHub's API (for PR badges) and the plugin registry.</div>
         </details>
       </div>
     </div>
