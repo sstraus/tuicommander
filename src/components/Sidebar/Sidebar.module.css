@@ -970,6 +970,37 @@
   cursor: not-allowed;
 }
 
+.remoteOnlyDismiss {
+  padding: 4px 12px;
+  font-size: var(--font-xs);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  margin-left: auto;
+}
+
+.remoteOnlyDismiss:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.remoteOnlyShowDismissed {
+  font-size: var(--font-2xs);
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+.remoteOnlyShowDismissed:hover {
+  text-decoration: underline;
+}
+
 .remoteOnlyDiffViewer {
   max-height: 400px;
   overflow-y: auto;

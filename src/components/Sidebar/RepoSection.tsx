@@ -377,6 +377,25 @@ const RemoteOnlyPrPopover: Component<{
   const [diffError, setDiffError] = createSignal<string | null>(null);
   const [approvingPr, setApprovingPr] = createSignal<number | null>(null);
   const [approveError, setApproveError] = createSignal<string | null>(null);
+  const [dismissedPrs, setDismissedPrs] = createSignal<Set<number>>(new Set());
+
+  const visiblePrs = createMemo(() =>
+    props.prs.filter((pr) => !dismissedPrs().has(pr.number)),
+  );
+
+  const dismissedCount = createMemo(() => dismissedPrs().size);
+
+  const handleDismiss = (prNumber: number) => {
+    setDismissedPrs((prev) => {
+      const next = new Set(prev);
+      next.add(prNumber);
+      return next;
+    });
+  };
+
+  const handleShowDismissed = () => {
+    setDismissedPrs(new Set<number>());
+  };
 
   const handleRowClick = (branch: string) => {
     setExpandedBranch((prev) => prev === branch ? null : branch);
@@ -462,10 +481,15 @@ const RemoteOnlyPrPopover: Component<{
       <div class={s.remoteOnlyPopover} onKeyDown={handleKeyDown} tabIndex={-1}>
         <div class={s.remoteOnlyHeader}>
           <span>{t("sidebar.remoteOnlyPrs", "Remote-only PRs")}</span>
+          <Show when={dismissedCount() > 0}>
+            <button class={s.remoteOnlyShowDismissed} onClick={handleShowDismissed}>
+              {t("sidebar.showDismissed", "Show")} {dismissedCount()} {t("sidebar.dismissed", "dismissed")}
+            </button>
+          </Show>
           <button class={s.remoteOnlyClose} onClick={props.onClose}>&times;</button>
         </div>
         <div class={s.remoteOnlyList}>
-          <For each={props.prs}>
+          <For each={visiblePrs()}>
             {(pr) => (
               <div class={cx(s.remoteOnlyItem, expandedBranch() === pr.branch && s.remoteOnlyItemExpanded)}>
                 <div class={s.remoteOnlyRow} onClick={() => handleRowClick(pr.branch)}>
@@ -534,6 +558,13 @@ const RemoteOnlyPrPopover: Component<{
                           {diffLoading() && diffPr() === pr.number
                             ? t("sidebar.loadingDiff", "Loading...")
                             : t("sidebar.viewDiff", "View Diff")}
+                        </button>
+                        <button
+                          class={s.remoteOnlyDismiss}
+                          onClick={() => handleDismiss(pr.number)}
+                          title={t("sidebar.dismissPr", "Hide this PR from view")}
+                        >
+                          {t("sidebar.dismiss", "Dismiss")}
                         </button>
                       </div>
                       <Show when={approveError()}>
