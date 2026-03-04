@@ -16,14 +16,15 @@ pub fn list_input_devices() -> Vec<AudioDevice> {
     let host = cpal::default_host();
     let default_name = host
         .default_input_device()
-        .and_then(|d| d.name().ok())
+        .and_then(|d| d.description().ok())
+        .map(|desc| desc.name().to_string())
         .unwrap_or_default();
 
     host.input_devices()
         .map(|devices| {
             devices
                 .filter_map(|d| {
-                    let name = d.name().ok()?;
+                    let name = d.description().ok()?.name().to_string();
                     Some(AudioDevice {
                         is_default: name == default_name,
                         name,
@@ -63,7 +64,7 @@ impl AudioCapture {
         let device = if let Some(name) = device_name {
             host.input_devices()
                 .map_err(|e| format!("Failed to enumerate devices: {e}"))?
-                .find(|d| d.name().map(|n| n == name).unwrap_or(false))
+                .find(|d| d.description().map(|desc| desc.name() == name).unwrap_or(false))
                 .ok_or_else(|| format!("Input device '{name}' not found"))?
         } else {
             host.default_input_device()
@@ -74,7 +75,7 @@ impl AudioCapture {
             .default_input_config()
             .map_err(|e| format!("Failed to get input config: {e}"))?;
 
-        let sample_rate = config.sample_rate().0;
+        let sample_rate = config.sample_rate();
         let channels = config.channels() as usize;
         let buffer = Arc::new(Mutex::new(VecDeque::new()));
         let buffer_clone = buffer.clone();

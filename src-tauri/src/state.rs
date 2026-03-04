@@ -1069,7 +1069,7 @@ fn extract_log_line(screen: &vt100::Screen, row: u16) -> LogLine {
         if contents.is_empty() {
             cur_text.push(' ');
         } else {
-            cur_text.push_str(&contents);
+            cur_text.push_str(contents);
         }
     }
 
@@ -1238,7 +1238,7 @@ impl VtLogBuffer {
 
     /// Update parser dimensions on terminal resize.
     pub fn resize(&mut self, rows: u16, cols: u16) {
-        self.parser.set_size(rows, cols);
+        self.parser.screen_mut().set_size(rows, cols);
         // prev_rows may no longer match the new dimensions; reset to avoid stale diffs.
         self.prev_rows.clear();
         self.prev_log_lines.clear();

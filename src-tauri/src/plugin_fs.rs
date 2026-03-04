@@ -34,7 +34,7 @@ static HOME_DIR_OVERRIDE: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock
 fn set_home_dir_override(dir: PathBuf) -> impl Drop {
     let fs_guard = FS_TEST_LOCK.lock().unwrap();
     *HOME_DIR_OVERRIDE.write().unwrap() = Some(dir);
-    struct Guard(std::sync::MutexGuard<'static, ()>);
+    struct Guard(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
     impl Drop for Guard {
         fn drop(&mut self) {
             *HOME_DIR_OVERRIDE.write().unwrap() = None;

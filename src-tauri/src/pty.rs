@@ -333,12 +333,11 @@ pub(crate) fn spawn_reader_thread(
                         // snapshot because arrow navigation only changes 1-2 rows.
                         if state.slash_mode.get(&session_id)
                             .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
+                            && let Some(vt_log) = state.vt_log_buffers.get(&session_id)
                         {
-                            if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
-                                let screen = vt_log.lock().screen_rows();
-                                if let Some(evt) = crate::output_parser::parse_slash_menu(&screen) {
-                                    events.push(evt);
-                                }
+                            let screen = vt_log.lock().screen_rows();
+                            if let Some(evt) = crate::output_parser::parse_slash_menu(&screen) {
+                                events.push(evt);
                             }
                         }
 
@@ -544,12 +543,11 @@ pub(crate) fn spawn_headless_reader_thread(
                         // Slash menu detection (same as desktop reader)
                         if state.slash_mode.get(&session_id)
                             .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
+                            && let Some(vt_log) = state.vt_log_buffers.get(&session_id)
                         {
-                            if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
-                                let screen = vt_log.lock().screen_rows();
-                                if let Some(evt) = crate::output_parser::parse_slash_menu(&screen) {
-                                    events.push(evt);
-                                }
+                            let screen = vt_log.lock().screen_rows();
+                            if let Some(evt) = crate::output_parser::parse_slash_menu(&screen) {
+                                events.push(evt);
                             }
                         }
 
