@@ -889,11 +889,32 @@ pub fn conceal_suggest(raw: &str) -> String {
         static ref ANSI_RE: regex::Regex =
             regex::Regex::new(r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]").unwrap();
     }
-    SUGGEST_CONCEAL_RE.replace_all(raw, |caps: &regex::Captures| {
-        // Count visible characters (strip ANSI sequences from the matched token)
-        let visible_len = ANSI_RE.replace_all(&caps[0], "").chars().count();
-        " ".repeat(visible_len)
-    }).into_owned()
+    // Check if the token is the only visible content on its line — if so, erase the
+    // whole line instead of leaving a blank row.  We look at the text between the
+    // preceding newline (or start) and the following newline (or end).
+    let replaced = SUGGEST_CONCEAL_RE.replace_all(raw, |caps: &regex::Captures| {
+        let m = caps.get(0).unwrap();
+        let before = &raw[..m.start()];
+        let after = &raw[m.end()..];
+
+        // Text on the same line before the token (after last \n)
+        let line_prefix = before.rsplit_once('\n').map_or(before, |(_, r)| r);
+        // Text on the same line after the token (before next \n)
+        let line_suffix = after.split_once('\n').map_or(after, |(l, _)| l);
+
+        let prefix_visible = ANSI_RE.replace_all(line_prefix, "");
+        let suffix_visible = ANSI_RE.replace_all(line_suffix, "");
+
+        if prefix_visible.trim().is_empty() && suffix_visible.trim().is_empty() {
+            // Token is alone on the line — erase line + cursor up to remove the blank row
+            "\x1b[2K\x1b[A".to_string()
+        } else {
+            // Token shares a line with other content — replace with spaces
+            let visible_len = ANSI_RE.replace_all(&caps[0], "").chars().count();
+            " ".repeat(visible_len)
+        }
+    });
+    replaced.into_owned()
 }
 
 /// Detect agent-declared intent tokens: `[intent: <text>]`, `[[intent: <text>]]`,
@@ -2555,10 +2576,9 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_conceal_suggest_basic() {
         let raw = "[[suggest: Fix the test | Refactor code | Add docs]]";
         let out = conceal_suggest(raw);
-        // Token replaced with spaces of same visible length
+        // Token alone on line → erase line + cursor up
         assert!(!out.contains("suggest:"), "token text should be gone");
-        assert_eq!(out.len(), raw.len(), "output length matches input (all ASCII)");
-        assert!(out.trim().is_empty(), "should be only spaces");
+        assert_eq!(out, "\x1b[2K\x1b[A", "should erase line when token is alone");
     }
 
     #[test]
@@ -2582,7 +2602,27 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let raw = "[suggest: Option A | Option B]";
         let out = conceal_suggest(raw);
         assert!(!out.contains("suggest:"), "single brackets also replaced");
-        assert_eq!(out.chars().count(), raw.chars().count(), "visible width preserved");
+        assert_eq!(out, "\x1b[2K\x1b[A", "should erase line when token is alone");
+    }
+
+    #[test]
+    fn test_conceal_suggest_erases_line_with_newlines() {
+        let raw = "line above\n[[suggest: A | B]]\nline below";
+        let out = conceal_suggest(raw);
+        assert!(out.contains("line above"), "before preserved");
+        assert!(out.contains("line below"), "after preserved");
+        assert!(out.contains("\x1b[2K\x1b[A"), "erase line when token is sole content");
+    }
+
+    #[test]
+    fn test_conceal_suggest_spaces_when_inline() {
+        // Token shares a line with visible text — must use spaces to preserve alignment
+        let raw = "prefix [[suggest: A | B]] suffix";
+        let out = conceal_suggest(raw);
+        assert!(out.starts_with("prefix "), "prefix preserved");
+        assert!(out.ends_with(" suffix"), "suffix preserved");
+        assert!(!out.contains("\x1b[2K"), "must NOT erase line when not alone");
+        assert!(!out.contains("suggest:"), "token replaced");
     }
 
     #[test]
