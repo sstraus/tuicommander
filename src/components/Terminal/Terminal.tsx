@@ -116,7 +116,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
   let terminal: XTerm | undefined;
   let fitAddon: FitAddon | undefined;
-  let searchAddon: SearchAddon | undefined;
+  const [searchAddon, setSearchAddon] = createSignal<SearchAddon | undefined>();
   let sessionId: string | null = null;
 
   // Search overlay state
@@ -699,8 +699,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
       handleOpenUrl(uri);
     }));
 
-    searchAddon = new SearchAddon();
-    terminal.loadAddon(searchAddon);
+    const search = new SearchAddon();
+    terminal.loadAddon(search);
+    setSearchAddon(search);
 
     // Register link provider for file paths (clickable to open in IDE or MD viewer)
     if (props.onOpenFilePath) {
@@ -1101,7 +1102,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     <div class={s.wrapper} data-terminal-id={props.id}>
       <TerminalSearch
         visible={searchVisible()}
-        searchAddon={searchAddon}
+        searchAddon={searchAddon()}
         onClose={() => {
           setSearchVisible(false);
           terminal?.focus();
