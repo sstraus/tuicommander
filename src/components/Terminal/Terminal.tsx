@@ -1093,6 +1093,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   };
 
   const handleDismissResume = (e: MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     terminalsStore.update(props.id, { pendingResumeCommand: null });
     terminal?.focus();
