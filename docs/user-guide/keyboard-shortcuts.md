@@ -101,6 +101,7 @@ Note: File browser, Markdown, and Diff panels are mutually exclusive — opening
 | `Cmd+G` | Open lazygit in terminal |
 | `Cmd+Shift+G` | Git operations panel |
 | `Cmd+Shift+L` | Lazygit in split pane |
+| `Cmd+B` | Quick branch switch (fuzzy search) |
 
 ## Quick Branch Switcher
 
@@ -202,5 +203,6 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `open-lazygit` | `Cmd+G` | Open lazygit |
 | `open-lazygit-pane` | `Cmd+Shift+L` | Lazygit split pane |
 | `worktree-manager` | `Cmd+Shift+W` | Worktree Manager panel |
+| `quick-branch-switch` | `Cmd+B` | Quick branch switch |
 | `find-in-terminal` | `Cmd+F` | Find in terminal |
 | `switch-branch-1..9` | `Cmd+Ctrl+1..9` | Switch to branch N |

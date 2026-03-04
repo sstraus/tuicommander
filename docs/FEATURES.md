@@ -213,7 +213,15 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Merge conflict resolution: Abort Merge, Continue Merge, Accept Ours, Accept Theirs
 - Auto-refreshes branch list via repo watcher
 
-### 3.9 Task Queue Panel (`Cmd+J`)
+### 3.9 Quick Branch Switch (`Cmd+B`)
+- Fuzzy-search dialog to switch branches instantly
+- Shows all local and remote branches for the active repo
+- Badges: current, remote, main branch indicators
+- Keyboard navigation: Arrow keys, Enter to switch, Escape to close
+- Remote branches auto-checkout as local tracking branch
+- Fetches live branch list via `get_git_branches`
+
+### 3.10 Task Queue Panel (`Cmd+J`)
 - Task management with status tracking (pending, running, completed, failed, cancelled)
 - Drag-and-drop task reordering
 
