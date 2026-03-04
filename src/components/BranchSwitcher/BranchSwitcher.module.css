@@ -83,7 +83,7 @@
 }
 
 .badge {
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   padding: 1px 6px;
   border-radius: var(--radius-sm);
   white-space: nowrap;

@@ -50,7 +50,7 @@
 .stateBadge {
   padding: 2px 8px;
   border-radius: var(--radius-pill);
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   font-weight: 700;
   text-transform: uppercase;
   flex-shrink: 0;
@@ -140,7 +140,7 @@
   display: inline-flex;
   padding: 2px 8px;
   border-radius: var(--radius-pill);
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -170,7 +170,7 @@
   display: inline-flex;
   padding: 2px 8px;
   border-radius: var(--radius-pill);
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   font-weight: 600;
   white-space: nowrap;
 }

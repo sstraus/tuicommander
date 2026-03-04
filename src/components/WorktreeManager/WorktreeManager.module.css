@@ -40,7 +40,7 @@
   background: none;
   border: none;
   color: var(--fg-secondary);
-  font-size: 18px;
+  font-size: var(--font-2xl);
   cursor: pointer;
   padding: 4px 8px;
   border-radius: var(--radius-md);
@@ -229,7 +229,7 @@
 }
 
 .mainBadge {
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   color: var(--fg-muted);
   background: var(--bg-tertiary);
   padding: 1px 6px;
@@ -238,7 +238,7 @@
 }
 
 .prBadge {
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   padding: 1px 6px;
   border-radius: var(--radius-sm);
   flex-shrink: 0;
@@ -298,7 +298,7 @@
 }
 
 .orphanBadge {
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   color: var(--warning);
   background: rgba(255, 200, 50, 0.15);
   padding: 1px 6px;

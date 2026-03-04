@@ -132,7 +132,7 @@
   border-radius: var(--radius-lg);
   background: var(--accent);
   color: var(--text-on-accent);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -203,7 +203,7 @@
   border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
   color: var(--fg-secondary);
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   cursor: pointer;
   flex-shrink: 0;
   white-space: nowrap;
@@ -306,7 +306,7 @@
 }
 
 .tickerPopoverUrgentBadge {
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   padding: 1px 4px;
   border-radius: var(--radius-sm);

@@ -43,7 +43,7 @@
   background: none;
   border: none;
   color: var(--fg-secondary);
-  font-size: 20px;
+  font-size: var(--font-2xl);
   cursor: pointer;
   padding: 4px 8px;
   border-radius: var(--radius-md);

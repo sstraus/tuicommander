@@ -74,7 +74,7 @@
   border: none;
   border-radius: var(--radius-lg);
   color: var(--fg-secondary);
-  font-size: 17px;
+  font-size: var(--font-xl);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   -webkit-app-region: no-drag;
@@ -179,7 +179,7 @@
   border-radius: var(--radius-lg);
   background: var(--accent);
   color: var(--text-on-accent);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   display: flex;
   align-items: center;

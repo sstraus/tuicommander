@@ -135,7 +135,7 @@
 }
 
 .tabIcon {
-  font-size: 6px;
+  font-size: var(--font-3xs);
   color: var(--fg-muted);
   flex-shrink: 0;
   opacity: 0.3;
@@ -228,27 +228,27 @@
 .tab.hasActivity .tabIcon {
   color: var(--activity);
   opacity: 1;
-  font-size: 8px;
+  font-size: var(--font-3xs);
   animation: pulse-opacity 1.5s ease-in-out 3;
 }
 
 .tab.shellBusy .tabIcon {
   color: var(--activity);
   opacity: 1;
-  font-size: 8px;
+  font-size: var(--font-3xs);
   animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
 .tab.shellIdle .tabIcon {
   color: var(--success);
   opacity: 1;
-  font-size: 8px;
+  font-size: var(--font-3xs);
 }
 
 /* Awaiting input — override tabIcon to show state via left dot */
 .tab.awaitingInput .tabIcon {
   opacity: 1;
-  font-size: 8px;
+  font-size: var(--font-3xs);
   color: var(--warning);
   animation: pulse-opacity 1.5s ease-in-out infinite;
 }

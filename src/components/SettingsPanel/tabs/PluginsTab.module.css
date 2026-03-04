@@ -113,7 +113,7 @@
 }
 
 .updateBadge {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -124,7 +124,7 @@
 }
 
 .installedBadge {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -180,7 +180,7 @@
 }
 
 .badge {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;

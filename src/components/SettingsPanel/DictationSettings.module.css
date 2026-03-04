@@ -42,7 +42,7 @@
 }
 
 .modelBadge {
-  font-size: var(--font-sm);
+  font-size: var(--font-2xs);
   padding: 2px 6px;
   border-radius: var(--radius-sm);
   background: var(--bg-tertiary);

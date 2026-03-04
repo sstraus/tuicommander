@@ -418,7 +418,7 @@
 .branchStats {
   display: flex;
   gap: 4px;
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   font-family: var(--font-mono);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
@@ -442,7 +442,7 @@
   align-items: center;
   padding: 1px 6px;
   margin-left: 4px;
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   font-weight: 600;
   font-family: var(--font-mono);
   border-radius: var(--radius-pill);
@@ -459,7 +459,7 @@
   align-items: center;
   padding: 1px 6px;
   margin-left: 4px;
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   font-weight: 600;
   font-family: var(--font-mono);
   border-radius: var(--radius-pill);
@@ -730,7 +730,7 @@
   border-radius: var(--radius-lg);
   background: var(--accent);
   color: var(--bg-primary);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -749,7 +749,7 @@
   min-width: 20px;
   width: auto;
   padding: 0 4px;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   color: var(--accent);
   border: 1px solid var(--accent);

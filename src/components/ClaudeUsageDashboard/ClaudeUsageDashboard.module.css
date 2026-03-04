@@ -17,7 +17,7 @@
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--font-xl);
   font-weight: 600;
   color: var(--fg-primary);
 }
@@ -76,7 +76,7 @@
 }
 
 .rateValue {
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--fg-primary);
 }
@@ -107,7 +107,7 @@
 }
 
 .rateReset {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--fg-muted);
 }
 
@@ -138,7 +138,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--fg-muted);
 }
 
@@ -167,20 +167,20 @@
 }
 
 .insightLabel {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
 
 .insightValue {
-  font-size: 18px;
+  font-size: var(--font-2xl);
   font-weight: 600;
   color: var(--fg-primary);
 }
 
 .insightSub {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--fg-secondary);
 }
 

@@ -60,7 +60,7 @@
   background: transparent;
   border: none;
   color: var(--fg-secondary);
-  font-size: 18px;
+  font-size: var(--font-2xl);
   cursor: pointer;
   border-radius: var(--radius-md);
   transition: background 0.15s, color 0.15s;

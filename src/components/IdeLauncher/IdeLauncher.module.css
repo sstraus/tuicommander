@@ -55,7 +55,7 @@
 }
 
 .arrow {
-  font-size: 8px;
+  font-size: var(--font-3xs);
   color: var(--fg-secondary);
 }
 

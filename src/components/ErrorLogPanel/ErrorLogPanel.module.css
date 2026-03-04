@@ -44,7 +44,7 @@
   background: none;
   border: none;
   color: var(--fg-secondary);
-  font-size: 18px;
+  font-size: var(--font-2xl);
   cursor: pointer;
   padding: 4px 8px;
   border-radius: var(--radius-md);
@@ -186,14 +186,14 @@
 .time {
   color: var(--fg-muted);
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .level {
   padding: 1px 6px;
   border-radius: var(--radius-sm);
   text-align: center;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   text-transform: uppercase;
   white-space: nowrap;
@@ -224,7 +224,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .message {
@@ -241,7 +241,7 @@
   cursor: pointer;
   padding: 1px 4px;
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: var(--font-xs);
   opacity: 0;
   transition: opacity 0.1s;
   flex-shrink: 0;

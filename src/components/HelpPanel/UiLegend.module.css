@@ -51,7 +51,7 @@
 .symbol {
   width: 18px;
   text-align: center;
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 600;
   flex-shrink: 0;
   line-height: 1;
@@ -78,7 +78,7 @@
   display: inline-block;
   padding: 1px 6px;
   border-radius: var(--radius-sm);
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   font-weight: 600;
   line-height: 1.4;
   flex-shrink: 0;
