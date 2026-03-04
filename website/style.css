@@ -144,6 +144,13 @@ section {
   padding: 8px 16px;
   font-size: 0.8rem;
 }
+.nav .btn-primary {
+  background: #2a7ab5;
+  font-weight: 600;
+}
+.nav .btn-primary:hover {
+  background: #3590d0;
+}
 
 /* ============================================
    HERO
