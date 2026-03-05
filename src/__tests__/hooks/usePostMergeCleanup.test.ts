@@ -52,19 +52,24 @@ function makeConfig(overrides?: Partial<CleanupConfig>): CleanupConfig {
 describe("executeCleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockInvoke.mockResolvedValue(undefined);
+    // Default: run_git_command returns { stdout, stderr }, other commands return undefined
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "run_git_command") return Promise.resolve({ stdout: "", stderr: "" });
+      return Promise.resolve(undefined);
+    });
     mockGetBranches.mockReturnValue({
       branches: { "feature/login": { terminals: [] } },
     });
   });
 
-  it("calls steps in order: switch → pull → delete-local → delete-remote", async () => {
+  it("calls steps in order: dirty-check → switch → pull → delete-local → delete-remote", async () => {
     const config = makeConfig();
     await executeCleanup(config);
 
     // Verify invoke call order
     const calls = mockInvoke.mock.calls.map((c: unknown[]) => c[0]);
     expect(calls).toEqual([
+      "run_git_command",   // status --porcelain (dirty check)
       "switch_branch",
       "run_git_command",   // pull
       "delete_local_branch",
@@ -87,7 +92,7 @@ describe("executeCleanup", () => {
     expect(calls).toEqual(["delete_local_branch"]);
   });
 
-  it("calls switch_branch with correct args", async () => {
+  it("calls dirty check then switch_branch with correct args", async () => {
     const config = makeConfig({
       steps: [
         { id: "switch", checked: true },
@@ -98,6 +103,10 @@ describe("executeCleanup", () => {
     });
     await executeCleanup(config);
 
+    expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
+      repoPath: "/repo",
+      args: ["status", "--porcelain"],
+    });
     expect(mockInvoke).toHaveBeenCalledWith("switch_branch", {
       repoPath: "/repo",
       branch: "main",
@@ -184,7 +193,10 @@ describe("executeCleanup", () => {
   });
 
   it("reports error status when a step fails", async () => {
-    mockInvoke.mockRejectedValueOnce(new Error("branch is dirty"));
+    // Dirty check succeeds, but switch itself fails
+    mockInvoke
+      .mockResolvedValueOnce({ stdout: "", stderr: "" }) // dirty check
+      .mockRejectedValueOnce(new Error("branch checkout conflict"));
     const onStepStart = vi.fn();
     const onStepDone = vi.fn();
     const config = makeConfig({
@@ -199,17 +211,18 @@ describe("executeCleanup", () => {
     });
     await executeCleanup(config);
 
-    expect(onStepDone).toHaveBeenCalledWith("switch", "error", "branch is dirty");
+    expect(onStepDone).toHaveBeenCalledWith("switch", "error", "branch checkout conflict");
     // pull should not have been attempted after switch error
     expect(onStepStart).not.toHaveBeenCalledWith("pull");
   });
 
   it("handles 'remote ref does not exist' as success", async () => {
-    // switch, pull, delete-local succeed
+    // dirty check, switch, pull, delete-local succeed, delete-remote fails with "does not exist"
     mockInvoke
-      .mockResolvedValueOnce(undefined)   // switch
-      .mockResolvedValueOnce(undefined)   // pull
-      .mockResolvedValueOnce(undefined)   // delete-local
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })  // dirty check
+      .mockResolvedValueOnce(undefined)                    // switch
+      .mockResolvedValueOnce({ stdout: "", stderr: "" })   // pull
+      .mockResolvedValueOnce(undefined)                    // delete-local
       .mockRejectedValueOnce("error: remote ref does not exist"); // delete-remote
 
     const onStepDone = vi.fn();
@@ -232,6 +245,45 @@ describe("executeCleanup", () => {
 
     expect(mockRemoveBranch).toHaveBeenCalledWith("/repo", "feature/login");
     expect(mockBumpRevision).toHaveBeenCalledWith("/repo");
+  });
+
+  it("pre-checks dirty state before switch and reports clear error", async () => {
+    // First invoke: run_git_command (status --porcelain) returns non-empty
+    mockInvoke.mockResolvedValueOnce({ stdout: "M src/foo.ts\n", stderr: "" });
+
+    const onStepStart = vi.fn();
+    const onStepDone = vi.fn();
+    const config = makeConfig({
+      steps: [
+        { id: "switch", checked: true },
+        { id: "pull", checked: false },
+        { id: "delete-local", checked: false },
+        { id: "delete-remote", checked: false },
+      ],
+      onStepStart,
+      onStepDone,
+    });
+    await executeCleanup(config);
+
+    expect(onStepDone).toHaveBeenCalledWith("switch", "error", "Working directory has uncommitted changes — commit or stash first");
+  });
+
+  it("handles no remote tracking branch gracefully", async () => {
+    mockInvoke.mockRejectedValueOnce("error: unable to delete 'feature/login': remote ref does not exist");
+
+    const onStepDone = vi.fn();
+    const config = makeConfig({
+      steps: [
+        { id: "switch", checked: false },
+        { id: "pull", checked: false },
+        { id: "delete-local", checked: false },
+        { id: "delete-remote", checked: true },
+      ],
+      onStepDone,
+    });
+    await executeCleanup(config);
+
+    expect(onStepDone).toHaveBeenCalledWith("delete-remote", "success", undefined);
   });
 
   it("calls bumpRevision at the end even without local delete", async () => {

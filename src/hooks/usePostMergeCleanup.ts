@@ -26,7 +26,15 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
     onStepStart(step.id);
     try {
       switch (step.id) {
-        case "switch":
+        case "switch": {
+          // Pre-check for dirty working directory
+          const status = await invoke<{ stdout: string; stderr: string }>("run_git_command", {
+            repoPath,
+            args: ["status", "--porcelain"],
+          });
+          if (status.stdout.trim().length > 0) {
+            throw new Error("Working directory has uncommitted changes — commit or stash first");
+          }
           await invoke("switch_branch", {
             repoPath,
             branch: baseBranch,
@@ -34,6 +42,7 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
             stash: false,
           });
           break;
+        }
 
         case "pull":
           await invoke("run_git_command", {
