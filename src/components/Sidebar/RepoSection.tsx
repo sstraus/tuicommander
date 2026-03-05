@@ -17,6 +17,8 @@ import { t } from "../../i18n";
 import type { BranchPrStatus } from "../../types";
 import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
 import { mdTabsStore } from "../../stores/mdTabs";
+import { PostMergeCleanupDialog, type CleanupStep, type StepId, type StepStatus } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
+import { executeCleanup } from "../../hooks/usePostMergeCleanup";
 import s from "./Sidebar.module.css";
 
 const BRANCH_ICON_CLASSES: Record<string, string> = {
@@ -376,6 +378,62 @@ const RemoteOnlyPrPopover: Component<{
   const [approveError, setApproveError] = createSignal<string | null>(null);
   const [dismissedPrs, setDismissedPrs] = createSignal<Set<number>>(new Set());
 
+  // Post-merge cleanup state
+  const [cleanupCtx, setCleanupCtx] = createSignal<{ branchName: string; baseBranch: string } | null>(null);
+  const [cleanupExecuting, setCleanupExecuting] = createSignal(false);
+  const [cleanupStepStatuses, setCleanupStepStatuses] = createSignal<Partial<Record<StepId, StepStatus>>>({});
+  const [cleanupStepErrors, setCleanupStepErrors] = createSignal<Partial<Record<StepId, string>>>({});
+
+  const cleanupIsOnBaseBranch = () => {
+    const ctx = cleanupCtx();
+    if (!ctx) return true; // remote-only: user is not on merged branch
+    const repo = repositoriesStore.get(props.repoPath);
+    return repo?.activeBranch === ctx.baseBranch;
+  };
+
+  const closeTerminalsForBranch = async (repoPath: string, branchName: string) => {
+    const repo = repositoriesStore.get(repoPath);
+    const branch = repo?.branches[branchName];
+    if (branch) {
+      for (const termId of branch.terminals) {
+        await invoke("close_pty", { id: termId });
+      }
+    }
+  };
+
+  const handleCleanupExecute = async (steps: CleanupStep[]) => {
+    const ctx = cleanupCtx();
+    if (!ctx) return;
+    setCleanupExecuting(true);
+    setCleanupStepStatuses({});
+    setCleanupStepErrors({});
+
+    await executeCleanup({
+      repoPath: props.repoPath,
+      branchName: ctx.branchName,
+      baseBranch: ctx.baseBranch,
+      steps: steps.map((st) => ({ id: st.id, checked: st.checked })),
+      closeTerminalsForBranch,
+      onStepStart: (id) => {
+        setCleanupStepStatuses((prev) => ({ ...prev, [id]: "running" }));
+      },
+      onStepDone: (id, result, error) => {
+        setCleanupStepStatuses((prev) => ({ ...prev, [id]: result }));
+        if (error) setCleanupStepErrors((prev) => ({ ...prev, [id]: error }));
+      },
+    });
+
+    setCleanupExecuting(false);
+    setTimeout(() => {
+      setCleanupCtx(null);
+      props.onClose();
+    }, 600);
+  };
+
+  const handleCleanupSkip = () => {
+    setCleanupCtx(null);
+  };
+
   const visiblePrs = createMemo(() =>
     props.prs.filter((pr) => !dismissedPrs().has(pr.number)),
   );
@@ -420,6 +478,10 @@ const RemoteOnlyPrPopover: Component<{
       });
       appLogger.info("github", `Merged PR #${pr.number} via ${method}`);
       githubStore.pollRepo(props.repoPath);
+
+      // Show cleanup dialog — for remote-only PRs the user is not on the branch
+      const baseBranch = pr.base_ref_name || "main";
+      setCleanupCtx({ branchName: pr.branch, baseBranch });
     } catch (e) {
       const msg = String(e);
       setMergeError(msg);
@@ -465,6 +527,24 @@ const RemoteOnlyPrPopover: Component<{
 
   return (
     <>
+      <Show when={cleanupCtx()}>
+        {(ctx) => (
+          <PostMergeCleanupDialog
+            branchName={ctx().branchName}
+            baseBranch={ctx().baseBranch}
+            repoPath={props.repoPath}
+            isOnBaseBranch={cleanupIsOnBaseBranch()}
+            isDefaultBranch={false}
+            hasTerminals={false}
+            onExecute={handleCleanupExecute}
+            onSkip={handleCleanupSkip}
+            executing={cleanupExecuting()}
+            stepStatuses={cleanupStepStatuses()}
+            stepErrors={cleanupStepErrors()}
+          />
+        )}
+      </Show>
+      <Show when={!cleanupCtx()}>
       <div class={s.remoteOnlyOverlay} onClick={props.onClose} onKeyDown={handleKeyDown} tabIndex={-1} />
       <div class={s.remoteOnlyPopover} onKeyDown={handleKeyDown} tabIndex={-1}>
         <div class={s.remoteOnlyHeader}>
@@ -569,6 +649,7 @@ const RemoteOnlyPrPopover: Component<{
           </For>
         </div>
       </div>
+      </Show>
     </>
   );
 };
