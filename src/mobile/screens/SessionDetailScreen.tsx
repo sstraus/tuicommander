@@ -44,6 +44,11 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
   // Command widget overlay toggle
   const [commandWidgetOpen, setCommandWidgetOpen] = createSignal(false);
 
+  // Prefill value for CommandInput (set by slash menu selection).
+  // Counter ensures the effect re-fires even when the same command is selected twice.
+  const [inputPrefill, setInputPrefill] = createSignal<{ text: string; seq: number }>({ text: "", seq: 0 });
+  let prefillSeq = 0;
+
   // Local dismiss flag for the slash menu overlay (resets when new items arrive)
   const [slashMenuDismissed, setSlashMenuDismissed] = createSignal(false);
   let lastSlashMenuItems: unknown = null;
@@ -212,13 +217,15 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
       </Show>
       <TerminalKeybar
         sessionId={props.session.session_id}
+        agentType={sessionState()?.agent_type as string | null | undefined}
         onCommandWidgetOpen={() => setCommandWidgetOpen(true)}
       />
-      <CommandInput sessionId={props.session.session_id} />
+      <CommandInput sessionId={props.session.session_id} prefillValue={inputPrefill()} />
       <Show when={showSlashMenu()}>
         <SlashMenuOverlay
           sessionId={props.session.session_id}
           items={sessionState()!.slash_menu_items!}
+          onSelect={(cmd) => setInputPrefill({ text: cmd, seq: ++prefillSeq })}
           onDismiss={() => setSlashMenuDismissed(true)}
         />
       </Show>

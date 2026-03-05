@@ -18,6 +18,9 @@ export function OutputView(props: OutputViewProps) {
   const [screenRows, setScreenRows] = createSignal<LogLine[]>([]);
   let containerEl: HTMLDivElement | undefined;
   let unsubscribe: (() => void) | null = null;
+  // When the user scrolls up manually, stop auto-scrolling until they
+  // return near the bottom.
+  let userScrolledUp = false;
 
   /** Fetch initial log lines + screen rows via HTTP; returns the total_lines offset for WS catch-up. */
   async function fetchInitialOutput(): Promise<number> {
@@ -31,7 +34,7 @@ export function OutputView(props: OutputViewProps) {
         if (json.screen && json.screen.length > 0) {
           setScreenRows(json.screen.map((text: string) => ({ spans: [{ text }] })));
         }
-        scrollToBottom();
+        scrollToBottom(true);
         return json.total_lines ?? 0;
       }
     } catch {
@@ -40,7 +43,8 @@ export function OutputView(props: OutputViewProps) {
     return 0;
   }
 
-  function scrollToBottom() {
+  function scrollToBottom(force = false) {
+    if (!force && userScrolledUp) return;
     requestAnimationFrame(() => {
       if (containerEl) {
         containerEl.scrollTop = containerEl.scrollHeight;
@@ -48,7 +52,15 @@ export function OutputView(props: OutputViewProps) {
     });
   }
 
+  function handleScroll() {
+    if (!containerEl) return;
+    // Consider "at bottom" when within 80px of the end
+    const atBottom = containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight < 80;
+    userScrolledUp = !atBottom;
+  }
+
   onMount(async () => {
+    containerEl?.addEventListener("scroll", handleScroll, { passive: true });
     const offset = await fetchInitialOutput();
 
     unsubscribe = (await subscribePty(
@@ -79,6 +91,7 @@ export function OutputView(props: OutputViewProps) {
 
   onCleanup(() => {
     unsubscribe?.();
+    containerEl?.removeEventListener("scroll", handleScroll);
   });
 
   const allLines = createMemo(() => [...logLines(), ...screenRows()]);

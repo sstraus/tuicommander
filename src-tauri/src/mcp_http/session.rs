@@ -71,6 +71,22 @@ pub(super) async fn write_to_session(
     if let Err(e) = session.writer.flush() {
         eprintln!("Warning: PTY flush failed for session {session_id}: {e}");
     }
+
+    // Track slash_mode for slash menu detection — same logic as desktop
+    // InputLineBuffer: "/" at start enables, "\r" (submit) disables.
+    let data = &body.data;
+    if data == "/" || data.starts_with('/') {
+        state.slash_mode
+            .entry(session_id.clone())
+            .or_insert_with(|| std::sync::atomic::AtomicBool::new(false))
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    } else if data.contains('\r') || data.contains('\n') {
+        // Submit clears slash mode
+        if let Some(flag) = state.slash_mode.get(&session_id) {
+            flag.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
     (StatusCode::OK, Json(serde_json::json!({"ok": true})))
 }
 
@@ -898,6 +914,13 @@ async fn handle_ws_log_session(
 
 /// Remove agent TUI chrome from screen rows (status bars, prompt lines,
 /// separators) and trim trailing empty rows.
+///
+/// Scans from the bottom for two anchor patterns:
+/// 1. Separator line (all box-drawing chars like `────`) — cuts from there
+/// 2. Prompt line (`❯`, `>`) — cuts from there, extending up past separators
+///
+/// The scan window is 15 rows to accommodate Claude Code's full footer
+/// (prompt + input area + separator + status bar = ~12 rows).
 fn trim_screen_chrome(rows: Vec<String>) -> Vec<String> {
     if rows.is_empty() {
         return rows;
@@ -909,21 +932,39 @@ fn trim_screen_chrome(rows: Vec<String>) -> Vec<String> {
         return Vec::new();
     }
 
-    // Then: scan last 8 content rows for agent prompt chrome.
-    let scan_start = content_end.saturating_sub(8);
+    let scan_start = content_end.saturating_sub(15);
+
+    // Strategy 1: find the lowest separator line — everything from separator
+    // down is chrome (status bar, permissions line, etc.).
+    let separator_idx = (scan_start..content_end).rev().find(|&i| {
+        let t = rows[i].trim();
+        !t.is_empty() && t.chars().all(|c| matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍' | '│'))
+    });
+
+    // Strategy 2: find prompt line (`❯`, `> `).
     let prompt_idx = (scan_start..content_end).rev().find(|&i| {
         let t = rows[i].trim_start();
         t.starts_with('❯') || t == ">" || t.starts_with("> ")
     });
-    let cutoff = match prompt_idx {
+
+    // Use whichever anchor is higher (closer to content), then extend up
+    // past empty lines and separators.
+    let anchor = match (separator_idx, prompt_idx) {
+        (Some(s), Some(p)) => Some(s.min(p)),
+        (Some(s), None) => Some(s),
+        (None, Some(p)) => Some(p),
+        (None, None) => None,
+    };
+
+    let cutoff = match anchor {
         Some(mut idx) => {
-            // Extend cutoff up past separators and empty lines above the prompt
+            // Extend cutoff up past separators and empty lines above the anchor
             while idx > 0 {
                 let above = rows[idx - 1].trim();
                 if above.is_empty()
                     || above
                         .chars()
-                        .all(|c| matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍'))
+                        .all(|c| matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍' | '│'))
                 {
                     idx -= 1;
                 } else {

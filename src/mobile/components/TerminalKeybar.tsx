@@ -5,6 +5,7 @@ import styles from "./TerminalKeybar.module.css";
 
 interface TerminalKeybarProps {
   sessionId: string;
+  agentType?: string | null;
   onCommandWidgetOpen?: () => void;
 }
 
@@ -29,13 +30,21 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
     }
   }
 
+  function handleSlash() {
+    if (props.agentType && props.onCommandWidgetOpen) {
+      // Known agent → open the command palette with agent-specific commands
+      props.onCommandWidgetOpen();
+    } else {
+      // No agent detected → type "/" into the PTY to trigger native slash menu
+      send("/");
+    }
+  }
+
   return (
     <div class={styles.bar}>
-      {props.onCommandWidgetOpen && (
-        <button class={`${styles.key} ${styles.accent}`} onClick={props.onCommandWidgetOpen}>
-          /
-        </button>
-      )}
+      <button class={`${styles.key} ${styles.accent}`} onClick={handleSlash}>
+        /
+      </button>
       {KEYS.map((k) => (
         <button
           class={styles.key}

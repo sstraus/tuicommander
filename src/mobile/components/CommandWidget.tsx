@@ -18,8 +18,10 @@ export function CommandWidget(props: CommandWidgetProps) {
   async function sendCommand(text: string) {
     props.onDismiss();
     try {
-      // Ctrl-U clears current input, then send command + CR (raw-mode PTY)
-      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text + "\r" }));
+      // Ctrl-U clears current input, send command text, then Enter separately.
+      // Ink-based TUIs treat \r as newline when combined with text in one write.
+      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text }));
+      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\r" }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       appLogger.error("network", `Command send failed after retries: ${msg}`);

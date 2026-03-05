@@ -10,6 +10,7 @@
   width: 100%;
   max-height: 60vh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: rgba(37, 37, 38, 0.85);
   backdrop-filter: blur(12px) saturate(1.6);
   -webkit-backdrop-filter: blur(12px) saturate(1.6);
@@ -32,6 +33,7 @@
   text-align: left;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .item:active {
@@ -51,4 +53,31 @@
 .description {
   color: var(--foreground-muted);
   font-family: var(--font-ui);
+}
+
+.arrowBar {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  padding: 8px 0 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.arrowBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--foreground);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+.arrowBtn:active {
+  background: rgba(255, 255, 255, 0.15);
 }

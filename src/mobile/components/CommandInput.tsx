@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, createEffect } from "solid-js";
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
 import { retryWrite } from "../utils/retryWrite";
@@ -6,11 +6,26 @@ import styles from "./CommandInput.module.css";
 
 interface CommandInputProps {
   sessionId: string;
+  /** When set, prefills the textarea and focuses it. Seq counter ensures re-fire on same text. */
+  prefillValue?: { text: string; seq: number };
 }
 
 export function CommandInput(props: CommandInputProps) {
   const [value, setValue] = createSignal("");
   let textareaEl: HTMLTextAreaElement | undefined;
+
+  // React to external prefill (e.g. slash menu selection)
+  createEffect(() => {
+    const pv = props.prefillValue;
+    if (pv && pv.text) {
+      setValue(pv.text);
+      if (textareaEl) {
+        textareaEl.value = pv.text;
+        textareaEl.focus();
+        autoResize();
+      }
+    }
+  });
 
   function autoResize() {
     if (!textareaEl) return;
@@ -19,15 +34,21 @@ export function CommandInput(props: CommandInputProps) {
   }
 
   async function send() {
-    const text = value().trim();
+    // Read directly from the DOM element — on mobile, paste and autocomplete
+    // may insert text without firing onInput, so the signal can be stale.
+    const text = (textareaEl?.value ?? value()).trim();
     if (!text) return;
 
     setValue("");
-    if (textareaEl) textareaEl.style.height = "auto";
+    if (textareaEl) { textareaEl.value = ""; textareaEl.style.height = "auto"; }
     try {
-      // PTY expects \r (carriage return) for Enter — \n is a line feed
-      // and won't trigger command submission in raw-mode programs (Ink, etc.)
-      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: text + "\r" }));
+      // Ctrl-U clears any existing PTY input (e.g. "/" typed before slash menu),
+      // then send text and Enter as separate writes — when combined in a single
+      // write, Ink-based TUIs (Claude Code) treat \r as newline in the
+      // multiline input instead of as submit.
+      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" }));
+      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: text }));
+      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\r" }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       appLogger.error("network", `Failed to send command after retries: ${msg}`);
