@@ -110,6 +110,30 @@
   50% { opacity: 0.8; }
 }
 
+.fab {
+  position: fixed;
+  bottom: calc(64px + max(12px, env(safe-area-inset-bottom)));
+  right: 16px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  -webkit-tap-highlight-color: transparent;
+  z-index: 10;
+}
+
+.fab:active {
+  opacity: 0.8;
+  transform: scale(0.95);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeletonIcon,
   .skeletonLine,

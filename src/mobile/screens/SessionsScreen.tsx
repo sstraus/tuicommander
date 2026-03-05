@@ -1,6 +1,9 @@
 import { For, Index, Show, createSignal } from "solid-js";
+import { rpc } from "../../transport";
+import { appLogger } from "../../stores/appLogger";
 import { SessionCard } from "../components/SessionCard";
 import { HeroMetrics } from "../components/HeroMetrics";
+import { NewSessionSheet } from "../components/NewSessionSheet";
 import type { SessionInfo } from "../useSessions";
 import styles from "./SessionsScreen.module.css";
 
@@ -18,8 +21,30 @@ const PULL_THRESHOLD = 60;
 export function SessionsScreen(props: SessionsScreenProps) {
   const [pulling, setPulling] = createSignal(false);
   const [pullY, setPullY] = createSignal(0);
+  const [showNewSession, setShowNewSession] = createSignal(false);
+  const [repos, setRepos] = createSignal<string[]>([]);
   let startY = 0;
   let listEl: HTMLDivElement | undefined;
+
+  async function handleKill(sessionId: string) {
+    if (!window.confirm("Kill this session?")) return;
+    try {
+      await rpc("close_pty", { sessionId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appLogger.warn("network", `Failed to kill session: ${msg}`);
+    }
+  }
+
+  async function openNewSessionSheet() {
+    try {
+      const config = await rpc<{ repos?: Record<string, unknown> }>("load_repositories");
+      setRepos(config.repos ? Object.keys(config.repos) : []);
+    } catch {
+      setRepos([]);
+    }
+    setShowNewSession(true);
+  }
 
   function onTouchStart(e: TouchEvent) {
     if (listEl && listEl.scrollTop === 0) {
@@ -116,9 +141,21 @@ export function SessionsScreen(props: SessionsScreenProps) {
           <SessionCard
             session={session}
             onSelect={props.onSelectSession}
+            onKill={handleKill}
           />
         )}
       </For>
+
+      <button class={styles.fab} onClick={openNewSessionSheet} data-testid="new-session-fab">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      </button>
+
+      <Show when={showNewSession()}>
+        <NewSessionSheet repos={repos()} onDismiss={() => setShowNewSession(false)} />
+      </Show>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import styles from "./SessionCard.module.css";
 interface SessionCardProps {
   session: SessionInfo;
   onSelect: (sessionId: string) => void;
+  onKill?: (sessionId: string) => void;
 }
 
 function formatTime(ms: number): string {
@@ -115,10 +116,27 @@ export function SessionCard(props: SessionCardProps) {
         </Show>
       </div>
 
-      <div class={styles.time}>
-        {props.session.state?.last_activity_ms
-          ? formatTime(props.session.state.last_activity_ms)
-          : ""}
+      <div class={styles.actions}>
+        <span class={styles.time}>
+          {props.session.state?.last_activity_ms
+            ? formatTime(props.session.state.last_activity_ms)
+            : ""}
+        </span>
+        <Show when={props.onKill}>
+          <button
+            class={styles.killBtn}
+            data-testid="kill-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onKill!(props.session.session_id);
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </Show>
       </div>
     </button>
   );
