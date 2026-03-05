@@ -134,11 +134,13 @@ pub(super) async fn get_output(
         let total = buf.total_lines();
         let offset = total.saturating_sub(limit);
         let (lines, _) = buf.lines_since_owned(offset);
+        let screen: Vec<String> = trim_screen_chrome(buf.screen_rows());
         return (
             StatusCode::OK,
             Json(serde_json::json!({
                 "lines": lines,
                 "total_lines": total,
+                "screen": screen,
             })),
         );
     }
@@ -798,22 +800,44 @@ async fn handle_ws_log_session(
     let send_task = tokio::spawn(async move {
         let mut offset = initial_offset;
         let mut event_rx = state_poll.event_bus.subscribe();
+        let mut prev_screen_hash: u64 = 0;
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(200)) => {
                     let Some(vt_log) = state_poll.vt_log_buffers.get(&sid_poll) else {
                         break;
                     };
-                    let (lines, new_offset) = vt_log.lock().lines_since_owned(offset);
-                    if !lines.is_empty() {
-                        let frame = serde_json::json!({"type": "log", "lines": lines, "offset": offset});
+                    let (lines, new_offset, screen) = {
+                        let buf = vt_log.lock();
+                        let (l, o) = buf.lines_since_owned(offset);
+                        let s: Vec<String> = trim_screen_chrome(buf.screen_rows());
+                        (l, o, s)
+                    }; // lock released
+                    // Hash screen rows to detect changes
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    screen.hash(&mut hasher);
+                    let screen_hash = hasher.finish();
+                    let screen_changed = screen_hash != prev_screen_hash && !screen.is_empty();
+                    // Send frame if there are new log lines OR screen content changed
+                    if !lines.is_empty() || screen_changed {
+                        let mut frame = serde_json::json!({"type": "log", "offset": offset});
+                        if !lines.is_empty() {
+                            frame["lines"] = serde_json::json!(lines);
+                        }
+                        if screen_changed {
+                            frame["screen"] = serde_json::json!(screen);
+                            prev_screen_hash = screen_hash;
+                        }
                         if futures_util::SinkExt::send(
                             &mut ws_sender,
                             Message::Text(frame.to_string().into()),
                         ).await.is_err() {
                             break;
                         }
-                        offset = new_offset;
+                        if !lines.is_empty() {
+                            offset = new_offset;
+                        }
                     }
                 }
                 event = event_rx.recv() => {
@@ -870,4 +894,45 @@ async fn handle_ws_log_session(
     }
 
     send_task.abort();
+}
+
+/// Remove agent TUI chrome from screen rows (status bars, prompt lines,
+/// separators) and trim trailing empty rows.
+fn trim_screen_chrome(rows: Vec<String>) -> Vec<String> {
+    if rows.is_empty() {
+        return rows;
+    }
+
+    // First: trim trailing empty rows (terminal padding below content).
+    let content_end = rows.iter().rposition(|r| !r.is_empty()).map_or(0, |i| i + 1);
+    if content_end == 0 {
+        return Vec::new();
+    }
+
+    // Then: scan last 8 content rows for agent prompt chrome.
+    let scan_start = content_end.saturating_sub(8);
+    let prompt_idx = (scan_start..content_end).rev().find(|&i| {
+        let t = rows[i].trim_start();
+        t.starts_with('❯') || t == ">" || t.starts_with("> ")
+    });
+    let cutoff = match prompt_idx {
+        Some(mut idx) => {
+            // Extend cutoff up past separators and empty lines above the prompt
+            while idx > 0 {
+                let above = rows[idx - 1].trim();
+                if above.is_empty()
+                    || above
+                        .chars()
+                        .all(|c| matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍'))
+                {
+                    idx -= 1;
+                } else {
+                    break;
+                }
+            }
+            idx
+        }
+        None => content_end,
+    };
+    rows[..cutoff].to_vec()
 }

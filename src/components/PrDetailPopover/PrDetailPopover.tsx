@@ -116,14 +116,14 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     props.onClose();
   };
 
-  const handleMerge = async () => {
+  const handleMerge = async (overrideMethod?: string) => {
     const pr = prData();
     if (!pr) return;
     setMerging(true);
     setMergeError(null);
     try {
       const preferred = repoSettingsStore.getEffective?.(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
-      const method = effectiveMergeMethod(pr, preferred);
+      const method = overrideMethod ?? effectiveMergeMethod(pr, preferred);
       await invoke("merge_pr_via_github", {
         repoPath: props.repoPath,
         prNumber: pr.number,
@@ -159,8 +159,13 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
   const handleMergeMethodDialogConfirm = async () => {
     setMergeMethodDenied(null);
+    // Persist squash as the default for future merges on this repo.
+    // Use getOrCreate to ensure the entry exists (update silently no-ops without it).
+    const repo = repositoriesStore.get(props.repoPath);
+    repoSettingsStore.getOrCreate(props.repoPath, repo?.displayName ?? props.repoPath);
     repoSettingsStore.update(props.repoPath, { prMergeStrategy: "squash" });
-    await handleMerge();
+    // Bypass effectiveMergeMethod — PR data flags may not reflect branch protection rules
+    await handleMerge("squash");
   };
 
   const handleMergeMethodDialogCancel = () => {
@@ -300,7 +305,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                   <Show when={prData() && canMergePr(prData()!)}>
                     <button
                       class={s.mergeBtn}
-                      onClick={handleMerge}
+                      onClick={() => handleMerge()}
                       disabled={merging()}
                     >
                       {merging()

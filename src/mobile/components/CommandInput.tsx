@@ -10,12 +10,20 @@ interface CommandInputProps {
 
 export function CommandInput(props: CommandInputProps) {
   const [value, setValue] = createSignal("");
+  let textareaEl: HTMLTextAreaElement | undefined;
+
+  function autoResize() {
+    if (!textareaEl) return;
+    textareaEl.style.height = "auto";
+    textareaEl.style.height = Math.min(textareaEl.scrollHeight, 120) + "px";
+  }
 
   async function send() {
     const text = value().trim();
     if (!text) return;
 
     setValue("");
+    if (textareaEl) textareaEl.style.height = "auto";
     try {
       // PTY expects \r (carriage return) for Enter — \n is a line feed
       // and won't trigger command submission in raw-mode programs (Ink, etc.)
@@ -37,10 +45,14 @@ export function CommandInput(props: CommandInputProps) {
   return (
     <div class={styles.form}>
       <textarea
+        ref={textareaEl}
         class={styles.input}
         placeholder="Type a command..."
         value={value()}
-        onInput={(e) => setValue(e.currentTarget.value)}
+        onInput={(e) => {
+          setValue(e.currentTarget.value);
+          autoResize();
+        }}
         onKeyDown={handleKeyDown}
         autocomplete="off"
         autocorrect="off"

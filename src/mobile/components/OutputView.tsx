@@ -14,20 +14,24 @@ interface OutputViewProps {
 }
 
 export function OutputView(props: OutputViewProps) {
-  const [lines, setLines] = createSignal<LogLine[]>([]);
+  const [logLines, setLogLines] = createSignal<LogLine[]>([]);
+  const [screenRows, setScreenRows] = createSignal<LogLine[]>([]);
   let containerEl: HTMLDivElement | undefined;
   let unsubscribe: (() => void) | null = null;
 
-  /** Fetch initial log lines via HTTP; returns the total_lines offset for WS catch-up. */
+  /** Fetch initial log lines + screen rows via HTTP; returns the total_lines offset for WS catch-up. */
   async function fetchInitialOutput(): Promise<number> {
     try {
       const resp = await fetch(`/sessions/${props.sessionId}/output?format=log`);
       if (resp.ok) {
-        const json = await resp.json() as { lines: unknown[]; total_lines: number };
+        const json = await resp.json() as { lines: unknown[]; total_lines: number; screen?: string[] };
         if (json.lines && json.lines.length > 0) {
-          setLines(json.lines.slice(-MAX_LINES).map(normalizeLogLine));
-          scrollToBottom();
+          setLogLines(json.lines.slice(-MAX_LINES).map(normalizeLogLine));
         }
+        if (json.screen && json.screen.length > 0) {
+          setScreenRows(json.screen.map((text: string) => ({ spans: [{ text }] })));
+        }
+        scrollToBottom();
         return json.total_lines ?? 0;
       }
     } catch {
@@ -51,16 +55,21 @@ export function OutputView(props: OutputViewProps) {
       props.sessionId,
       () => {}, // unused — onLogLines handles log delivery
       () => {
-        setLines((prev) => [...prev, { spans: [{ text: "--- session exited ---" }] }]);
+        setLogLines((prev) => [...prev, { spans: [{ text: "--- session exited ---" }] }]);
+        setScreenRows([]);
       },
       {
         format: "log",
         logOffset: offset,
         onLogLines(rawLines) {
-          setLines((prev) => {
+          setLogLines((prev) => {
             const incoming = rawLines.map(normalizeLogLine);
             return [...prev, ...incoming].slice(-MAX_LINES);
           });
+          scrollToBottom();
+        },
+        onScreenRows(rows) {
+          setScreenRows(rows.map((text) => ({ spans: [{ text }] })));
           scrollToBottom();
         },
         onStateChange: props.onStateChange,
@@ -72,10 +81,12 @@ export function OutputView(props: OutputViewProps) {
     unsubscribe?.();
   });
 
+  const allLines = createMemo(() => [...logLines(), ...screenRows()]);
+
   const displayedLines = createMemo(() => {
     const q = props.searchQuery;
-    if (!q) return lines();
-    return lines().filter((line) => lineMatchesQuery(line, q));
+    if (!q) return allLines();
+    return allLines().filter((line) => lineMatchesQuery(line, q));
   });
 
   return (

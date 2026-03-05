@@ -606,6 +606,8 @@ export interface SubscribePtyOptions {
    * Each LogLine has `spans: [{text, fg?, bg?, bold?, italic?, underline?}]`.
    */
   onLogLines?: (lines: unknown[]) => void;
+  /** Receive current screen rows (plain strings) pushed alongside log frames. */
+  onScreenRows?: (rows: string[]) => void;
   /** Starting offset for log-mode catch-up (skip lines already fetched via HTTP). */
   logOffset?: number;
   /** Receive real-time SessionState snapshots pushed by the server on parsed events. */
@@ -675,6 +677,10 @@ export async function subscribePty(
                 });
                 onData(texts.join("\n"));
               }
+            }
+            const screen = frame.screen as string[] | undefined;
+            if (screen && opts.onScreenRows) {
+              opts.onScreenRows(screen);
             }
             break;
           }
