@@ -33,3 +33,10 @@
   border-color: var(--status-error);
   font-weight: 600;
 }
+
+.accent {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+  font-size: 16px;
+}

@@ -4,6 +4,7 @@ import styles from "./TerminalKeybar.module.css";
 
 interface TerminalKeybarProps {
   sessionId: string;
+  onCommandWidgetOpen?: () => void;
 }
 
 interface KeyDef { label: string; seq: string; danger?: boolean }
@@ -29,6 +30,11 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
 
   return (
     <div class={styles.bar}>
+      {props.onCommandWidgetOpen && (
+        <button class={`${styles.key} ${styles.accent}`} onClick={props.onCommandWidgetOpen}>
+          /
+        </button>
+      )}
       {KEYS.map((k) => (
         <button
           class={styles.key}

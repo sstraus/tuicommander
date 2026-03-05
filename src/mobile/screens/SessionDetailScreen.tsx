@@ -4,6 +4,7 @@ import { OutputView } from "../components/OutputView";
 import { QuickActions } from "../components/QuickActions";
 import { SuggestChips } from "../components/SuggestChips";
 import { SlashMenuOverlay } from "../components/SlashMenuOverlay";
+import { CommandWidget } from "../components/CommandWidget";
 import { CommandInput } from "../components/CommandInput";
 import { TerminalKeybar } from "../components/TerminalKeybar";
 import type { SessionInfo } from "../useSessions";
@@ -35,6 +36,9 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
     return { ...poll, ...ws } as typeof poll;
   };
   const status = () => deriveStatus({ ...props.session, state: sessionState() });
+
+  // Command widget overlay toggle
+  const [commandWidgetOpen, setCommandWidgetOpen] = createSignal(false);
 
   // Local dismiss flag for the slash menu overlay (resets when new items arrive)
   const [slashMenuDismissed, setSlashMenuDismissed] = createSignal(false);
@@ -164,13 +168,23 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
       <Show when={sessionState()?.suggested_actions?.length}>
         <SuggestChips sessionId={props.session.session_id} items={sessionState()!.suggested_actions!} />
       </Show>
-      <TerminalKeybar sessionId={props.session.session_id} />
+      <TerminalKeybar
+        sessionId={props.session.session_id}
+        onCommandWidgetOpen={() => setCommandWidgetOpen(true)}
+      />
       <CommandInput sessionId={props.session.session_id} />
       <Show when={showSlashMenu()}>
         <SlashMenuOverlay
           sessionId={props.session.session_id}
           items={sessionState()!.slash_menu_items!}
           onDismiss={() => setSlashMenuDismissed(true)}
+        />
+      </Show>
+      <Show when={commandWidgetOpen()}>
+        <CommandWidget
+          sessionId={props.session.session_id}
+          agentType={sessionState()?.agent_type as string | null | undefined}
+          onDismiss={() => setCommandWidgetOpen(false)}
         />
       </Show>
     </div>
