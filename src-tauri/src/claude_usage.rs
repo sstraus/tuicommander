@@ -1474,4 +1474,39 @@ mod tests {
         assert!(parsed.five_hour.is_some());
         assert!((parsed.five_hour.unwrap().utilization - 0.5).abs() < 0.001);
     }
+
+    #[test]
+    fn usage_api_response_handles_null_resets_at() {
+        let json = r#"{"five_hour":{"utilization":0.42,"resets_at":null}}"#;
+        let parsed: UsageApiResponse = serde_json::from_str(json).unwrap();
+        let bucket = parsed.five_hour.unwrap();
+        assert!((bucket.utilization - 0.42).abs() < 0.001);
+        assert!(bucket.resets_at.is_none());
+    }
+
+    /// Call the real Anthropic usage API and verify the response deserializes.
+    /// Requires a valid OAuth token in the macOS keychain or ~/.claude/.credentials.json.
+    /// Skipped automatically if no token is available.
+    #[tokio::test]
+    async fn live_usage_api_deserializes() {
+        let token = match read_claude_access_token() {
+            Ok(Some(t)) => t,
+            _ => {
+                eprintln!("Skipping live API test: no OAuth token available");
+                return;
+            }
+        };
+        match fetch_usage_from_api(&token).await {
+            Ok(data) => {
+                // At minimum the response should parse — print it for manual inspection
+                eprintln!("Live API response: {data:?}");
+            }
+            Err(e) if e.status == 429 => {
+                eprintln!("Skipping live API test: rate limited (429)");
+            }
+            Err(e) => {
+                panic!("Live API call failed: status={} msg={}", e.status, e.message);
+            }
+        }
+    }
 }
