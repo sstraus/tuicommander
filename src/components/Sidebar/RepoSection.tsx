@@ -5,6 +5,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { githubStore } from "../../stores/github";
 import { appLogger } from "../../stores/appLogger";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
+import { repoSettingsStore } from "../../stores/repoSettings";
 import { activePrStatus, _resetMergedActivityAccum } from "../../utils/mergedPrGrace";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
@@ -470,7 +471,7 @@ const RemoteOnlyPrPopover: Component<{
     setMergingPr(pr.number);
     setMergeError(null);
     try {
-      const method = repoDefaultsStore.state.prMergeStrategy;
+      const method = repoSettingsStore.getEffective(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
       await invoke("merge_pr_via_github", {
         repoPath: props.repoPath,
         prNumber: pr.number,

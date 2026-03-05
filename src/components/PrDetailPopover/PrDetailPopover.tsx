@@ -119,7 +119,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     setMerging(true);
     setMergeError(null);
     try {
-      const method = repoDefaultsStore.state.prMergeStrategy;
+      const method = repoSettingsStore.getEffective(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
       await invoke("merge_pr_via_github", {
         repoPath: props.repoPath,
         prNumber: pr.number,

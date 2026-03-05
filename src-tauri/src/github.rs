@@ -1136,8 +1136,43 @@ pub(crate) fn get_ci_checks_impl(
 
 /// Merge a PR via GitHub REST API using the specified merge method.
 ///
-/// Calls PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge.
-/// Returns the SHA of the merge commit on success.
+/// All merge methods in fallback order.
+const MERGE_METHODS: &[&str] = &["squash", "rebase", "merge"];
+
+/// Try a single PUT /repos/{owner}/{repo}/pulls/{number}/merge call.
+/// Returns Ok(sha) on success, Err((status_code, message)) on failure.
+fn try_merge(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    token: &str,
+    method: &str,
+) -> Result<String, (u16, String)> {
+    let body = serde_json::json!({ "merge_method": method });
+    let response = client
+        .put(url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "tuicommander")
+        .header("Accept", "application/vnd.github+json")
+        .json(&body)
+        .send()
+        .map_err(|e| (0u16, format!("GitHub API request failed: {e}")))?;
+
+    let status = response.status().as_u16();
+    let json: serde_json::Value = response
+        .json()
+        .map_err(|e| (0u16, format!("Failed to parse GitHub API response: {e}")))?;
+
+    if (200..300).contains(&status) {
+        Ok(json["sha"].as_str().unwrap_or("").to_string())
+    } else {
+        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
+        Err((status, msg))
+    }
+}
+
+/// Merge a PR via GitHub REST API.
+/// Tries the requested method first; on 405 (method not allowed) falls back
+/// to the other methods in order: squash → rebase → merge.
 pub(crate) fn merge_pr_github_impl(
     repo_path: &str,
     pr_number: i64,
@@ -1157,30 +1192,39 @@ pub(crate) fn merge_pr_github_impl(
         .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/merge");
-    let body = serde_json::json!({ "merge_method": merge_method });
 
-    let response = state
-        .http_client
-        .put(&url)
-        .header("Authorization", format!("Bearer {token}"))
-        .header("User-Agent", "tuicommander")
-        .header("Accept", "application/vnd.github+json")
-        .json(&body)
-        .send()
-        .map_err(|e| format!("GitHub API request failed: {e}"))?;
-
-    let status = response.status();
-    let json: serde_json::Value = response
-        .json()
-        .map_err(|e| format!("Failed to parse GitHub API response: {e}"))?;
-
-    if status.is_success() {
-        let sha = json["sha"].as_str().unwrap_or("").to_string();
-        Ok(sha)
-    } else {
-        let msg = json["message"].as_str().unwrap_or("Unknown error");
-        Err(format!("GitHub merge failed ({status}): {msg}"))
+    // Try preferred method first
+    match try_merge(&state.http_client, &url, &token, merge_method) {
+        Ok(sha) => return Ok(sha),
+        Err((405, _)) => {
+            // Method not allowed by repo settings — try alternatives
+            eprintln!(
+                "[github] merge method '{merge_method}' not allowed for {owner}/{repo}, trying alternatives"
+            );
+        }
+        Err((status, msg)) => {
+            return Err(format!("GitHub merge failed ({status}): {msg}"));
+        }
     }
+
+    // Fallback: try each method except the one that already failed
+    for &fallback in MERGE_METHODS {
+        if fallback == merge_method {
+            continue;
+        }
+        match try_merge(&state.http_client, &url, &token, fallback) {
+            Ok(sha) => {
+                eprintln!("[github] merged PR #{pr_number} via fallback method '{fallback}'");
+                return Ok(sha);
+            }
+            Err((405, _)) => continue,
+            Err((status, msg)) => {
+                return Err(format!("GitHub merge failed ({status}): {msg}"));
+            }
+        }
+    }
+
+    Err("Merge commits are not allowed on this repository (all methods rejected)".to_string())
 }
 
 /// Merge a PR via GitHub REST API (Tauri command).
