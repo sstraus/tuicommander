@@ -27,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Move terminal to worktree** — Right-click a terminal tab → "Move to Worktree" submenu to move the terminal to a different worktree. Also available via Command Palette with dynamic "Move to worktree: <branch>" entries
 - **Customizable keybindings** — Click the pencil icon next to any shortcut in Help > Keyboard Shortcuts to rebind it. Conflict detection, per-shortcut reset, and "Reset all to defaults" button. Overrides persist in `keybindings.json`
 - **Tip of the Day improvements** — Expanded from 18 to 31 tips covering all discoverable features. Larger fonts, brighter colors, sliding dot window (max 7 visible). Fixed click-through bug on arrows and dots
+- **Post-merge cleanup dialog** — After merging a PR from the popover, a stepper dialog offers checkable steps: switch to base branch (with dirty state detection), pull (ff-only), delete local branch (closes terminals first), delete remote branch (handles "already deleted" gracefully). Steps execute sequentially via Rust backend (not PTY). Available from both local PR popover and remote-only PR popover
+- **PR diff panel tab** — View Diff button in PR popover opens a dedicated panel tab with collapsible file sections, dual line numbers, and color-coded additions/deletions
 
 ### Changed
 - **Progressive worktree loading** — `refreshAllBranchStats` now uses two-phase progressive loading. Phase 1 (`get_repo_structure`) returns worktree paths and merged branches instantly, so WorktreeManager rows appear immediately. Phase 2 (`get_repo_diff_stats`) fills in diff stats and timestamps progressively. Auto-archive of merged worktrees runs after Phase 1 instead of waiting for all stats

@@ -516,6 +516,9 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 - Title, number, link to GitHub
 - Author, timestamps, state, merge readiness, review decision
 - CI check details, labels, line changes, commit count
+- View Diff button: opens PR diff as a dedicated panel tab with collapsible file sections
+- Merge button: visible when PR is open, approved, CI green — merges via GitHub API
+- Post-merge cleanup dialog: after merge, offers checkable steps (switch to base, pull, delete local/remote branch)
 - Triggered from: sidebar PR badge, status bar PR badge, status bar CI badge, toolbar notification bell
 
 ### 8.4 PR Notifications
@@ -527,8 +530,15 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 ### 8.5 Merge PR via GitHub API
 - Merge PRs directly from TUICommander without switching to GitHub web
 - Configurable merge strategy per repo: merge commit, squash, or rebase (Settings > Repository > Worktree tab)
-- Triggered from Merge & Archive workflow (sidebar context menu or Worktree Manager)
-- After-merge behavior setting: `archive` (auto-archive worktree), `delete` (remove worktree), `ask` (show dialog with options)
+- Triggered from: PR detail popover (local branches), remote-only PR popover, Merge & Archive workflow (sidebar context menu)
+- Post-merge cleanup dialog: sequential steps executed via Rust backend (not PTY — terminal may be occupied by AI agent)
+  - Switch to base branch (with dirty state pre-check)
+  - Pull base branch (ff-only)
+  - Close terminals + delete local branch (safe delete, refuses default branch)
+  - Delete remote branch (gracefully handles "already deleted")
+  - Steps are checkable — user can toggle which to execute
+  - Per-step status reporting: pending → running → success/error
+- After-merge behavior setting for worktrees: `archive` (auto-archive), `delete` (remove), `ask` (show dialog)
 - Merge dialog shown when `afterMerge=ask`: presents archive/delete/keep choices before proceeding
 
 ### 8.6 Auto-Delete Branch on PR Close

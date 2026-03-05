@@ -169,4 +169,9 @@ export const TIPS: Tip[] = [
     description: "Right-click a terminal tab → Move to Worktree to move it to a different worktree. Also available via Command Palette.",
     shortcut: null,
   },
+  {
+    feature: "Post-Merge Cleanup",
+    description: "After merging a PR from the popover, a cleanup dialog lets you switch branch, pull, and delete the merged branch — all via backend, even while an agent runs in the terminal.",
+    shortcut: null,
+  },
 ];
