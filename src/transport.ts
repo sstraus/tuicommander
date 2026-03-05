@@ -608,6 +608,8 @@ export interface SubscribePtyOptions {
   onLogLines?: (lines: unknown[]) => void;
   /** Starting offset for log-mode catch-up (skip lines already fetched via HTTP). */
   logOffset?: number;
+  /** Receive real-time SessionState snapshots pushed by the server on parsed events. */
+  onStateChange?: (state: Record<string, unknown>) => void;
   onParsed?: (event: WsParsedEvent) => void;
 }
 
@@ -676,6 +678,11 @@ export async function subscribePty(
             }
             break;
           }
+          case "state":
+            if (opts.onStateChange && frame.state) {
+              opts.onStateChange(frame.state as Record<string, unknown>);
+            }
+            break;
           case "parsed":
             onParsed?.(frame);
             break;

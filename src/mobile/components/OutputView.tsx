@@ -7,6 +7,8 @@ const MAX_LINES = 500;
 
 interface OutputViewProps {
   sessionId: string;
+  /** Real-time session state pushed via WebSocket (bypasses 3s polling). */
+  onStateChange?: (state: Record<string, unknown>) => void;
 }
 
 export function OutputView(props: OutputViewProps) {
@@ -59,6 +61,7 @@ export function OutputView(props: OutputViewProps) {
           });
           scrollToBottom();
         },
+        onStateChange: props.onStateChange,
       },
     )) ?? null;
   });

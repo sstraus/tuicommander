@@ -792,28 +792,51 @@ async fn handle_ws_log_session(
         }
     };
 
-    // Spawn polling task: check for new lines every 200ms
+    // Spawn polling task: check for new lines every 200ms AND forward state changes.
     let sid_poll = session_id.clone();
     let state_poll = state.clone();
     let send_task = tokio::spawn(async move {
         let mut offset = initial_offset;
+        let mut event_rx = state_poll.event_bus.subscribe();
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-
-            let Some(vt_log) = state_poll.vt_log_buffers.get(&sid_poll) else {
-                // Session was removed
-                break;
-            };
-            let (lines, new_offset) = vt_log.lock().lines_since_owned(offset);
-            if !lines.is_empty() {
-                let frame = serde_json::json!({"type": "log", "lines": lines, "offset": offset});
-                if futures_util::SinkExt::send(
-                    &mut ws_sender,
-                    Message::Text(frame.to_string().into()),
-                ).await.is_err() {
-                    break;
+            tokio::select! {
+                _ = tokio::time::sleep(tokio::time::Duration::from_millis(200)) => {
+                    let Some(vt_log) = state_poll.vt_log_buffers.get(&sid_poll) else {
+                        break;
+                    };
+                    let (lines, new_offset) = vt_log.lock().lines_since_owned(offset);
+                    if !lines.is_empty() {
+                        let frame = serde_json::json!({"type": "log", "lines": lines, "offset": offset});
+                        if futures_util::SinkExt::send(
+                            &mut ws_sender,
+                            Message::Text(frame.to_string().into()),
+                        ).await.is_err() {
+                            break;
+                        }
+                        offset = new_offset;
+                    }
                 }
-                offset = new_offset;
+                event = event_rx.recv() => {
+                    let Ok(event) = event else { continue };
+                    // Forward state snapshot when a parsed event fires for this session.
+                    let is_relevant = match &event {
+                        crate::state::AppEvent::PtyParsed { session_id: sid, .. }
+                        | crate::state::AppEvent::PtyExit { session_id: sid }
+                        | crate::state::AppEvent::SessionClosed { session_id: sid } => sid == &sid_poll,
+                        _ => false,
+                    };
+                    if is_relevant {
+                        if let Some(ss) = state_poll.session_states.get(&sid_poll) {
+                            let frame = serde_json::json!({"type": "state", "state": ss.clone()});
+                            if futures_util::SinkExt::send(
+                                &mut ws_sender,
+                                Message::Text(frame.to_string().into()),
+                            ).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
     });
