@@ -5,6 +5,7 @@ import { QuickActions } from "../components/QuickActions";
 import { SuggestChips } from "../components/SuggestChips";
 import { SlashMenuOverlay } from "../components/SlashMenuOverlay";
 import { CommandInput } from "../components/CommandInput";
+import { TerminalKeybar } from "../components/TerminalKeybar";
 import type { SessionInfo } from "../useSessions";
 import { deriveStatus } from "../utils/deriveStatus";
 import { formatRetryCountdown } from "../utils/formatRetryCountdown";
@@ -163,6 +164,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
       <Show when={sessionState()?.suggested_actions?.length}>
         <SuggestChips sessionId={props.session.session_id} items={sessionState()!.suggested_actions!} />
       </Show>
+      <TerminalKeybar sessionId={props.session.session_id} />
       <CommandInput sessionId={props.session.session_id} />
       <Show when={showSlashMenu()}>
         <SlashMenuOverlay
