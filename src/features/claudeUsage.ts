@@ -17,8 +17,8 @@ import { invoke } from "../invoke";
 const FEATURE_ID = "claude-usage";
 const TICKER_ID = "claude-usage:rate";
 
-/** Poll API every 5 minutes */
-const API_POLL_MS = 5 * 60 * 1000;
+/** Poll API every 10 minutes (Rust backend caches for 5 min + 429 retry) */
+const API_POLL_MS = 10 * 60 * 1000;
 
 /** Chart icon (inline SVG, monochrome) */
 const CHART_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><path d="M0 11.5a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-4a.5.5 0 0 1-.5-.5v-4zm6-4a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5h-4a.5.5 0 0 1-.5-.5v-8zm6-7a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5v15a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5V.5z"/></svg>`;

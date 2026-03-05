@@ -582,7 +582,7 @@ struct ApiCache {
 static API_CACHE: parking_lot::Mutex<Option<ApiCache>> = parking_lot::Mutex::new(None);
 
 /// Cache TTL: return cached data without hitting the API.
-const API_CACHE_TTL: Duration = Duration::from_secs(600); // 10 minutes
+const API_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 
 /// Maximum retry attempts for 429 responses.
 const MAX_429_RETRIES: u32 = 3;
@@ -676,7 +676,7 @@ fn get_stale_cache() -> Option<UsageApiResponse> {
 // ---------------------------------------------------------------------------
 
 /// Fetch rate-limit usage from the Anthropic OAuth API.
-/// Uses an in-memory cache (10 min TTL) and retries 429s with exponential backoff.
+/// Uses an in-memory cache (5 min TTL) and retries 429s with exponential backoff.
 #[tauri::command]
 pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
     // Return fresh cache if available
@@ -711,7 +711,7 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
                     tokio::time::sleep(delay).await;
                     continue;
                 }
-                // Non-429 error or exhausted retries
+                // Non-429 error or exhausted retries — fall through
                 break;
             }
         }
