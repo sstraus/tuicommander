@@ -297,29 +297,21 @@ export const BranchItem: Component<{
         <span class={s.mergedBadge} title="Branch is merged into main">Merged</span>
       </Show>
       <Show when={pr()}>
-        {(activePr) => {
-          const isTerminal = () => {
-            const st = activePr().state?.toLowerCase();
-            return st === "closed" || st === "merged";
-          };
-          return (
-            <span
-              class={isTerminal() ? s.prBadgeDimmed : undefined}
-              onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}
-            >
-              <PrStateBadge
-                prNumber={activePr().number}
-                state={activePr().state}
-                isDraft={activePr().is_draft}
-                mergeable={activePr().mergeable}
-                reviewDecision={activePr().review_decision}
-                ciPassed={checks()?.passed}
-                ciFailed={checks()?.failed}
-                ciPending={checks()?.pending}
-              />
-            </span>
-          );
-        }}
+        <span
+          class={(() => { const st = pr()?.state?.toLowerCase(); return st === "closed" || st === "merged" ? s.prBadgeDimmed : undefined; })()}
+          onClick={(e) => { e.stopPropagation(); props.onShowPrDetail(); }}
+        >
+          <PrStateBadge
+            prNumber={pr()!.number}
+            state={pr()!.state}
+            isDraft={pr()!.is_draft}
+            mergeable={pr()!.mergeable}
+            reviewDecision={pr()!.review_decision}
+            ciPassed={checks()?.passed}
+            ciFailed={checks()?.failed}
+            ciPending={checks()?.pending}
+          />
+        </span>
       </Show>
       <StatsBadge additions={props.branch.additions} deletions={props.branch.deletions} />
       <Show when={props.shortcutIndex !== undefined} fallback={
