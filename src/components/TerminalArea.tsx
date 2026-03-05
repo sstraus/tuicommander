@@ -73,7 +73,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
         <For each={terminalsStore.getIds()}>
           {(id) => {
             const terminal = terminalsStore.get(id);
-            const isSplitPane = () => terminalsStore.state.layout.panes.includes(id);
+            const isSplitPane = () => terminalsStore.state.layout.direction !== "none" && terminalsStore.state.layout.panes.includes(id);
             const isActivePaneInSplit = () => {
               const layout = terminalsStore.state.layout;
               return layout.direction !== "none" && layout.panes[layout.activePaneIndex] === id;
