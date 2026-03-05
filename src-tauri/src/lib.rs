@@ -604,17 +604,9 @@ pub fn run() {
         });
     }
 
-    // Auto-install MCP bridge config into agent configs on first launch
-    if !config.mcp_config_installed {
-        agent_mcp::auto_install_mcp_configs();
-        let mut cfg = state.config.write();
-        cfg.mcp_config_installed = true;
-        let cfg_clone = cfg.clone();
-        drop(cfg);
-        if let Err(e) = config::save_app_config(cfg_clone) {
-            eprintln!("MCP: failed to persist mcp_config_installed flag: {e}");
-        }
-    }
+    // Ensure MCP bridge config is installed and up-to-date in all agent configs.
+    // Runs every launch: installs missing entries and updates stale paths.
+    agent_mcp::ensure_mcp_configs();
 
     // Install the it2 shim when Agent Teams is enabled
     if config.agent_teams_shim {

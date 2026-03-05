@@ -201,50 +201,83 @@ fn write_json_file(path: &std::path::Path, value: &serde_json::Value) -> Result<
 /// Supported agent types for auto-install
 const SUPPORTED_AGENTS: &[&str] = &["claude", "cursor", "windsurf", "vscode", "zed", "amp", "gemini"];
 
-/// Auto-install MCP bridge config into all supported agent configs.
-/// Called once at first app launch. Skips agents that already have our entry.
-pub(crate) fn auto_install_mcp_configs() {
+/// Ensure a single agent's MCP config has the correct bridge entry.
+/// Returns true if the config was written (installed or updated).
+fn ensure_agent_mcp_entry(
+    config_path: &std::path::Path,
+    key_path: &[&str],
+    bridge_path: &str,
+    agent_label: &str,
+) -> bool {
+    let root = read_json_file(config_path);
+    let existing_command = navigate(&root, key_path)
+        .and_then(|v| v.as_object())
+        .and_then(|obj| obj.get(TUIC_MCP_KEY))
+        .and_then(|entry| entry.get("command"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    match existing_command {
+        Some(ref cmd) if cmd == bridge_path => {
+            // Already correct — no write needed
+            return false;
+        }
+        Some(ref old) => {
+            eprintln!("MCP: {agent_label} — updating path: {old} → {bridge_path}");
+        }
+        None => {
+            eprintln!("MCP: {agent_label} — installing bridge");
+        }
+    }
+
+    let entry = TuicMcpEntry {
+        transport_type: "stdio".to_string(),
+        command: bridge_path.to_string(),
+        args: vec![],
+    };
+    let entry_value = match serde_json::to_value(&entry) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("MCP: {agent_label} — serialize error: {e}");
+            return false;
+        }
+    };
+
+    let mut root = read_json_file(config_path);
+    let servers = navigate_or_create(&mut root, key_path);
+    if let Some(obj) = servers.as_object_mut() {
+        obj.insert(TUIC_MCP_KEY.to_string(), entry_value);
+    } else {
+        *servers = serde_json::json!({ TUIC_MCP_KEY: entry_value });
+    }
+
+    match write_json_file(config_path, &root) {
+        Ok(()) => {
+            eprintln!("MCP: {agent_label} — written to {}", config_path.display());
+            true
+        }
+        Err(e) => {
+            eprintln!("MCP: {agent_label} — write error: {e}");
+            false
+        }
+    }
+}
+
+/// Ensure MCP bridge config is installed and up-to-date in all supported agent configs.
+/// Called on every app launch. Installs missing entries and updates stale paths.
+pub(crate) fn ensure_mcp_configs() {
+    // On Windows, skip until named pipe bridge is functional
+    if cfg!(windows) {
+        eprintln!("MCP: skipping auto-install on Windows (named pipe transport pending)");
+        return;
+    }
+
     let bridge_path = detect_bridge_binary();
-    eprintln!("MCP: auto-installing bridge config (bridge: {bridge_path})");
+    eprintln!("MCP: ensuring bridge configs (bridge: {bridge_path})");
 
     for agent in SUPPORTED_AGENTS {
         let Some(spec) = get_mcp_config_spec(agent) else { continue };
-
-        let root = read_json_file(&spec.config_path);
-        let already_installed = navigate(&root, &spec.key_path)
-            .and_then(|v| v.as_object())
-            .is_some_and(|obj| obj.contains_key(TUIC_MCP_KEY));
-
-        if already_installed {
-            eprintln!("MCP: {agent} — already installed, skipping");
-            continue;
-        }
-
-        let entry = TuicMcpEntry {
-            transport_type: "stdio".to_string(),
-            command: bridge_path.clone(),
-            args: vec![],
-        };
-        let entry_value = match serde_json::to_value(&entry) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("MCP: {agent} — serialize error: {e}");
-                continue;
-            }
-        };
-
-        let mut root = read_json_file(&spec.config_path);
-        let servers = navigate_or_create(&mut root, &spec.key_path);
-        if let Some(obj) = servers.as_object_mut() {
-            obj.insert(TUIC_MCP_KEY.to_string(), entry_value);
-        } else {
-            *servers = serde_json::json!({ TUIC_MCP_KEY: entry_value });
-        }
-
-        match write_json_file(&spec.config_path, &root) {
-            Ok(()) => eprintln!("MCP: {agent} — installed at {}", spec.config_path.display()),
-            Err(e) => eprintln!("MCP: {agent} — write error: {e}"),
-        }
+        ensure_agent_mcp_entry(&spec.config_path, &spec.key_path, &bridge_path, agent);
     }
 }
 
@@ -627,6 +660,93 @@ mod tests {
         for agent in &["aider", "warp", "opencode", "codex", "droid"] {
             assert!(get_mcp_config_spec(agent).is_none(), "{agent} should not be supported");
         }
+    }
+
+    // --- ensure_agent_mcp_entry tests ---
+
+    #[test]
+    fn ensure_installs_when_missing() {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("test.json");
+
+        let wrote = ensure_agent_mcp_entry(&config_path, &["mcpServers"], "/path/a", "test");
+        assert!(wrote, "should write when entry is missing");
+
+        let root = read_json_file(&config_path);
+        assert_eq!(root["mcpServers"][TUIC_MCP_KEY]["command"], "/path/a");
+    }
+
+    #[test]
+    fn ensure_updates_stale_path() {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("test.json");
+
+        // Install with path A
+        ensure_agent_mcp_entry(&config_path, &["mcpServers"], "/old/path", "test");
+
+        // Ensure with path B — should update
+        let wrote = ensure_agent_mcp_entry(&config_path, &["mcpServers"], "/new/path", "test");
+        assert!(wrote, "should write when path changed");
+
+        let root = read_json_file(&config_path);
+        assert_eq!(root["mcpServers"][TUIC_MCP_KEY]["command"], "/new/path");
+    }
+
+    #[test]
+    fn ensure_skips_when_path_matches() {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("test.json");
+
+        // Install
+        ensure_agent_mcp_entry(&config_path, &["mcpServers"], "/correct/path", "test");
+
+        // Record mtime
+        let mtime_before = std::fs::metadata(&config_path).unwrap().modified().unwrap();
+        // Small sleep to ensure mtime would differ if file were rewritten
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Ensure with same path — should not write
+        let wrote = ensure_agent_mcp_entry(&config_path, &["mcpServers"], "/correct/path", "test");
+        assert!(!wrote, "should not write when path already correct");
+
+        let mtime_after = std::fs::metadata(&config_path).unwrap().modified().unwrap();
+        assert_eq!(mtime_before, mtime_after, "file should not have been modified");
+    }
+
+    #[test]
+    fn ensure_preserves_other_servers() {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("test.json");
+
+        let initial = serde_json::json!({
+            "mcpServers": {
+                "other-server": { "command": "other-cmd" }
+            }
+        });
+        write_json_file(&config_path, &initial).unwrap();
+
+        ensure_agent_mcp_entry(&config_path, &["mcpServers"], "/bridge", "test");
+
+        let root = read_json_file(&config_path);
+        let servers = root["mcpServers"].as_object().unwrap();
+        assert_eq!(servers.len(), 2);
+        assert_eq!(servers["other-server"]["command"], "other-cmd");
+        assert_eq!(servers[TUIC_MCP_KEY]["command"], "/bridge");
+    }
+
+    #[test]
+    fn ensure_works_with_nested_key_path() {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("test.json");
+
+        let initial = serde_json::json!({ "amp": { "setting": true } });
+        write_json_file(&config_path, &initial).unwrap();
+
+        ensure_agent_mcp_entry(&config_path, &["amp", "mcpServers"], "/bridge", "test");
+
+        let root = read_json_file(&config_path);
+        assert_eq!(root["amp"]["setting"], true);
+        assert_eq!(root["amp"]["mcpServers"][TUIC_MCP_KEY]["command"], "/bridge");
     }
 
     // --- it2 shim tests ---
