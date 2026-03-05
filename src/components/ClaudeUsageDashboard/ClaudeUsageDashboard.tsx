@@ -469,8 +469,8 @@ export const ClaudeUsageDashboard: Component = () => {
     );
   });
 
-  // Auto-refresh API + timeline every 10 minutes (Rust caches for 5 min)
-  const timer = setInterval(() => { fetchApi(); fetchTimeline(scope()); }, 10 * 60 * 1000);
+  // Auto-refresh API + timeline every 5 minutes (Rust caches for 5 min)
+  const timer = setInterval(() => { fetchApi(); fetchTimeline(scope()); }, 5 * 60 * 1000);
   onCleanup(() => clearInterval(timer));
 
   // Computed data for rate limit cards
