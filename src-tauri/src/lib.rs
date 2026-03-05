@@ -800,6 +800,8 @@ pub fn run() {
             dictation::commands::inject_text,
             dictation::commands::get_dictation_config,
             dictation::commands::set_dictation_config,
+            dictation::commands::check_microphone_permission,
+            dictation::commands::open_microphone_settings,
             config::load_app_config,
             config::save_app_config,
             config::load_notification_config,

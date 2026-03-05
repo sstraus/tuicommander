@@ -2,6 +2,7 @@ pub mod audio;
 pub mod commands;
 pub mod corrections;
 pub mod model;
+pub mod permission;
 pub mod streaming;
 pub mod transcribe;
 pub mod vad;

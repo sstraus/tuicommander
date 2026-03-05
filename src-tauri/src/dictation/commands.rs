@@ -1,4 +1,4 @@
-use super::{audio, corrections, model, streaming, transcribe, DictationState};
+use super::{audio, corrections, model, permission, streaming, transcribe, DictationState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -169,6 +169,15 @@ pub fn start_dictation(
 
     if dictation.processing.load(Ordering::Acquire) {
         return Err("Transcription in progress".to_string());
+    }
+
+    // Check microphone permission before attempting audio capture
+    let mic_status = permission::check();
+    if mic_status == permission::MicPermission::Denied {
+        return Err("microphone_denied".to_string());
+    }
+    if mic_status == permission::MicPermission::Restricted {
+        return Err("microphone_restricted".to_string());
     }
 
     let whisper_model = configured_model();
@@ -438,4 +447,17 @@ pub fn get_dictation_config() -> DictationConfig {
 #[tauri::command]
 pub fn set_dictation_config(config: DictationConfig) -> Result<(), String> {
     crate::config::save_json_config(DICTATION_CONFIG_FILE, &config)
+}
+
+/// Check microphone permission status (macOS TCC).
+/// Returns: "authorized", "denied", "restricted", or "not_determined".
+#[tauri::command]
+pub fn check_microphone_permission() -> String {
+    permission::check().as_str().to_string()
+}
+
+/// Open macOS System Settings > Privacy > Microphone.
+#[tauri::command]
+pub fn open_microphone_settings() {
+    permission::open_settings();
 }

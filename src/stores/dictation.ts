@@ -267,7 +267,15 @@ function createDictationStore() {
         await invoke("start_dictation");
         setState("recording", true);
       } catch (err) {
-        appLogger.error("dictation", "Failed to start recording", err);
+        const errStr = String(err);
+        if (errStr.includes("microphone_denied")) {
+          appLogger.error("dictation", "Microphone access denied. Open System Settings > Privacy > Microphone to allow access.");
+          invoke("open_microphone_settings").catch(() => {});
+        } else if (errStr.includes("microphone_restricted")) {
+          appLogger.error("dictation", "Microphone access restricted by system policy");
+        } else {
+          appLogger.error("dictation", "Failed to start recording", err);
+        }
         throw err;
       } finally {
         setState("loading", false);
