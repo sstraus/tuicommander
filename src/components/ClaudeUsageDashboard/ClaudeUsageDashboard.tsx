@@ -8,7 +8,7 @@ import s from "./ClaudeUsageDashboard.module.css";
 
 interface RateBucket {
   utilization: number;
-  resets_at: string;
+  resets_at: string | null;
 }
 
 interface ExtraUsage {
@@ -603,9 +603,11 @@ export const ClaudeUsageDashboard: Component = () => {
                       style={{ width: `${Math.min(100, item.bucket.utilization)}%` }}
                     />
                   </div>
-                  <span class={s.rateReset}>
-                    Resets in {formatResetTime(item.bucket.resets_at)}
-                  </span>
+                  <Show when={item.bucket.resets_at}>
+                    <span class={s.rateReset}>
+                      Resets in {formatResetTime(item.bucket.resets_at!)}
+                    </span>
+                  </Show>
                 </div>
               )}
             </For>

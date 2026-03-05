@@ -25,14 +25,15 @@ use tauri::State;
 #[serde(default)]
 pub struct RateBucket {
     pub utilization: f64,
-    pub resets_at: String,
+    /// Reset timestamp — nullable when no active rate limit window.
+    pub resets_at: Option<String>,
 }
 
 impl Default for RateBucket {
     fn default() -> Self {
         Self {
             utilization: 0.0,
-            resets_at: String::new(),
+            resets_at: None,
         }
     }
 }
@@ -1424,7 +1425,7 @@ mod tests {
         let data = UsageApiResponse {
             five_hour: Some(RateBucket {
                 utilization: 42.0,
-                resets_at: "2026-03-05T12:00:00Z".into(),
+                resets_at: Some("2026-03-05T12:00:00Z".into()),
             }),
             ..Default::default()
         };

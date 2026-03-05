@@ -29,7 +29,7 @@ const CHART_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" f
 
 interface RateBucket {
   utilization: number;
-  resets_at: string;
+  resets_at: string | null;
 }
 
 interface UsageApiResponse {
