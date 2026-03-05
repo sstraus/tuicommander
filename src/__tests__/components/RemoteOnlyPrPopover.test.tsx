@@ -73,6 +73,7 @@ describe("RemoteOnlyPrPopover — 405 merge method not allowed dialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     repoSettingsStore.getOrCreate("/repo", "Repo");
+    repoSettingsStore.update("/repo", { prMergeStrategy: null }); // reset to global default
   });
 
   it("shows 405 dialog when merge is rejected with method not allowed", async () => {
@@ -84,7 +85,7 @@ describe("RemoteOnlyPrPopover — 405 merge method not allowed dialog", () => {
     expect(row).not.toBeNull();
     fireEvent.click(row!);
     const mergeBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent === "Merge",
+      (b) => ["Merge", "Squash & Merge", "Rebase & Merge"].includes(b.textContent ?? ""),
     ) as HTMLButtonElement | undefined;
     expect(mergeBtn).not.toBeUndefined();
     fireEvent.click(mergeBtn!);
@@ -104,7 +105,7 @@ describe("RemoteOnlyPrPopover — 405 merge method not allowed dialog", () => {
     expect(row).not.toBeNull();
     fireEvent.click(row!);
     const mergeBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent === "Merge",
+      (b) => ["Merge", "Squash & Merge", "Rebase & Merge"].includes(b.textContent ?? ""),
     ) as HTMLButtonElement | undefined;
     expect(mergeBtn).not.toBeUndefined();
     fireEvent.click(mergeBtn!);
@@ -131,7 +132,7 @@ describe("RemoteOnlyPrPopover — 405 merge method not allowed dialog", () => {
     expect(row).not.toBeNull();
     fireEvent.click(row!);
     const mergeBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent === "Merge",
+      (b) => ["Merge", "Squash & Merge", "Rebase & Merge"].includes(b.textContent ?? ""),
     ) as HTMLButtonElement | undefined;
     expect(mergeBtn).not.toBeUndefined();
     fireEvent.click(mergeBtn!);
@@ -147,5 +148,46 @@ describe("RemoteOnlyPrPopover — 405 merge method not allowed dialog", () => {
     await waitFor(() => {
       expect(container.textContent).toContain("405");
     });
+  });
+});
+
+describe("RemoteOnlyPrPopover — merge button label reflects effective method", () => {
+  const makePr = (overrides = {}): BranchPrStatus => ({
+    ...mergeablePr, ...overrides,
+  });
+
+  const renderAndExpand = (pr: BranchPrStatus) => {
+    repoSettingsStore.getOrCreate("/repo", "Repo");
+    repoSettingsStore.update("/repo", { prMergeStrategy: null });
+    const { container } = render(() => (
+      <RemoteOnlyPrPopover prs={[pr]} repoPath="/repo" onClose={vi.fn()} onCheckout={vi.fn()} />
+    ));
+    const row = container.querySelector(".remoteOnlyRow")!;
+    fireEvent.click(row);
+    return container;
+  };
+
+  it("shows Merge when merge commits are allowed", () => {
+    const container = renderAndExpand(makePr({ merge_commit_allowed: true }));
+    const btn = Array.from(container.querySelectorAll("button")).find(
+      (b) => ["Merge", "Squash & Merge", "Rebase & Merge"].includes(b.textContent ?? ""),
+    );
+    expect(btn?.textContent).toBe("Merge");
+  });
+
+  it("shows Squash & Merge when only squash is allowed", () => {
+    const container = renderAndExpand(makePr({ merge_commit_allowed: false, squash_merge_allowed: true, rebase_merge_allowed: false }));
+    const btn = Array.from(container.querySelectorAll("button")).find(
+      (b) => ["Merge", "Squash & Merge", "Rebase & Merge"].includes(b.textContent ?? ""),
+    );
+    expect(btn?.textContent).toBe("Squash & Merge");
+  });
+
+  it("shows Rebase & Merge when only rebase is allowed", () => {
+    const container = renderAndExpand(makePr({ merge_commit_allowed: false, squash_merge_allowed: false, rebase_merge_allowed: true }));
+    const btn = Array.from(container.querySelectorAll("button")).find(
+      (b) => ["Merge", "Squash & Merge", "Rebase & Merge"].includes(b.textContent ?? ""),
+    );
+    expect(btn?.textContent).toBe("Rebase & Merge");
   });
 });

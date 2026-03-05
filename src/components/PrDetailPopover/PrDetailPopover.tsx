@@ -122,7 +122,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     setMerging(true);
     setMergeError(null);
     try {
-      const preferred = repoSettingsStore.getEffective(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
+      const preferred = repoSettingsStore.getEffective?.(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
       const method = effectiveMergeMethod(pr, preferred);
       await invoke("merge_pr_via_github", {
         repoPath: props.repoPath,
@@ -145,6 +145,16 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     } finally {
       setMerging(false);
     }
+  };
+
+  const mergeLabel = () => {
+    const pr = prData();
+    if (!pr) return t("prDetail.merge", "Merge");
+    const preferred = repoSettingsStore.getEffective?.(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
+    const method = effectiveMergeMethod(pr, preferred);
+    if (method === "squash") return t("prDetail.mergeSquash", "Squash & Merge");
+    if (method === "rebase") return t("prDetail.mergeRebase", "Rebase & Merge");
+    return t("prDetail.merge", "Merge");
   };
 
   const handleMergeMethodDialogConfirm = async () => {
@@ -295,7 +305,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                     >
                       {merging()
                         ? t("prDetail.merging", "Merging...")
-                        : t("prDetail.merge", "Merge")}
+                        : mergeLabel()}
                     </button>
                   </Show>
                 </div>

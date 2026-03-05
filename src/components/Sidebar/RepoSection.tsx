@@ -501,6 +501,14 @@ export const RemoteOnlyPrPopover: Component<{
     }
   };
 
+  const mergeLabel = (pr: BranchPrStatus) => {
+    const preferred = repoSettingsStore.getEffective(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
+    const method = effectiveMergeMethod(pr, preferred);
+    if (method === "squash") return t("sidebar.mergeSquash", "Squash & Merge");
+    if (method === "rebase") return t("sidebar.mergeRebase", "Rebase & Merge");
+    return t("sidebar.merge", "Merge");
+  };
+
   const handleMergeMethodDialogConfirm = async () => {
     const ctx = mergeMethodDenied();
     if (!ctx) return;
@@ -648,7 +656,7 @@ export const RemoteOnlyPrPopover: Component<{
                           >
                             {mergingPr() === pr.number
                               ? t("sidebar.merging", "Merging...")
-                              : t("sidebar.merge", "Merge")}
+                              : mergeLabel(pr)}
                           </button>
                         </Show>
                         <button

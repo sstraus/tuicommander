@@ -815,6 +815,7 @@ describe("PrDetailPopover", () => {
 
     beforeEach(() => {
       repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { prMergeStrategy: null }); // reset to global default
       mockGetBranchPrData.mockReturnValue(mergeablePr);
     });
 
@@ -872,6 +873,40 @@ describe("PrDetailPopover", () => {
       await waitFor(() => {
         expect(container.textContent).toContain("405");
       });
+    });
+  });
+
+  describe("merge button label reflects effective merge method", () => {
+    const makePr = (overrides = {}) => ({
+      branch: "feature/x", number: 42, title: "Feature", state: "OPEN",
+      url: "", additions: 10, deletions: 5, author: "alice", commits: 1,
+      checks: { passed: 2, failed: 0, pending: 0, total: 2 }, check_details: [],
+      labels: [], is_draft: false, base_ref_name: "main", head_ref_oid: "abc",
+      created_at: "", updated_at: "", merge_state_label: null, review_state_label: null,
+      review_decision: "APPROVED", mergeable: "MERGEABLE", merge_state_status: "CLEAN",
+      merge_commit_allowed: true, squash_merge_allowed: true, rebase_merge_allowed: true,
+      ...overrides,
+    });
+
+    it("shows Merge when preferred method is merge and repo allows it", () => {
+      mockGetBranchPrData.mockReturnValue(makePr());
+      const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+      const btn = container.querySelector(".mergeBtn");
+      expect(btn?.textContent).toBe("Merge");
+    });
+
+    it("shows Squash & Merge when only squash is allowed", () => {
+      mockGetBranchPrData.mockReturnValue(makePr({ merge_commit_allowed: false, squash_merge_allowed: true, rebase_merge_allowed: false }));
+      const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+      const btn = container.querySelector(".mergeBtn");
+      expect(btn?.textContent).toBe("Squash & Merge");
+    });
+
+    it("shows Rebase & Merge when only rebase is allowed", () => {
+      mockGetBranchPrData.mockReturnValue(makePr({ merge_commit_allowed: false, squash_merge_allowed: false, rebase_merge_allowed: true }));
+      const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+      const btn = container.querySelector(".mergeBtn");
+      expect(btn?.textContent).toBe("Rebase & Merge");
     });
   });
 });
