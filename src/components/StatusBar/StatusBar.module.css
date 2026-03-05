@@ -322,6 +322,30 @@
   font-size: var(--font-sm);
 }
 
+/* Info balloon (click on truncated status info) */
+.infoBalloonOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.infoBalloon {
+  position: fixed;
+  bottom: calc(var(--status-height) + 8px);
+  left: 12px;
+  max-width: 480px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-bottom-anchor);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+  z-index: 1001;
+}
+
 .updateBadge {
   font-family: var(--font-mono);
   font-size: var(--font-sm);

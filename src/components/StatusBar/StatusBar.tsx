@@ -87,12 +87,21 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   let infoContainerRef: HTMLSpanElement | undefined;
   let infoTextRef: HTMLSpanElement | undefined;
   const [tickerActive, setTickerActive] = createSignal(false);
-  const [infoDismissed, setInfoDismissed] = createSignal(false);
-  const [dismissedText, setDismissedText] = createSignal("");
+  const [infoBalloonOpen, setInfoBalloonOpen] = createSignal(false);
+
+  // Close balloon on Escape
+  onMount(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && infoBalloonOpen()) setInfoBalloonOpen(false);
+    };
+    document.addEventListener("keydown", handleEscape);
+    onCleanup(() => document.removeEventListener("keydown", handleEscape));
+  });
 
   createEffect(() => {
-    // Subscribe to statusInfo changes to re-measure overflow
+    // Subscribe to statusInfo changes to re-measure overflow and close balloon
     void props.statusInfo;
+    setInfoBalloonOpen(false);
     // Defer measurement to after DOM update
     const rafId = requestAnimationFrame(() => {
       if (!infoContainerRef || !infoTextRef) return;
@@ -138,13 +147,13 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           fontSize={props.fontSize}
           defaultFontSize={props.defaultFontSize}
         />
-        <Show when={!infoDismissed() || props.statusInfo !== dismissedText()}>
+        <Show when={props.statusInfo}>
           <span
             class={s.info}
             ref={infoContainerRef}
-            onClick={() => { setInfoDismissed(true); setDismissedText(props.statusInfo); }}
+            onClick={() => { if (tickerActive()) setInfoBalloonOpen((v) => !v); }}
             style={{ cursor: tickerActive() ? "pointer" : undefined }}
-            title={tickerActive() ? props.statusInfo : undefined}
+            title={tickerActive() && !infoBalloonOpen() ? props.statusInfo : undefined}
           >
             <span
               class={cx(s.infoTicker, tickerActive() && s.infoTickerActive)}
@@ -153,6 +162,12 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
               {props.statusInfo}
             </span>
           </span>
+          <Show when={infoBalloonOpen()}>
+            <div class={s.infoBalloonOverlay} onClick={() => setInfoBalloonOpen(false)} />
+            <div class={s.infoBalloon}>
+              {props.statusInfo}
+            </div>
+          </Show>
         </Show>
         <Show when={shortenedCwd()}>
           <span
