@@ -37,6 +37,10 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
   };
   const status = () => deriveStatus({ ...props.session, state: sessionState() });
 
+  // Search filter
+  const [searchOpen, setSearchOpen] = createSignal(false);
+  const [searchQuery, setSearchQuery] = createSignal("");
+
   // Command widget overlay toggle
   const [commandWidgetOpen, setCommandWidgetOpen] = createSignal(false);
 
@@ -98,8 +102,46 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
             {sessionState()!.usage_limit_pct}%
           </span>
         </Show>
+        <button
+          class={styles.searchToggle}
+          classList={{ [styles.searchToggleActive]: searchOpen() }}
+          onClick={() => {
+            if (searchOpen()) {
+              setSearchOpen(false);
+              setSearchQuery("");
+            } else {
+              setSearchOpen(true);
+            }
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
         <StatusBadge status={status()} />
       </header>
+
+      <Show when={searchOpen()}>
+        <div class={styles.searchBar}>
+          <input
+            class={styles.searchInput}
+            type="text"
+            placeholder="Filter output..."
+            value={searchQuery()}
+            onInput={(e) => setSearchQuery(e.currentTarget.value)}
+            autofocus
+          />
+          <Show when={searchQuery()}>
+            <button class={styles.searchClear} onClick={() => setSearchQuery("")}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </Show>
+        </div>
+      </Show>
 
       <Show when={sessionState()?.agent_intent}>
         <div class={styles.intentLine}>
@@ -154,7 +196,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
       </Show>
 
       <div class={styles.outputArea}>
-        <OutputView sessionId={props.session.session_id} onStateChange={setWsState} />
+        <OutputView sessionId={props.session.session_id} onStateChange={setWsState} searchQuery={searchQuery()} />
         <Show when={!props.sessionExists}>
           <div class={styles.endedOverlay}>
             <span class={styles.endedText}>Session ended</span>

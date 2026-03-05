@@ -101,6 +101,17 @@ export function spanStyle(
   return hasStyle ? s : undefined;
 }
 
+/** Extract the plain text content of a log line (concatenated spans). */
+export function lineText(line: LogLine): string {
+  return line.spans.map((s) => s.text).join("");
+}
+
+/** Check if a log line's text contains the query (case-insensitive). */
+export function lineMatchesQuery(line: LogLine, query: string): boolean {
+  if (!query) return true;
+  return lineText(line).toLowerCase().includes(query.toLowerCase());
+}
+
 /**
  * Normalize a raw log line value (from HTTP or WebSocket) to a LogLine.
  * Handles both structured LogLine objects and plain string fallback.

@@ -1,6 +1,6 @@
-import { createSignal, onMount, onCleanup, For, Index } from "solid-js";
+import { createSignal, createMemo, onMount, onCleanup, For, Index } from "solid-js";
 import { subscribePty } from "../../transport";
-import { type LogLine, normalizeLogLine, spanStyle } from "../utils/logLine";
+import { type LogLine, normalizeLogLine, spanStyle, lineMatchesQuery } from "../utils/logLine";
 import styles from "./OutputView.module.css";
 
 const MAX_LINES = 500;
@@ -9,6 +9,8 @@ interface OutputViewProps {
   sessionId: string;
   /** Real-time session state pushed via WebSocket (bypasses 3s polling). */
   onStateChange?: (state: Record<string, unknown>) => void;
+  /** When set, only lines matching this query (case-insensitive) are shown. */
+  searchQuery?: string;
 }
 
 export function OutputView(props: OutputViewProps) {
@@ -70,10 +72,16 @@ export function OutputView(props: OutputViewProps) {
     unsubscribe?.();
   });
 
+  const displayedLines = createMemo(() => {
+    const q = props.searchQuery;
+    if (!q) return lines();
+    return lines().filter((line) => lineMatchesQuery(line, q));
+  });
+
   return (
     <div ref={containerEl} class={styles.output}>
       <pre class={styles.text}>
-        <For each={lines()}>
+        <For each={displayedLines()}>
           {(line) => (
             <div class={styles.line}>
               <Index each={line.spans}>
