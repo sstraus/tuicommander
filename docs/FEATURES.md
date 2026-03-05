@@ -26,7 +26,7 @@
 - Switch: `Cmd+1` through `Cmd+9`, `Cmd+Shift+[` / `Cmd+Shift+]`
 - Rename: double-click tab name (inline editing)
 - Reorder: drag-and-drop with visual drop indicators
-- Tab status dot (left of name): grey=running, green=idle, blue-pulse=background activity, orange-pulse=awaiting input, red-pulse=error
+- Tab status dot (left of name): grey=running, green=idle, purple=unseen (completed while not viewed), blue-pulse=background activity, orange-pulse=awaiting input, red-pulse=error
 - Tab type colors: red gradient=diff, blue gradient=editor, teal gradient=markdown, purple gradient=panel, amber gradient=remote PTY session
 - Remote PTY sessions (created via HTTP/MCP) show "PTY:" prefix and amber styling
 - Progress bar (OSC 9;4)

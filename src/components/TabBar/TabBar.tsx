@@ -380,6 +380,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
           const hasActivity = () => !isActive() && terminal()?.activity;
           const isBusy = () => terminalsStore.isBusy(id);
           const isIdle = () => !isBusy() && terminal()?.shellState === "idle";
+          const isUnseen = () => !isActive() && terminal()?.unseen;
           const awaitingInput = () => terminal()?.awaitingInput;
           const isDragging = () => draggingId() === id;
           const isDragOver = () => dragOverId() === id && draggingId() !== id;
@@ -423,7 +424,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   // the awaiting state (orange/red) takes visual priority over blue busy dot.
                   !awaitingInput() && hasActivity() && s.hasActivity,
                   !awaitingInput() && isBusy() && s.shellBusy,
-                  !awaitingInput() && isIdle() && s.shellIdle,
+                  !awaitingInput() && !isBusy() && isUnseen() && s.shellUnseen,
+                  !awaitingInput() && isIdle() && !isUnseen() && s.shellIdle,
                   isRemote() && s.remoteTab,
                   isDragging() && s.dragging,
                   isDragOver() && dragOverSide() === "left" && s.dragOverLeft,

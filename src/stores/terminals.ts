@@ -30,6 +30,7 @@ export interface TerminalData {
   cwd: string | null;
   awaitingInput: AwaitingInputType;
   activity: boolean;
+  unseen: boolean; // Terminal completed work while user wasn't viewing it
   progress: number | null; // OSC 9;4 progress (0-100), null when inactive
   shellState: ShellState;
   agentType: AgentType | null; // Detected foreground agent process (e.g. "claude")
@@ -148,17 +149,17 @@ function createTerminalsStore() {
 
   const actions = {
     /** Add a new terminal */
-    add(data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed"> & { isRemote?: boolean }): string {
+    add(data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed"> & { isRemote?: boolean }): string {
       const id = `term-${state.counter + 1}`;
       setState("counter", (c) => c + 1);
-      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, ...data });
+      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
       return id;
     },
 
     /** Register a terminal with a specific ID (used by floating windows to reconnect to existing PTY sessions) */
-    register(id: string, data: Omit<TerminalData, "id" | "activity" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed"> & { isRemote?: boolean }): void {
-      setState("terminals", id, { id, activity: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, ...data });
+    register(id: string, data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed"> & { isRemote?: boolean }): void {
+      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
     },
 
@@ -185,7 +186,10 @@ function createTerminalsStore() {
         appLogger.debug("terminal", `setActive(${id})`, { shellState: state.terminals[id]?.shellState });
       }
       batch(() => {
-        if (id) setState("terminals", id, "activity", false);
+        if (id) {
+          setState("terminals", id, "activity", false);
+          setState("terminals", id, "unseen", false);
+        }
         setState("activeId", id);
       });
     },
@@ -229,7 +233,13 @@ function createTerminalsStore() {
     setAwaitingInput(id: string, type: AwaitingInputType): void {
       const prev = state.terminals[id]?.awaitingInput;
       appLogger.debug("terminal", `setAwaitingInput(${id}) "${prev}" → "${type}"`);
-      setState("terminals", id, "awaitingInput", type);
+      batch(() => {
+        setState("terminals", id, "awaitingInput", type);
+        // Mark unseen when a non-active terminal starts awaiting input
+        if (type != null && prev == null && state.activeId !== id) {
+          setState("terminals", id, "unseen", true);
+        }
+      });
     },
 
     /** Clear terminal awaiting input state */

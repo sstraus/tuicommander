@@ -345,6 +345,59 @@ describe("terminalsStore", () => {
     });
   });
 
+  describe("unseen", () => {
+    it("initializes unseen as false", () => {
+      createRoot((dispose) => {
+        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        expect(store.get(id)!.unseen).toBe(false);
+        dispose();
+      });
+    });
+
+    it("clears unseen when setting active", () => {
+      createRoot((dispose) => {
+        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        store.update(id, { unseen: true });
+        store.setActive(id);
+        expect(store.get(id)!.unseen).toBe(false);
+        dispose();
+      });
+    });
+
+    it("sets unseen on awaitingInput transition when not active", () => {
+      createRoot((dispose) => {
+        const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+        store.setActive(id1);
+        // Terminal id2 is not active — setting awaitingInput should mark it unseen
+        store.setAwaitingInput(id2, "question");
+        expect(store.get(id2)!.unseen).toBe(true);
+        dispose();
+      });
+    });
+
+    it("does not set unseen on awaitingInput for active terminal", () => {
+      createRoot((dispose) => {
+        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        store.setActive(id);
+        store.setAwaitingInput(id, "question");
+        expect(store.get(id)!.unseen).toBe(false);
+        dispose();
+      });
+    });
+
+    it("does not set unseen when clearing awaitingInput", () => {
+      createRoot((dispose) => {
+        const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: "question" });
+        store.setActive(id1);
+        store.clearAwaitingInput(id2);
+        expect(store.get(id2)!.unseen).toBe(false);
+        dispose();
+      });
+    });
+  });
+
   describe("shellState", () => {
     it("initializes shellState as null", () => {
       createRoot((dispose) => {

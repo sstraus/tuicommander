@@ -400,6 +400,10 @@
   font-weight: bold;
 }
 
+.branchIconUnseen {
+  color: var(--unseen);
+}
+
 .branchContent {
   flex: 1;
   min-width: 0;

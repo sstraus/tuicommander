@@ -26,6 +26,7 @@ const BRANCH_ICON_CLASSES: Record<string, string> = {
   worktree: s.branchIconWorktree,
   question: s.branchIconQuestion,
   activity: s.branchIconActivity,
+  unseen: s.branchIconUnseen,
 };
 
 const PR_BADGE_CLASSES: Record<string, string> = {
@@ -54,8 +55,9 @@ const PR_BADGE_CLASSES: Record<string, string> = {
  *  1. question  → --attention (pulsing)
  *  2. activity  → --activity  (pulsing)
  *  3. busy      → --activity  (pulsing)
- *  4. idle      → --success
- *  5. base      → --warning (main) or --success (worktree)
+ *  4. unseen    → --unseen    (static purple)
+ *  5. idle      → --success
+ *  6. base      → --warning (main) or --success (worktree)
  */
 export const BranchIcon: Component<{
   isMainBranch: boolean;
@@ -64,6 +66,7 @@ export const BranchIcon: Component<{
   hasQuestion?: boolean;
   hasActivity?: boolean;
   hasBusy?: boolean;
+  hasUnseen?: boolean;
 }> = (props) => {
   const iconShape = () => {
     if (props.hasQuestion) return "question";
@@ -81,6 +84,7 @@ export const BranchIcon: Component<{
     if (props.hasQuestion) return "question";
     if (props.hasActivity) return "activity";
     if (props.hasBusy) return "activity";
+    if (props.hasUnseen) return "unseen";
     if (props.isMainBranch) return "main";
     return "worktree";
   };
@@ -199,6 +203,9 @@ export const BranchItem: Component<{
   const hasBusy = () =>
     props.branch.terminals.some((id) => terminalsStore.isBusy(id));
 
+  const hasUnseen = () =>
+    props.branch.terminals.some((id) => terminalsStore.get(id)?.unseen);
+
   const handleDoubleClick = (e: MouseEvent) => {
     e.stopPropagation();
     if (props.branch.isMain || props.branch.isShell) {
@@ -275,6 +282,7 @@ export const BranchItem: Component<{
         hasQuestion={hasQuestion()}
         hasActivity={hasActivity()}
         hasBusy={hasBusy()}
+        hasUnseen={hasUnseen()}
       />
       <div class={s.branchContent}>
         <span

@@ -174,4 +174,9 @@ export const TIPS: Tip[] = [
     description: "After merging a PR from the popover, a cleanup dialog lets you switch branch, pull, and delete the merged branch — all via backend, even while an agent runs in the terminal.",
     shortcut: null,
   },
+  {
+    feature: "Unseen Terminal Dot",
+    description: "When a terminal finishes work while you're viewing another tab, its dot turns purple. Click it to clear the unseen state. Sidebar branches also turn purple if they contain unseen terminals.",
+    shortcut: null,
+  },
 ];

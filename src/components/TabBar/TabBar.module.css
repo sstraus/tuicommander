@@ -245,6 +245,12 @@
   font-size: var(--font-3xs);
 }
 
+.tab.shellUnseen .tabIcon {
+  color: var(--unseen);
+  opacity: 1;
+  font-size: var(--font-3xs);
+}
+
 /* Awaiting input — override tabIcon to show state via left dot */
 .tab.awaitingInput .tabIcon {
   opacity: 1;

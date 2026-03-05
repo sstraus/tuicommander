@@ -186,6 +186,7 @@
   --attention: #e8984c;
   --error: #f48771;
   --merged: #a371f7;
+  --unseen: #c084fc;  /* terminal completed while user wasn't viewing */
   --text-on-accent: #000000;
   --text-on-error: #000000;
   --text-on-success: #000000;

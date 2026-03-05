@@ -359,7 +359,7 @@ const App: Component = () => {
   terminalsStore.onBusyToIdle((id, durationMs) => {
     if (durationMs >= BUSY_COMPLETION_THRESHOLD_MS) {
       appLogger.info("terminal", `[Notify] ${id} completion — busy for ${Math.round(durationMs / 1000)}s then idle`);
-      terminalsStore.update(id, { activity: true });
+      terminalsStore.update(id, { activity: true, unseen: true });
       notificationsStore.playCompletion();
     }
   });
