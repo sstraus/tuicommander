@@ -7,6 +7,8 @@ import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { appLogger } from "../../stores/appLogger";
 import { invoke } from "../../invoke";
 import { canMergePr, effectiveMergeMethod } from "../Sidebar/RepoSection";
+import { isMergeMethodNotAllowed } from "../../utils/prMerge";
+import { ConfirmDialog } from "../ConfirmDialog/ConfirmDialog";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -46,6 +48,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
   const [diffLoading, setDiffLoading] = createSignal(false);
   const [merging, setMerging] = createSignal(false);
   const [mergeError, setMergeError] = createSignal<string | null>(null);
+  const [mergeMethodDenied, setMergeMethodDenied] = createSignal<string | null>(null);
 
   // Post-merge cleanup dialog state
   const [cleanupCtx, setCleanupCtx] = createSignal<{ branchName: string; baseBranch: string } | null>(null);
@@ -133,11 +136,27 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
       const baseBranch = pr.base_ref_name || "main";
       setCleanupCtx({ branchName: props.branch, baseBranch });
     } catch (e) {
-      setMergeError(String(e));
-      appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: String(e) });
+      if (isMergeMethodNotAllowed(e)) {
+        setMergeMethodDenied(String(e));
+      } else {
+        setMergeError(String(e));
+        appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: String(e) });
+      }
     } finally {
       setMerging(false);
     }
+  };
+
+  const handleMergeMethodDialogConfirm = async () => {
+    setMergeMethodDenied(null);
+    repoSettingsStore.update(props.repoPath, { prMergeStrategy: "squash" });
+    await handleMerge();
+  };
+
+  const handleMergeMethodDialogCancel = () => {
+    const originalError = mergeMethodDenied();
+    setMergeMethodDenied(null);
+    setMergeError(originalError);
   };
 
   const handleViewDiff = async () => {
@@ -195,6 +214,16 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
   return (
     <>
+      <ConfirmDialog
+        visible={mergeMethodDenied() !== null}
+        title={t("prDetail.mergeMethodDeniedTitle", "Merge method not allowed")}
+        message={t("prDetail.mergeMethodDeniedMsg", "This repository does not allow merge commits.\nSwitch this repo\u2019s default merge strategy to \u201cSquash & Merge\u201d and retry?")}
+        confirmLabel={t("prDetail.mergeMethodDeniedConfirm", "Switch to squash & retry")}
+        cancelLabel={t("prDetail.mergeMethodDeniedCancel", "Cancel")}
+        kind="warning"
+        onClose={handleMergeMethodDialogCancel}
+        onConfirm={handleMergeMethodDialogConfirm}
+      />
       {/* Post-merge cleanup dialog (replaces the popover after merge) */}
       <Show when={cleanupCtx()}>
         {(ctx) => (

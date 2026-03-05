@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mockInvoke } from "../mocks/tauri";
 import "../mocks/tauri";
-import { render, fireEvent } from "@solidjs/testing-library";
+import { render, fireEvent, waitFor } from "@solidjs/testing-library";
+import { repoSettingsStore } from "../../stores/repoSettings";
 
 const {
   mockGetBranchPrData,
@@ -780,5 +782,96 @@ describe("PrDetailPopover", () => {
     const reviewStateBadge = container.querySelector(".reviewStateBadge");
     expect(mergeStateBadge).not.toBeNull();
     expect(reviewStateBadge).not.toBeNull();
+  });
+
+  describe("405 merge method not allowed dialog", () => {
+    const mergeablePr = {
+      branch: "feature/x",
+      number: 42,
+      title: "Feature",
+      state: "OPEN",
+      url: "https://github.com/org/repo/pull/42",
+      additions: 10,
+      deletions: 5,
+      author: "alice",
+      commits: 1,
+      checks: { passed: 2, failed: 0, pending: 0, total: 2 },
+      check_details: [],
+      labels: [],
+      is_draft: false,
+      base_ref_name: "main",
+      head_ref_oid: "abc",
+      created_at: "",
+      updated_at: "",
+      merge_state_label: null,
+      review_state_label: null,
+      review_decision: "APPROVED",
+      mergeable: "MERGEABLE",
+      merge_state_status: "CLEAN",
+      merge_commit_allowed: true,
+      squash_merge_allowed: true,
+      rebase_merge_allowed: true,
+    };
+
+    beforeEach(() => {
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      mockGetBranchPrData.mockReturnValue(mergeablePr);
+    });
+
+    it("shows 405 dialog when merge is rejected with method not allowed", async () => {
+      mockInvoke.mockRejectedValueOnce(new Error("GitHub merge failed (405): Merge commits are not allowed on this repository."));
+
+      const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+      const mergeBtn = container.querySelector(".mergeBtn") as HTMLButtonElement;
+      expect(mergeBtn).not.toBeNull();
+      fireEvent.click(mergeBtn);
+
+      await waitFor(() => {
+        expect(container.textContent).toContain("squash");
+      });
+    });
+
+    it("updates prMergeStrategy to squash and retries on dialog confirm", async () => {
+      mockInvoke
+        .mockRejectedValueOnce(new Error("GitHub merge failed (405): Merge commits are not allowed on this repository."))
+        .mockResolvedValueOnce("abc123sha");
+
+      const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+      const mergeBtn = container.querySelector(".mergeBtn") as HTMLButtonElement;
+      fireEvent.click(mergeBtn);
+
+      await waitFor(() => expect(container.textContent).toContain("squash"));
+
+      const confirmBtn = Array.from(container.querySelectorAll("button")).find(
+        (b) => b.textContent?.toLowerCase().includes("squash") || b.textContent?.toLowerCase().includes("switch") || b.textContent?.toLowerCase().includes("ok"),
+      );
+      expect(confirmBtn).not.toBeNull();
+      fireEvent.click(confirmBtn!);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenLastCalledWith("merge_pr_via_github", expect.objectContaining({ mergeMethod: "squash" }));
+      });
+      expect(repoSettingsStore.getEffective("/repo")?.prMergeStrategy).toBe("squash");
+    });
+
+    it("shows original error when dialog is cancelled", async () => {
+      mockInvoke.mockRejectedValueOnce(new Error("GitHub merge failed (405): Merge commits are not allowed on this repository."));
+
+      const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+      const mergeBtn = container.querySelector(".mergeBtn") as HTMLButtonElement;
+      fireEvent.click(mergeBtn);
+
+      await waitFor(() => expect(container.textContent).toContain("squash"));
+
+      const cancelBtn = Array.from(container.querySelectorAll("button")).find(
+        (b) => b.textContent?.toLowerCase().includes("cancel") || b.textContent?.toLowerCase().includes("keep"),
+      );
+      expect(cancelBtn).not.toBeNull();
+      fireEvent.click(cancelBtn!);
+
+      await waitFor(() => {
+        expect(container.textContent).toContain("405");
+      });
+    });
   });
 });

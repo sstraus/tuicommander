@@ -7,7 +7,8 @@ import { appLogger } from "../../stores/appLogger";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { activePrStatus, _resetMergedActivityAccum } from "../../utils/mergedPrGrace";
-import { effectiveMergeMethod } from "../../utils/prMerge";
+import { effectiveMergeMethod, isMergeMethodNotAllowed } from "../../utils/prMerge";
+import { ConfirmDialog } from "../ConfirmDialog/ConfirmDialog";
 export { effectiveMergeMethod };
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
@@ -366,7 +367,7 @@ export function canMergePr(pr: BranchPrStatus): boolean {
 
 
 /** Popover listing open PRs on remote-only branches with inline accordion detail */
-const RemoteOnlyPrPopover: Component<{
+export const RemoteOnlyPrPopover: Component<{
   prs: BranchPrStatus[];
   repoPath: string;
   onClose: () => void;
@@ -376,6 +377,7 @@ const RemoteOnlyPrPopover: Component<{
   const [expandedBranch, setExpandedBranch] = createSignal<string | null>(null);
   const [mergingPr, setMergingPr] = createSignal<number | null>(null);
   const [mergeError, setMergeError] = createSignal<string | null>(null);
+  const [mergeMethodDenied, setMergeMethodDenied] = createSignal<{ error: string; pr: BranchPrStatus } | null>(null);
   const [diffLoading, setDiffLoading] = createSignal(false);
   const [approvingPr, setApprovingPr] = createSignal<number | null>(null);
   const [approveError, setApproveError] = createSignal<string | null>(null);
@@ -487,12 +489,30 @@ const RemoteOnlyPrPopover: Component<{
       const baseBranch = pr.base_ref_name || "main";
       setCleanupCtx({ branchName: pr.branch, baseBranch });
     } catch (e) {
-      const msg = String(e);
-      setMergeError(msg);
-      appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: msg });
+      if (isMergeMethodNotAllowed(e)) {
+        setMergeMethodDenied({ error: String(e), pr });
+      } else {
+        const msg = String(e);
+        setMergeError(msg);
+        appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: msg });
+      }
     } finally {
       setMergingPr(null);
     }
+  };
+
+  const handleMergeMethodDialogConfirm = async () => {
+    const ctx = mergeMethodDenied();
+    if (!ctx) return;
+    setMergeMethodDenied(null);
+    repoSettingsStore.update(props.repoPath, { prMergeStrategy: "squash" });
+    await handleMerge(ctx.pr);
+  };
+
+  const handleMergeMethodDialogCancel = () => {
+    const ctx = mergeMethodDenied();
+    setMergeMethodDenied(null);
+    if (ctx) setMergeError(ctx.error);
   };
 
   const handleApprove = async (pr: BranchPrStatus) => {
@@ -531,6 +551,16 @@ const RemoteOnlyPrPopover: Component<{
 
   return (
     <>
+      <ConfirmDialog
+        visible={mergeMethodDenied() !== null}
+        title={t("sidebar.mergeMethodDeniedTitle", "Merge method not allowed")}
+        message={t("sidebar.mergeMethodDeniedMsg", "This repository does not allow merge commits.\nSwitch this repo\u2019s default merge strategy to \u201cSquash & Merge\u201d and retry?")}
+        confirmLabel={t("sidebar.mergeMethodDeniedConfirm", "Switch to squash & retry")}
+        cancelLabel={t("sidebar.mergeMethodDeniedCancel", "Cancel")}
+        kind="warning"
+        onClose={handleMergeMethodDialogCancel}
+        onConfirm={handleMergeMethodDialogConfirm}
+      />
       <Show when={cleanupCtx()}>
         {(ctx) => (
           <PostMergeCleanupDialog
