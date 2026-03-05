@@ -250,7 +250,7 @@ pub(crate) fn spawn_reader_thread(
         let mut buf = [0u8; 4096];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Dedup status-line events: only emit when task_name actually changes
         let mut last_status_task: Option<String> = None;
         // Resolve session CWD once for resolving relative plan-file paths
@@ -494,7 +494,7 @@ pub(crate) fn spawn_headless_reader_thread(
         // Silence-based question detection (mirrors main reader)
         let silence = Arc::new(Mutex::new(SilenceState::new()));
         state.silence_states.insert(session_id.clone(), silence.clone());
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         loop {
             while paused.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -1574,7 +1574,7 @@ mod tests {
         use crate::output_parser::{OutputParser, ParsedEvent};
 
         let mut vt_log = VtLogBuffer::new(24, 80, 1000);
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
 
         let changed = vt_log.process(b"* Reading files...");
         let events = parser.parse_clean_lines(&changed);
@@ -1592,7 +1592,7 @@ mod tests {
         use crate::output_parser::{OutputParser, ParsedEvent};
 
         let mut vt_log = VtLogBuffer::new(24, 80, 1000);
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
 
         // Enter alternate screen (smcup: ESC[?1049h)
         vt_log.process(b"\x1b[?1049h");
@@ -1639,7 +1639,7 @@ mod tests {
         use crate::output_parser::{OutputParser, ParsedEvent};
 
         let mut vt_log = VtLogBuffer::new(24, 80, 1000);
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
 
         let changed = vt_log.process(b"[[intent: Testing headless reader]]");
         let events = parser.parse_clean_lines(&changed);
@@ -1657,7 +1657,7 @@ mod tests {
         use crate::output_parser::{OutputParser, ParsedEvent};
 
         let mut vt_log = VtLogBuffer::new(24, 80, 1000);
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
 
         vt_log.process(b"\x1b[?1049h"); // enter alternate screen
         let changed = vt_log.process(b"* Reading files...");
