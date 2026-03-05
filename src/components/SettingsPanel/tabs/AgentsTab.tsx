@@ -5,6 +5,8 @@ import { agentConfigsStore } from "../../../stores/agentConfigs";
 import { useAgentDetection, type AgentAvailability } from "../../../hooks/useAgentDetection";
 import { invoke } from "../../../invoke";
 import { settingsStore } from "../../../stores/settings";
+import { editorTabsStore } from "../../../stores/editorTabs";
+import { repositoriesStore } from "../../../stores/repositories";
 import { isTauri } from "../../../transport";
 import { isPluginDisabled, setPluginEnabled } from "../../../plugins/pluginLoader";
 import { setClaudeUsageEnabled } from "../../../plugins";
@@ -213,7 +215,8 @@ const AgentRow: Component<{
     try {
       const configPath = await invoke<string | null>("get_agent_config_path", { agentType: props.agentType });
       if (configPath) {
-        await invoke("open_in_app", { path: configPath, app: settingsStore.state.ide });
+        const repoPath = repositoriesStore.state.activeRepoPath ?? "";
+        editorTabsStore.add(repoPath, configPath);
       }
     } catch (err) {
       appLogger.error("config", `Failed to open config for ${props.agentType}`, err);
