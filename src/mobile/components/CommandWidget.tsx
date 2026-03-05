@@ -1,6 +1,7 @@
 import { Show, For } from "solid-js";
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
+import { retryWrite } from "../utils/retryWrite";
 import { getAgentCommands } from "../config/agentCommands";
 import type { AgentCommand } from "../config/agentCommands";
 import styles from "./CommandWidget.module.css";
@@ -18,10 +19,10 @@ export function CommandWidget(props: CommandWidgetProps) {
     props.onDismiss();
     try {
       // Ctrl-U clears current input, then send command + CR (raw-mode PTY)
-      await rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text + "\r" });
+      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text + "\r" }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      appLogger.warn("network", `Command send failed: ${msg}`);
+      appLogger.error("network", `Command send failed after retries: ${msg}`);
     }
   }
 
@@ -36,10 +37,10 @@ export function CommandWidget(props: CommandWidgetProps) {
     if (!seq) return;
     props.onDismiss();
     try {
-      await rpc("write_pty", { sessionId: props.sessionId, data: seq });
+      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: seq }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      appLogger.warn("network", `Permission toggle failed: ${msg}`);
+      appLogger.error("network", `Permission toggle failed after retries: ${msg}`);
     }
   }
 

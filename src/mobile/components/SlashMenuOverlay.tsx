@@ -1,6 +1,7 @@
 import { For } from "solid-js";
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
+import { retryWrite } from "../utils/retryWrite";
 import type { SlashMenuItem } from "../useSessions";
 import styles from "./SlashMenuOverlay.module.css";
 
@@ -14,11 +15,11 @@ export function SlashMenuOverlay(props: SlashMenuOverlayProps) {
   const select = async (command: string) => {
     props.onDismiss();
     try {
-      // Clear the current input (Ctrl-U) then send the slash command + Enter
-      await rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + command + "\n" });
+      // Clear the current input (Ctrl-U) then send the slash command + CR
+      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + command + "\r" }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      appLogger.warn("network", `Failed to send slash command: ${msg}`);
+      appLogger.error("network", `Failed to send slash command after retries: ${msg}`);
     }
   };
 

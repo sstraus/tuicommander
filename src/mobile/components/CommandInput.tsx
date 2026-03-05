@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
+import { retryWrite } from "../utils/retryWrite";
 import styles from "./CommandInput.module.css";
 
 interface CommandInputProps {
@@ -14,14 +15,14 @@ export function CommandInput(props: CommandInputProps) {
     const text = value().trim();
     if (!text) return;
 
+    setValue("");
     try {
       // PTY expects \r (carriage return) for Enter — \n is a line feed
       // and won't trigger command submission in raw-mode programs (Ink, etc.)
-      await rpc("write_pty", { sessionId: props.sessionId, data: text + "\r" });
-      setValue("");
+      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: text + "\r" }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      appLogger.warn("network", `Failed to send command: ${msg}`);
+      appLogger.error("network", `Failed to send command after retries: ${msg}`);
     }
   }
 

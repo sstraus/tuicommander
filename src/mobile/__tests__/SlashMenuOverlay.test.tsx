@@ -48,7 +48,7 @@ describe("SlashMenuOverlay", () => {
     await fireEvent.click(buttons[1]); // click /review
     expect(rpc).toHaveBeenCalledWith("write_pty", {
       sessionId: "s1",
-      data: "\x15/review\n",
+      data: "\x15/review\r",
     });
     expect(onDismiss).toHaveBeenCalled();
   });

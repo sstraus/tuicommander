@@ -1,5 +1,6 @@
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
+import { retryWrite } from "../utils/retryWrite";
 import styles from "./TerminalKeybar.module.css";
 
 interface TerminalKeybarProps {
@@ -21,10 +22,10 @@ const KEYS: KeyDef[] = [
 export function TerminalKeybar(props: TerminalKeybarProps) {
   async function send(seq: string) {
     try {
-      await rpc("write_pty", { sessionId: props.sessionId, data: seq });
+      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: seq }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      appLogger.warn("network", `Key send failed: ${msg}`);
+      appLogger.error("network", `Key send failed after retries: ${msg}`);
     }
   }
 

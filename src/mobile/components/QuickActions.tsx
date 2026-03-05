@@ -1,5 +1,6 @@
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
+import { retryWrite } from "../utils/retryWrite";
 import styles from "./QuickActions.module.css";
 
 interface QuickActionsProps {
@@ -17,10 +18,10 @@ const ACTIONS = [
 
 async function send(sessionId: string, data: string) {
   try {
-    await rpc("write_pty", { sessionId, data: data + "\n" });
+    await retryWrite(() => rpc("write_pty", { sessionId, data: data + "\r" }));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    appLogger.warn("network", `Failed to send: ${msg}`);
+    appLogger.error("network", `Failed to send after retries: ${msg}`);
   }
 }
 
