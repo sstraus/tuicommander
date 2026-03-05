@@ -68,5 +68,49 @@ describe("useQuickSwitcher", () => {
 
       expect(mockHandleBranchSelect).toHaveBeenCalledWith("/repo", "main");
     });
+
+    it("skips collapsed repos", () => {
+      repositoriesStore.add({ path: "/repo1", displayName: "Repo1" });
+      repositoriesStore.setBranch("/repo1", "main", { worktreePath: "/repo1" });
+      repositoriesStore.toggleCollapsed("/repo1");
+
+      repositoriesStore.add({ path: "/repo2", displayName: "Repo2" });
+      repositoriesStore.setBranch("/repo2", "develop", { worktreePath: "/repo2" });
+
+      // Index 1 should skip collapsed repo1 and hit repo2
+      switcher.switchToBranchByIndex(1);
+
+      expect(mockHandleBranchSelect).toHaveBeenCalledWith("/repo2", "develop");
+    });
+
+    it("skips non-expanded repos", () => {
+      repositoriesStore.add({ path: "/repo1", displayName: "Repo1" });
+      repositoriesStore.setBranch("/repo1", "main", { worktreePath: "/repo1" });
+      repositoriesStore.toggleExpanded("/repo1"); // expanded: false
+
+      repositoriesStore.add({ path: "/repo2", displayName: "Repo2" });
+      repositoriesStore.setBranch("/repo2", "develop", { worktreePath: "/repo2" });
+
+      // Index 1 should skip non-expanded repo1 and hit repo2
+      switcher.switchToBranchByIndex(1);
+
+      expect(mockHandleBranchSelect).toHaveBeenCalledWith("/repo2", "develop");
+    });
+
+    it("skips repos in collapsed groups", () => {
+      repositoriesStore.add({ path: "/repo1", displayName: "Repo1" });
+      repositoriesStore.setBranch("/repo1", "main", { worktreePath: "/repo1" });
+      const groupId = repositoriesStore.createGroup("MyGroup")!;
+      repositoriesStore.addRepoToGroup("/repo1", groupId);
+      repositoriesStore.toggleGroupCollapsed(groupId);
+
+      repositoriesStore.add({ path: "/repo2", displayName: "Repo2" });
+      repositoriesStore.setBranch("/repo2", "develop", { worktreePath: "/repo2" });
+
+      // Index 1 should skip repo1 in collapsed group
+      switcher.switchToBranchByIndex(1);
+
+      expect(mockHandleBranchSelect).toHaveBeenCalledWith("/repo2", "develop");
+    });
   });
 });

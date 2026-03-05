@@ -11,7 +11,6 @@ import s from "./Sidebar.module.css";
 export const GroupSection: Component<{
   group: RepoGroup;
   repos: RepositoryState[];
-  quickSwitcherActive?: boolean;
   onRename: (groupId: string) => void;
   onColorChange: (groupId: string) => void;
   onDragStart?: (e: DragEvent) => void;
@@ -54,7 +53,7 @@ export const GroupSection: Component<{
         <span class={s.groupCount}>{props.repos.length}</span>
         <span class={cx(s.groupChevron, !props.group.collapsed && s.expanded)}>{"\u203A"}</span>
       </div>
-      <Show when={!props.group.collapsed || props.quickSwitcherActive}>
+      <Show when={!props.group.collapsed}>
         <div class={s.groupRepos}>
           <Show when={props.repos.length === 0}>
             <div class={s.groupEmptyHint}>{t("sidebar.dragReposHere", "Drag repos here")}</div>

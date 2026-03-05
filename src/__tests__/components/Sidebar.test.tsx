@@ -726,25 +726,27 @@ describe("Sidebar", () => {
   });
 
   describe("quick switcher mode", () => {
-    it("shows shortcut keys instead of action buttons in quick switcher mode", () => {
+    it("shows shortcut keys and hides action buttons in quick switcher mode", () => {
       setRepos({ "/repo1": makeRepo() });
       const { container } = render(() => <Sidebar {...defaultProps({ quickSwitcherActive: true })} />);
 
-      const shortcut = container.querySelector(".branchShortcut");
+      const shortcut = container.querySelector(".branchShortcut") as HTMLElement;
       expect(shortcut).not.toBeNull();
-      expect(shortcut!.textContent).toContain("1");
+      expect(shortcut.textContent).toContain("1");
+      expect(shortcut.style.display).not.toBe("none");
 
-      // Should not show add/remove buttons
-      const addBtn = container.querySelector(".branchAddBtn");
-      expect(addBtn).toBeNull();
+      // Action buttons should be hidden (display:none), not removed
+      const actions = container.querySelector(".branchActions") as HTMLElement;
+      expect(actions).not.toBeNull();
+      expect(actions.style.display).toBe("none");
     });
 
-    it("forces branches visible in quick switcher even when not expanded", () => {
+    it("keeps collapsed repos hidden in quick switcher mode", () => {
       setRepos({ "/repo1": makeRepo({ expanded: false }) });
       const { container } = render(() => <Sidebar {...defaultProps({ quickSwitcherActive: true })} />);
 
       const branchItems = container.querySelectorAll(".branchItem");
-      expect(branchItems.length).toBe(1);
+      expect(branchItems.length).toBe(0);
     });
   });
 

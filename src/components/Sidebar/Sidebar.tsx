@@ -118,20 +118,24 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     document.body.style.userSelect = "none";
   };
 
-  // Compute the starting shortcut index for each repo (1-based, cumulative across all groups then ungrouped)
+  // Compute the starting shortcut index for each repo (1-based, cumulative across all groups then ungrouped).
+  // Only counts visible repos (expanded, not collapsed, in non-collapsed groups).
   const repoShortcutStarts = createMemo(() => {
     const starts: Record<string, number> = {};
     let counter = 1;
     const layout = groupedLayout();
-    // Groups first
+    // Groups first — skip collapsed groups and collapsed/non-expanded repos
     for (const entry of layout.groups) {
+      if (entry.group.collapsed) continue;
       for (const repo of entry.repos) {
+        if (!repo.expanded || repo.collapsed) continue;
         starts[repo.path] = counter;
         counter += Object.keys(repo.branches).length;
       }
     }
-    // Then ungrouped
+    // Then ungrouped — skip collapsed/non-expanded repos
     for (const repo of layout.ungrouped) {
+      if (!repo.expanded || repo.collapsed) continue;
       starts[repo.path] = counter;
       counter += Object.keys(repo.branches).length;
     }
@@ -208,7 +212,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                 <GroupSection
                   group={entry.group}
                   repos={entry.repos}
-                  quickSwitcherActive={props.quickSwitcherActive}
                   onRename={handleGroupRename}
                   onColorChange={handleGroupColorChange}
                   onDragStart={(e) => drag.handleGroupDragStart(e, entry.group.id)}
