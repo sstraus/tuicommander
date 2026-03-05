@@ -9,6 +9,7 @@ import { filterValidTerminals } from "../utils/terminalFilter";
 import { buildResumeCommand } from "../utils/agentSession";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { githubStore } from "../stores/github";
+import { effectiveMergeMethod, isMergeMethodNotAllowed } from "../utils/prMerge";
 import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
 
 /** Dependencies injected into useGitOperations */
@@ -847,11 +848,16 @@ export function useGitOperations(deps: GitOperationsDeps) {
       // Use GitHub API when a PR exists for this branch
       const pr = githubStore.getPrStatus(repoPath, branchName);
       if (pr && pr.state === "OPEN") {
-        const strategy = repoSettingsStore.getEffective(repoPath)?.prMergeStrategy ?? "merge";
+        const preferred = repoSettingsStore.getEffective(repoPath)?.prMergeStrategy ?? "merge";
+        const method = effectiveMergeMethod(pr, preferred);
         try {
-          await deps.repo.mergePrViaGithub(repoPath, pr.number, strategy);
+          await deps.repo.mergePrViaGithub(repoPath, pr.number, method);
         } catch (githubErr) {
-          // GitHub API merge failed — fall back to local git merge
+          if (isMergeMethodNotAllowed(githubErr)) {
+            // Surface 405 to the caller — branch protection rules disallow this merge method
+            throw githubErr;
+          }
+          // Other GitHub API failures — fall back to local git merge
           appLogger.warn("git", `GitHub API merge failed, falling back to local git merge: ${githubErr}`);
           await mergeLocalAndFinalize(repoPath, branchName, targetBranch, afterMerge);
           return;
@@ -874,6 +880,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
       // No open PR — local git merge
       await mergeLocalAndFinalize(repoPath, branchName, targetBranch, afterMerge);
     } catch (err) {
+      if (isMergeMethodNotAllowed(err)) {
+        throw err;
+      }
       appLogger.error("git", "Failed to merge and archive worktree", err);
       deps.setStatusInfo(`Failed to merge: ${err}`);
     }

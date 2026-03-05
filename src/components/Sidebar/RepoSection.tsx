@@ -7,6 +7,8 @@ import { appLogger } from "../../stores/appLogger";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { activePrStatus, _resetMergedActivityAccum } from "../../utils/mergedPrGrace";
+import { effectiveMergeMethod } from "../../utils/prMerge";
+export { effectiveMergeMethod };
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
 import { PromptDialog } from "../PromptDialog";
@@ -315,34 +317,33 @@ export const BranchItem: Component<{
         </span>
       </Show>
       <StatsBadge additions={props.branch.additions} deletions={props.branch.deletions} />
-      <Show when={props.shortcutIndex !== undefined} fallback={
-        <div class={s.branchActions}>
+      <div class={s.branchActions} style={{ display: props.shortcutIndex !== undefined ? "none" : undefined }}>
+        <button
+          class={s.branchAddBtn}
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onAddTerminal();
+          }}
+          title={t("sidebar.addTerminal", "Add terminal")}
+        >
+          +
+        </button>
+        <Show when={!props.branch.isMain && props.branch.worktreePath && props.canRemove}>
           <button
-            class={s.branchAddBtn}
+            class={s.branchRemoveBtn}
             onClick={(e) => {
               e.stopPropagation();
-              props.onAddTerminal();
+              props.onRemove();
             }}
-            title={t("sidebar.addTerminal", "Add terminal")}
+            title={t("sidebar.removeWorktree", "Remove worktree")}
           >
-            +
+            ×
           </button>
-          <Show when={!props.branch.isMain && props.branch.worktreePath && props.canRemove}>
-            <button
-              class={s.branchRemoveBtn}
-              onClick={(e) => {
-                e.stopPropagation();
-                props.onRemove();
-              }}
-              title={t("sidebar.removeWorktree", "Remove worktree")}
-            >
-              ×
-            </button>
-          </Show>
-        </div>
-      }>
-        <span class={s.branchShortcut}>{getModifierSymbol()}^{props.shortcutIndex}</span>
-      </Show>
+        </Show>
+      </div>
+      <span class={s.branchShortcut} style={{ display: props.shortcutIndex !== undefined ? undefined : "none" }}>
+        {getModifierSymbol()}^{props.shortcutIndex}
+      </span>
       <ContextMenu
         items={contextMenuItems()}
         x={ctxMenu.position().x}
@@ -363,24 +364,6 @@ export function canMergePr(pr: BranchPrStatus): boolean {
     && (pr.checks?.pending ?? 0) === 0;
 }
 
-/** Pick the merge method for a PR based on repo-allowed methods and user preference.
- *  Returns the first allowed method, preferring the user's configured strategy. */
-export function effectiveMergeMethod(
-  pr: BranchPrStatus,
-  preferred: string,
-): string {
-  const allowed: Record<string, boolean> = {
-    merge: pr.merge_commit_allowed,
-    squash: pr.squash_merge_allowed,
-    rebase: pr.rebase_merge_allowed,
-  };
-  if (allowed[preferred]) return preferred;
-  // Fall back to the first allowed method
-  for (const method of ["squash", "rebase", "merge"] as const) {
-    if (allowed[method]) return method;
-  }
-  return preferred; // all false shouldn't happen — send preferred anyway
-}
 
 /** Popover listing open PRs on remote-only branches with inline accordion detail */
 const RemoteOnlyPrPopover: Component<{
@@ -840,8 +823,8 @@ export const RepoSection: Component<{
         </Show>
       </div>
 
-      {/* Branches - force expanded in quick switcher mode */}
-      <Show when={(props.repo.expanded && !props.repo.collapsed) || props.quickSwitcherActive}>
+      {/* Branches */}
+      <Show when={props.repo.expanded && !props.repo.collapsed}>
         <div class={s.repoBranches}>
           <For each={sortedBranches()}>
             {(branch, index) => (

@@ -647,6 +647,28 @@ describe("useGitOperations", () => {
       expect(mockRepo.mergePrViaGithub).not.toHaveBeenCalled();
       expect(mockRepo.mergeAndArchiveWorktree).toHaveBeenCalled();
     });
+
+    it("uses effectiveMergeMethod to pick allowed method when preferred is disallowed", async () => {
+      // Repo only allows squash; preferred is "merge"
+      githubStore.updateRepoData("/repo", [{ ...testPr, merge_commit_allowed: false, squash_merge_allowed: true, rebase_merge_allowed: false }]);
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { prMergeStrategy: "merge" });
+
+      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "archive");
+
+      expect(mockRepo.mergePrViaGithub).toHaveBeenCalledWith("/repo", 99, "squash");
+    });
+
+    it("re-throws 405 error instead of silently falling back to local merge", async () => {
+      const err = new Error("GitHub merge failed (405): Merge commits are not allowed on this repository.");
+      mockRepo.mergePrViaGithub.mockRejectedValueOnce(err);
+
+      await expect(
+        gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "archive"),
+      ).rejects.toThrow("405");
+
+      expect(mockRepo.mergeAndArchiveWorktree).not.toHaveBeenCalled();
+    });
   });
 
   describe("refreshAllBranchStats", () => {
