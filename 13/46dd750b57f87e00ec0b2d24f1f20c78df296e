@@ -1,0 +1,25 @@
+src/components/PrDetailPopover/PrDetailPopover.tsx
+  e5458edc56702a98 6,9,45-69,169-179,181-183
+src/components/PrDetailPopover/PrDetailPopover.module.css
+  e5458edc56702a98 397-425
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "1346dd750b57f87e00ec0b2d24f1f20c78df296e",
+  "prompts": {
+    "e5458edc56702a98": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12601615-ef15-4b09-b4da-179fc019ce6c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 68,
+      "total_deletions": 0,
+      "accepted_lines": 70,
+      "overriden_lines": 0
+    }
+  }
+}
