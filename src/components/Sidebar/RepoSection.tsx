@@ -363,6 +363,25 @@ export function canMergePr(pr: BranchPrStatus): boolean {
     && (pr.checks?.pending ?? 0) === 0;
 }
 
+/** Pick the merge method for a PR based on repo-allowed methods and user preference.
+ *  Returns the first allowed method, preferring the user's configured strategy. */
+export function effectiveMergeMethod(
+  pr: BranchPrStatus,
+  preferred: string,
+): string {
+  const allowed: Record<string, boolean> = {
+    merge: pr.merge_commit_allowed,
+    squash: pr.squash_merge_allowed,
+    rebase: pr.rebase_merge_allowed,
+  };
+  if (allowed[preferred]) return preferred;
+  // Fall back to the first allowed method
+  for (const method of ["squash", "rebase", "merge"] as const) {
+    if (allowed[method]) return method;
+  }
+  return preferred; // all false shouldn't happen — send preferred anyway
+}
+
 /** Popover listing open PRs on remote-only branches with inline accordion detail */
 const RemoteOnlyPrPopover: Component<{
   prs: BranchPrStatus[];
@@ -471,7 +490,8 @@ const RemoteOnlyPrPopover: Component<{
     setMergingPr(pr.number);
     setMergeError(null);
     try {
-      const method = repoSettingsStore.getEffective(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
+      const preferred = repoSettingsStore.getEffective(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
+      const method = effectiveMergeMethod(pr, preferred);
       await invoke("merge_pr_via_github", {
         repoPath: props.repoPath,
         prNumber: pr.number,

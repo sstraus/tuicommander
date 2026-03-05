@@ -571,9 +571,14 @@ pub(crate) struct BranchPrStatus {
     pub(crate) updated_at: String,
     pub(crate) merge_state_label: Option<StateLabel>,
     pub(crate) review_state_label: Option<StateLabel>,
+    /// Repo-level: merge commits allowed
+    pub(crate) merge_commit_allowed: bool,
+    /// Repo-level: squash merge allowed
+    pub(crate) squash_merge_allowed: bool,
+    /// Repo-level: rebase merge allowed
+    pub(crate) rebase_merge_allowed: bool,
 }
 
-/// Parse a GraphQL PR node into a BranchPrStatus.
 /// Shared logic for extracting fields from a single PR node.
 fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
     let branch = v["headRefName"].as_str()?.to_string();
@@ -677,7 +682,23 @@ fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
         updated_at,
         merge_state_label,
         review_state_label,
+        // Defaults — stamped with real values from repo-level response after parsing
+        merge_commit_allowed: true,
+        squash_merge_allowed: true,
+        rebase_merge_allowed: true,
     })
+}
+
+/// Stamp merge policy from a GraphQL repository object onto parsed PR nodes.
+fn stamp_merge_policy(nodes: &mut [BranchPrStatus], repo_json: &serde_json::Value) {
+    let merge = repo_json["mergeCommitAllowed"].as_bool().unwrap_or(true);
+    let squash = repo_json["squashMergeAllowed"].as_bool().unwrap_or(true);
+    let rebase = repo_json["rebaseMergeAllowed"].as_bool().unwrap_or(true);
+    for pr in nodes.iter_mut() {
+        pr.merge_commit_allowed = merge;
+        pr.squash_merge_allowed = squash;
+        pr.rebase_merge_allowed = rebase;
+    }
 }
 
 /// Parse a GraphQL batch PR response into BranchPrStatus entries.
@@ -765,10 +786,13 @@ pub(crate) fn get_repo_pr_statuses_impl(
     match graphql_with_retry(state, &query, serde_json::Value::Null) {
         Ok(response) => {
             let alias = &aliases[0].0;
-            let mut nodes: Vec<BranchPrStatus> = response["data"][alias]["pullRequests"]["nodes"]
+            let repo_json = &response["data"][alias];
+            let mut nodes: Vec<BranchPrStatus> = repo_json["pullRequests"]["nodes"]
                 .as_array()
                 .map(|arr| arr.iter().filter_map(parse_pr_node).collect())
                 .unwrap_or_default();
+
+            stamp_merge_policy(&mut nodes, repo_json);
 
             // Filter stale merged PRs (same logic as batch endpoint)
             if include_merged && nodes.iter().any(|s| s.state == "MERGED") {
@@ -870,7 +894,7 @@ fn build_multi_repo_pr_query(
     for (i, (path, owner, name)) in repos.iter().enumerate() {
         let alias = format!("r{i}");
         parts.push(format!(
-            "  {alias}: repository(owner: \"{owner}\", name: \"{name}\") {{\n    pullRequests(first: 20, states: {states}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {node_fields} }}\n    }}\n  }}"
+            "  {alias}: repository(owner: \"{owner}\", name: \"{name}\") {{\n    mergeCommitAllowed\n    squashMergeAllowed\n    rebaseMergeAllowed\n    pullRequests(first: 20, states: {states}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {node_fields} }}\n    }}\n  }}"
         ));
         aliases.push((alias, path.clone()));
     }
@@ -912,11 +936,13 @@ pub(crate) fn get_all_pr_statuses_impl(
 
     let mut results = std::collections::HashMap::new();
     for (alias, path) in &aliases {
-        let nodes = match response["data"][alias]["pullRequests"]["nodes"].as_array() {
+        let repo_json = &response["data"][alias];
+        let nodes = match repo_json["pullRequests"]["nodes"].as_array() {
             Some(arr) => arr,
             None => continue,
         };
         let mut statuses: Vec<BranchPrStatus> = nodes.iter().filter_map(parse_pr_node).collect();
+        stamp_merge_policy(&mut statuses, repo_json);
 
         // Filter stale merged PRs: if a branch was recreated (e.g. new worktree from
         // scratch), its local tip won't match the PR's headRefOid.  Without this filter
@@ -1135,44 +1161,6 @@ pub(crate) fn get_ci_checks_impl(
 }
 
 /// Merge a PR via GitHub REST API using the specified merge method.
-///
-/// All merge methods in fallback order.
-const MERGE_METHODS: &[&str] = &["squash", "rebase", "merge"];
-
-/// Try a single PUT /repos/{owner}/{repo}/pulls/{number}/merge call.
-/// Returns Ok(sha) on success, Err((status_code, message)) on failure.
-fn try_merge(
-    client: &reqwest::blocking::Client,
-    url: &str,
-    token: &str,
-    method: &str,
-) -> Result<String, (u16, String)> {
-    let body = serde_json::json!({ "merge_method": method });
-    let response = client
-        .put(url)
-        .header("Authorization", format!("Bearer {token}"))
-        .header("User-Agent", "tuicommander")
-        .header("Accept", "application/vnd.github+json")
-        .json(&body)
-        .send()
-        .map_err(|e| (0u16, format!("GitHub API request failed: {e}")))?;
-
-    let status = response.status().as_u16();
-    let json: serde_json::Value = response
-        .json()
-        .map_err(|e| (0u16, format!("Failed to parse GitHub API response: {e}")))?;
-
-    if (200..300).contains(&status) {
-        Ok(json["sha"].as_str().unwrap_or("").to_string())
-    } else {
-        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
-        Err((status, msg))
-    }
-}
-
-/// Merge a PR via GitHub REST API.
-/// Tries the requested method first; on 405 (method not allowed) falls back
-/// to the other methods in order: squash → rebase → merge.
 pub(crate) fn merge_pr_github_impl(
     repo_path: &str,
     pr_number: i64,
@@ -1192,39 +1180,29 @@ pub(crate) fn merge_pr_github_impl(
         .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/merge");
+    let body = serde_json::json!({ "merge_method": merge_method });
 
-    // Try preferred method first
-    match try_merge(&state.http_client, &url, &token, merge_method) {
-        Ok(sha) => return Ok(sha),
-        Err((405, _)) => {
-            // Method not allowed by repo settings — try alternatives
-            eprintln!(
-                "[github] merge method '{merge_method}' not allowed for {owner}/{repo}, trying alternatives"
-            );
-        }
-        Err((status, msg)) => {
-            return Err(format!("GitHub merge failed ({status}): {msg}"));
-        }
+    let response = state
+        .http_client
+        .put(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "tuicommander")
+        .header("Accept", "application/vnd.github+json")
+        .json(&body)
+        .send()
+        .map_err(|e| format!("GitHub API request failed: {e}"))?;
+
+    let status = response.status().as_u16();
+    let json: serde_json::Value = response
+        .json()
+        .map_err(|e| format!("Failed to parse GitHub API response: {e}"))?;
+
+    if (200..300).contains(&status) {
+        Ok(json["sha"].as_str().unwrap_or("").to_string())
+    } else {
+        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
+        Err(format!("GitHub merge failed ({status}): {msg}"))
     }
-
-    // Fallback: try each method except the one that already failed
-    for &fallback in MERGE_METHODS {
-        if fallback == merge_method {
-            continue;
-        }
-        match try_merge(&state.http_client, &url, &token, fallback) {
-            Ok(sha) => {
-                eprintln!("[github] merged PR #{pr_number} via fallback method '{fallback}'");
-                return Ok(sha);
-            }
-            Err((405, _)) => continue,
-            Err((status, msg)) => {
-                return Err(format!("GitHub merge failed ({status}): {msg}"));
-            }
-        }
-    }
-
-    Err("Merge commits are not allowed on this repository (all methods rejected)".to_string())
 }
 
 /// Merge a PR via GitHub REST API (Tauri command).

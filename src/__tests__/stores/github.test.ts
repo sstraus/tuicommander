@@ -57,6 +57,9 @@ describe("githubStore", () => {
       updated_at: "2026-01-15T12:00:00Z",
       merge_state_label: { label: "Ready to merge", css_class: "clean" },
       review_state_label: null,
+      merge_commit_allowed: true,
+      squash_merge_allowed: true,
+      rebase_merge_allowed: true,
       ...overrides,
     };
   }

@@ -6,7 +6,7 @@ import { mdTabsStore } from "../../stores/mdTabs";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { appLogger } from "../../stores/appLogger";
 import { invoke } from "../../invoke";
-import { canMergePr } from "../Sidebar/RepoSection";
+import { canMergePr, effectiveMergeMethod } from "../Sidebar/RepoSection";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -119,7 +119,8 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     setMerging(true);
     setMergeError(null);
     try {
-      const method = repoSettingsStore.getEffective(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
+      const preferred = repoSettingsStore.getEffective(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
+      const method = effectiveMergeMethod(pr, preferred);
       await invoke("merge_pr_via_github", {
         repoPath: props.repoPath,
         prNumber: pr.number,

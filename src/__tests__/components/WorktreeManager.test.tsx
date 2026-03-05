@@ -41,6 +41,7 @@ function mockPr(overrides: Partial<BranchPrStatus> & Pick<BranchPrStatus, "numbe
     merge_state_status: "UNKNOWN", review_decision: "", labels: [],
     is_draft: false, base_ref_name: "main", head_ref_oid: "", created_at: "", updated_at: "",
     merge_state_label: null, review_state_label: null,
+    merge_commit_allowed: true, squash_merge_allowed: true, rebase_merge_allowed: true,
     ...overrides,
   };
 }

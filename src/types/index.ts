@@ -135,6 +135,9 @@ export interface BranchPrStatus {
   updated_at: string;
   merge_state_label: { label: string; css_class: string } | null;
   review_state_label: { label: string; css_class: string } | null;
+  merge_commit_allowed: boolean;
+  squash_merge_allowed: boolean;
+  rebase_merge_allowed: boolean;
 }
 
 /** Agent statistics */

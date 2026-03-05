@@ -42,6 +42,9 @@ const basePr: BranchPrStatus = {
   updated_at: new Date().toISOString(),
   merge_state_label: { label: "Ready to merge", css_class: "clean" },
   review_state_label: { label: "Approved", css_class: "approved" },
+  merge_commit_allowed: true,
+  squash_merge_allowed: true,
+  rebase_merge_allowed: true,
 };
 
 /** Derive merge_state_label from mergeable/merge_state_status when not explicitly set.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canMergePr } from "../../components/Sidebar/RepoSection";
+import { canMergePr, effectiveMergeMethod } from "../../components/Sidebar/RepoSection";
 import type { BranchPrStatus } from "../../types";
 
 /** Build a BranchPrStatus with sensible defaults for a merge-eligible PR */
@@ -27,6 +27,9 @@ function makePr(overrides: Partial<BranchPrStatus> = {}): BranchPrStatus {
     updated_at: "2026-01-01T00:00:00Z",
     merge_state_label: { label: "Ready", css_class: "clean" },
     review_state_label: { label: "Approved", css_class: "approved" },
+    merge_commit_allowed: true,
+    squash_merge_allowed: true,
+    rebase_merge_allowed: true,
     ...overrides,
   };
 }
@@ -75,5 +78,42 @@ describe("canMergePr", () => {
   it("handles lowercase state string", () => {
     expect(canMergePr(makePr({ state: "open" }))).toBe(true);
     expect(canMergePr(makePr({ state: "closed" }))).toBe(false);
+  });
+});
+
+describe("effectiveMergeMethod", () => {
+  it("returns preferred method when allowed", () => {
+    expect(effectiveMergeMethod(makePr(), "squash")).toBe("squash");
+    expect(effectiveMergeMethod(makePr(), "merge")).toBe("merge");
+    expect(effectiveMergeMethod(makePr(), "rebase")).toBe("rebase");
+  });
+
+  it("falls back when preferred method is not allowed", () => {
+    const pr = makePr({ merge_commit_allowed: false });
+    expect(effectiveMergeMethod(pr, "merge")).toBe("squash");
+  });
+
+  it("picks first available when preferred is disallowed", () => {
+    const pr = makePr({ merge_commit_allowed: false, squash_merge_allowed: false });
+    expect(effectiveMergeMethod(pr, "merge")).toBe("rebase");
+  });
+
+  it("returns squash for squash-only repo", () => {
+    const pr = makePr({
+      merge_commit_allowed: false,
+      squash_merge_allowed: true,
+      rebase_merge_allowed: false,
+    });
+    expect(effectiveMergeMethod(pr, "merge")).toBe("squash");
+    expect(effectiveMergeMethod(pr, "rebase")).toBe("squash");
+  });
+
+  it("returns preferred as last resort when all are false", () => {
+    const pr = makePr({
+      merge_commit_allowed: false,
+      squash_merge_allowed: false,
+      rebase_merge_allowed: false,
+    });
+    expect(effectiveMergeMethod(pr, "squash")).toBe("squash");
   });
 });
