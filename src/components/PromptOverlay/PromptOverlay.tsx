@@ -59,13 +59,14 @@ export const PromptOverlay: Component<PromptOverlayProps> = (props) => {
           break;
         case "Escape":
           e.preventDefault();
+          e.stopPropagation();
           dismiss();
           break;
       }
     };
 
-    document.addEventListener("keydown", handleKeydown);
-    onCleanup(() => document.removeEventListener("keydown", handleKeydown));
+    document.addEventListener("keydown", handleKeydown, true);
+    onCleanup(() => document.removeEventListener("keydown", handleKeydown, true));
   });
 
   const selectAndConfirm = async (index: number) => {

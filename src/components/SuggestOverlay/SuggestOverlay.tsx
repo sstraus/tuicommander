@@ -14,6 +14,8 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
       props.onDismiss();
       return;
     }
