@@ -362,6 +362,38 @@
   color: var(--fg-primary);
 }
 
+/* View Diff action button */
+.actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.viewDiffBtn {
+  flex: 1;
+  padding: 6px 12px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.viewDiffBtn:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-color: var(--accent);
+}
+
+.viewDiffBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Empty state */
 .empty {
   padding: 20px;

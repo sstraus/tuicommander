@@ -1,7 +1,10 @@
-import { Component, Show, createMemo, onMount, onCleanup } from "solid-js";
+import { Component, Show, createMemo, createSignal, onMount, onCleanup } from "solid-js";
 import { githubStore } from "../../stores/github";
 import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
+import { mdTabsStore } from "../../stores/mdTabs";
+import { appLogger } from "../../stores/appLogger";
+import { invoke } from "../../invoke";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -36,6 +39,25 @@ export interface PrDetailPopoverProps {
 /** Rich PR detail popover showing PR metadata, diff stats, and CI checks */
 export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
   const prData = () => githubStore.getBranchPrData(props.repoPath, props.branch);
+  const [diffLoading, setDiffLoading] = createSignal(false);
+
+  const handleViewDiff = async () => {
+    const pr = prData();
+    if (!pr) return;
+    setDiffLoading(true);
+    try {
+      const diff = await invoke<string>("get_pr_diff", {
+        repoPath: props.repoPath,
+        prNumber: pr.number,
+      });
+      mdTabsStore.addPrDiff(props.repoPath, pr.number, pr.title, diff);
+      props.onClose();
+    } catch (e) {
+      appLogger.error("github", `Failed to load PR #${pr.number} diff`, { error: String(e) });
+    } finally {
+      setDiffLoading(false);
+    }
+  };
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -106,7 +128,19 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
               </div>
 
               {/* Shared body content: status pills, labels, meta, CI, checks, open link */}
-              <PrDetailContent repoPath={props.repoPath} branch={props.branch} />
+              <PrDetailContent repoPath={props.repoPath} branch={props.branch}>
+                <div class={s.actions}>
+                  <button
+                    class={s.viewDiffBtn}
+                    onClick={handleViewDiff}
+                    disabled={diffLoading()}
+                  >
+                    {diffLoading()
+                      ? t("prDetail.loadingDiff", "Loading...")
+                      : t("prDetail.viewDiff", "View Diff")}
+                  </button>
+                </div>
+              </PrDetailContent>
             </>
           )}
         </Show>
