@@ -3,8 +3,10 @@ import { githubStore } from "../../stores/github";
 import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { mdTabsStore } from "../../stores/mdTabs";
+import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { appLogger } from "../../stores/appLogger";
 import { invoke } from "../../invoke";
+import { canMergePr } from "../Sidebar/RepoSection";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -40,6 +42,31 @@ export interface PrDetailPopoverProps {
 export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
   const prData = () => githubStore.getBranchPrData(props.repoPath, props.branch);
   const [diffLoading, setDiffLoading] = createSignal(false);
+  const [merging, setMerging] = createSignal(false);
+  const [mergeError, setMergeError] = createSignal<string | null>(null);
+
+  const handleMerge = async () => {
+    const pr = prData();
+    if (!pr) return;
+    setMerging(true);
+    setMergeError(null);
+    try {
+      const method = repoDefaultsStore.state.prMergeStrategy;
+      await invoke("merge_pr_via_github", {
+        repoPath: props.repoPath,
+        prNumber: pr.number,
+        mergeMethod: method,
+      });
+      appLogger.info("github", `Merged PR #${pr.number} via ${method}`);
+      githubStore.pollRepo(props.repoPath);
+      props.onClose();
+    } catch (e) {
+      setMergeError(String(e));
+      appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: String(e) });
+    } finally {
+      setMerging(false);
+    }
+  };
 
   const handleViewDiff = async () => {
     const pr = prData();
@@ -139,7 +166,21 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                       ? t("prDetail.loadingDiff", "Loading...")
                       : t("prDetail.viewDiff", "View Diff")}
                   </button>
+                  <Show when={prData() && canMergePr(prData()!)}>
+                    <button
+                      class={s.mergeBtn}
+                      onClick={handleMerge}
+                      disabled={merging()}
+                    >
+                      {merging()
+                        ? t("prDetail.merging", "Merging...")
+                        : t("prDetail.merge", "Merge")}
+                    </button>
+                  </Show>
                 </div>
+                <Show when={mergeError()}>
+                  <div class={s.errorMsg}>{mergeError()}</div>
+                </Show>
               </PrDetailContent>
             </>
           )}

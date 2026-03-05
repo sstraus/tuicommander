@@ -394,6 +394,35 @@
   cursor: not-allowed;
 }
 
+.mergeBtn {
+  flex: 1;
+  padding: 6px 12px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--success);
+  background: rgba(63, 185, 80, 0.12);
+  color: var(--success);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.mergeBtn:hover {
+  background: var(--success);
+  color: var(--bg-primary);
+}
+
+.mergeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.errorMsg {
+  padding: 4px 12px 8px;
+  font-size: var(--font-xs);
+  color: var(--error);
+}
+
 /* Empty state */
 .empty {
   padding: 20px;
