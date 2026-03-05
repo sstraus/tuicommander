@@ -251,6 +251,8 @@ pub(crate) fn spawn_reader_thread(
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
         let parser = OutputParser::new();
+        // Dedup status-line events: only emit when task_name actually changes
+        let mut last_status_task: Option<String> = None;
         // Resolve session CWD once for resolving relative plan-file paths
         let session_cwd: Option<String> = state
             .sessions
@@ -351,6 +353,13 @@ pub(crate) fn spawn_reader_thread(
                                 | ParsedEvent::ApiError { .. }
                             ) {
                                 continue;
+                            }
+                            // Dedup status-line: skip if task_name hasn't changed
+                            if let ParsedEvent::StatusLine { task_name, .. } = event {
+                                if last_status_task.as_deref() == Some(task_name.as_str()) {
+                                    continue;
+                                }
+                                last_status_task = Some(task_name.clone());
                             }
                             // Resolve relative plan-file paths to absolute using session CWD
                             let resolved = if let ParsedEvent::PlanFile { path } = event {
