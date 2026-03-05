@@ -8,10 +8,10 @@ Optional HTTP/WebSocket server that exposes all Tauri commands as REST endpoints
 
 The server has two independent listeners:
 
-- **Unix socket** (always started): Listens at `<config_dir>/mcp.sock` with no authentication. Used by the local `tuic-bridge` sidecar.
+- **IPC listener** (always started): On macOS/Linux, listens at `<config_dir>/mcp.sock` (Unix domain socket). On Windows, listens on `\\.\pipe\tuicommander-mcp` (named pipe). No authentication — used by the local `tuic-bridge` sidecar.
 - **TCP listener** (opt-in): Only starts when remote access is enabled. Binds to `0.0.0.0:<remote_access_port>` with Basic Auth.
 
-The `mcp_server_enabled` config flag controls whether the `/mcp` protocol route is active (MCP tool discovery and invocation), not whether the server itself starts. The HTTP API endpoints (sessions, git, config, etc.) are always available on the Unix socket.
+The `mcp_server_enabled` config flag controls whether the `/mcp` protocol route is active (MCP tool discovery and invocation), not whether the server itself starts. The HTTP API endpoints (sessions, git, config, etc.) are always available on the IPC listener.
 
 Configuration via Settings > Services, or `config.json`:
 
@@ -24,7 +24,7 @@ Configuration via Settings > Services, or `config.json`:
 ```
 
 On startup, the server:
-1. Binds a Unix domain socket at `<config_dir>/mcp.sock` (removes stale socket from previous run)
+1. Binds the IPC listener: Unix socket at `<config_dir>/mcp.sock` (macOS/Linux) or named pipe `\\.\pipe\tuicommander-mcp` (Windows)
 2. If remote access is enabled, binds a TCP listener on the configured port
 3. Starts Axum HTTP server on a background tokio thread
 4. Enables CORS for browser mode

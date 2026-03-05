@@ -30,7 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - **Progressive worktree loading** — `refreshAllBranchStats` now uses two-phase progressive loading. Phase 1 (`get_repo_structure`) returns worktree paths and merged branches instantly, so WorktreeManager rows appear immediately. Phase 2 (`get_repo_diff_stats`) fills in diff stats and timestamps progressively. Auto-archive of merged worktrees runs after Phase 1 instead of waiting for all stats
-- **MCP Unix socket transport** — MCP server now uses Unix domain socket (`<config_dir>/mcp.sock`) for local connections; port-based infrastructure removed. TCP port only for remote access
+- **MCP cross-platform IPC transport** — MCP server uses Unix domain socket on macOS/Linux and named pipe (`\\.\pipe\tuicommander-mcp`) on Windows. `tuic-bridge` sidecar now works on all platforms. Bridge path is verified and updated on every app launch (not just first install)
+- **MCP bridge path auto-update** — `ensure_mcp_configs()` runs on every launch, detects stale bridge paths in agent configs (from reinstalls, updates, or moves) and updates them automatically
 - **MCP session output ANSI stripping** — MCP session output now strips ANSI codes by default (pass `format=raw` to preserve)
 
 ### Fixed

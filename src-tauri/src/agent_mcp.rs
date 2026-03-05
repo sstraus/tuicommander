@@ -266,12 +266,6 @@ fn ensure_agent_mcp_entry(
 /// Ensure MCP bridge config is installed and up-to-date in all supported agent configs.
 /// Called on every app launch. Installs missing entries and updates stale paths.
 pub(crate) fn ensure_mcp_configs() {
-    // On Windows, skip until named pipe bridge is functional
-    if cfg!(windows) {
-        eprintln!("MCP: skipping auto-install on Windows (named pipe transport pending)");
-        return;
-    }
-
     let bridge_path = detect_bridge_binary();
     eprintln!("MCP: ensuring bridge configs (bridge: {bridge_path})");
 
