@@ -11,6 +11,8 @@ import { handleOpenUrl } from "../../utils/openUrl";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { PrDetailContent } from "./PrDetailContent";
+import { PostMergeCleanupDialog, type CleanupStep, type StepId, type StepStatus } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
+import { executeCleanup } from "../../hooks/usePostMergeCleanup";
 import s from "./PrDetailPopover.module.css";
 
 /** Extract "owner/repo" from a GitHub PR URL, e.g. https://github.com/owner/repo/pull/67 */
@@ -45,6 +47,72 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
   const [merging, setMerging] = createSignal(false);
   const [mergeError, setMergeError] = createSignal<string | null>(null);
 
+  // Post-merge cleanup dialog state
+  const [cleanupCtx, setCleanupCtx] = createSignal<{ branchName: string; baseBranch: string } | null>(null);
+  const [cleanupExecuting, setCleanupExecuting] = createSignal(false);
+  const [cleanupStepStatuses, setCleanupStepStatuses] = createSignal<Partial<Record<StepId, StepStatus>>>({});
+  const [cleanupStepErrors, setCleanupStepErrors] = createSignal<Partial<Record<StepId, string>>>({});
+
+  const isOnBaseBranch = () => {
+    const ctx = cleanupCtx();
+    if (!ctx) return false;
+    const repo = repositoriesStore.get(props.repoPath);
+    return repo?.activeBranch === ctx.baseBranch;
+  };
+
+  const hasTerminals = () => {
+    const ctx = cleanupCtx();
+    if (!ctx) return false;
+    const repo = repositoriesStore.get(props.repoPath);
+    const branch = repo?.branches[ctx.branchName];
+    return (branch?.terminals?.length ?? 0) > 0;
+  };
+
+  const closeTerminalsForBranch = async (repoPath: string, branchName: string) => {
+    const repo = repositoriesStore.get(repoPath);
+    const branch = repo?.branches[branchName];
+    if (branch) {
+      for (const termId of branch.terminals) {
+        await invoke("close_pty", { id: termId });
+      }
+    }
+  };
+
+  const handleCleanupExecute = async (steps: CleanupStep[]) => {
+    const ctx = cleanupCtx();
+    if (!ctx) return;
+    setCleanupExecuting(true);
+    setCleanupStepStatuses({});
+    setCleanupStepErrors({});
+
+    await executeCleanup({
+      repoPath: props.repoPath,
+      branchName: ctx.branchName,
+      baseBranch: ctx.baseBranch,
+      steps: steps.map((s) => ({ id: s.id, checked: s.checked })),
+      closeTerminalsForBranch,
+      onStepStart: (id) => {
+        setCleanupStepStatuses((prev) => ({ ...prev, [id]: "running" }));
+      },
+      onStepDone: (id, result, error) => {
+        setCleanupStepStatuses((prev) => ({ ...prev, [id]: result }));
+        if (error) setCleanupStepErrors((prev) => ({ ...prev, [id]: error }));
+      },
+    });
+
+    setCleanupExecuting(false);
+    // Auto-close after a short delay so user can see final statuses
+    setTimeout(() => {
+      setCleanupCtx(null);
+      props.onClose();
+    }, 600);
+  };
+
+  const handleCleanupSkip = () => {
+    setCleanupCtx(null);
+    props.onClose();
+  };
+
   const handleMerge = async () => {
     const pr = prData();
     if (!pr) return;
@@ -59,7 +127,10 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
       });
       appLogger.info("github", `Merged PR #${pr.number} via ${method}`);
       githubStore.pollRepo(props.repoPath);
-      props.onClose();
+
+      // Show cleanup dialog instead of closing
+      const baseBranch = pr.base_ref_name || "main";
+      setCleanupCtx({ branchName: props.branch, baseBranch });
     } catch (e) {
       setMergeError(String(e));
       appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: String(e) });
@@ -123,6 +194,26 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
   return (
     <>
+      {/* Post-merge cleanup dialog (replaces the popover after merge) */}
+      <Show when={cleanupCtx()}>
+        {(ctx) => (
+          <PostMergeCleanupDialog
+            branchName={ctx().branchName}
+            baseBranch={ctx().baseBranch}
+            repoPath={props.repoPath}
+            isOnBaseBranch={isOnBaseBranch()}
+            isDefaultBranch={false}
+            hasTerminals={hasTerminals()}
+            onExecute={handleCleanupExecute}
+            onSkip={handleCleanupSkip}
+            executing={cleanupExecuting()}
+            stepStatuses={cleanupStepStatuses()}
+            stepErrors={cleanupStepErrors()}
+          />
+        )}
+      </Show>
+
+      <Show when={!cleanupCtx()}>
       <div class={s.overlay} onClick={props.onClose} />
       <div class={cx(s.popover, props.anchor === "top" && s.anchorTop)}>
         <Show when={prData()} fallback={
@@ -186,6 +277,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
           )}
         </Show>
       </div>
+      </Show>
     </>
   );
 };
