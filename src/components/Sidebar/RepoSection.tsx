@@ -7,8 +7,7 @@ import { appLogger } from "../../stores/appLogger";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { activePrStatus, _resetMergedActivityAccum } from "../../utils/mergedPrGrace";
-import { effectiveMergeMethod, isMergeMethodNotAllowed } from "../../utils/prMerge";
-import { ConfirmDialog } from "../ConfirmDialog/ConfirmDialog";
+import { effectiveMergeMethod, mergeWithFallback } from "../../utils/prMerge";
 export { effectiveMergeMethod };
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
@@ -377,7 +376,6 @@ export const RemoteOnlyPrPopover: Component<{
   const [expandedBranch, setExpandedBranch] = createSignal<string | null>(null);
   const [mergingPr, setMergingPr] = createSignal<number | null>(null);
   const [mergeError, setMergeError] = createSignal<string | null>(null);
-  const [mergeMethodDenied, setMergeMethodDenied] = createSignal<{ error: string; pr: BranchPrStatus } | null>(null);
   const [diffLoading, setDiffLoading] = createSignal(false);
   const [approvingPr, setApprovingPr] = createSignal<number | null>(null);
   const [approveError, setApproveError] = createSignal<string | null>(null);
@@ -476,26 +474,24 @@ export const RemoteOnlyPrPopover: Component<{
     setMergeError(null);
     try {
       const preferred = repoSettingsStore.getEffective(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
-      const method = effectiveMergeMethod(pr, preferred);
-      await invoke("merge_pr_via_github", {
-        repoPath: props.repoPath,
-        prNumber: pr.number,
-        mergeMethod: method,
-      });
-      appLogger.info("github", `Merged PR #${pr.number} via ${method}`);
+      const startMethod = effectiveMergeMethod(pr, preferred);
+      const usedMethod = await mergeWithFallback(props.repoPath, pr.number, startMethod);
+      // Persist the working method so future merges use it directly
+      if (usedMethod !== preferred) {
+        const repo = repositoriesStore.get(props.repoPath);
+        repoSettingsStore.getOrCreate(props.repoPath, repo?.displayName ?? props.repoPath);
+        repoSettingsStore.update(props.repoPath, { prMergeStrategy: usedMethod as "merge" | "squash" | "rebase" });
+      }
+      appLogger.info("github", `Merged PR #${pr.number} via ${usedMethod}`);
       githubStore.pollRepo(props.repoPath);
 
       // Show cleanup dialog — for remote-only PRs the user is not on the branch
       const baseBranch = pr.base_ref_name || "main";
       setCleanupCtx({ branchName: pr.branch, baseBranch });
     } catch (e) {
-      if (isMergeMethodNotAllowed(e)) {
-        setMergeMethodDenied({ error: String(e), pr });
-      } else {
-        const msg = String(e);
-        setMergeError(msg);
-        appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: msg });
-      }
+      const msg = String(e);
+      setMergeError(msg);
+      appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: msg });
     } finally {
       setMergingPr(null);
     }
@@ -507,20 +503,6 @@ export const RemoteOnlyPrPopover: Component<{
     if (method === "squash") return t("sidebar.mergeSquash", "Squash & Merge");
     if (method === "rebase") return t("sidebar.mergeRebase", "Rebase & Merge");
     return t("sidebar.merge", "Merge");
-  };
-
-  const handleMergeMethodDialogConfirm = async () => {
-    const ctx = mergeMethodDenied();
-    if (!ctx) return;
-    setMergeMethodDenied(null);
-    repoSettingsStore.update(props.repoPath, { prMergeStrategy: "squash" });
-    await handleMerge(ctx.pr);
-  };
-
-  const handleMergeMethodDialogCancel = () => {
-    const ctx = mergeMethodDenied();
-    setMergeMethodDenied(null);
-    if (ctx) setMergeError(ctx.error);
   };
 
   const handleApprove = async (pr: BranchPrStatus) => {
@@ -559,16 +541,6 @@ export const RemoteOnlyPrPopover: Component<{
 
   return (
     <>
-      <ConfirmDialog
-        visible={mergeMethodDenied() !== null}
-        title={t("sidebar.mergeMethodDeniedTitle", "Merge method not allowed")}
-        message={t("sidebar.mergeMethodDeniedMsg", "This repository does not allow merge commits.\nSwitch this repo\u2019s default merge strategy to \u201cSquash & Merge\u201d and retry?")}
-        confirmLabel={t("sidebar.mergeMethodDeniedConfirm", "Switch to squash & retry")}
-        cancelLabel={t("sidebar.mergeMethodDeniedCancel", "Cancel")}
-        kind="warning"
-        onClose={handleMergeMethodDialogCancel}
-        onConfirm={handleMergeMethodDialogConfirm}
-      />
       <Show when={cleanupCtx()}>
         {(ctx) => (
           <PostMergeCleanupDialog

@@ -69,81 +69,59 @@ const defaultProps = {
   onCheckout: vi.fn(),
 };
 
-describe("RemoteOnlyPrPopover — 405 merge method not allowed dialog", () => {
+describe("RemoteOnlyPrPopover — 405 merge method auto-fallback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     repoSettingsStore.getOrCreate("/repo", "Repo");
     repoSettingsStore.update("/repo", { prMergeStrategy: null }); // reset to global default
   });
 
-  it("shows 405 dialog when merge is rejected with method not allowed", async () => {
-    mockInvoke.mockRejectedValueOnce(new Error("GitHub merge failed (405): Merge commits are not allowed on this repository."));
-
-    const { container } = render(() => <RemoteOnlyPrPopover {...defaultProps} />);
-    // Expand the PR row first to reveal action buttons
+  const clickMerge = (container: HTMLElement) => {
     const row = container.querySelector(".remoteOnlyRow");
-    expect(row).not.toBeNull();
     fireEvent.click(row!);
     const mergeBtn = Array.from(container.querySelectorAll("button")).find(
       (b) => ["Merge", "Squash & Merge", "Rebase & Merge"].includes(b.textContent ?? ""),
-    ) as HTMLButtonElement | undefined;
-    expect(mergeBtn).not.toBeUndefined();
-    fireEvent.click(mergeBtn!);
+    ) as HTMLButtonElement;
+    fireEvent.click(mergeBtn);
+  };
 
-    await waitFor(() => {
-      expect(container.textContent).toContain("squash");
-    });
-  });
-
-  it("updates prMergeStrategy to squash and retries on dialog confirm", async () => {
+  it("falls back to squash when merge is rejected with 405", async () => {
     mockInvoke
-      .mockRejectedValueOnce(new Error("GitHub merge failed (405): Merge commits are not allowed on this repository."))
+      .mockRejectedValueOnce(new Error("GitHub merge failed (405): Merge commits are not allowed."))
       .mockResolvedValueOnce("abc123sha");
 
     const { container } = render(() => <RemoteOnlyPrPopover {...defaultProps} />);
-    const row = container.querySelector(".remoteOnlyRow");
-    expect(row).not.toBeNull();
-    fireEvent.click(row!);
-    const mergeBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => ["Merge", "Squash & Merge", "Rebase & Merge"].includes(b.textContent ?? ""),
-    ) as HTMLButtonElement | undefined;
-    expect(mergeBtn).not.toBeUndefined();
-    fireEvent.click(mergeBtn!);
-
-    await waitFor(() => expect(container.textContent).toContain("squash"));
-
-    const confirmBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.toLowerCase().includes("squash") || b.textContent?.toLowerCase().includes("switch"),
-    );
-    expect(confirmBtn).not.toBeNull();
-    fireEvent.click(confirmBtn!);
+    clickMerge(container);
 
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenLastCalledWith("merge_pr_via_github", expect.objectContaining({ mergeMethod: "squash" }));
+      expect(mockInvoke).toHaveBeenCalledWith("merge_pr_via_github", expect.objectContaining({ mergeMethod: "squash" }));
     });
     expect(repoSettingsStore.getEffective("/repo")?.prMergeStrategy).toBe("squash");
   });
 
-  it("shows original error when dialog is cancelled", async () => {
-    mockInvoke.mockRejectedValueOnce(new Error("GitHub merge failed (405): Merge commits are not allowed on this repository."));
+  it("falls back to rebase when both merge and squash are rejected", async () => {
+    mockInvoke
+      .mockRejectedValueOnce(new Error("GitHub merge failed (405): Merge commits are not allowed."))
+      .mockRejectedValueOnce(new Error("GitHub merge failed (405): Squash merging is not allowed."))
+      .mockResolvedValueOnce("abc123sha");
 
     const { container } = render(() => <RemoteOnlyPrPopover {...defaultProps} />);
-    const row = container.querySelector(".remoteOnlyRow");
-    expect(row).not.toBeNull();
-    fireEvent.click(row!);
-    const mergeBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => ["Merge", "Squash & Merge", "Rebase & Merge"].includes(b.textContent ?? ""),
-    ) as HTMLButtonElement | undefined;
-    expect(mergeBtn).not.toBeUndefined();
-    fireEvent.click(mergeBtn!);
+    clickMerge(container);
 
-    await waitFor(() => expect(container.textContent).toContain("squash"));
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("merge_pr_via_github", expect.objectContaining({ mergeMethod: "rebase" }));
+    });
+    expect(repoSettingsStore.getEffective("/repo")?.prMergeStrategy).toBe("rebase");
+  });
 
-    const cancelBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.toLowerCase().includes("cancel"),
-    );
-    expect(cancelBtn).not.toBeNull();
-    fireEvent.click(cancelBtn!);
+  it("shows error when all merge methods fail", async () => {
+    mockInvoke
+      .mockRejectedValueOnce(new Error("GitHub merge failed (405): Merge commits are not allowed."))
+      .mockRejectedValueOnce(new Error("GitHub merge failed (405): Squash merging is not allowed."))
+      .mockRejectedValueOnce(new Error("GitHub merge failed (405): Rebase merging is not allowed."));
+
+    const { container } = render(() => <RemoteOnlyPrPopover {...defaultProps} />);
+    clickMerge(container);
 
     await waitFor(() => {
       expect(container.textContent).toContain("405");

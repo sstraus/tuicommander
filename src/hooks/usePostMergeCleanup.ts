@@ -41,7 +41,7 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
         case "switch": {
           // Pre-check for dirty working directory
           const status = await invoke<{ stdout: string; stderr: string }>("run_git_command", {
-            repoPath,
+            path: repoPath,
             args: ["status", "--porcelain"],
           });
           if (status.stdout.trim().length > 0) {
@@ -58,7 +58,7 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
 
         case "pull":
           await invoke("run_git_command", {
-            repoPath,
+            path: repoPath,
             args: ["pull", "--ff-only"],
           });
           break;
@@ -75,7 +75,7 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
         case "delete-remote":
           try {
             await invoke("run_git_command", {
-              repoPath,
+              path: repoPath,
               args: ["push", "origin", "--delete", branchName],
             });
           } catch (e) {

@@ -43,7 +43,7 @@
   padding: 16px;
 }
 
-.body input {
+.body input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
   padding: 8px 12px;
   background: var(--bg-tertiary);
@@ -54,12 +54,12 @@
   font-family: var(--font-mono);
 }
 
-.body input:focus {
+.body input:not([type="checkbox"]):not([type="radio"]):focus {
   outline: none;
   border-color: var(--accent);
 }
 
-.body input:disabled {
+.body input:not([type="checkbox"]):not([type="radio"]):disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

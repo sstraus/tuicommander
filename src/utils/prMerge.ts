@@ -1,4 +1,7 @@
 import type { BranchPrStatus } from "../types";
+import { invoke } from "../invoke";
+
+const MERGE_METHODS = ["merge", "squash", "rebase"] as const;
 
 /** Pick the merge method for a PR based on repo-allowed methods and user preference.
  *  Falls back to the first allowed method if preferred is not permitted.
@@ -21,4 +24,32 @@ export function effectiveMergeMethod(pr: BranchPrStatus, preferred: string): str
 /** Whether a GitHub merge error is a 405 method-not-allowed response. */
 export function isMergeMethodNotAllowed(error: unknown): boolean {
   return String(error).includes("405");
+}
+
+/** Try to merge a PR, automatically falling back through all merge methods on 405.
+ *  Returns the method that succeeded. Throws on non-405 errors or if all methods fail. */
+export async function mergeWithFallback(
+  repoPath: string,
+  prNumber: number,
+  preferred: string,
+): Promise<string> {
+  const methodOrder = [preferred, ...MERGE_METHODS.filter((m) => m !== preferred)];
+  let lastError: unknown;
+  for (const method of methodOrder) {
+    try {
+      await invoke("merge_pr_via_github", {
+        repoPath,
+        prNumber,
+        mergeMethod: method,
+      });
+      return method;
+    } catch (e) {
+      if (isMergeMethodNotAllowed(e)) {
+        lastError = e;
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastError;
 }

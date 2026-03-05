@@ -7,8 +7,7 @@ import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { appLogger } from "../../stores/appLogger";
 import { invoke } from "../../invoke";
 import { canMergePr, effectiveMergeMethod } from "../Sidebar/RepoSection";
-import { isMergeMethodNotAllowed } from "../../utils/prMerge";
-import { ConfirmDialog } from "../ConfirmDialog/ConfirmDialog";
+import { mergeWithFallback } from "../../utils/prMerge";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -48,7 +47,6 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
   const [diffLoading, setDiffLoading] = createSignal(false);
   const [merging, setMerging] = createSignal(false);
   const [mergeError, setMergeError] = createSignal<string | null>(null);
-  const [mergeMethodDenied, setMergeMethodDenied] = createSignal<string | null>(null);
 
   // Post-merge cleanup dialog state
   const [cleanupCtx, setCleanupCtx] = createSignal<{ branchName: string; baseBranch: string } | null>(null);
@@ -116,32 +114,30 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     props.onClose();
   };
 
-  const handleMerge = async (overrideMethod?: string) => {
+  const handleMerge = async () => {
     const pr = prData();
     if (!pr) return;
     setMerging(true);
     setMergeError(null);
     try {
       const preferred = repoSettingsStore.getEffective?.(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
-      const method = overrideMethod ?? effectiveMergeMethod(pr, preferred);
-      await invoke("merge_pr_via_github", {
-        repoPath: props.repoPath,
-        prNumber: pr.number,
-        mergeMethod: method,
-      });
-      appLogger.info("github", `Merged PR #${pr.number} via ${method}`);
+      const startMethod = effectiveMergeMethod(pr, preferred);
+      const usedMethod = await mergeWithFallback(props.repoPath, pr.number, startMethod);
+      // Persist the working method so future merges use it directly
+      if (usedMethod !== preferred) {
+        const repo = repositoriesStore.get(props.repoPath);
+        repoSettingsStore.getOrCreate(props.repoPath, repo?.displayName ?? props.repoPath);
+        repoSettingsStore.update(props.repoPath, { prMergeStrategy: usedMethod as "merge" | "squash" | "rebase" });
+      }
+      appLogger.info("github", `Merged PR #${pr.number} via ${usedMethod}`);
       githubStore.pollRepo(props.repoPath);
 
       // Show cleanup dialog instead of closing
       const baseBranch = pr.base_ref_name || "main";
       setCleanupCtx({ branchName: props.branch, baseBranch });
     } catch (e) {
-      if (isMergeMethodNotAllowed(e)) {
-        setMergeMethodDenied(String(e));
-      } else {
-        setMergeError(String(e));
-        appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: String(e) });
-      }
+      setMergeError(String(e));
+      appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: String(e) });
     } finally {
       setMerging(false);
     }
@@ -155,23 +151,6 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     if (method === "squash") return t("prDetail.mergeSquash", "Squash & Merge");
     if (method === "rebase") return t("prDetail.mergeRebase", "Rebase & Merge");
     return t("prDetail.merge", "Merge");
-  };
-
-  const handleMergeMethodDialogConfirm = async () => {
-    setMergeMethodDenied(null);
-    // Persist squash as the default for future merges on this repo.
-    // Use getOrCreate to ensure the entry exists (update silently no-ops without it).
-    const repo = repositoriesStore.get(props.repoPath);
-    repoSettingsStore.getOrCreate(props.repoPath, repo?.displayName ?? props.repoPath);
-    repoSettingsStore.update(props.repoPath, { prMergeStrategy: "squash" });
-    // Bypass effectiveMergeMethod — PR data flags may not reflect branch protection rules
-    await handleMerge("squash");
-  };
-
-  const handleMergeMethodDialogCancel = () => {
-    const originalError = mergeMethodDenied();
-    setMergeMethodDenied(null);
-    setMergeError(originalError);
   };
 
   const handleViewDiff = async () => {
@@ -229,16 +208,6 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
   return (
     <>
-      <ConfirmDialog
-        visible={mergeMethodDenied() !== null}
-        title={t("prDetail.mergeMethodDeniedTitle", "Merge method not allowed")}
-        message={t("prDetail.mergeMethodDeniedMsg", "This repository does not allow merge commits.\nSwitch this repo\u2019s default merge strategy to \u201cSquash & Merge\u201d and retry?")}
-        confirmLabel={t("prDetail.mergeMethodDeniedConfirm", "Switch to squash & retry")}
-        cancelLabel={t("prDetail.mergeMethodDeniedCancel", "Cancel")}
-        kind="warning"
-        onClose={handleMergeMethodDialogCancel}
-        onConfirm={handleMergeMethodDialogConfirm}
-      />
       {/* Post-merge cleanup dialog (replaces the popover after merge) */}
       <Show when={cleanupCtx()}>
         {(ctx) => (
