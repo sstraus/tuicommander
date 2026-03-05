@@ -1333,6 +1333,12 @@ fn is_prompt_line(text: &str) -> bool {
     t.starts_with('❯') || t == ">" || t.starts_with("> ")
 }
 
+/// Returns true if `text` is a separator line (only box-drawing characters).
+fn is_separator_line(text: &str) -> bool {
+    let t = text.trim();
+    !t.is_empty() && t.chars().all(|c| matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍'))
+}
+
 /// Returns the index of the first line to discard when a prompt line is found
 /// in the last [`CHROME_SCAN_ROWS`] rows of `lines`, scanning from the bottom.
 ///
@@ -1341,32 +1347,55 @@ fn is_prompt_line(text: &str) -> bool {
 /// - `> ` (greater-than + space) — used by Codex and Gemini
 /// - `>` alone
 ///
+/// After finding the prompt, extends the cutoff UP past immediately preceding
+/// separator lines and empty lines (the separator that typically sits above
+/// the prompt in agent UIs).
+///
 /// Returns `None` if no prompt line is found in the scan window.
 #[cfg(test)]
 fn find_prompt_cutoff(lines: &[String]) -> Option<usize> {
     let scan_start = lines.len().saturating_sub(CHROME_SCAN_ROWS);
-    (scan_start..lines.len()).rev().find(|&i| is_prompt_line(&lines[i]))
+    let prompt_idx = (scan_start..lines.len()).rev().find(|&i| is_prompt_line(&lines[i]))?;
+    // Extend cutoff up past separators and empty lines above the prompt.
+    let mut cutoff = prompt_idx;
+    while cutoff > 0 {
+        let above = lines[cutoff - 1].trim();
+        if above.is_empty() || is_separator_line(above) {
+            cutoff -= 1;
+        } else {
+            break;
+        }
+    }
+    Some(cutoff)
 }
 
 /// Like `find_prompt_cutoff` but works on `LogLine` slices.
 fn find_prompt_cutoff_loglines(lines: &[LogLine]) -> Option<usize> {
     let scan_start = lines.len().saturating_sub(CHROME_SCAN_ROWS);
-    (scan_start..lines.len()).rev().find(|&i| is_prompt_line(&lines[i].text()))
+    let prompt_idx = (scan_start..lines.len()).rev()
+        .find(|&i| is_prompt_line(&lines[i].text()))?;
+    // Extend cutoff up past separators and empty lines above the prompt.
+    let mut cutoff = prompt_idx;
+    while cutoff > 0 {
+        let text = lines[cutoff - 1].text();
+        let trimmed = text.trim();
+        if trimmed.is_empty() || is_separator_line(trimmed) {
+            cutoff -= 1;
+        } else {
+            break;
+        }
+    }
+    Some(cutoff)
 }
 
 /// Trims agent prompt and chrome from a batch of scrolled-off lines.
 ///
-/// Only applied to "large batches" where `lines.len() >= screen_rows * 2 / 3`,
-/// which indicates a full-screen redraw rather than normal terminal scrolling.
-/// Small batches (real scroll events) pass through unchanged.
-///
 /// When a prompt line is found in the last [`CHROME_SCAN_ROWS`] rows, everything
-/// from that line to the end (inclusive) is discarded.
-fn trim_agent_chrome(lines: Vec<LogLine>, screen_rows: usize) -> Vec<LogLine> {
-    let threshold = (screen_rows * 2 / 3).max(4);
-    if lines.len() < threshold {
-        return lines;
-    }
+/// from the prompt (and any immediately preceding separator/empty lines) to the
+/// end of the batch is discarded. Applied to all batches regardless of size —
+/// every CLI agent renders context info below the prompt that should not appear
+/// in the log.
+fn trim_agent_chrome(lines: Vec<LogLine>, _screen_rows: usize) -> Vec<LogLine> {
     match find_prompt_cutoff_loglines(&lines) {
         Some(cutoff) => lines[..cutoff].to_vec(),
         None => lines,
@@ -2770,12 +2799,65 @@ mod tests {
         assert_eq!(result.len(), 17);
     }
 
-    /// Small batch (below threshold) passes through unchanged even if it contains a prompt.
+    /// Small batch with a prompt in the scan window → chrome trimmed.
     #[test]
-    fn test_trim_agent_chrome_small_batch_passthrough() {
+    fn test_trim_agent_chrome_small_batch_with_prompt_trims() {
         let lines = make_log_lines(&["line 1", "❯ command", "chrome"]);
+        let result = trim_agent_chrome(lines, 24);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].text(), "line 1");
+    }
+
+    /// Separator lines immediately above a prompt are included in the cutoff.
+    #[test]
+    fn test_trim_agent_chrome_separator_above_prompt_trimmed() {
+        let lines = make_log_lines(&[
+            "real output",
+            "more output",
+            "────────────────────",  // separator above prompt
+            "❯ ",                    // bare prompt
+            "────────────────────",  // separator below
+            "[Opus 4.6 | Max]",
+            "Context ███░░░",
+        ]);
+        let result = trim_agent_chrome(lines, 24);
+        assert_eq!(result.len(), 2, "only real output lines kept");
+        assert_eq!(result[0].text(), "real output");
+        assert_eq!(result[1].text(), "more output");
+    }
+
+    /// Empty lines above a prompt are included in the cutoff.
+    #[test]
+    fn test_trim_agent_chrome_empty_lines_above_prompt_trimmed() {
+        let lines = make_log_lines(&[
+            "real output",
+            "",
+            "",
+            "❯",
+            "Model: x",
+        ]);
+        let result = trim_agent_chrome(lines, 24);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].text(), "real output");
+    }
+
+    /// is_separator_line detects common box-drawing lines.
+    #[test]
+    fn test_is_separator_line() {
+        assert!(is_separator_line("────────────────────"));
+        assert!(is_separator_line("━━━━━━━━━━━━━━━━━━━━"));
+        assert!(is_separator_line("  ──────────────  "));  // with whitespace
+        assert!(!is_separator_line("── real text ──"));
+        assert!(!is_separator_line("hello world"));
+        assert!(!is_separator_line(""));
+    }
+
+    /// Batch with no prompt → all lines kept, regardless of size.
+    #[test]
+    fn test_trim_agent_chrome_no_prompt_any_size_passthrough() {
+        let lines = make_log_lines(&["a", "b", "c"]);
         let result = trim_agent_chrome(lines.clone(), 24);
-        assert_eq!(result, lines, "small batch must not be filtered");
+        assert_eq!(result, lines);
     }
 
     /// Large batch without any prompt → all lines kept.
