@@ -16,7 +16,7 @@ import { cx } from "../../utils";
 import { t } from "../../i18n";
 import type { BranchPrStatus } from "../../types";
 import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
-import { DiffViewer } from "../ui/DiffViewer";
+import { mdTabsStore } from "../../stores/mdTabs";
 import s from "./Sidebar.module.css";
 
 const BRANCH_ICON_CLASSES: Record<string, string> = {
@@ -371,10 +371,7 @@ const RemoteOnlyPrPopover: Component<{
   const [expandedBranch, setExpandedBranch] = createSignal<string | null>(null);
   const [mergingPr, setMergingPr] = createSignal<number | null>(null);
   const [mergeError, setMergeError] = createSignal<string | null>(null);
-  const [diffPr, setDiffPr] = createSignal<number | null>(null);
-  const [diffContent, setDiffContent] = createSignal<string | null>(null);
   const [diffLoading, setDiffLoading] = createSignal(false);
-  const [diffError, setDiffError] = createSignal<string | null>(null);
   const [approvingPr, setApprovingPr] = createSignal<number | null>(null);
   const [approveError, setApproveError] = createSignal<string | null>(null);
   const [dismissedPrs, setDismissedPrs] = createSignal<Set<number>>(new Set());
@@ -452,24 +449,15 @@ const RemoteOnlyPrPopover: Component<{
   };
 
   const handleViewDiff = async (pr: BranchPrStatus) => {
-    if (diffPr() === pr.number && diffContent() !== null) {
-      // Toggle off
-      setDiffPr(null);
-      setDiffContent(null);
-      return;
-    }
-    setDiffPr(pr.number);
-    setDiffContent(null);
-    setDiffError(null);
     setDiffLoading(true);
     try {
       const diff = await invoke<string>("get_pr_diff", {
         repoPath: props.repoPath,
         prNumber: pr.number,
       });
-      setDiffContent(diff);
+      mdTabsStore.addPrDiff(props.repoPath, pr.number, pr.title, diff);
     } catch (e) {
-      setDiffError(String(e));
+      appLogger.error("github", `Failed to load PR #${pr.number} diff`, { error: String(e) });
     } finally {
       setDiffLoading(false);
     }
@@ -550,12 +538,12 @@ const RemoteOnlyPrPopover: Component<{
                           </button>
                         </Show>
                         <button
-                          class={cx(s.remoteOnlyViewDiff, diffPr() === pr.number && diffContent() !== null && s.remoteOnlyViewDiffActive)}
+                          class={s.remoteOnlyViewDiff}
                           onClick={() => handleViewDiff(pr)}
                           disabled={diffLoading()}
                           title={t("sidebar.viewDiff", "View PR diff")}
                         >
-                          {diffLoading() && diffPr() === pr.number
+                          {diffLoading()
                             ? t("sidebar.loadingDiff", "Loading...")
                             : t("sidebar.viewDiff", "View Diff")}
                         </button>
@@ -572,14 +560,6 @@ const RemoteOnlyPrPopover: Component<{
                       </Show>
                       <Show when={mergeError()}>
                         <div class={s.remoteOnlyMergeError}>{mergeError()}</div>
-                      </Show>
-                      <Show when={diffError()}>
-                        <div class={s.remoteOnlyMergeError}>{diffError()}</div>
-                      </Show>
-                      <Show when={diffPr() === pr.number && diffContent() !== null}>
-                        <div class={s.remoteOnlyDiffViewer}>
-                          <DiffViewer diff={diffContent()!} />
-                        </div>
                       </Show>
                     </PrDetailContent>
                   </div>

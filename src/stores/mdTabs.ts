@@ -38,8 +38,19 @@ export interface ClaudeUsageTab extends BaseTab {
   title: string;
 }
 
+/** PR diff tab (renders a full PR diff in the main panel) */
+export interface PrDiffTab extends BaseTab {
+  type: "pr-diff";
+  title: string;
+  repoPath: string;
+  prNumber: number;
+  prTitle: string;
+  /** Raw unified diff content */
+  diff: string;
+}
+
 /** Discriminated union of all markdown tab types */
-export type MdTabData = FileTab | VirtualTab | PluginPanelTab | ClaudeUsageTab;
+export type MdTabData = FileTab | VirtualTab | PluginPanelTab | ClaudeUsageTab | PrDiffTab;
 
 // ---------------------------------------------------------------------------
 // Store
@@ -163,6 +174,24 @@ function createMdTabsStore() {
       const id = base._nextId("md");
       const tabId = base._addTab({ type: "claude-usage", id, title: "Claude Usage", pinned: true } as ClaudeUsageTab);
 
+      return tabId;
+    },
+
+    /** Add a PR diff tab (or reuse existing for same repo+prNumber, updating diff content) */
+    addPrDiff(repoPath: string, prNumber: number, prTitle: string, diff: string): string {
+      const existing = Object.values(base.state.tabs).find(
+        (tab) => tab.type === "pr-diff" && (tab as PrDiffTab).repoPath === repoPath && (tab as PrDiffTab).prNumber === prNumber,
+      ) as PrDiffTab | undefined;
+      if (existing) {
+        // Update diff content in case it changed
+        base._setState("tabs", existing.id, "diff" as keyof MdTabData, diff as MdTabData[keyof MdTabData]);
+        base.setActive(existing.id);
+        return existing.id;
+      }
+
+      const id = base._nextId("md");
+      const title = `PR #${prNumber}`;
+      const tabId = base._addTab({ type: "pr-diff", id, title, repoPath, prNumber, prTitle, diff, pinned: false } as PrDiffTab);
       return tabId;
     },
 

@@ -1,6 +1,7 @@
 import { Component, createEffect, createMemo, For, JSX, Show } from "solid-js";
 import { Terminal } from "./Terminal";
 import { DiffTab } from "./DiffTab";
+import { PrDiffTab } from "./PrDiffTab";
 import { MarkdownTab } from "./MarkdownTab";
 import { PluginPanel } from "./PluginPanel";
 import { ClaudeUsageDashboard } from "./ClaudeUsageDashboard";
@@ -200,6 +201,12 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                   <PluginPanel
                     tab={mdTab}
                     onClose={() => props.onCloseTab(id)}
+                  />
+                ) : mdTab && mdTab.type === "pr-diff" ? (
+                  <PrDiffTab
+                    prNumber={mdTab.prNumber}
+                    prTitle={mdTab.prTitle}
+                    diff={mdTab.diff}
                   />
                 ) : mdTab ? (
                   <MarkdownTab

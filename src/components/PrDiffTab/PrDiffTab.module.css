@@ -1,0 +1,156 @@
+/* PR Diff Tab — multi-file diff viewer with collapsible sections */
+.container {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-highlight);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.headerTitle {
+  font-weight: 600;
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+}
+
+.headerStats {
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+}
+
+.statAdd {
+  color: var(--success);
+}
+
+.statDel {
+  color: var(--error);
+}
+
+/* File section */
+.fileSection {
+  border-bottom: 1px solid var(--border);
+}
+
+.fileHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 37px; /* below main header */
+  z-index: 1;
+}
+
+.fileHeader:hover {
+  background: var(--bg-highlight);
+}
+
+.chevron {
+  color: var(--fg-muted);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.chevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.filePath {
+  color: var(--accent);
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileStats {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  font-size: var(--font-xs);
+}
+
+/* Diff lines table */
+.diffTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.lineNum {
+  width: 50px;
+  min-width: 50px;
+  padding: 0 6px;
+  text-align: right;
+  color: var(--fg-muted);
+  user-select: none;
+  vertical-align: top;
+  opacity: 0.6;
+}
+
+.lineContent {
+  padding: 0 12px;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* Line type styles */
+.lineAddition {
+  background: rgba(158, 206, 106, 0.12);
+}
+
+.lineAddition .lineContent {
+  color: var(--success);
+}
+
+.lineDeletion {
+  background: rgba(247, 118, 142, 0.12);
+}
+
+.lineDeletion .lineContent {
+  color: var(--error);
+}
+
+.lineHunk {
+  background: var(--bg-highlight);
+}
+
+.lineHunk .lineContent {
+  color: var(--fg-muted);
+}
+
+.lineHunk .lineNum {
+  background: var(--bg-highlight);
+}
+
+.lineHeader {
+  /* skip rendering — file headers handled by fileHeader */
+}
+
+.lineContext {
+  /* default styling */
+}
+
+.emptyState {
+  padding: 24px;
+  text-align: center;
+  color: var(--fg-muted);
+}

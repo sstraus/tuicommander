@@ -231,6 +231,58 @@ describe("mdTabsStore", () => {
   // -------------------------------------------------------------------------
   // Auto-show markdown panel
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // PR Diff tabs
+  // -------------------------------------------------------------------------
+  describe("addPrDiff()", () => {
+    it("adds a pr-diff tab and sets it active", () => {
+      createRoot((dispose) => {
+        const id = store.addPrDiff("/repo", 42, "Fix bug", "diff --git a/f.ts b/f.ts\n-old\n+new");
+        expect(store.state.activeId).toBe(id);
+        const tab = store.get(id);
+        expect(tab?.type).toBe("pr-diff");
+        if (tab?.type === "pr-diff") {
+          expect(tab.prNumber).toBe(42);
+          expect(tab.prTitle).toBe("Fix bug");
+          expect(tab.diff).toContain("diff --git");
+        }
+        dispose();
+      });
+    });
+
+    it("deduplicates by repoPath + prNumber", () => {
+      createRoot((dispose) => {
+        const id1 = store.addPrDiff("/repo", 42, "Fix bug", "diff1");
+        const id2 = store.addPrDiff("/repo", 42, "Fix bug", "diff2");
+        expect(id2).toBe(id1);
+        expect(store.getCount()).toBe(1);
+        dispose();
+      });
+    });
+
+    it("allows different PR numbers as separate tabs", () => {
+      createRoot((dispose) => {
+        const id1 = store.addPrDiff("/repo", 42, "Fix A", "diff1");
+        const id2 = store.addPrDiff("/repo", 43, "Fix B", "diff2");
+        expect(id1).not.toBe(id2);
+        expect(store.getCount()).toBe(2);
+        dispose();
+      });
+    });
+
+    it("updates diff content when reopening same PR", () => {
+      createRoot((dispose) => {
+        store.addPrDiff("/repo", 42, "Fix bug", "old diff");
+        const id = store.addPrDiff("/repo", 42, "Fix bug", "new diff");
+        const tab = store.get(id);
+        if (tab?.type === "pr-diff") {
+          expect(tab.diff).toBe("new diff");
+        }
+        dispose();
+      });
+    });
+  });
+
   describe("does not auto-show markdown file browser", () => {
     it("does not open file browser when adding a file tab", () => {
       createRoot((dispose) => {

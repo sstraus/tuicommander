@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { stripAnsi } from "../utils/stripAnsi";
-import { parseDiff } from "../components/ui/DiffViewer";
+import { parseDiff, parseDiffFiles } from "../components/ui/DiffViewer";
 import { validateBranchName } from "../components/RenameBranchDialog/RenameBranchDialog";
 import { cleanOscTitle } from "../components/Terminal/Terminal";
 
@@ -94,6 +94,109 @@ describe("parseDiff", () => {
     const lines = parseDiff("");
     expect(lines).toHaveLength(1);
     expect(lines[0].content).toBe("");
+  });
+});
+
+describe("parseDiffFiles", () => {
+  it("splits a multi-file diff into file sections", () => {
+    const diff = [
+      "diff --git a/file1.ts b/file1.ts",
+      "--- a/file1.ts",
+      "+++ b/file1.ts",
+      "@@ -1,3 +1,4 @@",
+      " unchanged",
+      "-removed",
+      "+added",
+      "+also added",
+      "diff --git a/file2.ts b/file2.ts",
+      "--- a/file2.ts",
+      "+++ b/file2.ts",
+      "@@ -1,2 +1,2 @@",
+      "-old",
+      "+new",
+    ].join("\n");
+
+    const files = parseDiffFiles(diff);
+    expect(files).toHaveLength(2);
+    expect(files[0].path).toBe("file1.ts");
+    expect(files[1].path).toBe("file2.ts");
+  });
+
+  it("counts additions and deletions per file", () => {
+    const diff = [
+      "diff --git a/file.ts b/file.ts",
+      "--- a/file.ts",
+      "+++ b/file.ts",
+      "@@ -1,3 +1,4 @@",
+      " unchanged",
+      "-removed",
+      "+added",
+      "+also added",
+    ].join("\n");
+
+    const files = parseDiffFiles(diff);
+    expect(files[0].additions).toBe(2);
+    expect(files[0].deletions).toBe(1);
+  });
+
+  it("extracts file path from diff --git header", () => {
+    const diff = "diff --git a/src/components/App.tsx b/src/components/App.tsx\n@@ -1 +1 @@\n-old\n+new";
+    const files = parseDiffFiles(diff);
+    expect(files[0].path).toBe("src/components/App.tsx");
+  });
+
+  it("handles rename detection", () => {
+    const diff = [
+      "diff --git a/old.ts b/new.ts",
+      "similarity index 90%",
+      "rename from old.ts",
+      "rename to new.ts",
+      "--- a/old.ts",
+      "+++ b/new.ts",
+      "@@ -1,2 +1,2 @@",
+      "-old",
+      "+new",
+    ].join("\n");
+
+    const files = parseDiffFiles(diff);
+    expect(files[0].path).toBe("new.ts");
+  });
+
+  it("returns empty array for empty diff", () => {
+    expect(parseDiffFiles("")).toHaveLength(0);
+    expect(parseDiffFiles("  \n  ")).toHaveLength(0);
+  });
+
+  it("preserves raw lines for each file section", () => {
+    const diff = [
+      "diff --git a/a.ts b/a.ts",
+      "--- a/a.ts",
+      "+++ b/a.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+    ].join("\n");
+
+    const files = parseDiffFiles(diff);
+    expect(files[0].lines).toHaveLength(6);
+  });
+
+  it("handles new file mode", () => {
+    const diff = [
+      "diff --git a/new.ts b/new.ts",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/new.ts",
+      "@@ -0,0 +1,3 @@",
+      "+line1",
+      "+line2",
+      "+line3",
+    ].join("\n");
+
+    const files = parseDiffFiles(diff);
+    expect(files[0].path).toBe("new.ts");
+    expect(files[0].additions).toBe(3);
+    expect(files[0].deletions).toBe(0);
   });
 });
 
