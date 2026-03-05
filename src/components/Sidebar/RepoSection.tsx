@@ -293,7 +293,7 @@ export const BranchItem: Component<{
           {props.branch.name}
         </span>
       </div>
-      <Show when={props.branch.isMerged && !props.branch.isMain}>
+      <Show when={props.branch.isMerged && !props.branch.isMain && !props.branch.terminals.length && !(props.branch.additions + props.branch.deletions)}>
         <span class={s.mergedBadge} title="Branch is merged into main">Merged</span>
       </Show>
       <Show when={pr()}>
