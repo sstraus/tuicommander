@@ -698,10 +698,12 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
             Err(e) => {
                 last_err_msg = e.message.clone();
                 if e.status == 429 && attempt < MAX_429_RETRIES {
-                    let delay = e.retry_after_secs.map_or_else(
-                        || RETRY_INITIAL_DELAY * 2u32.pow(attempt),
-                        Duration::from_secs,
-                    );
+                    // Use server's retry-after if > 0, otherwise our own exponential backoff.
+                    // retry-after: 0 is treated as "no hint" since immediate retry is pointless.
+                    let delay = match e.retry_after_secs.filter(|&s| s > 0) {
+                        Some(secs) => Duration::from_secs(secs),
+                        None => RETRY_INITIAL_DELAY * 2u32.pow(attempt),
+                    };
                     eprintln!(
                         "[claude_usage] 429 rate limited, retry {}/{} after {}s",
                         attempt + 1,
