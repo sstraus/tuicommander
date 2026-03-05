@@ -361,12 +361,15 @@ pub(crate) fn spawn_reader_thread(
                                 }
                                 last_status_task = Some(task_name.clone());
                             }
-                            // Resolve relative plan-file paths to absolute using session CWD
+                            // Resolve relative plan-file paths to absolute using session CWD.
+                            // Canonicalize to remove ".." segments so the frontend security
+                            // check (which rejects paths containing "..") doesn't block valid paths.
                             let resolved = if let ParsedEvent::PlanFile { path } = event {
                                 if !path.starts_with('/') {
                                     if let Some(ref cwd) = session_cwd {
-                                        let abs = format!("{}/{}", cwd.trim_end_matches('/'), path);
-                                        Some(ParsedEvent::PlanFile { path: abs })
+                                        let joined = std::path::PathBuf::from(cwd).join(path);
+                                        let clean = normalize_path(&joined);
+                                        Some(ParsedEvent::PlanFile { path: clean.to_string_lossy().into_owned() })
                                     } else {
                                         None
                                     }
@@ -1164,6 +1167,50 @@ pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
 
 /// Walk the process tree from `root_pid` and return the deepest descendant PID.
 /// On Windows, this finds the "foreground" process in a PTY session by following
+/// Normalize a path by resolving `.` and `..` components logically
+/// (without requiring the path to exist on disk).
+fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
+    let mut result = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => { result.pop(); }
+            std::path::Component::CurDir => {}
+            other => result.push(other),
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod normalize_path_tests {
+    use super::normalize_path;
+    use std::path::Path;
+
+    #[test]
+    fn resolves_parent_segments() {
+        let p = normalize_path(Path::new("/a/b/../../c/d"));
+        assert_eq!(p, Path::new("/c/d"));
+    }
+
+    #[test]
+    fn resolves_worktree_relative_plan() {
+        let p = normalize_path(Path::new("/home/user/repo__wt/feat/../../repo/plans/foo.md"));
+        assert_eq!(p, Path::new("/home/user/repo/plans/foo.md"));
+    }
+
+    #[test]
+    fn strips_dot_segments() {
+        let p = normalize_path(Path::new("/a/./b/./c"));
+        assert_eq!(p, Path::new("/a/b/c"));
+    }
+
+    #[test]
+    fn preserves_clean_path() {
+        let p = normalize_path(Path::new("/home/user/plans/bar.md"));
+        assert_eq!(p, Path::new("/home/user/plans/bar.md"));
+    }
+}
+
 /// the chain: shell → agent CLI (e.g. claude.exe).
 #[cfg(windows)]
 fn deepest_descendant_pid(root_pid: u32) -> Option<u32> {
