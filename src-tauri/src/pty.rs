@@ -364,17 +364,27 @@ pub(crate) fn spawn_reader_thread(
                             // Resolve relative plan-file paths to absolute using session CWD.
                             // Canonicalize to remove ".." segments so the frontend security
                             // check (which rejects paths containing "..") doesn't block valid paths.
+                            // Skip plan-file events for files that don't exist on disk —
+                            // prevents false positives from grep output, help text, or test paths.
                             let resolved = if let ParsedEvent::PlanFile { path } = event {
-                                if !path.starts_with('/') {
+                                let abs_path = if !path.starts_with('/') {
                                     if let Some(ref cwd) = session_cwd {
                                         let joined = std::path::PathBuf::from(cwd).join(path);
-                                        let clean = normalize_path(&joined);
-                                        Some(ParsedEvent::PlanFile { path: clean.to_string_lossy().into_owned() })
+                                        Some(normalize_path(&joined).to_string_lossy().into_owned())
                                     } else {
                                         None
                                     }
                                 } else {
-                                    None
+                                    Some(path.clone())
+                                };
+                                match abs_path {
+                                    Some(p) if std::path::Path::new(&p).is_file() => {
+                                        Some(ParsedEvent::PlanFile { path: p })
+                                    }
+                                    _ => {
+                                        // File doesn't exist — suppress the event
+                                        continue;
+                                    }
                                 }
                             } else {
                                 None

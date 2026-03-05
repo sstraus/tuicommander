@@ -839,9 +839,9 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
     lazy_static::lazy_static! {
         // Match plan file paths: optional leading path, then plans/<name>.md(x)
         // Captures the full path including any prefix directory.
-        // Excludes <>, $, {}, ` to avoid template placeholders and interpolation
+        // Excludes <>, $, {}, `, * to avoid template placeholders, interpolation, and globs
         static ref PLAN_RE: regex::Regex =
-            regex::Regex::new(r#"(?:^|[\s'":])(/?(?:[^\s'"<>${}`]+/)?plans/[^\s'"<>${}`]+\.mdx?)"#).unwrap();
+            regex::Regex::new(r#"(?:^|[\s'":])(/?(?:[^\s'"<>${}`*]+/)?plans/[^\s'"<>${}`*]+\.mdx?)"#).unwrap();
     }
     for line in clean.lines() {
         if let Some(caps) = PLAN_RE.captures(line) {
@@ -1731,6 +1731,15 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(get_plan_path(&parser.parse("plans/${name}.md")).is_none());
         assert!(get_plan_path(&parser.parse("plans/`cmd`.md")).is_none());
         assert!(get_plan_path(&parser.parse("Save to plans/foo-${bar}-baz.md")).is_none());
+    }
+
+    #[test]
+    fn test_plan_file_glob_rejected() {
+        let mut parser = OutputParser::new();
+        // Glob patterns should NOT match as plan files
+        assert!(get_plan_path(&parser.parse("plans/*.md")).is_none());
+        assert!(get_plan_path(&parser.parse("/repo/plans/*.md")).is_none());
+        assert!(get_plan_path(&parser.parse("ls plans/*.md")).is_none());
     }
 
     // --- False positive prevention tests ---
