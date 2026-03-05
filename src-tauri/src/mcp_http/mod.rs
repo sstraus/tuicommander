@@ -67,12 +67,76 @@ fn validate_repo_path(path: &str) -> Result<(), (StatusCode, Json<serde_json::Va
 
 /// IPC endpoint path for local MCP bridge connections.
 /// Unix: `<config_dir>/mcp.sock` (Unix domain socket)
-/// Windows: `\\.\pipe\tuicommander-mcp` (named pipe — reserved for future use)
+/// Windows: `\\.\pipe\tuicommander-mcp` (named pipe)
 pub(crate) fn socket_path() -> std::path::PathBuf {
     #[cfg(unix)]
     { crate::config::config_dir().join("mcp.sock") }
     #[cfg(windows)]
     { std::path::PathBuf::from(r"\\.\pipe\tuicommander-mcp") }
+}
+
+/// Named pipe name for Windows IPC (without the \\.\pipe\ prefix for display).
+#[cfg(windows)]
+const PIPE_NAME: &str = r"\\.\pipe\tuicommander-mcp";
+
+/// axum::serve::Listener implementation for Windows named pipes.
+/// Uses the tokio reconnect pattern: pre-creates the next pipe instance before
+/// spawning the handler for the current connection, avoiding a listen gap.
+#[cfg(windows)]
+struct NamedPipeListener {
+    server: tokio::net::windows::named_pipe::NamedPipeServer,
+}
+
+#[cfg(windows)]
+impl NamedPipeListener {
+    fn new() -> std::io::Result<Self> {
+        use tokio::net::windows::named_pipe::ServerOptions;
+        let server = ServerOptions::new()
+            .first_pipe_instance(true)
+            .reject_remote_clients(true)
+            .create(PIPE_NAME)?;
+        Ok(Self { server })
+    }
+}
+
+#[cfg(windows)]
+impl axum::serve::Listener for NamedPipeListener {
+    type Io = tokio::net::windows::named_pipe::NamedPipeServer;
+    type Addr = String;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        use tokio::net::windows::named_pipe::ServerOptions;
+        loop {
+            match self.server.connect().await {
+                Ok(()) => {
+                    let connected = std::mem::replace(
+                        &mut self.server,
+                        match ServerOptions::new()
+                            .reject_remote_clients(true)
+                            .create(PIPE_NAME)
+                        {
+                            Ok(s) => s,
+                            Err(e) => {
+                                eprintln!("MCP HTTP: failed to create next pipe instance: {e}");
+                                // Sleep briefly then retry — the pipe name might be transiently busy
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                continue;
+                            }
+                        },
+                    );
+                    return (connected, PIPE_NAME.to_string());
+                }
+                Err(e) => {
+                    eprintln!("MCP HTTP: named pipe accept error: {e}");
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+            }
+        }
+    }
+
+    fn local_addr(&self) -> tokio::io::Result<Self::Addr> {
+        Ok(PIPE_NAME.to_string())
+    }
 }
 
 /// Return the plugin development guide as JSON.
@@ -106,10 +170,9 @@ async fn plugin_data_http(
     }
 }
 
-/// Middleware that injects a synthetic `ConnectInfo<SocketAddr>` for Unix socket
-/// connections (which lack a TCP peer address). Always uses 127.0.0.1:0 since
-/// Unix sockets are inherently local.
-#[cfg(unix)]
+/// Middleware that injects a synthetic `ConnectInfo<SocketAddr>` for IPC
+/// connections (Unix socket / named pipe) which lack a TCP peer address.
+/// Always uses 127.0.0.1:0 since IPC is inherently local.
 async fn inject_localhost_connect_info(
     mut req: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
@@ -340,6 +403,27 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         }
     };
 
+    // --- Windows named pipe listener (always on, no auth) ---
+    #[cfg(windows)]
+    let pipe_handle = {
+        match NamedPipeListener::new() {
+            Ok(pipe) => {
+                eprintln!("MCP HTTP: Named pipe listening on {PIPE_NAME}");
+                let app = build_router(state.clone(), false, true);
+                let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
+                Some(tokio::spawn(async move {
+                    if let Err(e) = axum::serve(pipe, app.into_make_service()).await {
+                        eprintln!("MCP HTTP: Named pipe server error: {e}");
+                    }
+                }))
+            }
+            Err(e) => {
+                eprintln!("MCP HTTP: failed to create named pipe {PIPE_NAME}: {e}");
+                None
+            }
+        }
+    };
+
     // --- TCP listener (only for remote access with auth) ---
     let tcp_handle = if remote_enabled {
         let port = if config.remote_access_port == 0 { 0 } else { config.remote_access_port };
@@ -382,12 +466,16 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
     if let Some(h) = socket_handle {
         h.abort();
     }
+    #[cfg(windows)]
+    if let Some(h) = pipe_handle {
+        h.abort();
+    }
     if let Some(h) = tcp_handle {
         h.abort();
     }
     reaper_handle.abort();
 
-    // Cleanup socket file
+    // Cleanup socket file (Unix only — named pipes clean up automatically)
     #[cfg(unix)]
     let _ = std::fs::remove_file(socket_path());
 }

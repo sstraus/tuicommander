@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::State;
 
 // ---------------------------------------------------------------------------
@@ -568,15 +569,36 @@ fn read_claude_access_token() -> Result<Option<String>, String> {
 }
 
 // ---------------------------------------------------------------------------
-// Tauri commands
+// API cache + retry
 // ---------------------------------------------------------------------------
 
-/// Fetch rate-limit usage from the Anthropic OAuth API.
-#[tauri::command]
-pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
-    let token = read_claude_access_token()?
-        .ok_or_else(|| "No Claude OAuth token found".to_string())?;
+/// Cached API response with timestamp for TTL checks.
+struct ApiCache {
+    data: UsageApiResponse,
+    fetched_at: Instant,
+}
 
+/// In-memory cache for the usage API response.
+static API_CACHE: parking_lot::Mutex<Option<ApiCache>> = parking_lot::Mutex::new(None);
+
+/// Cache TTL: return cached data without hitting the API.
+const API_CACHE_TTL: Duration = Duration::from_secs(600); // 10 minutes
+
+/// Maximum retry attempts for 429 responses.
+const MAX_429_RETRIES: u32 = 3;
+
+/// Initial backoff delay for 429 retry.
+const RETRY_INITIAL_DELAY: Duration = Duration::from_secs(2);
+
+/// Error from a raw API fetch, carrying status and optional Retry-After.
+struct FetchError {
+    status: u16,
+    message: String,
+    retry_after_secs: Option<u64>,
+}
+
+/// Raw HTTP fetch — no caching, no retry.
+async fn fetch_usage_from_api(token: &str) -> Result<UsageApiResponse, FetchError> {
     let client = reqwest::Client::new();
     let resp = client
         .get("https://api.anthropic.com/api/oauth/usage")
@@ -584,26 +606,124 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
         .header("anthropic-beta", "oauth-2025-04-20")
         .send()
         .await
-        .map_err(|e| format!("API request failed: {e}"))?;
+        .map_err(|e| FetchError {
+            status: 0,
+            message: format!("API request failed: {e}"),
+            retry_after_secs: None,
+        })?;
 
+    let status = resp.status().as_u16();
     if !resp.status().is_success() {
-        let status = resp.status();
+        let retry_after_secs = resp
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API returned {status}: {body}"));
+        return Err(FetchError {
+            status,
+            message: format!("API returned {status}: {body}"),
+            retry_after_secs,
+        });
     }
 
     let body = resp
         .text()
         .await
-        .map_err(|e| format!("Failed to read API response: {e}"))?;
+        .map_err(|e| FetchError {
+            status: 0,
+            message: format!("Failed to read API response: {e}"),
+            retry_after_secs: None,
+        })?;
 
-    let usage: UsageApiResponse = serde_json::from_str(&body).map_err(|e| {
-        // Log the raw body on parse failure to aid debugging
+    serde_json::from_str(&body).map_err(|e| {
         eprintln!("[claude_usage] Parse error: {e}\nBody: {body}");
-        format!("Failed to parse API response: {e}")
-    })?;
+        FetchError {
+            status: 0,
+            message: format!("Failed to parse API response: {e}"),
+            retry_after_secs: None,
+        }
+    })
+}
 
-    Ok(usage)
+/// Store a successful response in the cache.
+fn cache_response(data: &UsageApiResponse) {
+    *API_CACHE.lock() = Some(ApiCache {
+        data: data.clone(),
+        fetched_at: Instant::now(),
+    });
+}
+
+/// Try to get a cached response. Returns Some if cache exists and is within TTL.
+fn try_get_fresh_cache() -> Option<UsageApiResponse> {
+    let guard = API_CACHE.lock();
+    guard.as_ref().and_then(|c| {
+        if c.fetched_at.elapsed() < API_CACHE_TTL {
+            Some(c.data.clone())
+        } else {
+            None
+        }
+    })
+}
+
+/// Get stale cached data (any age) as fallback on errors.
+fn get_stale_cache() -> Option<UsageApiResponse> {
+    API_CACHE.lock().as_ref().map(|c| c.data.clone())
+}
+
+// ---------------------------------------------------------------------------
+// Tauri commands
+// ---------------------------------------------------------------------------
+
+/// Fetch rate-limit usage from the Anthropic OAuth API.
+/// Uses an in-memory cache (10 min TTL) and retries 429s with exponential backoff.
+#[tauri::command]
+pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
+    // Return fresh cache if available
+    if let Some(cached) = try_get_fresh_cache() {
+        return Ok(cached);
+    }
+
+    let token = read_claude_access_token()?
+        .ok_or_else(|| "No Claude OAuth token found".to_string())?;
+
+    // Attempt fetch with 429 retry
+    let mut last_err_msg = String::new();
+    for attempt in 0..=MAX_429_RETRIES {
+        match fetch_usage_from_api(&token).await {
+            Ok(data) => {
+                cache_response(&data);
+                return Ok(data);
+            }
+            Err(e) => {
+                last_err_msg = e.message.clone();
+                if e.status == 429 && attempt < MAX_429_RETRIES {
+                    let delay = e.retry_after_secs.map_or_else(
+                        || RETRY_INITIAL_DELAY * 2u32.pow(attempt),
+                        Duration::from_secs,
+                    );
+                    eprintln!(
+                        "[claude_usage] 429 rate limited, retry {}/{} after {}s",
+                        attempt + 1,
+                        MAX_429_RETRIES,
+                        delay.as_secs()
+                    );
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+                // Non-429 error or exhausted retries
+                break;
+            }
+        }
+    }
+
+    // On error, return stale cache if available
+    if let Some(stale) = get_stale_cache() {
+        eprintln!("[claude_usage] Returning stale cache after error: {last_err_msg}");
+        return Ok(stale);
+    }
+
+    Err(last_err_msg)
 }
 
 /// Get token usage timeline reconstructed from session transcripts.
@@ -1285,6 +1405,63 @@ mod tests {
     #[test]
     fn resolve_slug_handles_empty() {
         assert!(resolve_slug_to_path("").is_none() || resolve_slug_to_path("").unwrap().is_empty() || true);
+    }
+
+    /// Single test for API cache to avoid parallel test race conditions
+    /// on the shared static API_CACHE.
+    #[test]
+    fn api_cache_lifecycle() {
+        // Hold the lock for the entire test to prevent parallel interference
+        let mut guard = API_CACHE.lock();
+
+        // Empty cache returns None
+        *guard = None;
+        assert!(guard.is_none());
+
+        // Insert fresh data
+        let data = UsageApiResponse {
+            five_hour: Some(RateBucket {
+                utilization: 42.0,
+                resets_at: "2026-03-05T12:00:00Z".into(),
+            }),
+            ..Default::default()
+        };
+        *guard = Some(ApiCache {
+            data: data.clone(),
+            fetched_at: Instant::now(),
+        });
+
+        // Fresh cache returns data
+        let cached = guard.as_ref().and_then(|c| {
+            if c.fetched_at.elapsed() < API_CACHE_TTL {
+                Some(c.data.clone())
+            } else {
+                None
+            }
+        });
+        assert!(cached.is_some(), "fresh cache should return data");
+        assert!((cached.unwrap().five_hour.unwrap().utilization - 42.0).abs() < 0.001);
+
+        // Stale accessor works on fresh data too
+        assert!(guard.as_ref().map(|c| c.data.clone()).is_some());
+
+        // Expired cache: fresh check fails, stale check succeeds
+        *guard = Some(ApiCache {
+            data: UsageApiResponse::default(),
+            fetched_at: Instant::now() - API_CACHE_TTL - Duration::from_secs(1),
+        });
+        let fresh = guard.as_ref().and_then(|c| {
+            if c.fetched_at.elapsed() < API_CACHE_TTL {
+                Some(c.data.clone())
+            } else {
+                None
+            }
+        });
+        assert!(fresh.is_none(), "expired cache should not be fresh");
+        assert!(guard.as_ref().is_some(), "stale cache should still exist");
+
+        // Clean up
+        *guard = None;
     }
 
     #[test]
