@@ -1,17 +1,30 @@
-use futures_util::{SinkExt, StreamExt};
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
+
+use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
+use tuic_relay::relay::AppState;
 
 /// Start a relay server on a random port and return the bound address.
 async fn start_relay() -> SocketAddr {
-    let state = tuic_relay::relay::AppState::new();
+    start_relay_with_state(AppState::new()).await
+}
+
+/// Start a relay server with the given state and return the bound address.
+async fn start_relay_with_state(state: Arc<AppState>) -> SocketAddr {
     let router = tuic_relay::routes::build_router(state);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
     tokio::spawn(async move {
-        axum::serve(listener, router).await.unwrap();
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
     });
 
     addr
@@ -229,4 +242,38 @@ async fn invalid_session_id_rejected() {
         .unwrap();
     // Should get 404 (no route match) or 400
     assert!(resp.status().is_client_error());
+}
+
+#[tokio::test]
+async fn idle_session_receives_timeout_and_is_cleaned_up() {
+    let state = AppState::new();
+    // Spawn reaper with 1-second timeout, checking every 200ms
+    tuic_relay::relay::spawn_session_reaper(
+        state.clone(),
+        Duration::from_secs(1),
+        Duration::from_millis(200),
+    );
+    let addr = start_relay_with_state(state.clone()).await;
+
+    let mut peer = connect_ws(addr, "timeout-test").await;
+    let status = read_text(&mut peer).await;
+    assert!(status.contains("waiting"), "expected waiting, got: {status}");
+
+    // Wait for the session to be reaped (1s idle + 200ms check interval + margin)
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    // Should receive timeout status
+    let msg = tokio::time::timeout(Duration::from_secs(2), read_text(&mut peer)).await;
+    match msg {
+        Ok(text) => assert!(text.contains("timeout"), "expected timeout, got: {text}"),
+        Err(_) => {
+            // Connection may have been closed — that's also acceptable
+        }
+    }
+
+    // Session should be removed from state
+    assert!(
+        state.sessions.is_empty(),
+        "expected sessions to be empty after timeout"
+    );
 }

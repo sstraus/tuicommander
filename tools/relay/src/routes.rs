@@ -1,7 +1,8 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::extract::ws::WebSocketUpgrade;
-use axum::extract::{Path, State};
+use axum::extract::{ConnectInfo, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
@@ -35,7 +36,13 @@ struct RegisterResponse {
 }
 
 /// Self-registration: generate a new bearer token.
-async fn register(State(state): State<Arc<AppState>>) -> Response {
+async fn register(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    if !state.check_rate_limit(addr.ip()) {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
     let token = auth::generate_token();
     let hash = match auth::hash_token(&token) {
         Ok(h) => h,

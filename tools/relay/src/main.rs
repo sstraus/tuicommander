@@ -27,6 +27,18 @@ struct Args {
     /// Contact URI for VAPID subject claim (mailto: or https:).
     #[arg(long, env = "RELAY_VAPID_SUBJECT", default_value = "mailto:admin@tuicommander.com")]
     vapid_subject: String,
+
+    /// Session idle timeout in seconds. Sessions with no activity are cleaned up.
+    #[arg(long, env = "RELAY_SESSION_TIMEOUT_SECS", default_value = "3600")]
+    session_timeout_secs: u64,
+
+    /// Max token registrations per IP per hour (0 = unlimited).
+    #[arg(long, env = "RELAY_RATE_LIMIT_PER_HOUR", default_value = "10")]
+    rate_limit_per_hour: u32,
+
+    /// Max concurrent sessions per token (0 = unlimited).
+    #[arg(long, env = "RELAY_MAX_SESSIONS_PER_TOKEN", default_value = "5")]
+    max_sessions_per_token: u32,
 }
 
 #[tokio::main]
@@ -56,13 +68,23 @@ async fn main() -> anyhow::Result<()> {
         token_cache: dashmap::DashMap::new(),
         vapid,
         http_client: reqwest::Client::new(),
+        rate_limits: dashmap::DashMap::new(),
+        rate_limit_per_hour: args.rate_limit_per_hour,
+        max_sessions_per_token: args.max_sessions_per_token,
     });
+    // Spawn session reaper
+    relay::spawn_session_reaper(
+        state.clone(),
+        std::time::Duration::from_secs(args.session_timeout_secs),
+        std::time::Duration::from_secs(30),
+    );
+
     let router = routes::build_router(state);
 
-    info!(addr = %args.bind, db = %args.db_path, "relay server starting");
+    info!(addr = %args.bind, db = %args.db_path, timeout_secs = args.session_timeout_secs, "relay server starting");
 
     let listener = tokio::net::TcpListener::bind(args.bind).await?;
-    axum::serve(listener, router).await?;
+    axum::serve(listener, router.into_make_service_with_connect_info::<std::net::SocketAddr>()).await?;
 
     Ok(())
 }

@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use tokio::net::TcpListener;
 
@@ -11,7 +12,12 @@ async fn start_relay_with_db() -> SocketAddr {
     let addr = listener.local_addr().unwrap();
 
     tokio::spawn(async move {
-        axum::serve(listener, router).await.unwrap();
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
     });
 
     addr
@@ -258,4 +264,58 @@ async fn push_subscribe_and_unsubscribe() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 404);
+}
+
+/// Start a relay with a custom rate limit.
+async fn start_relay_with_rate_limit(limit: u32) -> SocketAddr {
+    let conn = tuic_relay::db::init(":memory:").await.unwrap();
+    let state = Arc::new(tuic_relay::relay::AppState {
+        sessions: dashmap::DashMap::new(),
+        db: Some(conn),
+        token_cache: dashmap::DashMap::new(),
+        vapid: None,
+        http_client: reqwest::Client::new(),
+        rate_limits: dashmap::DashMap::new(),
+        rate_limit_per_hour: limit,
+        max_sessions_per_token: 0,
+    });
+    let router = tuic_relay::routes::build_router(state);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+
+    addr
+}
+
+#[tokio::test]
+async fn register_rate_limited_after_threshold() {
+    let limit = 3;
+    let addr = start_relay_with_rate_limit(limit).await;
+    let client = reqwest::Client::new();
+
+    // First N registrations succeed
+    for i in 0..limit {
+        let resp = client
+            .post(format!("http://{addr}/register"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 201, "registration {i} should succeed");
+    }
+
+    // Next registration should be rate limited
+    let resp = client
+        .post(format!("http://{addr}/register"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 429, "registration after limit should be 429");
 }
