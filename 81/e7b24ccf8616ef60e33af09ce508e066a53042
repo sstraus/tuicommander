@@ -1,0 +1,25 @@
+src/hooks/usePostMergeCleanup.ts
+  e5458edc56702a98 1-86
+src/__tests__/hooks/usePostMergeCleanup.test.ts
+  e5458edc56702a98 1-250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "81e7b24ccf8616ef60e33af09ce508e066a53042",
+  "prompts": {
+    "e5458edc56702a98": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12601615-ef15-4b09-b4da-179fc019ce6c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 339,
+      "total_deletions": 3,
+      "accepted_lines": 336,
+      "overriden_lines": 0
+    }
+  }
+}
