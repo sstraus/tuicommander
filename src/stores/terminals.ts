@@ -122,6 +122,12 @@ function createTerminalsStore() {
       setState("debouncedBusy", id, true);
       busySinceMap.set(id, Date.now());
       busyDurationMap.delete(id);
+      // Agent resumed output after being idle — clear stale question state.
+      // If the agent was truly waiting for input it can't produce output on its own,
+      // so any pending awaitingInput is a false positive from the silence detector.
+      if (prev === "idle" && state.terminals[id]?.awaitingInput != null) {
+        setState("terminals", id, "awaitingInput", null);
+      }
     } else if (next !== "busy" && prev === "busy") {
       // Leaving busy: freeze duration, start cooldown
       const since = busySinceMap.get(id);

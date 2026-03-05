@@ -266,10 +266,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
         appLogger.debug("terminal", `[ShellState] ${props.id} → "busy" (PTY output, was "${storeState}")`);
         terminalsStore.update(props.id, { shellState: "busy" });
       }
-      // NOTE: do NOT clear awaitingInput here. PTY output does not mean the user
-      // answered the question — the agent may be printing more context or
-      // the shell is redrawing the prompt after a resize. awaitingInput is cleared
-      // explicitly by: user keypress (onData), status-line/progress events, or session exit.
+      // awaitingInput is cleared by handleShellStateChange when transitioning
+      // idle→busy (agent resumed = no longer waiting). Not cleared on every
+      // busy→busy output to avoid losing state during brief PTY redraws.
     }
     lastOutputTime = now;
     if (!idleTimer) {
@@ -394,12 +393,21 @@ export const Terminal: Component<TerminalProps> = (props) => {
             }
             break;
           }
-          case "question":
+          case "question": {
+            // Guard: if the terminal is actively producing output, the match
+            // is likely a false positive from the agent streaming code/discussion
+            // that contains question-like patterns (same logic as rate-limit).
+            const qTerminal = terminalsStore.get(props.id);
+            if (qTerminal?.shellState === "busy") {
+              appLogger.debug("terminal", `[ParsedEvent] ${props.id} question IGNORED (shellState=busy, likely false positive) prompt="${parsed.prompt_text}"`);
+              break;
+            }
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} question prompt="${parsed.prompt_text}" → setAwaitingInput("question")`);
             terminalsStore.setAwaitingInput(props.id, "question");
             appLogger.info("terminal", `[Notify] ${props.id} question — prompt="${parsed.prompt_text}"`);
             notificationsStore.playQuestion();
             break;
+          }
           case "usage-limit": {
             const current = terminalsStore.get(props.id)?.usageLimit;
             if (current?.percentage !== parsed.percentage || current?.limitType !== parsed.limit_type) {
@@ -578,6 +586,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // We intercept both keydown (to inject ESC+char) and keypress (to suppress the
     // macOS-composed character that xterm's third-level-shift pass-through would send).
     let leftOptionHeld = false;
+    // Tracks the ESC key cycle (keydown→keypress→keyup) when dismissing the
+    // resume banner so ALL event types are blocked, preventing a stray \x1b
+    // keypress from reaching xterm (which would eat the next typed character).
+    let blockEscForResumeDismiss = false;
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
       // Intercept Cmd+F (macOS) / Ctrl+F (Win/Linux) to open search overlay
       if (event.type === "keydown" && (event.metaKey || event.ctrlKey) && event.key === "f" && !event.altKey && !event.shiftKey) {
@@ -593,10 +605,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
         return false;
       }
 
-      // Escape dismisses resume banner when visible and returns focus to terminal
-      if (event.type === "keydown" && event.key === "Escape" && terminalsStore.get(props.id)?.pendingResumeCommand) {
-        terminalsStore.update(props.id, { pendingResumeCommand: null });
-        terminal?.focus();
+      // Escape dismisses resume banner — block the full key cycle to prevent
+      // a stray \x1b keypress from eating the next typed character
+      if (event.key === "Escape" && (terminalsStore.get(props.id)?.pendingResumeCommand || blockEscForResumeDismiss)) {
+        if (event.type === "keydown") {
+          blockEscForResumeDismiss = true;
+          terminalsStore.update(props.id, { pendingResumeCommand: null });
+          terminal?.focus();
+        } else if (event.type === "keyup") {
+          blockEscForResumeDismiss = false;
+        }
         return false;
       }
 

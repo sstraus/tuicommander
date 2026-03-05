@@ -425,6 +425,30 @@ describe("terminalsStore", () => {
       });
     });
 
+    it("clears awaitingInput on idle→busy transition", () => {
+      createRoot((dispose) => {
+        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        store.update(id, { shellState: "idle" });
+        store.setAwaitingInput(id, "question");
+        expect(store.get(id)!.awaitingInput).toBe("question");
+        // Agent resumes output → idle→busy transition should clear stale question
+        store.update(id, { shellState: "busy" });
+        expect(store.get(id)!.awaitingInput).toBeNull();
+        dispose();
+      });
+    });
+
+    it("does not clear awaitingInput on null→busy transition", () => {
+      createRoot((dispose) => {
+        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        store.setAwaitingInput(id, "question");
+        // Initial busy (from null) should NOT clear — agent hasn't been idle yet
+        store.update(id, { shellState: "busy" });
+        expect(store.get(id)!.awaitingInput).toBe("question");
+        dispose();
+      });
+    });
+
     it("preserves shellState on setActive", () => {
       createRoot((dispose) => {
         const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });

@@ -395,6 +395,9 @@ const App: Component = () => {
   const BUSY_COMPLETION_THRESHOLD_MS = 5000;
   terminalsStore.onBusyToIdle((id, durationMs) => {
     if (durationMs >= BUSY_COMPLETION_THRESHOLD_MS) {
+      // Don't flag the terminal the user is currently viewing — they already
+      // saw the output, so activity/unseen markers are noise.
+      if (terminalsStore.state.activeId === id) return;
       appLogger.info("terminal", `[Notify] ${id} completion — busy for ${Math.round(durationMs / 1000)}s then idle`);
       terminalsStore.update(id, { activity: true, unseen: true });
       notificationsStore.playCompletion();
