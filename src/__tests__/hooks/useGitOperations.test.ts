@@ -533,50 +533,19 @@ describe("useGitOperations", () => {
       // Branch stays in sidebar — user must choose
       expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeDefined();
       // Dialog context is populated
-      expect(gitOps.mergePendingCtx()).toEqual({ repoPath: "/repo", branchName: "feature/x" });
+      expect(gitOps.mergePendingCtx()).toEqual({ repoPath: "/repo", branchName: "feature/x", baseBranch: "main" });
     });
 
-    it("archives worktree and removes branch when user chooses archive in pending dialog", async () => {
-      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
-      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
-      repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
-      mockRepo.mergeAndArchiveWorktree.mockResolvedValue({ merged: true, action: "pending", archive_path: null });
-      mockRepo.finalizeMergedWorktree.mockResolvedValue({ merged: true, action: "archived", archive_path: "/archived/feature-x" });
-
-      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "ask");
-      await gitOps.handleMergePendingChoice("archive");
-
-      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/x", "archive");
-      expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeUndefined();
-      expect(gitOps.mergePendingCtx()).toBeNull();
-    });
-
-    it("deletes worktree and removes branch when user chooses delete in pending dialog", async () => {
-      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
-      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
-      repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
-      mockRepo.mergeAndArchiveWorktree.mockResolvedValue({ merged: true, action: "pending", archive_path: null });
-      mockRepo.finalizeMergedWorktree.mockResolvedValue({ merged: true, action: "deleted", archive_path: null });
-
-      await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "ask");
-      await gitOps.handleMergePendingChoice("delete");
-
-      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/x", "delete");
-      expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeUndefined();
-      expect(gitOps.mergePendingCtx()).toBeNull();
-    });
-
-    it("keeps worktree in sidebar when user cancels the pending dialog", async () => {
+    it("dismissMergePending clears the context and keeps branch in sidebar", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
       repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
       mockRepo.mergeAndArchiveWorktree.mockResolvedValue({ merged: true, action: "pending", archive_path: null });
 
       await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "ask");
-      await gitOps.handleMergePendingChoice("cancel");
+      gitOps.dismissMergePending();
 
-      expect(mockRepo.finalizeMergedWorktree).not.toHaveBeenCalled();
-      // Branch stays — worktree is kept as-is
+      // Branch stays — cleanup dialog was skipped
       expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeDefined();
       expect(gitOps.mergePendingCtx()).toBeNull();
     });
@@ -662,7 +631,7 @@ describe("useGitOperations", () => {
       await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "ask");
 
       expect(mockRepo.mergePrViaGithub).toHaveBeenCalled();
-      expect(gitOps.mergePendingCtx()).toEqual({ repoPath: "/repo", branchName: "feature/x" });
+      expect(gitOps.mergePendingCtx()).toEqual({ repoPath: "/repo", branchName: "feature/x", baseBranch: "main" });
       expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeDefined();
     });
 

@@ -2,7 +2,7 @@ import { Component, For, Show, createEffect, createSignal, onCleanup } from "sol
 import d from "../shared/dialog.module.css";
 import s from "./PostMergeCleanupDialog.module.css";
 
-export type StepId = "switch" | "pull" | "delete-local" | "delete-remote";
+export type StepId = "worktree" | "switch" | "pull" | "delete-local" | "delete-remote";
 export type StepStatus = "pending" | "running" | "success" | "error" | "skipped";
 
 export interface CleanupStep {
@@ -27,6 +27,10 @@ export interface PostMergeCleanupDialogProps {
   stepStatuses?: Partial<Record<StepId, StepStatus>>;
   /** Per-step error messages */
   stepErrors?: Partial<Record<StepId, string>>;
+  /** When set, adds a worktree archive/delete step as the first step */
+  worktreeAction?: "archive" | "delete";
+  /** Called when the user toggles between archive/delete for the worktree step */
+  onWorktreeActionChange?: (action: "archive" | "delete") => void;
 }
 
 const STATUS_ICONS: Record<StepStatus, string> = {
@@ -41,8 +45,19 @@ function buildInitialSteps(
   baseBranch: string,
   isOnBaseBranch: boolean,
   isDefaultBranch: boolean,
+  worktreeAction?: "archive" | "delete",
 ): CleanupStep[] {
-  return [
+  const steps: CleanupStep[] = [];
+
+  if (worktreeAction) {
+    steps.push({
+      id: "worktree",
+      label: worktreeAction === "archive" ? "Archive worktree" : "Delete worktree",
+      checked: true,
+    });
+  }
+
+  steps.push(
     {
       id: "switch",
       label: `Switch to ${baseBranch}`,
@@ -64,12 +79,14 @@ function buildInitialSteps(
       label: "Delete remote branch",
       checked: true,
     },
-  ];
+  );
+
+  return steps;
 }
 
 export const PostMergeCleanupDialog: Component<PostMergeCleanupDialogProps> = (props) => {
   const [steps, setSteps] = createSignal<CleanupStep[]>(
-    buildInitialSteps(props.baseBranch, props.isOnBaseBranch, props.isDefaultBranch),
+    buildInitialSteps(props.baseBranch, props.isOnBaseBranch, props.isDefaultBranch, props.worktreeAction),
   );
 
   const toggleStep = (id: StepId) => {
@@ -122,7 +139,31 @@ export const PostMergeCleanupDialog: Component<PostMergeCleanupDialogProps> = (p
                           disabled={step.disabled || !!props.executing}
                           onChange={() => toggleStep(step.id)}
                         />
-                        <span data-testid={`step-label-${step.id}`}>{step.label}</span>
+                        <Show when={step.id === "worktree" && props.onWorktreeActionChange}
+                          fallback={<span data-testid={`step-label-${step.id}`}>{step.label}</span>}
+                        >
+                          <select
+                            data-testid={`step-label-${step.id}`}
+                            class={s.worktreeSelect}
+                            value={props.worktreeAction}
+                            disabled={!!props.executing}
+                            onChange={(e) => {
+                              const action = e.currentTarget.value as "archive" | "delete";
+                              props.onWorktreeActionChange!(action);
+                              setSteps((prev) =>
+                                prev.map((st) =>
+                                  st.id === "worktree"
+                                    ? { ...st, label: action === "archive" ? "Archive worktree" : "Delete worktree" }
+                                    : st,
+                                ),
+                              );
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <option value="archive">Archive worktree</option>
+                            <option value="delete">Delete worktree</option>
+                          </select>
+                        </Show>
                       </label>
                       <Show when={status() !== "pending"}>
                         <span

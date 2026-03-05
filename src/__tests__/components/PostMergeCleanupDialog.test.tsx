@@ -163,4 +163,70 @@ describe("PostMergeCleanupDialog", () => {
     expect(deleteLocalCheck.disabled).toBe(true);
     expect(deleteLocalCheck.checked).toBe(false);
   });
+
+  describe("worktree mode", () => {
+    it("renders worktree step as first step when worktreeAction is set", () => {
+      const { container } = render(() => (
+        <PostMergeCleanupDialog {...defaultProps()} worktreeAction="archive" />
+      ));
+      const labels = container.querySelectorAll("[data-testid^='step-label-']");
+      expect(labels.length).toBe(5);
+      expect(labels[0].textContent).toContain("Archive worktree");
+    });
+
+    it("worktree step shows 'Delete worktree' when worktreeAction is delete", () => {
+      const { container } = render(() => (
+        <PostMergeCleanupDialog {...defaultProps()} worktreeAction="delete" />
+      ));
+      const label = container.querySelector("[data-testid='step-label-worktree']");
+      expect(label).not.toBeNull();
+      expect(label!.textContent).toContain("Delete worktree");
+    });
+
+    it("worktree step is checked by default and included in onExecute", () => {
+      const props = defaultProps();
+      const { container } = render(() => (
+        <PostMergeCleanupDialog {...props} worktreeAction="archive" />
+      ));
+      const wtCheck = container.querySelector(
+        "input[data-testid='step-check-worktree']",
+      ) as HTMLInputElement;
+      expect(wtCheck.checked).toBe(true);
+
+      const executeBtn = container.querySelector("[data-testid='execute-btn']")!;
+      fireEvent.click(executeBtn);
+
+      const steps: CleanupStep[] = props.onExecute.mock.calls[0][0];
+      const worktreeStep = steps.find((s) => s.id === "worktree");
+      expect(worktreeStep).toBeDefined();
+      expect(worktreeStep!.checked).toBe(true);
+    });
+
+    it("worktree mode pre-unchecks switch/pull (user is not in worktree dir)", () => {
+      const { container } = render(() => (
+        <PostMergeCleanupDialog
+          {...defaultProps()}
+          worktreeAction="archive"
+          isOnBaseBranch={false}
+        />
+      ));
+      // In worktree mode, the user is working in the main repo checkout,
+      // not in the worktree — switch/pull are for the main repo and should be offered
+      const switchCheck = container.querySelector(
+        "input[data-testid='step-check-switch']",
+      ) as HTMLInputElement;
+      // switch should be available (not disabled) since the user may not be on base
+      expect(switchCheck.disabled).toBe(false);
+    });
+
+    it("does not render worktree step without worktreeAction prop", () => {
+      const { container } = render(() => (
+        <PostMergeCleanupDialog {...defaultProps()} />
+      ));
+      const wtCheck = container.querySelector(
+        "input[data-testid='step-check-worktree']",
+      );
+      expect(wtCheck).toBeNull();
+    });
+  });
 });

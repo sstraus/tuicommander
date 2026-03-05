@@ -539,7 +539,7 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
   - Steps are checkable — user can toggle which to execute
   - Per-step status reporting: pending → running → success/error
 - After-merge behavior setting for worktrees: `archive` (auto-archive), `delete` (remove), `ask` (show dialog)
-- Merge dialog shown when `afterMerge=ask`: presents archive/delete/keep choices before proceeding
+- When `afterMerge=ask`: unified cleanup dialog includes an archive/delete worktree step (with inline selector) alongside branch cleanup steps — replaces the old 3-button MergePostActionDialog
 
 ### 8.6 Auto-Delete Branch on PR Close
 - Per-repo setting: Off (default) / Ask / Auto

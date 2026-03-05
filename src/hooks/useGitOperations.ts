@@ -88,10 +88,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
     baseRefs: string[];
   } | null>(null);
 
-  /** Pending merge context — set when afterMerge=ask; cleared once the user picks archive/delete/cancel */
+  /** Pending merge context — set when afterMerge=ask; cleared once the user picks or skips cleanup */
   const [mergePendingCtx, setMergePendingCtx] = createSignal<{
     repoPath: string;
     branchName: string;
+    baseBranch: string;
   } | null>(null);
 
   /** Reentrancy guard: prevents concurrent handleBranchSelect calls from
@@ -859,7 +860,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
         await closeTerminalsForBranch(repoPath, branchName);
         if (afterMerge === "ask") {
           deps.setStatusInfo(`Merged ${branchName} via GitHub — choose what to do with the worktree`);
-          setMergePendingCtx({ repoPath, branchName });
+          setMergePendingCtx({ repoPath, branchName, baseBranch: targetBranch });
           return;
         }
         const action = afterMerge as "archive" | "delete";
@@ -893,8 +894,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
     if (result.action === "pending") {
       // "ask" mode — merge succeeded, user must choose what to do with the worktree
       deps.setStatusInfo(`Merged ${branchName} into ${targetBranch} — choose what to do with the worktree`);
-      setMergePendingCtx({ repoPath, branchName });
-      // Branch stays in sidebar until the user decides (archive/delete/cancel)
+      setMergePendingCtx({ repoPath, branchName, baseBranch: targetBranch });
+      // Branch stays in sidebar until the user decides via cleanup dialog
       return;
     }
 
@@ -907,21 +908,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
     refreshAllBranchStats();
   };
 
-  /** Handle the user's choice in the post-merge dialog (archive, delete, or cancel). */
-  const handleMergePendingChoice = async (choice: "archive" | "delete" | "cancel") => {
-    const ctx = mergePendingCtx();
+  /** Dismiss the post-merge cleanup dialog. */
+  const dismissMergePending = () => {
     setMergePendingCtx(null);
-    if (!ctx || choice === "cancel") return;
-
-    try {
-      await deps.repo.finalizeMergedWorktree(ctx.repoPath, ctx.branchName, choice);
-      deps.setStatusInfo(`Worktree ${choice === "archive" ? "archived" : "deleted"}`);
-      repositoriesStore.removeBranch(ctx.repoPath, ctx.branchName);
-      refreshAllBranchStats();
-    } catch (err) {
-      appLogger.error("git", `Failed to ${choice} worktree after merge`, err);
-      deps.setStatusInfo(`Failed to ${choice} worktree: ${err}`);
-    }
   };
 
   const handleNewTab = async () => {
@@ -1323,7 +1312,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
     handleCreateWorktreeFromBranch,
     handleMergeAndArchive,
     mergePendingCtx,
-    handleMergePendingChoice,
+    dismissMergePending,
+    closeTerminalsForBranch,
     worktreeDialogState,
     setWorktreeDialogState,
     creatingWorktreeRepos,

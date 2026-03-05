@@ -286,6 +286,61 @@ describe("executeCleanup", () => {
     expect(onStepDone).toHaveBeenCalledWith("delete-remote", "success", undefined);
   });
 
+  it("calls finalize_merged_worktree for worktree step", async () => {
+    const config = makeConfig({
+      steps: [
+        { id: "worktree", checked: true },
+        { id: "switch", checked: false },
+        { id: "pull", checked: false },
+        { id: "delete-local", checked: false },
+        { id: "delete-remote", checked: false },
+      ],
+      worktreeAction: "archive",
+    });
+    await executeCleanup(config);
+
+    expect(mockInvoke).toHaveBeenCalledWith("finalize_merged_worktree", {
+      repoPath: "/repo",
+      branchName: "feature/login",
+      action: "archive",
+    });
+  });
+
+  it("calls finalize_merged_worktree with 'delete' action", async () => {
+    const config = makeConfig({
+      steps: [
+        { id: "worktree", checked: true },
+        { id: "switch", checked: false },
+        { id: "pull", checked: false },
+        { id: "delete-local", checked: false },
+        { id: "delete-remote", checked: false },
+      ],
+      worktreeAction: "delete",
+    });
+    await executeCleanup(config);
+
+    expect(mockInvoke).toHaveBeenCalledWith("finalize_merged_worktree", {
+      repoPath: "/repo",
+      branchName: "feature/login",
+      action: "delete",
+    });
+  });
+
+  it("skips worktree step when worktreeAction is not set", async () => {
+    const config = makeConfig({
+      steps: [
+        { id: "worktree", checked: true },
+        { id: "switch", checked: false },
+        { id: "pull", checked: false },
+        { id: "delete-local", checked: false },
+        { id: "delete-remote", checked: false },
+      ],
+    });
+    await executeCleanup(config);
+
+    expect(mockInvoke).not.toHaveBeenCalledWith("finalize_merged_worktree", expect.anything());
+  });
+
   it("calls bumpRevision at the end even without local delete", async () => {
     const config = makeConfig({
       steps: [

@@ -25,7 +25,8 @@ import { RenameBranchDialog } from "./components/RenameBranchDialog";
 import { CreateWorktreeDialog } from "./components/CreateWorktreeDialog";
 import { PromptDialog } from "./components/PromptDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
-import { MergePostActionDialog } from "./components/MergePostActionDialog";
+import { PostMergeCleanupDialog, type StepId, type StepStatus, type CleanupStep } from "./components/PostMergeCleanupDialog/PostMergeCleanupDialog";
+import { executeCleanup } from "./hooks/usePostMergeCleanup";
 import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
 import { CommandPalette } from "./components/CommandPalette";
@@ -189,6 +190,42 @@ const App: Component = () => {
       return effective?.promptOnCreate ?? repoDefaultsStore.state.promptOnCreate;
     },
   });
+
+  // ── Post-merge worktree cleanup dialog state ──
+  const [worktreeCleanupExecuting, setWorktreeCleanupExecuting] = createSignal(false);
+  const [worktreeCleanupStepStatuses, setWorktreeCleanupStepStatuses] = createSignal<Partial<Record<StepId, StepStatus>>>({});
+  const [worktreeCleanupStepErrors, setWorktreeCleanupStepErrors] = createSignal<Partial<Record<StepId, string>>>({});
+  const [worktreeCleanupAction, setWorktreeCleanupAction] = createSignal<"archive" | "delete">("archive");
+
+  const handleWorktreeCleanupExecute = async (steps: CleanupStep[]) => {
+    const ctx = gitOps.mergePendingCtx();
+    if (!ctx) return;
+    setWorktreeCleanupExecuting(true);
+    setWorktreeCleanupStepStatuses({});
+    setWorktreeCleanupStepErrors({});
+    await executeCleanup({
+      repoPath: ctx.repoPath,
+      branchName: ctx.branchName,
+      baseBranch: ctx.baseBranch,
+      steps: steps.map((s) => ({ id: s.id, checked: s.checked })),
+      worktreeAction: worktreeCleanupAction(),
+      onStepStart: (id) => setWorktreeCleanupStepStatuses((prev) => ({ ...prev, [id]: "running" as StepStatus })),
+      onStepDone: (id, result, error) => {
+        setWorktreeCleanupStepStatuses((prev) => ({ ...prev, [id]: result as StepStatus }));
+        if (error) setWorktreeCleanupStepErrors((prev) => ({ ...prev, [id]: error }));
+      },
+      closeTerminalsForBranch: gitOps.closeTerminalsForBranch,
+    });
+    // Brief delay so user sees final statuses
+    setTimeout(() => {
+      setWorktreeCleanupExecuting(false);
+      gitOps.dismissMergePending();
+    }, 600);
+  };
+
+  const handleWorktreeCleanupSkip = () => {
+    gitOps.dismissMergePending();
+  };
 
   const lazygit = useAppLazygit({
     pty,
@@ -1352,14 +1389,34 @@ const App: Component = () => {
         onConfirm={dialogs.handleConfirm}
       />
 
-      {/* Post-merge dialog — shown when afterMerge=ask and user must choose archive/delete/cancel */}
+      {/* Post-merge worktree cleanup — shown when afterMerge=ask */}
       <Show when={gitOps.mergePendingCtx() !== null}>
-        <MergePostActionDialog
-          branchName={gitOps.mergePendingCtx()!.branchName}
-          onArchive={() => gitOps.handleMergePendingChoice("archive")}
-          onDelete={() => gitOps.handleMergePendingChoice("delete")}
-          onCancel={() => gitOps.handleMergePendingChoice("cancel")}
-        />
+        {(() => {
+          const ctx = gitOps.mergePendingCtx()!;
+          const repoState = repositoriesStore.get(ctx.repoPath);
+          const activeBranch = repoState?.activeBranch ?? "";
+          const isOnBaseBranch = activeBranch === ctx.baseBranch;
+          const branchState = repoState?.branches[ctx.branchName];
+          const isDefaultBranch = branchState?.isMain ?? false;
+          const hasTerminals = (branchState?.terminals.length ?? 0) > 0;
+          return (
+            <PostMergeCleanupDialog
+              branchName={ctx.branchName}
+              baseBranch={ctx.baseBranch}
+              repoPath={ctx.repoPath}
+              isOnBaseBranch={isOnBaseBranch}
+              isDefaultBranch={isDefaultBranch}
+              hasTerminals={hasTerminals}
+              worktreeAction={worktreeCleanupAction()}
+              onWorktreeActionChange={setWorktreeCleanupAction}
+              executing={worktreeCleanupExecuting()}
+              stepStatuses={worktreeCleanupStepStatuses()}
+              stepErrors={worktreeCleanupStepErrors()}
+              onExecute={handleWorktreeCleanupExecute}
+              onSkip={handleWorktreeCleanupSkip}
+            />
+          );
+        })()}
       </Show>
 
       {/* Lazygit floating window (Story 051) */}

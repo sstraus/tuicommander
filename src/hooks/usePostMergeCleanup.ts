@@ -11,6 +11,8 @@ export interface CleanupConfig {
   onStepStart: (id: StepId) => void;
   onStepDone: (id: StepId, result: "success" | "error", error?: string) => void;
   closeTerminalsForBranch: (repoPath: string, branchName: string) => Promise<void>;
+  /** When set, the "worktree" step calls finalize_merged_worktree with this action */
+  worktreeAction?: "archive" | "delete";
 }
 
 /** Execute post-merge cleanup steps sequentially via Rust backend commands. */
@@ -26,6 +28,16 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
     onStepStart(step.id);
     try {
       switch (step.id) {
+        case "worktree": {
+          if (!config.worktreeAction) break; // no-op if action not set
+          await invoke("finalize_merged_worktree", {
+            repoPath,
+            branchName,
+            action: config.worktreeAction,
+          });
+          break;
+        }
+
         case "switch": {
           // Pre-check for dirty working directory
           const status = await invoke<{ stdout: string; stderr: string }>("run_git_command", {
