@@ -1,0 +1,31 @@
+tools/relay/src/routes.rs
+  565843328bbd8c9a 1,5,40-45
+tools/relay/src/relay.rs
+  565843328bbd8c9a 2,21-22,37-42,54-56,68-70,73-95,127-179,190-194,229-233,236-237,239,320-350,434-467
+tools/relay/tests/relay_core.rs
+  565843328bbd8c9a 2-5,8,12-16,24,246-279
+tools/relay/tests/auth_db.rs
+  565843328bbd8c9a 2,17,268-321
+tools/relay/src/main.rs
+  565843328bbd8c9a 30-41,71-73,75-81,84,87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "24072622ccfee93e94a59cd5614f1dfef5cb3e62",
+  "prompts": {
+    "565843328bbd8c9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d951fac9-300b-4db1-8ad9-758f7f2b0e41",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 319,
+      "total_deletions": 39,
+      "accepted_lines": 304,
+      "overriden_lines": 0
+    }
+  }
+}
