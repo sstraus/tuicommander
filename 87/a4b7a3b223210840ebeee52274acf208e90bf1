@@ -1,0 +1,23 @@
+src/components/PrDetailPopover/PrDetailPopover.tsx
+  e5458edc56702a98 14-15,50-115,130-133,197-216,280
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "87a4b7a3b223210840ebeee52274acf208e90bf1",
+  "prompts": {
+    "e5458edc56702a98": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12601615-ef15-4b09-b4da-179fc019ce6c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 93,
+      "total_deletions": 1,
+      "accepted_lines": 93,
+      "overriden_lines": 0
+    }
+  }
+}
