@@ -1,0 +1,27 @@
+src/components/Sidebar/RepoSection.tsx
+  577f5f4898fc20b8 604
+src/components/PrDetailPopover/PrDetailPopover.tsx
+  577f5f4898fc20b8 274
+src/components/PostMergeCleanupDialog/PostMergeCleanupDialog.tsx
+  577f5f4898fc20b8 152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "278a888f657b272cace66224d1e62e6dfd59c79f",
+  "prompts": {
+    "577f5f4898fc20b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "23120500-43b1-4168-ad0d-b4407c6e2850",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 3,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  }
+}
