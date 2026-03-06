@@ -51,9 +51,11 @@ Reference for all UI/CSS/layout work. Every visual change MUST follow this guide
 
 ## Color Palette
 
-### CSS Variables (`:root` in `styles.css`)
+Values shown are the **vscode-dark** theme defaults (defined in `:root` of `global.css`). The app supports **11 themes** — all core colors are CSS custom properties overridden at runtime by `applyAppTheme()` in `themes.ts`. When writing CSS, always use variables, never hardcode core palette values.
 
-| Variable | Value | Usage |
+### CSS Variables (`:root` in `global.css`)
+
+| Variable | Default (vscode-dark) | Usage |
 |----------|-------|-------|
 | `--bg-primary` | `#1e1e1e` | Main canvas — terminals, panel bodies |
 | `--bg-secondary` | `#252526` | Sidebar, tab bar, status bar |
@@ -64,10 +66,13 @@ Reference for all UI/CSS/layout work. Every visual change MUST follow this guide
 | `--fg-muted` | `#9aa1a9` | Section titles, tertiary text |
 | `--accent` | `#59a8dd` | Primary actions, active indicators, links (theme-dependent) |
 | `--accent-hover` | `#7abde5` | Hover on accent elements (theme-dependent) |
-| `--activity` | `#59a8dd` | Busy/activity pulse indicators (fixed, never overridden by themes) |
+| `--activity` | `#59a8dd` | Busy/activity pulse indicators (fixed in `global.css`, not overridden by themes) |
 | `--success` | `#4ec9b0` | Positive states, open PRs (teal) |
 | `--warning` | `#dcdcaa` | Caution, pending, main branch icon (yellow) |
+| `--attention` | `#e8984c` | Actionable alerts, confirmation prompts (orange) |
 | `--error` | `#f48771` | Errors, failures, closed PRs (coral) |
+| `--merged` | `#a371f7` | PR merged badge (purple) |
+| `--unseen` | `#c084fc` | Terminal completed while user wasn't viewing (purple, clears on view) |
 | `--border` | `#3e3e42` | All borders and dividers |
 | `--text-on-accent` | `#000000` | Black text on colored badge backgrounds |
 | `--text-on-error` | `#000000` | Black text on error backgrounds |
@@ -77,7 +82,6 @@ Reference for all UI/CSS/layout work. Every visual change MUST follow this guide
 
 | Color | Context |
 |-------|---------|
-| `#a371f7` | PR merged badge (purple) |
 | `#d29922` | Changes requested / review required (orange) |
 | `#e3b341` | CI pending (golden) |
 | `#ffd700` | Rate limit, question icon (gold) |
@@ -107,13 +111,16 @@ Every surface uses exactly one of these four levels. Elevation = lighter.
 
 | Variable | Size | Where |
 |----------|------|-------|
-| `--font-2xs` | 9px | Smallest labels |
-| `--font-xs` | 10px | Badge text, hotkey hints, metadata |
-| `--font-sm` | 11px | Section titles (REPOS), secondary labels |
-| `--font-md` | 12px | Branch names, tab names, settings labels — **default for UI** |
-| `--font-base` | 13px | Body text, document default |
-| `--font-lg` | 14px | Panel headings, chevrons |
-| `--font-xl` | 16px | Dialog titles |
+| `--font-3xs` | 8px | Micro labels, pixel-level detail |
+| `--font-2xs` | 10px | Smallest visible labels |
+| `--font-xs` | 11px | Badge text, hotkey hints, metadata |
+| `--font-sm` | 12px | Section titles (REPOS), secondary labels |
+| `--font-md` | 13px | Branch names, tab names, settings labels — **default for UI** |
+| `--font-base` | 14px | Body text, document default |
+| `--font-lg` | 15px | Panel headings, chevrons |
+| `--font-xl` | 17px | Dialog titles |
+| `--font-2xl` | 20px | Large headings |
+| `--font-3xl` | 24px | Hero text, splash screens |
 
 Font weight: 400 normal, 500 medium (branch names), 600 semibold (repo names, badges), 700 bold (headings only).
 
@@ -570,6 +577,30 @@ CSS classes on `<html>`: `.platform-macos`, `.platform-windows`, `.platform-linu
 - `prefers-reduced-motion` query disables all animations.
 - Custom scrollbars maintain 8px touch target.
 
+## PWA / Mobile (`src/mobile/mobile.css`)
+
+The mobile PWA has its own standalone stylesheet at `src/mobile/mobile.css`, **completely independent from the desktop `global.css`**. This allows the mobile UI to evolve separately while sharing the same design language.
+
+### What's shared
+- Core color palette (same `--bg-*`, `--fg-*`, `--accent`, `--success`, `--warning`, `--attention`, `--error` variables with identical default values)
+- Border radius scale (`--radius-sm` through `--radius-full`, excluding `--radius-xs`)
+- Shadow tokens (`--shadow-popup`, `--shadow-dropdown`)
+- ANSI terminal palette
+
+### What differs
+| Property | Desktop (`global.css`) | Mobile (`mobile.css`) |
+|----------|----------------------|----------------------|
+| Font mono stack | JetBrains Mono, Fira Code, Hack, Cascadia, ... | SF Mono, Menlo, Consolas, DejaVu, ... |
+| Font size scale | `--font-3xs` through `--font-3xl` (8–24px) | Not defined — components use explicit `px` values |
+| Layout variables | `--sidebar-width`, `--toolbar-height`, `--tab-bar-height`, `--status-height` | Not used — mobile uses flex-based layout |
+| User select | Disabled (`none`) | Enabled (`text`) |
+| Theme variables | `--activity`, `--merged`, `--unseen` | Not present (mobile has no terminal activity tracking yet) |
+| Safe areas | Not used | `env(safe-area-inset-top/bottom)` on `#mobile-app` |
+| Input font-size | From scale | Fixed `16px` minimum to prevent iOS auto-zoom |
+
+### Keeping in sync
+When updating core palette colors in `global.css`, **also update `mobile.css`** — the `:root` blocks must stay aligned for the shared variables. Theme-specific variables (`--activity`, `--merged`, `--unseen`) are desktop-only and do not need mobile equivalents until that functionality ships in PWA.
+
 ## Anti-Patterns (DO NOT)
 
 - **No bright whites** — max text brightness is `--fg-primary` (#cccccc).
@@ -580,4 +611,4 @@ CSS classes on `<html>`: `.platform-macos`, `.platform-windows`, `.platform-linu
 - **No off-scale radius** — only `--radius-xs` through `--radius-full`.
 - **No `!important`** — except xterm scrollbar overrides.
 - **No pixel values outside the spacing scale** unless component-specific dimension (like 28px repo initials).
-- **No inline styles for theming** — all colors and spacing in `styles.css`.
+- **No inline styles for theming** — all colors and spacing via CSS variables (desktop: `global.css`, mobile: `mobile.css`).
