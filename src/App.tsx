@@ -395,13 +395,11 @@ const App: Component = () => {
   const BUSY_COMPLETION_THRESHOLD_MS = 5000;
   terminalsStore.onBusyToIdle((id, durationMs) => {
     if (durationMs >= BUSY_COMPLETION_THRESHOLD_MS) {
+      // Don't notify for the terminal the user is currently viewing.
+      if (terminalsStore.state.activeId === id) return;
       appLogger.info("terminal", `[Notify] ${id} completion — busy for ${Math.round(durationMs / 1000)}s then idle`);
-      // Always play the sound — user may be looking away even if on this tab.
+      terminalsStore.update(id, { activity: true, unseen: true });
       notificationsStore.playCompletion();
-      // Visual markers only for non-active terminals (active tab already shows output).
-      if (terminalsStore.state.activeId !== id) {
-        terminalsStore.update(id, { activity: true, unseen: true });
-      }
     }
   });
 

@@ -143,7 +143,7 @@ describe("terminalsStore debounced busy signal", () => {
       });
     });
 
-    it("resets when terminal goes busy again", () => {
+    it("resets when terminal goes busy again after cooldown expires", () => {
       createRoot((dispose) => {
         const id = addTerminal();
         store.update(id, { shellState: "busy" });
@@ -151,10 +151,30 @@ describe("terminalsStore debounced busy signal", () => {
         store.update(id, { shellState: "idle" });
         expect(store.getBusyDuration(id)).toBe(5000);
 
-        // New busy cycle
+        // Wait for cooldown to fully expire before starting new busy cycle
+        vi.advanceTimersByTime(2000);
+
+        // New busy cycle — busySinceMap resets because cooldown already fired
         store.update(id, { shellState: "busy" });
         vi.advanceTimersByTime(1000);
         expect(store.getBusyDuration(id)).toBe(1000);
+        dispose();
+      });
+    });
+
+    it("preserves busySince when re-entering busy during cooldown", () => {
+      createRoot((dispose) => {
+        const id = addTerminal();
+        store.update(id, { shellState: "busy" });
+        vi.advanceTimersByTime(5000);
+        store.update(id, { shellState: "idle" });
+        expect(store.getBusyDuration(id)).toBe(5000);
+
+        // Re-enter busy within cooldown — same logical busy period
+        store.update(id, { shellState: "busy" });
+        vi.advanceTimersByTime(1000);
+        // Duration continues from original start, not from re-entry
+        expect(store.getBusyDuration(id)).toBe(6000);
         dispose();
       });
     });

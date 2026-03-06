@@ -114,14 +114,18 @@ function createTerminalsStore() {
   /** Handle shellState transition for debounced busy tracking */
   function handleShellStateChange(id: string, prev: ShellState, next: ShellState): void {
     if (next === "busy" && prev !== "busy") {
-      // Entering busy: clear any cooldown, mark busy, record start time
-      const timer = cooldownTimers.get(id);
-      if (timer != null) {
-        clearTimeout(timer);
+      // Entering busy: clear any cooldown, mark busy, record start time.
+      // If a cooldown was active, this is a continuation of the same busy period
+      // (e.g. shell prompt redraw after agent exit) — keep the original start time.
+      const hadCooldown = cooldownTimers.has(id);
+      if (hadCooldown) {
+        clearTimeout(cooldownTimers.get(id)!);
         cooldownTimers.delete(id);
       }
       setState("debouncedBusy", id, true);
-      busySinceMap.set(id, Date.now());
+      if (!hadCooldown) {
+        busySinceMap.set(id, Date.now());
+      }
       busyDurationMap.delete(id);
       // Agent resumed output after being idle — clear stale question state,
       // but only for low-confidence detections (silence-based `?` heuristic).
