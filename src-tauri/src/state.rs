@@ -796,6 +796,7 @@ impl AppState {
                         match event_type {
                             "question" => {
                                 s.awaiting_input = true;
+                                s.is_busy = false;
                                 s.question_text = parsed.get("prompt_text")
                                     .and_then(|t| t.as_str())
                                     .map(|t| t.to_string());
@@ -2198,6 +2199,31 @@ mod tests {
         let status = make_parsed("status-line", serde_json::json!({ "task_name": "Working" }));
         let s = apply(&state, &status);
         assert!(s.suggested_actions.is_none());
+    }
+
+    #[test]
+    fn test_session_state_question_clears_is_busy() {
+        let state = fresh_state();
+        // Initially busy
+        assert!(state.session_states.get("s1").unwrap().is_busy);
+        let event = make_parsed("question", serde_json::json!({ "prompt_text": "Do you want to proceed?" }));
+        let s = apply(&state, &event);
+        assert!(s.awaiting_input);
+        assert!(!s.is_busy);
+        assert_eq!(s.question_text.as_deref(), Some("Do you want to proceed?"));
+    }
+
+    #[test]
+    fn test_session_state_user_input_sets_busy() {
+        let state = fresh_state();
+        // First go to question state
+        let q = make_parsed("question", serde_json::json!({ "prompt_text": "Ready?" }));
+        apply(&state, &q);
+        // User responds → busy again
+        let event = make_parsed("user-input", serde_json::json!({ "content": "yes" }));
+        let s = apply(&state, &event);
+        assert!(s.is_busy);
+        assert!(!s.awaiting_input);
     }
 
     // --- VtLogBuffer tests ---

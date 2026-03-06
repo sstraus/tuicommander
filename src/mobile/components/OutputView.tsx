@@ -36,6 +36,11 @@ export function OutputView(props: OutputViewProps) {
         if (json.screen && json.screen.length > 0) {
           setScreenRows(json.screen.map((text: string) => ({ spans: [{ text }] })));
         }
+        // Sync initial input_line from HTTP response
+        if (props.onInputLine) {
+          const il = (json as Record<string, unknown>).input_line;
+          props.onInputLine(typeof il === "string" ? il : null);
+        }
         scrollToBottom(true);
         return json.total_lines ?? 0;
       }
