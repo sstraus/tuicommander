@@ -1609,4 +1609,31 @@ mod tests {
         buf.feed("hello");
         assert!(!buf.content().starts_with('/'));
     }
+
+    /// Pasting "/usr/bin/python\r" should NOT leave slash_mode active.
+    /// The old HTTP heuristic (data.starts_with('/')) false-positived here
+    /// because it didn't track the submit clearing the buffer.
+    #[test]
+    fn test_no_slash_mode_after_paste_with_submit() {
+        let mut buf = InputLineBuffer::new();
+        let actions = buf.feed("/usr/bin/python\r");
+        // Should have produced a Line action for the submit
+        assert!(actions.iter().any(|a| matches!(a, InputAction::Line(_))));
+        // After submit, buffer is empty — no slash mode
+        assert!(!buf.content().starts_with('/'));
+    }
+
+    /// Typing "echo " then pasting "/path" should NOT be slash_mode.
+    /// The old HTTP heuristic only looked at the current write chunk,
+    /// not the accumulated buffer, so it false-positived on a paste
+    /// starting with '/' mid-line.
+    #[test]
+    fn test_no_slash_mode_for_mid_line_slash_paste() {
+        let mut buf = InputLineBuffer::new();
+        buf.feed("echo ");
+        // Now paste something starting with /
+        buf.feed("/path/to/file");
+        // Buffer is "echo /path/to/file" — does NOT start with /
+        assert!(!buf.content().starts_with('/'));
+    }
 }

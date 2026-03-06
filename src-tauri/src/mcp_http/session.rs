@@ -72,20 +72,23 @@ pub(super) async fn write_to_session(
         eprintln!("Warning: PTY flush failed for session {session_id}: {e}");
     }
 
-    // Track slash_mode for slash menu detection — same logic as desktop
-    // InputLineBuffer: "/" at start enables, "\r" (submit) disables.
-    let data = &body.data;
-    if data == "/" || data.starts_with('/') {
-        state.slash_mode
-            .entry(session_id.clone())
-            .or_insert_with(|| std::sync::atomic::AtomicBool::new(false))
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-    } else if data.contains('\r') || data.contains('\n') {
-        // Submit clears slash mode
-        if let Some(flag) = state.slash_mode.get(&session_id) {
-            flag.store(false, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
+    // Feed input through InputLineBuffer FSM to track slash_mode accurately.
+    // The old substring heuristic false-positived on pastes starting with '/'.
+    let input_entry = state
+        .input_buffers
+        .entry(session_id.clone())
+        .or_insert_with(|| parking_lot::Mutex::new(crate::input_line_buffer::InputLineBuffer::new()));
+    let mut buf = input_entry.lock();
+    let actions = buf.feed(&body.data);
+    let line_submitted = actions.iter().any(|a| {
+        matches!(a, crate::input_line_buffer::InputAction::Line(_) | crate::input_line_buffer::InputAction::Interrupt)
+    });
+    let in_slash = if line_submitted { false } else { buf.content().starts_with('/') };
+    state
+        .slash_mode
+        .entry(session_id.clone())
+        .or_insert_with(|| std::sync::atomic::AtomicBool::new(false))
+        .store(in_slash, std::sync::atomic::Ordering::Relaxed);
 
     (StatusCode::OK, Json(serde_json::json!({"ok": true})))
 }
