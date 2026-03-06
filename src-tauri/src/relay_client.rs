@@ -16,6 +16,36 @@ use crate::app_logger::log_via_state;
 use crate::state::{AppEvent, AppState};
 
 // ---------------------------------------------------------------------------
+// Relay message types (mirrored from tools/relay/src/types.rs)
+// ---------------------------------------------------------------------------
+
+/// Relay-generated status messages sent as plaintext JSON to connected peers.
+#[derive(Debug, Clone, serde::Deserialize, PartialEq)]
+#[serde(tag = "type")]
+enum RelayMessage {
+    /// Connection status update from relay to peers.
+    #[serde(rename = "relay:status")]
+    Status { peer: PeerStatus },
+
+    /// Push notification hint from TUICommander to relay (echoed back).
+    #[serde(rename = "relay:push")]
+    Push {
+        reason: String,
+        session_name: String,
+    },
+}
+
+/// Peer connection state as seen by the relay.
+#[derive(Debug, Clone, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum PeerStatus {
+    Waiting,
+    Connected,
+    Disconnected,
+    Timeout,
+}
+
+// ---------------------------------------------------------------------------
 // E2E Encryption (AES-256-GCM with HKDF key derivation)
 // ---------------------------------------------------------------------------
 
@@ -218,11 +248,22 @@ async fn connect_and_run(
                         }
                     }
                     Some(Ok(Message::Text(text))) => {
-                        // Status messages from relay (relay:status)
-                        if text.contains("connected") {
-                            log_via_state(state, "info", "relay", "mobile peer connected");
-                        } else if text.contains("disconnected") {
-                            log_via_state(state, "info", "relay", "mobile peer disconnected");
+                        match serde_json::from_str::<RelayMessage>(&text) {
+                            Ok(RelayMessage::Status { peer }) => {
+                                let label = match peer {
+                                    PeerStatus::Connected => "mobile peer connected",
+                                    PeerStatus::Disconnected => "mobile peer disconnected",
+                                    PeerStatus::Waiting => "mobile peer waiting",
+                                    PeerStatus::Timeout => "mobile peer timed out",
+                                };
+                                log_via_state(state, "info", "relay", label);
+                            }
+                            Ok(RelayMessage::Push { .. }) => {
+                                // Push hints echoed back — ignore
+                            }
+                            Err(_) => {
+                                log_via_state(state, "warn", "relay", &format!("unrecognized text frame: {text}"));
+                            }
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => {
@@ -351,6 +392,55 @@ mod tests {
         let (aw, push) = evaluate_push_hint(&parsed, false);
         assert!(!aw);
         assert!(!push);
+    }
+
+    // -----------------------------------------------------------------------
+    // Relay message deserialization tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn deserialize_status_connected() {
+        let json = r#"{"type":"relay:status","peer":"connected"}"#;
+        let msg: RelayMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg, RelayMessage::Status { peer: PeerStatus::Connected });
+    }
+
+    #[test]
+    fn deserialize_status_disconnected() {
+        let json = r#"{"type":"relay:status","peer":"disconnected"}"#;
+        let msg: RelayMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg, RelayMessage::Status { peer: PeerStatus::Disconnected });
+    }
+
+    #[test]
+    fn deserialize_status_waiting() {
+        let json = r#"{"type":"relay:status","peer":"waiting"}"#;
+        let msg: RelayMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg, RelayMessage::Status { peer: PeerStatus::Waiting });
+    }
+
+    #[test]
+    fn deserialize_status_timeout() {
+        let json = r#"{"type":"relay:status","peer":"timeout"}"#;
+        let msg: RelayMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg, RelayMessage::Status { peer: PeerStatus::Timeout });
+    }
+
+    #[test]
+    fn deserialize_push_message() {
+        let json = r#"{"type":"relay:push","reason":"awaiting_input","session_name":"s1"}"#;
+        let msg: RelayMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg, RelayMessage::Push {
+            reason: "awaiting_input".to_string(),
+            session_name: "s1".to_string(),
+        });
+    }
+
+    #[test]
+    fn deserialize_unknown_type_fails() {
+        let json = r#"{"type":"relay:unknown","data":"foo"}"#;
+        let result = serde_json::from_str::<RelayMessage>(json);
+        assert!(result.is_err());
     }
 
     // -----------------------------------------------------------------------
