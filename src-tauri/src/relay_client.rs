@@ -56,6 +56,28 @@ fn decrypt(cipher: &Aes256Gcm, data: &[u8]) -> anyhow::Result<Vec<u8>> {
 }
 
 // ---------------------------------------------------------------------------
+// Push-hint decision logic
+// ---------------------------------------------------------------------------
+
+/// Evaluate a parsed PTY event and determine the new `awaiting_input` state.
+/// Returns `(new_awaiting, should_push)` where `should_push` is true when the
+/// agent transitions from working to awaiting input (i.e. a "question" event
+/// while not already awaiting).
+fn evaluate_push_hint(parsed: &serde_json::Value, was_awaiting: bool) -> (bool, bool) {
+    let event_type = parsed
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let new_awaiting = match event_type {
+        "question" => true,
+        "user-input" => false,
+        _ => was_awaiting,
+    };
+    let should_push = new_awaiting && !was_awaiting;
+    (new_awaiting, should_push)
+}
+
+// ---------------------------------------------------------------------------
 // Relay client lifecycle
 // ---------------------------------------------------------------------------
 
@@ -147,12 +169,11 @@ async fn connect_and_run(
             event = event_rx.recv() => {
                 match event {
                     Ok(ref evt) => {
-                        // Check for awaiting_input transition → send push hint
+                        // Check for question/user-input transition → send push hint
                         if let AppEvent::PtyParsed { parsed, session_id, .. } = evt {
-                            let new_awaiting = parsed.get("awaiting_input")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false);
-                            if new_awaiting && !awaiting_input {
+                            let (new_awaiting, should_push) =
+                                evaluate_push_hint(parsed, awaiting_input);
+                            if should_push {
                                 let push_hint = serde_json::json!({
                                     "type": "relay:push",
                                     "reason": "awaiting_input",
@@ -281,6 +302,59 @@ mod tests {
         let encrypted = encrypt(&c1, b"test").unwrap();
         assert!(decrypt(&c2, &encrypted).is_err());
     }
+
+    // -----------------------------------------------------------------------
+    // Push-hint decision tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn push_hint_triggers_on_question_event() {
+        let parsed = serde_json::json!({ "type": "question", "prompt_text": "Allow?" });
+        let (new_awaiting, should_push) = evaluate_push_hint(&parsed, false);
+        assert!(new_awaiting);
+        assert!(should_push);
+    }
+
+    #[test]
+    fn push_hint_does_not_retrigger_while_already_awaiting() {
+        let parsed = serde_json::json!({ "type": "question", "prompt_text": "Again?" });
+        let (new_awaiting, should_push) = evaluate_push_hint(&parsed, true);
+        assert!(new_awaiting);
+        assert!(!should_push, "should not push when already awaiting");
+    }
+
+    #[test]
+    fn push_hint_clears_on_user_input() {
+        let parsed = serde_json::json!({ "type": "user-input", "content": "yes" });
+        let (new_awaiting, should_push) = evaluate_push_hint(&parsed, true);
+        assert!(!new_awaiting);
+        assert!(!should_push);
+    }
+
+    #[test]
+    fn push_hint_preserves_state_on_unrelated_events() {
+        let status = serde_json::json!({ "type": "status-line" });
+        // was false → stays false
+        let (aw, push) = evaluate_push_hint(&status, false);
+        assert!(!aw);
+        assert!(!push);
+        // was true → stays true (no re-push)
+        let (aw2, push2) = evaluate_push_hint(&status, true);
+        assert!(aw2);
+        assert!(!push2);
+    }
+
+    #[test]
+    fn push_hint_handles_missing_type_field() {
+        let parsed = serde_json::json!({ "content": "no type" });
+        let (aw, push) = evaluate_push_hint(&parsed, false);
+        assert!(!aw);
+        assert!(!push);
+    }
+
+    // -----------------------------------------------------------------------
+    // Crypto tests
+    // -----------------------------------------------------------------------
 
     #[test]
     fn derive_key_uses_hkdf_with_salt_and_info() {
