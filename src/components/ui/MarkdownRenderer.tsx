@@ -12,6 +12,8 @@ export interface MarkdownRendererProps {
   onLinkClick?: (href: string) => void;
   /** Absolute directory path of the source file, used to resolve relative image src attributes */
   baseDir?: string;
+  /** Ref callback to expose the rendered content container for search */
+  contentRef?: (el: HTMLDivElement) => void;
 }
 
 /** Strip event handler attributes (on*) as defense-in-depth before DOMPurify */
@@ -64,7 +66,7 @@ export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
   };
 
   return (
-    <div id="markdown-content" onClick={handleClick}>
+    <div id="markdown-content" ref={props.contentRef} onClick={handleClick}>
       <Show
         when={!isEmpty()}
         fallback={<p>{props.emptyMessage || "No content"}</p>}

@@ -8,6 +8,9 @@ import { editorTabsStore } from "../../stores/editorTabs";
 import { invoke } from "../../invoke";
 import { mdTabsStore, type MdTabData } from "../../stores/mdTabs";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
+import { DomSearchEngine } from "../shared/DomSearchEngine";
+import type { SearchOptions } from "../shared/DomSearchEngine";
+import { SearchBar } from "../shared/SearchBar";
 import { t } from "../../i18n";
 import e from "../shared/editor-header.module.css";
 import s from "./MarkdownTab.module.css";
@@ -17,18 +20,42 @@ export interface MarkdownTabProps {
   onClose?: () => void;
 }
 
+/** Public handle exposed via ref for external callers (e.g. App.tsx keybinding) */
+export interface MarkdownTabHandle {
+  openSearch: () => void;
+}
+
 export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const [content, setContent] = createSignal("");
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [searchVisible, setSearchVisible] = createSignal(false);
+  const [matchIndex, setMatchIndex] = createSignal(-1);
+  const [matchCount, setMatchCount] = createSignal(0);
   const repo = useRepository();
   const contextMenu = createContextMenu();
   let wrapperRef: HTMLDivElement | undefined;
+  let contentRef: HTMLDivElement | undefined;
+  let engine: DomSearchEngine | undefined;
+  let lastSearchTerm = "";
+  let lastSearchOpts: SearchOptions = { caseSensitive: false, regex: false, wholeWord: false };
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // Expose openSearch for external callers
+  const handle: MarkdownTabHandle = {
+    openSearch: () => {
+      setSearchVisible(true);
+    },
+  };
+
+  // Register handle on the mdTabsStore so App.tsx can access it
+  createEffect(() => {
+    mdTabsStore.setHandle(props.tab.id, handle);
+    onCleanup(() => mdTabsStore.clearHandle(props.tab.id));
+  });
 
   // When this tab is active, focus the wrapper so wheel events route by cursor
   // position rather than following xterm's retained textarea focus.
-  // We focus .wrapper (no overflow) not .content (overflow:auto) to avoid
-  // triggering a spurious scrollbar.
   const focusWrapper = () => requestAnimationFrame(() => wrapperRef?.focus({ preventScroll: true }));
 
   onMount(() => {
@@ -51,7 +78,6 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 
     if (tab.type === "file") {
       const { repoPath, filePath } = tab;
-      // Re-run on git changes (file may have been modified externally)
       void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 
       if (!filePath) {
@@ -74,7 +100,6 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
         }
       })();
     } else if (tab.type === "virtual") {
-      // Virtual tab: resolve content through markdownProviderRegistry
       const { contentUri } = tab;
 
       setLoading(true);
@@ -97,14 +122,21 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
         }
       })();
     } else {
-      // Plugin panel tab — HTML content rendered by PluginPanel, not here
       setContent("");
       setLoading(false);
     }
   });
 
+  // Re-apply search when content changes
+  createEffect(() => {
+    // Subscribe to content changes
+    content();
+    if (!searchVisible() || !lastSearchTerm) return;
+    // Wait for DOM to settle after innerHTML update
+    requestAnimationFrame(() => rerunSearch());
+  });
+
   // Poll for file changes (external edits, agent modifications).
-  // Skip while tab is hidden to avoid unnecessary I/O.
   createEffect(() => {
     const tab = props.tab;
     if (tab.type !== "file" || !tab.filePath) return;
@@ -116,14 +148,58 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
         const diskContent = await readFileContent(repoPath, filePath);
         if (diskContent !== content()) setContent(diskContent);
       } catch {
-        // File may have been deleted — ignore, next interval will retry
+        // File may have been deleted — ignore
       }
     }, 5000);
     onCleanup(() => clearInterval(timer));
   });
 
-  /** Resolve a relative .md href against the current file's directory and open it.
-   * Only applicable for file tabs. */
+  /** Run search with current term and options */
+  function rerunSearch() {
+    if (!contentRef) return;
+    if (!engine) engine = new DomSearchEngine(contentRef);
+    const count = engine.search(lastSearchTerm, lastSearchOpts);
+    setMatchCount(count);
+    setMatchIndex(count > 0 ? 0 : -1);
+  }
+
+  const handleSearch = (term: string, opts: SearchOptions) => {
+    lastSearchTerm = term;
+    lastSearchOpts = opts;
+
+    clearTimeout(searchDebounceTimer);
+    if (!term) {
+      engine?.clear();
+      setMatchCount(0);
+      setMatchIndex(-1);
+      return;
+    }
+
+    searchDebounceTimer = setTimeout(() => {
+      rerunSearch();
+    }, 150);
+  };
+
+  const handleSearchNext = () => {
+    if (!engine || matchCount() === 0) return;
+    const idx = engine.next();
+    setMatchIndex(idx);
+  };
+
+  const handleSearchPrev = () => {
+    if (!engine || matchCount() === 0) return;
+    const idx = engine.prev();
+    setMatchIndex(idx);
+  };
+
+  const handleSearchClose = () => {
+    engine?.clear();
+    setSearchVisible(false);
+    setMatchCount(0);
+    setMatchIndex(-1);
+    focusWrapper();
+  };
+
   const handleMdLink = (href: string) => {
     const tab = props.tab;
     if (tab.type !== "file") return;
@@ -146,11 +222,9 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     return tab.type === "file" ? tab.filePath : tab.title;
   };
 
-  /** Absolute directory containing the source file, for resolving relative image paths */
   const baseDir = () => {
     const tab = props.tab;
     if (tab.type !== "file") return undefined;
-    // Absolute path without repo (e.g. plugin README) — directory is the parent
     if (!tab.repoPath && tab.filePath.startsWith("/")) {
       const lastSlash = tab.filePath.lastIndexOf("/");
       return lastSlash > 0 ? tab.filePath.slice(0, lastSlash) : "/";
@@ -161,7 +235,6 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     return dir ? `${tab.repoPath}/${dir}` : tab.repoPath;
   };
 
-  /** Full path for clipboard copy (repoPath + filePath) */
   const fullPath = () => {
     const tab = props.tab;
     if (tab.type !== "file") return null;
@@ -197,11 +270,23 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
           </button>
         </Show>
       </div>
+
+      <SearchBar
+        visible={searchVisible()}
+        onSearch={handleSearch}
+        onNext={handleSearchNext}
+        onPrev={handleSearchPrev}
+        onClose={handleSearchClose}
+        matchIndex={matchIndex()}
+        matchCount={matchCount()}
+      />
+
       <div class={s.content}>
         <MarkdownRenderer
           content={content()}
           baseDir={baseDir()}
           onLinkClick={handleMdLink}
+          contentRef={(el) => { contentRef = el; }}
           emptyMessage={
             loading()
               ? t("markdownTab.loading", "Loading...")

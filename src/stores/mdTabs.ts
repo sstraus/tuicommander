@@ -65,6 +65,9 @@ function currentBranchKey(): string | undefined {
   return makeBranchKey(repoPath, repo.activeBranch);
 }
 
+/** Imperative handles exposed by tab components (e.g. MarkdownTabHandle) */
+const handles = new Map<string, unknown>();
+
 function createMdTabsStore() {
   const base = createTabManager<MdTabData>();
 
@@ -193,6 +196,21 @@ function createMdTabsStore() {
       const title = `PR #${prNumber}`;
       const tabId = base._addTab({ type: "pr-diff", id, title, repoPath, prNumber, prTitle, diff, pinned: false } as PrDiffTab);
       return tabId;
+    },
+
+    /** Register an imperative handle for a tab (e.g. MarkdownTabHandle with openSearch) */
+    setHandle(tabId: string, handle: unknown): void {
+      handles.set(tabId, handle);
+    },
+
+    /** Remove the imperative handle when a tab component unmounts */
+    clearHandle(tabId: string): void {
+      handles.delete(tabId);
+    },
+
+    /** Retrieve the imperative handle for a tab */
+    getHandle<T = unknown>(tabId: string): T | undefined {
+      return handles.get(tabId) as T | undefined;
     },
 
     /** Clear all file-based markdown tabs for a repository (virtual tabs are unaffected) */

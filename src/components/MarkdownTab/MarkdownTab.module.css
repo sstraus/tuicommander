@@ -1,5 +1,6 @@
 /* MarkdownTab layout */
 .wrapper {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -20,4 +21,16 @@
   overflow: auto;
   padding: 24px;
   cursor: text;
+}
+
+/* DomSearchEngine highlight marks */
+.content :global(.search-match) {
+  background: #ffff0040;
+  border-radius: 2px;
+}
+
+.content :global(.search-match-active) {
+  background: #ff8c00b0;
+  outline: 1px solid #ff8c00;
+  border-radius: 2px;
 }
