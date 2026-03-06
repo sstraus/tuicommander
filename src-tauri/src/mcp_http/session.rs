@@ -821,6 +821,19 @@ async fn handle_ws_log_session(
         let mut prev_screen_hash: u64 = 0;
         // Dedup: only send state frames when SessionState actually changed
         let mut prev_state: Option<crate::state::SessionState> = None;
+
+        // Send initial state snapshot so the client has the correct status immediately
+        if let Some(ss) = state_poll.session_states.get(&sid_poll) {
+            let current = ss.clone();
+            drop(ss);
+            let frame = serde_json::json!({"type": "state", "state": &current});
+            prev_state = Some(current);
+            let _ = futures_util::SinkExt::send(
+                &mut ws_sender,
+                Message::Text(frame.to_string().into()),
+            ).await;
+        }
+
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(200)) => {

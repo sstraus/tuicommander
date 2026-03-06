@@ -11,7 +11,7 @@
   font-family: var(--font-mono);
   font-size: 14px;
   line-height: 1.6;
-  color: var(--fg-secondary);
+  color: var(--fg-primary);
   white-space: pre-wrap;
   overflow-wrap: break-word;
   word-break: normal;

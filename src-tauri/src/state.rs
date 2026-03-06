@@ -74,7 +74,7 @@ pub enum AppEvent {
 /// Per-session state accumulated from broadcast events.
 /// Updated by a background task that subscribes to the event bus.
 /// Read by `GET /sessions` to enrich the response for REST-polling clients.
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub(crate) struct SessionState {
     /// True when a Question parsed event is pending (no subsequent user-input or pty-exit)
     pub awaiting_input: bool,
@@ -91,7 +91,8 @@ pub(crate) struct SessionState {
     pub usage_limit_pct: Option<u8>,
     /// True when we have recent output activity (not idle)
     pub is_busy: bool,
-    /// Timestamp of last activity (any event for this session)
+    /// Timestamp of last activity (any event for this session).
+    /// Excluded from PartialEq — telemetry field, not logical state.
     pub last_activity_ms: u64,
     /// Detected agent type, if known
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -117,6 +118,27 @@ pub(crate) struct SessionState {
     /// Slash command menu items (from slash-menu parsed events)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slash_menu_items: Option<Vec<crate::output_parser::SlashMenuItem>>,
+}
+
+/// PartialEq excludes last_activity_ms (telemetry, not logical state).
+/// Used by WS dedup to avoid sending identical state frames.
+impl PartialEq for SessionState {
+    fn eq(&self, other: &Self) -> bool {
+        self.awaiting_input == other.awaiting_input
+            && self.question_text == other.question_text
+            && self.rate_limited == other.rate_limited
+            && self.retry_after_ms == other.retry_after_ms
+            && self.usage_limit_pct == other.usage_limit_pct
+            && self.is_busy == other.is_busy
+            && self.agent_type == other.agent_type
+            && self.last_error == other.last_error
+            && self.agent_intent == other.agent_intent
+            && self.current_task == other.current_task
+            && self.last_prompt == other.last_prompt
+            && self.progress == other.progress
+            && self.suggested_actions == other.suggested_actions
+            && self.slash_menu_items == other.slash_menu_items
+    }
 }
 
 
@@ -2256,6 +2278,29 @@ mod tests {
         let event = make_parsed("intent", serde_json::json!({ "text": "thinking" }));
         let s = apply(&state, &event);
         assert!(!s.is_busy);
+    }
+
+    #[test]
+    fn test_session_state_repeated_status_line_same_task_no_change() {
+        let state = fresh_state();
+        let e1 = make_parsed("status-line", serde_json::json!({ "task_name": "Twisting" }));
+        let s1 = apply(&state, &e1);
+        assert_eq!(s1.current_task.as_deref(), Some("Twisting"));
+        // Same task again — state should be identical (PartialEq)
+        let e2 = make_parsed("status-line", serde_json::json!({ "task_name": "Twisting" }));
+        let s2 = apply(&state, &e2);
+        assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn test_session_state_status_line_different_task_updates() {
+        let state = fresh_state();
+        let e1 = make_parsed("status-line", serde_json::json!({ "task_name": "Twisting" }));
+        let s1 = apply(&state, &e1);
+        let e2 = make_parsed("status-line", serde_json::json!({ "task_name": "Reading files" }));
+        let s2 = apply(&state, &e2);
+        assert_ne!(s1, s2);
+        assert_eq!(s2.current_task.as_deref(), Some("Reading files"));
     }
 
     // --- VtLogBuffer tests ---

@@ -55,7 +55,7 @@ export default function MobileApp() {
         when={showDetail()}
         fallback={
           <>
-            <TopBar notificationCount={questionCount()} />
+            <TopBar notificationCount={questionCount()} isConnected={error() === null} />
             <QuestionBanner
               sessions={sessions()}
               onNavigate={navigateToSession}

@@ -8,8 +8,18 @@ const sourceCode = readFileSync(
 );
 
 describe("TopBar subtitle and notification badge", () => {
-  it("renders the subtitle text", () => {
+  it("renders the subtitle text when connected", () => {
     expect(sourceCode).toContain("Manage your sessions");
+  });
+
+  it("shows reconnecting subtitle when offline", () => {
+    expect(sourceCode).toContain("Reconnecting");
+  });
+
+  it("has connectivity dot with online/offline classes", () => {
+    expect(sourceCode).toContain("connDot");
+    expect(sourceCode).toContain("connOnline");
+    expect(sourceCode).toContain("connOffline");
   });
 
   it("badge is hidden when notificationCount is 0 or undefined", () => {

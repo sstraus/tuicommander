@@ -1,0 +1,91 @@
+/* TUICommander PWA — Standalone global styles.
+ * Isolated from the desktop global.css to allow independent evolution.
+ */
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* --- Core palette (dark theme) --- */
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #252526;
+  --bg-tertiary: #2d2d30;
+  --bg-highlight: #37373d;
+  --fg-primary: #cccccc;
+  --fg-secondary: #a0a0a0;
+  --fg-muted: #9aa1a9;
+  --accent: #59a8dd;
+  --accent-hover: #7abde5;
+  --border: #3e3e42;
+  --success: #4ec9b0;
+  --warning: #dcdcaa;
+  --attention: #e8984c;
+  --error: #f48771;
+  --text-on-accent: #000000;
+  --text-on-error: #000000;
+  --text-on-success: #000000;
+
+  /* --- Border radius --- */
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-pill: 12px;
+  --radius-full: 50%;
+
+  /* --- Elevation --- */
+  --shadow-popup: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-dropdown: 0 4px 16px rgba(0, 0, 0, 0.3);
+
+  /* --- Fonts --- */
+  --font-mono: "SF Mono", "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+
+  /* --- ANSI terminal palette (VS Code dark+ defaults) --- */
+  --ansi-black: #000000;
+  --ansi-red: #cd3131;
+  --ansi-green: #0dbc79;
+  --ansi-yellow: #e5e510;
+  --ansi-blue: #2472c8;
+  --ansi-magenta: #bc3fbc;
+  --ansi-cyan: #11a8cd;
+  --ansi-white: #e5e5e5;
+  --ansi-bright-black: #666666;
+  --ansi-bright-red: #f14c4c;
+  --ansi-bright-green: #23d18b;
+  --ansi-bright-yellow: #f5f543;
+  --ansi-bright-blue: #3b8eea;
+  --ansi-bright-magenta: #d670d6;
+  --ansi-bright-cyan: #29b8db;
+  --ansi-bright-white: #ffffff;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--fg-primary);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Mobile: allow text selection (desktop global.css blocks it) */
+  -webkit-user-select: text;
+  user-select: text;
+  /* Prevent iOS rubber-band on the body */
+  overscroll-behavior: none;
+}
+
+/* Prevent iOS auto-zoom on focused inputs */
+input, textarea, select {
+  font-size: 16px;
+}
+
+/* Safe area for notched devices */
+#mobile-app {
+  height: 100%;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}

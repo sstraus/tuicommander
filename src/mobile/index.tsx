@@ -2,7 +2,7 @@
 import { render, ErrorBoundary } from "solid-js/web";
 import MobileApp from "./MobileApp";
 import { appLogger } from "../stores/appLogger";
-import "../global.css";
+import "./mobile.css";
 
 // Global error handlers
 window.addEventListener("error", (event) => {

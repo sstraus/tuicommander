@@ -17,10 +17,45 @@
   gap: 2px;
 }
 
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .appName {
   font-size: 20px;
   font-weight: 700;
   color: var(--fg-primary);
+}
+
+.connDot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.connOnline {
+  background: #4ec9b0;
+}
+
+.connOffline {
+  background: #f48771;
+  animation: pulse-dot 1.5s ease infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connOffline {
+    animation: none;
+  }
 }
 
 .subtitle {
