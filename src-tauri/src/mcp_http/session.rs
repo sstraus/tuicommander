@@ -671,7 +671,9 @@ async fn handle_ws_session(
                         eprintln!("[ws] PTY write failed for session {sid}: {e}");
                         break;
                     }
-                    let _ = s.writer.flush();
+                    if let Err(e) = s.writer.flush() {
+                        eprintln!("[ws] PTY flush failed for session {sid}: {e}");
+                    }
                 }
             }
             Message::Binary(data) => {
@@ -681,7 +683,9 @@ async fn handle_ws_session(
                         eprintln!("[ws] PTY write failed for session {sid}: {e}");
                         break;
                     }
-                    let _ = s.writer.flush();
+                    if let Err(e) = s.writer.flush() {
+                        eprintln!("[ws] PTY flush failed for session {sid}: {e}");
+                    }
                 }
             }
             Message::Close(_) => break,
