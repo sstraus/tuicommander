@@ -1,0 +1,27 @@
+src/mobile/components/OutputView.tsx
+  577f5f4898fc20b8 1,3,22,75,92,96-98,100-105,123-127
+src/mobile/components/OutputView.module.css
+  577f5f4898fc20b8 24-30
+src/mobile/__tests__/OutputView.test.ts
+  577f5f4898fc20b8 1-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "ff7febb3c37e64829c5a04ec887101be397851a6",
+  "prompts": {
+    "577f5f4898fc20b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "23120500-43b1-4168-ad0d-b4407c6e2850",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 95,
+      "total_deletions": 24,
+      "accepted_lines": 77,
+      "overriden_lines": 0
+    }
+  }
+}
