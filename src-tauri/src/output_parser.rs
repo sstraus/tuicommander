@@ -81,6 +81,13 @@ pub enum ParsedEvent {
     SlashMenu {
         items: Vec<SlashMenuItem>,
     },
+    /// Claude Code sub-task indicator: `›› task · N local agents` or `›› task · 1 bash`.
+    /// Count > 0 means the agent has background work in progress; 0 means all sub-tasks finished.
+    #[serde(rename = "active-subtasks")]
+    ActiveSubtasks {
+        count: u32,
+        task_type: String, // "local agents", "bash", "background tasks", etc.
+    },
 }
 
 /// A single item in a slash command autocomplete menu.
@@ -158,6 +165,11 @@ impl OutputParser {
             events.push(evt);
         }
 
+        // Active sub-task indicator (Claude Code ›› lines)
+        if let Some(evt) = parse_active_subtasks(&clean) {
+            events.push(evt);
+        }
+
         // Rate limit detection (operates on clean text to avoid ANSI escapes bridging unrelated tokens)
         if let Some(evt) = self.parse_rate_limit(&clean) {
             events.push(evt);
@@ -218,6 +230,11 @@ impl OutputParser {
 
         // Status line — iterates lines internally
         if let Some(evt) = parse_status_line(&joined) {
+            events.push(evt);
+        }
+
+        // Active sub-task indicator (Claude Code ›› lines)
+        if let Some(evt) = parse_active_subtasks(&joined) {
             events.push(evt);
         }
 
@@ -651,6 +668,41 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
                     token_info,
                 });
             }
+        }
+    }
+    None
+}
+
+/// Detect Claude Code active sub-task indicators from the `››` mode line.
+/// With sub-tasks: `›› <mode> · N <type>` → count=N
+/// Without sub-tasks: `›› <mode>` → count=0 (all sub-tasks finished)
+fn parse_active_subtasks(clean: &str) -> Option<ParsedEvent> {
+    // Fast path: requires ›› (U+203A U+203A)
+    if !clean.contains('\u{203A}') {
+        return None;
+    }
+
+    lazy_static::lazy_static! {
+        // ›› <mode> · <count> <type>
+        static ref SUBTASK_COUNT_RE: regex::Regex =
+            regex::Regex::new(r"\u{203A}\u{203A}\s+.+?\s+\u{00B7}\s+(\d+)\s+(.+?)$").unwrap();
+        // ›› <mode> (without sub-task suffix)
+        static ref SUBTASK_BARE_RE: regex::Regex =
+            regex::Regex::new(r"\u{203A}\u{203A}\s+\S").unwrap();
+    }
+
+    for line in clean.lines() {
+        let trimmed = line.trim();
+        if let Some(caps) = SUBTASK_COUNT_RE.captures(trimmed) {
+            let count: u32 = caps[1].parse().unwrap_or(0);
+            let task_type = caps[2].trim().to_string();
+            if count > 0 && !task_type.is_empty() {
+                return Some(ParsedEvent::ActiveSubtasks { count, task_type });
+            }
+        }
+        // ›› line present but no count suffix → sub-tasks finished
+        if SUBTASK_BARE_RE.is_match(trimmed) {
+            return Some(ParsedEvent::ActiveSubtasks { count: 0, task_type: String::new() });
         }
     }
     None
@@ -3063,6 +3115,83 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_slash_menu_empty_screen() {
         let screen: Vec<String> = vec![String::new(); 24];
         assert!(parse_slash_menu(&screen).is_none());
+    }
+
+    // ── ActiveSubtasks tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_active_subtasks_local_agents() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{203A}\u{203A} bypass permissions on \u{00B7} 2 local agents");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 2);
+                assert_eq!(task_type, "local agents");
+            }
+            _ => panic!("Expected ActiveSubtasks event, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_single_bash() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{203A}\u{203A} reading config files \u{00B7} 1 bash");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 1);
+                assert_eq!(task_type, "bash");
+            }
+            _ => panic!("Expected ActiveSubtasks event, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_background_tasks() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{203A}\u{203A} fixing tests \u{00B7} 3 background tasks");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 3);
+                assert_eq!(task_type, "background tasks");
+            }
+            _ => panic!("Expected ActiveSubtasks event, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_single_local_agent() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{203A}\u{203A} writing code \u{00B7} 1 local agent");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 1);
+                assert_eq!(task_type, "local agent");
+            }
+            _ => panic!("Expected ActiveSubtasks event, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_bare_mode_line_resets_to_zero() {
+        let parser = OutputParser::new();
+        // ›› line without · N type → count=0
+        let events = parser.parse("\u{203A}\u{203A} bypass permissions on");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, .. }) => {
+                assert_eq!(*count, 0);
+            }
+            _ => panic!("Expected ActiveSubtasks with count=0, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_not_triggered_by_regular_text() {
+        let parser = OutputParser::new();
+        let events = parser.parse("some regular output with \u{203A} single guillemet");
+        assert!(
+            !events.iter().any(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })),
+            "Should not match single guillemet: {:?}", events
+        );
     }
 
 }

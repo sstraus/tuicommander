@@ -34,7 +34,8 @@ type ParsedEvent =
   | { type: "user-input"; content: string }
   | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string }
   | { type: "intent"; text: string; title?: string }
-  | { type: "suggest"; items: string[] };
+  | { type: "suggest"; items: string[] }
+  | { type: "active-subtasks"; count: number; task_type: string };
 
 export interface TerminalProps {
   id: string;
@@ -363,6 +364,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
             terminalsStore.update(props.id, { currentTask: parsed.task_name });
             break;
           }
+          case "active-subtasks": {
+            terminalsStore.update(props.id, { activeSubTasks: parsed.count });
+            break;
+          }
           case "rate-limit": {
             const terminal = terminalsStore.get(props.id);
             const detectedAgent = terminal?.agentType;
@@ -429,8 +434,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           case "user-input":
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} user-input content="${parsed.content.slice(0, 80)}"`);
-            // New user input means a new agent cycle — allow suggest to re-appear
-            terminalsStore.update(props.id, { suggestDismissed: false });
+            // New user input means a new agent cycle — reset sub-task count, allow suggest to re-appear
+            terminalsStore.update(props.id, { suggestDismissed: false, activeSubTasks: 0 });
             // Refresh last relevant prompt from Rust (word-count filtering happens backend-side)
             invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
               if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
@@ -457,7 +462,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
               const t = terminalsStore.get(props.id);
               // Don't re-show after user dismissed — wait for next user-input to reset
               if (!t?.suggestDismissed) {
-                terminalsStore.update(props.id, { suggestedActions: parsed.items });
+                terminalsStore.setSuggestedActions(props.id, parsed.items);
               }
             }
             break;

@@ -72,6 +72,8 @@ pub enum AppEvent {
 // SessionState — server-side accumulator for REST polling (mobile/browser)
 // ---------------------------------------------------------------------------
 
+fn is_zero(v: &u32) -> bool { *v == 0 }
+
 /// Per-session state accumulated from broadcast events.
 /// Updated by a background task that subscribes to the event bus.
 /// Read by `GET /sessions` to enrich the response for REST-polling clients.
@@ -116,6 +118,9 @@ pub(crate) struct SessionState {
     /// Current progress value (0-100); None when no active progress bar
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<u8>,
+    /// Number of active sub-tasks (local agents, bash, background tasks) from ›› mode line
+    #[serde(skip_serializing_if = "is_zero")]
+    pub active_sub_tasks: u32,
     /// Suggested follow-up actions from the agent (from [[suggest: ...]] tokens)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_actions: Option<Vec<String>>,
@@ -138,6 +143,7 @@ impl PartialEq for SessionState {
             && self.last_error == other.last_error
             && self.agent_intent == other.agent_intent
             && self.current_task == other.current_task
+            && self.active_sub_tasks == other.active_sub_tasks
             && self.last_prompt == other.last_prompt
             && self.progress == other.progress
             && self.suggested_actions == other.suggested_actions
@@ -937,6 +943,11 @@ impl AppState {
                             "slash-menu" => {
                                 s.slash_menu_items = parsed.get("items")
                                     .and_then(|v| serde_json::from_value::<Vec<crate::output_parser::SlashMenuItem>>(v.clone()).ok());
+                            }
+                            "active-subtasks" => {
+                                s.active_sub_tasks = parsed.get("count")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0) as u32;
                             }
                             "progress" => {
                                 let state_val = parsed.get("state").and_then(|v| v.as_u64()).unwrap_or(0);

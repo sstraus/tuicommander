@@ -42,6 +42,7 @@ export interface TerminalData {
   lastPrompt: string | null; // Last relevant user prompt (>= 10 words), set by Rust
   agentIntent: string | null; // LLM-declared intent via [[intent: ...]] token
   currentTask: string | null; // Current agent task from status-line parsing (e.g. "Reading files")
+  activeSubTasks: number; // Count of running sub-agents/background tasks from ›› status line
   isRemote: boolean; // Created via HTTP/MCP (not locally by the UI)
   agentSessionId: string | null; // Agent session ID for session-specific resume (claude, gemini, codex)
   suggestedActions: string[] | null; // Follow-up suggestions from [[suggest: ...]] tokens
@@ -109,6 +110,8 @@ function createTerminalsStore() {
   const busySinceMap = new Map<string, number>();
   const busyDurationMap = new Map<string, number>();
   const cooldownTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const suggestTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const SUGGEST_DISMISS_MS = 30_000;
   const busyToIdleCallbacks: Array<(id: string, durationMs: number) => void> = [];
 
   /** Handle shellState transition for debounced busy tracking */
@@ -161,17 +164,17 @@ function createTerminalsStore() {
 
   const actions = {
     /** Add a new terminal */
-    add(data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed" | "awaitingInputConfident"> & { isRemote?: boolean }): string {
+    add(data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "activeSubTasks" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed" | "awaitingInputConfident"> & { isRemote?: boolean }): string {
       const id = `term-${state.counter + 1}`;
       setState("counter", (c) => c + 1);
-      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, ...data });
+      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
       return id;
     },
 
     /** Register a terminal with a specific ID (used by floating windows to reconnect to existing PTY sessions) */
-    register(id: string, data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed" | "awaitingInputConfident"> & { isRemote?: boolean }): void {
-      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, ...data });
+    register(id: string, data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "activeSubTasks" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed" | "awaitingInputConfident"> & { isRemote?: boolean }): void {
+      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
     },
 
@@ -182,6 +185,8 @@ function createTerminalsStore() {
       const sessionId = state.terminals[id]?.sessionId;
       if (sessionId) sessionToTerminal.delete(sessionId);
       cleanupBusyState(id);
+      const st = suggestTimers.get(id);
+      if (st) { clearTimeout(st); suggestTimers.delete(id); }
       setState(
         produce((s) => {
           delete s.terminals[id];
@@ -229,6 +234,27 @@ function createTerminalsStore() {
     /** Update last relevant user prompt */
     setLastPrompt(id: string, prompt: string | null): void {
       setState("terminals", id, "lastPrompt", prompt);
+    },
+
+    /** Set suggested follow-up actions with auto-dismiss timer.
+     *  Timer is per-terminal so tab switching doesn't affect it. */
+    setSuggestedActions(id: string, items: string[]): void {
+      const prev = suggestTimers.get(id);
+      if (prev) clearTimeout(prev);
+      setState("terminals", id, "suggestedActions", items);
+      suggestTimers.set(id, setTimeout(() => {
+        suggestTimers.delete(id);
+        setState("terminals", id, "suggestedActions", null);
+        setState("terminals", id, "suggestDismissed", true);
+      }, SUGGEST_DISMISS_MS));
+    },
+
+    /** Dismiss suggested actions for a terminal (user selected or dismissed) */
+    dismissSuggestedActions(id: string): void {
+      const prev = suggestTimers.get(id);
+      if (prev) { clearTimeout(prev); suggestTimers.delete(id); }
+      setState("terminals", id, "suggestedActions", null);
+      setState("terminals", id, "suggestDismissed", true);
     },
 
     /** Update agent-declared intent (via [[intent: ...]] token) */

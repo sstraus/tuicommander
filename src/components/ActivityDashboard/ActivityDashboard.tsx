@@ -58,6 +58,13 @@ const TaskIcon: Component = () => (
   </svg>
 );
 
+/** People icon (active sub-tasks / agents) */
+const SubTaskIcon: Component = () => (
+  <svg class={s.subIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+    <path d="M2 5.5a3.5 3.5 0 1 1 5.898 2.549 5.508 5.508 0 0 1 3.034 4.084.75.75 0 1 1-1.482.235 4.001 4.001 0 0 0-7.9 0 .75.75 0 0 1-1.482-.236A5.507 5.507 0 0 1 3.102 8.05 3.493 3.493 0 0 1 2 5.5ZM11 4a.75.75 0 1 0 0 1.5 2.5 2.5 0 0 1 2.45 2.993.75.75 0 1 0 1.472.29A4.001 4.001 0 0 0 11 4Zm-5.5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/>
+  </svg>
+);
+
 interface ActivityDashboardProps {
   onSelect?: (id: string) => void;
 }
@@ -116,6 +123,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
         agentIntent: term.agentIntent,
         // Claude Code spinner verbs are decorative garbage — suppress them
         currentTask: term.agentType === "claude" ? null : term.currentTask,
+        activeSubTasks: term.activeSubTasks,
         isActive: terminalsStore.state.activeId === id,
       };
     }).filter(Boolean) as Array<{
@@ -128,6 +136,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
       lastPrompt: string | null;
       agentIntent: string | null;
       currentTask: string | null;
+      activeSubTasks: number;
       isActive: boolean;
     }>;
     return filtered.sort((a, b) => (b.lastDataAt ?? 0) - (a.lastDataAt ?? 0));
@@ -173,6 +182,12 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
                         <span class={s.subText}>{truncate(task())}</span>
                       </div>
                     )}
+                  </Show>
+                  <Show when={term.activeSubTasks > 0}>
+                    <div class={s.subRow} title={`${term.activeSubTasks} sub-tasks running`}>
+                      <SubTaskIcon />
+                      <span class={s.subText}>{term.activeSubTasks} sub-tasks running</span>
+                    </div>
                   </Show>
                   <Show when={term.agentIntent} keyed>
                     {(intent) => (

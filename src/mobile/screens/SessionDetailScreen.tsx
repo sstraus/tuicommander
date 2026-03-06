@@ -174,6 +174,18 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
         </div>
       </Show>
 
+      <Show when={(sessionState()?.active_sub_tasks ?? 0) > 0}>
+        <div class={styles.taskLine}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
+          <span class={styles.subText}>{sessionState()!.active_sub_tasks} sub-tasks running</span>
+        </div>
+      </Show>
+
       <Show when={sessionState()?.progress != null}>
         <div class={styles.headerProgressBar}>
           <div class={styles.headerProgressFill} style={{ width: `${sessionState()!.progress}%` }} />

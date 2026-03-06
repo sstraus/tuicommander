@@ -16,6 +16,7 @@ export interface SessionState {
   last_error?: string;
   agent_intent?: string;
   current_task?: string;
+  active_sub_tasks?: number;
   last_prompt?: string;
   progress?: number;
   suggested_actions?: string[];

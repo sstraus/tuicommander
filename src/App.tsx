@@ -392,33 +392,21 @@ const App: Component = () => {
   });
 
   // Completion notification: play sound when a terminal was busy for >=5s then goes idle.
-  // Deferred when the agent has an active status line (sub-agents may still be running).
   const BUSY_COMPLETION_THRESHOLD_MS = 5000;
-  const DEFERRED_COMPLETION_MS = 10_000;
-  const deferredCompletionTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
   terminalsStore.onBusyToIdle((id, durationMs) => {
-    if (durationMs < BUSY_COMPLETION_THRESHOLD_MS) return;
-    if (terminalsStore.state.activeId === id) return;
-
-    const fireCompletion = () => {
-      deferredCompletionTimers.delete(id);
-      // Re-check: terminal may have become active or gone busy during the wait.
+    if (durationMs >= BUSY_COMPLETION_THRESHOLD_MS) {
+      // Don't notify for the terminal the user is currently viewing.
       if (terminalsStore.state.activeId === id) return;
-      if (terminalsStore.state.debouncedBusy[id]) return;
+      // Don't notify when agent has active sub-tasks (local agents, bash, background tasks).
+      // The idle is just a wait between sub-task outputs, not true completion.
+      const terminal = terminalsStore.get(id);
+      if (terminal && terminal.activeSubTasks > 0) {
+        appLogger.debug("terminal", `[Notify] ${id} completion SUPPRESSED — ${terminal.activeSubTasks} active sub-tasks`);
+        return;
+      }
       appLogger.info("terminal", `[Notify] ${id} completion — busy for ${Math.round(durationMs / 1000)}s then idle`);
       terminalsStore.update(id, { activity: true, unseen: true });
       notificationsStore.playCompletion();
-    };
-
-    const t = terminalsStore.get(id);
-    if (t?.agentType) {
-      // Agent process is still running (e.g. waiting for background sub-agents).
-      // Defer the notification — if the terminal stays idle, it's truly done.
-      clearTimeout(deferredCompletionTimers.get(id));
-      deferredCompletionTimers.set(id, setTimeout(fireCompletion, DEFERRED_COMPLETION_MS));
-    } else {
-      fireCompletion();
     }
   });
 
