@@ -6,6 +6,7 @@
  */
 
 import { appLogger } from "./stores/appLogger";
+import type { LogLine } from "./mobile/utils/logLine";
 
 // ---------------------------------------------------------------------------
 // MCP upstream config types (mirrors Rust structs in mcp_upstream_config.rs)
@@ -605,7 +606,7 @@ export interface SubscribePtyOptions {
    * Receive structured LogLine objects from `format=log` frames.
    * Each LogLine has `spans: [{text, fg?, bg?, bold?, italic?, underline?}]`.
    */
-  onLogLines?: (lines: unknown[]) => void;
+  onLogLines?: (lines: LogLine[]) => void;
   /** Receive current screen rows (LogLine objects with styled spans) pushed alongside log frames. */
   onScreenRows?: (rows: unknown[]) => void;
   /** Receive the current PTY input line text (extracted from prompt row). */
@@ -663,7 +664,7 @@ export async function subscribePty(
             onData(frame.data as string);
             break;
           case "log": {
-            const lines = frame.lines as unknown[] | undefined;
+            const lines = frame.lines as LogLine[] | undefined;
             if (lines && lines.length > 0) {
               if (opts.onLogLines) {
                 opts.onLogLines(lines);

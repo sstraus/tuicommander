@@ -112,6 +112,16 @@ export function lineMatchesQuery(line: LogLine, query: string): boolean {
   return lineText(line).toLowerCase().includes(query.toLowerCase());
 }
 
+/** Type guard: checks that `value` is a LogLine (object with a `spans` array). */
+export function isLogLine(value: unknown): value is LogLine {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "spans" in value &&
+    Array.isArray((value as LogLine).spans)
+  );
+}
+
 /**
  * Normalize a raw log line value (from HTTP or WebSocket) to a LogLine.
  * Handles both structured LogLine objects and plain string fallback.
@@ -120,8 +130,8 @@ export function normalizeLogLine(raw: unknown): LogLine {
   if (typeof raw === "string") {
     return { spans: [{ text: raw }] };
   }
-  if (raw && typeof raw === "object" && "spans" in raw) {
-    return raw as LogLine;
+  if (isLogLine(raw)) {
+    return raw;
   }
   return { spans: [{ text: String(raw) }] };
 }
