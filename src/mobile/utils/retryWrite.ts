@@ -16,7 +16,7 @@ export async function retryWrite(fn: () => Promise<void>): Promise<void> {
       return;
     } catch (err) {
       if (attempt === MAX_ATTEMPTS - 1) throw err;
-      await delay(BACKOFF_MS[attempt]);
+      await delay(BACKOFF_MS[attempt] ?? BACKOFF_MS[BACKOFF_MS.length - 1]);
     }
   }
 }
