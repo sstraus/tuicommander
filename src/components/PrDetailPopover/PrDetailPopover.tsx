@@ -271,7 +271,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                       ? t("prDetail.loadingDiff", "Loading...")
                       : t("prDetail.viewDiff", "View Diff")}
                   </button>
-                  <Show when={prData() && canMergePr(prData()!)}>
+                  <Show when={canMergePr(pr())}>
                     <button
                       class={s.mergeBtn}
                       onClick={() => handleMerge()}

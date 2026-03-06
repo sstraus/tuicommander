@@ -601,7 +601,7 @@ export const RemoteOnlyPrPopover: Component<{
                         <Show when={props.onCreateWorktree}>
                           <button
                             class={s.remoteOnlyWorktree}
-                            onClick={() => props.onCreateWorktree!(pr.branch)}
+                            onClick={() => props.onCreateWorktree?.(pr.branch)}
                             title={t("sidebar.createWorktreeFromBranch", "Create worktree from this branch")}
                           >
                             {t("sidebar.worktree", "Worktree")}

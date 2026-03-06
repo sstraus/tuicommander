@@ -149,7 +149,7 @@ export const PostMergeCleanupDialog: Component<PostMergeCleanupDialogProps> = (p
                             disabled={!!props.executing}
                             onChange={(e) => {
                               const action = e.currentTarget.value as "archive" | "delete";
-                              props.onWorktreeActionChange!(action);
+                              props.onWorktreeActionChange?.(action);
                               setSteps((prev) =>
                                 prev.map((st) =>
                                   st.id === "worktree"
