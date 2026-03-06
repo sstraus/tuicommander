@@ -838,93 +838,101 @@ async fn handle_ws_log_session(
         }
 
         loop {
-            tokio::select! {
+            // Track whether we need to check state and/or send log frames
+            enum LoopAction {
+                Poll,       // sleep arm: check state + send log/screen
+                Event,      // event arm: check state only (relevant event)
+                Skip,       // event arm: irrelevant event, skip state check
+                SessionGone, // vt_log_buffer missing, exit loop
+            }
+
+            let action = tokio::select! {
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(200)) => {
-                    let Some(vt_log) = state_poll.vt_log_buffers.get(&sid_poll) else {
-                        break;
-                    };
-                    let (lines, new_offset, screen_lines, input_line) = {
-                        let buf = vt_log.lock();
-                        let (l, o) = buf.lines_since_owned(offset);
-                        let trim = trim_screen_chrome(buf.screen_rows());
-                        // Get styled screen rows, trimmed to same cutoff
-                        let styled = buf.screen_log_lines();
-                        let trimmed_styled: Vec<_> = styled.into_iter().take(trim.cutoff).collect();
-                        let il = buf.prompt_input_text();
-                        (l, o, trimmed_styled, il)
-                    }; // lock released
-                    // Hash screen rows to detect changes (use plain text for hashing)
-                    use std::hash::{Hash, Hasher};
-                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                    // Hash the text content of each LogLine for change detection
-                    for sl in &screen_lines {
-                        for span in &sl.spans {
-                            span.text.hash(&mut hasher);
-                        }
-                    }
-                    input_line.hash(&mut hasher);
-                    let screen_hash = hasher.finish();
-                    let screen_changed = screen_hash != prev_screen_hash && !screen_lines.is_empty();
-                    // Check shell_state for busy→idle transition (500ms timeout).
-                    // This catches the transition that has no event trigger.
-                    if let Some(current) = state_poll.session_state_with_shell(&sid_poll)
-                        && prev_state.as_ref() != Some(&current)
-                    {
-                        let frame = serde_json::json!({"type": "state", "state": &current});
-                        prev_state = Some(current);
-                        if futures_util::SinkExt::send(
-                            &mut ws_sender,
-                            Message::Text(frame.to_string().into()),
-                        ).await.is_err() {
-                            break;
-                        }
-                    }
-                    // Send frame if there are new log lines OR screen content changed
-                    if !lines.is_empty() || screen_changed {
-                        let mut frame = serde_json::json!({"type": "log", "offset": offset});
-                        if !lines.is_empty() {
-                            frame["lines"] = serde_json::json!(lines);
-                        }
-                        if screen_changed {
-                            frame["screen"] = serde_json::json!(screen_lines);
-                            if let Some(ref il) = input_line {
-                                frame["input_line"] = serde_json::json!(il);
-                            }
-                            prev_screen_hash = screen_hash;
-                        }
-                        if futures_util::SinkExt::send(
-                            &mut ws_sender,
-                            Message::Text(frame.to_string().into()),
-                        ).await.is_err() {
-                            break;
-                        }
-                        if !lines.is_empty() {
-                            offset = new_offset;
-                        }
+                    if state_poll.vt_log_buffers.contains_key(&sid_poll) {
+                        LoopAction::Poll
+                    } else {
+                        LoopAction::SessionGone
                     }
                 }
                 event = event_rx.recv() => {
                     let Ok(event) = event else { continue };
-                    // Forward state snapshot when a parsed event fires for this session,
-                    // but only if the state actually changed (dedup spinner rotations, etc.)
                     let is_relevant = match &event {
                         crate::state::AppEvent::PtyParsed { session_id: sid, .. }
                         | crate::state::AppEvent::PtyExit { session_id: sid }
                         | crate::state::AppEvent::SessionClosed { session_id: sid } => sid == &sid_poll,
                         _ => false,
                     };
-                    if is_relevant
-                        && let Some(current) = state_poll.session_state_with_shell(&sid_poll)
-                        && prev_state.as_ref() != Some(&current)
-                    {
-                        let frame = serde_json::json!({"type": "state", "state": &current});
-                        prev_state = Some(current);
-                        if futures_util::SinkExt::send(
-                            &mut ws_sender,
-                            Message::Text(frame.to_string().into()),
-                        ).await.is_err() {
-                            break;
+                    if is_relevant { LoopAction::Event } else { LoopAction::Skip }
+                }
+            };
+
+            if matches!(action, LoopAction::SessionGone) {
+                break;
+            }
+            if matches!(action, LoopAction::Skip) {
+                continue;
+            }
+
+            // Single session_state_with_shell call per iteration, used by both arms
+            if let Some(current) = state_poll.session_state_with_shell(&sid_poll)
+                && prev_state.as_ref() != Some(&current)
+            {
+                let frame = serde_json::json!({"type": "state", "state": &current});
+                prev_state = Some(current);
+                if futures_util::SinkExt::send(
+                    &mut ws_sender,
+                    Message::Text(frame.to_string().into()),
+                ).await.is_err() {
+                    break;
+                }
+            }
+
+            // Poll arm: also send log lines and screen content
+            if matches!(action, LoopAction::Poll) {
+                let Some(vt_log) = state_poll.vt_log_buffers.get(&sid_poll) else {
+                    break;
+                };
+                let (lines, new_offset, screen_lines, input_line) = {
+                    let buf = vt_log.lock();
+                    let (l, o) = buf.lines_since_owned(offset);
+                    let trim = trim_screen_chrome(buf.screen_rows());
+                    let styled = buf.screen_log_lines();
+                    let trimmed_styled: Vec<_> = styled.into_iter().take(trim.cutoff).collect();
+                    let il = buf.prompt_input_text();
+                    (l, o, trimmed_styled, il)
+                }; // lock released
+                // Hash screen rows to detect changes (use plain text for hashing)
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                for sl in &screen_lines {
+                    for span in &sl.spans {
+                        span.text.hash(&mut hasher);
+                    }
+                }
+                input_line.hash(&mut hasher);
+                let screen_hash = hasher.finish();
+                let screen_changed = screen_hash != prev_screen_hash && !screen_lines.is_empty();
+                // Send frame if there are new log lines OR screen content changed
+                if !lines.is_empty() || screen_changed {
+                    let mut frame = serde_json::json!({"type": "log", "offset": offset});
+                    if !lines.is_empty() {
+                        frame["lines"] = serde_json::json!(lines);
+                    }
+                    if screen_changed {
+                        frame["screen"] = serde_json::json!(screen_lines);
+                        if let Some(ref il) = input_line {
+                            frame["input_line"] = serde_json::json!(il);
                         }
+                        prev_screen_hash = screen_hash;
+                    }
+                    if futures_util::SinkExt::send(
+                        &mut ws_sender,
+                        Message::Text(frame.to_string().into()),
+                    ).await.is_err() {
+                        break;
+                    }
+                    if !lines.is_empty() {
+                        offset = new_offset;
                     }
                 }
             }
