@@ -769,8 +769,9 @@ async fn handle_ws_session(
         }
     }
 
-    // Client disconnected — abort the send task
+    // Client disconnected — abort the send task and purge the dead sender
     send_task.abort();
+    crate::state::purge_dead_ws_clients(&state.ws_clients, &session_id);
 }
 
 /// Handle a WebSocket connection in log mode (`?format=log`).

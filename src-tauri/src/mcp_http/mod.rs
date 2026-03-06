@@ -1688,6 +1688,58 @@ mod tests {
         assert_eq!(state.ws_clients.get("sess").unwrap().len(), 1);
     }
 
+    #[test]
+    fn test_ws_clients_idle_session_leak() {
+        // Simulate mobile reconnect churn on an idle PTY session:
+        // N clients connect and disconnect without any PTY output arriving.
+        // Without the fix, dead senders accumulate indefinitely.
+        let state = test_state();
+        let session_id = "idle-session".to_string();
+
+        // Simulate 10 connect/disconnect cycles (mobile reconnects)
+        for _ in 0..10 {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            state.ws_clients.entry(session_id.clone()).or_default().push(tx);
+            // Client disconnects — rx is dropped, making tx a dead sender
+            drop(rx);
+        }
+
+        // Without cleanup, all 10 dead senders remain
+        assert_eq!(state.ws_clients.get(&session_id).unwrap().len(), 10);
+
+        // Now run the cleanup that should happen on WS close
+        // (purge_dead_ws_clients is the function we'll add)
+        crate::state::purge_dead_ws_clients(&state.ws_clients, &session_id);
+
+        // After cleanup, all dead senders should be removed
+        // Vec may remain as empty entry, or be removed entirely
+        let remaining = state.ws_clients.get(&session_id)
+            .map(|c| c.len())
+            .unwrap_or(0);
+        assert_eq!(remaining, 0, "dead senders should be purged on WS close");
+    }
+
+    #[test]
+    fn test_ws_clients_purge_preserves_live_senders() {
+        // Purge should only remove dead senders, keeping live ones
+        let state = test_state();
+        let session_id = "mixed-session".to_string();
+
+        let (tx_live, _rx_live) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let (tx_dead, rx_dead) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+        state.ws_clients.entry(session_id.clone()).or_default().push(tx_live);
+        state.ws_clients.entry(session_id.clone()).or_default().push(tx_dead);
+
+        // Kill one sender
+        drop(rx_dead);
+
+        crate::state::purge_dead_ws_clients(&state.ws_clients, &session_id);
+
+        // Only the live sender should remain
+        assert_eq!(state.ws_clients.get(&session_id).unwrap().len(), 1);
+    }
+
     // --- MCP proxy wiring tests ---
 
     /// tools/list returns only native tools when no upstream is connected.

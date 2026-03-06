@@ -743,6 +743,20 @@ pub struct AppState {
     pub(crate) relay_shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 }
 
+/// Remove dead (closed-receiver) WebSocket senders for a session.
+///
+/// Called on WS close so that disconnected clients don't accumulate
+/// on idle PTY sessions that produce no output (which would otherwise
+/// be the only trigger for retain-based cleanup).
+pub(crate) fn purge_dead_ws_clients(
+    ws_clients: &DashMap<String, Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    session_id: &str,
+) {
+    if let Some(mut clients) = ws_clients.get_mut(session_id) {
+        clients.retain(|tx| !tx.is_closed());
+    }
+}
+
 impl AppState {
     /// Look up a cached value if it exists and hasn't expired.
     pub(crate) fn get_cached<T: Clone>(
