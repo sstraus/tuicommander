@@ -269,6 +269,113 @@ pub(super) async fn close_session(
     }
 }
 
+/// Shared PTY setup: opens a PTY, spawns the shell, registers buffers and reader thread.
+///
+/// Returns `(session_id, cwd_string)` on success. Both `create_session` and
+/// `create_session_with_worktree` delegate here after deriving the cwd and worktree.
+fn spawn_pty_session(
+    state: Arc<AppState>,
+    shell: String,
+    cwd: Option<String>,
+    rows: u16,
+    cols: u16,
+    worktree: Option<crate::state::WorktreeInfo>,
+) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
+    let session_id = Uuid::new_v4().to_string();
+    let pty_system = native_pty_system();
+
+    let pair = pty_system.openpty(PtySize {
+        rows,
+        cols,
+        pixel_width: 0,
+        pixel_height: 0,
+    }).map_err(|e| (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({"error": format!("Failed to open PTY: {}", e)})),
+    ))?;
+
+    let agent_teams = {
+        let cfg = state.config.read();
+        if cfg.agent_teams_shim {
+            Some(crate::pty::AgentTeamsEnv {
+                session_id: session_id.clone(),
+                http_port: cfg.remote_access_port,
+                socket_path: super::socket_path().to_string_lossy().to_string(),
+            })
+        } else {
+            None
+        }
+    };
+    let mut cmd = build_shell_command(&shell, agent_teams.as_ref());
+    if let Some(ref dir) = cwd {
+        cmd.cwd(dir);
+    }
+
+    let child = pair.slave.spawn_command(cmd).map_err(|e| (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({"error": format!("Failed to spawn shell: {}", e)})),
+    ))?;
+
+    let writer = pair.master.take_writer().map_err(|e| (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({"error": format!("Failed to get PTY writer: {}", e)})),
+    ))?;
+
+    let reader = pair.master.try_clone_reader().map_err(|e| (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({"error": format!("Failed to get PTY reader: {}", e)})),
+    ))?;
+
+    let paused = Arc::new(AtomicBool::new(false));
+    state.sessions.insert(
+        session_id.clone(),
+        Mutex::new(PtySession {
+            writer,
+            master: pair.master,
+            _child: child,
+            paused: paused.clone(),
+            worktree,
+            cwd: cwd.clone(),
+        }),
+    );
+    state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
+    state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
+
+    state.output_buffers.insert(
+        session_id.clone(),
+        Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+    state.vt_log_buffers.insert(
+        session_id.clone(),
+        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
+    );
+
+    // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
+    let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
+        session_id: session_id.clone(),
+        cwd: cwd.clone(),
+    });
+
+    // Use full reader thread (with Tauri events) when AppHandle is available,
+    // fall back to headless for tests or pre-setup scenarios
+    let app_handle = state.app_handle.read().clone();
+    if let Some(ref app) = app_handle {
+        spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state);
+    } else {
+        spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
+    }
+
+    // Tauri IPC for desktop backward compat
+    if let Some(app) = app_handle {
+        let _ = app.emit("session-created", serde_json::json!({
+            "session_id": session_id,
+            "cwd": cwd,
+        }));
+    }
+
+    Ok(session_id)
+}
+
 pub(super) async fn create_session(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CreateSessionRequest>,
@@ -287,123 +394,13 @@ pub(super) async fn create_session(
     }
     let shell = resolve_shell(body.shell);
 
-    let session_id = Uuid::new_v4().to_string();
-    let pty_system = native_pty_system();
-
-    let pair = match pty_system.openpty(PtySize {
-        rows,
-        cols,
-        pixel_width: 0,
-        pixel_height: 0,
-    }) {
-        Ok(p) => p,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": format!("Failed to open PTY: {}", e)})),
-            )
-        }
-    };
-
-    let agent_teams = {
-        let cfg = state.config.read();
-        if cfg.agent_teams_shim {
-            Some(crate::pty::AgentTeamsEnv {
-                session_id: session_id.clone(),
-                http_port: cfg.remote_access_port,
-                socket_path: super::socket_path().to_string_lossy().to_string(),
-            })
-        } else {
-            None
-        }
-    };
-    let mut cmd = build_shell_command(&shell, agent_teams.as_ref());
-    if let Some(ref cwd) = body.cwd {
-        cmd.cwd(cwd);
+    match spawn_pty_session(state, shell, body.cwd, rows, cols, None) {
+        Ok(session_id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({"session_id": session_id})),
+        ),
+        Err(err) => err,
     }
-
-    let child = match pair.slave.spawn_command(cmd) {
-        Ok(c) => c,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": format!("Failed to spawn shell: {}", e)})),
-            )
-        }
-    };
-
-    let writer = match pair.master.take_writer() {
-        Ok(w) => w,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": format!("Failed to get PTY writer: {}", e)})),
-            )
-        }
-    };
-
-    let reader = match pair.master.try_clone_reader() {
-        Ok(r) => r,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": format!("Failed to get PTY reader: {}", e)})),
-            )
-        }
-    };
-
-    let paused = Arc::new(AtomicBool::new(false));
-    state.sessions.insert(
-        session_id.clone(),
-        Mutex::new(PtySession {
-            writer,
-            master: pair.master,
-            _child: child,
-            paused: paused.clone(),
-            worktree: None,
-            cwd: body.cwd.clone(),
-        }),
-    );
-    state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
-    state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
-
-    state.output_buffers.insert(
-        session_id.clone(),
-        Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
-    );
-    state.vt_log_buffers.insert(
-        session_id.clone(),
-        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
-    );
-    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
-
-    // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
-    let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
-        session_id: session_id.clone(),
-        cwd: body.cwd.clone(),
-    });
-
-    // Use full reader thread (with Tauri events) when AppHandle is available,
-    // fall back to headless for tests or pre-setup scenarios
-    let app_handle = state.app_handle.read().clone();
-    if let Some(ref app) = app_handle {
-        spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state);
-    } else {
-        spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
-    }
-
-    // Tauri IPC for desktop backward compat
-    if let Some(app) = app_handle {
-        let _ = app.emit("session-created", serde_json::json!({
-            "session_id": session_id,
-            "cwd": body.cwd,
-        }));
-    }
-
-    (
-        StatusCode::CREATED,
-        Json(serde_json::json!({"session_id": session_id})),
-    )
 }
 
 pub(super) async fn pause_session(
@@ -516,97 +513,20 @@ pub(super) async fn create_session_with_worktree(
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg})));
     }
     let shell = resolve_shell(body.config.shell);
-    let session_id = Uuid::new_v4().to_string();
-    let pty_system = native_pty_system();
-
-    let pair = match pty_system.openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }) {
-        Ok(p) => p,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Failed to open PTY: {}", e)}))),
-    };
-
-    let agent_teams = {
-        let cfg = state.config.read();
-        if cfg.agent_teams_shim {
-            Some(crate::pty::AgentTeamsEnv {
-                session_id: session_id.clone(),
-                http_port: cfg.remote_access_port,
-                socket_path: super::socket_path().to_string_lossy().to_string(),
-            })
-        } else {
-            None
-        }
-    };
-    let mut cmd = build_shell_command(&shell, agent_teams.as_ref());
-    cmd.cwd(worktree.path.to_string_lossy().as_ref());
-
-    let child = match pair.slave.spawn_command(cmd) {
-        Ok(c) => c,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Failed to spawn shell: {}", e)}))),
-    };
-    let writer = match pair.master.take_writer() {
-        Ok(w) => w,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Failed to get PTY writer: {}", e)}))),
-    };
-    let reader = match pair.master.try_clone_reader() {
-        Ok(r) => r,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Failed to get PTY reader: {}", e)}))),
-    };
-
     let worktree_path_str = worktree.path.to_string_lossy().to_string();
     let worktree_branch = worktree.branch.clone();
-    let paused = Arc::new(AtomicBool::new(false));
-    state.sessions.insert(
-        session_id.clone(),
-        Mutex::new(PtySession {
-            writer,
-            master: pair.master,
-            _child: child,
-            paused: paused.clone(),
-            worktree: Some(worktree),
-            cwd: Some(worktree_path_str.clone()),
-        }),
-    );
-    state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
-    state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
-    state.output_buffers.insert(
-        session_id.clone(),
-        Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
-    );
-    state.vt_log_buffers.insert(
-        session_id.clone(),
-        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
-    );
-    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
-    // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
-    let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
-        session_id: session_id.clone(),
-        cwd: Some(worktree_path_str.clone()),
-    });
-
-    let app_handle = state.app_handle.read().clone();
-    if let Some(ref app) = app_handle {
-        spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state);
-    } else {
-        spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
+    match spawn_pty_session(state, shell, Some(worktree_path_str.clone()), rows, cols, Some(worktree)) {
+        Ok(session_id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({
+                "session_id": session_id,
+                "worktree_path": worktree_path_str,
+                "branch": worktree_branch,
+            })),
+        ),
+        Err(err) => err,
     }
-
-    // Tauri IPC for desktop backward compat
-    if let Some(app) = app_handle {
-        let _ = app.emit("session-created", serde_json::json!({
-            "session_id": session_id,
-            "cwd": worktree_path_str,
-        }));
-    }
-
-    (
-        StatusCode::CREATED,
-        Json(serde_json::json!({
-            "session_id": session_id,
-            "worktree_path": worktree_path_str,
-            "branch": worktree_branch,
-        })),
-    )
 }
 
 /// WebSocket upgrade handler for streaming PTY output.
