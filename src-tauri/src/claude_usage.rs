@@ -582,14 +582,20 @@ struct ApiCache {
 /// In-memory cache for the usage API response.
 static API_CACHE: parking_lot::Mutex<Option<ApiCache>> = parking_lot::Mutex::new(None);
 
+/// When set, we're rate-limited and should not hit the API until this instant.
+static RATE_LIMITED_UNTIL: parking_lot::Mutex<Option<Instant>> = parking_lot::Mutex::new(None);
+
 /// Cache TTL: return cached data without hitting the API.
 const API_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 
 /// Maximum retry attempts for 429 responses.
-const MAX_429_RETRIES: u32 = 3;
+const MAX_429_RETRIES: u32 = 1;
 
 /// Initial backoff delay for 429 retry.
-const RETRY_INITIAL_DELAY: Duration = Duration::from_secs(2);
+const RETRY_INITIAL_DELAY: Duration = Duration::from_secs(10);
+
+/// Minimum backoff after exhausting 429 retries (prevents hammering on next poll).
+const RATE_LIMIT_BACKOFF: Duration = Duration::from_secs(120);
 
 /// Error from a raw API fetch, carrying status and optional Retry-After.
 struct FetchError {
@@ -685,39 +691,64 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
         return Ok(cached);
     }
 
+    // If we're in a rate-limit backoff window, return stale cache without hitting the API
+    if let Some(until) = *RATE_LIMITED_UNTIL.lock() {
+        if Instant::now() < until {
+            if let Some(stale) = get_stale_cache() {
+                return Ok(stale);
+            }
+            return Err("Rate limited — waiting for backoff to expire".to_string());
+        }
+    }
+
     let token = read_claude_access_token()?
         .ok_or_else(|| "No Claude OAuth token found".to_string())?;
 
     // Attempt fetch with 429 retry
     let mut last_err_msg = String::new();
+    let mut was_rate_limited = false;
     for attempt in 0..=MAX_429_RETRIES {
         match fetch_usage_from_api(&token).await {
             Ok(data) => {
+                // Clear any rate-limit backoff on success
+                *RATE_LIMITED_UNTIL.lock() = None;
                 cache_response(&data);
                 return Ok(data);
             }
             Err(e) => {
                 last_err_msg = e.message.clone();
-                if e.status == 429 && attempt < MAX_429_RETRIES {
-                    // Use server's retry-after if > 0, otherwise our own exponential backoff.
-                    // retry-after: 0 is treated as "no hint" since immediate retry is pointless.
-                    let delay = match e.retry_after_secs.filter(|&s| s > 0) {
-                        Some(secs) => Duration::from_secs(secs),
-                        None => RETRY_INITIAL_DELAY * 2u32.pow(attempt),
-                    };
-                    eprintln!(
-                        "[claude_usage] 429 rate limited, retry {}/{} after {}s",
-                        attempt + 1,
-                        MAX_429_RETRIES,
-                        delay.as_secs()
-                    );
-                    tokio::time::sleep(delay).await;
-                    continue;
+                if e.status == 429 {
+                    was_rate_limited = true;
+                    if attempt < MAX_429_RETRIES {
+                        // Use server's retry-after if > 0, otherwise our own exponential backoff.
+                        // retry-after: 0 is treated as "no hint" since immediate retry is pointless.
+                        let delay = match e.retry_after_secs.filter(|&s| s > 0) {
+                            Some(secs) => Duration::from_secs(secs),
+                            None => RETRY_INITIAL_DELAY * 2u32.pow(attempt),
+                        };
+                        eprintln!(
+                            "[claude_usage] 429 rate limited, retry {}/{} after {}s",
+                            attempt + 1,
+                            MAX_429_RETRIES,
+                            delay.as_secs()
+                        );
+                        tokio::time::sleep(delay).await;
+                        continue;
+                    }
                 }
                 // Non-429 error or exhausted retries — fall through
                 break;
             }
         }
+    }
+
+    // Set backoff so next poll doesn't hammer a rate-limited endpoint
+    if was_rate_limited {
+        *RATE_LIMITED_UNTIL.lock() = Some(Instant::now() + RATE_LIMIT_BACKOFF);
+        eprintln!(
+            "[claude_usage] Rate limited — backing off for {}s",
+            RATE_LIMIT_BACKOFF.as_secs()
+        );
     }
 
     // On error, return stale cache if available
@@ -1464,6 +1495,25 @@ mod tests {
         assert!(guard.as_ref().is_some(), "stale cache should still exist");
 
         // Clean up
+        *guard = None;
+    }
+
+    #[test]
+    fn rate_limit_backoff_lifecycle() {
+        let mut guard = RATE_LIMITED_UNTIL.lock();
+
+        // Initially no backoff
+        assert!(guard.is_none());
+
+        // Set backoff in the future — should block
+        *guard = Some(Instant::now() + Duration::from_secs(60));
+        assert!(guard.map_or(false, |until| Instant::now() < until));
+
+        // Set backoff in the past — should not block
+        *guard = Some(Instant::now() - Duration::from_secs(1));
+        assert!(guard.map_or(true, |until| Instant::now() >= until));
+
+        // Clear backoff
         *guard = None;
     }
 

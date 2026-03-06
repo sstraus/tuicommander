@@ -104,7 +104,7 @@ describe("executeCleanup", () => {
     await executeCleanup(config);
 
     expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
-      repoPath: "/repo",
+      path: "/repo",
       args: ["status", "--porcelain"],
     });
     expect(mockInvoke).toHaveBeenCalledWith("switch_branch", {
@@ -127,7 +127,7 @@ describe("executeCleanup", () => {
     await executeCleanup(config);
 
     expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
-      repoPath: "/repo",
+      path: "/repo",
       args: ["pull", "--ff-only"],
     });
   });
@@ -168,7 +168,7 @@ describe("executeCleanup", () => {
     await executeCleanup(config);
 
     expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
-      repoPath: "/repo",
+      path: "/repo",
       args: ["push", "origin", "--delete", "feature/login"],
     });
   });
