@@ -110,8 +110,6 @@ function createTerminalsStore() {
   const busySinceMap = new Map<string, number>();
   const busyDurationMap = new Map<string, number>();
   const cooldownTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const suggestTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const SUGGEST_DISMISS_MS = 30_000;
   const busyToIdleCallbacks: Array<(id: string, durationMs: number) => void> = [];
 
   /** Handle shellState transition for debounced busy tracking */
@@ -185,8 +183,6 @@ function createTerminalsStore() {
       const sessionId = state.terminals[id]?.sessionId;
       if (sessionId) sessionToTerminal.delete(sessionId);
       cleanupBusyState(id);
-      const st = suggestTimers.get(id);
-      if (st) { clearTimeout(st); suggestTimers.delete(id); }
       setState(
         produce((s) => {
           delete s.terminals[id];
@@ -236,23 +232,13 @@ function createTerminalsStore() {
       setState("terminals", id, "lastPrompt", prompt);
     },
 
-    /** Set suggested follow-up actions with auto-dismiss timer.
-     *  Timer is per-terminal so tab switching doesn't affect it. */
+    /** Set suggested follow-up actions (timer-free — overlay handles visibility timeout) */
     setSuggestedActions(id: string, items: string[]): void {
-      const prev = suggestTimers.get(id);
-      if (prev) clearTimeout(prev);
       setState("terminals", id, "suggestedActions", items);
-      suggestTimers.set(id, setTimeout(() => {
-        suggestTimers.delete(id);
-        setState("terminals", id, "suggestedActions", null);
-        setState("terminals", id, "suggestDismissed", true);
-      }, SUGGEST_DISMISS_MS));
     },
 
-    /** Dismiss suggested actions for a terminal (user selected or dismissed) */
+    /** Dismiss suggested actions for a specific terminal */
     dismissSuggestedActions(id: string): void {
-      const prev = suggestTimers.get(id);
-      if (prev) { clearTimeout(prev); suggestTimers.delete(id); }
       setState("terminals", id, "suggestedActions", null);
       setState("terminals", id, "suggestDismissed", true);
     },

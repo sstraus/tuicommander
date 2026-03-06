@@ -241,6 +241,42 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
             );
           }}
         </For>
+
+        {/* Suggest follow-up actions overlay — inside #terminal-panes for correct centering.
+             Timer lives in the overlay: 30s after becoming visible → auto-dismiss.
+             Tab switch unmounts the overlay (cancelling the timer); returning remounts it (restarting the timer).
+             This way suggestions persist until the user actually sees them. */}
+        <Show when={settingsStore.state.suggestFollowups}>
+          {(() => {
+            const active = () => terminalsStore.getActive();
+            const actions = () => active()?.suggestedActions;
+            const activeId = () => terminalsStore.state.activeId;
+            return (
+              <Show when={actions()?.length}>
+                {(() => {
+                  // Capture terminal ID at render time so dismiss always targets the right terminal
+                  const capturedId = activeId()!;
+                  const capturedSid = active()?.sessionId ?? null;
+                  return (
+                    <SuggestOverlay
+                      items={actions()!}
+                      onSelect={async (text) => {
+                        terminalsStore.dismissSuggestedActions(capturedId);
+                        if (capturedSid) {
+                          await rpc("write_pty", { sessionId: capturedSid, data: text });
+                          await rpc("write_pty", { sessionId: capturedSid, data: "\r" });
+                        }
+                      }}
+                      onDismiss={() => {
+                        terminalsStore.dismissSuggestedActions(capturedId);
+                      }}
+                    />
+                  );
+                })()}
+              </Show>
+            );
+          })()}
+        </Show>
       </div>
 
       {/* Lazygit split pane (Story 047) */}
@@ -282,35 +318,6 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
             />
           </div>
         </div>
-      </Show>
-
-      {/* Suggest follow-up actions overlay */}
-      <Show when={settingsStore.state.suggestFollowups}>
-        {(() => {
-          const active = () => terminalsStore.getActive();
-          const actions = () => active()?.suggestedActions;
-          return (
-            <Show when={actions()?.length}>
-              <SuggestOverlay
-                items={actions()!}
-                onSelect={async (text) => {
-                  const id = terminalsStore.state.activeId;
-                  if (id) terminalsStore.update(id, { suggestedActions: null, suggestDismissed: true });
-                  const term = active();
-                  const sid = term?.sessionId;
-                  if (sid) {
-                    await rpc("write_pty", { sessionId: sid, data: text });
-                    await rpc("write_pty", { sessionId: sid, data: "\r" });
-                  }
-                }}
-                onDismiss={() => {
-                  const id = terminalsStore.state.activeId;
-                  if (id) terminalsStore.update(id, { suggestedActions: null, suggestDismissed: true });
-                }}
-              />
-            </Show>
-          );
-        })()}
       </Show>
 
       {/* Side panels (must be inside #terminal-container for flex row layout) */}

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, fireEvent, cleanup } from "@solidjs/testing-library";
 import SuggestOverlay from "../../components/SuggestOverlay/SuggestOverlay";
+import { terminalsStore } from "../../stores/terminals";
 
 afterEach(cleanup);
 
@@ -66,7 +67,7 @@ describe("SuggestOverlay", () => {
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 
-  it("auto-dismisses after timeout", () => {
+  it("auto-dismisses after 30s timeout", () => {
     vi.useFakeTimers();
     const onDismiss = vi.fn();
     render(() => (
@@ -102,5 +103,25 @@ describe("SuggestOverlay", () => {
     ));
     const buttons = container.querySelectorAll("button");
     expect(buttons.length).toBe(0);
+  });
+});
+
+describe("terminalsStore suggest methods", () => {
+  const addTestTerminal = () => terminalsStore.add({ name: "test", sessionId: null, fontSize: 14, cwd: null, awaitingInput: null });
+
+  it("setSuggestedActions stores items on the terminal", () => {
+    const id = addTestTerminal();
+    terminalsStore.setSuggestedActions(id, ["Run tests", "Deploy"]);
+    expect(terminalsStore.get(id)?.suggestedActions).toEqual(["Run tests", "Deploy"]);
+    terminalsStore.remove(id);
+  });
+
+  it("dismissSuggestedActions clears actions and sets dismissed flag", () => {
+    const id = addTestTerminal();
+    terminalsStore.setSuggestedActions(id, ["Run tests"]);
+    terminalsStore.dismissSuggestedActions(id);
+    expect(terminalsStore.get(id)?.suggestedActions).toBeNull();
+    expect(terminalsStore.get(id)?.suggestDismissed).toBe(true);
+    terminalsStore.remove(id);
   });
 });
