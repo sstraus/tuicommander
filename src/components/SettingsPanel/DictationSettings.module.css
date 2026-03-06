@@ -101,7 +101,7 @@
 }
 
 .modelDelete:hover {
-  color: var(--error, #f87171);
+  color: var(--error);
 }
 
 .modelActiveLabel {
@@ -222,7 +222,7 @@
 }
 
 .correctionDelete:hover {
-  color: var(--error, #f87171);
+  color: var(--error);
 }
 
 .correctionAdd {

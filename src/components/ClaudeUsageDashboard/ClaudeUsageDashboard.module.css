@@ -320,6 +320,6 @@
 }
 
 .retryButton:hover {
-  background: var(--bg-hover);
+  background: var(--bg-highlight);
   color: var(--fg-primary);
 }

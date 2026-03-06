@@ -40,11 +40,11 @@
 }
 
 .planItem:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-highlight);
 }
 
 .planItem:active {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-highlight);
 }
 
 .planIcon {
@@ -118,5 +118,5 @@
 /* Story badge */
 .badgeStory {
   background: rgba(163, 113, 247, 0.15);
-  color: #a371f7;
+  color: var(--merged);
 }

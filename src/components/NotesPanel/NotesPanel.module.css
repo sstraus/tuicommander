@@ -149,7 +149,7 @@
 }
 
 .editBtn:hover {
-  background: var(--warning, #e2b340);
+  background: var(--warning);
   color: var(--bg-primary);
 }
 

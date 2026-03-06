@@ -7,15 +7,15 @@
 }
 
 .modified {
-  background: #5e98f7;
+  background: var(--accent);
 }
 
 .staged {
-  background: #22c55e;
+  background: var(--success);
 }
 
 .untracked {
-  background: #9ca3af;
+  background: var(--fg-muted);
 }
 
 .legend {

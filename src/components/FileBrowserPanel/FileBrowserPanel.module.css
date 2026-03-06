@@ -90,7 +90,7 @@
 }
 
 .entrySelected {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-highlight);
 }
 
 .entryIgnored {

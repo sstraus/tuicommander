@@ -37,7 +37,7 @@
 
 .resumeBanner:hover {
   color: var(--accent);
-  background: var(--bg-hover);
+  background: var(--bg-highlight);
 }
 
 .resumeDismiss {
