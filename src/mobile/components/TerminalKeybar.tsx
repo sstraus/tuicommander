@@ -1,3 +1,4 @@
+import { For } from "solid-js";
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
 import { retryWrite } from "../utils/retryWrite";
@@ -45,7 +46,7 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
       <button class={`${styles.key} ${styles.accent}`} onClick={handleSlash}>
         /
       </button>
-      {KEYS.map((k) => (
+      <For each={KEYS}>{(k) => (
         <button
           class={styles.key}
           classList={{ [styles.danger]: !!k.danger }}
@@ -53,7 +54,7 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
         >
           {k.label}
         </button>
-      ))}
+      )}</For>
     </div>
   );
 }
