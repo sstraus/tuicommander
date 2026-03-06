@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-06
+
 ### Added
 - **Markdown search** — `Cmd+F` now works in the markdown viewer with DOM-based text search, cross-element matching, highlight navigation, case/regex/whole-word toggles, and shared SearchBar component (also used by terminal search)
 - **VT100 log extraction for mobile** — New `VtLogBuffer` per session uses a full VT100 parser to extract clean log lines from PTY output. Alternate-screen TUI apps (vim, htop, Claude Code) are suppressed — no garbled screen renders in mobile output. Accessible via `GET /sessions/:id/output?format=log` (returns `{lines, total_lines}`) and `WS /sessions/:id/stream?format=log` (catch-up on connect, then 200ms polling frames as `{type:log,lines:[...],offset:N}`). Mobile `OutputView` component now uses `format=log` for both initial fetch and live streaming
