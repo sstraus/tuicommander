@@ -1,4 +1,5 @@
 import type { BranchPrStatus } from "../types";
+import type { MergeStrategy } from "../stores/repoDefaults";
 import { invoke } from "../invoke";
 
 const MERGE_METHODS = ["merge", "squash", "rebase"] as const;
@@ -8,7 +9,7 @@ const MERGE_METHODS = ["merge", "squash", "rebase"] as const;
  *  Note: merge_commit_allowed/squash_merge_allowed/rebase_merge_allowed reflect
  *  repo-level settings but may not account for branch protection rulesets —
  *  callers should handle 405 errors from GitHub as a signal to update the strategy. */
-export function effectiveMergeMethod(pr: BranchPrStatus, preferred: string): string {
+export function effectiveMergeMethod(pr: BranchPrStatus, preferred: MergeStrategy): MergeStrategy {
   const allowed: Record<string, boolean> = {
     merge: pr.merge_commit_allowed,
     squash: pr.squash_merge_allowed,
@@ -31,8 +32,8 @@ export function isMergeMethodNotAllowed(error: unknown): boolean {
 export async function mergeWithFallback(
   repoPath: string,
   prNumber: number,
-  preferred: string,
-): Promise<string> {
+  preferred: MergeStrategy,
+): Promise<MergeStrategy> {
   const methodOrder = [preferred, ...MERGE_METHODS.filter((m) => m !== preferred)];
   let lastError: unknown;
   for (const method of methodOrder) {

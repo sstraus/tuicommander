@@ -127,7 +127,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
       if (usedMethod !== preferred) {
         const repo = repositoriesStore.get(props.repoPath);
         repoSettingsStore.getOrCreate(props.repoPath, repo?.displayName ?? props.repoPath);
-        repoSettingsStore.update(props.repoPath, { prMergeStrategy: usedMethod as "merge" | "squash" | "rebase" });
+        repoSettingsStore.update(props.repoPath, { prMergeStrategy: usedMethod });
       }
       appLogger.info("github", `Merged PR #${pr.number} via ${usedMethod}`);
       githubStore.pollRepo(props.repoPath);
