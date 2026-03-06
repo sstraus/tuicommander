@@ -12,23 +12,18 @@ interface DiffLine {
   type: LineType;
 }
 
+/** Classify a single unified-diff line by its prefix. */
+export function classifyLine(line: string): LineType {
+  if (line.startsWith("diff --git")) return "header";
+  if (line.startsWith("@@")) return "hunk";
+  if (line.startsWith("+") && !line.startsWith("+++")) return "addition";
+  if (line.startsWith("-") && !line.startsWith("---")) return "deletion";
+  return "context";
+}
+
 export function parseDiff(diff: string): DiffLine[] {
   const lines = diff.split("\n");
-  return lines.map((line) => {
-    let type: LineType = "context";
-
-    if (line.startsWith("diff --git")) {
-      type = "header";
-    } else if (line.startsWith("@@")) {
-      type = "hunk";
-    } else if (line.startsWith("+") && !line.startsWith("+++")) {
-      type = "addition";
-    } else if (line.startsWith("-") && !line.startsWith("---")) {
-      type = "deletion";
-    }
-
-    return { content: line, type };
-  });
+  return lines.map((line) => ({ content: line, type: classifyLine(line) }));
 }
 
 /** A single file section within a multi-file diff */
@@ -50,14 +45,10 @@ export function parseDiffFiles(diff: string): DiffFileSection[] {
   const flush = (endIdx: number) => {
     if (!current) return;
     const sectionLines = rawLines.slice(current.startIdx, endIdx);
-    const parsed = sectionLines.map((line) => {
-      let type: LineType = "context";
-      if (line.startsWith("diff --git")) type = "header";
-      else if (line.startsWith("@@")) type = "hunk";
-      else if (line.startsWith("+") && !line.startsWith("+++")) type = "addition";
-      else if (line.startsWith("-") && !line.startsWith("---")) type = "deletion";
-      return { content: line, type };
-    });
+    const parsed = sectionLines.map((line) => ({
+      content: line,
+      type: classifyLine(line),
+    }));
     let additions = 0;
     let deletions = 0;
     for (const l of parsed) {
