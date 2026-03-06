@@ -34,7 +34,7 @@ export function OutputView(props: OutputViewProps) {
           setLogLines(json.lines.slice(-MAX_LINES).map(normalizeLogLine));
         }
         if (json.screen && json.screen.length > 0) {
-          setScreenRows(json.screen.map((text: string) => ({ spans: [{ text }] })));
+          setScreenRows((json.screen as unknown[]).map(normalizeLogLine));
         }
         // Sync initial input_line from HTTP response
         if (props.onInputLine) {
@@ -88,7 +88,7 @@ export function OutputView(props: OutputViewProps) {
           scrollToBottom();
         },
         onScreenRows(rows) {
-          setScreenRows(rows.map((text) => ({ spans: [{ text }] })));
+          setScreenRows(rows.map(normalizeLogLine));
           scrollToBottom();
         },
         onStateChange: props.onStateChange,

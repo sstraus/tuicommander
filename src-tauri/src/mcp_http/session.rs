@@ -28,7 +28,7 @@ pub(super) async fn list_sessions(State(state): State<Arc<AppState>>) -> Json<Ve
         .map(|entry| {
             let session_id = entry.key().clone();
             let session = entry.value().lock();
-            let session_state = state.session_states.get(&session_id).map(|s| s.clone());
+            let session_state = state.session_state_with_shell(&session_id);
             SessionInfo {
                 session_id,
                 cwd: session.cwd.clone(),
@@ -151,11 +151,14 @@ pub(super) async fn get_output(
         let offset = total.saturating_sub(limit);
         let (lines, _) = buf.lines_since_owned(offset);
         let trim = trim_screen_chrome(buf.screen_rows());
+        // Get styled screen rows, trimmed to same cutoff
+        let styled = buf.screen_log_lines();
+        let screen: Vec<_> = styled.into_iter().take(trim.cutoff).collect();
         let input_line = buf.prompt_input_text();
         let mut resp = serde_json::json!({
             "lines": lines,
             "total_lines": total,
-            "screen": trim.rows,
+            "screen": screen,
         });
         if let Some(il) = &input_line {
             resp["input_line"] = serde_json::json!(il);
@@ -372,6 +375,7 @@ pub(super) async fn create_session(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
+    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
     // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
     let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
@@ -572,6 +576,7 @@ pub(super) async fn create_session_with_worktree(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
+    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
     // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
     let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
@@ -823,9 +828,7 @@ async fn handle_ws_log_session(
         let mut prev_state: Option<crate::state::SessionState> = None;
 
         // Send initial state snapshot so the client has the correct status immediately
-        if let Some(ss) = state_poll.session_states.get(&sid_poll) {
-            let current = ss.clone();
-            drop(ss);
+        if let Some(current) = state_poll.session_state_with_shell(&sid_poll) {
             let frame = serde_json::json!({"type": "state", "state": &current});
             prev_state = Some(current);
             let _ = futures_util::SinkExt::send(
@@ -840,20 +843,42 @@ async fn handle_ws_log_session(
                     let Some(vt_log) = state_poll.vt_log_buffers.get(&sid_poll) else {
                         break;
                     };
-                    let (lines, new_offset, screen, input_line) = {
+                    let (lines, new_offset, screen_lines, input_line) = {
                         let buf = vt_log.lock();
                         let (l, o) = buf.lines_since_owned(offset);
                         let trim = trim_screen_chrome(buf.screen_rows());
+                        // Get styled screen rows, trimmed to same cutoff
+                        let styled = buf.screen_log_lines();
+                        let trimmed_styled: Vec<_> = styled.into_iter().take(trim.cutoff).collect();
                         let il = buf.prompt_input_text();
-                        (l, o, trim.rows, il)
+                        (l, o, trimmed_styled, il)
                     }; // lock released
-                    // Hash screen rows to detect changes
+                    // Hash screen rows to detect changes (use plain text for hashing)
                     use std::hash::{Hash, Hasher};
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                    screen.hash(&mut hasher);
+                    // Hash the text content of each LogLine for change detection
+                    for sl in &screen_lines {
+                        for span in &sl.spans {
+                            span.text.hash(&mut hasher);
+                        }
+                    }
                     input_line.hash(&mut hasher);
                     let screen_hash = hasher.finish();
-                    let screen_changed = screen_hash != prev_screen_hash && !screen.is_empty();
+                    let screen_changed = screen_hash != prev_screen_hash && !screen_lines.is_empty();
+                    // Check shell_state for busy→idle transition (500ms timeout).
+                    // This catches the transition that has no event trigger.
+                    if let Some(current) = state_poll.session_state_with_shell(&sid_poll) {
+                        if prev_state.as_ref() != Some(&current) {
+                            let frame = serde_json::json!({"type": "state", "state": &current});
+                            prev_state = Some(current);
+                            if futures_util::SinkExt::send(
+                                &mut ws_sender,
+                                Message::Text(frame.to_string().into()),
+                            ).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
                     // Send frame if there are new log lines OR screen content changed
                     if !lines.is_empty() || screen_changed {
                         let mut frame = serde_json::json!({"type": "log", "offset": offset});
@@ -861,7 +886,7 @@ async fn handle_ws_log_session(
                             frame["lines"] = serde_json::json!(lines);
                         }
                         if screen_changed {
-                            frame["screen"] = serde_json::json!(screen);
+                            frame["screen"] = serde_json::json!(screen_lines);
                             if let Some(ref il) = input_line {
                                 frame["input_line"] = serde_json::json!(il);
                             }
@@ -889,9 +914,7 @@ async fn handle_ws_log_session(
                         _ => false,
                     };
                     if is_relevant {
-                        if let Some(ss) = state_poll.session_states.get(&sid_poll) {
-                            let current = ss.clone();
-                            drop(ss); // release DashMap ref before async send
+                        if let Some(current) = state_poll.session_state_with_shell(&sid_poll) {
                             if prev_state.as_ref() != Some(&current) {
                                 let frame = serde_json::json!({"type": "state", "state": &current});
                                 prev_state = Some(current);
@@ -951,7 +974,8 @@ async fn handle_ws_log_session(
 /// (prompt + input area + separator + status bar = ~12 rows).
 /// Result of trimming screen chrome: cleaned rows.
 struct TrimResult {
-    rows: Vec<String>,
+    /// How many rows were kept (cutoff index). Allows applying the same trim to parallel data.
+    cutoff: usize,
 }
 
 /// A line is a separator if it contains a run of 4+ box-drawing characters.
@@ -973,13 +997,13 @@ fn is_separator_line(s: &str) -> bool {
 
 fn trim_screen_chrome(rows: Vec<String>) -> TrimResult {
     if rows.is_empty() {
-        return TrimResult { rows };
+        return TrimResult { cutoff: 0 };
     }
 
     // First: trim trailing empty rows (terminal padding below content).
     let content_end = rows.iter().rposition(|r| !r.is_empty()).map_or(0, |i| i + 1);
     if content_end == 0 {
-        return TrimResult { rows: Vec::new() };
+        return TrimResult { cutoff: 0 };
     }
 
     let scan_start = content_end.saturating_sub(15);
@@ -1020,7 +1044,5 @@ fn trim_screen_chrome(rows: Vec<String>) -> TrimResult {
         }
         None => content_end,
     };
-    TrimResult {
-        rows: rows[..cutoff].to_vec(),
-    }
+    TrimResult { cutoff }
 }

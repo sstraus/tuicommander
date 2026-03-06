@@ -606,8 +606,8 @@ export interface SubscribePtyOptions {
    * Each LogLine has `spans: [{text, fg?, bg?, bold?, italic?, underline?}]`.
    */
   onLogLines?: (lines: unknown[]) => void;
-  /** Receive current screen rows (plain strings) pushed alongside log frames. */
-  onScreenRows?: (rows: string[]) => void;
+  /** Receive current screen rows (LogLine objects with styled spans) pushed alongside log frames. */
+  onScreenRows?: (rows: unknown[]) => void;
   /** Receive the current PTY input line text (extracted from prompt row). */
   onInputLine?: (text: string | null) => void;
   /** Starting offset for log-mode catch-up (skip lines already fetched via HTTP). */
@@ -680,7 +680,7 @@ export async function subscribePty(
                 onData(texts.join("\n"));
               }
             }
-            const screen = frame.screen as string[] | undefined;
+            const screen = frame.screen as unknown[] | undefined;
             if (screen && opts.onScreenRows) {
               opts.onScreenRows(screen);
             }

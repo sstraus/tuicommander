@@ -941,24 +941,47 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
         return None;
     }
     lazy_static::lazy_static! {
-        // [intent: <text>]  — ASCII single brackets
-        // [[intent: <text>]] — ASCII double brackets (also accepted)
-        // ⟦intent: <text>⟧ — Unicode mathematical brackets (U+27E6 / U+27E7)
-        // Optional trailing (title) before the closing bracket.
-        // (?:^|\s) anchor: the opening bracket must be at line/string start or after whitespace,
-        // preventing matches on ANSI-stripped garbage like `]che[[intent:`
-        // (?s:.+?) — DOTALL mode for the body so the token can span multiple joined rows.
-        // When VtLogBuffer rows are joined with '\n' (parse_clean_lines), long tokens that
-        // wrap at 80 cols would otherwise not match because '.' skips '\n' by default.
+        // Single-line regex: no DOTALL, matches intent tokens on one line.
         static ref INTENT_RE: regex::Regex =
-            regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})intent:\s*(?s:(.+?))\s*(?:\]?\]|\x{27E7})").unwrap();
+            regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})intent:\s*(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
+        // Opener regex: detects the start of an intent token without requiring
+        // the closing bracket (for wrapped tokens spanning two rows).
+        static ref INTENT_OPEN_RE: regex::Regex =
+            regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})intent:\s*(.+)$").unwrap();
+        // Closer regex: detects the closing bracket at the end of a line.
+        static ref INTENT_CLOSE_RE: regex::Regex =
+            regex::Regex::new(r"^(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
         // Separate regex to split out the optional (title) suffix from the captured text.
-        // (?s) enables DOTALL so the body can span multiple lines (wrapped tokens).
         static ref TITLE_RE: regex::Regex =
-            regex::Regex::new(r"(?s)^(.*?)\(([^)]+)\)\s*$").unwrap();
+            regex::Regex::new(r"^(.*?)\(([^)]+)\)\s*$").unwrap();
     }
-    INTENT_RE.captures(clean).and_then(|caps| {
-        let raw = caps[1].trim();
+
+    // Strategy: try each line individually first (most intents fit on one row).
+    // If a line has [[intent: but no closing ]], check the NEXT line for the close.
+    // Never match across more than 2 adjacent lines — prevents cross-row garbage.
+    let lines: Vec<&str> = clean.lines().collect();
+    let mut raw_match: Option<String> = None;
+
+    for (i, line) in lines.iter().enumerate() {
+        // Pass 1: complete token on a single line
+        if let Some(caps) = INTENT_RE.captures(line) {
+            raw_match = Some(caps[1].trim().to_string());
+            break;
+        }
+        // Pass 2: opener on this line, closer on the next line
+        if let Some(open_caps) = INTENT_OPEN_RE.captures(line) {
+            if let Some(next_line) = lines.get(i + 1) {
+                if let Some(close_caps) = INTENT_CLOSE_RE.captures(next_line) {
+                    let body = format!("{} {}", open_caps[1].trim(), close_caps[1].trim());
+                    raw_match = Some(body);
+                    break;
+                }
+            }
+        }
+    }
+
+    raw_match.and_then(|raw| {
+        let raw = raw.trim();
         // Filter out meaningless intents: ellipsis, bare punctuation, template placeholders
         if raw == "..." || raw == "<text>" || raw.len() < 4 {
             return None;
@@ -2813,6 +2836,36 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let (text, title) = intent.unwrap();
         assert!(text.contains("Implementing"), "text should contain intent body; got: {:?}", text);
         assert_eq!(title.as_deref(), Some("Long Feature"), "title must be extracted; got: {:?}", title);
+    }
+
+    /// Reproduces the cross-row contamination bug: when [[intent: is on one row
+    /// and ]] happens to appear on a distant unrelated row, the old DOTALL regex
+    /// would match garbage in between. The two-pass strategy (single-line first)
+    /// prevents this by preferring the single-line match.
+    #[test]
+    fn test_parse_intent_cross_row_contamination() {
+        let mut parser = OutputParser::new();
+        // Row 0: partial intent (no closing brackets on this row)
+        // Row 1: garbage from old screen content including "1F" (escape leak scenario)
+        // Row 2: closing brackets from old content
+        let rows = vec![
+            row(0, "● [[intent: "),
+            row(1, "1Ffx all 34 documentation)gaps"),
+            row(2, "other stuff]]"),
+        ];
+        let events = parser.parse_clean_lines(&rows);
+        let intent = events.iter().find_map(|e| match e {
+            ParsedEvent::Intent { text, .. } => Some(text.clone()),
+            _ => None,
+        });
+        // The old regex would capture "1Ffx all 34 documentation)gaps\nother stuff"
+        // The two-pass strategy should either:
+        // a) Not match at all (preferred — the intent is clearly corrupted), or
+        // b) If it matches, the text should NOT contain "1F"
+        if let Some(text) = &intent {
+            assert!(!text.contains("1F"),
+                "cross-row contamination leaked '1F' into intent: {:?}", text);
+        }
     }
 
     #[test]
