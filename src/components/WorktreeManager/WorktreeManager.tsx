@@ -232,38 +232,40 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
           </Show>
 
           <div class={s.toolbar}>
-            <Show when={selectableIds().length > 1}>
-              <input
-                type="checkbox"
-                class={s.selectAll}
-                checked={allVisibleSelected()}
-                onChange={handleSelectAll}
-              />
-            </Show>
-            <Show when={repoOptions().length > 1}>
-              <div class={s.pillsRow}>
-                <button
-                  class={`${s.filterPill} ${!worktreeManagerStore.state.repoFilter ? s.filterPillActive : ""}`}
-                  onClick={() => worktreeManagerStore.setRepoFilter(null)}
-                >
-                  All
-                </button>
-                <For each={repoOptions()}>
-                  {(repo) => (
-                    <button
-                      class={`${s.filterPill} ${worktreeManagerStore.state.repoFilter === repo.path ? s.filterPillActive : ""}`}
-                      onClick={() => worktreeManagerStore.setRepoFilter(repo.path)}
-                    >
-                      {repo.name}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </Show>
+            <div class={s.toolbarTop}>
+              <Show when={selectableIds().length > 1}>
+                <input
+                  type="checkbox"
+                  class={s.selectAll}
+                  checked={allVisibleSelected()}
+                  onChange={handleSelectAll}
+                />
+              </Show>
+              <Show when={repoOptions().length > 1}>
+                <div class={s.pillsRow}>
+                  <button
+                    class={`${s.filterPill} ${!worktreeManagerStore.state.repoFilter ? s.filterPillActive : ""}`}
+                    onClick={() => worktreeManagerStore.setRepoFilter(null)}
+                  >
+                    All
+                  </button>
+                  <For each={repoOptions()}>
+                    {(repo) => (
+                      <button
+                        class={`${s.filterPill} ${worktreeManagerStore.state.repoFilter === repo.path ? s.filterPillActive : ""}`}
+                        onClick={() => worktreeManagerStore.setRepoFilter(repo.path)}
+                      >
+                        {repo.name}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </div>
             <input
               class={s.searchInput}
               type="text"
-              placeholder="Filter branches…"
+              placeholder="Filter worktrees…"
               value={worktreeManagerStore.state.textFilter}
               onInput={(e) => worktreeManagerStore.setTextFilter(e.currentTarget.value)}
             />
@@ -274,10 +276,23 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
               <div class={s.empty}>No worktrees found. Create one from the sidebar.</div>
             </Show>
 
+            <Show when={worktrees().length > 0 || orphanRows().length > 0}>
+              <div class={s.columnHeader}>
+                <span />
+                <span>Repo</span>
+                <span>Branch / Path</span>
+                <span />
+                <span>Status</span>
+                <span>Committed</span>
+                <span />
+              </div>
+            </Show>
+
             <For each={worktrees()}>
               {(wt) => (
                 <div class={`${s.row} ${wt.isMain ? s.mainRow : ""}`}>
-                  <Show when={!wt.isMain && selectableIds().length > 1}>
+                  {/* Col 1: Checkbox */}
+                  <Show when={!wt.isMain && selectableIds().length > 1} fallback={<span class={s.checkboxPlaceholder} />}>
                     <input
                       type="checkbox"
                       class={s.rowCheckbox}
@@ -285,22 +300,32 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
                       onChange={() => worktreeManagerStore.toggleSelect(wt.id)}
                     />
                   </Show>
-                  <span class={s.branch}>{wt.branch}</span>
+                  {/* Col 2: Repo */}
                   <span class={s.repo}>{wt.repoName}</span>
-                  <Show when={wt.isMain}>
-                    <span class={s.mainBadge}>main</span>
-                  </Show>
-                  <Show when={wt.prStatus}>
-                    {(pr) => <PrBadge state={pr().state} number={pr().number} />}
-                  </Show>
+                  {/* Col 3: Branch + worktree path */}
+                  <div class={s.branchCell}>
+                    <span class={s.branch}>{wt.branch}</span>
+                    <span class={s.worktreePath}>{wt.worktreePath}</span>
+                  </div>
+                  {/* Col 4: Badges */}
+                  <div class={s.metaGroup}>
+                    <Show when={wt.isMain}>
+                      <span class={s.mainBadge}>main</span>
+                    </Show>
+                    <Show when={wt.prStatus}>
+                      {(pr) => <PrBadge state={pr().state} number={pr().number} />}
+                    </Show>
+                  </div>
+                  {/* Col 4: Stats */}
                   <DirtyStats additions={wt.additions} deletions={wt.deletions} />
+                  {/* Col 5: Timestamp */}
                   <span class={s.timestamp}>{formatRelativeTime(wt.lastCommitTs)}</span>
-                  <Show when={props.actions}>
+                  {/* Col 6: Actions */}
+                  <Show when={props.actions} fallback={<span />}>
                     {(actions) => (
                       <div class={s.actions}>
                         <button
                           class={s.actionBtn}
-
                           title="Open terminal"
                           onClick={() => actions().onOpenTerminal(wt.repoPath, wt.branch)}
                         >
@@ -308,7 +333,6 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
                         </button>
                         <button
                           class={s.actionBtn}
-
                           title="Merge & archive"
                           disabled={wt.isMain}
                           onClick={() => actions().onMergeAndArchive(wt.repoPath, wt.branch)}
@@ -317,7 +341,6 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
                         </button>
                         <button
                           class={`${s.actionBtn} ${s.actionBtnDanger}`}
-
                           title="Delete worktree"
                           disabled={wt.isMain}
                           onClick={() => actions().onDelete(wt.repoPath, wt.branch)}
@@ -334,9 +357,17 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
             <For each={orphanRows()}>
               {(orphan) => (
                 <div class={`${s.row} ${s.orphanRow}`}>
-                  <span class={s.branch}>{displayName(orphan.worktreePath)}</span>
+                  <span class={s.checkboxPlaceholder} />
                   <span class={s.repo}>{orphan.repoName}</span>
-                  <span class={s.orphanBadge}>orphan</span>
+                  <div class={s.branchCell}>
+                    <span class={s.branch}>{displayName(orphan.worktreePath)}</span>
+                    <span class={s.worktreePath}>{orphan.worktreePath}</span>
+                  </div>
+                  <div class={s.metaGroup}>
+                    <span class={s.orphanBadge}>orphan</span>
+                  </div>
+                  <span />
+                  <span />
                   <button class={s.pruneBtn} onClick={() => handlePrune(orphan)}>Prune</button>
                 </div>
               )}
@@ -345,7 +376,7 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
 
           <div class={s.footer}>
             <span>{worktrees().length} worktree(s)</span>
-            <span style={{ "margin-left": "auto" }}>Esc to close</span>
+            <span class={s.footerRight}>Esc to close</span>
           </div>
         </div>
       </div>
