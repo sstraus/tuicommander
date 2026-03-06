@@ -12,6 +12,7 @@ use sha2::Sha256;
 use tokio::sync::oneshot;
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::app_logger::log_via_state;
 use crate::state::{AppEvent, AppState};
 
 // ---------------------------------------------------------------------------
@@ -92,7 +93,7 @@ const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 pub(crate) async fn run(state: Arc<AppState>, mut shutdown_rx: oneshot::Receiver<()>) {
     let config = state.config.read().clone();
     if !config.relay_enabled || config.relay_url.is_empty() || config.relay_token.is_empty() {
-        eprintln!("[relay] disabled or not configured");
+        log_via_state(&state, "info", "relay", "disabled or not configured");
         return;
     }
 
@@ -101,18 +102,18 @@ pub(crate) async fn run(state: Arc<AppState>, mut shutdown_rx: oneshot::Receiver
     let mut backoff = INITIAL_BACKOFF;
 
     loop {
-        eprintln!("[relay] connecting to {ws_url}");
+        log_via_state(&state, "info", "relay", &format!("connecting to {ws_url}"));
 
         match connect_and_run(&state, &ws_url, &config.relay_token, &cipher, &mut shutdown_rx).await {
             Ok(ShutdownReason::Signal) => {
-                eprintln!("[relay] shutting down");
+                log_via_state(&state, "info", "relay", "shutting down");
                 return;
             }
             Ok(ShutdownReason::Disconnected) => {
-                eprintln!("[relay] disconnected, reconnecting in {}s", backoff.as_secs());
+                log_via_state(&state, "warn", "relay", &format!("disconnected, reconnecting in {}s", backoff.as_secs()));
             }
             Err(e) => {
-                eprintln!("[relay] connection error: {e}, reconnecting in {}s", backoff.as_secs());
+                log_via_state(&state, "error", "relay", &format!("connection error: {e}, reconnecting in {}s", backoff.as_secs()));
             }
         }
 
@@ -120,7 +121,7 @@ pub(crate) async fn run(state: Arc<AppState>, mut shutdown_rx: oneshot::Receiver
         tokio::select! {
             _ = tokio::time::sleep(backoff) => {}
             _ = &mut shutdown_rx => {
-                eprintln!("[relay] shutting down during backoff");
+                log_via_state(&state, "info", "relay", "shutting down during backoff");
                 return;
             }
         }
@@ -151,7 +152,7 @@ async fn connect_and_run(
         .send(Message::Text(format!("Bearer {relay_token}").into()))
         .await?;
 
-    eprintln!("[relay] authenticated, starting event bridge");
+    log_via_state(state, "info", "relay", "authenticated, starting event bridge");
 
     // Subscribe to event bus — reset backoff on successful connection
     let mut event_rx = state.event_bus.subscribe();
@@ -194,7 +195,7 @@ async fn connect_and_run(
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                        eprintln!("[relay] event bus lagged, skipped {n} events");
+                        log_via_state(state, "warn", "relay", &format!("event bus lagged, skipped {n} events"));
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         return Ok(ShutdownReason::Signal);
@@ -209,19 +210,19 @@ async fn connect_and_run(
                         match decrypt(cipher, &data) {
                             Ok(_plaintext) => {
                                 // TODO: dispatch decrypted message as mobile command
-                                eprintln!("[relay] received mobile command (dispatch not yet implemented)");
+                                log_via_state(state, "info", "relay", "received mobile command (dispatch not yet implemented)");
                             }
                             Err(e) => {
-                                eprintln!("[relay] failed to decrypt message: {e}");
+                                log_via_state(state, "error", "relay", &format!("failed to decrypt message: {e}"));
                             }
                         }
                     }
                     Some(Ok(Message::Text(text))) => {
                         // Status messages from relay (relay:status)
                         if text.contains("connected") {
-                            eprintln!("[relay] mobile peer connected");
+                            log_via_state(state, "info", "relay", "mobile peer connected");
                         } else if text.contains("disconnected") {
-                            eprintln!("[relay] mobile peer disconnected");
+                            log_via_state(state, "info", "relay", "mobile peer disconnected");
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => {
