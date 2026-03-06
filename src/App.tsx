@@ -822,6 +822,13 @@ const App: Component = () => {
     toggleFileBrowserPanel: uiStore.toggleFileBrowserPanel,
     togglePlanPanel: uiStore.togglePlanPanel,
     findInTerminal: () => {
+      // Context-aware: open search in whichever tab type is active
+      const mdActiveId = mdTabsStore.state.activeId;
+      if (mdActiveId) {
+        const handle = mdTabsStore.getHandle<{ openSearch: () => void }>(mdActiveId);
+        handle?.openSearch();
+        return;
+      }
       const active = terminalsStore.getActive();
       active?.ref?.openSearch();
     },

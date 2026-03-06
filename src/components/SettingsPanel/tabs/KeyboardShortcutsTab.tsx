@@ -40,7 +40,7 @@ function getShortcutSections(): ShortcutSection[] {
       { action: "prev-tab", keys: keyFor("prev-tab"), description: t("helpPanel.previousTab", "Previous tab") },
       { action: "next-tab", keys: keyFor("next-tab"), description: t("helpPanel.nextTab", "Next tab") },
       { action: "clear-terminal", keys: keyFor("clear-terminal"), description: t("helpPanel.clearTerminal", "Clear terminal") },
-      { action: "find-in-terminal", keys: keyFor("find-in-terminal"), description: t("helpPanel.findInTerminal", "Find in terminal") },
+      { action: "find-in-terminal", keys: keyFor("find-in-terminal"), description: t("helpPanel.findInContent", "Find in content") },
       { keys: `${mod}G`, description: t("helpPanel.findNext", "Find next match") },
       { keys: `${isMacOS() ? "⌘⇧G" : "Shift+F3"}`, description: t("helpPanel.findPrevious", "Find previous match") },
       { keys: `${mod}C`, description: t("helpPanel.copySelection", "Copy selection") },

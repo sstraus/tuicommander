@@ -29,7 +29,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "close-terminal": { label: "Close terminal tab", category: "Terminal" },
   "reopen-closed-tab": { label: "Reopen closed tab", category: "Terminal" },
   "clear-terminal": { label: "Clear terminal", category: "Terminal" },
-  "find-in-terminal": { label: "Find in terminal", category: "Terminal" },
+  "find-in-terminal": { label: "Find in content", category: "Terminal" },
   "run-command": { label: "Run saved command", category: "Terminal" },
   "edit-command": { label: "Edit saved command", category: "Terminal" },
   "prev-tab": { label: "Previous tab", category: "Terminal" },
