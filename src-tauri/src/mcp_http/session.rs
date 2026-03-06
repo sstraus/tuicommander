@@ -867,16 +867,16 @@ async fn handle_ws_log_session(
                     let screen_changed = screen_hash != prev_screen_hash && !screen_lines.is_empty();
                     // Check shell_state for busy→idle transition (500ms timeout).
                     // This catches the transition that has no event trigger.
-                    if let Some(current) = state_poll.session_state_with_shell(&sid_poll) {
-                        if prev_state.as_ref() != Some(&current) {
-                            let frame = serde_json::json!({"type": "state", "state": &current});
-                            prev_state = Some(current);
-                            if futures_util::SinkExt::send(
-                                &mut ws_sender,
-                                Message::Text(frame.to_string().into()),
-                            ).await.is_err() {
-                                break;
-                            }
+                    if let Some(current) = state_poll.session_state_with_shell(&sid_poll)
+                        && prev_state.as_ref() != Some(&current)
+                    {
+                        let frame = serde_json::json!({"type": "state", "state": &current});
+                        prev_state = Some(current);
+                        if futures_util::SinkExt::send(
+                            &mut ws_sender,
+                            Message::Text(frame.to_string().into()),
+                        ).await.is_err() {
+                            break;
                         }
                     }
                     // Send frame if there are new log lines OR screen content changed
@@ -913,18 +913,17 @@ async fn handle_ws_log_session(
                         | crate::state::AppEvent::SessionClosed { session_id: sid } => sid == &sid_poll,
                         _ => false,
                     };
-                    if is_relevant {
-                        if let Some(current) = state_poll.session_state_with_shell(&sid_poll) {
-                            if prev_state.as_ref() != Some(&current) {
-                                let frame = serde_json::json!({"type": "state", "state": &current});
-                                prev_state = Some(current);
-                                if futures_util::SinkExt::send(
-                                    &mut ws_sender,
-                                    Message::Text(frame.to_string().into()),
-                                ).await.is_err() {
-                                    break;
-                                }
-                            }
+                    if is_relevant
+                        && let Some(current) = state_poll.session_state_with_shell(&sid_poll)
+                        && prev_state.as_ref() != Some(&current)
+                    {
+                        let frame = serde_json::json!({"type": "state", "state": &current});
+                        prev_state = Some(current);
+                        if futures_util::SinkExt::send(
+                            &mut ws_sender,
+                            Message::Text(frame.to_string().into()),
+                        ).await.is_err() {
+                            break;
                         }
                     }
                 }

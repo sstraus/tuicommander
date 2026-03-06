@@ -1558,6 +1558,9 @@ mod tests {
             Err(e) if e.status == 429 => {
                 eprintln!("Skipping live API test: rate limited (429)");
             }
+            Err(e) if e.status == 0 => {
+                eprintln!("Skipping live API test: network error ({})", e.message);
+            }
             Err(e) => {
                 panic!("Live API call failed: status={} msg={}", e.status, e.message);
             }

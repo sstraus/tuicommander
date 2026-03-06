@@ -969,14 +969,13 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
             break;
         }
         // Pass 2: opener on this line, closer on the next line
-        if let Some(open_caps) = INTENT_OPEN_RE.captures(line) {
-            if let Some(next_line) = lines.get(i + 1) {
-                if let Some(close_caps) = INTENT_CLOSE_RE.captures(next_line) {
-                    let body = format!("{} {}", open_caps[1].trim(), close_caps[1].trim());
-                    raw_match = Some(body);
-                    break;
-                }
-            }
+        if let Some(open_caps) = INTENT_OPEN_RE.captures(line)
+            && let Some(next_line) = lines.get(i + 1)
+            && let Some(close_caps) = INTENT_CLOSE_RE.captures(next_line)
+        {
+            let body = format!("{} {}", open_caps[1].trim(), close_caps[1].trim());
+            raw_match = Some(body);
+            break;
         }
     }
 
