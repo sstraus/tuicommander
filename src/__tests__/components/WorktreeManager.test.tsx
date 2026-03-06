@@ -87,7 +87,7 @@ describe("WorktreeManager", () => {
 
     // feature-a should be first (non-main sorted before main)
     const branchTexts = Array.from(rows).map((r) =>
-      r.querySelector("[class*='branch']")?.textContent,
+      r.querySelector("span[class*='branch']")?.textContent,
     );
     expect(branchTexts[0]).toBe("feature-a");
     expect(branchTexts[1]).toBe("main");
@@ -200,7 +200,7 @@ describe("WorktreeManager", () => {
 
       const rows = container.querySelectorAll("[class*='row']");
       expect(rows.length).toBe(1);
-      expect(rows[0].querySelector("[class*='branch']")?.textContent).toBe("main");
+      expect(rows[0].querySelector("span[class*='branch']")?.textContent).toBe("main");
     });
 
     it("shows all repos when filter is null (All)", () => {
@@ -231,7 +231,7 @@ describe("WorktreeManager", () => {
 
       const rows = container.querySelectorAll("[class*='row']");
       expect(rows.length).toBe(1);
-      expect(rows[0].querySelector("[class*='branch']")?.textContent).toBe("feature-auth");
+      expect(rows[0].querySelector("span[class*='branch']")?.textContent).toBe("feature-auth");
     });
 
     it("shows search input", () => {
@@ -327,7 +327,7 @@ describe("WorktreeManager", () => {
 
       const rows = container.querySelectorAll("[class*='row']");
       expect(rows.length).toBe(1);
-      expect(rows[0].querySelector("[class*='branch']")?.textContent).toBe("feature-auth");
+      expect(rows[0].querySelector("span[class*='branch']")?.textContent).toBe("feature-auth");
       expect(rows[0].querySelector("[class*='repo']")?.textContent).toBe("Alpha");
     });
   });
