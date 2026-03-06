@@ -455,8 +455,11 @@ impl OutputRingBuffer {
             self.capacity - (to_read - self.write_pos)
         };
 
-        for i in 0..to_read {
-            result.push(self.buf[(start + i) % self.capacity]);
+        // Bulk copy using extend_from_slice (two slices if wrapping)
+        let first_chunk = (self.capacity - start).min(to_read);
+        result.extend_from_slice(&self.buf[start..start + first_chunk]);
+        if first_chunk < to_read {
+            result.extend_from_slice(&self.buf[..to_read - first_chunk]);
         }
 
         (result, self.total_written)
@@ -1685,6 +1688,80 @@ mod tests {
         let (data, total) = rb.read_last(4);
         assert_eq!(&data, b"efgh");
         assert_eq!(total, 8);
+    }
+
+    #[test]
+    fn test_ring_buffer_read_last_bulk_copy_wrap() {
+        // Wrap-around: read_last must stitch two slices correctly.
+        let mut rb = OutputRingBuffer::new(8);
+        rb.write(b"ABCDEFGH"); // fills buffer, write_pos = 0
+        rb.write(b"XY");       // overwrites A,B → buf = [X,Y,C,D,E,F,G,H], write_pos = 2
+
+        // Read all 8 bytes — should produce CDEFGHXY (oldest to newest)
+        let (data, total) = rb.read_last(8);
+        assert_eq!(&data, b"CDEFGHXY");
+        assert_eq!(total, 10);
+
+        // Read last 3 — should produce HXY (straddles the wrap boundary)
+        let (data, _) = rb.read_last(3);
+        assert_eq!(&data, b"HXY");
+
+        // Read last 6 — wraps from before write_pos to after.
+        // buf = [X,Y,C,D,E,F,G,H], write_pos = 2, available = 8
+        // start = 2 + 8 - 6 = 4 → indices 4,5,6,7,0,1 → E,F,G,H,X,Y
+        let (data, _) = rb.read_last(6);
+        assert_eq!(&data, b"EFGHXY");
+    }
+
+    #[test]
+    fn test_ring_buffer_read_last_no_wrap() {
+        // No wrap: all data sits in a contiguous region.
+        let mut rb = OutputRingBuffer::new(16);
+        rb.write(b"hello world!");
+        let (data, total) = rb.read_last(5);
+        assert_eq!(&data, b"orld!");
+        assert_eq!(total, 12);
+
+        let (data, _) = rb.read_last(12);
+        assert_eq!(&data, b"hello world!");
+
+        // Request more than available
+        let (data, _) = rb.read_last(100);
+        assert_eq!(&data, b"hello world!");
+    }
+
+    #[test]
+    fn test_ring_buffer_read_last_2mb_performance() {
+        // Verify that read_last on a full 2MB buffer completes quickly.
+        // With bulk copy this should be sub-millisecond; the old byte-per-byte
+        // loop took ~2M iterations with modulo on each.
+        let cap = 2 * 1024 * 1024; // 2 MB
+        let mut rb = OutputRingBuffer::new(cap);
+
+        // Fill the buffer with pattern data that wraps
+        let chunk: Vec<u8> = (0..=255u8).cycle().take(cap + 1024).collect();
+        rb.write(&chunk);
+
+        let start = std::time::Instant::now();
+        let iterations = 100;
+        for _ in 0..iterations {
+            let (data, _) = rb.read_last(cap);
+            assert_eq!(data.len(), cap);
+            // Prevent optimizing away
+            std::hint::black_box(&data);
+        }
+        let elapsed = start.elapsed();
+        let per_call = elapsed / iterations;
+        eprintln!(
+            "read_last(2MB) x {}: total {:?}, per call {:?}",
+            iterations, elapsed, per_call
+        );
+        // Bulk copy should finish each call well under 5ms on any modern machine.
+        assert!(
+            per_call.as_millis() < 5,
+            "read_last(2MB) took {:?} per call — too slow",
+            per_call
+        );
     }
 
     // --- EscapeAwareBuffer tests ---
