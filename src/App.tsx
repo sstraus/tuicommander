@@ -392,22 +392,50 @@ const App: Component = () => {
   });
 
   // Completion notification: play sound when a terminal was busy for >=5s then goes idle.
+  // Deferred when the agent has active sub-tasks or is an agent process (sub-agents may still be running).
   const BUSY_COMPLETION_THRESHOLD_MS = 5000;
-  terminalsStore.onBusyToIdle((id, durationMs) => {
-    if (durationMs >= BUSY_COMPLETION_THRESHOLD_MS) {
-      // Don't notify for the terminal the user is currently viewing.
+  const DEFERRED_COMPLETION_MS = 10_000;
+  const deferredCompletionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  const unsubBusyToIdle = terminalsStore.onBusyToIdle((id, durationMs) => {
+    if (durationMs < BUSY_COMPLETION_THRESHOLD_MS) return;
+    if (terminalsStore.state.activeId === id) return;
+
+    const fireCompletion = () => {
+      deferredCompletionTimers.delete(id);
+      // Re-check: terminal may have become active or gone busy during the wait.
       if (terminalsStore.state.activeId === id) return;
-      // Don't notify when agent has active sub-tasks (local agents, bash, background tasks).
-      // The idle is just a wait between sub-task outputs, not true completion.
+      if (terminalsStore.state.debouncedBusy[id]) return;
+      // Re-check sub-tasks: count may have updated during deferral.
       const terminal = terminalsStore.get(id);
-      if (terminal && terminal.activeSubTasks > 0) {
+      if (!terminal) return; // Terminal removed during deferral
+      if (terminal.activeSubTasks > 0) {
         appLogger.debug("terminal", `[Notify] ${id} completion SUPPRESSED — ${terminal.activeSubTasks} active sub-tasks`);
         return;
       }
       appLogger.info("terminal", `[Notify] ${id} completion — busy for ${Math.round(durationMs / 1000)}s then idle`);
       terminalsStore.update(id, { activity: true, unseen: true });
       notificationsStore.playCompletion();
+    };
+
+    const t = terminalsStore.get(id);
+    // Suppress immediately if agent has known active sub-tasks.
+    if (t && t.activeSubTasks > 0) {
+      appLogger.debug("terminal", `[Notify] ${id} completion SUPPRESSED — ${t.activeSubTasks} active sub-tasks`);
+      return;
     }
+    if (t?.agentType) {
+      // Agent process: defer — if the terminal stays idle for 10s, it's truly done.
+      clearTimeout(deferredCompletionTimers.get(id));
+      deferredCompletionTimers.set(id, setTimeout(fireCompletion, DEFERRED_COMPLETION_MS));
+    } else {
+      fireCompletion();
+    }
+  });
+  onCleanup(() => {
+    unsubBusyToIdle();
+    for (const timer of deferredCompletionTimers.values()) clearTimeout(timer);
+    deferredCompletionTimers.clear();
   });
 
   // Initialize plugin system

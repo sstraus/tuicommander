@@ -673,22 +673,23 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Detect Claude Code active sub-task indicators from the `››` mode line.
-/// With sub-tasks: `›› <mode> · N <type>` → count=N
-/// Without sub-tasks: `›› <mode>` → count=0 (all sub-tasks finished)
+/// Detect Claude Code active sub-task indicators from the mode line.
+/// Supports both `››` (U+203A, older) and `⏵⏵` (U+23F5, current) prefixes.
+/// With sub-tasks: `⏵⏵ <mode> · N <type>` → count=N
+/// Without sub-tasks: `⏵⏵ <mode>` → count=0 (all sub-tasks finished)
 fn parse_active_subtasks(clean: &str) -> Option<ParsedEvent> {
-    // Fast path: requires ›› (U+203A U+203A)
-    if !clean.contains('\u{203A}') {
+    // Fast path: requires either ›› (U+203A) or ⏵⏵ (U+23F5)
+    if !clean.contains('\u{203A}') && !clean.contains('\u{23F5}') {
         return None;
     }
 
     lazy_static::lazy_static! {
-        // ›› <mode> · <count> <type>
+        // ⏵⏵|›› <mode> · <count> <type>
         static ref SUBTASK_COUNT_RE: regex::Regex =
-            regex::Regex::new(r"\u{203A}\u{203A}\s+.+?\s+\u{00B7}\s+(\d+)\s+(.+?)$").unwrap();
-        // ›› <mode> (without sub-task suffix)
+            regex::Regex::new(r"(?:\u{203A}\u{203A}|\u{23F5}\u{23F5})\s+.+?\s+\u{00B7}\s+(\d+)\s+(.+?)$").unwrap();
+        // ⏵⏵|›› <mode> (without sub-task suffix)
         static ref SUBTASK_BARE_RE: regex::Regex =
-            regex::Regex::new(r"\u{203A}\u{203A}\s+\S").unwrap();
+            regex::Regex::new(r"(?:\u{203A}\u{203A}|\u{23F5}\u{23F5})\s+\S").unwrap();
     }
 
     for line in clean.lines() {
@@ -3221,6 +3222,93 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             !events.iter().any(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })),
             "Should not match single guillemet: {:?}", events
         );
+    }
+
+    // ── ActiveSubtasks tests with ⏵⏵ (U+23F5) prefix ──────────────────
+
+    #[test]
+    fn test_active_subtasks_triangle_local_agents() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{23F5}\u{23F5} bypass permissions on \u{00B7} 2 local agents");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 2);
+                assert_eq!(task_type, "local agents");
+            }
+            _ => panic!("Expected ActiveSubtasks event with ⏵⏵ prefix, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_triangle_bare_resets_to_zero() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{23F5}\u{23F5} bypass permissions on");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, .. }) => {
+                assert_eq!(*count, 0);
+            }
+            _ => panic!("Expected ActiveSubtasks with count=0 for ⏵⏵ prefix, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_triangle_single_bash() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{23F5}\u{23F5} reading config files \u{00B7} 1 bash");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 1);
+                assert_eq!(task_type, "bash");
+            }
+            _ => panic!("Expected ActiveSubtasks event with ⏵⏵ prefix, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_not_triggered_by_single_triangle() {
+        let parser = OutputParser::new();
+        let events = parser.parse("some output with \u{23F5} single triangle");
+        assert!(
+            !events.iter().any(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })),
+            "Should not match single ⏵: {:?}", events
+        );
+    }
+
+    #[test]
+    fn test_active_subtasks_triangle_explicit_zero_count() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{23F5}\u{23F5} finishing \u{00B7} 0 bash");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, .. }) => assert_eq!(*count, 0),
+            _ => panic!("Expected ActiveSubtasks with count=0, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_triangle_embedded_in_multiline() {
+        let parser = OutputParser::new();
+        let input = "some other output\n\u{23F5}\u{23F5} working \u{00B7} 2 bash\nmore output after";
+        let events = parser.parse(input);
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 2);
+                assert_eq!(task_type, "bash");
+            }
+            _ => panic!("Expected ActiveSubtasks in multiline input, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_triangle_background_tasks() {
+        let parser = OutputParser::new();
+        let events = parser.parse("\u{23F5}\u{23F5} fixing tests \u{00B7} 3 background tasks");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 3);
+                assert_eq!(task_type, "background tasks");
+            }
+            _ => panic!("Expected ActiveSubtasks event with ⏵⏵ prefix, got: {:?}", events),
+        }
     }
 
 }

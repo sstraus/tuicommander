@@ -379,10 +379,10 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         let sock = socket_path();
         // Remove stale socket from a previous run
         let _ = std::fs::remove_file(&sock);
-        if let Some(parent) = sock.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                eprintln!("Warning: failed to create socket parent dir {}: {e}", parent.display());
-            }
+        if let Some(parent) = sock.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            eprintln!("Warning: failed to create socket parent dir {}: {e}", parent.display());
         }
         match tokio::net::UnixListener::bind(&sock) {
             Ok(uds) => {
