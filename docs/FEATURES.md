@@ -68,14 +68,15 @@
 - Supports `:line` and `:line:col` suffixes for precise navigation
 - Recognized extensions: rs, ts, tsx, js, jsx, py, go, java, kt, swift, c, cpp, cs, rb, php, lua, zig, css, scss, html, vue, svelte, json, yaml, toml, sql, graphql, tf, sh, dockerfile, and more
 
-### 1.8 Find in Terminal
-- `Cmd+F` opens search overlay in the active terminal pane
-- Incremental search with highlight decorations (yellow matches, orange active match)
+### 1.8 Find in Content
+- `Cmd+F` opens search overlay — context-aware: routes to terminal or markdown tab based on active view
+- **Terminal:** incremental search via `@xterm/addon-search` with highlight decorations
+- **Markdown viewer:** DOM-based search with cross-element matching (finds text spanning inline tags)
+- Yellow highlight for matches, orange for active match
 - Navigate matches: `Enter` / `Cmd+G` (next), `Shift+Enter` / `Cmd+Shift+G` (previous)
 - Toggle options: case sensitive, whole word, regex
 - Match counter shows "N of M" results
-- `Escape` closes search and refocuses terminal
-- Uses `@xterm/addon-search` for native xterm integration
+- `Escape` closes search and refocuses content
 
 ### 1.9 International Keyboard Support
 - Terminal handles international keyboard input correctly
@@ -178,6 +179,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Clickable file paths in terminal open `.md` files here
 - Auto-show: adding any markdown tab automatically opens the Markdown panel if it's closed
 - Header bar shows file path (or title for virtual tabs) with Edit button (pencil icon) to open in CodeEditor
+- `Cmd+F` search: find text in rendered markdown with highlight navigation (shared SearchBar component)
 
 ### 3.4 File Browser Panel (`Cmd+E`)
 - Directory tree of active repository

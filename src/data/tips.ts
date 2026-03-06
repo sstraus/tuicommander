@@ -100,8 +100,8 @@ export const TIPS: Tip[] = [
     shortcut: `${mod}+Shift+D`,
   },
   {
-    feature: "Find in Terminal",
-    description: "Search text in the terminal scrollback buffer — matches highlight as you type.",
+    feature: "Find in Content",
+    description: "Search text in terminals and markdown viewers — matches highlight as you type, with case, regex, and whole-word toggles.",
     shortcut: `${mod}+F`,
   },
   {
