@@ -330,7 +330,7 @@ describe("useSessions — refreshing signal", () => {
         state: {
           awaiting_input: true,
           rate_limited: false,
-          is_busy: false,
+          shell_state: "idle",
           last_activity_ms: Date.now(),
         },
       }),
@@ -338,7 +338,7 @@ describe("useSessions — refreshing signal", () => {
         state: {
           awaiting_input: false,
           rate_limited: false,
-          is_busy: true,
+          shell_state: "busy",
           last_activity_ms: Date.now(),
         },
       }),
@@ -347,7 +347,7 @@ describe("useSessions — refreshing signal", () => {
           awaiting_input: true,
           question_text: "Continue?",
           rate_limited: false,
-          is_busy: false,
+          shell_state: "idle",
           last_activity_ms: Date.now(),
         },
       }),

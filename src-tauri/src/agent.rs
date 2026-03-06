@@ -618,6 +618,7 @@ pub(crate) async fn spawn_agent(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
+    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
     spawn_reader_thread(
         reader,

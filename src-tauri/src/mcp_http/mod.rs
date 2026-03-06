@@ -556,6 +556,7 @@ mod tests {
             mcp_upstream_registry: std::sync::Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             slash_mode: DashMap::new(),
+            last_output_ms: DashMap::new(),
         })
     }
 

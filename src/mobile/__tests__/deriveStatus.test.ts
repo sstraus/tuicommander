@@ -11,7 +11,7 @@ function makeSession(overrides: Partial<NonNullable<SessionInfo["state"]>> = {})
     state: {
       awaiting_input: false,
       rate_limited: false,
-      is_busy: false,
+      shell_state: "idle",
       last_activity_ms: Date.now(),
       ...overrides,
     },
@@ -28,8 +28,8 @@ describe("deriveStatus", () => {
     expect(deriveStatus(makeSession())).toBe("idle");
   });
 
-  it("returns busy when is_busy is true", () => {
-    expect(deriveStatus(makeSession({ is_busy: true }))).toBe("busy");
+  it("returns busy when shell_state is busy", () => {
+    expect(deriveStatus(makeSession({ shell_state: "busy" }))).toBe("busy");
   });
 
   it("returns question when awaiting_input is true", () => {
@@ -54,7 +54,7 @@ describe("deriveStatus", () => {
     });
 
     it("rate_limited beats busy", () => {
-      expect(deriveStatus(makeSession({ rate_limited: true, is_busy: true }))).toBe("rate-limited");
+      expect(deriveStatus(makeSession({ rate_limited: true, shell_state: "busy" }))).toBe("rate-limited");
     });
 
     it("error beats question", () => {
@@ -62,11 +62,11 @@ describe("deriveStatus", () => {
     });
 
     it("error beats busy", () => {
-      expect(deriveStatus(makeSession({ last_error: "err", is_busy: true }))).toBe("error");
+      expect(deriveStatus(makeSession({ last_error: "err", shell_state: "busy" }))).toBe("error");
     });
 
     it("question beats busy", () => {
-      expect(deriveStatus(makeSession({ awaiting_input: true, is_busy: true }))).toBe("question");
+      expect(deriveStatus(makeSession({ awaiting_input: true, shell_state: "busy" }))).toBe("question");
     });
   });
 });

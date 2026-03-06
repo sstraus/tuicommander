@@ -301,6 +301,14 @@ pub(crate) fn spawn_reader_thread(
                         );
                     }
                     if !data.is_empty() {
+                        // Stamp last output time for shell_state derivation (busy/idle)
+                        if let Some(ts) = state.last_output_ms.get(&session_id) {
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
+                            ts.store(now, std::sync::atomic::Ordering::Relaxed);
+                        }
                         // Feed raw data (post-kitty-strip) into VT100 log buffer.
                         // Capture changed rows for clean-text parsing (both normal and alternate screen).
                         let changed_rows = if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
@@ -732,6 +740,7 @@ pub(crate) async fn create_pty(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
+    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
     spawn_reader_thread(
         reader,
@@ -852,6 +861,7 @@ pub(crate) async fn create_pty_with_worktree(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
+    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
     spawn_reader_thread(
         reader,
@@ -1677,5 +1687,200 @@ mod tests {
             events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
             "headless reader must detect StatusLine during alternate screen, got: {:?}", events
         );
+    }
+
+    // --- vt100 escape sequence handling diagnostics ---
+
+    /// Verify that `\x1b[<n>F` (CPL — Cursor Previous Line) is handled by vt100
+    /// and does NOT leak parameter digits into screen cell text.
+    #[test]
+    fn test_vt100_cpl_sequence_does_not_leak() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // Write on row 2, then CPL to go back to row 1 and overwrite
+        parser.process(b"\n");                     // move to row 1
+        parser.process(b"old content here\n");     // row 1 has text, cursor at row 2
+        parser.process(b"\x1b[1F");                // CPL: go up 1 line, col 0
+        parser.process(b"new content");            // overwrite row 1
+        let screen = parser.screen();
+        let row1: String = screen.rows(0, 80).nth(1).unwrap().trim_end().to_string();
+        assert_eq!(row1, "new content here",
+            "CPL should move cursor up; row1 = {:?}", row1);
+        // The critical check: no "1F" should appear anywhere
+        assert!(!row1.contains("1F"),
+            "escape param '1F' leaked into screen text: {:?}", row1);
+    }
+
+    /// Verify that `\x1b[<n>E` (CNL — Cursor Next Line) is handled.
+    #[test]
+    fn test_vt100_cnl_sequence_does_not_leak() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        parser.process(b"line0");
+        parser.process(b"\x1b[1E");  // CNL: go down 1 line, col 0
+        parser.process(b"line1");
+        let screen = parser.screen();
+        let row0: String = screen.rows(0, 80).nth(0).unwrap().trim_end().to_string();
+        let row1: String = screen.rows(0, 80).nth(1).unwrap().trim_end().to_string();
+        assert_eq!(row0, "line0", "row0 should be unchanged; got {:?}", row0);
+        assert_eq!(row1, "line1", "CNL should move cursor down; got {:?}", row1);
+    }
+
+    /// Simulate Ink-style rendering: write intent, then use CPL to update it.
+    /// This is what Claude Code does when updating its status line.
+    #[test]
+    fn test_vt100_ink_style_intent_with_cpl() {
+        use crate::state::VtLogBuffer;
+        use crate::output_parser::{OutputParser, ParsedEvent};
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        let mut parser = OutputParser::new();
+
+        // Simulate Ink render: write placeholder, then CPL + overwrite with intent
+        vt_log.process(b"\x1b[?1049h");  // alternate screen
+        vt_log.process(b"placeholder text\r\n");
+        // Ink update: go up, clear line, write intent
+        let changed = vt_log.process(
+            b"\x1b[1F\x1b[2K[[intent: Fix all 34 documentation gaps(Fixing gaps)]]"
+        );
+        let events = parser.parse_clean_lines(&changed);
+        let intent = events.iter().find_map(|e| match e {
+            ParsedEvent::Intent { text, title } => Some((text.clone(), title.clone())),
+            _ => None,
+        });
+        assert!(intent.is_some(),
+            "intent must be detected after CPL overwrite; changed={:?}, events={:?}",
+            changed, events);
+        let (text, title) = intent.unwrap();
+        assert_eq!(text, "Fix all 34 documentation gaps",
+            "intent text must be clean (no '1F' leak); got: {:?}", text);
+        assert_eq!(title.as_deref(), Some("Fixing gaps"));
+    }
+
+    /// Chunked delivery: CSI split across two process() calls.
+    /// Verifies the vt100 parser buffers incomplete escapes correctly.
+    #[test]
+    fn test_vt100_chunked_csi_does_not_leak() {
+        use crate::state::VtLogBuffer;
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        vt_log.process(b"\x1b[?1049h");  // alternate screen
+        vt_log.process(b"old line\r\n");
+
+        // Chunk 1: partial CSI (just the introducer)
+        let changed1 = vt_log.process(b"\x1b[");
+        // Chunk 2: parameter + final byte completing CPL, then text
+        let changed2 = vt_log.process(b"1F[[intent: Fix all gaps]]");
+
+        // Check that no row contains literal "1F" as text
+        for row in changed1.iter().chain(changed2.iter()) {
+            assert!(!row.text.contains("1F"),
+                "chunked CSI leaked '1F' into row text: {:?}", row.text);
+        }
+    }
+
+    /// Test what happens when CSI is aborted by an unexpected byte.
+    /// Some terminal emulators discard the sequence; others print the chars.
+    #[test]
+    fn test_vt100_aborted_csi_does_not_leak_digits() {
+        // Scenario: \x1b[1 followed by a non-CSI byte (e.g. ESC starting
+        // a new sequence). The pending "1" should NOT become visible text.
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // \x1b[1\x1b[2K — the first CSI is aborted by the second ESC
+        parser.process(b"\x1b[1\x1b[2KHello");
+        let screen = parser.screen();
+        let row: String = screen.rows(0, 80).nth(0).unwrap().trim_end().to_string();
+        eprintln!("aborted CSI row: {:?}", row);
+        assert!(!row.starts_with('1'),
+            "aborted CSI parameter '1' should not appear in cell text: {:?}", row);
+    }
+
+    /// Test intermediate characters in CSI (e.g. \x1b[?25l has '?' intermediate).
+    /// If vt100 doesn't recognize a private-mode sequence, does it leak?
+    #[test]
+    fn test_vt100_unknown_private_csi_does_not_leak() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        // \x1b[?1234z — fictional private sequence with unknown final byte 'z'
+        parser.process(b"\x1b[?1234zVisible text");
+        let screen = parser.screen();
+        let row: String = screen.rows(0, 80).nth(0).unwrap().trim_end().to_string();
+        eprintln!("unknown private CSI row: {:?}", row);
+        assert_eq!(row, "Visible text",
+            "unknown private CSI should not leak; got: {:?}", row);
+    }
+
+    /// Simulate realistic Ink output with SGR + cursor movement + text.
+    /// This mimics what Claude Code actually sends through the PTY.
+    #[test]
+    fn test_vt100_realistic_ink_render_cycle() {
+        use crate::state::VtLogBuffer;
+        use crate::output_parser::{OutputParser, ParsedEvent};
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        let mut parser = OutputParser::new();
+
+        vt_log.process(b"\x1b[?1049h");  // alternate screen
+
+        // Frame 1: Ink renders initial content with colors
+        vt_log.process(
+            b"\x1b[1;1H\x1b[38;2;128;128;128m\xe2\x97\x8f\x1b[0m \x1b[1m[[intent: Reading codebase structure(Reading code)]]\x1b[0m"
+        );
+
+        // Frame 2: Ink updates — cursor up, erase line, rewrite
+        // This is how Ink typically does incremental updates
+        let changed = vt_log.process(
+            b"\x1b[1F\x1b[2K\x1b[38;2;128;128;128m\xe2\x97\x8f\x1b[0m \x1b[1m[[intent: Fix all 34 documentation gaps(Fixing gaps)]]\x1b[0m"
+        );
+
+        let events = parser.parse_clean_lines(&changed);
+        let intent = events.iter().find_map(|e| match e {
+            ParsedEvent::Intent { text, title } => Some((text.clone(), title.clone())),
+            _ => None,
+        });
+
+        // Print all changed rows for debugging
+        eprintln!("changed rows:");
+        for r in &changed {
+            eprintln!("  row[{}]: {:?}", r.row_index, r.text);
+        }
+        eprintln!("events: {:?}", events);
+
+        assert!(intent.is_some(),
+            "intent must be detected in realistic Ink render; events={:?}", events);
+        let (text, title) = intent.unwrap();
+        assert!(!text.contains("1F"),
+            "intent text must not contain escape leak '1F'; got: {:?}", text);
+        assert_eq!(text, "Fix all 34 documentation gaps");
+        assert_eq!(title.as_deref(), Some("Fixing gaps"));
+    }
+
+    /// Multi-chunk Ink render: data arrives in small fragments.
+    #[test]
+    fn test_vt100_fragmented_ink_output() {
+        use crate::state::VtLogBuffer;
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        vt_log.process(b"\x1b[?1049h");
+
+        // Simulate fragmented delivery of: \x1b[1F\x1b[2K[[intent: Fix]]
+        let fragments: Vec<&[u8]> = vec![
+            b"\x1b[",      // CSI introducer
+            b"1",           // parameter
+            b"F",           // final byte (CPL)
+            b"\x1b[",      // CSI introducer
+            b"2K",          // erase line
+            b"[[intent: Fix all gaps]]",
+        ];
+
+        let mut all_changed = Vec::new();
+        for frag in fragments {
+            let changed = vt_log.process(frag);
+            all_changed.extend(changed);
+        }
+
+        // Check no row contains '1F' leak
+        for row in &all_changed {
+            eprintln!("fragmented row[{}]: {:?}", row.row_index, row.text);
+            assert!(!row.text.contains("1F"),
+                "fragmented delivery leaked '1F': {:?}", row.text);
+        }
     }
 }

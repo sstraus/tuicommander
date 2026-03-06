@@ -14,7 +14,7 @@ function makeSession(overrides: Partial<SessionState> = {}): SessionInfo {
     state: {
       awaiting_input: false,
       rate_limited: false,
-      is_busy: false,
+      shell_state: "idle",
       last_activity_ms: Date.now(),
       ...overrides,
     },

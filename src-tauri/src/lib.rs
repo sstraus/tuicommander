@@ -581,6 +581,7 @@ pub fn run() {
         mcp_upstream_registry: Arc::new(mcp_proxy::registry::UpstreamRegistry::new()),
         mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
         slash_mode: DashMap::new(),
+        last_output_ms: DashMap::new(),
     });
 
     // Wire the event bus into the upstream registry so status changes emit SSE events.

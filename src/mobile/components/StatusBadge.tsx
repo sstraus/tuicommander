@@ -7,9 +7,9 @@ interface StatusBadgeProps {
 }
 
 const STATUS_LABELS: Record<SessionStatus, string> = {
-  idle: "Done",
-  busy: "Busy",
-  question: "Question",
+  idle: "Idle",
+  busy: "Activity",
+  question: "Input",
   error: "Error",
   "rate-limited": "Rate Limited",
 };

@@ -217,6 +217,7 @@ pub(super) async fn spawn_agent_session(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
+    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
     // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
     let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {

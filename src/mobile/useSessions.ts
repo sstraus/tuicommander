@@ -10,7 +10,7 @@ export interface SessionState {
   rate_limited: boolean;
   retry_after_ms?: number;
   usage_limit_pct?: number;
-  is_busy: boolean;
+  shell_state?: string;
   last_activity_ms: number;
   agent_type?: string;
   last_error?: string;

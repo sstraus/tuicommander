@@ -89,8 +89,11 @@ pub(crate) struct SessionState {
     /// Usage limit percentage (0-100), if detected
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage_limit_pct: Option<u8>,
-    /// True when we have recent output activity (not idle)
-    pub is_busy: bool,
+    /// Shell state derived from PTY output timing (matches desktop model).
+    /// "busy" = recent PTY output (< 500ms), "idle" = no recent output.
+    /// Computed on-the-fly when serializing; None for sessions with no output yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shell_state: Option<String>,
     /// Timestamp of last activity (any event for this session).
     /// Excluded from PartialEq — telemetry field, not logical state.
     pub last_activity_ms: u64,
@@ -129,7 +132,7 @@ impl PartialEq for SessionState {
             && self.rate_limited == other.rate_limited
             && self.retry_after_ms == other.retry_after_ms
             && self.usage_limit_pct == other.usage_limit_pct
-            && self.is_busy == other.is_busy
+            && self.shell_state == other.shell_state
             && self.agent_type == other.agent_type
             && self.last_error == other.last_error
             && self.agent_intent == other.agent_intent
@@ -729,6 +732,10 @@ pub struct AppState {
     /// Per-session slash command mode (true when input starts with `/`).
     /// Used to suppress false-positive slash menu detection on PTY output.
     pub(crate) slash_mode: DashMap<String, std::sync::atomic::AtomicBool>,
+    /// Per-session timestamp of last PTY output (epoch ms).
+    /// Updated by PTY reader on every non-empty chunk. Used to derive shell_state:
+    /// "busy" when now - last < 500ms, "idle" otherwise (matches desktop model).
+    pub(crate) last_output_ms: DashMap<String, AtomicU64>,
 }
 
 impl AppState {
@@ -773,6 +780,38 @@ impl AppState {
         self.git_status_cache.remove(path);
     }
 
+    /// Shell idle timeout: 500ms without PTY output → "idle" (matches desktop model).
+    const SHELL_IDLE_MS: u64 = 500;
+
+    /// Derive shell_state from PTY output timing for a session.
+    /// Returns "busy" if last output was < 500ms ago, "idle" otherwise, None if never output.
+    pub(crate) fn derive_shell_state(&self, session_id: &str) -> Option<String> {
+        self.last_output_ms.get(session_id).map(|ts| {
+            let last = ts.load(std::sync::atomic::Ordering::Relaxed);
+            if last == 0 {
+                return "idle".to_string();
+            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            if now.saturating_sub(last) < Self::SHELL_IDLE_MS {
+                "busy".to_string()
+            } else {
+                "idle".to_string()
+            }
+        })
+    }
+
+    /// Get a SessionState snapshot with shell_state computed from output timing.
+    pub(crate) fn session_state_with_shell(&self, session_id: &str) -> Option<SessionState> {
+        self.session_states.get(session_id).map(|s| {
+            let mut state = s.clone();
+            state.shell_state = self.derive_shell_state(session_id);
+            state
+        })
+    }
+
     /// Spawn a background task that subscribes to the event bus and updates
     /// `session_states`. Call once at startup after constructing AppState.
     pub(crate) fn spawn_session_state_accumulator(state: Arc<AppState>) {
@@ -800,7 +839,6 @@ impl AppState {
         match event {
             AppEvent::SessionCreated { session_id, .. } => {
                 state.session_states.insert(session_id.clone(), SessionState {
-                    is_busy: true,
                     last_activity_ms: now_ms,
                     ..Default::default()
                 });
@@ -817,14 +855,12 @@ impl AppState {
                         match event_type {
                             "question" => {
                                 s.awaiting_input = true;
-                                s.is_busy = false;
                                 s.question_text = parsed.get("prompt_text")
                                     .and_then(|t| t.as_str())
                                     .map(|t| t.to_string());
                             }
                             "user-input" => {
                                 // User responded — agent will start working
-                                s.is_busy = true;
                                 s.awaiting_input = false;
                                 s.question_text = None;
                                 s.slash_menu_items = None;
@@ -838,7 +874,6 @@ impl AppState {
                                 s.rate_limited = true;
                                 s.retry_after_ms = parsed.get("retry_after_ms")
                                     .and_then(|v| v.as_u64());
-                                s.is_busy = false;
                             }
                             "usage-limit" => {
                                 s.usage_limit_pct = parsed.get("percentage")
@@ -851,8 +886,7 @@ impl AppState {
                                     .map(|t| t.to_string());
                             }
                             "status-line" => {
-                                // Agent is working — mark busy + clear error/rate-limit/suggest/menu
-                                s.is_busy = true;
+                                // Agent is working — clear error/rate-limit/suggest/menu
                                 s.rate_limited = false;
                                 s.retry_after_ms = None;
                                 s.last_error = None;
@@ -899,14 +933,12 @@ impl AppState {
                         }
                     })
                     .or_insert_with(|| SessionState {
-                        is_busy: true,
                         last_activity_ms: now_ms,
                         ..Default::default()
                     });
             }
             AppEvent::PtyExit { session_id } => {
                 if let Some(mut entry) = state.session_states.get_mut(session_id) {
-                    entry.is_busy = false;
                     entry.awaiting_input = false;
                     entry.question_text = None;
                     entry.rate_limited = false;
@@ -1348,6 +1380,26 @@ impl VtLogBuffer {
             .collect()
     }
 
+    /// Current visible screen rows as styled LogLines (with ANSI color attributes).
+    /// Used by mobile/REST to render screen content with colors.
+    pub fn screen_log_lines(&self) -> Vec<LogLine> {
+        let screen = self.parser.screen();
+        let rows = screen.size().0;
+        let mut lines = Vec::with_capacity(rows as usize);
+        for row in 0..rows {
+            lines.push(extract_log_line(&screen, row));
+        }
+        // Trim trailing empty lines
+        while let Some(last) = lines.last() {
+            if last.spans.is_empty() {
+                lines.pop();
+            } else {
+                break;
+            }
+        }
+        lines
+    }
+
     /// Extract the user-typed text from the prompt line, excluding ghost/dim text.
     /// Scans from the bottom for `❯` or `>` prompt, then collects non-dim cell contents.
     pub fn prompt_input_text(&self) -> Option<String> {
@@ -1781,6 +1833,7 @@ mod tests {
             mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             slash_mode: DashMap::new(),
+            last_output_ms: DashMap::new(),
         }
     }
 
@@ -2137,10 +2190,9 @@ mod tests {
     fn fresh_state() -> Arc<AppState> {
         let s = Arc::new(make_test_app_state());
         // Insert initial entry so and_modify fires
-        s.session_states.insert("s1".to_string(), SessionState {
-            is_busy: true,
-            ..Default::default()
-        });
+        s.session_states.insert("s1".to_string(), SessionState::default());
+        // Initialize last_output_ms for shell_state derivation
+        s.last_output_ms.insert("s1".to_string(), AtomicU64::new(0));
         s
     }
 
@@ -2230,54 +2282,56 @@ mod tests {
     }
 
     #[test]
-    fn test_session_state_question_clears_is_busy() {
+    fn test_session_state_question_sets_awaiting_input() {
         let state = fresh_state();
-        // Initially busy
-        assert!(state.session_states.get("s1").unwrap().is_busy);
         let event = make_parsed("question", serde_json::json!({ "prompt_text": "Do you want to proceed?" }));
         let s = apply(&state, &event);
         assert!(s.awaiting_input);
-        assert!(!s.is_busy);
         assert_eq!(s.question_text.as_deref(), Some("Do you want to proceed?"));
     }
 
     #[test]
-    fn test_session_state_user_input_sets_busy() {
+    fn test_session_state_user_input_clears_awaiting() {
         let state = fresh_state();
         // First go to question state
         let q = make_parsed("question", serde_json::json!({ "prompt_text": "Ready?" }));
         apply(&state, &q);
-        // User responds → busy again
+        // User responds → no longer awaiting
         let event = make_parsed("user-input", serde_json::json!({ "content": "yes" }));
         let s = apply(&state, &event);
-        assert!(s.is_busy);
         assert!(!s.awaiting_input);
     }
 
     #[test]
-    fn test_session_state_status_line_sets_busy() {
+    fn test_session_state_shell_state_from_output_timing() {
         let state = fresh_state();
-        // Go to question (not busy)
-        let q = make_parsed("question", serde_json::json!({ "prompt_text": "?" }));
-        apply(&state, &q);
-        assert!(!state.session_states.get("s1").unwrap().is_busy);
-        // Status line means agent is working → busy
-        let event = make_parsed("status-line", serde_json::json!({ "task_name": "Reading" }));
-        let s = apply(&state, &event);
-        assert!(s.is_busy);
+        // No output yet → idle
+        assert_eq!(state.derive_shell_state("s1"), Some("idle".to_string()));
+        // Stamp recent output
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        state.last_output_ms.get("s1").unwrap()
+            .store(now, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(state.derive_shell_state("s1"), Some("busy".to_string()));
+        // Old output → idle
+        state.last_output_ms.get("s1").unwrap()
+            .store(now - 1000, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(state.derive_shell_state("s1"), Some("idle".to_string()));
     }
 
     #[test]
-    fn test_session_state_intent_does_not_change_busy() {
+    fn test_session_state_with_shell_enriches_state() {
         let state = fresh_state();
-        // Go to question (not busy)
-        let q = make_parsed("question", serde_json::json!({ "prompt_text": "?" }));
-        apply(&state, &q);
-        assert!(!state.session_states.get("s1").unwrap().is_busy);
-        // Intent should not change is_busy
-        let event = make_parsed("intent", serde_json::json!({ "text": "thinking" }));
-        let s = apply(&state, &event);
-        assert!(!s.is_busy);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        state.last_output_ms.get("s1").unwrap()
+            .store(now, std::sync::atomic::Ordering::Relaxed);
+        let ss = state.session_state_with_shell("s1").unwrap();
+        assert_eq!(ss.shell_state.as_deref(), Some("busy"));
     }
 
     #[test]

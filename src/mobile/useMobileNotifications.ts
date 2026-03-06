@@ -24,7 +24,7 @@ export function useMobileNotifications(sessions: Accessor<SessionInfo[]>) {
           awaiting: state.awaiting_input,
           rateLimited: state.rate_limited,
           error: state.last_error,
-          busy: state.is_busy,
+          busy: state.shell_state === "busy",
         };
 
         if (prev) {

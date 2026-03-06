@@ -371,6 +371,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
             state.output_buffers.insert(session_id.clone(), Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)));
             state.vt_log_buffers.insert(session_id.clone(), Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)));
+            state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
             spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
             serde_json::json!({"session_id": session_id})
         }
@@ -687,6 +688,7 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
             state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
             state.output_buffers.insert(session_id.clone(), Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)));
             state.vt_log_buffers.insert(session_id.clone(), Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)));
+            state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
             let app_handle = state.app_handle.read().clone();
             if let Some(ref app) = app_handle {

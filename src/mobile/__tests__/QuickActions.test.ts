@@ -30,7 +30,7 @@ describe("QuickActions conditional visibility rule", () => {
   });
 
   it("hides when session is busy but not awaiting input", () => {
-    // is_busy=true, awaiting_input=false → hidden
+    // shell_state=busy, awaiting_input=false → hidden
     expect(shouldShowQuickActions(false)).toBe(false);
   });
 
