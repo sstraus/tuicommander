@@ -29,6 +29,7 @@ export interface TerminalData {
   nameIsCustom: boolean; // When true, OSC/status-line title changes are ignored
   cwd: string | null;
   awaitingInput: AwaitingInputType;
+  awaitingInputConfident: boolean; // High-confidence detection — don't clear on idle→busy
   activity: boolean;
   unseen: boolean; // Terminal completed work while user wasn't viewing it
   progress: number | null; // OSC 9;4 progress (0-100), null when inactive
@@ -122,10 +123,11 @@ function createTerminalsStore() {
       setState("debouncedBusy", id, true);
       busySinceMap.set(id, Date.now());
       busyDurationMap.delete(id);
-      // Agent resumed output after being idle — clear stale question state.
-      // If the agent was truly waiting for input it can't produce output on its own,
-      // so any pending awaitingInput is a false positive from the silence detector.
-      if (prev === "idle" && state.terminals[id]?.awaitingInput != null) {
+      // Agent resumed output after being idle — clear stale question state,
+      // but only for low-confidence detections (silence-based `?` heuristic).
+      // High-confidence detections (regex-matched Ink menus, Y/N prompts) are kept
+      // because Ink agents produce micro-renders while genuinely waiting for input.
+      if (prev === "idle" && state.terminals[id]?.awaitingInput != null && !state.terminals[id]?.awaitingInputConfident) {
         setState("terminals", id, "awaitingInput", null);
       }
     } else if (next !== "busy" && prev === "busy") {
@@ -155,17 +157,17 @@ function createTerminalsStore() {
 
   const actions = {
     /** Add a new terminal */
-    add(data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed"> & { isRemote?: boolean }): string {
+    add(data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed" | "awaitingInputConfident"> & { isRemote?: boolean }): string {
       const id = `term-${state.counter + 1}`;
       setState("counter", (c) => c + 1);
-      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, ...data });
+      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
       return id;
     },
 
     /** Register a terminal with a specific ID (used by floating windows to reconnect to existing PTY sessions) */
-    register(id: string, data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed"> & { isRemote?: boolean }): void {
-      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, ...data });
+    register(id: string, data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "isRemote" | "agentSessionId" | "suggestedActions" | "suggestDismissed" | "awaitingInputConfident"> & { isRemote?: boolean }): void {
+      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, isRemote: false, agentSessionId: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
     },
 
@@ -236,11 +238,12 @@ function createTerminalsStore() {
     },
 
     /** Set terminal awaiting input state */
-    setAwaitingInput(id: string, type: AwaitingInputType): void {
+    setAwaitingInput(id: string, type: AwaitingInputType, confident = false): void {
       const prev = state.terminals[id]?.awaitingInput;
-      appLogger.debug("terminal", `setAwaitingInput(${id}) "${prev}" → "${type}"`);
+      appLogger.debug("terminal", `setAwaitingInput(${id}) "${prev}" → "${type}" confident=${confident}`);
       batch(() => {
         setState("terminals", id, "awaitingInput", type);
+        setState("terminals", id, "awaitingInputConfident", confident);
         // Mark unseen when a non-active terminal starts awaiting input
         if (type != null && prev == null && state.activeId !== id) {
           setState("terminals", id, "unseen", true);
@@ -252,7 +255,10 @@ function createTerminalsStore() {
     clearAwaitingInput(id: string): void {
       const prev = state.terminals[id]?.awaitingInput;
       if (prev) appLogger.debug("terminal", `clearAwaitingInput(${id}) was "${prev}" → null`);
-      setState("terminals", id, "awaitingInput", null);
+      batch(() => {
+        setState("terminals", id, "awaitingInput", null);
+        setState("terminals", id, "awaitingInputConfident", false);
+      });
     },
 
     /** Check if any terminal is awaiting input */

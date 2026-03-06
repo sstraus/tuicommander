@@ -28,7 +28,7 @@ type ParsedEvent =
   | { type: "rate-limit"; pattern_name: string; matched_text: string; retry_after_ms: number | null }
   | { type: "status-line"; task_name: string; full_line: string; time_info: string | null; token_info: string | null }
   | { type: "progress"; state: number; value: number }
-  | { type: "question"; prompt_text: string }
+  | { type: "question"; prompt_text: string; confident: boolean }
   | { type: "usage-limit"; percentage: number; limit_type: string }
   | { type: "plan-file"; path: string }
   | { type: "user-input"; content: string }
@@ -398,13 +398,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
             // is likely a false positive from the agent streaming code/discussion
             // that contains question-like patterns (same logic as rate-limit).
             const qTerminal = terminalsStore.get(props.id);
-            if (qTerminal?.shellState === "busy") {
-              appLogger.debug("terminal", `[ParsedEvent] ${props.id} question IGNORED (shellState=busy, likely false positive) prompt="${parsed.prompt_text}"`);
+            if (qTerminal?.shellState === "busy" && !parsed.confident) {
+              appLogger.debug("terminal", `[ParsedEvent] ${props.id} question IGNORED (shellState=busy, low confidence) prompt="${parsed.prompt_text}"`);
               break;
             }
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} question prompt="${parsed.prompt_text}" → setAwaitingInput("question")`);
-            terminalsStore.setAwaitingInput(props.id, "question");
-            appLogger.info("terminal", `[Notify] ${props.id} question — prompt="${parsed.prompt_text}"`);
+            terminalsStore.setAwaitingInput(props.id, "question", !!parsed.confident);
+            appLogger.info("terminal", `[Notify] ${props.id} question — prompt="${parsed.prompt_text}" confident=${!!parsed.confident}`);
             notificationsStore.playQuestion();
             break;
           }

@@ -32,6 +32,10 @@ pub enum ParsedEvent {
     #[serde(rename = "question")]
     Question {
         prompt_text: String,
+        /// True for high-confidence detections (explicit regex match on known patterns).
+        /// False for low-confidence detections (silence-based `?` heuristic).
+        /// Desktop uses this to skip the "busy = false positive" guard on confident questions.
+        confident: bool,
     },
     /// Claude Code usage limit: "You've used X% of your weekly/session limit"
     #[serde(rename = "usage-limit")]
@@ -719,26 +723,31 @@ fn parse_question(clean: &str) -> Option<ParsedEvent> {
         if QUESTION_RE.is_match(trimmed) {
             return Some(ParsedEvent::Question {
                 prompt_text: trimmed.to_string(),
+                confident: true,
             });
         }
         if MENU_RE.is_match(trimmed) {
             return Some(ParsedEvent::Question {
                 prompt_text: trimmed.to_string(),
+                confident: true,
             });
         }
         if YN_RE.is_match(trimmed) {
             return Some(ParsedEvent::Question {
                 prompt_text: trimmed.to_string(),
+                confident: true,
             });
         }
         if INQUIRER_RE.is_match(trimmed) {
             return Some(ParsedEvent::Question {
                 prompt_text: trimmed.to_string(),
+                confident: true,
             });
         }
         if INK_FOOTER_RE.is_match(trimmed) {
             return Some(ParsedEvent::Question {
                 prompt_text: trimmed.to_string(),
+                confident: true,
             });
         }
         // Generic `?`-ending lines are NOT detected here. They are handled

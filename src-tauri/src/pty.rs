@@ -228,7 +228,7 @@ pub(crate) fn spawn_reader_thread(
                 }
                 let question = silence.lock().check_silence();
                 if let Some(prompt_text) = question {
-                    let parsed = ParsedEvent::Question { prompt_text };
+                    let parsed = ParsedEvent::Question { prompt_text, confident: false };
                     // Broadcast to SSE/WebSocket consumers
                     if let Ok(json) = serde_json::to_value(&parsed) {
                         let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
