@@ -1,0 +1,23 @@
+docs/frontend/STYLE_GUIDE.md
+  e00c433839850e2c 54,56-58,69,72,74-75,114-123,580-603,614
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "b601b4405788892ddb1d5750e35a0f4e368e9163",
+  "prompts": {
+    "e00c433839850e2c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8de55755-0287-44bd-934d-c662a75251e4",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 43,
+      "total_deletions": 12,
+      "accepted_lines": 43,
+      "overriden_lines": 0
+    }
+  }
+}
