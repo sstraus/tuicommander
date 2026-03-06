@@ -43,9 +43,9 @@ The browser client provides the same UI as the desktop app:
 
 Separate from remote access, TUICommander runs an **HTTP API server** for AI tool integration:
 
-- The server always listens on a Unix domain socket at `<config_dir>/mcp.sock` — no port configuration needed
-- AI agents connect via the `tuic-bridge` sidecar binary, which translates MCP stdio transport to HTTP over the Unix socket
-- Bridge configs are auto-installed on first launch for supported agents (Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini)
+- The server always listens on an IPC listener: Unix domain socket at `<config_dir>/mcp.sock` on macOS/Linux, or named pipe `\\.\pipe\tuicommander-mcp` on Windows
+- AI agents connect via the `tuic-bridge` sidecar binary, which translates MCP stdio transport to the IPC listener
+- Bridge configs are auto-installed on first launch for supported agents (Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini). On every subsequent launch, the bridge path is verified and updated if stale (from reinstalls, updates, or moves)
 - The `mcp_server_enabled` toggle in **Settings** → **Services** controls whether MCP protocol tools are exposed, not the server itself
 - Shows server status and active session count in settings
 

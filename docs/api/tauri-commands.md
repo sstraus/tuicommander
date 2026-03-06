@@ -47,7 +47,10 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 |---------|------|---------|-------------|
 | `get_github_status` | `path` | `GitHubStatus` | PR + CI for current branch |
 | `get_ci_checks` | `path` | `Vec<JSON>` | CI check details |
-| `get_repo_pr_statuses` | `path` | `Vec<BranchPrStatus>` | Batch PR status (all branches) |
+| `get_repo_pr_statuses` | `path, include_merged` | `Vec<BranchPrStatus>` | Batch PR status (all branches) |
+| `approve_pr` | `repo_path, pr_number` | `String` | Submit approving review via GitHub API |
+| `get_repo_merge_methods` | `repo_path` | `Vec<String>` | Query repo's allowed merge methods |
+| `merge_pr` | `repo_path, pr_number, merge_method` | `String` | Merge PR via GitHub API |
 
 ## Worktree Management (`worktree.rs`)
 

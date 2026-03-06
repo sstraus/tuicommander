@@ -127,6 +127,38 @@ When a PR is merged or closed on GitHub, TUICommander can automatically clean up
 - Uses safe `git branch -d` — refuses to delete branches with unmerged commits
 - Dirty worktrees (uncommitted changes) always escalate to Ask mode, even when set to Auto
 
+## Remote-Only Pull Requests
+
+When a branch exists only on the remote (not checked out locally) but has an open PR, it still appears in the sidebar with a PR badge. These "remote-only" PRs support inline accordion actions:
+
+- **Checkout** — Creates a local tracking branch from the remote
+- **Create Worktree** — Creates a worktree for the branch
+
+### PR Detail Popover Actions
+
+Clicking the PR badge on any branch (local or remote-only) opens the detail popover. Available actions:
+
+| Button | When Shown | What It Does |
+|--------|------------|--------------|
+| **View Diff** | Always | Opens PR diff in a dedicated panel tab |
+| **Merge** | PR is open, approved, CI green | Merges via GitHub API (auto-detects allowed merge method) |
+| **Approve** | Remote-only PRs | Submits an approving review via GitHub API |
+
+### Post-Merge Cleanup
+
+After merging a PR from the popover, a **cleanup dialog** appears with checkable steps:
+
+1. **Switch to base branch** — with dirty state pre-check (warns if uncommitted changes)
+2. **Pull base branch** — fast-forward only
+3. **Delete local branch** — closes terminals first, refuses to delete default branch
+4. **Delete remote branch** — gracefully handles "already deleted"
+
+Steps execute sequentially via the Rust backend (not PTY — your terminal may be occupied by an AI agent). Each step shows live status: pending → running → success/error.
+
+### Dismiss & Show Dismissed
+
+Remote-only PRs can be dismissed from the sidebar to reduce clutter. A "Show Dismissed" toggle in the sidebar reveals them again.
+
 ## Troubleshooting
 
 **No PR data showing:**

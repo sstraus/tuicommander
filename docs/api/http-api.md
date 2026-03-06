@@ -411,6 +411,25 @@ Content-Type: application/json
 
 Merges a PR via the GitHub API. `mergeMethod` must be `"merge"`, `"squash"`, or `"rebase"`. Returns `{"sha": "..."}` on success.
 
+### Approve PR
+
+```
+POST /repo/approve-pr
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "prNumber": 42 }
+```
+
+Submits an approving review on a PR via the GitHub API.
+
+### Get Repo Merge Methods
+
+```
+GET /repo/merge-methods?path=/path/to/repo
+```
+
+Returns array of allowed merge methods for the repo (e.g., `["squash", "rebase"]`).
+
 ### CI Checks
 
 ```

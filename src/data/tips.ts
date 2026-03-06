@@ -179,4 +179,24 @@ export const TIPS: Tip[] = [
     description: "When a terminal finishes work while you're viewing another tab, its dot turns purple. Click it to clear the unseen state. Sidebar branches also turn purple if they contain unseen terminals.",
     shortcut: null,
   },
+  {
+    feature: "PR Actions",
+    description: "Click a PR badge to open the popover — Merge, Approve, and View Diff are right there. After merging, a cleanup dialog handles branch deletion for you.",
+    shortcut: null,
+  },
+  {
+    feature: "PR Diff Tab",
+    description: "Click View Diff in any PR popover to open a dedicated diff panel with collapsible file sections.",
+    shortcut: null,
+  },
+  {
+    feature: "Dismiss Remote PRs",
+    description: "Remote-only PRs cluttering your sidebar? Dismiss them — use Show Dismissed to bring them back when needed.",
+    shortcut: null,
+  },
+  {
+    feature: "Status Bar Info",
+    description: "Hover the status info text for a tooltip balloon with the full message — no more guessing truncated text.",
+    shortcut: null,
+  },
 ];

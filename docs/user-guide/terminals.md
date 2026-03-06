@@ -51,11 +51,17 @@ Drag tabs to reorder them. Visual drop indicators show where the tab will land.
 
 | Indicator | Meaning |
 |-----------|---------|
-| Solid dot | Terminal has background activity |
+| Grey dot | Terminal is running |
+| Green dot | Terminal is idle |
+| Purple dot | Terminal completed work while you were viewing another tab (clears when selected) |
+| Blue pulsing dot | Background activity in progress |
+| Orange pulsing dot | Agent is awaiting input |
+| Red pulsing dot | Error detected |
 | Question icon | Agent is asking a question |
-| Error icon | Error detected in output |
 | Progress bar | Operation in progress (OSC 9;4) |
 | Amber gradient | Session created via HTTP/MCP (remote session) |
+
+Sidebar branch icons also show purple when they contain unseen terminals.
 
 ### Tab Shortcuts
 

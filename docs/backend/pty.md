@@ -147,10 +147,21 @@ VT100-aware extractor that captures clean log lines from PTY output. Designed fo
 ```rust
 impl VtLogBuffer {
     fn new(rows: u16, cols: u16, capacity: usize) -> Self  // Create with terminal size
-    fn process(&mut self, data: &[u8])                      // Feed raw PTY bytes
+    fn process(&mut self, data: &[u8]) -> Vec<ChangedRow>   // Feed raw PTY bytes, return changed rows
     fn resize(&mut self, rows: u16, cols: u16)              // Update terminal dimensions
+    fn screen_rows(&self) -> Vec<String>                    // Current VT100 screen content (for slash menu detection)
+    fn trim_agent_chrome(&mut self, rows: &[ChangedRow]) -> Vec<ChangedRow> // Strip agent prompt/chrome from full-screen redraws
     fn lines_since_owned(&self, offset: usize) -> (Vec<String>, usize) // Incremental reads
     fn total_lines(&self) -> usize                          // Total accumulated lines
+}
+```
+
+**`ChangedRow`** — describes a row that changed between two `process()` calls:
+
+```rust
+struct ChangedRow {
+    row_index: usize,   // 0-based row in the VT100 screen
+    text: String,        // Clean text content (no ANSI)
 }
 ```
 

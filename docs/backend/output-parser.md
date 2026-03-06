@@ -120,6 +120,52 @@ Examples: `Reading auth module for token flow` · `Writing parser unit tests` ·
 
 The activity dashboard shows intent (crosshair icon) when available, falling back to user prompt (speech bubble) otherwise.
 
+### PlanFile
+
+Plan file path detected in agent output:
+
+```rust
+ParsedEvent::PlanFile {
+    path: String,  // Absolute path to the plan file
+}
+```
+
+### Suggest
+
+Agent-proposed follow-up actions:
+
+```rust
+ParsedEvent::Suggest {
+    items: Vec<String>,  // e.g., ["Run tests", "Review diff", "Deploy"]
+}
+```
+
+Detected via `[[suggest: A | B | C]]`, `[suggest: ...]`, or `⟦suggest: ...⟧` tokens. Items are pipe-delimited.
+
+The `conceal_suggest()` function replaces the raw token in the terminal stream with SGR invisible sequences so it never appears on screen.
+
+### SlashMenu
+
+Slash command menu detected from VT100 screen rows:
+
+```rust
+ParsedEvent::SlashMenu {
+    items: Vec<SlashMenuItem>,  // { command, highlighted }
+}
+```
+
+Detected by `parse_slash_menu()` when `slash_mode` is active — scans the bottom screen rows for 2+ consecutive `/command` patterns. The `❯` prefix marks the highlighted item.
+
+## VT100-Aware Parsing
+
+### `parse_clean_lines(rows: &[ChangedRow]) -> Vec<ParsedEvent>`
+
+Primary entry point for VT100-aware parsing. Accepts `ChangedRow` vectors from `VtLogBuffer.process()` — each row contains clean text extracted from the VT100 screen emulator. This replaces the legacy ANSI-stripping pipeline for mobile/MCP consumers.
+
+### `parse_slash_menu(screen_rows: &[String]) -> Option<ParsedEvent>`
+
+Scans screen bottom rows (from VtLogBuffer) for slash command menus. Only called when `slash_mode` is active (user typed `/`). Returns `SlashMenu` event with all detected commands.
+
 ## Pattern Detection
 
 The parser uses regex patterns to detect:

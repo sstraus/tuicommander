@@ -10,7 +10,10 @@ Integrates with GitHub via the `gh` CLI for PR status, CI checks, and batch quer
 |---------|-----------|-------------|
 | `get_github_status` | `(path: String) -> GitHubStatus` | PR + CI status for current branch |
 | `get_ci_checks` | `(path: String) -> Vec<Value>` | Detailed CI check list |
-| `get_repo_pr_statuses` | `(path: String) -> Vec<BranchPrStatus>` | Batch PR status for all branches |
+| `get_repo_pr_statuses` | `(path: String, include_merged: bool) -> Vec<BranchPrStatus>` | Batch PR status for all branches |
+| `approve_pr` | `(repo_path: String, pr_number: i32) -> String` | Submit approving review via GitHub API |
+| `get_repo_merge_methods` | `(repo_path: String) -> Vec<String>` | Query repo's allowed merge methods (merge, squash, rebase) |
+| `merge_pr` | `(repo_path: String, pr_number: i32, merge_method: String) -> String` | Merge PR via GitHub API |
 
 ## Data Types
 
@@ -139,3 +142,21 @@ Calculates relative luminance using the sRGB formula to determine if a color is 
 `get_repo_pr_statuses` uses `gh pr list` with extensive `--json` fields to fetch all open PRs in a single call. This is efficient: 1 API call returns all branches with PR data.
 
 **Polling budget:** ~2 calls/min/repo = 1,200/hr for 10 repos, well within GitHub's 5,000/hr rate limit.
+
+## PR Approval & Merge
+
+### `approve_pr`
+
+Submits an approving review on a pull request via `gh api`. Used by the remote-only PR popover.
+
+### `get_repo_merge_methods`
+
+Queries the GitHub API for the repository's allowed merge methods (`allow_merge_commit`, `allow_squash_merge`, `allow_rebase_merge`). Returns a `Vec<String>` of enabled methods (e.g., `["squash", "rebase"]`).
+
+### Merge Method Auto-Fallback
+
+When a merge attempt returns HTTP 405 (method not allowed), the frontend automatically retries with the next available merge method. Priority order: configured method → squash → merge → rebase.
+
+## Stale PR Filtering
+
+When `include_merged` is true, `get_repo_pr_statuses` includes recently merged PRs. Stale merged PRs are filtered: if a branch has been recreated after a PR was merged (detected via branch creation timestamp vs PR merge timestamp), the old merged PR is excluded to prevent ghost badges.

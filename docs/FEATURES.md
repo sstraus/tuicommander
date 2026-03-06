@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.6.0 | **Last verified:** 2026-03-02
+**Version:** 0.6.3 | **Last verified:** 2026-03-06
 
 ---
 
@@ -131,7 +131,8 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Merged badge: branches merged into main show a "Merged" badge
 - Question indicator: `?` icon (orange, pulsing) when agent asks a question
 - Quick switcher badge: numbered index shown when `Cmd+Ctrl` held
-- Remote-only branches with open PRs: shown in sidebar with PR badge and "Checkout" action (creates local tracking branch)
+- Remote-only branches with open PRs: shown in sidebar with PR badge and inline accordion actions (Checkout, Create Worktree). Additional actions when PR popover is open: Merge, View Diff, Approve, Dismiss
+- Dismiss/Show Dismissed: remote-only PRs can be dismissed from the sidebar; a "Show Dismissed" toggle reveals them again
 - Branch sorting: main/master/develop always first, then alphabetical; merged PR branches sorted last
 
 ### 2.4 Git Quick Actions
@@ -439,10 +440,17 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 
 ### 6.11 Suggest Follow-up Actions
 - **Protocol:** Agents emit `[[suggest: action1 | action2 | action3]]` tokens after completing a task
-- **Desktop:** Floating chip bar (SuggestOverlay) above terminal, auto-dismiss after 30s or on Esc
+- **Token concealment:** `[[suggest: ...]]` tokens are concealed in terminal output via SGR invisible sequences — the raw token never appears on screen
+- **Desktop:** Floating chip bar (SuggestOverlay) above terminal with larger buttons and keyboard shortcut badges (`1`–`9` to select, `Esc` to dismiss). Auto-dismiss after 30s, on typing, or on Esc
 - **Mobile:** Horizontal scrollable pill buttons above CommandInput in SessionDetailScreen
-- **Action:** Clicking a chip sends the text to the PTY via `write_pty`
+- **Action:** Clicking a chip (or pressing its number key) sends the text to the PTY via `write_pty`
 - **Settings:** Configurable via Settings > Agents > Show suggested follow-up actions
+
+### 6.12 Slash Menu Detection
+- When the user types `/` in a terminal, `slash_mode` activates and the output parser scans the bottom screen rows for slash command menus
+- Detection: 2+ consecutive rows starting with `/command` patterns, with `❯` highlight for the selected item
+- Produces `ParsedEvent::SlashMenu { items }` — used by mobile PWA to render a native bottom-sheet overlay
+- `slash_mode` cleared on user-input events and status-line events
 
 ---
 
@@ -516,8 +524,9 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 - Title, number, link to GitHub
 - Author, timestamps, state, merge readiness, review decision
 - CI check details, labels, line changes, commit count
-- View Diff button: opens PR diff as a dedicated panel tab with collapsible file sections
-- Merge button: visible when PR is open, approved, CI green — merges via GitHub API
+- View Diff button: opens PR diff as a dedicated panel tab with collapsible file sections, dual line numbers, and color-coded additions/deletions
+- Merge button: visible when PR is open, approved, CI green — merges via GitHub API. Merge method auto-detected from repo-allowed methods; auto-fallback to squash on HTTP 405 rejection
+- Approve button: submit an approving review via GitHub API (remote-only PRs)
 - Post-merge cleanup dialog: after merge, offers checkable steps (switch to base, pull, delete local/remote branch)
 - Triggered from: sidebar PR badge, status bar PR badge, status bar CI badge, toolbar notification bell
 
@@ -530,6 +539,7 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 ### 8.5 Merge PR via GitHub API
 - Merge PRs directly from TUICommander without switching to GitHub web
 - Configurable merge strategy per repo: merge commit, squash, or rebase (Settings > Repository > Worktree tab)
+- Merge method auto-detected from repo's allowed methods via GitHub API (`get_repo_merge_methods`); auto-fallback to squash on HTTP 405 rejection
 - Triggered from: PR detail popover (local branches), remote-only PR popover, Merge & Archive workflow (sidebar context menu)
 - Post-merge cleanup dialog: sequential steps executed via Rust backend (not PTY — terminal may be occupied by AI agent)
   - Switch to base branch (with dirty state pre-check)
@@ -589,7 +599,13 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 - 200ms audio window overlap (`keep_ms`) carries context across windows for continuity
 - Final transcription pass on full captured audio at key release
 
-### 9.5 Configuration
+### 9.5 Microphone Permission Detection (macOS)
+- On first use, checks microphone permission via macOS TCC (Transparency, Consent, and Control) framework
+- Permission states: `NotDetermined` (will prompt), `Authorized`, `Denied`, `Restricted`
+- If denied, shows a dialog guiding the user to System Settings > Privacy & Security > Microphone with an "Open Settings" button
+- Linux/Windows: always returns `Authorized` (no TCC framework)
+
+### 9.6 Configuration
 - Enable/disable, hotkey, language (auto-detect or explicit), model download
 - Audio device selection
 - Text correction dictionary (e.g., "new line" → `\n`)
@@ -641,7 +657,7 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 - Reset panel sizes: restore sidebar and panel widths to defaults
 
 ### 11.3 Services
-- HTTP API server: enable/disable toggle. Local MCP connections use a Unix domain socket (no port configuration needed); TCP port only for remote access
+- HTTP API server: always active on IPC listener (Unix domain socket on macOS/Linux, named pipe `\\.\pipe\tuicommander-mcp` on Windows). TCP port only for remote access
 - MCP connection info: bridge sidecar auto-installs configs for supported agents (Claude Code, Cursor, etc.)
 - TUIC native tool toggles: enable/disable individual MCP tools (`session`, `git`, `agent`, `config`, `workspace`, `notify`, `plugin_dev_guide`) to restrict what AI agents can access
 - MCP Upstreams: add/edit/remove upstream MCP servers (HTTP or stdio), per-upstream enable/disable, reconnect, credential storage via OS keyring, live status dots, tool count and metrics
@@ -743,7 +759,7 @@ All data persisted to platform config directory via Rust:
 - WebSocket streaming, Streamable HTTP transport
 - Used by Claude Code, Cursor, and other tools via MCP protocol
 - `tuic-bridge` ships as a Tauri sidecar; auto-installs MCP configs on first launch for Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini
-- Local connections use Unix domain socket (`<config_dir>/mcp.sock`); TCP port reserved for remote access only
+- Local connections use Unix domain socket (`<config_dir>/mcp.sock`) on macOS/Linux or named pipe (`\\.\pipe\tuicommander-mcp`) on Windows; TCP port reserved for remote access only
 
 ### 14.7 macOS Dock Badge
 - Badge count for attention-requiring notifications (questions, errors)
@@ -801,6 +817,7 @@ All data persisted to platform config directory via Rust:
 ### Git & Lazygit
 | Shortcut | Action |
 |----------|--------|
+| `Cmd+B` | Quick branch switch (fuzzy search) |
 | `Cmd+G` | Open lazygit in terminal |
 | `Cmd+Shift+G` | Git operations panel |
 | `Cmd+Shift+L` | Lazygit in split pane |
@@ -961,13 +978,19 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - Tap card to open session detail
 
 ### 18.3 Session Detail Screen
-- Live output via WebSocket (ANSI-stripped, auto-scrolling, 500-line buffer)
+- Live output via WebSocket with `format=log` (VT100-extracted clean lines, auto-scrolling, 500-line buffer)
+- Semantic colorization: log lines are color-coded by type (info, warning, error, diff +/-, file paths) via `classifyLine()` utility
+- Search/filter in output: text search bar filters visible log lines in real time
 - Rich header: agent intent line (italic), current task line, progress bar, usage percentage (red above 80%)
 - Error bar (red tint) when `last_error` is set
 - Rate-limit bar (orange tint) with live countdown timer (`formatRetryCountdown`)
 - Suggest follow-up chips: horizontal scrollable pills from `suggested_actions`, tap to send
+- Slash menu overlay: frosted glass bottom sheet showing detected `/command` entries; tap to send `Ctrl-U` + command + Enter
 - Quick-action chips: Yes, No, y, n, Enter, Ctrl-C
+- **TerminalKeybar:** row of special key buttons (Ctrl+C, Ctrl+D, Tab, Esc, arrow keys) above the main input for common terminal operations
+- **CLI command widget:** agent-specific quick commands (e.g., `/compact`, `/status` for Claude Code) accessible via expandable button
 - Text command input with 16px font (prevents iOS auto-zoom), `inputmode="text"`
+- **Offline retry queue:** `write_pty` calls that fail due to network disconnection are queued and retried when connectivity resumes
 - Back navigation to session list
 
 ### 18.4 Question Banner
@@ -981,25 +1004,34 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - Reads from shared `activityStore`
 - Sticky section headers, tap to navigate to session
 
-### 18.6 Settings
-- Connection status: Connected/Disconnected derived from connection error state
+### 18.6 Session Management
+- **Session kill:** swipe or long-press a session card to kill/close the PTY session
+- **New session:** create a new PTY session from the sessions screen (optional shell/cwd selection)
+
+### 18.7 Settings
+- Connection status: connectivity indicator with real-time Connected/Disconnected state
 - Server URL display
 - Notification sound toggle (localStorage-persisted)
 - Open Desktop UI link
 
-### 18.7 PWA Support
+### 18.8 PWA Support
 - Web app manifest (`mobile-manifest.json`) with standalone display mode
 - iOS Safari and Android Chrome Add to Home Screen support
 - `apple-mobile-web-app-capable` meta tags
 
-### 18.8 Notification Sounds
+### 18.9 Notification Sounds
 - Reuses shared `NotificationManager` (Web Audio API)
 - State transition detection: question, rate-limit, error, completion
 
-### 18.9 Visual Polish
+### 18.10 Visual Polish
 - Frosted glass bottom tabs: `backdrop-filter: blur(20px) saturate(1.8)` with semi-transparent background
 - Elevated card design: `border-radius: var(--radius-xl)`, `background: var(--bg-secondary)`, margin spacing
 - Safe-area-inset padding for notched devices
+
+### 18.11 Standalone CSS
+- Mobile PWA uses its own standalone stylesheet (`src/mobile/mobile.css`), independent from the desktop `global.css`
+- Shares core color palette and border radius tokens; differs in font stacks, layout approach, and iOS-specific rules
+- WebSocket state deduplication: duplicate state pushes are filtered to reduce unnecessary re-renders
 
 ---
 

@@ -81,7 +81,17 @@ Each branch row can show:
 
 ## Remote-Only PRs
 
-When a repository has open PRs on branches that only exist on the remote (not checked out locally), a badge appears in the branch section. Click it to open a popover listing these PRs. Each row shows the PR number, title, and state badge. Click a row to expand an inline accordion showing PR details, with **Checkout** and **Worktree** action buttons to check out the branch or create a worktree from it.
+When a repository has open PRs on branches that only exist on the remote (not checked out locally), a badge appears in the branch section. Click it to open a popover listing these PRs. Each row shows the PR number, title, and state badge. Click a row to expand an inline accordion showing PR details, with action buttons:
+
+- **Checkout** — Create a local tracking branch
+- **Create Worktree** — Create a worktree for the branch
+- **Merge** — Merge the PR via GitHub API (shown when PR is mergeable)
+- **View Diff** — Open PR diff in a panel tab
+- **Approve** — Submit an approving review
+
+### Dismiss & Show Dismissed
+
+Remote-only PRs can be dismissed to reduce sidebar clutter. Right-click the remote PRs badge or use the "Dismiss" action in the accordion. A "Show Dismissed" toggle at the bottom reveals dismissed PRs again.
 
 ## Park Repos
 

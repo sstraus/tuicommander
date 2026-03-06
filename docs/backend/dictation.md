@@ -208,3 +208,24 @@ Stored in dictation config. Applied after transcription, before injecting into t
 - **macOS:** Metal acceleration via whisper-rs (GPU-accelerated)
 - **Linux/Windows:** CPU-only (Metal feature conditionally compiled)
 - Microphone permissions deferred until first use (avoids startup permission popup)
+
+## Microphone Permission Detection
+
+**Module:** `src-tauri/src/dictation/permission.rs`
+
+On macOS, microphone access is gated by the TCC (Transparency, Consent, and Control) framework. The `MicPermission` enum tracks the current state:
+
+| State | Meaning |
+|-------|---------|
+| `NotDetermined` | User hasn't been asked yet — system will prompt on first access |
+| `Authorized` | User granted access |
+| `Denied` | User denied access — must be changed in System Settings |
+| `Restricted` | System policy prevents access (e.g., MDM) |
+
+**API:**
+- `MicPermission::check()` — queries `AVCaptureDevice` authorization status via Objective-C bridge (`objc2`, `objc2-av-foundation`)
+- `MicPermission::open_settings()` — opens macOS System Settings at the Privacy & Security > Microphone pane
+
+**Platform behavior:**
+- **macOS:** Full TCC integration via AVFoundation
+- **Linux/Windows:** Always returns `Authorized` (no TCC framework)
