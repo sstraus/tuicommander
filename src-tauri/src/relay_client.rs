@@ -19,10 +19,13 @@ use crate::state::{AppEvent, AppState};
 // ---------------------------------------------------------------------------
 
 /// Derive a 256-bit AES key from the relay token using HKDF-SHA-256.
+///
+/// BREAKING CHANGE: mobile clients must update their key derivation to use the
+/// same HKDF parameters (salt + info) or they will fail to decrypt messages.
 fn derive_cipher(relay_token: &str) -> Aes256Gcm {
-    let hk = Hkdf::<Sha256>::new(None, relay_token.as_bytes());
+    let hk = Hkdf::<Sha256>::new(Some(b"tuicommander-relay-v1"), relay_token.as_bytes());
     let mut okm = [0u8; 32];
-    hk.expand(b"tuicommander-relay-v1", &mut okm)
+    hk.expand(b"aes-256-gcm-key", &mut okm)
         .expect("HKDF-SHA256 expand for 32 bytes always succeeds");
     Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(&okm))
 }
@@ -277,5 +280,29 @@ mod tests {
         let c2 = derive_cipher("token_b");
         let encrypted = encrypt(&c1, b"test").unwrap();
         assert!(decrypt(&c2, &encrypted).is_err());
+    }
+
+    #[test]
+    fn derive_key_uses_hkdf_with_salt_and_info() {
+        // Verify derive_key uses HKDF-SHA256 with:
+        //   salt = b"tuicommander-relay-v1"
+        //   info = b"aes-256-gcm-key"
+        // by comparing against a manually-computed reference.
+        let hk = Hkdf::<Sha256>::new(
+            Some(b"tuicommander-relay-v1"),
+            b"test_token",
+        );
+        let mut expected = [0u8; 32];
+        hk.expand(b"aes-256-gcm-key", &mut expected).unwrap();
+
+        let reference_cipher =
+            Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(&expected));
+        let cipher = derive_cipher("test_token");
+
+        // If derive_cipher uses the same HKDF params, cross-decryption works
+        let plaintext = b"hkdf salt and info verification";
+        let encrypted = encrypt(&reference_cipher, plaintext).unwrap();
+        let decrypted = decrypt(&cipher, &encrypted).unwrap();
+        assert_eq!(decrypted, plaintext);
     }
 }
