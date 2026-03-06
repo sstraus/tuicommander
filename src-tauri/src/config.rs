@@ -338,6 +338,18 @@ pub(crate) struct AppConfig {
     /// Show suggested follow-up actions from agents (from [[suggest: ...]] tokens)
     #[serde(default = "default_true")]
     pub(crate) suggest_followups: bool,
+    /// Enable cloud relay for mobile access
+    #[serde(default)]
+    pub(crate) relay_enabled: bool,
+    /// WebSocket URL of the relay server
+    #[serde(default)]
+    pub(crate) relay_url: String,
+    /// Bearer token for relay authentication
+    #[serde(default)]
+    pub(crate) relay_token: String,
+    /// Session ID to join on the relay (shared with mobile client)
+    #[serde(default)]
+    pub(crate) relay_session_id: String,
 }
 
 fn default_language() -> String {
@@ -402,6 +414,10 @@ impl Default for AppConfig {
             intent_tab_title: true,
             agent_teams_shim: false,
             suggest_followups: true,
+            relay_enabled: false,
+            relay_url: String::new(),
+            relay_token: String::new(),
+            relay_session_id: String::new(),
         }
     }
 }
@@ -910,6 +926,10 @@ mod tests {
             intent_tab_title: false,
             agent_teams_shim: true,
             suggest_followups: false,
+            relay_enabled: false,
+            relay_url: String::new(),
+            relay_token: String::new(),
+            relay_session_id: String::new(),
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));

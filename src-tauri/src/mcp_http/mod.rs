@@ -557,6 +557,7 @@ mod tests {
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
+            relay_shutdown: parking_lot::Mutex::new(None),
         })
     }
 

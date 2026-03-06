@@ -1,0 +1,4 @@
+# Replace with your domain
+relay.tuicommander.com {
+    reverse_proxy relay:8080
+}

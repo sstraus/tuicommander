@@ -736,6 +736,8 @@ pub struct AppState {
     /// Updated by PTY reader on every non-empty chunk. Used to derive shell_state:
     /// "busy" when now - last < 500ms, "idle" otherwise (matches desktop model).
     pub(crate) last_output_ms: DashMap<String, AtomicU64>,
+    /// Shutdown sender for the relay client — send () to gracefully stop it
+    pub(crate) relay_shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 }
 
 impl AppState {
@@ -1834,6 +1836,7 @@ mod tests {
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
+            relay_shutdown: parking_lot::Mutex::new(None),
         }
     }
 

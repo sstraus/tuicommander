@@ -1,0 +1,37 @@
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - relay-data:/data
+    environment:
+      - RELAY_BIND=0.0.0.0:8080
+      - RELAY_DB_PATH=/data/relay.db
+      # Generate with: openssl rand -hex 32
+      - RELAY_ADMIN_KEY=changeme
+      # Generate VAPID keys (see README)
+      # - RELAY_VAPID_PRIVATE_KEY=
+      # - RELAY_VAPID_SUBJECT=mailto:admin@example.com
+    networks:
+      - relay
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - relay
+
+volumes:
+  relay-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  relay:

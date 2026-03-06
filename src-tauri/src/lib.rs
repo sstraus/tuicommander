@@ -28,6 +28,7 @@ pub(crate) mod plugins;
 pub(crate) mod prompt;
 pub(crate) mod registry;
 pub(crate) mod pty;
+pub(crate) mod relay_client;
 pub(crate) mod sleep_prevention;
 pub(crate) mod state;
 pub(crate) mod worktree;
@@ -582,6 +583,7 @@ pub fn run() {
         mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
         slash_mode: DashMap::new(),
         last_output_ms: DashMap::new(),
+        relay_shutdown: parking_lot::Mutex::new(None),
     });
 
     // Wire the event bus into the upstream registry so status changes emit SSE events.
@@ -608,6 +610,18 @@ pub fn run() {
     // Ensure MCP bridge config is installed and up-to-date in all agent configs.
     // Runs every launch: installs missing entries and updates stale paths.
     agent_mcp::ensure_mcp_configs();
+
+    // Start relay client if configured
+    if config.relay_enabled {
+        let (relay_tx, relay_rx) = tokio::sync::oneshot::channel();
+        *state.relay_shutdown.lock() = Some(relay_tx);
+        let relay_state = state.clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new()
+                .expect("Failed to create tokio runtime for relay client");
+            rt.block_on(relay_client::run(relay_state, relay_rx));
+        });
+    }
 
     // Install the it2 shim when Agent Teams is enabled
     if config.agent_teams_shim {
