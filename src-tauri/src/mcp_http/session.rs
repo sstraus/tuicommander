@@ -872,15 +872,15 @@ async fn handle_ws_log_session(
                         | crate::state::AppEvent::SessionClosed { session_id: sid } => sid == &sid_poll,
                         _ => false,
                     };
-                    if is_relevant {
-                        if let Some(ss) = state_poll.session_states.get(&sid_poll) {
-                            let frame = serde_json::json!({"type": "state", "state": ss.clone()});
-                            if futures_util::SinkExt::send(
-                                &mut ws_sender,
-                                Message::Text(frame.to_string().into()),
-                            ).await.is_err() {
-                                break;
-                            }
+                    if is_relevant
+                        && let Some(ss) = state_poll.session_states.get(&sid_poll)
+                    {
+                        let frame = serde_json::json!({"type": "state", "state": ss.clone()});
+                        if futures_util::SinkExt::send(
+                            &mut ws_sender,
+                            Message::Text(frame.to_string().into()),
+                        ).await.is_err() {
+                            break;
                         }
                     }
                 }

@@ -692,13 +692,13 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
     }
 
     // If we're in a rate-limit backoff window, return stale cache without hitting the API
-    if let Some(until) = *RATE_LIMITED_UNTIL.lock() {
-        if Instant::now() < until {
-            if let Some(stale) = get_stale_cache() {
-                return Ok(stale);
-            }
-            return Err("Rate limited — waiting for backoff to expire".to_string());
+    if let Some(until) = *RATE_LIMITED_UNTIL.lock()
+        && Instant::now() < until
+    {
+        if let Some(stale) = get_stale_cache() {
+            return Ok(stale);
         }
+        return Err("Rate limited — waiting for backoff to expire".to_string());
     }
 
     let token = read_claude_access_token()?
