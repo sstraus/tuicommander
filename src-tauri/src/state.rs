@@ -1319,6 +1319,57 @@ impl VtLogBuffer {
             .collect()
     }
 
+    /// Extract the user-typed text from the prompt line, excluding ghost/dim text.
+    /// Scans from the bottom for `❯` or `>` prompt, then collects non-dim cell contents.
+    pub fn prompt_input_text(&self) -> Option<String> {
+        let screen = self.parser.screen();
+        let (rows, cols) = screen.size();
+        // Scan from bottom to find prompt row
+        for row in (0..rows).rev() {
+            // Check first non-space cell for prompt character
+            let row_text: String = (0..cols)
+                .filter_map(|c| screen.cell(row, c).map(|cell| cell.contents()))
+                .collect::<Vec<_>>()
+                .join("");
+            let trimmed = row_text.trim_start();
+            if !(trimmed.starts_with('❯') || trimmed == ">" || trimmed.starts_with("> ")) {
+                continue;
+            }
+            // Found prompt row — collect non-dim text after prompt char
+            let mut result = String::new();
+            let mut past_prompt = false;
+            for col in 0..cols {
+                let Some(cell) = screen.cell(row, col) else { break };
+                if cell.is_wide_continuation() {
+                    continue;
+                }
+                let ch = cell.contents();
+                if !past_prompt {
+                    // Skip until after prompt char(s) and space
+                    if ch == "❯" || ch == "›" || ch == ">" {
+                        past_prompt = true;
+                        continue;
+                    }
+                    if ch.trim().is_empty() {
+                        continue;
+                    }
+                    past_prompt = true;
+                }
+                if past_prompt && ch.trim().is_empty() && result.is_empty() {
+                    // Skip leading spaces after prompt
+                    continue;
+                }
+                if cell.dim() {
+                    // Ghost/suggestion text — stop collecting
+                    break;
+                }
+                result.push_str(ch);
+            }
+            return Some(result.trim_end().to_string());
+        }
+        None
+    }
+
     /// Total log lines ever finalized (monotonically increasing offset).
     /// Callers can use this as a cursor for incremental reads.
     pub fn total_lines(&self) -> usize {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, fireEvent, cleanup } from "@solidjs/testing-library";
+import { render, fireEvent, cleanup, waitFor } from "@solidjs/testing-library";
 import { CommandWidget } from "../components/CommandWidget";
 
 vi.mock("../../transport", () => ({
@@ -54,10 +54,16 @@ describe("CommandWidget", () => {
     ));
     const buttons = container.querySelectorAll("button");
     const compactBtn = Array.from(buttons).find((b) => b.textContent === "/compact")!;
-    await fireEvent.click(compactBtn);
-    expect(rpc).toHaveBeenCalledWith("write_pty", {
-      sessionId: "s1",
-      data: "\x15/compact\r",
+    fireEvent.click(compactBtn);
+    await waitFor(() => {
+      expect(rpc).toHaveBeenCalledWith("write_pty", {
+        sessionId: "s1",
+        data: "\x15/compact",
+      });
+      expect(rpc).toHaveBeenCalledWith("write_pty", {
+        sessionId: "s1",
+        data: "\r",
+      });
     });
     expect(onDismiss).toHaveBeenCalled();
   });
@@ -69,10 +75,16 @@ describe("CommandWidget", () => {
     ));
     const buttons = container.querySelectorAll("button");
     const opusBtn = Array.from(buttons).find((b) => b.textContent === "opus")!;
-    await fireEvent.click(opusBtn);
-    expect(rpc).toHaveBeenCalledWith("write_pty", {
-      sessionId: "s1",
-      data: "\x15/model opus\r",
+    fireEvent.click(opusBtn);
+    await waitFor(() => {
+      expect(rpc).toHaveBeenCalledWith("write_pty", {
+        sessionId: "s1",
+        data: "\x15/model opus",
+      });
+      expect(rpc).toHaveBeenCalledWith("write_pty", {
+        sessionId: "s1",
+        data: "\r",
+      });
     });
     expect(onDismiss).toHaveBeenCalled();
   });

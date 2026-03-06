@@ -150,15 +150,17 @@ pub(super) async fn get_output(
         let total = buf.total_lines();
         let offset = total.saturating_sub(limit);
         let (lines, _) = buf.lines_since_owned(offset);
-        let screen: Vec<String> = trim_screen_chrome(buf.screen_rows());
-        return (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "lines": lines,
-                "total_lines": total,
-                "screen": screen,
-            })),
-        );
+        let trim = trim_screen_chrome(buf.screen_rows());
+        let input_line = buf.prompt_input_text();
+        let mut resp = serde_json::json!({
+            "lines": lines,
+            "total_lines": total,
+            "screen": trim.rows,
+        });
+        if let Some(il) = &input_line {
+            resp["input_line"] = serde_json::json!(il);
+        }
+        return (StatusCode::OK, Json(resp));
     }
 
     // format=text: serve clean rows from VtLogBuffer (no strip_ansi needed)
@@ -823,16 +825,18 @@ async fn handle_ws_log_session(
                     let Some(vt_log) = state_poll.vt_log_buffers.get(&sid_poll) else {
                         break;
                     };
-                    let (lines, new_offset, screen) = {
+                    let (lines, new_offset, screen, input_line) = {
                         let buf = vt_log.lock();
                         let (l, o) = buf.lines_since_owned(offset);
-                        let s: Vec<String> = trim_screen_chrome(buf.screen_rows());
-                        (l, o, s)
+                        let trim = trim_screen_chrome(buf.screen_rows());
+                        let il = buf.prompt_input_text();
+                        (l, o, trim.rows, il)
                     }; // lock released
                     // Hash screen rows to detect changes
                     use std::hash::{Hash, Hasher};
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();
                     screen.hash(&mut hasher);
+                    input_line.hash(&mut hasher);
                     let screen_hash = hasher.finish();
                     let screen_changed = screen_hash != prev_screen_hash && !screen.is_empty();
                     // Send frame if there are new log lines OR screen content changed
@@ -843,6 +847,9 @@ async fn handle_ws_log_session(
                         }
                         if screen_changed {
                             frame["screen"] = serde_json::json!(screen);
+                            if let Some(ref il) = input_line {
+                                frame["input_line"] = serde_json::json!(il);
+                            }
                             prev_screen_hash = screen_hash;
                         }
                         if futures_util::SinkExt::send(
@@ -921,15 +928,37 @@ async fn handle_ws_log_session(
 ///
 /// The scan window is 15 rows to accommodate Claude Code's full footer
 /// (prompt + input area + separator + status bar = ~12 rows).
-fn trim_screen_chrome(rows: Vec<String>) -> Vec<String> {
+/// Result of trimming screen chrome: cleaned rows.
+struct TrimResult {
+    rows: Vec<String>,
+}
+
+/// A line is a separator if it contains a run of 4+ box-drawing characters.
+/// Claude Code v2.1.70+ adds decorative text to separators (e.g. "──── ■■■ Medium /model ─").
+fn is_separator_line(s: &str) -> bool {
+    let mut run = 0u32;
+    for c in s.chars() {
+        if matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍') {
+            run += 1;
+            if run >= 4 {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    false
+}
+
+fn trim_screen_chrome(rows: Vec<String>) -> TrimResult {
     if rows.is_empty() {
-        return rows;
+        return TrimResult { rows };
     }
 
     // First: trim trailing empty rows (terminal padding below content).
     let content_end = rows.iter().rposition(|r| !r.is_empty()).map_or(0, |i| i + 1);
     if content_end == 0 {
-        return Vec::new();
+        return TrimResult { rows: Vec::new() };
     }
 
     let scan_start = content_end.saturating_sub(15);
@@ -937,8 +966,7 @@ fn trim_screen_chrome(rows: Vec<String>) -> Vec<String> {
     // Strategy 1: find the lowest separator line — everything from separator
     // down is chrome (status bar, permissions line, etc.).
     let separator_idx = (scan_start..content_end).rev().find(|&i| {
-        let t = rows[i].trim();
-        !t.is_empty() && t.chars().all(|c| matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍' | '│'))
+        is_separator_line(rows[i].trim())
     });
 
     // Strategy 2: find prompt line (`❯`, `> `).
@@ -961,11 +989,7 @@ fn trim_screen_chrome(rows: Vec<String>) -> Vec<String> {
             // Extend cutoff up past separators and empty lines above the anchor
             while idx > 0 {
                 let above = rows[idx - 1].trim();
-                if above.is_empty()
-                    || above
-                        .chars()
-                        .all(|c| matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍' | '│'))
-                {
+                if above.is_empty() || is_separator_line(above) {
                     idx -= 1;
                 } else {
                     break;
@@ -975,5 +999,7 @@ fn trim_screen_chrome(rows: Vec<String>) -> Vec<String> {
         }
         None => content_end,
     };
-    rows[..cutoff].to_vec()
+    TrimResult {
+        rows: rows[..cutoff].to_vec(),
+    }
 }

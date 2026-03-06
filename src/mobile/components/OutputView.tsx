@@ -9,6 +9,8 @@ interface OutputViewProps {
   sessionId: string;
   /** Real-time session state pushed via WebSocket (bypasses 3s polling). */
   onStateChange?: (state: Record<string, unknown>) => void;
+  /** Receive current PTY input line text from the prompt row. */
+  onInputLine?: (text: string | null) => void;
   /** When set, only lines matching this query (case-insensitive) are shown. */
   searchQuery?: string;
 }
@@ -85,6 +87,7 @@ export function OutputView(props: OutputViewProps) {
           scrollToBottom();
         },
         onStateChange: props.onStateChange,
+        onInputLine: props.onInputLine,
       },
     )) ?? null;
   });

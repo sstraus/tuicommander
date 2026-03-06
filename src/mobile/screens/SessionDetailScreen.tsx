@@ -49,6 +49,9 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
   const [inputPrefill, setInputPrefill] = createSignal<{ text: string; seq: number }>({ text: "", seq: 0 });
   let prefillSeq = 0;
 
+  // PTY input line synced from WebSocket (what's on the terminal prompt)
+  const [ptyInputLine, setPtyInputLine] = createSignal<string | null>(null);
+
   // Local dismiss flag for the slash menu overlay (resets when new items arrive)
   const [slashMenuDismissed, setSlashMenuDismissed] = createSignal(false);
   let lastSlashMenuItems: unknown = null;
@@ -201,7 +204,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
       </Show>
 
       <div class={styles.outputArea}>
-        <OutputView sessionId={props.session.session_id} onStateChange={setWsState} searchQuery={searchQuery()} />
+        <OutputView sessionId={props.session.session_id} onStateChange={setWsState} onInputLine={setPtyInputLine} searchQuery={searchQuery()} />
         <Show when={!props.sessionExists}>
           <div class={styles.endedOverlay}>
             <span class={styles.endedText}>Session ended</span>
@@ -220,7 +223,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
         agentType={sessionState()?.agent_type as string | null | undefined}
         onCommandWidgetOpen={() => setCommandWidgetOpen(true)}
       />
-      <CommandInput sessionId={props.session.session_id} prefillValue={inputPrefill()} />
+      <CommandInput sessionId={props.session.session_id} prefillValue={inputPrefill()} ptyInputLine={ptyInputLine()} />
       <Show when={showSlashMenu()}>
         <SlashMenuOverlay
           sessionId={props.session.session_id}

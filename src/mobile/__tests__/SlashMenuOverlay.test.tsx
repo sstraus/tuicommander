@@ -24,8 +24,8 @@ describe("SlashMenuOverlay", () => {
       <SlashMenuOverlay sessionId="s1" items={ITEMS} onSelect={() => {}} onDismiss={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
-    // 3 items + 2 arrow buttons
-    expect(buttons.length).toBe(5);
+    // 3 items + 4 arrow buttons (page up, up, down, page down)
+    expect(buttons.length).toBe(7);
   });
 
   it("displays command and description text", () => {
@@ -79,7 +79,7 @@ describe("SlashMenuOverlay", () => {
       <SlashMenuOverlay sessionId="s1" items={[]} onSelect={() => {}} onDismiss={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
-    // Only the 2 arrow buttons, no menu items
-    expect(buttons.length).toBe(2);
+    // Only the 4 arrow buttons, no menu items
+    expect(buttons.length).toBe(4);
   });
 });

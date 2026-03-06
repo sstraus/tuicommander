@@ -608,6 +608,8 @@ export interface SubscribePtyOptions {
   onLogLines?: (lines: unknown[]) => void;
   /** Receive current screen rows (plain strings) pushed alongside log frames. */
   onScreenRows?: (rows: string[]) => void;
+  /** Receive the current PTY input line text (extracted from prompt row). */
+  onInputLine?: (text: string | null) => void;
   /** Starting offset for log-mode catch-up (skip lines already fetched via HTTP). */
   logOffset?: number;
   /** Receive real-time SessionState snapshots pushed by the server on parsed events. */
@@ -681,6 +683,10 @@ export async function subscribePty(
             const screen = frame.screen as string[] | undefined;
             if (screen && opts.onScreenRows) {
               opts.onScreenRows(screen);
+            }
+            if (opts.onInputLine && frame.screen !== undefined) {
+              const il = (frame as Record<string, unknown>).input_line;
+              opts.onInputLine(typeof il === "string" ? il : null);
             }
             break;
           }
