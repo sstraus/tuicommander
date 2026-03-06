@@ -89,15 +89,15 @@ export function useSessions() {
   );
 
   onCleanup(() => {
-    unlistenCreated.then((fn) => fn());
-    unlistenClosed.then((fn) => fn());
+    unlistenCreated.then((fn) => fn()).catch(() => {});
+    unlistenClosed.then((fn) => fn()).catch(() => {});
   });
 
   /** Force an immediate refresh (sets refreshing=true while in-flight) */
   function refresh() {
     const token = ++refreshToken;
     setRefreshing(true);
-    fetchSessions().catch(() => {}).finally(() => {
+    fetchSessions().finally(() => {
       if (refreshToken === token) setRefreshing(false);
     });
   }
