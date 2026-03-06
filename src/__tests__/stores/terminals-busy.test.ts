@@ -250,4 +250,44 @@ describe("terminalsStore debounced busy signal", () => {
       });
     });
   });
+
+  describe("awaitingInputConfident", () => {
+    it("does not clear awaitingInput on idle→busy when confident is true", () => {
+      createRoot((dispose) => {
+        const id = addTerminal();
+        store.update(id, { shellState: "busy" });
+        store.update(id, { shellState: "idle" });
+        store.setAwaitingInput(id, "question", true);
+        // Idle→busy should NOT clear a confident detection (e.g. Ink menu)
+        store.update(id, { shellState: "busy" });
+        expect(store.get(id)?.awaitingInput).toBe("question");
+        dispose();
+      });
+    });
+
+    it("clears awaitingInput on idle→busy when confident is false", () => {
+      createRoot((dispose) => {
+        const id = addTerminal();
+        store.update(id, { shellState: "busy" });
+        store.update(id, { shellState: "idle" });
+        store.setAwaitingInput(id, "question", false);
+        // Idle→busy SHOULD clear a low-confidence detection (silence-based heuristic)
+        store.update(id, { shellState: "busy" });
+        expect(store.get(id)?.awaitingInput).toBeNull();
+        dispose();
+      });
+    });
+
+    it("clearAwaitingInput resets confident flag", () => {
+      createRoot((dispose) => {
+        const id = addTerminal();
+        store.setAwaitingInput(id, "question", true);
+        expect(store.get(id)?.awaitingInputConfident).toBe(true);
+        store.clearAwaitingInput(id);
+        expect(store.get(id)?.awaitingInput).toBeNull();
+        expect(store.get(id)?.awaitingInputConfident).toBe(false);
+        dispose();
+      });
+    });
+  });
 });

@@ -696,9 +696,11 @@ fn parse_active_subtasks(clean: &str) -> Option<ParsedEvent> {
         if let Some(caps) = SUBTASK_COUNT_RE.captures(trimmed) {
             let count: u32 = caps[1].parse().unwrap_or(0);
             let task_type = caps[2].trim().to_string();
-            if count > 0 && !task_type.is_empty() {
+            if count > 0 {
                 return Some(ParsedEvent::ActiveSubtasks { count, task_type });
             }
+            // Count-bearing ›› line with count=0 → sub-tasks finished
+            return Some(ParsedEvent::ActiveSubtasks { count: 0, task_type: String::new() });
         }
         // ›› line present but no count suffix → sub-tasks finished
         if SUBTASK_BARE_RE.is_match(trimmed) {
@@ -3181,6 +3183,33 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
                 assert_eq!(*count, 0);
             }
             _ => panic!("Expected ActiveSubtasks with count=0, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_explicit_zero_count() {
+        let parser = OutputParser::new();
+        // ›› mode · 0 bash → count=0 (sub-tasks finished, via count-regex branch)
+        let events = parser.parse("\u{203A}\u{203A} finishing \u{00B7} 0 bash");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, .. }) => {
+                assert_eq!(*count, 0);
+            }
+            _ => panic!("Expected ActiveSubtasks with count=0, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_embedded_in_multiline_output() {
+        let parser = OutputParser::new();
+        let input = "some other output\n\u{203A}\u{203A} working \u{00B7} 2 bash\nmore output after";
+        let events = parser.parse(input);
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 2);
+                assert_eq!(task_type, "bash");
+            }
+            _ => panic!("Expected ActiveSubtasks in multiline input, got: {:?}", events),
         }
     }
 

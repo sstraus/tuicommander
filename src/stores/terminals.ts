@@ -118,9 +118,10 @@ function createTerminalsStore() {
       // Entering busy: clear any cooldown, mark busy, record start time.
       // If a cooldown was active, this is a continuation of the same busy period
       // (e.g. shell prompt redraw after agent exit) — keep the original start time.
-      const hadCooldown = cooldownTimers.has(id);
+      const existingCooldown = cooldownTimers.get(id);
+      const hadCooldown = existingCooldown != null;
       if (hadCooldown) {
-        clearTimeout(cooldownTimers.get(id)!);
+        clearTimeout(existingCooldown);
         cooldownTimers.delete(id);
       }
       setState("debouncedBusy", id, true);

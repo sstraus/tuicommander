@@ -973,6 +973,7 @@ impl AppState {
                     entry.awaiting_input = false;
                     entry.question_text = None;
                     entry.rate_limited = false;
+                    entry.active_sub_tasks = 0;
                     entry.last_activity_ms = now_ms;
                 }
             }

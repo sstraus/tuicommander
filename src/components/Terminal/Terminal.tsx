@@ -439,7 +439,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             // Refresh last relevant prompt from Rust (word-count filtering happens backend-side)
             invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
               if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
-            });
+            }).catch(() => {});
             break;
           case "api-error": {
             const agent = terminalsStore.get(props.id)?.agentType;
