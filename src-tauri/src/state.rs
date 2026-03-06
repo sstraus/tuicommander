@@ -74,7 +74,7 @@ pub enum AppEvent {
 /// Per-session state accumulated from broadcast events.
 /// Updated by a background task that subscribes to the event bus.
 /// Read by `GET /sessions` to enrich the response for REST-polling clients.
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
 pub(crate) struct SessionState {
     /// True when a Question parsed event is pending (no subsequent user-input or pty-exit)
     pub awaiting_input: bool,
@@ -836,10 +836,15 @@ impl AppState {
                                 s.last_error = None;
                                 s.suggested_actions = None;
                                 s.slash_menu_items = None;
-                                // Capture current task name from status line
-                                s.current_task = parsed.get("task_name")
+                                // Only update current_task + activity timestamp when task changes.
+                                // Spinner rotations (same task name) are suppressed to avoid
+                                // churning the state and flooding WS clients.
+                                let new_task = parsed.get("task_name")
                                     .and_then(|v| v.as_str())
                                     .map(|t| t.to_string());
+                                if s.current_task != new_task {
+                                    s.current_task = new_task;
+                                }
                             }
                             "intent" => {
                                 s.agent_intent = parsed.get("text")

@@ -558,7 +558,15 @@ describe("TabBar", () => {
   });
 
   describe("diff tabs", () => {
+    /** Set up an active repo+branch so diff/md tab visibility filtering works */
+    function setupActiveRepo() {
+      repositoriesStore.add({ path: "/repo", displayName: "repo" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main");
+    }
+
     it("renders diff tabs", () => {
+      setupActiveRepo();
       diffTabsStore.add("/repo", "/repo/file.ts", "M");
 
       const { container } = render(() => (
@@ -570,6 +578,7 @@ describe("TabBar", () => {
     });
 
     it("clicking diff tab selects it", () => {
+      setupActiveRepo();
       const id = diffTabsStore.add("/repo", "/repo/file.ts", "M");
       const handleSelect = vi.fn();
 
@@ -582,6 +591,7 @@ describe("TabBar", () => {
     });
 
     it("closing diff tab via close button", () => {
+      setupActiveRepo();
       const id = diffTabsStore.add("/repo", "/repo/file.ts", "M");
       const handleClose = vi.fn();
 
@@ -594,6 +604,7 @@ describe("TabBar", () => {
     });
 
     it("middle-click closes diff tab", () => {
+      setupActiveRepo();
       const id = diffTabsStore.add("/repo", "/repo/file.ts", "M");
       const handleClose = vi.fn();
 
@@ -606,7 +617,14 @@ describe("TabBar", () => {
   });
 
   describe("markdown tabs", () => {
+    function setupActiveRepo() {
+      repositoriesStore.add({ path: "/repo", displayName: "repo" });
+      repositoriesStore.setActive("/repo");
+      repositoriesStore.setActiveBranch("/repo", "main");
+    }
+
     it("renders markdown tabs", () => {
+      setupActiveRepo();
       mdTabsStore.add("/repo", "/repo/readme.md");
 
       const { container } = render(() => (
@@ -618,6 +636,7 @@ describe("TabBar", () => {
     });
 
     it("clicking md tab selects it", () => {
+      setupActiveRepo();
       const id = mdTabsStore.add("/repo", "/repo/readme.md");
       const handleSelect = vi.fn();
 
@@ -630,6 +649,7 @@ describe("TabBar", () => {
     });
 
     it("closing md tab via close button", () => {
+      setupActiveRepo();
       const id = mdTabsStore.add("/repo", "/repo/readme.md");
       const handleClose = vi.fn();
 

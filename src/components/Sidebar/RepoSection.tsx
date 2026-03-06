@@ -274,7 +274,7 @@ export const BranchItem: Component<{
 
   return (
     <div
-      class={cx(s.branchItem, props.isActive && s.active)}
+      class={cx(s.branchItem, props.isActive && s.active, hasActivity() && s.hasActivity)}
       onClick={props.onSelect}
       onContextMenu={ctxMenu.open}
     >

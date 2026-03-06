@@ -370,6 +370,10 @@
   padding-left: 6px;
 }
 
+.branchItem.hasActivity {
+  /* Semantic marker — visual treatment is on .branchIcon inside */
+}
+
 .branchIcon {
   font-size: var(--font-md);
   width: 18px;

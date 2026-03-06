@@ -1417,8 +1417,10 @@ mod tests {
 
     #[test]
     fn agent_teams_shim_round_trips_via_json() {
-        let mut config = AppConfig::default();
-        config.agent_teams_shim = true;
+        let config = AppConfig {
+            agent_teams_shim: true,
+            ..AppConfig::default()
+        };
         let json = serde_json::to_string(&config).unwrap();
         let loaded: AppConfig = serde_json::from_str(&json).unwrap();
         assert!(loaded.agent_teams_shim);

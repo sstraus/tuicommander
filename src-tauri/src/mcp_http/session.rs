@@ -819,6 +819,8 @@ async fn handle_ws_log_session(
         let mut offset = initial_offset;
         let mut event_rx = state_poll.event_bus.subscribe();
         let mut prev_screen_hash: u64 = 0;
+        // Dedup: only send state frames when SessionState actually changed
+        let mut prev_state: Option<crate::state::SessionState> = None;
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(200)) => {
@@ -865,22 +867,28 @@ async fn handle_ws_log_session(
                 }
                 event = event_rx.recv() => {
                     let Ok(event) = event else { continue };
-                    // Forward state snapshot when a parsed event fires for this session.
+                    // Forward state snapshot when a parsed event fires for this session,
+                    // but only if the state actually changed (dedup spinner rotations, etc.)
                     let is_relevant = match &event {
                         crate::state::AppEvent::PtyParsed { session_id: sid, .. }
                         | crate::state::AppEvent::PtyExit { session_id: sid }
                         | crate::state::AppEvent::SessionClosed { session_id: sid } => sid == &sid_poll,
                         _ => false,
                     };
-                    if is_relevant
-                        && let Some(ss) = state_poll.session_states.get(&sid_poll)
-                    {
-                        let frame = serde_json::json!({"type": "state", "state": ss.clone()});
-                        if futures_util::SinkExt::send(
-                            &mut ws_sender,
-                            Message::Text(frame.to_string().into()),
-                        ).await.is_err() {
-                            break;
+                    if is_relevant {
+                        if let Some(ss) = state_poll.session_states.get(&sid_poll) {
+                            let current = ss.clone();
+                            drop(ss); // release DashMap ref before async send
+                            if prev_state.as_ref() != Some(&current) {
+                                let frame = serde_json::json!({"type": "state", "state": &current});
+                                prev_state = Some(current);
+                                if futures_util::SinkExt::send(
+                                    &mut ws_sender,
+                                    Message::Text(frame.to_string().into()),
+                                ).await.is_err() {
+                                    break;
+                                }
+                            }
                         }
                     }
                 }

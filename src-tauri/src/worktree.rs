@@ -1139,7 +1139,7 @@ mod tests {
     fn generate_clone_branch_name_avoids_collisions() {
         // Pre-populate with one name and verify a different one is generated
         let first = generate_clone_branch_name("main", &[]);
-        let second = generate_clone_branch_name("main", &[first.clone()]);
+        let second = generate_clone_branch_name("main", std::slice::from_ref(&first));
         assert_ne!(first, second, "Should generate unique names");
     }
 

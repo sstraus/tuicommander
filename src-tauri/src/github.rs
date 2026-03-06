@@ -1538,6 +1538,7 @@ mod tests {
     // --- parse_graphql_prs tests ---
 
     /// Helper to build a GraphQL PR node for testing
+    #[expect(clippy::too_many_arguments)]
     fn graphql_pr_node(
         number: i64,
         title: &str,

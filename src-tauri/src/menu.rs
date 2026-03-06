@@ -202,6 +202,5 @@ mod tests {
     #[test]
     fn module_compiles() {
         // If this test runs, the menu module compiles correctly.
-        assert!(true);
     }
 }

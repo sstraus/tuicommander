@@ -498,8 +498,17 @@ describe("githubStore", () => {
   });
 
   describe("polling", () => {
+    // pollAll() checks the circuit breaker before polling — let it pass by default
+    beforeEach(() => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
+        return Promise.resolve(null);
+      });
+    });
+
     it("polls repos on startPolling using batched get_all_pr_statuses", async () => {
       mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
         if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [makePrStatus()] });
         return Promise.resolve(null);
       });
@@ -522,6 +531,7 @@ describe("githubStore", () => {
     it("includes all repo paths in batched poll", async () => {
       mockGetPaths.mockReturnValue(["/repo1", "/repo2"]);
       mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
         if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [], "/repo2": [] });
         return Promise.resolve(null);
       });
@@ -550,6 +560,7 @@ describe("githubStore", () => {
 
     it("uses includeMerged=true on startup poll and false on subsequent", async () => {
       mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
         if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [] });
         return Promise.resolve(null);
       });
@@ -579,6 +590,7 @@ describe("githubStore", () => {
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
         if (cmd === "get_all_pr_statuses") return Promise.reject(new Error("batch failed"));
         if (cmd === "get_repo_pr_statuses") return Promise.reject(new Error("network error"));
         return Promise.resolve(null);
@@ -588,8 +600,8 @@ describe("githubStore", () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
-        // Fallback per-repo call should have been made
-        expect(mockInvoke).toHaveBeenCalledWith("get_repo_pr_statuses", { path: "/repo1" });
+        // Fallback per-repo call should have been made (includeMerged=true on startup poll)
+        expect(mockInvoke).toHaveBeenCalledWith("get_repo_pr_statuses", { path: "/repo1", includeMerged: true });
         // Per-repo failure should be logged as error
         expect(consoleSpy).toHaveBeenCalledWith(
           "[github]",
@@ -605,6 +617,7 @@ describe("githubStore", () => {
 
     it("stopPolling prevents further polls", async () => {
       mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
         if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [] });
         return Promise.resolve(null);
       });
@@ -626,6 +639,7 @@ describe("githubStore", () => {
 
     it("pauses polling when document becomes hidden", async () => {
       mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
         if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [makePrStatus()] });
         return Promise.resolve(null);
       });
@@ -652,6 +666,7 @@ describe("githubStore", () => {
 
     it("resumes polling with immediate poll when document becomes visible", async () => {
       mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
         if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [makePrStatus()] });
         return Promise.resolve(null);
       });
@@ -699,6 +714,7 @@ describe("githubStore", () => {
     it("updates store state from successful batch poll response", async () => {
       const prStatus = makePrStatus({ branch: "main", state: "OPEN", number: 7 });
       mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
         if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [prStatus] });
         return Promise.resolve(null);
       });
@@ -755,6 +771,7 @@ describe("githubStore", () => {
     it("persists PR state to localStorage after successful poll", async () => {
       const prStatus = makePrStatus({ branch: "feat/x", state: "OPEN" });
       mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
         if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [prStatus] });
         return Promise.resolve(null);
       });
@@ -785,6 +802,7 @@ describe("githubStore", () => {
       // New poll returns the same PR as MERGED → should emit 'merged' notification
       const mergedPr = makePrStatus({ branch: "feat/y", state: "MERGED", number: 99 });
       mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
         if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [mergedPr] });
         return Promise.resolve(null);
       });

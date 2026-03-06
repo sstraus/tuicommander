@@ -1257,9 +1257,11 @@ mod tests {
     #[test]
     fn cache_serialization_roundtrip() {
         let mut cache: SessionStatsCache = HashMap::new();
-        let mut file_stats = CachedFileStats::default();
-        file_stats.file_size = 12345;
-        file_stats.total_input_tokens = 1000;
+        let mut file_stats = CachedFileStats {
+            file_size: 12345,
+            total_input_tokens: 1000,
+            ..CachedFileStats::default()
+        };
         file_stats.session_ids.insert("s1".to_string());
 
         let mut project = HashMap::new();
@@ -1438,7 +1440,9 @@ mod tests {
 
     #[test]
     fn resolve_slug_handles_empty() {
-        assert!(resolve_slug_to_path("").is_none() || resolve_slug_to_path("").unwrap().is_empty() || true);
+        // Empty slug should not resolve to a meaningful path
+        let result = resolve_slug_to_path("");
+        assert!(result.is_none() || result.as_deref() == Some("/"));
     }
 
     /// Single test for API cache to avoid parallel test race conditions
@@ -1507,11 +1511,11 @@ mod tests {
 
         // Set backoff in the future — should block
         *guard = Some(Instant::now() + Duration::from_secs(60));
-        assert!(guard.map_or(false, |until| Instant::now() < until));
+        assert!(guard.is_some_and(|until| Instant::now() < until));
 
         // Set backoff in the past — should not block
         *guard = Some(Instant::now() - Duration::from_secs(1));
-        assert!(guard.map_or(true, |until| Instant::now() >= until));
+        assert!(guard.is_none_or(|until| Instant::now() >= until));
 
         // Clear backoff
         *guard = None;

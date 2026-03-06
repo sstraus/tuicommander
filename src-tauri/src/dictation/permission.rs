@@ -10,6 +10,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MicPermission {
     /// Never asked — system will prompt on first microphone access.
+    #[cfg_attr(not(target_os = "macos"), expect(dead_code))]
     NotDetermined,
     /// User granted access.
     Authorized,

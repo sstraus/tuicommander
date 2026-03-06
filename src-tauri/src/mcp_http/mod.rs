@@ -1853,9 +1853,10 @@ mod tests {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let state = test_state();
-        let tmp_dir = std::env::temp_dir().join(format!("tuic-sock-test-{}", uuid::Uuid::new_v4()));
+        // Use /tmp directly — macOS $TMPDIR can exceed SUN_LEN (104 bytes)
+        let tmp_dir = std::path::PathBuf::from("/tmp").join(format!("tuic-{}", &uuid::Uuid::new_v4().to_string()[..8]));
         std::fs::create_dir_all(&tmp_dir).unwrap();
-        let sock_path = tmp_dir.join("mcp.sock");
+        let sock_path = tmp_dir.join("s");
 
         // Bind Unix socket and serve the router (no auth, MCP enabled)
         let app = build_router(state.clone(), false, true);
@@ -1907,7 +1908,7 @@ mod tests {
         let app = build_router(state, false, true);
         let resp = app
             .oneshot(
-                Request::get(&format!("/sessions/{sid}/output?format=log"))
+                Request::get(format!("/sessions/{sid}/output?format=log"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1953,7 +1954,7 @@ mod tests {
         let app = build_router(state, false, true);
         let resp = app
             .oneshot(
-                Request::get(&format!("/sessions/{sid}/output?format=log&limit=3"))
+                Request::get(format!("/sessions/{sid}/output?format=log&limit=3"))
                     .body(Body::empty())
                     .unwrap(),
             )
