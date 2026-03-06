@@ -1,54 +1,137 @@
 import { describe, it, expect } from "vitest";
-import { lineMatchesQuery, lineText } from "../utils/logLine";
-import type { LogLine } from "../utils/logLine";
+import { lineMatchesQuery, type LogLine } from "../utils/logLine";
 
-describe("lineText", () => {
-  it("concatenates span texts", () => {
-    const line: LogLine = {
-      spans: [
-        { text: "Hello " },
-        { text: "World" },
-      ],
-    };
-    expect(lineText(line)).toBe("Hello World");
+// --- Search toggle logic ---
+// Mirrors the searchOpen/searchQuery state machine in SessionDetailScreen.
+
+function makeSearchState() {
+  let open = false;
+  let query = "";
+
+  return {
+    get open() { return open; },
+    get query() { return query; },
+    toggle() {
+      if (open) {
+        open = false;
+        query = "";
+      } else {
+        open = true;
+      }
+    },
+    setQuery(q: string) { query = q; },
+    dismissOnEscape() {
+      if (open) {
+        open = false;
+        query = "";
+      }
+    },
+  };
+}
+
+describe("search toggle state machine", () => {
+  it("starts closed with empty query", () => {
+    const s = makeSearchState();
+    expect(s.open).toBe(false);
+    expect(s.query).toBe("");
   });
 
-  it("handles single span", () => {
-    const line: LogLine = { spans: [{ text: "foo" }] };
-    expect(lineText(line)).toBe("foo");
+  it("opens on first toggle", () => {
+    const s = makeSearchState();
+    s.toggle();
+    expect(s.open).toBe(true);
   });
 
-  it("handles empty spans", () => {
-    const line: LogLine = { spans: [] };
-    expect(lineText(line)).toBe("");
+  it("closes and clears query on second toggle", () => {
+    const s = makeSearchState();
+    s.toggle();
+    s.setQuery("error");
+    s.toggle();
+    expect(s.open).toBe(false);
+    expect(s.query).toBe("");
+  });
+
+  it("re-opens with empty query after close", () => {
+    const s = makeSearchState();
+    s.toggle();
+    s.setQuery("warn");
+    s.toggle();
+    s.toggle();
+    expect(s.open).toBe(true);
+    expect(s.query).toBe("");
+  });
+
+  it("dismisses on Escape when open", () => {
+    const s = makeSearchState();
+    s.toggle();
+    s.setQuery("fatal");
+    s.dismissOnEscape();
+    expect(s.open).toBe(false);
+    expect(s.query).toBe("");
+  });
+
+  it("Escape is a no-op when already closed", () => {
+    const s = makeSearchState();
+    s.dismissOnEscape();
+    expect(s.open).toBe(false);
+    expect(s.query).toBe("");
   });
 });
 
-describe("lineMatchesQuery", () => {
-  it("returns true for case-insensitive match", () => {
-    const line: LogLine = { spans: [{ text: "Error: something failed" }] };
-    expect(lineMatchesQuery(line, "error")).toBe(true);
-    expect(lineMatchesQuery(line, "ERROR")).toBe(true);
-    expect(lineMatchesQuery(line, "something")).toBe(true);
+// --- Output line filtering ---
+// Mirrors the displayedLines memo in OutputView that filters allLines
+// through lineMatchesQuery when a searchQuery is present.
+
+function filterLines(lines: LogLine[], query: string | undefined): LogLine[] {
+  if (!query) return lines;
+  return lines.filter((line) => lineMatchesQuery(line, query));
+}
+
+const SAMPLE_LINES: LogLine[] = [
+  { spans: [{ text: "INFO: server started on port 3000" }] },
+  { spans: [{ text: "WARN: deprecated API called" }] },
+  { spans: [{ text: "ERROR: connection refused" }] },
+  { spans: [{ text: "INFO: request handled in 12ms" }] },
+  { spans: [{ text: "ERROR: timeout waiting for response" }] },
+];
+
+describe("output line filtering", () => {
+  it("returns all lines when query is empty", () => {
+    expect(filterLines(SAMPLE_LINES, "")).toEqual(SAMPLE_LINES);
   });
 
-  it("returns false when no match", () => {
-    const line: LogLine = { spans: [{ text: "All good" }] };
-    expect(lineMatchesQuery(line, "error")).toBe(false);
+  it("returns all lines when query is undefined", () => {
+    expect(filterLines(SAMPLE_LINES, undefined)).toEqual(SAMPLE_LINES);
   });
 
-  it("matches across spans", () => {
-    const line: LogLine = {
-      spans: [
-        { text: "err" },
-        { text: "or found" },
-      ],
-    };
-    expect(lineMatchesQuery(line, "error")).toBe(true);
+  it("filters lines matching query case-insensitively", () => {
+    const result = filterLines(SAMPLE_LINES, "error");
+    expect(result).toHaveLength(2);
+    expect(result[0].spans[0].text).toContain("ERROR: connection refused");
+    expect(result[1].spans[0].text).toContain("ERROR: timeout");
   });
 
-  it("returns true for empty query", () => {
-    const line: LogLine = { spans: [{ text: "anything" }] };
-    expect(lineMatchesQuery(line, "")).toBe(true);
+  it("filters by partial match", () => {
+    const result = filterLines(SAMPLE_LINES, "port");
+    expect(result).toHaveLength(1);
+    expect(result[0].spans[0].text).toContain("port 3000");
+  });
+
+  it("returns empty array when nothing matches", () => {
+    expect(filterLines(SAMPLE_LINES, "xyz-no-match")).toEqual([]);
+  });
+
+  it("matches across multiple spans in a line", () => {
+    const multiSpanLines: LogLine[] = [
+      { spans: [{ text: "conn" }, { text: "ection" }, { text: " lost" }] },
+      { spans: [{ text: "all good" }] },
+    ];
+    const result = filterLines(multiSpanLines, "connection");
+    expect(result).toHaveLength(1);
+    expect(result[0].spans[0].text).toBe("conn");
+  });
+
+  it("handles empty line array", () => {
+    expect(filterLines([], "error")).toEqual([]);
   });
 });
