@@ -1,0 +1,47 @@
+docs/user-guide/remote-access.md
+  e00c433839850e2c 46-48
+docs/api/tauri-commands.md
+  e00c433839850e2c 50-53
+docs/backend/output-parser.md
+  e00c433839850e2c 123-168
+docs/FEATURES.md
+  e00c433839850e2c 6,134-135,443-444,446,449-454,527-529,542,602-608,660,762,820,981-983,988,990-991,993,1007-1012,1017,1022,1026,1031-1035
+docs/api/http-api.md
+  e00c433839850e2c 414-432
+docs/backend/github.md
+  e00c433839850e2c 13-16,145-162
+docs/user-guide/github-integration.md
+  e00c433839850e2c 130-161
+docs/user-guide/terminals.md
+  e00c433839850e2c 54-59,64
+docs/backend/dictation.md
+  e00c433839850e2c 211-231
+docs/backend/pty.md
+  e00c433839850e2c 150,152-153,159-164
+src/data/tips.ts
+  e00c433839850e2c 182-201
+CHANGELOG.md
+  e00c433839850e2c 33-37
+docs/user-guide/sidebar.md
+  e00c433839850e2c 84-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "99413589eab9f48be423c0f64aa121c9e5d058dc",
+  "prompts": {
+    "e00c433839850e2c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8de55755-0287-44bd-934d-c662a75251e4",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 250,
+      "total_deletions": 24,
+      "accepted_lines": 250,
+      "overriden_lines": 0
+    }
+  }
+}
