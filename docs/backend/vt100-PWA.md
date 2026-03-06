@@ -311,51 +311,42 @@ displayedLines = [...logLines, ...screenRows]  // combined
 - `scrollToBottom(force?)`: skips if user scrolled up, unless `force=true`
 - Initial load and session exit force-scroll
 
-### CommandInput — Bidirectional Sync
+### CommandInput — Last-Writer-Wins Sync
 
 **File:** `src/mobile/components/CommandInput.tsx`
 
-The textarea syncs bidirectionally with the PTY input line.
+The textarea syncs bidirectionally with the PTY input line using a **last-writer-wins** strategy. Only one side writes at a time — there is no attempt at incremental character-by-character synchronization.
 
 #### Direction 1: PTY → Textarea
 
 Source: `ptyInputLine` prop (from WebSocket `input_line` field).
 
-**Guards:**
-- `userEditing` flag — when user is typing, PTY changes don't overwrite
-- `SYNC_GUARD_MS` (400ms) — after any outbound write, ignore PTY echo-back
+When `userEditing` is false, every incoming `input_line` replaces the textarea content entirely:
 
 ```typescript
 createEffect(() => {
   const il = props.ptyInputLine;
   if (userEditing) return;
-  if (Date.now() - lastSyncTs < SYNC_GUARD_MS) return;
   setValue(il ?? "");
 });
 ```
 
 #### Direction 2: Textarea → PTY
 
-Uses `InputEvent.inputType` for incremental, character-by-character sync:
-
-| `inputType` | Cursor at end? | Action |
-|-------------|---------------|--------|
-| `insertText` | Yes | Send `e.data` (just the typed chars) |
-| `deleteContentBackward` | Yes | Send `\x7f` (backspace) |
-| Any other | — | Resync: `Ctrl-U + textarea.value` |
-
-The "any other" fallback handles: paste, cut, mid-text insert, word-delete, undo.
+On every input event, the **full textarea content** is sent to the PTY after a 300ms debounce:
 
 ```typescript
-const cursorAtEnd = ta.selectionStart === ta.value.length;
-if (inputType === "insertText" && e.data && cursorAtEnd) {
-  rpc("write_pty", { data: e.data });
-} else if (inputType === "deleteContentBackward" && cursorAtEnd) {
-  rpc("write_pty", { data: "\x7f" });
-} else {
-  rpc("write_pty", { data: "\x15" + ta.value }); // Ctrl-U + full text
+function debouncedSync(text: string) {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    rpc("write_pty", { data: "\x15" + text }); // Ctrl-U + full text
+  }, SYNC_DEBOUNCE_MS);
 }
 ```
+
+This handles all input methods uniformly: typing, paste, cut, autocomplete, composition, cursor-based edits. No `InputEvent.inputType` parsing needed.
+
+On blur, any pending debounce flushes immediately.
 
 #### Send (Enter)
 
@@ -366,14 +357,14 @@ Ink-based TUIs (Claude Code) treat `\r` combined with text as a newline in their
 #### State Transitions
 
 ```
-idle (no focus)     → PTY echo updates textarea
+idle (no focus)     → PTY input_line updates textarea
   │
   ▼ (tap/focus)
-editing             → keystrokes sent to PTY, echo suppressed
+editing             → debounced Ctrl-U + full text to PTY
   │
-  ├── Enter         → send + clear + back to idle
-  └── blur (empty)  → back to idle
-  └── blur (draft)  → stays in editing (preserves draft)
+  ├── Enter         → flush + send + clear + back to idle
+  ├── blur (empty)  → flush + back to idle
+  └── blur (draft)  → flush + stays in editing (preserves draft)
 ```
 
 ### SlashMenuOverlay

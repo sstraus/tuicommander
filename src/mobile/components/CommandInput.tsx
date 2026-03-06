@@ -1,4 +1,4 @@
-import { createSignal, createEffect } from "solid-js";
+import { createSignal, createEffect, onCleanup } from "solid-js";
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
 import { retryWrite } from "../utils/retryWrite";
@@ -12,16 +12,29 @@ interface CommandInputProps {
   ptyInputLine?: string | null;
 }
 
-// After syncing to PTY, ignore incoming input_line echoes for this duration
-const SYNC_GUARD_MS = 400;
+// Debounce delay before syncing textarea content to PTY
+const SYNC_DEBOUNCE_MS = 300;
 
 export function CommandInput(props: CommandInputProps) {
   const [value, setValue] = createSignal("");
   let textareaEl: HTMLTextAreaElement | undefined;
   // When true, user is actively editing — don't overwrite with PTY input
   let userEditing = false;
-  // Timestamp of last outbound write; used to suppress echo-back
-  let lastSyncTs = 0;
+  // Debounce timer for textarea→PTY sync
+  let syncTimer: ReturnType<typeof setTimeout> | null = null;
+
+  onCleanup(() => { if (syncTimer) clearTimeout(syncTimer); });
+
+  /** Send the full textarea content to PTY (Ctrl-U + text). */
+  function syncToPty(text: string) {
+    rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text }).catch(() => {});
+  }
+
+  /** Schedule a debounced sync of textarea content to PTY. */
+  function debouncedSync(text: string) {
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => syncToPty(text), SYNC_DEBOUNCE_MS);
+  }
 
   // React to external prefill (e.g. slash menu selection)
   createEffect(() => {
@@ -34,17 +47,16 @@ export function CommandInput(props: CommandInputProps) {
         textareaEl.focus();
         autoResize();
       }
-      // Push to PTY: Ctrl-U clears existing input, then type the full text
-      lastSyncTs = Date.now();
-      rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + pv.text }).catch(() => {});
+      // Immediate sync (no debounce) — user selected from menu
+      if (syncTimer) clearTimeout(syncTimer);
+      syncToPty(pv.text);
     }
   });
 
-  // Sync PTY input line → textarea (only when user is not editing and no recent outbound write)
+  // PTY → textarea: last writer wins — only update when user is not editing
   createEffect(() => {
     const il = props.ptyInputLine;
     if (userEditing) return;
-    if (Date.now() - lastSyncTs < SYNC_GUARD_MS) return;
     const text = il ?? "";
     setValue(text);
     if (textareaEl) {
@@ -59,39 +71,24 @@ export function CommandInput(props: CommandInputProps) {
     textareaEl.style.height = Math.min(textareaEl.scrollHeight, 120) + "px";
   }
 
-  /** Send incremental edits to PTY based on InputEvent type. */
+  /** On any input change, debounce a full-text sync to PTY. */
   function handleInput(e: InputEvent & { currentTarget: HTMLTextAreaElement }) {
     userEditing = true;
-    setValue(e.currentTarget.value);
+    const text = e.currentTarget.value;
+    setValue(text);
     autoResize();
-
-    lastSyncTs = Date.now();
-    const inputType = e.inputType;
-
-    const ta = e.currentTarget;
-    const cursorAtEnd = ta.selectionStart === ta.value.length;
-
-    if (inputType === "insertText" && e.data && cursorAtEnd) {
-      // Simple append at end — send just the new characters
-      rpc("write_pty", { sessionId: props.sessionId, data: e.data }).catch(() => {});
-    } else if (inputType === "deleteContentBackward" && cursorAtEnd) {
-      // Backspace at end
-      rpc("write_pty", { sessionId: props.sessionId, data: "\x7f" }).catch(() => {});
-    } else {
-      // Any other edit (paste, mid-text insert, cut, word-delete, cursor move+type):
-      // resync full textarea content to PTY
-      rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + ta.value }).catch(() => {});
-    }
+    debouncedSync(text);
   }
 
   async function send() {
+    // Flush any pending debounced sync
+    if (syncTimer) clearTimeout(syncTimer);
     // Read directly from the DOM element — on mobile, paste and autocomplete
     // may insert text without firing onInput, so the signal can be stale.
     const text = (textareaEl?.value ?? value()).trim();
     if (!text) return;
 
     userEditing = false;
-    lastSyncTs = Date.now();
     setValue("");
     if (textareaEl) { textareaEl.value = ""; textareaEl.style.height = "auto"; }
     try {
@@ -118,6 +115,11 @@ export function CommandInput(props: CommandInputProps) {
   }
 
   function handleBlur() {
+    // Flush pending sync immediately on blur
+    if (syncTimer) {
+      clearTimeout(syncTimer);
+      syncToPty(value());
+    }
     // Resume PTY sync only if textarea is empty (no draft to preserve)
     if (!value().trim()) {
       userEditing = false;
