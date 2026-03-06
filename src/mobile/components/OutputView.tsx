@@ -46,8 +46,8 @@ export function OutputView(props: OutputViewProps) {
         scrollToBottom(true);
         return json.total_lines ?? 0;
       }
-    } catch {
-      // Silently fail — live stream will populate
+    } catch (err) {
+      appLogger.warn("terminal", "fetchInitialOutput failed, will rely on WS catch-up", { error: err });
     }
     return 0;
   }
