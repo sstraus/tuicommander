@@ -792,7 +792,6 @@ impl AppState {
                     .entry(session_id.clone())
                     .and_modify(|s| {
                         s.last_activity_ms = now_ms;
-                        s.is_busy = true;
                         match event_type {
                             "question" => {
                                 s.awaiting_input = true;
@@ -802,7 +801,8 @@ impl AppState {
                                     .map(|t| t.to_string());
                             }
                             "user-input" => {
-                                // User responded — clear question + slash menu state
+                                // User responded — agent will start working
+                                s.is_busy = true;
                                 s.awaiting_input = false;
                                 s.question_text = None;
                                 s.slash_menu_items = None;
@@ -829,7 +829,8 @@ impl AppState {
                                     .map(|t| t.to_string());
                             }
                             "status-line" => {
-                                // Agent is working — clear error/rate-limit/suggest/menu states
+                                // Agent is working — mark busy + clear error/rate-limit/suggest/menu
+                                s.is_busy = true;
                                 s.rate_limited = false;
                                 s.retry_after_ms = None;
                                 s.last_error = None;
@@ -2224,6 +2225,32 @@ mod tests {
         let s = apply(&state, &event);
         assert!(s.is_busy);
         assert!(!s.awaiting_input);
+    }
+
+    #[test]
+    fn test_session_state_status_line_sets_busy() {
+        let state = fresh_state();
+        // Go to question (not busy)
+        let q = make_parsed("question", serde_json::json!({ "prompt_text": "?" }));
+        apply(&state, &q);
+        assert!(!state.session_states.get("s1").unwrap().is_busy);
+        // Status line means agent is working → busy
+        let event = make_parsed("status-line", serde_json::json!({ "task_name": "Reading" }));
+        let s = apply(&state, &event);
+        assert!(s.is_busy);
+    }
+
+    #[test]
+    fn test_session_state_intent_does_not_change_busy() {
+        let state = fresh_state();
+        // Go to question (not busy)
+        let q = make_parsed("question", serde_json::json!({ "prompt_text": "?" }));
+        apply(&state, &q);
+        assert!(!state.session_states.get("s1").unwrap().is_busy);
+        // Intent should not change is_busy
+        let event = make_parsed("intent", serde_json::json!({ "text": "thinking" }));
+        let s = apply(&state, &event);
+        assert!(!s.is_busy);
     }
 
     // --- VtLogBuffer tests ---
