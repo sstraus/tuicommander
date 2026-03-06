@@ -2,6 +2,7 @@ use dashmap::DashMap;
 use notify_debouncer_mini::Debouncer;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::path::PathBuf;
@@ -516,10 +517,10 @@ impl KittyKeyboardState {
 ///
 /// Returns the cleaned string (with kitty sequences removed) and a list of actions.
 /// Fast path: if the input contains none of the trigger prefixes, returns it unchanged.
-pub(crate) fn strip_kitty_sequences(input: &str) -> (String, Vec<KittyAction>) {
+pub(crate) fn strip_kitty_sequences(input: &str) -> (Cow<'_, str>, Vec<KittyAction>) {
     // Fast path: skip scanning if no possible kitty sequence prefix exists
     if !input.contains("\x1b[>") && !input.contains("\x1b[<") && !input.contains("\x1b[?") {
-        return (input.to_string(), Vec::new());
+        return (Cow::Borrowed(input), Vec::new());
     }
 
     let bytes = input.as_bytes();
@@ -593,7 +594,7 @@ pub(crate) fn strip_kitty_sequences(input: &str) -> (String, Vec<KittyAction>) {
 
     // If no kitty sequences were found, return original string
     if actions.is_empty() {
-        return (input.to_string(), actions);
+        return (Cow::Borrowed(input), actions);
     }
 
     // Flush trailing kept span
@@ -607,7 +608,7 @@ pub(crate) fn strip_kitty_sequences(input: &str) -> (String, Vec<KittyAction>) {
         output.push_str(&input[*start..*end]);
     }
 
-    (output, actions)
+    (Cow::Owned(output), actions)
 }
 
 /// Represents a git worktree
@@ -2260,6 +2261,26 @@ mod tests {
         let (out, actions) = strip_kitty_sequences(input);
         assert_eq!(out, "漢字日本語");
         assert_eq!(actions, vec![KittyAction::Pop]);
+    }
+
+    #[test]
+    fn test_strip_kitty_fast_path_returns_borrowed() {
+        use std::borrow::Cow;
+        let input = "hello world";
+        let (out, actions) = strip_kitty_sequences(input);
+        assert!(actions.is_empty());
+        assert!(matches!(out, Cow::Borrowed(_)), "fast path should return Cow::Borrowed");
+        assert_eq!(&*out, input);
+    }
+
+    #[test]
+    fn test_strip_kitty_slow_path_returns_owned() {
+        use std::borrow::Cow;
+        let input = "before\x1b[>1uafter";
+        let (out, actions) = strip_kitty_sequences(input);
+        assert!(!actions.is_empty());
+        assert!(matches!(out, Cow::Owned(_)), "slow path should return Cow::Owned");
+        assert_eq!(&*out, "beforeafter");
     }
 
     // Helpers for session-state accumulator tests

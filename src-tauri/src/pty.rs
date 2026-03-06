@@ -322,7 +322,8 @@ pub(crate) fn spawn_reader_thread(
                         }
                         // Broadcast to WebSocket clients
                         if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
-                            clients.retain(|tx| tx.send(data.clone()).is_ok());
+                            let owned = data.clone().into_owned();
+                            clients.retain(|tx| tx.send(owned.clone()).is_ok());
                         }
                         // Emit parsed events before raw output.
                         // Suppress notification-class events during resize grace period:
@@ -424,7 +425,7 @@ pub(crate) fn spawn_reader_thread(
                         // parse_clean_lines detected the Intent event — because Claude Code
                         // re-renders lines with CUU/CUD cursor movements, and re-render chunks
                         // may contain the token without detection (cursor-split text).
-                        let data = if data.contains("[intent:") { colorize_intent(&data) } else { data };
+                        let data: String = if data.contains("[intent:") { colorize_intent(&data) } else { data.into_owned() };
 
                         // Conceal [[suggest: ...]] tokens so they are invisible in xterm but
                         // still occupy their original character positions (preserving cursor layout).
@@ -560,7 +561,8 @@ pub(crate) fn spawn_headless_reader_thread(
                         }
                         // Broadcast to WebSocket clients
                         if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
-                            clients.retain(|tx| tx.send(data.clone()).is_ok());
+                            let owned = data.clone().into_owned();
+                            clients.retain(|tx| tx.send(owned.clone()).is_ok());
                         }
                         // Emit structured events via event_bus (no Tauri IPC for headless).
                         // OSC 9;4 progress stays on raw stream.
