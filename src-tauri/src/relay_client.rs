@@ -7,25 +7,28 @@ use std::time::Duration;
 use aes_gcm::aead::{Aead, OsRng};
 use aes_gcm::{Aes256Gcm, AeadCore, KeyInit};
 use futures_util::{SinkExt, StreamExt};
-use sha2::{Digest, Sha256};
+use hkdf::Hkdf;
+use sha2::Sha256;
 use tokio::sync::oneshot;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::state::{AppEvent, AppState};
 
 // ---------------------------------------------------------------------------
-// E2E Encryption (AES-256-GCM)
+// E2E Encryption (AES-256-GCM with HKDF key derivation)
 // ---------------------------------------------------------------------------
 
-/// Derive a 256-bit AES key from the relay token using SHA-256.
-fn derive_key(relay_token: &str) -> aes_gcm::Key<Aes256Gcm> {
-    let hash = Sha256::digest(relay_token.as_bytes());
-    *aes_gcm::Key::<Aes256Gcm>::from_slice(&hash)
+/// Derive a 256-bit AES key from the relay token using HKDF-SHA-256.
+fn derive_cipher(relay_token: &str) -> Aes256Gcm {
+    let hk = Hkdf::<Sha256>::new(None, relay_token.as_bytes());
+    let mut okm = [0u8; 32];
+    hk.expand(b"tuicommander-relay-v1", &mut okm)
+        .expect("HKDF-SHA256 expand for 32 bytes always succeeds");
+    Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(&okm))
 }
 
 /// Encrypt plaintext with AES-256-GCM. Returns nonce (12 bytes) || ciphertext.
-fn encrypt(key: &aes_gcm::Key<Aes256Gcm>, plaintext: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let cipher = Aes256Gcm::new(key);
+fn encrypt(cipher: &Aes256Gcm, plaintext: &[u8]) -> anyhow::Result<Vec<u8>> {
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let ciphertext = cipher
         .encrypt(&nonce, plaintext)
@@ -37,13 +40,12 @@ fn encrypt(key: &aes_gcm::Key<Aes256Gcm>, plaintext: &[u8]) -> anyhow::Result<Ve
 }
 
 /// Decrypt nonce (12 bytes) || ciphertext with AES-256-GCM.
-fn decrypt(key: &aes_gcm::Key<Aes256Gcm>, data: &[u8]) -> anyhow::Result<Vec<u8>> {
+fn decrypt(cipher: &Aes256Gcm, data: &[u8]) -> anyhow::Result<Vec<u8>> {
     if data.len() < 12 {
         anyhow::bail!("ciphertext too short (missing nonce)");
     }
     let (nonce_bytes, ciphertext) = data.split_at(12);
     let nonce = aes_gcm::Nonce::from_slice(nonce_bytes);
-    let cipher = Aes256Gcm::new(key);
     let plaintext = cipher
         .decrypt(nonce, ciphertext)
         .map_err(|e| anyhow::anyhow!("decryption failed: {e}"))?;
@@ -69,14 +71,14 @@ pub(crate) async fn run(state: Arc<AppState>, mut shutdown_rx: oneshot::Receiver
         return;
     }
 
-    let key = derive_key(&config.relay_token);
+    let cipher = derive_cipher(&config.relay_token);
     let ws_url = format!("{}/ws/{}", config.relay_url, config.relay_session_id);
     let mut backoff = INITIAL_BACKOFF;
 
     loop {
         eprintln!("[relay] connecting to {ws_url}");
 
-        match connect_and_run(&state, &ws_url, &config.relay_token, &key, &mut shutdown_rx).await {
+        match connect_and_run(&state, &ws_url, &config.relay_token, &cipher, &mut shutdown_rx).await {
             Ok(ShutdownReason::Signal) => {
                 eprintln!("[relay] shutting down");
                 return;
@@ -113,7 +115,7 @@ async fn connect_and_run(
     state: &Arc<AppState>,
     ws_url: &str,
     relay_token: &str,
-    key: &aes_gcm::Key<Aes256Gcm>,
+    cipher: &Aes256Gcm,
     shutdown_rx: &mut oneshot::Receiver<()>,
 ) -> anyhow::Result<ShutdownReason> {
     let (ws_stream, _) = tokio_tungstenite::connect_async(ws_url).await?;
@@ -162,7 +164,7 @@ async fn connect_and_run(
 
                         // Encrypt and forward event
                         let json = serde_json::to_vec(evt)?;
-                        let encrypted = encrypt(key, &json)?;
+                        let encrypted = encrypt(cipher, &json)?;
                         if ws_sink.send(Message::Binary(encrypted.into())).await.is_err() {
                             return Ok(ShutdownReason::Disconnected);
                         }
@@ -180,10 +182,10 @@ async fn connect_and_run(
             msg = ws_source.next() => {
                 match msg {
                     Some(Ok(Message::Binary(data))) => {
-                        match decrypt(key, &data) {
+                        match decrypt(cipher, &data) {
                             Ok(_plaintext) => {
-                                // Future: dispatch decrypted message as HTTP request
-                                // to local server or handle as mobile command
+                                // TODO: dispatch decrypted message as mobile command
+                                eprintln!("[relay] received mobile command (dispatch not yet implemented)");
                             }
                             Err(e) => {
                                 eprintln!("[relay] failed to decrypt message: {e}");
@@ -218,56 +220,62 @@ async fn connect_and_run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aes_gcm::KeyInit;
 
     #[test]
     fn encrypt_decrypt_round_trip() {
-        let key = derive_key("tuic_test_token_abc123");
+        let cipher = derive_cipher("tuic_test_token_abc123");
         let plaintext = b"hello from tuicommander";
-        let encrypted = encrypt(&key, plaintext).unwrap();
-        let decrypted = decrypt(&key, &encrypted).unwrap();
+        let encrypted = encrypt(&cipher, plaintext).unwrap();
+        let decrypted = decrypt(&cipher, &encrypted).unwrap();
         assert_eq!(decrypted, plaintext);
     }
 
     #[test]
     fn decrypt_fails_with_wrong_key() {
-        let key1 = derive_key("token_one");
-        let key2 = derive_key("token_two");
-        let encrypted = encrypt(&key1, b"secret data").unwrap();
-        let result = decrypt(&key2, &encrypted);
+        let c1 = derive_cipher("token_one");
+        let c2 = derive_cipher("token_two");
+        let encrypted = encrypt(&c1, b"secret data").unwrap();
+        let result = decrypt(&c2, &encrypted);
         assert!(result.is_err());
     }
 
     #[test]
     fn decrypt_fails_with_short_data() {
-        let key = derive_key("token");
-        let result = decrypt(&key, &[1, 2, 3]);
+        let cipher = derive_cipher("token");
+        let result = decrypt(&cipher, &[1, 2, 3]);
         assert!(result.is_err());
     }
 
     #[test]
     fn different_encryptions_produce_different_ciphertexts() {
-        let key = derive_key("token");
+        let cipher = derive_cipher("token");
         let plaintext = b"same message";
-        let e1 = encrypt(&key, plaintext).unwrap();
-        let e2 = encrypt(&key, plaintext).unwrap();
+        let e1 = encrypt(&cipher, plaintext).unwrap();
+        let e2 = encrypt(&cipher, plaintext).unwrap();
         // Random nonce means different ciphertext each time
         assert_ne!(e1, e2);
         // But both decrypt to the same plaintext
-        assert_eq!(decrypt(&key, &e1).unwrap(), plaintext);
-        assert_eq!(decrypt(&key, &e2).unwrap(), plaintext);
+        assert_eq!(decrypt(&cipher, &e1).unwrap(), plaintext);
+        assert_eq!(decrypt(&cipher, &e2).unwrap(), plaintext);
     }
 
     #[test]
-    fn derive_key_is_deterministic() {
-        let k1 = derive_key("same_token");
-        let k2 = derive_key("same_token");
-        assert_eq!(k1, k2);
+    fn derive_cipher_is_deterministic() {
+        // Same token must produce same key material
+        let c1 = derive_cipher("same_token");
+        let c2 = derive_cipher("same_token");
+        let plaintext = b"test data";
+        let encrypted = encrypt(&c1, plaintext).unwrap();
+        let decrypted = decrypt(&c2, &encrypted).unwrap();
+        assert_eq!(decrypted, plaintext);
     }
 
     #[test]
     fn different_tokens_produce_different_keys() {
-        let k1 = derive_key("token_a");
-        let k2 = derive_key("token_b");
-        assert_ne!(k1, k2);
+        let c1 = derive_cipher("token_a");
+        let c2 = derive_cipher("token_b");
+        let encrypted = encrypt(&c1, b"test").unwrap();
+        assert!(decrypt(&c2, &encrypted).is_err());
     }
 }

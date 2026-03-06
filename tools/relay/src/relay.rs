@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket};
 use dashmap::DashMap;
@@ -14,12 +14,20 @@ use crate::types::{PeerStatus, RelayMessage};
 
 /// Per-session slot holding up to two peer senders.
 pub struct SessionSlot {
-    /// Bounded channel senders for each connected peer.
-    peers: Vec<mpsc::Sender<Message>>,
+    /// Bounded channel senders keyed by stable peer ID.
+    peers: Vec<(u64, mpsc::Sender<Message>)>,
+    /// Monotonic counter for assigning stable peer IDs.
+    next_peer_id: u64,
     /// Token hash that owns this session (for stats tracking).
     pub token_hash: Option<String>,
     /// Last activity timestamp — updated on every incoming message.
     pub last_activity: Instant,
+}
+
+impl SessionSlot {
+    fn peer_count(&self) -> usize {
+        self.peers.len()
+    }
 }
 
 /// Application state shared across all handlers.
@@ -96,11 +104,43 @@ impl AppState {
     }
 }
 
+/// Resolve a bearer token: check in-memory cache first, fall back to DB argon2 verification.
+/// On cache miss + DB hit, populates the cache for subsequent lookups.
+async fn resolve_token(state: &AppState, token: &str) -> Option<String> {
+    // Fast path: cache hit
+    if let Some(hash) = state.token_cache.get(token).map(|e| e.value().clone()) {
+        return Some(hash);
+    }
+
+    // Slow path: iterate DB hashes and verify with argon2
+    let conn = state.db.as_ref()?;
+    let all_hashes = match crate::db::list_token_hashes(conn).await {
+        Ok(hashes) => hashes,
+        Err(e) => {
+            warn!(error = %e, "failed to list token hashes from DB");
+            return None;
+        }
+    };
+
+    for hash in all_hashes {
+        if crate::auth::verify_token(token, &hash) {
+            // Populate cache for future lookups
+            state.token_cache.insert(token.to_owned(), hash.clone());
+            return Some(hash);
+        }
+    }
+
+    None
+}
+
 /// Maximum peers allowed per session (desktop + mobile).
 const MAX_PEERS_PER_SESSION: usize = 2;
 
 /// Bounded channel capacity per peer — backpressure on slow clients.
 const PEER_CHANNEL_CAPACITY: usize = 32;
+
+/// Timeout for receiving the first auth message from a connecting peer.
+const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Handle a new WebSocket connection for the given session.
 pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: WebSocket) {
@@ -109,7 +149,7 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
         let session_full = state
             .sessions
             .get(&session_id)
-            .map(|s| s.peers.len() >= MAX_PEERS_PER_SESSION)
+            .map(|s| s.peer_count() >= MAX_PEERS_PER_SESSION)
             .unwrap_or(false);
 
         if session_full {
@@ -128,19 +168,20 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
     let mut token_hash: Option<String> = None;
     let mut first_msg_to_replay: Option<Message> = None;
 
-    if let Some(Ok(msg)) = socket.recv().await {
+    // Wait for first message with timeout — peers that skip auth just get no token_hash
+    let first_msg = tokio::time::timeout(AUTH_TIMEOUT, socket.recv()).await;
+    if let Ok(Some(Ok(msg))) = first_msg {
         if let Message::Text(ref text) = msg {
             if let Some(token) = text.strip_prefix("Bearer ") {
                 // Verify token against cache
-                if let Some(hash) = state.token_cache.get(token).map(|e| e.value().clone()) {
-                    token_hash = Some(hash.clone());
-
+                // Check cache first, fall back to DB argon2 verification on miss
+                if let Some(hash) = resolve_token(&state, token).await {
                     // Check max concurrent sessions per token
                     if state.max_sessions_per_token > 0 {
-                        let session_count = state
+                        let session_count: usize = state
                             .sessions
                             .iter()
-                            .filter(|e| e.value().token_hash.as_deref() == Some(&hash))
+                            .filter(|e| e.value().token_hash.as_deref() == Some(hash.as_str()))
                             .count();
 
                         if session_count >= state.max_sessions_per_token as usize {
@@ -154,6 +195,7 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
                             return;
                         }
                     }
+                    token_hash = Some(hash);
                 } else {
                     warn!(session_id, "invalid bearer token, rejecting");
                     let _ = socket
@@ -172,8 +214,11 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
             // Not a text message — treat as regular message
             first_msg_to_replay = Some(msg);
         }
+    } else if first_msg.is_err() {
+        // Auth timeout — proceed without auth (unauthenticated peer)
+        info!(session_id, "auth timeout, proceeding without authentication");
     } else {
-        // Connection closed before any message
+        // Connection closed or error before any message
         return;
     }
 
@@ -183,27 +228,42 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
     let (tx, rx) = mpsc::channel::<Message>(PEER_CHANNEL_CAPACITY);
 
     // Join the session
-    let peer_index = {
+    let peer_id = {
         let mut entry = state
             .sessions
             .entry(session_id.clone())
-            .or_insert_with(|| SessionSlot { peers: Vec::new(), token_hash: None, last_activity: Instant::now() });
+            .or_insert_with(|| SessionSlot { peers: Vec::new(), next_peer_id: 0, token_hash: None, last_activity: Instant::now() });
         // Set token_hash if authenticated
         if token_hash.is_some() {
             entry.value_mut().token_hash = token_hash;
         }
         let slot = entry.value_mut();
-        slot.peers.push(tx.clone());
-        slot.peers.len() - 1
+        let id = slot.next_peer_id;
+        slot.next_peer_id += 1;
+        slot.peers.push((id, tx.clone()));
+        id
     };
 
-    info!(session_id, peer_index, "peer joined");
+    info!(session_id, peer_id, "peer joined");
+
+    // Record session start in DB for stats tracking
+    if let Some(conn) = &state.db {
+        let token_hash_for_db = state
+            .sessions
+            .get(&session_id)
+            .and_then(|s| s.token_hash.clone());
+        if let Some(hash) = token_hash_for_db {
+            if let Err(e) = crate::db::start_session(conn, &session_id, &hash).await {
+                warn!(error = %e, "failed to record session start");
+            }
+        }
+    }
 
     // Notify this peer of current state
     let peer_count = state
         .sessions
         .get(&session_id)
-        .map(|s| s.peers.len())
+        .map(|s| s.peer_count())
         .unwrap_or(0);
 
     let status = if peer_count == 2 {
@@ -220,7 +280,7 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
 
     // If we're the second peer, notify the first peer too
     if peer_count == 2 {
-        notify_other_peers(&state, &session_id, peer_index, PeerStatus::Connected).await;
+        notify_other_peers(&state, &session_id, peer_id, PeerStatus::Connected).await;
     }
 
     // Spawn writer task: reads from channel, writes to WebSocket
@@ -228,7 +288,7 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
 
     // If the first message wasn't a bearer token, process it now
     if let Some(msg) = first_msg_to_replay {
-        process_message(&state, &session_id, peer_index, msg).await;
+        process_message(&state, &session_id, peer_id, msg).await;
     }
 
     // Reader loop: reads from WebSocket, forwards to other peer(s)
@@ -236,13 +296,21 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
         if matches!(&msg, Message::Close(_)) {
             break;
         }
-        process_message(&state, &session_id, peer_index, msg).await;
+        process_message(&state, &session_id, peer_id, msg).await;
     }
 
     // Peer disconnected — clean up
     writer_handle.abort();
-    remove_peer(&state, &session_id, peer_index).await;
-    info!(session_id, peer_index, "peer left");
+
+    // Record session end in DB
+    if let Some(conn) = &state.db {
+        if let Err(e) = crate::db::end_session(conn, &session_id, 0).await {
+            warn!(error = %e, "failed to record session end");
+        }
+    }
+
+    remove_peer(&state, &session_id, peer_id).await;
+    info!(session_id, peer_id, "peer left");
 }
 
 /// If the other peer is offline, send Web Push to all subscriptions for this session's token.
@@ -251,7 +319,7 @@ async fn maybe_send_push(state: &Arc<AppState>, session_id: &str, reason: &str, 
     let peer_count = state
         .sessions
         .get(session_id)
-        .map(|s| s.peers.len())
+        .map(|s| s.peer_count())
         .unwrap_or(0);
 
     if peer_count >= 2 {
@@ -321,7 +389,7 @@ async fn maybe_send_push(state: &Arc<AppState>, session_id: &str, reason: &str, 
 async fn process_message(
     state: &Arc<AppState>,
     session_id: &str,
-    peer_index: usize,
+    peer_id: u64,
     msg: Message,
 ) {
     // Update activity timestamp
@@ -332,7 +400,7 @@ async fn process_message(
     match &msg {
         Message::Binary(_) => {
             // Opaque E2E data — forward to other peers
-            forward_to_others(state, session_id, peer_index, msg).await;
+            forward_to_others(state, session_id, peer_id, msg).await;
         }
         Message::Text(text) => {
             // Check if this is a relay:push hint
@@ -342,7 +410,7 @@ async fn process_message(
                 maybe_send_push(state, session_id, &reason, &session_name).await;
             }
             // Always forward text to other peers
-            forward_to_others(state, session_id, peer_index, Message::Text(text.clone())).await;
+            forward_to_others(state, session_id, peer_id, Message::Text(text.clone())).await;
         }
         Message::Close(_) | Message::Ping(_) | Message::Pong(_) => {}
     }
@@ -352,12 +420,12 @@ async fn process_message(
 async fn forward_to_others(
     state: &AppState,
     session_id: &str,
-    sender_index: usize,
+    sender_id: u64,
     msg: Message,
 ) {
     if let Some(slot) = state.sessions.get(session_id) {
-        for (i, peer_tx) in slot.peers.iter().enumerate() {
-            if i != sender_index {
+        for (id, peer_tx) in slot.peers.iter() {
+            if *id != sender_id {
                 // Drop message if peer is slow (bounded channel)
                 let _ = peer_tx.try_send(msg.clone());
             }
@@ -369,15 +437,15 @@ async fn forward_to_others(
 async fn notify_other_peers(
     state: &AppState,
     session_id: &str,
-    except_index: usize,
+    except_id: u64,
     status: PeerStatus,
 ) {
     let msg = serde_json::to_string(&RelayMessage::Status { peer: status })
         .expect("status serialization is infallible");
 
     if let Some(slot) = state.sessions.get(session_id) {
-        for (i, peer_tx) in slot.peers.iter().enumerate() {
-            if i != except_index {
+        for (id, peer_tx) in slot.peers.iter() {
+            if *id != except_id {
                 let _ = peer_tx.try_send(Message::Text(msg.clone().into()));
             }
         }
@@ -385,18 +453,14 @@ async fn notify_other_peers(
 }
 
 /// Remove a peer from the session and notify remaining peers.
-async fn remove_peer(state: &AppState, session_id: &str, peer_index: usize) {
+async fn remove_peer(state: &AppState, session_id: &str, peer_id: u64) {
     let remaining = {
         let mut entry = match state.sessions.get_mut(session_id) {
             Some(e) => e,
             None => return,
         };
         let slot = entry.value_mut();
-
-        // Remove the peer (shift indices)
-        if peer_index < slot.peers.len() {
-            slot.peers.remove(peer_index);
-        }
+        slot.peers.retain(|(id, _)| *id != peer_id);
         slot.peers.len()
     };
 
@@ -414,7 +478,7 @@ async fn notify_all_peers(state: &AppState, session_id: &str, status: PeerStatus
         .expect("status serialization is infallible");
 
     if let Some(slot) = state.sessions.get(session_id) {
-        for peer_tx in slot.peers.iter() {
+        for (_id, peer_tx) in slot.peers.iter() {
             let _ = peer_tx.try_send(Message::Text(msg.clone().into()));
         }
     }

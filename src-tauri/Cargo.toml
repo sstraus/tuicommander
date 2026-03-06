@@ -59,6 +59,7 @@ vt100 = "0.16"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 aes-gcm = "0.10"
 sha2 = "0.10"
+hkdf = "0.12"
 anyhow = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -64,6 +64,20 @@ pub async fn insert_token(conn: &Connection, token_hash: &str) -> Result<()> {
     Ok(())
 }
 
+/// List all stored token hashes (for DB-fallback auth verification on cache miss).
+pub async fn list_token_hashes(conn: &Connection) -> Result<Vec<String>> {
+    let hashes = conn
+        .call(|c| {
+            let mut stmt = c.prepare("SELECT token_hash FROM tokens")?;
+            let rows = stmt
+                .query_map([], |row| row.get(0))?
+                .collect::<std::result::Result<Vec<String>, _>>()?;
+            Ok(rows)
+        })
+        .await?;
+    Ok(hashes)
+}
+
 /// Check if a token hash exists and update last_seen.
 pub async fn validate_token(conn: &Connection, token_hash: &str) -> Result<bool> {
     let hash = token_hash.to_owned();
