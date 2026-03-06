@@ -1,5 +1,6 @@
-import { createSignal, createMemo, onMount, onCleanup, For, Index } from "solid-js";
+import { createSignal, createMemo, onMount, onCleanup, For, Index, Show } from "solid-js";
 import { subscribePty } from "../../transport";
+import { appLogger } from "../../stores/appLogger";
 import { type LogLine, normalizeLogLine, spanStyle, lineMatchesQuery } from "../utils/logLine";
 import styles from "./OutputView.module.css";
 
@@ -18,6 +19,7 @@ interface OutputViewProps {
 export function OutputView(props: OutputViewProps) {
   const [logLines, setLogLines] = createSignal<LogLine[]>([]);
   const [screenRows, setScreenRows] = createSignal<LogLine[]>([]);
+  const [subscribeError, setSubscribeError] = createSignal<string | null>(null);
   let containerEl: HTMLDivElement | undefined;
   let unsubscribe: (() => void) | null = null;
   // When the user scrolls up manually, stop auto-scrolling until they
@@ -70,31 +72,37 @@ export function OutputView(props: OutputViewProps) {
     containerEl?.addEventListener("scroll", handleScroll, { passive: true });
     const offset = await fetchInitialOutput();
 
-    unsubscribe = (await subscribePty(
-      props.sessionId,
-      () => {}, // unused — onLogLines handles log delivery
-      () => {
-        setLogLines((prev) => [...prev, { spans: [{ text: "--- session exited ---" }] }]);
-        setScreenRows([]);
-      },
-      {
-        format: "log",
-        logOffset: offset,
-        onLogLines(rawLines) {
-          setLogLines((prev) => {
-            const incoming = rawLines.map(normalizeLogLine);
-            return [...prev, ...incoming].slice(-MAX_LINES);
-          });
-          scrollToBottom();
+    try {
+      unsubscribe = (await subscribePty(
+        props.sessionId,
+        () => {}, // unused — onLogLines handles log delivery
+        () => {
+          setLogLines((prev) => [...prev, { spans: [{ text: "--- session exited ---" }] }]);
+          setScreenRows([]);
         },
-        onScreenRows(rows) {
-          setScreenRows(rows.map(normalizeLogLine));
-          scrollToBottom();
+        {
+          format: "log",
+          logOffset: offset,
+          onLogLines(rawLines) {
+            setLogLines((prev) => {
+              const incoming = rawLines.map(normalizeLogLine);
+              return [...prev, ...incoming].slice(-MAX_LINES);
+            });
+            scrollToBottom();
+          },
+          onScreenRows(rows) {
+            setScreenRows(rows.map(normalizeLogLine));
+            scrollToBottom();
+          },
+          onStateChange: props.onStateChange,
+          onInputLine: props.onInputLine,
         },
-        onStateChange: props.onStateChange,
-        onInputLine: props.onInputLine,
-      },
-    )) ?? null;
+      )) ?? null;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appLogger.error("terminal", "Failed to subscribe to PTY output", { error: msg });
+      setSubscribeError(msg);
+    }
   });
 
   onCleanup(() => {
@@ -112,6 +120,11 @@ export function OutputView(props: OutputViewProps) {
 
   return (
     <div ref={containerEl} class={styles.output}>
+      <Show when={subscribeError()}>
+        {(errMsg) => (
+          <div class={styles.error}>Failed to connect to terminal: {errMsg()}</div>
+        )}
+      </Show>
       <pre class={styles.text}>
         <For each={displayedLines()}>
           {(line) => (

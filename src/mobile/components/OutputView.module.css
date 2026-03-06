@@ -21,3 +21,10 @@
 .line {
   min-height: 1.5em;
 }
+
+.error {
+  padding: 12px;
+  color: var(--status-error);
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
