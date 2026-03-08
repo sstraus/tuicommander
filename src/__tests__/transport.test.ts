@@ -123,6 +123,15 @@ describe("transport", () => {
       expect(() => mapCommandToHttp("unknown_cmd", {})).toThrow("No HTTP mapping for command: unknown_cmd");
     });
 
+    it("throws for browser-unsupported commands", () => {
+      expect(() => mapCommandToHttp("start_dictation", {})).toThrow(
+        /requires native OS features.*not available in browser mode/,
+      );
+      expect(() => mapCommandToHttp("open_in_app", {})).toThrow(
+        /requires native OS features/,
+      );
+    });
+
     it("maps hash_password to POST /config/hash-password with transform", () => {
       const result = mapCommandToHttp("hash_password", { password: "secret" });
       expect(result.method).toBe("POST");

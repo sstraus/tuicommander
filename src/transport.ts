@@ -52,421 +52,476 @@ export interface HttpMapping {
   transform?: (data: unknown) => unknown;
 }
 
-/** Commands that require local hardware/OS integration and cannot work in browser mode */
-const BROWSER_UNSUPPORTED_COMMANDS = new Set([
-  // Dictation (requires local audio hardware)
-  "get_dictation_status",
-  "get_model_info",
-  "download_whisper_model",
-  "delete_whisper_model",
-  "start_dictation",
-  "stop_dictation_and_transcribe",
-  "get_correction_map",
-  "set_correction_map",
-  "list_audio_devices",
-  "inject_text",
-  "get_dictation_config",
-  "set_dictation_config",
-  // OS integration
-  "open_in_app",
-  // MCP upstream management (uses OS keyring — not available in browser)
-  "load_mcp_upstreams",
-  "save_mcp_upstreams",
-  "reconnect_mcp_upstream",
-  "save_mcp_upstream_credential",
-  "delete_mcp_upstream_credential",
-]);
-
-/** Map a Tauri invoke command + args to an HTTP method/path/body */
-export function mapCommandToHttp(command: string, args: Record<string, unknown>): HttpMapping {
-  if (BROWSER_UNSUPPORTED_COMMANDS.has(command)) {
-    throw new Error(
-      `Command "${command}" requires native OS features and is not available in browser mode`,
-    );
+/** Helper to encode a required argument for URL path/query usage */
+function encodeArg(command: string, args: Record<string, unknown>, key: string): string {
+  const val = args[key];
+  if (val === undefined || val === null) {
+    throw new Error(`mapCommandToHttp(${command}): missing required argument "${key}"`);
   }
+  return encodeURIComponent(String(val));
+}
 
-  const p = (key: string): string => {
-    const val = args[key];
-    if (val === undefined || val === null) {
-      throw new Error(`mapCommandToHttp(${command}): missing required argument "${key}"`);
-    }
-    return encodeURIComponent(String(val));
-  };
+/** Args accessor + URL encoder, bound to a specific command invocation */
+type ArgEncoder = (key: string) => string;
 
-  switch (command) {
-    // --- Session lifecycle ---
-    case "create_pty": {
-      const config = args.config as Record<string, unknown>;
-      return {
-        method: "POST",
-        path: "/sessions",
-        body: config,
-        transform: (data: unknown) => (data as { session_id: string }).session_id,
-      };
-    }
-    case "create_pty_with_worktree":
-      return {
-        method: "POST",
-        path: "/sessions/worktree",
-        body: {
-          config: args.config,
-          base_repo: args.baseRepo,
-          branch_name: args.branchName,
-        },
-      };
-    case "write_pty":
-      return {
-        method: "POST",
-        path: `/sessions/${args.sessionId ?? args.id}/write`,
-        body: { data: args.data },
-      };
-    case "resize_pty":
-      return {
-        method: "POST",
-        path: `/sessions/${args.sessionId}/resize`,
-        body: { rows: args.rows, cols: args.cols },
-      };
-    case "pause_pty":
-      return { method: "POST", path: `/sessions/${args.sessionId}/pause` };
-    case "resume_pty":
-      return { method: "POST", path: `/sessions/${args.sessionId}/resume` };
-    case "get_kitty_flags":
-      return { method: "GET", path: `/sessions/${args.sessionId}/kitty-flags` };
-    case "close_pty":
-      return { method: "DELETE", path: `/sessions/${args.sessionId}` };
-    case "get_session_foreground_process":
-      return {
-        method: "GET",
-        path: `/sessions/${args.sessionId}/foreground`,
-        transform: (data) => (data as { agent: string | null }).agent,
-      };
+/** A command table entry: either a mapper function or a browser-unsupported marker */
+type CommandTableEntry =
+  | { map: (args: Record<string, unknown>, p: ArgEncoder) => HttpMapping }
+  | { browserUnsupported: true };
 
-    // --- Orchestrator ---
-    case "get_orchestrator_stats":
-      return { method: "GET", path: "/stats" };
-    case "get_session_metrics":
-      return { method: "GET", path: "/metrics" };
-    case "list_active_sessions":
-      return { method: "GET", path: "/sessions" };
-    case "can_spawn_session":
-      return {
-        method: "GET",
-        path: "/stats",
-        transform: (data) => {
-          const stats = data as { active_sessions: number; max_sessions: number };
-          return stats.active_sessions < stats.max_sessions;
-        },
-      };
+/**
+ * Table-driven mapping from Tauri command names to HTTP method/path/body.
+ *
+ * Each entry is either:
+ * - `{ map: (args, p) => HttpMapping }` — a mapper that builds the HTTP request
+ * - `{ browserUnsupported: true }` — command requires native OS features
+ *
+ * The `p` helper encodes a required argument for URL usage (throws if missing).
+ */
+const COMMAND_TABLE: Record<string, CommandTableEntry> = {
+  // --- Browser-unsupported: Dictation (requires local audio hardware) ---
+  get_dictation_status: { browserUnsupported: true },
+  get_model_info: { browserUnsupported: true },
+  download_whisper_model: { browserUnsupported: true },
+  delete_whisper_model: { browserUnsupported: true },
+  start_dictation: { browserUnsupported: true },
+  stop_dictation_and_transcribe: { browserUnsupported: true },
+  get_correction_map: { browserUnsupported: true },
+  set_correction_map: { browserUnsupported: true },
+  list_audio_devices: { browserUnsupported: true },
+  inject_text: { browserUnsupported: true },
+  get_dictation_config: { browserUnsupported: true },
+  set_dictation_config: { browserUnsupported: true },
+  // --- Browser-unsupported: OS integration ---
+  open_in_app: { browserUnsupported: true },
+  // --- Browser-unsupported: MCP upstream (uses OS keyring) ---
+  load_mcp_upstreams: { browserUnsupported: true },
+  save_mcp_upstreams: { browserUnsupported: true },
+  reconnect_mcp_upstream: { browserUnsupported: true },
+  save_mcp_upstream_credential: { browserUnsupported: true },
+  delete_mcp_upstream_credential: { browserUnsupported: true },
 
-    // --- Config: app ---
-    case "load_config":
-      return { method: "GET", path: "/config" };
-    case "save_config":
-      return { method: "PUT", path: "/config", body: args.config };
-    case "hash_password":
-      return {
-        method: "POST",
-        path: "/config/hash-password",
-        body: { password: args.password },
-        transform: (data) => (data as { hash: string }).hash,
-      };
+  // --- Session lifecycle ---
+  create_pty: {
+    map: (args) => ({
+      method: "POST",
+      path: "/sessions",
+      body: args.config as Record<string, unknown>,
+      transform: (data: unknown) => (data as { session_id: string }).session_id,
+    }),
+  },
+  create_pty_with_worktree: {
+    map: (args) => ({
+      method: "POST",
+      path: "/sessions/worktree",
+      body: { config: args.config, base_repo: args.baseRepo, branch_name: args.branchName },
+    }),
+  },
+  write_pty: {
+    map: (args) => ({
+      method: "POST",
+      path: `/sessions/${args.sessionId ?? args.id}/write`,
+      body: { data: args.data },
+    }),
+  },
+  resize_pty: {
+    map: (args) => ({
+      method: "POST",
+      path: `/sessions/${args.sessionId}/resize`,
+      body: { rows: args.rows, cols: args.cols },
+    }),
+  },
+  pause_pty: {
+    map: (args) => ({ method: "POST", path: `/sessions/${args.sessionId}/pause` }),
+  },
+  resume_pty: {
+    map: (args) => ({ method: "POST", path: `/sessions/${args.sessionId}/resume` }),
+  },
+  get_kitty_flags: {
+    map: (args) => ({ method: "GET", path: `/sessions/${args.sessionId}/kitty-flags` }),
+  },
+  close_pty: {
+    map: (args) => ({ method: "DELETE", path: `/sessions/${args.sessionId}` }),
+  },
+  get_session_foreground_process: {
+    map: (args) => ({
+      method: "GET",
+      path: `/sessions/${args.sessionId}/foreground`,
+      transform: (data) => (data as { agent: string | null }).agent,
+    }),
+  },
 
-    // --- Config: notifications ---
-    case "load_notification_config":
-      return { method: "GET", path: "/config/notifications" };
-    case "save_notification_config":
-      return { method: "PUT", path: "/config/notifications", body: args.config };
+  // --- Orchestrator ---
+  get_orchestrator_stats: { map: () => ({ method: "GET", path: "/stats" }) },
+  get_session_metrics: { map: () => ({ method: "GET", path: "/metrics" }) },
+  list_active_sessions: { map: () => ({ method: "GET", path: "/sessions" }) },
+  can_spawn_session: {
+    map: () => ({
+      method: "GET",
+      path: "/stats",
+      transform: (data) => {
+        const stats = data as { active_sessions: number; max_sessions: number };
+        return stats.active_sessions < stats.max_sessions;
+      },
+    }),
+  },
 
-    // --- Config: UI prefs ---
-    case "load_ui_prefs":
-      return { method: "GET", path: "/config/ui-prefs" };
-    case "save_ui_prefs":
-      return { method: "PUT", path: "/config/ui-prefs", body: args.config };
+  // --- Config: app ---
+  load_config: { map: () => ({ method: "GET", path: "/config" }) },
+  save_config: { map: (args) => ({ method: "PUT", path: "/config", body: args.config }) },
+  hash_password: {
+    map: (args) => ({
+      method: "POST",
+      path: "/config/hash-password",
+      body: { password: args.password },
+      transform: (data) => (data as { hash: string }).hash,
+    }),
+  },
 
-    // --- Config: repo settings ---
-    case "load_repo_settings":
-      return { method: "GET", path: "/config/repo-settings" };
-    case "save_repo_settings":
-      return { method: "PUT", path: "/config/repo-settings", body: args.config };
-    case "check_has_custom_settings":
-      return { method: "GET", path: `/config/repo-settings/has-custom?path=${p("path")}` };
-    case "load_repo_defaults":
-      return { method: "GET", path: "/config/repo-defaults" };
-    case "save_repo_defaults":
-      return { method: "PUT", path: "/config/repo-defaults", body: args.config };
+  // --- Config: notifications ---
+  load_notification_config: { map: () => ({ method: "GET", path: "/config/notifications" }) },
+  save_notification_config: {
+    map: (args) => ({ method: "PUT", path: "/config/notifications", body: args.config }),
+  },
 
-    // --- Config: repositories ---
-    case "load_repositories":
-      return { method: "GET", path: "/config/repositories" };
-    case "save_repositories":
-      return { method: "PUT", path: "/config/repositories", body: args.config };
+  // --- Config: UI prefs ---
+  load_ui_prefs: { map: () => ({ method: "GET", path: "/config/ui-prefs" }) },
+  save_ui_prefs: {
+    map: (args) => ({ method: "PUT", path: "/config/ui-prefs", body: args.config }),
+  },
 
-    // --- Config: prompt library ---
-    case "load_prompt_library":
-      return { method: "GET", path: "/config/prompt-library" };
-    case "save_prompt_library":
-      return { method: "PUT", path: "/config/prompt-library", body: args.config };
+  // --- Config: repo settings ---
+  load_repo_settings: { map: () => ({ method: "GET", path: "/config/repo-settings" }) },
+  save_repo_settings: {
+    map: (args) => ({ method: "PUT", path: "/config/repo-settings", body: args.config }),
+  },
+  check_has_custom_settings: {
+    map: (_args, p) => ({ method: "GET", path: `/config/repo-settings/has-custom?path=${p("path")}` }),
+  },
+  load_repo_defaults: { map: () => ({ method: "GET", path: "/config/repo-defaults" }) },
+  save_repo_defaults: {
+    map: (args) => ({ method: "PUT", path: "/config/repo-defaults", body: args.config }),
+  },
 
-    // --- Git/GitHub ---
-    case "get_repo_info":
-      return { method: "GET", path: `/repo/info?path=${p("path")}` };
-    case "get_git_diff":
-      return {
-        method: "GET",
-        path: `/repo/diff?path=${p("path")}`,
-        transform: (data) => (data as { diff: string }).diff,
-      };
-    case "get_diff_stats":
-      return { method: "GET", path: `/repo/diff-stats?path=${p("path")}` };
-    case "get_changed_files":
-      return { method: "GET", path: `/repo/files?path=${p("path")}` };
-    case "get_file_diff": {
+  // --- Config: repositories ---
+  load_repositories: { map: () => ({ method: "GET", path: "/config/repositories" }) },
+  save_repositories: {
+    map: (args) => ({ method: "PUT", path: "/config/repositories", body: args.config }),
+  },
+
+  // --- Config: prompt library ---
+  load_prompt_library: { map: () => ({ method: "GET", path: "/config/prompt-library" }) },
+  save_prompt_library: {
+    map: (args) => ({ method: "PUT", path: "/config/prompt-library", body: args.config }),
+  },
+
+  // --- Git/GitHub ---
+  get_repo_info: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/info?path=${p("path")}` }),
+  },
+  get_git_diff: {
+    map: (_args, p) => ({
+      method: "GET",
+      path: `/repo/diff?path=${p("path")}`,
+      transform: (data) => (data as { diff: string }).diff,
+    }),
+  },
+  get_diff_stats: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/diff-stats?path=${p("path")}` }),
+  },
+  get_changed_files: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/files?path=${p("path")}` }),
+  },
+  get_file_diff: {
+    map: (args, p) => {
       let diffUrl = `/repo/file-diff?path=${p("path")}&file=${p("file")}`;
       if (args?.scope) diffUrl += `&scope=${encodeURIComponent(String(args.scope))}`;
       if (args?.untracked) diffUrl += `&untracked=true`;
       return { method: "GET", path: diffUrl };
-    }
-    case "get_github_status":
-      return { method: "GET", path: `/repo/github?path=${p("path")}` };
-    case "get_repo_pr_statuses":
-      return { method: "GET", path: `/repo/prs?path=${p("path")}` };
-    case "get_all_pr_statuses":
-      return {
-        method: "POST",
-        path: "/repo/prs/batch",
-        body: { paths: args.paths, include_merged: args.includeMerged },
-      };
-    case "get_git_branches":
-      return { method: "GET", path: `/repo/branches?path=${p("path")}` };
-    case "get_merged_branches":
-      return { method: "GET", path: `/repo/branches/merged?path=${p("repoPath")}` };
-    case "get_repo_summary":
-      return { method: "GET", path: `/repo/summary?path=${p("repoPath")}` };
-    case "get_repo_structure":
-      return { method: "GET", path: `/repo/structure?path=${p("repoPath")}` };
-    case "get_repo_diff_stats":
-      return { method: "GET", path: `/repo/diff-stats/batch?path=${p("repoPath")}` };
-    case "get_ci_checks":
-      return { method: "GET", path: `/repo/ci?path=${p("path")}&pr_number=${p("prNumber")}` };
-    case "rename_branch":
-      return {
-        method: "POST",
-        path: "/repo/branch/rename",
-        body: { path: args.path, old_name: args.oldName, new_name: args.newName },
-      };
-    case "get_initials":
-      return { method: "GET", path: `/repo/initials?name=${p("name")}` };
-    case "check_is_main_branch":
-      return {
-        method: "GET",
-        path: `/repo/is-main-branch?branch=${p("branch")}`,
-      };
+    },
+  },
+  get_github_status: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/github?path=${p("path")}` }),
+  },
+  get_repo_pr_statuses: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/prs?path=${p("path")}` }),
+  },
+  get_all_pr_statuses: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/prs/batch",
+      body: { paths: args.paths, include_merged: args.includeMerged },
+    }),
+  },
+  get_git_branches: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/branches?path=${p("path")}` }),
+  },
+  get_merged_branches: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/branches/merged?path=${p("repoPath")}` }),
+  },
+  get_repo_summary: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/summary?path=${p("repoPath")}` }),
+  },
+  get_repo_structure: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/structure?path=${p("repoPath")}` }),
+  },
+  get_repo_diff_stats: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/diff-stats/batch?path=${p("repoPath")}` }),
+  },
+  get_ci_checks: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/ci?path=${p("path")}&pr_number=${p("prNumber")}` }),
+  },
+  rename_branch: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/branch/rename",
+      body: { path: args.path, old_name: args.oldName, new_name: args.newName },
+    }),
+  },
+  get_initials: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/initials?name=${p("name")}` }),
+  },
+  check_is_main_branch: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/is-main-branch?branch=${p("branch")}` }),
+  },
 
-    // --- Worktrees ---
-    case "list_worktrees":
-      return { method: "GET", path: "/worktrees" };
-    case "get_worktrees_dir": {
+  // --- Worktrees ---
+  list_worktrees: { map: () => ({ method: "GET", path: "/worktrees" }) },
+  get_worktrees_dir: {
+    map: (args) => {
       const rp = args?.repoPath as string | undefined;
       return {
         method: "GET",
         path: rp ? `/worktrees/dir?repo_path=${encodeURIComponent(rp)}` : "/worktrees/dir",
         transform: (data) => (data as { dir: string }).dir,
       };
-    }
-    case "get_worktree_paths":
-      return { method: "GET", path: `/worktrees/paths?path=${p("repoPath")}` };
-    case "create_worktree":
-      return {
-        method: "POST",
-        path: "/worktrees",
-        body: { base_repo: args.baseRepo, branch_name: args.branchName, base_ref: args.baseRef },
-      };
-    case "remove_worktree":
-      return {
-        method: "DELETE",
-        path: `/worktrees/${p("branchName")}?repoPath=${p("repoPath")}&deleteBranch=${args.deleteBranch ?? true}`,
-      };
-    case "generate_worktree_name_cmd":
-      return {
-        method: "POST",
-        path: "/worktrees/generate-name",
-        body: { existing_names: args.existingNames },
-      };
-    case "finalize_merged_worktree":
-      return {
-        method: "POST",
-        path: "/worktrees/finalize",
-        body: { repoPath: args.repoPath, branchName: args.branchName, action: args.action },
-      };
+    },
+  },
+  get_worktree_paths: {
+    map: (_args, p) => ({ method: "GET", path: `/worktrees/paths?path=${p("repoPath")}` }),
+  },
+  create_worktree: {
+    map: (args) => ({
+      method: "POST",
+      path: "/worktrees",
+      body: { base_repo: args.baseRepo, branch_name: args.branchName, base_ref: args.baseRef },
+    }),
+  },
+  remove_worktree: {
+    map: (args, p) => ({
+      method: "DELETE",
+      path: `/worktrees/${p("branchName")}?repoPath=${p("repoPath")}&deleteBranch=${args.deleteBranch ?? true}`,
+    }),
+  },
+  generate_worktree_name_cmd: {
+    map: (args) => ({
+      method: "POST",
+      path: "/worktrees/generate-name",
+      body: { existing_names: args.existingNames },
+    }),
+  },
+  finalize_merged_worktree: {
+    map: (args) => ({
+      method: "POST",
+      path: "/worktrees/finalize",
+      body: { repoPath: args.repoPath, branchName: args.branchName, action: args.action },
+    }),
+  },
+  checkout_remote_branch: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/checkout-remote",
+      body: { repoPath: args.repoPath, branchName: args.branchName },
+    }),
+  },
+  detect_orphan_worktrees: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/orphan-worktrees?repoPath=${p("repoPath")}` }),
+  },
+  remove_orphan_worktree: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/remove-orphan",
+      body: { repoPath: args.repoPath, worktreePath: args.worktreePath },
+    }),
+  },
+  run_setup_script: {
+    map: (args) => ({
+      method: "POST",
+      path: "/worktrees/run-script",
+      body: { script: args.script, cwd: args.cwd },
+    }),
+  },
+  merge_pr_via_github: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/merge-pr",
+      body: { repoPath: args.repoPath, prNumber: args.prNumber, mergeMethod: args.mergeMethod },
+    }),
+  },
+  get_pr_diff: {
+    map: (args, p) => ({
+      method: "GET",
+      path: `/repo/pr-diff?path=${p("repoPath")}&pr=${args.prNumber}`,
+    }),
+  },
+  approve_pr: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/approve-pr",
+      body: { repoPath: args.repoPath, prNumber: args.prNumber },
+    }),
+  },
+  list_local_branches: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/local-branches?path=${p("repoPath")}` }),
+  },
 
-    case "checkout_remote_branch":
-      return {
-        method: "POST",
-        path: "/repo/checkout-remote",
-        body: { repoPath: args.repoPath, branchName: args.branchName },
-      };
+  // --- File operations ---
+  list_markdown_files: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/markdown-files?path=${p("path")}` }),
+  },
+  read_file: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/file?path=${p("path")}&file=${p("file")}` }),
+  },
 
-    case "detect_orphan_worktrees":
-      return { method: "GET", path: `/repo/orphan-worktrees?repoPath=${p("repoPath")}` };
+  // --- Prompt processing ---
+  process_prompt_content: {
+    map: (args) => ({
+      method: "POST",
+      path: "/prompt/process",
+      body: { content: args.content, variables: args.variables },
+    }),
+  },
+  extract_prompt_variables: {
+    map: (args) => ({
+      method: "POST",
+      path: "/prompt/extract-variables",
+      body: { content: args.content },
+    }),
+  },
 
-    case "remove_orphan_worktree":
-      return {
-        method: "POST",
-        path: "/repo/remove-orphan",
-        body: { repoPath: args.repoPath, worktreePath: args.worktreePath },
-      };
+  // --- Agents ---
+  detect_agents: { map: () => ({ method: "GET", path: "/agents" }) },
+  detect_agent_binary: {
+    map: (_args, p) => ({ method: "GET", path: `/agents/detect?binary=${p("binary")}` }),
+  },
+  detect_installed_ides: { map: () => ({ method: "GET", path: "/agents/ides" }) },
 
-    case "run_setup_script":
-      return {
-        method: "POST",
-        path: "/worktrees/run-script",
-        body: { script: args.script, cwd: args.cwd },
-      };
+  // --- Watchers ---
+  start_head_watcher: {
+    map: (_args, p) => ({ method: "POST", path: `/watchers/head?path=${p("repoPath")}` }),
+  },
+  stop_head_watcher: {
+    map: (_args, p) => ({ method: "DELETE", path: `/watchers/head?path=${p("repoPath")}` }),
+  },
+  start_repo_watcher: {
+    map: (_args, p) => ({ method: "POST", path: `/watchers/repo?path=${p("repoPath")}` }),
+  },
+  stop_repo_watcher: {
+    map: (_args, p) => ({ method: "DELETE", path: `/watchers/repo?path=${p("repoPath")}` }),
+  },
 
-    case "merge_pr_via_github":
-      return {
-        method: "POST",
-        path: "/repo/merge-pr",
-        body: { repoPath: args.repoPath, prNumber: args.prNumber, mergeMethod: args.mergeMethod },
-      };
+  // --- MCP status ---
+  get_mcp_status: { map: () => ({ method: "GET", path: "/mcp/status" }) },
 
-    case "get_pr_diff":
-      return {
-        method: "GET",
-        path: `/repo/pr-diff?path=${p("repoPath")}&pr=${args.prNumber}`,
-      };
+  // --- Network ---
+  get_local_ip: { map: () => ({ method: "GET", path: "/system/local-ip" }) },
+  get_local_ips: { map: () => ({ method: "GET", path: "/system/local-ips" }) },
 
-    case "approve_pr":
-      return {
-        method: "POST",
-        path: "/repo/approve-pr",
-        body: { repoPath: args.repoPath, prNumber: args.prNumber },
-      };
+  // --- File browser ---
+  list_directory: {
+    map: (_args, p) => ({ method: "GET", path: `/fs/list?repoPath=${p("repoPath")}&subdir=${p("subdir")}` }),
+  },
+  fs_read_file: {
+    map: (_args, p) => ({ method: "GET", path: `/fs/read?repoPath=${p("repoPath")}&file=${p("file")}` }),
+  },
+  read_external_file: {
+    map: (_args, p) => ({ method: "GET", path: `/fs/read-external?path=${p("path")}` }),
+  },
+  write_file: {
+    map: (args) => ({
+      method: "POST",
+      path: "/fs/write",
+      body: { repoPath: args.repoPath, file: args.file, content: args.content },
+    }),
+  },
+  create_directory: {
+    map: (args) => ({
+      method: "POST",
+      path: "/fs/mkdir",
+      body: { repoPath: args.repoPath, dir: args.dir },
+    }),
+  },
+  delete_path: {
+    map: (args) => ({
+      method: "POST",
+      path: "/fs/delete",
+      body: { repoPath: args.repoPath, path: args.path },
+    }),
+  },
+  rename_path: {
+    map: (args) => ({
+      method: "POST",
+      path: "/fs/rename",
+      body: { repoPath: args.repoPath, from: args.from, to: args.to },
+    }),
+  },
+  copy_path: {
+    map: (args) => ({
+      method: "POST",
+      path: "/fs/copy",
+      body: { repoPath: args.repoPath, from: args.from, to: args.to },
+    }),
+  },
+  add_to_gitignore: {
+    map: (args) => ({
+      method: "POST",
+      path: "/fs/gitignore",
+      body: { repoPath: args.repoPath, pattern: args.pattern },
+    }),
+  },
 
-    case "list_local_branches":
-      return { method: "GET", path: `/repo/local-branches?path=${p("repoPath")}` };
+  // --- Notes ---
+  load_notes: { map: () => ({ method: "GET", path: "/config/notes" }) },
+  save_notes: { map: (args) => ({ method: "PUT", path: "/config/notes", body: args.config }) },
 
-    // --- File operations ---
-    case "list_markdown_files":
-      return { method: "GET", path: `/repo/markdown-files?path=${p("path")}` };
-    case "read_file":
-      return { method: "GET", path: `/repo/file?path=${p("path")}&file=${p("file")}` };
+  // --- Recent commits ---
+  get_recent_commits: {
+    map: (args, p) => ({
+      method: "GET",
+      path: `/repo/recent-commits?path=${p("path")}&count=${args.count ?? 5}`,
+    }),
+  },
 
-    // --- Prompt processing ---
-    case "process_prompt_content":
-      return {
-        method: "POST",
-        path: "/prompt/process",
-        body: { content: args.content, variables: args.variables },
-      };
-    case "extract_prompt_variables":
-      return {
-        method: "POST",
-        path: "/prompt/extract-variables",
-        body: { content: args.content },
-      };
+  // --- Plugins ---
+  list_user_plugins: { map: () => ({ method: "GET", path: "/plugins/list" }) },
 
-    // --- Agents ---
-    case "detect_agents":
-      return { method: "GET", path: "/agents" };
-    case "detect_agent_binary":
-      return { method: "GET", path: `/agents/detect?binary=${p("binary")}` };
-    case "detect_installed_ides":
-      return { method: "GET", path: "/agents/ides" };
+  // --- App Logger ---
+  push_log: {
+    map: (args) => ({
+      method: "POST",
+      path: "/logs",
+      body: { level: args.level, source: args.source, message: args.message, data_json: args.dataJson },
+    }),
+  },
+  get_logs: {
+    map: (args) => ({ method: "GET", path: `/logs?limit=${args.limit ?? 0}` }),
+  },
+  clear_logs: { map: () => ({ method: "DELETE", path: "/logs" }) },
+};
 
-    // --- Watchers ---
-    case "start_head_watcher":
-      return { method: "POST", path: `/watchers/head?path=${p("repoPath")}` };
-    case "stop_head_watcher":
-      return { method: "DELETE", path: `/watchers/head?path=${p("repoPath")}` };
-    case "start_repo_watcher":
-      return { method: "POST", path: `/watchers/repo?path=${p("repoPath")}` };
-    case "stop_repo_watcher":
-      return { method: "DELETE", path: `/watchers/repo?path=${p("repoPath")}` };
-
-    // --- MCP status ---
-    case "get_mcp_status":
-      return { method: "GET", path: "/mcp/status" };
-
-    // --- Network ---
-    case "get_local_ip":
-      return { method: "GET", path: "/system/local-ip" };
-    case "get_local_ips":
-      return { method: "GET", path: "/system/local-ips" };
-
-    // --- File browser ---
-    case "list_directory":
-      return { method: "GET", path: `/fs/list?repoPath=${p("repoPath")}&subdir=${p("subdir")}` };
-    case "fs_read_file":
-      return { method: "GET", path: `/fs/read?repoPath=${p("repoPath")}&file=${p("file")}` };
-    case "read_external_file":
-      return { method: "GET", path: `/fs/read-external?path=${p("path")}` };
-    case "write_file":
-      return {
-        method: "POST",
-        path: "/fs/write",
-        body: { repoPath: args.repoPath, file: args.file, content: args.content },
-      };
-    case "create_directory":
-      return {
-        method: "POST",
-        path: "/fs/mkdir",
-        body: { repoPath: args.repoPath, dir: args.dir },
-      };
-    case "delete_path":
-      return {
-        method: "POST",
-        path: "/fs/delete",
-        body: { repoPath: args.repoPath, path: args.path },
-      };
-    case "rename_path":
-      return {
-        method: "POST",
-        path: "/fs/rename",
-        body: { repoPath: args.repoPath, from: args.from, to: args.to },
-      };
-    case "copy_path":
-      return {
-        method: "POST",
-        path: "/fs/copy",
-        body: { repoPath: args.repoPath, from: args.from, to: args.to },
-      };
-    case "add_to_gitignore":
-      return {
-        method: "POST",
-        path: "/fs/gitignore",
-        body: { repoPath: args.repoPath, pattern: args.pattern },
-      };
-
-    // --- Notes ---
-    case "load_notes":
-      return { method: "GET", path: "/config/notes" };
-    case "save_notes":
-      return { method: "PUT", path: "/config/notes", body: args.config };
-
-    // --- Recent commits ---
-    case "get_recent_commits":
-      return { method: "GET", path: `/repo/recent-commits?path=${p("path")}&count=${args.count ?? 5}` };
-
-    // --- Plugins ---
-    case "list_user_plugins":
-      return { method: "GET", path: "/plugins/list" };
-
-    // --- App Logger ---
-    case "push_log":
-      return {
-        method: "POST",
-        path: "/logs",
-        body: { level: args.level, source: args.source, message: args.message, data_json: args.dataJson },
-      };
-    case "get_logs":
-      return { method: "GET", path: `/logs?limit=${args.limit ?? 0}` };
-    case "clear_logs":
-      return { method: "DELETE", path: "/logs" };
-
-    default:
-      throw new Error(`No HTTP mapping for command: ${command}`);
+/** Map a Tauri invoke command + args to an HTTP method/path/body */
+export function mapCommandToHttp(command: string, args: Record<string, unknown>): HttpMapping {
+  const entry = COMMAND_TABLE[command];
+  if (!entry) {
+    throw new Error(`No HTTP mapping for command: ${command}`);
   }
+  if ("browserUnsupported" in entry) {
+    throw new Error(
+      `Command "${command}" requires native OS features and is not available in browser mode`,
+    );
+  }
+  const p: ArgEncoder = (key) => encodeArg(command, args, key);
+  return entry.map(args, p);
 }
 
 /** Build a full URL for HTTP transport using current window origin */
