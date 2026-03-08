@@ -65,10 +65,21 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
 
         case "delete-local":
           await config.closeTerminalsForBranch(repoPath, branchName);
-          await invoke("delete_local_branch", {
-            repoPath,
-            branchName,
-          });
+          try {
+            await invoke("delete_local_branch", {
+              repoPath,
+              branchName,
+            });
+          } catch (e) {
+            const msg = String(e);
+            if (msg.includes("not found") || msg.includes("no such branch")) {
+              // Already deleted — treat as success
+              appLogger.info("git", `Local branch ${branchName} already deleted`);
+              onStepDone(step.id, "success", undefined);
+              continue;
+            }
+            throw e;
+          }
           didDeleteLocal = true;
           break;
 

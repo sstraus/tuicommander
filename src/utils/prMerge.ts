@@ -27,6 +27,12 @@ export function isMergeMethodNotAllowed(error: unknown): boolean {
   return String(error).includes("405");
 }
 
+/** Whether the PR was already merged (GitHub returns 409 or "not mergeable"). */
+export function isAlreadyMerged(error: unknown): boolean {
+  const msg = String(error);
+  return msg.includes("not mergeable") || msg.includes("already been merged") || msg.includes("409");
+}
+
 /** Try to merge a PR, automatically falling back through all merge methods on 405.
  *  Returns the method that succeeded. Throws on non-405 errors or if all methods fail. */
 export async function mergeWithFallback(

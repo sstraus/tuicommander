@@ -7,7 +7,7 @@ import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { appLogger } from "../../stores/appLogger";
 import { invoke } from "../../invoke";
 import { canMergePr, effectiveMergeMethod } from "../Sidebar/RepoSection";
-import { mergeWithFallback } from "../../utils/prMerge";
+import { mergeWithFallback, isAlreadyMerged } from "../../utils/prMerge";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -123,14 +123,24 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     try {
       const preferred = repoSettingsStore.getEffective?.(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
       const startMethod = effectiveMergeMethod(pr, preferred);
-      const usedMethod = await mergeWithFallback(props.repoPath, pr.number, startMethod);
-      // Persist the working method so future merges use it directly
-      if (usedMethod !== preferred) {
-        const repo = repositoriesStore.get(props.repoPath);
-        repoSettingsStore.getOrCreate(props.repoPath, repo?.displayName ?? props.repoPath);
-        repoSettingsStore.update(props.repoPath, { prMergeStrategy: usedMethod });
+      let alreadyMerged = false;
+      try {
+        const usedMethod = await mergeWithFallback(props.repoPath, pr.number, startMethod);
+        // Persist the working method so future merges use it directly
+        if (usedMethod !== preferred) {
+          const repo = repositoriesStore.get(props.repoPath);
+          repoSettingsStore.getOrCreate(props.repoPath, repo?.displayName ?? props.repoPath);
+          repoSettingsStore.update(props.repoPath, { prMergeStrategy: usedMethod });
+        }
+        appLogger.info("github", `Merged PR #${pr.number} via ${usedMethod}`);
+      } catch (mergeErr) {
+        if (isAlreadyMerged(mergeErr)) {
+          alreadyMerged = true;
+          appLogger.info("github", `PR #${pr.number} was already merged — proceeding to cleanup`);
+        } else {
+          throw mergeErr;
+        }
       }
-      appLogger.info("github", `Merged PR #${pr.number} via ${usedMethod}`);
       githubStore.pollRepo(props.repoPath);
 
       // Show cleanup dialog — pre-check dirty state for stash UX
