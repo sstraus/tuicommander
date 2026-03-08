@@ -196,7 +196,7 @@ const App: Component = () => {
   const [worktreeCleanupStepErrors, setWorktreeCleanupStepErrors] = createSignal<Partial<Record<StepId, string>>>({});
   const [worktreeCleanupAction, setWorktreeCleanupAction] = createSignal<"archive" | "delete">("archive");
 
-  const handleWorktreeCleanupExecute = async (steps: CleanupStep[]) => {
+  const handleWorktreeCleanupExecute = async (steps: CleanupStep[], options?: { unstash?: boolean }) => {
     const ctx = gitOps.mergePendingCtx();
     if (!ctx) return;
     setWorktreeCleanupExecuting(true);
@@ -208,6 +208,7 @@ const App: Component = () => {
       baseBranch: ctx.baseBranch,
       steps: steps.map((s) => ({ id: s.id, checked: s.checked })),
       worktreeAction: worktreeCleanupAction(),
+      unstash: options?.unstash,
       onStepStart: (id) => setWorktreeCleanupStepStatuses((prev) => ({ ...prev, [id]: "running" as StepStatus })),
       onStepDone: (id, result, error) => {
         setWorktreeCleanupStepStatuses((prev) => ({ ...prev, [id]: result as StepStatus }));
@@ -1449,6 +1450,7 @@ const App: Component = () => {
               isOnBaseBranch={isOnBaseBranch}
               isDefaultBranch={isDefaultBranch}
               hasTerminals={hasTerminals}
+              hasDirtyFiles={ctx.hasDirtyFiles}
               worktreeAction={worktreeCleanupAction()}
               onWorktreeActionChange={setWorktreeCleanupAction}
               executing={worktreeCleanupExecuting()}

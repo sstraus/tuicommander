@@ -19,7 +19,9 @@ export interface PostMergeCleanupDialogProps {
   isOnBaseBranch: boolean;
   isDefaultBranch: boolean;
   hasTerminals: boolean;
-  onExecute: (steps: CleanupStep[]) => void;
+  /** Working directory has uncommitted changes */
+  hasDirtyFiles?: boolean;
+  onExecute: (steps: CleanupStep[], options?: { unstash?: boolean }) => void;
   onSkip: () => void;
   /** When true, checkboxes and buttons are disabled */
   executing?: boolean;
@@ -88,6 +90,7 @@ export const PostMergeCleanupDialog: Component<PostMergeCleanupDialogProps> = (p
   const [steps, setSteps] = createSignal<CleanupStep[]>(
     buildInitialSteps(props.baseBranch, props.isOnBaseBranch, props.isDefaultBranch, props.worktreeAction),
   );
+  const [unstash, setUnstash] = createSignal(false);
 
   const toggleStep = (id: StepId) => {
     if (props.executing) return;
@@ -99,7 +102,7 @@ export const PostMergeCleanupDialog: Component<PostMergeCleanupDialogProps> = (p
   };
 
   const handleExecute = () => {
-    props.onExecute(steps());
+    props.onExecute(steps(), { unstash: unstash() });
   };
 
   createEffect(() => {
@@ -174,6 +177,21 @@ export const PostMergeCleanupDialog: Component<PostMergeCleanupDialogProps> = (p
                         </span>
                       </Show>
                     </div>
+                    <Show when={step.id === "switch" && step.checked && props.hasDirtyFiles}>
+                      <div class={s.dirtyWarning} data-testid="dirty-warning">
+                        Uncommitted changes will be stashed before switching.
+                        <label class={s.unstashOption}>
+                          <input
+                            type="checkbox"
+                            data-testid="unstash-check"
+                            checked={unstash()}
+                            disabled={!!props.executing}
+                            onChange={() => setUnstash((v) => !v)}
+                          />
+                          <span>Unstash after switch</span>
+                        </label>
+                      </div>
+                    </Show>
                     <Show when={error()}>
                       <div class={s.stepError} data-testid={`step-error-${step.id}`}>
                         {error()}

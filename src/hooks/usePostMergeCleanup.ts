@@ -13,6 +13,8 @@ export interface CleanupConfig {
   closeTerminalsForBranch: (repoPath: string, branchName: string) => Promise<void>;
   /** When set, the "worktree" step calls finalize_merged_worktree with this action */
   worktreeAction?: "archive" | "delete";
+  /** When true, pop the stash after switching branches */
+  unstash?: boolean;
 }
 
 /** Execute post-merge cleanup steps sequentially via Rust backend commands. */
@@ -39,20 +41,18 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
         }
 
         case "switch": {
-          // Pre-check for dirty working directory
-          const status = await invoke<{ stdout: string; stderr: string }>("run_git_command", {
-            path: repoPath,
-            args: ["status", "--porcelain"],
-          });
-          if (status.stdout.trim().length > 0) {
-            throw new Error("Working directory has uncommitted changes — commit or stash first");
-          }
           await invoke("switch_branch", {
             repoPath,
             branch: baseBranch,
             force: false,
-            stash: false,
+            stash: true,
           });
+          if (config.unstash) {
+            await invoke("run_git_command", {
+              path: repoPath,
+              args: ["stash", "pop"],
+            });
+          }
           break;
         }
 

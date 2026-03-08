@@ -49,7 +49,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
   const [mergeError, setMergeError] = createSignal<string | null>(null);
 
   // Post-merge cleanup dialog state
-  const [cleanupCtx, setCleanupCtx] = createSignal<{ branchName: string; baseBranch: string } | null>(null);
+  const [cleanupCtx, setCleanupCtx] = createSignal<{ branchName: string; baseBranch: string; hasDirtyFiles: boolean } | null>(null);
   const [cleanupExecuting, setCleanupExecuting] = createSignal(false);
   const [cleanupStepStatuses, setCleanupStepStatuses] = createSignal<Partial<Record<StepId, StepStatus>>>({});
   const [cleanupStepErrors, setCleanupStepErrors] = createSignal<Partial<Record<StepId, string>>>({});
@@ -79,7 +79,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     }
   };
 
-  const handleCleanupExecute = async (steps: CleanupStep[]) => {
+  const handleCleanupExecute = async (steps: CleanupStep[], options?: { unstash?: boolean }) => {
     const ctx = cleanupCtx();
     if (!ctx) return;
     setCleanupExecuting(true);
@@ -92,6 +92,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
       baseBranch: ctx.baseBranch,
       steps: steps.map((s) => ({ id: s.id, checked: s.checked })),
       closeTerminalsForBranch,
+      unstash: options?.unstash,
       onStepStart: (id) => {
         setCleanupStepStatuses((prev) => ({ ...prev, [id]: "running" }));
       },
@@ -132,9 +133,17 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
       appLogger.info("github", `Merged PR #${pr.number} via ${usedMethod}`);
       githubStore.pollRepo(props.repoPath);
 
-      // Show cleanup dialog instead of closing
+      // Show cleanup dialog — pre-check dirty state for stash UX
       const baseBranch = pr.base_ref_name || "main";
-      setCleanupCtx({ branchName: props.branch, baseBranch });
+      let hasDirtyFiles = false;
+      try {
+        const status = await invoke<{ stdout: string }>("run_git_command", {
+          path: props.repoPath,
+          args: ["status", "--porcelain"],
+        });
+        hasDirtyFiles = status.stdout.trim().length > 0;
+      } catch { /* ignore — assume clean */ }
+      setCleanupCtx({ branchName: props.branch, baseBranch, hasDirtyFiles });
     } catch (e) {
       setMergeError(String(e));
       appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: String(e) });
@@ -218,6 +227,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
             isOnBaseBranch={isOnBaseBranch()}
             isDefaultBranch={false}
             hasTerminals={hasTerminals()}
+            hasDirtyFiles={ctx().hasDirtyFiles}
             onExecute={handleCleanupExecute}
             onSkip={handleCleanupSkip}
             executing={cleanupExecuting()}

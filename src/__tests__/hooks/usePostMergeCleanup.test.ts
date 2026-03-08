@@ -62,14 +62,13 @@ describe("executeCleanup", () => {
     });
   });
 
-  it("calls steps in order: dirty-check → switch → pull → delete-local → delete-remote", async () => {
+  it("calls steps in order: switch → pull → delete-local → delete-remote", async () => {
     const config = makeConfig();
     await executeCleanup(config);
 
     // Verify invoke call order
     const calls = mockInvoke.mock.calls.map((c: unknown[]) => c[0]);
     expect(calls).toEqual([
-      "run_git_command",   // status --porcelain (dirty check)
       "switch_branch",
       "run_git_command",   // pull
       "delete_local_branch",
@@ -92,7 +91,7 @@ describe("executeCleanup", () => {
     expect(calls).toEqual(["delete_local_branch"]);
   });
 
-  it("calls dirty check then switch_branch with correct args", async () => {
+  it("calls switch_branch with stash: true", async () => {
     const config = makeConfig({
       steps: [
         { id: "switch", checked: true },
@@ -103,15 +102,11 @@ describe("executeCleanup", () => {
     });
     await executeCleanup(config);
 
-    expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
-      path: "/repo",
-      args: ["status", "--porcelain"],
-    });
     expect(mockInvoke).toHaveBeenCalledWith("switch_branch", {
       repoPath: "/repo",
       branch: "main",
       force: false,
-      stash: false,
+      stash: true,
     });
   });
 
@@ -193,9 +188,7 @@ describe("executeCleanup", () => {
   });
 
   it("reports error status when a step fails", async () => {
-    // Dirty check succeeds, but switch itself fails
     mockInvoke
-      .mockResolvedValueOnce({ stdout: "", stderr: "" }) // dirty check
       .mockRejectedValueOnce(new Error("branch checkout conflict"));
     const onStepStart = vi.fn();
     const onStepDone = vi.fn();
@@ -217,9 +210,7 @@ describe("executeCleanup", () => {
   });
 
   it("handles 'remote ref does not exist' as success", async () => {
-    // dirty check, switch, pull, delete-local succeed, delete-remote fails with "does not exist"
     mockInvoke
-      .mockResolvedValueOnce({ stdout: "", stderr: "" })  // dirty check
       .mockResolvedValueOnce(undefined)                    // switch
       .mockResolvedValueOnce({ stdout: "", stderr: "" })   // pull
       .mockResolvedValueOnce(undefined)                    // delete-local
@@ -247,12 +238,7 @@ describe("executeCleanup", () => {
     expect(mockBumpRevision).toHaveBeenCalledWith("/repo");
   });
 
-  it("pre-checks dirty state before switch and reports clear error", async () => {
-    // First invoke: run_git_command (status --porcelain) returns non-empty
-    mockInvoke.mockResolvedValueOnce({ stdout: "M src/foo.ts\n", stderr: "" });
-
-    const onStepStart = vi.fn();
-    const onStepDone = vi.fn();
+  it("runs stash pop after switch when unstash is true", async () => {
     const config = makeConfig({
       steps: [
         { id: "switch", checked: true },
@@ -260,12 +246,32 @@ describe("executeCleanup", () => {
         { id: "delete-local", checked: false },
         { id: "delete-remote", checked: false },
       ],
-      onStepStart,
-      onStepDone,
+      unstash: true,
     });
     await executeCleanup(config);
 
-    expect(onStepDone).toHaveBeenCalledWith("switch", "error", "Working directory has uncommitted changes — commit or stash first");
+    const calls = mockInvoke.mock.calls.map((c: unknown[]) => c[0]);
+    expect(calls).toEqual(["switch_branch", "run_git_command"]);
+    expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
+      path: "/repo",
+      args: ["stash", "pop"],
+    });
+  });
+
+  it("does not run stash pop when unstash is false", async () => {
+    const config = makeConfig({
+      steps: [
+        { id: "switch", checked: true },
+        { id: "pull", checked: false },
+        { id: "delete-local", checked: false },
+        { id: "delete-remote", checked: false },
+      ],
+      unstash: false,
+    });
+    await executeCleanup(config);
+
+    const calls = mockInvoke.mock.calls.map((c: unknown[]) => c[0]);
+    expect(calls).toEqual(["switch_branch"]);
   });
 
   it("handles no remote tracking branch gracefully", async () => {

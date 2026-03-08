@@ -4,6 +4,7 @@ import { repositoriesStore, type RepositoryState } from "../stores/repositories"
 import { appLogger } from "../stores/appLogger";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "../transport";
+import { invoke } from "../invoke";
 import { findOrphanTerminals } from "../utils/terminalOrphans";
 import { filterValidTerminals } from "../utils/terminalFilter";
 import { buildResumeCommand } from "../utils/agentSession";
@@ -94,6 +95,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     repoPath: string;
     branchName: string;
     baseBranch: string;
+    hasDirtyFiles: boolean;
   } | null>(null);
 
   /** Reentrancy guard: prevents concurrent handleBranchSelect calls from
@@ -866,7 +868,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
         await closeTerminalsForBranch(repoPath, branchName);
         if (afterMerge === "ask") {
           deps.setStatusInfo(`Merged ${branchName} via GitHub — choose what to do with the worktree`);
-          setMergePendingCtx({ repoPath, branchName, baseBranch: targetBranch });
+          let hasDirtyFiles = false;
+          try {
+            const status = await invoke<{ stdout: string }>("run_git_command", { path: repoPath, args: ["status", "--porcelain"] });
+            hasDirtyFiles = status.stdout.trim().length > 0;
+          } catch { /* assume clean */ }
+          setMergePendingCtx({ repoPath, branchName, baseBranch: targetBranch, hasDirtyFiles });
           return;
         }
         const action = afterMerge as "archive" | "delete";
@@ -903,7 +910,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
     if (result.action === "pending") {
       // "ask" mode — merge succeeded, user must choose what to do with the worktree
       deps.setStatusInfo(`Merged ${branchName} into ${targetBranch} — choose what to do with the worktree`);
-      setMergePendingCtx({ repoPath, branchName, baseBranch: targetBranch });
+      let hasDirtyFiles = false;
+      try {
+        const status = await invoke<{ stdout: string }>("run_git_command", { path: repoPath, args: ["status", "--porcelain"] });
+        hasDirtyFiles = status.stdout.trim().length > 0;
+      } catch { /* assume clean */ }
+      setMergePendingCtx({ repoPath, branchName, baseBranch: targetBranch, hasDirtyFiles });
       // Branch stays in sidebar until the user decides via cleanup dialog
       return;
     }

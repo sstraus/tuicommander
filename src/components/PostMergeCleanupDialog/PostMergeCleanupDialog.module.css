@@ -72,3 +72,20 @@
   font-size: var(--font-md);
   color: var(--fg-muted);
 }
+
+.dirtyWarning {
+  padding-left: 30px;
+  font-size: var(--font-xs);
+  color: var(--warning);
+  margin-top: -2px;
+}
+
+.unstashOption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
