@@ -914,7 +914,9 @@ impl AppState {
                                     .map(|t| t.to_string());
                             }
                             "status-line" => {
-                                // Agent is working — clear error/rate-limit/suggest/menu
+                                // Agent is working — clear error/rate-limit/suggest/menu/question
+                                s.awaiting_input = false;
+                                s.question_text = None;
                                 s.rate_limited = false;
                                 s.retry_after_ms = None;
                                 s.last_error = None;
@@ -2456,6 +2458,19 @@ mod tests {
         let event = make_parsed("user-input", serde_json::json!({ "content": "yes" }));
         let s = apply(&state, &event);
         assert!(!s.awaiting_input);
+    }
+
+    #[test]
+    fn test_session_state_status_line_clears_awaiting_input() {
+        let state = fresh_state();
+        // Set question state
+        let q = make_parsed("question", serde_json::json!({ "prompt_text": "Install gopls?" }));
+        apply(&state, &q);
+        // Status-line means agent is working → question answered
+        let status = make_parsed("status-line", serde_json::json!({ "task_name": "Reading files" }));
+        let s = apply(&state, &status);
+        assert!(!s.awaiting_input, "status-line should clear awaiting_input");
+        assert!(s.question_text.is_none(), "status-line should clear question_text");
     }
 
     #[test]
