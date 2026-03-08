@@ -85,7 +85,7 @@
 ### 1.10 Move Terminal to Worktree
 - Right-click a terminal tab → "Move to Worktree" submenu lists available worktrees (excluding the current one)
 - Selecting a worktree sends `cd` to the PTY; OSC 7 auto-reassigns the terminal to the target branch
-- Also available via Command Palette: dynamic "Move to worktree: <branch>" entries appear when the active terminal belongs to a repo with multiple worktrees
+- Also available via Command Palette: dynamic "Move to worktree: \<branch\>" entries appear when the active terminal belongs to a repo with multiple worktrees
 - Only shown when the repo has more than one worktree
 
 ### 1.11 OSC 7 CWD Tracking

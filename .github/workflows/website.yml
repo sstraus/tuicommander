@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "website/**"
+      - "docs/**"
       - ".github/workflows/website.yml"
   workflow_dispatch:
 
@@ -29,13 +30,21 @@ jobs:
           cache: npm
           cache-dependency-path: website/package-lock.json
 
-      - name: Install dependencies
+      - name: Install website dependencies
         working-directory: website
         run: npm ci
 
-      - name: Build
+      - name: Build landing page
         working-directory: website
         run: npm run build
+
+      - name: Install mdBook
+        uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: "latest"
+
+      - name: Build docs
+        run: mdbook build docs --dest-dir ${{ github.workspace }}/website/dist/docs
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

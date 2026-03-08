@@ -1,0 +1,15 @@
+[book]
+title = "TUICommander"
+description = "Multi-agent terminal orchestrator"
+authors = ["TUICommander Contributors"]
+language = "en"
+src = "."
+
+[build]
+build-dir = "book"
+
+[output.html]
+site-url = "/docs/"
+default-theme = "dark"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/nicobailon/tuicommander"
