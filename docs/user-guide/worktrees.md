@@ -78,6 +78,8 @@ Right-click a worktree branch → **Merge & Archive** to:
 
 The merge uses `--no-edit` for a clean fast-forward or merge commit. If conflicts are detected, the merge is aborted and the worktree is left intact.
 
+When using **Ask** mode, the cleanup dialog detects uncommitted changes and auto-stashes them during the branch switch. An "Unstash after switch" checkbox lets you restore changes on the target branch.
+
 ## Moving Terminals Between Worktrees
 
 Right-click a terminal tab → **Move to Worktree** to move it to a different worktree. The terminal will `cd` into the target worktree path, and the tab automatically reassigns to the new branch in the sidebar.

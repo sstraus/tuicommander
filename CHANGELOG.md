@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Post-merge cleanup: auto-stash** — Switch step now auto-stashes uncommitted changes instead of blocking. Dialog shows inline warning with optional "Unstash after switch" checkbox
+- **Mobile Activity Feed: throttled grouping** — Items snapshot every 10s to prevent constant reordering with multiple active sessions
+
+### Fixed
+- **Ghost question notifications on PWA** — Question state now auto-clears when agent resumes work (status-line event)
+- **Mobile table rendering** — Box-drawing characters preserve alignment via horizontal scroll (`white-space: pre`)
+- **Mobile emoji rendering** — Unicode symbols (●, ○, ◉) forced to text presentation via `font-variant-emoji: text`
+
 ## [0.7.1] - 2026-03-08
 
 ### Changed

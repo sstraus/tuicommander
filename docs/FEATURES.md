@@ -385,6 +385,7 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 - Silence-based detection: if terminal output stops for 10s after a line ending with `?`, the session is treated as awaiting input
 - Echo suppression: user-typed input echoed by PTY is ignored for 500ms to prevent false question detection
 - `extract_question_line()` scans all changed rows (not just the last) for question text, applied in both normal and headless reader threads
+- Question state auto-clears when a `status-line` event fires (agent is actively working, so it's no longer awaiting input)
 
 ### 6.5 Usage Limit Detection
 - Claude Code weekly and session usage percentage (from PTY output patterns)
@@ -546,7 +547,7 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 - Merge method auto-detected from repo's allowed methods via GitHub API (`get_repo_merge_methods`); auto-fallback to squash on HTTP 405 rejection
 - Triggered from: PR detail popover (local branches), remote-only PR popover, Merge & Archive workflow (sidebar context menu)
 - Post-merge cleanup dialog: sequential steps executed via Rust backend (not PTY — terminal may be occupied by AI agent)
-  - Switch to base branch (with dirty state pre-check)
+  - Switch to base branch (auto-stash if dirty — inline warning shown with "Unstash after switch" checkbox)
   - Pull base branch (ff-only)
   - Close terminals + delete local branch (safe delete, refuses default branch)
   - Delete remote branch (gracefully handles "already deleted")
@@ -1007,6 +1008,7 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 ### 18.5 Activity Feed
 - Chronological event feed grouped by time (NOW, EARLIER, TODAY, OLDER)
 - Reads from shared `activityStore`
+- Throttled grouping: items snapshot every 10s to prevent constant reordering with multiple active sessions; new items/removals trigger immediate refresh
 - Sticky section headers, tap to navigate to session
 
 ### 18.6 Session Management
@@ -1034,6 +1036,8 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - Frosted glass bottom tabs: `backdrop-filter: blur(20px) saturate(1.8)` with semi-transparent background
 - Elevated card design: `border-radius: var(--radius-xl)`, `background: var(--bg-secondary)`, margin spacing
 - Safe-area-inset padding for notched devices
+- `font-variant-emoji: text` on output view — forces Unicode symbols (●, ○, ◉) to render as monochrome text glyphs instead of colorful emoji
+- `white-space: pre` on output view — preserves box-drawing character alignment with horizontal scroll instead of wrapping
 
 ### 18.11 Standalone CSS
 - Mobile PWA uses its own standalone stylesheet (`src/mobile/mobile.css`), independent from the desktop `global.css`

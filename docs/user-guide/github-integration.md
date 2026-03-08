@@ -148,7 +148,7 @@ Clicking the PR badge on any branch (local or remote-only) opens the detail popo
 
 After merging a PR from the popover, a **cleanup dialog** appears with checkable steps:
 
-1. **Switch to base branch** — with dirty state pre-check (warns if uncommitted changes)
+1. **Switch to base branch** — if the working directory has uncommitted changes, they are automatically stashed. An inline warning shows with an optional "Unstash after switch" checkbox
 2. **Pull base branch** — fast-forward only
 3. **Delete local branch** — closes terminals first, refuses to delete default branch
 4. **Delete remote branch** — gracefully handles "already deleted"
