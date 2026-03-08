@@ -1072,7 +1072,7 @@ impl LogColor {
 }
 
 /// A contiguous run of text with uniform formatting attributes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct LogSpan {
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1101,6 +1101,25 @@ impl LogLine {
             s.push_str(&span.text);
         }
         s
+    }
+
+    /// Strip structural tokens (`[[intent: ...]]`, `[[suggest: ...]]`) from span text.
+    /// These tokens are parsed by the output parser for state updates but should not
+    /// appear in rendered log output (PWA/REST consumers).
+    pub fn strip_structural_tokens(&mut self) {
+        lazy_static::lazy_static! {
+            static ref STRUCTURAL_RE: regex::Regex = regex::Regex::new(
+                r"(?:\[\[?|\x{27E6})(?:intent|suggest):\s*[^\]\x{27E7}]*?\s*(?:\]?\]|\x{27E7})"
+            ).unwrap();
+        }
+        for span in &mut self.spans {
+            if span.text.contains("intent:") || span.text.contains("suggest:") {
+                let replaced = STRUCTURAL_RE.replace_all(&span.text, "");
+                span.text = replaced.into_owned();
+            }
+        }
+        // Remove spans that became empty after stripping
+        self.spans.retain(|s| !s.text.is_empty());
     }
 }
 
@@ -1390,7 +1409,12 @@ impl VtLogBuffer {
         if offset >= total {
             return (Vec::new(), total);
         }
-        let slice: Vec<LogLine> = self.log.iter().skip(offset).cloned().collect();
+        let mut slice: Vec<LogLine> = self.log.iter().skip(offset).cloned().collect();
+        for line in &mut slice {
+            line.strip_structural_tokens();
+        }
+        // Remove lines that became entirely empty after stripping
+        slice.retain(|l| !l.spans.is_empty());
         let new_offset = total;
         (slice, new_offset)
     }
@@ -1419,7 +1443,9 @@ impl VtLogBuffer {
         let rows = screen.size().0;
         let mut lines = Vec::with_capacity(rows as usize);
         for row in 0..rows {
-            lines.push(extract_log_line(screen, row));
+            let mut line = extract_log_line(screen, row);
+            line.strip_structural_tokens();
+            lines.push(line);
         }
         // Trim trailing empty lines
         while let Some(last) = lines.last() {
@@ -3338,5 +3364,51 @@ mod tests {
         assert_eq!(spans[1]["text"], " world");
         assert!(spans[1].get("fg").is_none() || spans[1]["fg"].is_null());
         assert!(spans[1].get("bold").is_none() || !spans[1]["bold"].as_bool().unwrap_or(true));
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_intent() {
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "● ".into(), ..Default::default() },
+                LogSpan { text: "[[intent: Reading codebase(Reading)]]".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert_eq!(line.spans.len(), 1);
+        assert_eq!(line.spans[0].text, "● ");
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_suggest() {
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "[[suggest: Run tests | Deploy]]".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert!(line.spans.is_empty(), "suggest-only line should be empty after stripping");
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_mixed_content() {
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "prefix [[intent: Doing work(Work)]] suffix".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert_eq!(line.spans[0].text, "prefix  suffix");
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_no_match() {
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "normal output".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert_eq!(line.spans[0].text, "normal output");
     }
 }

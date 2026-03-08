@@ -923,10 +923,11 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Colorize intent tokens yellow: `[[intent: text(title)]]` → `\e[2;33mintent: text\e[0m`.
+/// Colorize intent tokens dim yellow: `[[intent: text(title)]]` → `\e[2;33mintent: text\e[0m`.
 /// Operates on raw PTY text via replace_all — only the matched token span is replaced,
 /// preserving surrounding cursor movements (CUU/CUD) that position the text on screen.
-/// The body stays raw (ANSI codes intact) so xterm.js renders it faithfully.
+/// ANSI codes within the body are stripped so our dim-yellow SGR is not interrupted
+/// by embedded resets or color changes from the agent's Ink renderer.
 /// Brackets and the optional `(title)` suffix are stripped.
 pub fn colorize_intent(raw: &str) -> String {
     lazy_static::lazy_static! {
@@ -938,10 +939,27 @@ pub fn colorize_intent(raw: &str) -> String {
                 C = c
             )).unwrap()
         };
+        // SGR sequences end with 'm' — these set colors/attributes that would
+        // interrupt our dim-yellow wrapping.
+        static ref SGR_RE: regex::Regex =
+            regex::Regex::new(r"\x1b\[[\x30-\x3f]*m").unwrap();
+        // CUF (cursor forward) sequences end with 'C' — used by Ink as inter-word
+        // spacing. Convert to spaces so words don't merge after SGR stripping.
+        static ref CUF_RE: regex::Regex =
+            regex::Regex::new(r"\x1b\[(\d*)C").unwrap();
     }
     INTENT_REPLACE_RE.replace_all(raw, |caps: &regex::Captures| {
-        let body = &caps[1]; // raw body, ANSI codes intact for xterm.js
-        format!("\x1b[2;33mintent: {}\x1b[0m", body)
+        let body_raw = &caps[1];
+        // Convert CUF (cursor forward) to equivalent spaces
+        let body = CUF_RE.replace_all(body_raw, |cuf: &regex::Captures| {
+            let n: usize = cuf.get(1)
+                .and_then(|m| m.as_str().parse().ok())
+                .unwrap_or(1);
+            " ".repeat(n)
+        });
+        // Strip SGR sequences so our dim-yellow is uninterrupted
+        let body_clean = SGR_RE.replace_all(&body, "");
+        format!("\x1b[2;33mintent: {}\x1b[0m", body_clean)
     }).into_owned()
 }
 
@@ -2487,7 +2505,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         // Verify colorize strips brackets + title even with ⏺ prefix
         let raw = "\u{25CF} [[intent: Implementing agentTeamsShim config field(Config field)]]";
         let colored = colorize_intent(raw);
-        assert!(colored.contains("\x1b[2;33m"), "should contain yellow ANSI");
+        assert!(colored.contains("\x1b[2;33m"), "should contain dim yellow ANSI");
         assert!(!colored.contains("(Config field)"), "should strip title from visible output");
         assert!(!colored.contains("[["), "should strip opening brackets");
         assert!(!colored.contains("]]"), "should strip closing brackets");
@@ -2502,7 +2520,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert_eq!(get_intent(&events), Some("Implementing config".to_string()));
         assert_eq!(get_intent_title(&events), Some("Config field".to_string()));
         let colored = colorize_intent(raw);
-        assert!(colored.contains("\x1b[2;33m"), "should colorize yellow");
+        assert!(colored.contains("\x1b[2;33m"), "should colorize dim yellow");
         assert!(!colored.contains("(Config field)"), "should strip title");
         assert!(!colored.contains("[["), "should strip brackets");
     }
@@ -2765,12 +2783,12 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     #[test]
     fn test_colorize_intent_cuf_between_words() {
         // Claude Code emits \x1b[1C (CUF) instead of spaces between words.
-        // The body is kept raw (CUF intact) — xterm.js renders them as cursor movement.
+        // CUF is converted to spaces so words stay separated after SGR stripping.
         let raw = "[[intent: Project\x1b[1Conboarding\x1b[1Cand\x1b[1Cunderstanding(Prime session)]]";
         let colored = colorize_intent(raw);
-        // Body should contain the raw CUF codes (xterm.js renders them correctly)
-        assert!(colored.contains("Project\x1b[1Conboarding"),
-            "raw CUF must be preserved in body; got: {:?}", colored);
+        // CUF replaced with spaces, words separated
+        assert!(colored.contains("Project onboarding and understanding"),
+            "CUF should become spaces; got: {:?}", colored);
         assert!(!colored.contains("(Prime session)"), "title stripped");
         assert!(!colored.contains("[["), "brackets stripped");
     }
