@@ -399,12 +399,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           }
           case "question": {
-            // Guard: if the terminal is actively producing output, the match
-            // is likely a false positive from the agent streaming code/discussion
-            // that contains question-like patterns (same logic as rate-limit).
+            // Guard: if the terminal is actively producing output or has active
+            // sub-tasks (tool use), low-confidence questions are false positives.
             const qTerminal = terminalsStore.get(props.id);
-            if (qTerminal?.shellState === "busy" && !parsed.confident) {
-              appLogger.debug("terminal", `[ParsedEvent] ${props.id} question IGNORED (shellState=busy, low confidence) prompt="${parsed.prompt_text}"`);
+            if (!parsed.confident && (qTerminal?.shellState === "busy" || (qTerminal?.activeSubTasks ?? 0) > 0)) {
+              appLogger.debug("terminal", `[ParsedEvent] ${props.id} question IGNORED (busy=${qTerminal?.shellState === "busy"} subTasks=${qTerminal?.activeSubTasks} low-confidence) prompt="${parsed.prompt_text}"`);
               break;
             }
             // Dedup: don't re-notify if already awaiting input

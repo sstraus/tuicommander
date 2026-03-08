@@ -252,15 +252,16 @@ describe("terminalsStore debounced busy signal", () => {
   });
 
   describe("awaitingInputConfident", () => {
-    it("does not clear awaitingInput on idle→busy when confident is true", () => {
+    it("clears confident awaitingInput on idle→busy immediately", () => {
       createRoot((dispose) => {
         const id = addTerminal();
         store.update(id, { shellState: "busy" });
         store.update(id, { shellState: "idle" });
         store.setAwaitingInput(id, "question", true);
-        // Idle→busy should NOT clear a confident detection (e.g. Ink menu)
+        // Idle→busy clears ALL question state — confident false positives are
+        // now prevented upstream in Rust (spinner suppression #658-785c).
         store.update(id, { shellState: "busy" });
-        expect(store.get(id)?.awaitingInput).toBe("question");
+        expect(store.get(id)?.awaitingInput).toBeNull();
         dispose();
       });
     });
