@@ -575,7 +575,18 @@ fn is_tcc_protected_path(path: &std::path::Path) -> bool {
 #[tauri::command]
 pub fn resolve_terminal_path(cwd: String, candidate: String) -> Option<ResolvedFilePath> {
     let path_str = strip_line_col_suffix(&candidate);
-    let path = PathBuf::from(path_str);
+
+    // Expand ~ to home directory
+    let expanded = if let Some(rest) = path_str.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            home.join(rest).to_string_lossy().to_string()
+        } else {
+            path_str.to_string()
+        }
+    } else {
+        path_str.to_string()
+    };
+    let path = PathBuf::from(&expanded);
 
     let absolute = if path.is_absolute() {
         path
