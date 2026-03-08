@@ -13,6 +13,7 @@
   line-height: 1.6;
   color: var(--fg-primary);
   white-space: pre;
+  font-variant-emoji: text;
   margin: 0;
 }
 
