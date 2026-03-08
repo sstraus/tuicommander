@@ -17,6 +17,15 @@ TUICommander uses an Obsidian-style plugin system. Plugins extend the Activity C
 }
 ```
 
+> **Note:** All manifest fields use **camelCase** (`minAppVersion`, `agentTypes`, `contentUri`) — this matches the Rust serde serialization format. Do not use snake_case.
+
+```json
+// ✅ Correct
+{ "minAppVersion": "0.5.0", "agentTypes": ["claude"] }
+// ❌ Wrong
+{ "min_app_version": "0.5.0", "agent_types": ["claude"] }
+```
+
 3. Create `main.js` (ES module with default export):
 
 ```javascript

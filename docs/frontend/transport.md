@@ -29,13 +29,19 @@ export function isTauri(): boolean
 
 ### Command Mapping
 
-Maps every Tauri command name to an HTTP method + path:
+Maps every Tauri command name to an HTTP method + path via a declarative `COMMAND_TABLE`. Each entry is a `CommandTableEntry` — either a mapper function that returns `{ method, path, body? }`, or a `{ browserUnsupported: true }` marker for desktop-only commands.
 
 ```typescript
-mapCommandToHttp("create_pty", config) → { method: "POST", path: "/sessions", body: config }
-mapCommandToHttp("get_repo_info", { path }) → { method: "GET", path: "/repo/info?path=..." }
-mapCommandToHttp("write_pty", { session_id, data }) → { method: "POST", path: "/sessions/{id}/write" }
+// Table-driven: each command maps to an HTTP request
+const COMMAND_TABLE: Record<string, CommandTableEntry> = {
+  create_pty: (args) => ({ method: "POST", path: "/sessions", body: args.config }),
+  get_repo_info: (args) => ({ method: "GET", path: `/repo/info?path=${enc(args.path)}` }),
+  write_pty: (args) => ({ method: "POST", path: `/sessions/${args.session_id}/write`, body: { data: args.data } }),
+  // ... ~80 commands
+};
 ```
+
+This replaces the previous 370-line switch statement with a flat lookup table for easier maintenance and review.
 
 ### PTY Subscription
 

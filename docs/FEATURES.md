@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.7.0 | **Last verified:** 2026-03-06
+**Version:** 0.7.1 | **Last verified:** 2026-03-08
 
 ---
 
@@ -382,7 +382,9 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 - Recognizes interactive prompts (yes/no, multiple choice, numbered options)
 - Tab dot turns orange (pulsing) when awaiting input; sidebar branch icon shows `?` in orange
 - Prompt overlay: keyboard navigation (↑/↓, Enter, number keys 1-9, Escape)
-- Silence-based detection for unrecognized agents
+- Silence-based detection: if terminal output stops for 10s after a line ending with `?`, the session is treated as awaiting input
+- Echo suppression: user-typed input echoed by PTY is ignored for 500ms to prevent false question detection
+- `extract_question_line()` scans all changed rows (not just the last) for question text, applied in both normal and headless reader threads
 
 ### 6.5 Usage Limit Detection
 - Claude Code weekly and session usage percentage (from PTY output patterns)
@@ -411,7 +413,9 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
   - Cache persisted to disk as JSON for fast restarts
 
 ### 6.7 Intent Event Tracking
-- Agents declaring work phases via `[[intent: ...]]` tokens are detected and colorized yellow in terminal output
+- Agents declaring work phases via `[[intent: ...]]` tokens are detected and colorized dim yellow in terminal output
+- Embedded ANSI codes (SGR colors, bold, resets) from the agent's Ink renderer are stripped from the intent body so the dim-yellow color is uniform; CUF (cursor-forward) codes are converted to spaces
+- Structural tokens (`[[intent:...]]`, `[[suggest:...]]`) are stripped from log lines served to PWA/REST consumers via `LogLine::strip_structural_tokens()`
 - Structured `Intent` events emitted for LLM-declared work phase tracking
 - Centralized debounced busy signal with completion notifications for accurate idle/active status
 
@@ -430,15 +434,13 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 - **Context menu integration:** Right-click terminal > Agents submenu with per-agent run configurations
 - **Busy detection:** Agents submenu disabled when a process is already running in the active terminal
 
-### 6.10 Agent Teams (it2 Shim)
+### 6.10 Agent Teams
 - **Purpose:** Enables Claude Code's Agent Teams feature to use TUIC tabs instead of tmux panes
-- **it2 shim:** Bash script at `~/.tuicommander/bin/it2` that emulates the iTerm2 `it2` CLI
-- **Supported commands:** `--version`, `session split`, `session run`, `session close`, `session list`
-- **Communication:** Uses `curl --unix-socket` via `TUIC_SOCKET_PATH` to call the TUIC HTTP API
-- **PTY env injection:** Sets `ITERM_SESSION_ID`, `TERM_PROGRAM=iTerm.app`, prepends `~/.tuicommander/bin` to `PATH`
-- **Auto-install:** Shim installed on app startup when `agent_teams_shim` config is enabled
-- **Settings toggle:** General > Agent Teams > Enable it2 shim
+- **Approach:** Environment variable `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` injected into PTY sessions, which unlocks Claude Code's TeamCreate/TaskCreate/SendMessage tools. Agent spawning uses direct MCP tool calls (`agent spawn`) instead of the deprecated it2 shim
+- **Session lifecycle events:** MCP-spawned sessions emit `session-created` and `session-closed` events so they automatically appear as tabs and clean up on exit
+- **Settings toggle:** Settings > Agents > Agent Teams
 - **Suggest follow-ups:** Agents can propose follow-up actions via `[[suggest: ...]]` tokens, displayed as floating chip bar
+- **Deprecated:** The it2 shim approach (iTerm2 CLI emulation) is commented out — superseded by direct MCP tool spawning
 
 ### 6.11 Suggest Follow-up Actions
 - **Protocol:** Agents emit `[[suggest: action1 | action2 | action3]]` tokens after completing a task
@@ -923,6 +925,7 @@ All data persisted to platform config directory via Rust:
 - Panel API: rich HTML panels in sandboxed iframes (`sandbox="allow-scripts"`) with structured message bridge (`onMessage`/`send`) and automatic CSS theme variable injection
 - Shared ticker system: `setTicker`/`clearTicker` API with source labels, priority tiers (low <10, normal 10-99, urgent >=100), counter badge, click-to-cycle, right-click popover
 - Agent-scoped plugins: `agentTypes` manifest field restricts output watchers and structured events to terminals running specific agents (e.g. `["claude"]`)
+- Plugin manifest fields use camelCase (`minAppVersion`, `agentTypes`, `contentUri`) — matches Rust serde serialization
 
 ### 17.2 Plugin Management (Settings > Plugins)
 - **Installed tab:** List all plugins with enable/disable toggle, logs viewer, uninstall button
@@ -989,7 +992,7 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - Suggest follow-up chips: horizontal scrollable pills from `suggested_actions`, tap to send
 - Slash menu overlay: frosted glass bottom sheet showing detected `/command` entries; tap to send `Ctrl-U` + command + Enter
 - Quick-action chips: Yes, No, y, n, Enter, Ctrl-C
-- **TerminalKeybar:** row of special key buttons (Ctrl+C, Ctrl+D, Tab, Esc, arrow keys) above the main input for common terminal operations
+- **TerminalKeybar:** context-aware row of special key buttons above the main input. Shows Ctrl+C, Ctrl+D, Tab, Esc, Enter, arrow keys for terminal operations. When the agent is awaiting input, adds Yes/No quick-reply buttons. Consolidated from the former separate QuickActions component
 - **CLI command widget:** agent-specific quick commands (e.g., `/compact`, `/status` for Claude Code) accessible via expandable button
 - Text command input with 16px font (prevents iOS auto-zoom), `inputmode="text"`
 - **Offline retry queue:** `write_pty` calls that fail due to network disconnection are queued and retried when connectivity resumes
@@ -1022,8 +1025,10 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - `apple-mobile-web-app-capable` meta tags
 
 ### 18.9 Notification Sounds
-- Reuses shared `NotificationManager` (Web Audio API)
+- Audio playback via Rust `rodio` crate (Tauri command `play_notification_sound`), replacing the previous Web Audio API approach
+- Eliminates AudioContext suspend issues on WebKit and works in headless/remote modes
 - State transition detection: question, rate-limit, error, completion
+- Completion notifications deferred 10s and suppressed when active sub-tasks are running (detected via `⏵⏵`/`››` mode-line prefix)
 
 ### 18.10 Visual Polish
 - Frosted glass bottom tabs: `backdrop-filter: blur(20px) saturate(1.8)` with semi-transparent background

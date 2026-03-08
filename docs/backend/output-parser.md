@@ -79,7 +79,7 @@ Detected via multiple patterns:
 - **Ink navigation footer**: "Enter to select" (Ink SelectInput menus)
 - **Generic questions**: Any line ending with `?` that passes false-positive filters (rejects code comments, markdown, indented code, backtick fragments, bold markers, long prose >120 chars)
 
-Additionally, `extract_last_question_line()` provides silence-based detection: if the last non-empty line ends with `?` and isn't code/prose, the session may be waiting for input. User-typed lines (detected via `suppress_user_input`) are excluded from question detection to avoid false positives when the user themselves types a line ending with `?`.
+Additionally, `extract_question_line()` provides silence-based detection: scans all `ChangedRow` entries for lines ending with `?` (skipping mode-line status indicators like `⏵⏵ Reading files`). User-typed lines (detected via a 500ms `suppress_user_input` window) are excluded from question detection to avoid false positives when the user types a line ending with `?`.
 
 ### ApiError
 
@@ -105,11 +105,12 @@ Agent-declared intent — what the LLM is currently working on:
 
 ```rust
 ParsedEvent::Intent {
-    text: String,  // Short action description
+    text: String,   // Short action description
+    title: Option<String>,  // Optional tab title from (parenthesized) suffix
 }
 ```
 
-Detected when the agent emits `[[intent: <text>]]` or `⟦intent: <text>⟧` on its own line. Agents receive this instruction automatically via MCP init. To use manually without MCP, add to CLAUDE.md or equivalent:
+Detected when the agent emits `[[intent: <text>(<title>)]]` or `⟦intent: <text>⟧` on its own line. Agents receive this instruction automatically via MCP init. To use manually without MCP, add to CLAUDE.md or equivalent:
 
 ```
 ## Intent Declaration
@@ -119,6 +120,12 @@ Examples: `Reading auth module for token flow` · `Writing parser unit tests` ·
 ```
 
 The activity dashboard shows intent (crosshair icon) when available, falling back to user prompt (speech bubble) otherwise.
+
+**Colorization:** `colorize_intent()` wraps the intent text in `\x1b[2;33m` (dim yellow) for the xterm.js stream. Embedded ANSI codes (SGR colors, bold, resets) from the agent's Ink renderer are stripped from the body to prevent color interruption. CUF (cursor-forward) sequences used by Ink as inter-word spacing are converted to space characters.
+
+**PWA/REST stripping:** `LogLine::strip_structural_tokens()` removes raw `[[intent:...]]` and `[[suggest:...]]` tokens from log line spans before serving to mobile/browser clients, where the raw xterm colorization pipeline does not apply.
+
+**Active subtask detection:** The output parser recognizes `⏵⏵` (U+23F5) and `››` (U+203A) mode-line prefixes as active subtask indicators. The `active_sub_tasks` count is tracked in `SessionState` and used to suppress premature completion notifications.
 
 ### PlanFile
 

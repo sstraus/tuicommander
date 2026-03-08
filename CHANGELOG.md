@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-03-08
+
+### Changed
+- **Notification sounds moved to Rust** — Audio playback moved from JS Web Audio API to Rust `rodio` crate. Eliminates AudioContext suspend issues on WebKit and works reliably in both Tauri and headless/remote modes
+- **Transport table-driven mapping** — `mapCommandToHttp` refactored from 370-line switch to declarative `COMMAND_TABLE` for easier maintenance
+- **Agent Teams simplified** — it2 shim infrastructure commented out; Agent Teams now uses env-var-only approach (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) with direct MCP tool spawning
+- **Mobile TerminalKeybar consolidated** — QuickActions merged into context-aware TerminalKeybar with agent-specific Yes/No buttons and Enter key for Ink TUI navigation
+- **Intent token colorization** — Embedded ANSI codes from Ink renderers are now stripped from intent body text so dim-yellow color is uniform
+- **Question detection simplified** — Removed challenged threshold; all silence-based questions use a single 10s timeout
+
+### Fixed
+- **Intent tokens visible in PWA** — `[[intent:...]]` and `[[suggest:...]]` structural tokens are now stripped from log lines served to PWA/REST consumers
+- **PTY echo false question detection** — User-typed input echoed by PTY no longer triggers the silence-based question detector (500ms suppression window)
+- **Headless reader question detection** — `extract_question_line` now applies to HTTP-created sessions, not just Tauri-spawned ones
+- **Mobile input echo** — CommandInput sends `Ctrl-U` + text + Enter atomically to prevent duplicate echo
+- **PluginManifest field naming** — TypeScript PluginManifest fields aligned to Rust serde camelCase serialization (`minAppVersion`, not `min_app_version`)
+- **Notification subtask detection** — Parser now recognizes `⏵⏵` (U+23F5) prefix in addition to `››` (U+203A) for Claude Code active subtask counting; restored 10s notification deferral
+- **Agent session lifecycle events** — MCP-spawned sessions now emit `session-created` and `session-closed` events so they appear as tabs and clean up correctly
+
 ## [0.7.0] - 2026-03-06
 
 ### Added

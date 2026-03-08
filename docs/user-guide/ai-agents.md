@@ -54,7 +54,7 @@ When an agent asks an interactive question (Y/N, multiple choice, numbered optio
    - `Escape` to dismiss
 3. Plays a **notification sound** (if enabled in Settings → Notifications)
 
-For unrecognized agents, silence-based detection kicks in — if the terminal stops producing output for a configured duration, it's treated as a potential prompt. Lines typed by the user that end with `?` are suppressed from question detection to avoid false positives.
+For unrecognized agents, silence-based detection kicks in — if the terminal stops producing output for 10 seconds after a line ending with `?`, it's treated as a potential prompt. User-typed lines ending with `?` are suppressed from question detection for 500ms (echo window) to avoid false positives from PTY echo.
 
 ## Usage Limit Tracking
 
@@ -82,6 +82,14 @@ When enabled, TUICommander polls the Claude API every 5 minutes and shows:
 - **Per-project breakdown** — All projects ranked by token usage. Click a project to filter the dashboard to that project.
 
 The dashboard opens as a tab in the Activity Center. You can also reach it by clicking the Claude usage badge in the status bar.
+
+## Agent Teams
+
+Agent Teams lets Claude Code spawn teammate agents as TUIC terminal tabs. Enable it in **Settings** > **Agents** > **Agent Teams**.
+
+When enabled, PTY sessions receive the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` environment variable, which unlocks Claude Code's `TeamCreate`, `TaskCreate`, and `SendMessage` tools. Agent spawning uses direct MCP tool calls (`agent spawn`) — the earlier it2 shim approach (iTerm2 CLI emulation) is deprecated.
+
+Spawned sessions automatically emit lifecycle events (`session-created`, `session-closed`) so they appear as tabs and clean up on exit.
 
 ## Sleep Prevention
 

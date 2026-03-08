@@ -107,6 +107,15 @@ Client ──WebSocket──> /sessions/{session_id}/stream
                       Server pushes PTY output as text frames
 ```
 
+### Session Lifecycle Events
+
+When sessions are created or closed (via HTTP, MCP, or PTY exit), the server broadcasts events through the SSE event bus:
+
+- **`session-created`** — Emitted when a new PTY session is created (both local and MCP-spawned). Carries `session_id` and `cwd`. Frontend uses this to auto-add terminal tabs for remotely spawned agents.
+- **`session-closed`** — Emitted when a session exits. Carries `session_id`. Frontend uses this for cleanup.
+
+These events are available on the SSE `/events` stream used by the mobile PWA and any connected WebSocket clients.
+
 ### Streamable HTTP (`POST /mcp`)
 
 MCP Streamable HTTP transport (spec 2025-03-26):

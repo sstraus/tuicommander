@@ -86,7 +86,7 @@ spawn_reader_thread(reader, paused, session_id, app, state)
 
 ### Headless Reader Thread
 
-`spawn_headless_reader_thread()` — used for HTTP-created sessions (no Tauri app handle). Same pipeline but skips Tauri event emission; only writes to ring buffer and WebSocket.
+`spawn_headless_reader_thread()` — used for HTTP-created sessions (no Tauri app handle). Same pipeline but skips Tauri event emission; only writes to ring buffer and WebSocket. Includes `extract_question_line()` for silence-based question detection, session lifecycle events (`session-created`, `session-closed`), and full output parser integration.
 
 ## Shell Resolution
 
@@ -150,8 +150,9 @@ impl VtLogBuffer {
     fn process(&mut self, data: &[u8]) -> Vec<ChangedRow>   // Feed raw PTY bytes, return changed rows
     fn resize(&mut self, rows: u16, cols: u16)              // Update terminal dimensions
     fn screen_rows(&self) -> Vec<String>                    // Current VT100 screen content (for slash menu detection)
+    fn screen_log_lines(&self) -> Vec<LogLine>              // Styled screen rows for mobile/REST (structural tokens stripped)
     fn trim_agent_chrome(&mut self, rows: &[ChangedRow]) -> Vec<ChangedRow> // Strip agent prompt/chrome from full-screen redraws
-    fn lines_since_owned(&self, offset: usize) -> (Vec<String>, usize) // Incremental reads
+    fn lines_since_owned(&self, offset: usize) -> (Vec<LogLine>, usize) // Incremental reads (structural tokens stripped)
     fn total_lines(&self) -> usize                          // Total accumulated lines
 }
 ```
@@ -202,7 +203,13 @@ Additionally, `CLAUDECODE` is removed from the environment (`env_remove`) to pre
 
 ## Silence-Based Question Detection
 
-The reader thread tracks output silence to detect unanswered agent prompts. When the terminal stops producing output for a configured duration (10 seconds) after the last line ends with `?`, the session is treated as waiting for input. This complements the instant pattern-based detection in the output parser and catches generic questions that would cause too many false positives if detected immediately (e.g., streaming fragments like "ad?", "swap?").
+The reader thread tracks output silence to detect unanswered agent prompts. When the terminal stops producing output for 10 seconds after a line ending with `?` is detected, the session is treated as waiting for input. This complements the instant pattern-based detection in the output parser and catches generic questions that would cause too many false positives if detected immediately (e.g., streaming fragments like "ad?", "swap?").
+
+**Question extraction:** `extract_question_line()` scans all `ChangedRow` entries (not just the last) for question text. It skips rows that are mode-line status indicators (e.g., `⏵⏵ Reading files`), so a question on row 5 is still found even when a status line updates on row 23 in the same chunk.
+
+**Echo suppression:** When the user types a line into the PTY, the reader activates a 500ms suppression window (`suppress_user_input`). During this window, any matching text echoed by the shell is ignored for question detection. This prevents false positives when the user types a line ending with `?` — the PTY echoes it back, and without suppression, the silence detector would treat the echo as an agent question.
+
+**Single threshold:** All silence-based questions use a uniform 10-second timeout regardless of whether new output has arrived since the question was detected.
 
 ## Amber Tab Styling
 
