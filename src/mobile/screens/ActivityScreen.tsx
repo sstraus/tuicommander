@@ -1,4 +1,4 @@
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { activityStore } from "../../stores/activityStore";
 import type { ActivityItem as ActivityItemData } from "../../plugins/types";
 import { ActivityItem } from "../components/ActivityItem";
@@ -53,7 +53,22 @@ export function ActivityScreen(props: ActivityScreenProps) {
     return [...items].sort((a, b) => b.createdAt - a.createdAt);
   });
 
-  const groups = createMemo(() => groupByTime(activeItems()));
+  // Snapshot items every 10s so time-group buckets don't reshuffle
+  // on every store mutation (which is constant with multiple sessions).
+  // New items/removals trigger an immediate snapshot via count change.
+  const [snapshot, setSnapshot] = createSignal(activeItems(), { equals: false });
+  const timer = setInterval(() => setSnapshot(activeItems()), 10_000);
+  onCleanup(() => clearInterval(timer));
+
+  let prevCount = activeItems().length;
+  const groups = createMemo(() => {
+    const current = activeItems();
+    if (current.length !== prevCount) {
+      prevCount = current.length;
+      setSnapshot(current);
+    }
+    return groupByTime(snapshot());
+  });
 
   function handleTap(item: ActivityItemData) {
     if (item.contentUri) {
