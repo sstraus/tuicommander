@@ -92,11 +92,9 @@ export function CommandInput(props: CommandInputProps) {
     setValue("");
     if (textareaEl) { textareaEl.value = ""; textareaEl.style.height = "auto"; }
     try {
-      // Ctrl-U clears any existing PTY input, then send text and Enter as
-      // separate writes — Ink-based TUIs treat \r as newline when combined.
-      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" }));
-      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: text }));
-      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\r" }));
+      // Single atomic write: Ctrl-U clears existing PTY input, then text + Enter.
+      // Must be ONE write to prevent in-flight debouncedSync from interleaving.
+      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text + "\r" }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       appLogger.error("network", `Failed to send command after retries: ${msg}`);
