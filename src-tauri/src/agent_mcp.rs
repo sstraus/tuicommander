@@ -276,9 +276,15 @@ pub(crate) fn ensure_mcp_configs() {
 }
 
 // ---------------------------------------------------------------------------
-// Agent Teams it2 shim
+// Agent Teams it2 shim — DISABLED
+// TODO(v1.1): delete this entire section if not reimplemented by then.
+// The it2 shim approach was superseded by direct MCP tool spawning — CC calls
+// `agent spawn` via our MCP server instead of using iTerm2's `it2 session split`.
+// The shim script, install_it2_shim(), and install_it2_shim_cmd() are preserved
+// as commented-out code for reference.
 // ---------------------------------------------------------------------------
 
+/*
 /// Shell script content for the `it2` shim.
 /// Translates iTerm2 CLI commands into TUIC HTTP API calls over Unix socket.
 const IT2_SHIM_SCRIPT: &str = r#"#!/bin/bash
@@ -405,6 +411,7 @@ pub(crate) fn install_it2_shim() {
 pub(crate) fn install_it2_shim_cmd() {
     install_it2_shim();
 }
+*/
 
 // ---------------------------------------------------------------------------
 // Tauri commands
@@ -743,49 +750,6 @@ mod tests {
         assert_eq!(root["amp"]["mcpServers"][TUIC_MCP_KEY]["command"], "/bridge");
     }
 
-    // --- it2 shim tests ---
-
-    #[test]
-    fn it2_shim_script_contains_created_new_pane() {
-        // Claude Code parses output with regex: /Created new pane:\s*(.+)/
-        assert!(IT2_SHIM_SCRIPT.contains("Created new pane:"));
-    }
-
-    #[test]
-    fn it2_shim_script_starts_with_shebang() {
-        assert!(IT2_SHIM_SCRIPT.starts_with("#!/bin/bash"));
-    }
-
-    #[test]
-    fn it2_shim_script_handles_all_required_commands() {
-        for cmd in &["--version", "split", "run", "close", "list"] {
-            assert!(IT2_SHIM_SCRIPT.contains(cmd), "script must handle {cmd}");
-        }
-    }
-
-    #[test]
-    fn it2_shim_installs_to_disk() {
-        let dir = TempDir::new().unwrap();
-        let bin_dir = dir.path().join(".tuicommander").join("bin");
-        std::fs::create_dir_all(&bin_dir).unwrap();
-        let shim_path = bin_dir.join("it2");
-        std::fs::write(&shim_path, IT2_SHIM_SCRIPT).unwrap();
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&shim_path, std::fs::Permissions::from_mode(0o755)).unwrap();
-            let perms = std::fs::metadata(&shim_path).unwrap().permissions().mode();
-            assert_eq!(perms & 0o111, 0o111, "script should be executable");
-        }
-
-        let content = std::fs::read_to_string(&shim_path).unwrap();
-        assert!(content.starts_with("#!/bin/bash"));
-    }
-
-    #[test]
-    fn it2_shim_uses_unix_socket() {
-        assert!(IT2_SHIM_SCRIPT.contains("--unix-socket"));
-        assert!(IT2_SHIM_SCRIPT.contains("TUIC_SOCKET_PATH"));
-    }
+    // TODO(v1.1): delete — it2 shim tests disabled along with the shim itself
+    // See the commented-out shim code above for the original test targets.
 }

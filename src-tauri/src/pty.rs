@@ -29,34 +29,21 @@ pub(crate) fn default_shell() -> String {
     }
 }
 
-/// Environment overrides for Agent Teams iTerm2 shim mode.
-/// When enabled, these env vars make Claude Code detect an iTerm2 terminal
-/// and find the `it2` shim on PATH, enabling session splitting (Agent Teams).
-pub(crate) struct AgentTeamsEnv {
-    pub session_id: String,
-    pub http_port: u16,
-    pub socket_path: String,
-}
+// TODO(v1.1): delete AgentTeamsEnv and the commented-out it2 shim infrastructure
+// if not reimplemented by then. The it2 shim approach was superseded by direct
+// MCP tool spawning — CC calls `agent spawn` via our MCP server instead of
+// using iTerm2's `it2 session split`. See agent_mcp.rs for the commented-out shim.
 
-impl AgentTeamsEnv {
-    /// Return the environment variable overrides to inject into the PTY.
-    pub(crate) fn env_overrides(&self) -> Vec<(String, String)> {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
-        let tuic_bin = format!("{home}/.tuicommander/bin");
-        let current_path = std::env::var("PATH").unwrap_or_default();
-        vec![
-            ("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS".to_string(), "1".to_string()),
-            ("ITERM_SESSION_ID".to_string(), format!("w0t0p0:{}", self.session_id)),
-            ("TERM_PROGRAM".to_string(), "iTerm.app".to_string()),
-            ("PATH".to_string(), format!("{tuic_bin}:{current_path}")),
-            ("TUIC_HTTP_PORT".to_string(), self.http_port.to_string()),
-            ("TUIC_SOCKET_PATH".to_string(), self.socket_path.clone()),
-        ]
-    }
+/// When Agent Teams is enabled, inject the feature flag env var into PTY sessions
+/// so Claude Code unlocks the TeamCreate/TaskCreate/SendMessage tools.
+pub(crate) fn build_agent_teams_env() -> Vec<(String, String)> {
+    vec![
+        ("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS".to_string(), "1".to_string()),
+    ]
 }
 
 /// Build a CommandBuilder for the given shell with platform-appropriate flags.
-pub(crate) fn build_shell_command(shell: &str, agent_teams: Option<&AgentTeamsEnv>) -> CommandBuilder {
+pub(crate) fn build_shell_command(shell: &str, agent_teams: bool) -> CommandBuilder {
     #[allow(unused_mut)]
     let mut cmd = CommandBuilder::new(shell);
     // Login shell flag is Unix-only; PowerShell/cmd.exe don't support -l
@@ -89,10 +76,9 @@ pub(crate) fn build_shell_command(shell: &str, agent_teams: Option<&AgentTeamsEn
             // Fallback: ensure UTF-8 is available even when LANG is completely unset
             cmd.env("LANG", "en_US.UTF-8");
         }
-        // Agent Teams shim: override TERM_PROGRAM to iTerm.app, inject
-        // ITERM_SESSION_ID, prepend ~/.tuicommander/bin to PATH, set TUIC_HTTP_PORT
-        if let Some(at) = agent_teams {
-            for (k, v) in at.env_overrides() {
+        // Agent Teams: inject feature flag so CC unlocks team tools
+        if agent_teams {
+            for (k, v) in build_agent_teams_env() {
                 cmd.env(k, v);
             }
         }
@@ -690,19 +676,8 @@ pub(crate) async fn create_pty(
             }
         };
 
-        let agent_teams = {
-            let cfg = state.config.read();
-            if cfg.agent_teams_shim {
-                Some(AgentTeamsEnv {
-                    session_id: session_id.clone(),
-                    http_port: cfg.remote_access_port,
-                    socket_path: crate::mcp_http::socket_path().to_string_lossy().to_string(),
-                })
-            } else {
-                None
-            }
-        };
-        let mut cmd = build_shell_command(&shell, agent_teams.as_ref());
+        let agent_teams = state.config.read().agent_teams_shim;
+        let mut cmd = build_shell_command(&shell, agent_teams);
 
         if let Some(ref cwd) = config.cwd {
             cmd.cwd(cwd);
@@ -808,19 +783,8 @@ pub(crate) async fn create_pty_with_worktree(
 
         let shell = resolve_shell(pty_config.shell);
 
-        let agent_teams = {
-            let cfg = state.config.read();
-            if cfg.agent_teams_shim {
-                Some(AgentTeamsEnv {
-                    session_id: session_id.clone(),
-                    http_port: cfg.remote_access_port,
-                    socket_path: crate::mcp_http::socket_path().to_string_lossy().to_string(),
-                })
-            } else {
-                None
-            }
-        };
-        let mut cmd = build_shell_command(&shell, agent_teams.as_ref());
+        let agent_teams = state.config.read().agent_teams_shim;
+        let mut cmd = build_shell_command(&shell, agent_teams);
         cmd.cwd(&worktree_path);
 
         let child = pair
@@ -1562,45 +1526,25 @@ mod tests {
     }
 
     // --- Agent Teams env injection tests ---
+    // TODO(v1.1): delete commented-out it2 shim tests if not reimplemented
+    /*
+    #[test]
+    fn agent_teams_env_sets_iterm_session_id() { ... }
+    #[test]
+    fn agent_teams_env_sets_term_program() { ... }
+    #[test]
+    fn agent_teams_env_prepends_tuic_bin_to_path() { ... }
+    #[test]
+    fn agent_teams_env_sets_tuic_http_port() { ... }
+    #[test]
+    fn agent_teams_env_sets_tuic_socket_path() { ... }
+    */
 
     #[test]
-    fn agent_teams_env_sets_iterm_session_id() {
-        let env = AgentTeamsEnv { session_id: "abc-123".to_string(), http_port: 9876, socket_path: "/tmp/mcp.sock".to_string() };
-        let vars = env.env_overrides();
-        let val = vars.iter().find(|(k, _)| k == "ITERM_SESSION_ID").map(|(_, v)| v.as_str());
-        assert_eq!(val, Some("w0t0p0:abc-123"));
-    }
-
-    #[test]
-    fn agent_teams_env_sets_term_program() {
-        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 8080, socket_path: "/tmp/mcp.sock".to_string() };
-        let vars = env.env_overrides();
-        let val = vars.iter().find(|(k, _)| k == "TERM_PROGRAM").map(|(_, v)| v.as_str());
-        assert_eq!(val, Some("iTerm.app"));
-    }
-
-    #[test]
-    fn agent_teams_env_prepends_tuic_bin_to_path() {
-        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 8080, socket_path: "/tmp/mcp.sock".to_string() };
-        let vars = env.env_overrides();
-        let path_val = vars.iter().find(|(k, _)| k == "PATH").map(|(_, v)| v.clone()).unwrap();
-        assert!(path_val.starts_with(&format!("{}/.tuicommander/bin:", std::env::var("HOME").unwrap_or_default())));
-    }
-
-    #[test]
-    fn agent_teams_env_sets_tuic_http_port() {
-        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 9876, socket_path: "/tmp/mcp.sock".to_string() };
-        let vars = env.env_overrides();
-        let val = vars.iter().find(|(k, _)| k == "TUIC_HTTP_PORT").map(|(_, v)| v.as_str());
-        assert_eq!(val, Some("9876"));
-    }
-
-    #[test]
-    fn agent_teams_env_sets_tuic_socket_path() {
-        let env = AgentTeamsEnv { session_id: "x".to_string(), http_port: 8080, socket_path: "/tmp/test.sock".to_string() };
-        let vars = env.env_overrides();
-        let val = vars.iter().find(|(k, _)| k == "TUIC_SOCKET_PATH").map(|(_, v)| v.as_str());
-        assert_eq!(val, Some("/tmp/test.sock"));
+    fn agent_teams_env_sets_feature_flag() {
+        let vars = build_agent_teams_env();
+        let val = vars.iter().find(|(k, _)| k == "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS").map(|(_, v)| v.as_str());
+        assert_eq!(val, Some("1"));
     }
 
     // --- VtLogBuffer + parse_clean_lines pipeline tests ---

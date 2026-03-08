@@ -559,7 +559,7 @@ function createSettingsStore() {
       }
     },
 
-    /** Set Agent Teams it2 shim preference */
+    /** Set Agent Teams preference (injects CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env into PTY) */
     async setAgentTeamsShim(enabled: boolean): Promise<void> {
       const prevValue = state.agentTeamsShim;
       setState("agentTeamsShim", enabled);
@@ -567,7 +567,8 @@ function createSettingsStore() {
         const config = await invoke<RustAppConfig>("load_config");
         config.agent_teams_shim = enabled;
         await invoke("save_config", { config });
-        if (enabled) await invoke("install_it2_shim_cmd");
+        // TODO(v1.1): delete — it2 shim install disabled, CC uses MCP agent spawn
+        // if (enabled) await invoke("install_it2_shim_cmd");
       } catch (err) {
         appLogger.error("config", "Failed to persist agentTeamsShim", err);
         setState("agentTeamsShim", prevValue);

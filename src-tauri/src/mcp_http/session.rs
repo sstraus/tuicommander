@@ -297,19 +297,8 @@ fn spawn_pty_session(
         Json(serde_json::json!({"error": format!("Failed to open PTY: {}", e)})),
     ))?;
 
-    let agent_teams = {
-        let cfg = state.config.read();
-        if cfg.agent_teams_shim {
-            Some(crate::pty::AgentTeamsEnv {
-                session_id: session_id.clone(),
-                http_port: cfg.remote_access_port,
-                socket_path: super::socket_path().to_string_lossy().to_string(),
-            })
-        } else {
-            None
-        }
-    };
-    let mut cmd = build_shell_command(&shell, agent_teams.as_ref());
+    let agent_teams = state.config.read().agent_teams_shim;
+    let mut cmd = build_shell_command(&shell, agent_teams);
     if let Some(ref dir) = cwd {
         cmd.cwd(dir);
     }

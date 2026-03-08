@@ -623,10 +623,10 @@ pub fn run() {
         });
     }
 
-    // Install the it2 shim when Agent Teams is enabled
-    if config.agent_teams_shim {
-        agent_mcp::install_it2_shim();
-    }
+    // TODO(v1.1): delete — it2 shim disabled, CC uses MCP agent spawn instead
+    // if config.agent_teams_shim {
+    //     agent_mcp::install_it2_shim();
+    // }
 
     let builder = tauri::Builder::default();
     let builder = plugins::register_plugin_protocol(builder);
@@ -850,7 +850,8 @@ pub fn run() {
             agent_mcp::install_agent_mcp,
             agent_mcp::remove_agent_mcp,
             agent_mcp::get_agent_config_path,
-            agent_mcp::install_it2_shim_cmd,
+            // TODO(v1.1): delete — it2 shim disabled
+            // agent_mcp::install_it2_shim_cmd,
             prompt::extract_prompt_variables,
             prompt::process_prompt_content,
             head_watcher::start_head_watcher,
