@@ -129,12 +129,27 @@ function createTerminalsStore() {
         busySinceMap.set(id, Date.now());
       }
       busyDurationMap.delete(id);
-      // Agent resumed output after being idle — clear stale question state,
-      // but only for low-confidence detections (silence-based `?` heuristic).
-      // High-confidence detections (regex-matched Ink menus, Y/N prompts) are kept
+      // Agent resumed output after being idle — clear stale question state.
+      // Low-confidence detections are cleared immediately (silence-based heuristic).
+      // High-confidence detections are cleared only after sustained busy (>2s),
       // because Ink agents produce micro-renders while genuinely waiting for input.
-      if (prev === "idle" && state.terminals[id]?.awaitingInput != null && !state.terminals[id]?.awaitingInputConfident) {
-        setState("terminals", id, "awaitingInput", null);
+      if (prev === "idle" && state.terminals[id]?.awaitingInput != null) {
+        if (!state.terminals[id]?.awaitingInputConfident) {
+          setState("terminals", id, "awaitingInput", null);
+        } else {
+          // Schedule clearing of confident detection after 2s of sustained busy.
+          // If the agent is truly working (not micro-rendering), clear the stale question.
+          const confidentClearTimer = setTimeout(() => {
+            if (state.terminals[id]?.shellState === "busy" && state.terminals[id]?.awaitingInput != null) {
+              setState("terminals", id, "awaitingInput", null);
+              setState("terminals", id, "awaitingInputConfident", false);
+            }
+          }, 2000);
+          // Clean up on next state change
+          const existingCleanup = cooldownTimers.get(`${id}-qclear`);
+          if (existingCleanup) clearTimeout(existingCleanup);
+          cooldownTimers.set(`${id}-qclear`, confidentClearTimer);
+        }
       }
     } else if (next !== "busy" && prev === "busy") {
       // Leaving busy: freeze duration, start cooldown
