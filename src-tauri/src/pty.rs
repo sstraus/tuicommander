@@ -131,6 +131,9 @@ pub(crate) struct SilenceState {
     /// Set by `suppress_user_input()` so the echo of user-typed text doesn't
     /// re-enable silence-based question detection.
     pub(crate) suppress_echo_until: Option<std::time::Instant>,
+    /// When the last StatusLine (spinner) event was seen. If recent (<3s),
+    /// silence-based question detection is suppressed — spinner means the agent is working.
+    pub(crate) last_status_line_at: Option<std::time::Instant>,
 }
 
 impl SilenceState {
@@ -141,6 +144,7 @@ impl SilenceState {
             question_already_emitted: false,
             last_resize_at: None,
             suppress_echo_until: None,
+            last_status_line_at: None,
         }
     }
 
@@ -199,10 +203,28 @@ impl SilenceState {
         self.suppress_echo_until = Some(std::time::Instant::now() + ECHO_SUPPRESS_WINDOW);
     }
 
+    /// Called by the reader thread when a StatusLine (spinner) event is detected.
+    /// Records the timestamp so check_silence() can suppress questions while
+    /// the agent is actively working.
+    pub(crate) fn on_status_line(&mut self) {
+        self.last_status_line_at = Some(std::time::Instant::now());
+    }
+
+    /// Returns true if a spinner/status-line was seen recently (within 3s).
+    fn is_spinner_active(&self) -> bool {
+        self.last_status_line_at
+            .map(|t| t.elapsed() < std::time::Duration::from_secs(3))
+            .unwrap_or(false)
+    }
+
     /// Called by the timer thread. Returns the question text if the silence
     /// threshold has been reached and we haven't emitted yet.
     pub(crate) fn check_silence(&mut self) -> Option<String> {
         if self.question_already_emitted {
+            return None;
+        }
+        // Spinner active means the agent is working — not waiting for input.
+        if self.is_spinner_active() {
             return None;
         }
         if let Some(ref line) = self.pending_question_line
@@ -442,8 +464,15 @@ pub(crate) fn spawn_reader_thread(
                         }
 
                         // Update silence state for fallback question detection.
+                        let has_status_line = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
                         let last_q_line = extract_question_line(&changed_rows);
-                        silence.lock().on_chunk(regex_found_question, last_q_line);
+                        {
+                            let mut sl = silence.lock();
+                            if has_status_line {
+                                sl.on_status_line();
+                            }
+                            sl.on_chunk(regex_found_question, last_q_line);
+                        }
 
                         // Colorize [intent: ...] tokens yellow before sending to xterm.
                         // Run on every chunk containing "intent:" — not just when
@@ -626,8 +655,15 @@ pub(crate) fn spawn_headless_reader_thread(
                             }
                         }
                         // Update silence state for fallback question detection.
+                        let has_status_line = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
                         let last_q_line = extract_question_line(&changed_rows);
-                        silence.lock().on_chunk(regex_found_question, last_q_line);
+                        {
+                            let mut sl = silence.lock();
+                            if has_status_line {
+                                sl.on_status_line();
+                            }
+                            sl.on_chunk(regex_found_question, last_q_line);
+                        }
                     }
                 }
                 Err(e) => {
@@ -1565,6 +1601,30 @@ mod tests {
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         // Should fire — this is a real agent question
         assert_eq!(s.check_silence(), Some("Would you like to proceed?".to_string()));
+    }
+
+    #[test]
+    fn test_silence_state_spinner_suppresses_question() {
+        let mut s = SilenceState::new();
+        // Agent prints a `?`-line, then a status-line/spinner appears
+        s.on_chunk(false, Some("Want me to proceed?".to_string()));
+        s.on_status_line(); // spinner active
+        // Simulate 10s+ of silence
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        // Should NOT emit question — spinner was recently active
+        assert_eq!(s.check_silence(), None, "spinner active → no question");
+    }
+
+    #[test]
+    fn test_silence_state_spinner_expired_allows_question() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Want me to proceed?".to_string()));
+        s.on_status_line();
+        // Spinner was active but long ago (>3s)
+        s.last_status_line_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(5));
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        // Spinner expired, question should fire
+        assert_eq!(s.check_silence(), Some("Want me to proceed?".to_string()));
     }
 
     // --- Resize grace period tests ---
