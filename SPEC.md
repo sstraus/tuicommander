@@ -352,11 +352,13 @@ All stores persist to localStorage:
 - [x] Floating toast for partial transcription results
 - [x] Prompt token carry-forward across windows
 
+### Completed (P2)
+- [x] Task completion detection
+- [x] Audio notification when agent awaits input
+- [x] IDE launcher with app icons
+
 ### Pending (P2)
-- [ ] Task completion detection
 - [ ] Error handling strategy config
-- [ ] Audio notification when agent awaits input
-- [ ] IDE launcher with app icons
 
 ### Agent Configuration (Done)
 - [x] Settings > Agents tab with per-agent run configurations
@@ -365,12 +367,14 @@ All stores persist to localStorage:
 - [x] Agent binary detection and version display
 - [x] agents.json persistence for run configurations
 
+### Completed (P3)
+- [x] Markdown rendering (MarkdownPanel, not inline terminal)
+- [x] Task queue UI
+- [x] Advanced keyboard shortcuts
+
 ### Pending (P3)
-- [ ] Markdown rendering in terminal
 - [ ] Agent stats display
 - [ ] Config file support
-- [ ] Task queue UI
-- [ ] Advanced keyboard shortcuts
 - [ ] TypeScript PTY wrapper
 
 ## Future Considerations
