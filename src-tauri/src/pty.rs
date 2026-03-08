@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::input_line_buffer::{InputAction, InputLineBuffer};
 use crate::output_parser::{colorize_intent, conceal_suggest, OutputParser, ParsedEvent};
 use crate::state::{
-    AppState, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
+    AppState, ChangedRow, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
     OutputRingBuffer, PtyConfig, PtyOutput, PtySession, Utf8ReadBuffer, VtLogBuffer,
     MAX_CONCURRENT_SESSIONS, OUTPUT_RING_BUFFER_CAPACITY, VT_LOG_BUFFER_CAPACITY,
     strip_kitty_sequences,
@@ -96,6 +96,11 @@ pub(crate) fn resolve_shell(override_shell: Option<String>) -> String {
 /// false positives from AI agents that pause while thinking between API calls.
 const SILENCE_QUESTION_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Extended silence threshold when the pending question was followed by
+/// non-`?` output (the agent may have moved on). 30s reduces false positives
+/// from tool calls while still catching genuinely blocked prompts.
+const SILENCE_CHALLENGED_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// How often the timer thread wakes up to check for silence.
 const SILENCE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -107,6 +112,15 @@ const RESIZE_GRACE: std::time::Duration = std::time::Duration::from_millis(1000)
 /// How long after user input to ignore `?`-ending echo lines from the PTY.
 const ECHO_SUPPRESS_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// Extract the last `?`-ending line from changed rows for silence-based question detection.
+/// Searches all changed rows (not just the last non-empty one) so a question row
+/// is found even when a mode/status line with a higher row index arrives in the same chunk.
+pub(crate) fn extract_question_line(changed_rows: &[ChangedRow]) -> Option<String> {
+    changed_rows.iter().rev()
+        .find(|r| !r.text.is_empty() && r.text.ends_with('?'))
+        .map(|r| r.text.clone())
+}
+
 /// Shared state between the PTY reader thread and the silence-detection timer thread.
 pub(crate) struct SilenceState {
     /// When the last chunk of output was received from the PTY.
@@ -116,6 +130,10 @@ pub(crate) struct SilenceState {
     /// Whether a Question event has already been emitted for the current pending line
     /// (either by the instant regex detector or by the silence timer).
     pub(crate) question_already_emitted: bool,
+    /// True when the pending question was followed by non-`?` output,
+    /// suggesting the agent may have moved past it. Uses a longer silence
+    /// threshold to reduce false positives.
+    pending_challenged: bool,
     /// When the last resize was requested. Used to suppress re-parsing of redrawn output.
     last_resize_at: Option<std::time::Instant>,
     /// Deadline until which `on_chunk` ignores `?`-ending lines (suppresses PTY echo).
@@ -130,6 +148,7 @@ impl SilenceState {
             last_output_at: std::time::Instant::now(),
             pending_question_line: None,
             question_already_emitted: false,
+            pending_challenged: false,
             last_resize_at: None,
             suppress_echo_until: None,
         }
@@ -173,10 +192,13 @@ impl SilenceState {
                 // New candidate for silence-based detection.
                 self.pending_question_line = Some(line);
                 self.question_already_emitted = false;
+                self.pending_challenged = false;
             }
-        } else {
-            // The agent printed more output that doesn't end with `?` — it moved on.
-            self.pending_question_line = None;
+        } else if self.pending_question_line.is_some() {
+            // Non-`?` output after a pending question — mark as challenged.
+            // The question is preserved (spinner updates shouldn't kill it) but
+            // check_silence() will use a longer threshold to reduce false positives.
+            self.pending_challenged = true;
         }
     }
 
@@ -195,8 +217,13 @@ impl SilenceState {
         if self.question_already_emitted {
             return None;
         }
+        let threshold = if self.pending_challenged {
+            SILENCE_CHALLENGED_THRESHOLD
+        } else {
+            SILENCE_QUESTION_THRESHOLD
+        };
         if let Some(ref line) = self.pending_question_line
-            && self.last_output_at.elapsed() >= SILENCE_QUESTION_THRESHOLD
+            && self.last_output_at.elapsed() >= threshold
         {
             self.question_already_emitted = true;
             return Some(line.clone());
@@ -421,10 +448,7 @@ pub(crate) fn spawn_reader_thread(
                         }
 
                         // Update silence state for fallback question detection.
-                        // Feed from the last non-empty changed row (clean text, no strip_ansi).
-                        let last_q_line = changed_rows.iter().rev()
-                            .find(|r| !r.text.is_empty())
-                            .and_then(|r| if r.text.ends_with('?') { Some(r.text.clone()) } else { None });
+                        let last_q_line = extract_question_line(&changed_rows);
                         silence.lock().on_chunk(regex_found_question, last_q_line);
 
                         // Colorize [intent: ...] tokens yellow before sending to xterm.
@@ -1479,13 +1503,41 @@ mod tests {
     }
 
     #[test]
-    fn test_silence_state_new_output_clears_pending() {
+    fn test_silence_state_regex_clears_prior_pending() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Continue?".to_string()));
-        // Agent prints more non-question output — it moved past the question
-        s.on_chunk(false, None);
+        // Silence detector has a pending question from an earlier chunk
+        s.on_chunk(false, Some("Earlier question?".to_string()));
+        assert!(s.pending_question_line.is_some());
+        // Regex fires on a different event — no question line in this chunk
+        s.on_chunk(true, None);
+        assert!(s.pending_question_line.is_none(), "prior pending should be cleared when regex fires");
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert!(s.check_silence().is_none());
+    }
+
+    #[test]
+    fn test_silence_state_challenged_does_not_fire_at_normal_threshold() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Continue?".to_string()));
+        // Spinner/status updates produce chunks with no `?`-ending line.
+        // These mark the question as "challenged" but do NOT clear it.
+        s.on_chunk(false, None);
+        s.on_chunk(false, None);
+        assert!(s.pending_challenged);
+        // Normal threshold (10s) is not enough for challenged questions
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert!(s.check_silence().is_none(), "challenged question should require longer silence");
+    }
+
+    #[test]
+    fn test_silence_state_challenged_fires_at_extended_threshold() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Continue?".to_string()));
+        s.on_chunk(false, None);
+        assert!(s.pending_challenged);
+        // Extended threshold (30s) fires for challenged questions
+        s.last_output_at = std::time::Instant::now() - SILENCE_CHALLENGED_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(s.check_silence(), Some("Continue?".to_string()));
     }
 
     #[test]
@@ -1525,8 +1577,9 @@ mod tests {
     fn test_silence_state_suppress_echo_expires() {
         let mut s = SilenceState::new();
         s.suppress_user_input();
-        // Expire the echo suppress window
-        s.suppress_echo_until = None;
+        // Expire the echo suppress window with a past deadline (not None,
+        // which means "never suppressed" — a different code path).
+        s.suppress_echo_until = Some(std::time::Instant::now() - std::time::Duration::from_millis(1));
         // Agent asks a genuine question after the window expires
         s.on_chunk(false, Some("Would you like to proceed?".to_string()));
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
@@ -1645,16 +1698,93 @@ mod tests {
         );
     }
 
-    /// extract_last_question_line_from_changed_rows: given changed rows, we can derive
-    /// the silence-tracker question line from the last non-empty row.
+    /// extract_question_line finds `?`-ending rows from VtLogBuffer output.
     #[test]
-    fn test_silence_question_from_changed_rows() {
+    fn test_extract_question_line_basic() {
         use crate::state::VtLogBuffer;
 
         let mut vt_log = VtLogBuffer::new(24, 80, 1000);
         let changed = vt_log.process(b"Would you like to proceed?");
-        let last_q = changed.iter().rev().find(|r| !r.text.is_empty()).map(|r| r.text.clone());
-        assert_eq!(last_q.as_deref(), Some("Would you like to proceed?"));
+        assert_eq!(extract_question_line(&changed).as_deref(), Some("Would you like to proceed?"));
+    }
+
+    /// Question row must be found even when a mode line with a higher row index
+    /// arrives in the same chunk (e.g. Claude Code question + ⏵⏵ status line).
+    #[test]
+    fn test_extract_question_line_with_mode_line_same_chunk() {
+        use crate::state::VtLogBuffer;
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        let data = b"Le committo?\r\n\r\n\xe2\x8f\xb5\xe2\x8f\xb5 Reading files";
+        let changed = vt_log.process(data);
+        assert_eq!(extract_question_line(&changed).as_deref(), Some("Le committo?"),
+            "question must be found even when mode line is on a later row; changed_rows: {:?}",
+            changed.iter().map(|r| format!("[{}] {:?}", r.row_index, &r.text)).collect::<Vec<_>>()
+        );
+    }
+
+    /// Question must be found in alternate screen with cursor-positioned rows.
+    #[test]
+    fn test_extract_question_line_alternate_screen() {
+        use crate::state::VtLogBuffer;
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        vt_log.process(b"\x1b[?1049h");
+        let data = b"\x1b[5;1HDo you want to proceed?\x1b[23;1H* Thinking...";
+        let changed = vt_log.process(data);
+        assert_eq!(extract_question_line(&changed).as_deref(), Some("Do you want to proceed?"),
+            "question must be found in alternate screen; changed_rows: {:?}",
+            changed.iter().map(|r| format!("[{}] {:?}", r.row_index, &r.text)).collect::<Vec<_>>()
+        );
+    }
+
+    /// End-to-end: VtLogBuffer → extract_question_line → SilenceState → check_silence.
+    /// Question + mode line arrive together → unchallenged → fires at 10s.
+    #[test]
+    fn test_e2e_question_detection_with_mode_line() {
+        use crate::state::VtLogBuffer;
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        let mut silence = SilenceState::new();
+
+        let changed = vt_log.process(b"Le committo?\r\n\r\n\xe2\x8f\xb5\xe2\x8f\xb5 Reading files");
+        silence.on_chunk(false, extract_question_line(&changed));
+
+        assert_eq!(silence.pending_question_line.as_deref(), Some("Le committo?"));
+        assert!(!silence.pending_challenged);
+
+        silence.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(silence.check_silence(), Some("Le committo?".to_string()));
+    }
+
+    /// End-to-end: question in chunk 1, mode line in chunk 2 → challenged → 30s.
+    #[test]
+    fn test_e2e_question_then_spinner_then_silence() {
+        use crate::state::VtLogBuffer;
+
+        let mut vt_log = VtLogBuffer::new(24, 80, 1000);
+        let mut silence = SilenceState::new();
+
+        let changed = vt_log.process(b"Le committo?");
+        silence.on_chunk(false, extract_question_line(&changed));
+
+        let changed = vt_log.process(b"\r\n\xe2\x8f\xb5\xe2\x8f\xb5 Idle");
+        silence.on_chunk(false, extract_question_line(&changed));
+        assert!(silence.pending_challenged);
+
+        // 10s — not enough for challenged
+        silence.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert!(silence.check_silence().is_none());
+
+        // 30s — enough for challenged (fresh state, no double-emit guard)
+        let mut silence2 = SilenceState::new();
+        let mut vt_log2 = VtLogBuffer::new(24, 80, 1000);
+        let changed = vt_log2.process(b"Le committo?");
+        silence2.on_chunk(false, extract_question_line(&changed));
+        let changed = vt_log2.process(b"\r\n\xe2\x8f\xb5\xe2\x8f\xb5 Idle");
+        silence2.on_chunk(false, extract_question_line(&changed));
+        silence2.last_output_at = std::time::Instant::now() - SILENCE_CHALLENGED_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(silence2.check_silence(), Some("Le committo?".to_string()));
     }
 
     // --- Headless reader structured event tests ---
