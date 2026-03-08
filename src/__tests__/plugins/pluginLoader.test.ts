@@ -43,7 +43,7 @@ function validManifest(overrides: Partial<PluginManifest> = {}): PluginManifest 
     id: "test-plugin",
     name: "Test Plugin",
     version: "1.0.0",
-    min_app_version: "0.1.0",
+    minAppVersion: "0.1.0",
     main: "main.js",
     capabilities: [],
     ...overrides,
@@ -76,17 +76,17 @@ describe("validateManifest", () => {
   });
 
   it("rejects minAppVersion higher than current app version", () => {
-    const error = validateManifest(validManifest({ min_app_version: "99.0.0" }));
+    const error = validateManifest(validManifest({ minAppVersion: "99.0.0" }));
     expect(error).toContain("requires app version");
   });
 
   it("accepts minAppVersion equal to current", () => {
     // App is 0.3.0
-    expect(validateManifest(validManifest({ min_app_version: "0.3.0" }))).toBeNull();
+    expect(validateManifest(validManifest({ minAppVersion: "0.3.0" }))).toBeNull();
   });
 
   it("accepts minAppVersion lower than current", () => {
-    expect(validateManifest(validManifest({ min_app_version: "0.1.0" }))).toBeNull();
+    expect(validateManifest(validManifest({ minAppVersion: "0.1.0" }))).toBeNull();
   });
 });
 
@@ -150,7 +150,7 @@ describe("loadUserPlugins", () => {
 
   it("skips plugins that fail manifest validation", async () => {
     (invoke as Mock).mockResolvedValue([
-      validManifest({ min_app_version: "99.0.0" }),
+      validManifest({ minAppVersion: "99.0.0" }),
     ]);
     await loadUserPlugins();
     expect(pluginRegistry.register).not.toHaveBeenCalled();

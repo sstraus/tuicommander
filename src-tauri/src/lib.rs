@@ -717,10 +717,10 @@ pub fn run() {
                 let handle = app.handle().clone();
                 for repo_path in repos.keys() {
                     if let Err(e) = head_watcher::start_watching(repo_path, Some(&handle), app_state) {
-                        app_logger::log_via_state(app_state, "error", "app", &format!("[HeadWatcher] Failed to watch {repo_path}: {e}"));
+                        app_logger::log_via_state(app_state, "warn", "app", &format!("[HeadWatcher] Failed to watch {repo_path}: {e}"));
                     }
                     if let Err(e) = repo_watcher::start_watching(repo_path, Some(&handle), app_state) {
-                        app_logger::log_via_state(app_state, "error", "app", &format!("[RepoWatcher] Failed to watch {repo_path}: {e}"));
+                        app_logger::log_via_state(app_state, "warn", "app", &format!("[RepoWatcher] Failed to watch {repo_path}: {e}"));
                     }
                 }
             }

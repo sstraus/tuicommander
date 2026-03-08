@@ -38,14 +38,14 @@ export interface PluginManifest {
   id: string;
   name: string;
   version: string;
-  min_app_version: string;
+  minAppVersion: string;
   main: string;
   description?: string;
   author?: string;
   capabilities: string[];
-  allowed_urls?: string[];
+  allowedUrls?: string[];
   /** Agent types this plugin targets (e.g. ["claude"]). Empty/omitted = universal. */
-  agent_types?: string[];
+  agentTypes?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -74,9 +74,9 @@ export function validateManifest(manifest: PluginManifest): string | null {
   if (!manifest.version) return "manifest: version is required";
   if (!manifest.main) return "manifest: main is required";
 
-  if (!manifest.min_app_version) return "manifest: min_app_version is required";
-  if (compareSemver(manifest.min_app_version, APP_VERSION) > 0) {
-    return `plugin "${manifest.id}" requires app version ${manifest.min_app_version}, current is ${APP_VERSION}`;
+  if (!manifest.minAppVersion) return "manifest: minAppVersion is required";
+  if (compareSemver(manifest.minAppVersion, APP_VERSION) > 0) {
+    return `plugin "${manifest.id}" requires app version ${manifest.minAppVersion}, current is ${APP_VERSION}`;
   }
 
   return null;
@@ -224,7 +224,7 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
   }
 
   const plugin = (mod as { default: TuiPlugin }).default;
-  pluginRegistry.register(plugin, manifest.capabilities, manifest.allowed_urls, manifest.agent_types);
+  pluginRegistry.register(plugin, manifest.capabilities, manifest.allowedUrls, manifest.agentTypes);
   loadedPluginIds.add(manifest.id);
   logger.info(`Loaded v${manifest.version}`);
   appLogger.info("plugin", `Loaded plugin "${manifest.id}" v${manifest.version}`);
