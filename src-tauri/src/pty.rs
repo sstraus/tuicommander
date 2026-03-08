@@ -615,9 +615,7 @@ pub(crate) fn spawn_headless_reader_thread(
                             }
                         }
                         // Update silence state for fallback question detection.
-                        let last_q_line = changed_rows.iter().rev()
-                            .find(|r| !r.text.is_empty())
-                            .and_then(|r| if r.text.ends_with('?') { Some(r.text.clone()) } else { None });
+                        let last_q_line = extract_question_line(&changed_rows);
                         silence.lock().on_chunk(regex_found_question, last_q_line);
                     }
                 }
