@@ -11,6 +11,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tauri::Emitter;
 use uuid::Uuid;
 
 /// Serialize a value to JSON, returning a structured error on failure instead of silent null.
@@ -690,8 +691,20 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
             state.vt_log_buffers.insert(session_id.clone(), Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)));
             state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
+            // Broadcast session-created to SSE/WebSocket consumers
+            let cwd_str = args["cwd"].as_str().map(|s| s.to_string());
+            let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
+                session_id: session_id.clone(),
+                cwd: cwd_str.clone(),
+            });
+
             let app_handle = state.app_handle.read().clone();
             if let Some(ref app) = app_handle {
+                // Notify Tauri frontend so it creates a tab
+                let _ = app.emit("session-created", serde_json::json!({
+                    "session_id": session_id,
+                    "cwd": cwd_str,
+                }));
                 spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state.clone());
             } else {
                 spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());

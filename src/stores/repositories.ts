@@ -388,7 +388,7 @@ function createRepositoriesStore() {
 
       const branch = repo.branches[branchName];
       if (branch) {
-        appLogger.error("terminal", `removeBranch "${branchName}" from ${repoPath}`, {
+        appLogger.debug("terminal", `removeBranch "${branchName}" from ${repoPath}`, {
           terminals: branch.terminals,
           hadTerminals: branch.hadTerminals,
           savedTerminals: branch.savedTerminals?.length ?? 0,

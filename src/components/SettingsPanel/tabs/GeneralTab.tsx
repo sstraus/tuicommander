@@ -159,20 +159,6 @@ export const GeneralTab: Component = () => {
         <p class={s.hint}>{t("general.hint.autoShowPrPopover", "Automatically open the PR panel when a branch has an associated pull request")}</p>
       </div>
 
-      <h3>Agent Teams</h3>
-
-      <div class={s.group}>
-        <div class={s.toggle}>
-          <input
-            type="checkbox"
-            checked={settingsStore.state.agentTeamsShim}
-            onChange={(e) => settingsStore.setAgentTeamsShim(e.currentTarget.checked)}
-          />
-          <span>Enable it2 shim</span>
-        </div>
-        <p class={s.hint}>Enables Claude Code Agent Teams to use TUIC tabs instead of tmux panes</p>
-      </div>
-
       <h3>{t("general.heading.repoDefaults", "Repository Defaults")}</h3>
       <p class={s.hint} style={{ "margin-bottom": "12px" }}>
         {t("general.hint.repoDefaults", "These defaults apply to all repositories unless overridden per-repo")}

@@ -45,6 +45,7 @@ impl AgentTeamsEnv {
         let tuic_bin = format!("{home}/.tuicommander/bin");
         let current_path = std::env::var("PATH").unwrap_or_default();
         vec![
+            ("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS".to_string(), "1".to_string()),
             ("ITERM_SESSION_ID".to_string(), format!("w0t0p0:{}", self.session_id)),
             ("TERM_PROGRAM".to_string(), "iTerm.app".to_string()),
             ("PATH".to_string(), format!("{tuic_bin}:{current_path}")),
@@ -484,6 +485,13 @@ pub(crate) fn spawn_reader_thread(
             &format!("pty-exit-{session_id}"),
             serde_json::json!({ "session_id": session_id }),
         );
+        // Notify frontend about session closure (used by remote/MCP-spawned terminals)
+        let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
+            session_id: session_id.clone(),
+        });
+        let _ = app.emit("session-closed", serde_json::json!({
+            "session_id": session_id,
+        }));
         // Only decrement active_sessions if we're the ones removing the session.
         // HTTP/MCP close paths may have already removed it and decremented.
         if state.sessions.remove(&session_id).is_some() {
@@ -622,6 +630,15 @@ pub(crate) fn spawn_headless_reader_thread(
             if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
                 clients.retain(|tx| tx.send(remaining.clone()).is_ok());
             }
+        }
+        // Broadcast exit so SSE/WebSocket consumers and Tauri frontend can clean up
+        let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
+            session_id: session_id.clone(),
+        });
+        if let Some(app) = state.app_handle.read().as_ref() {
+            let _ = app.emit("session-closed", serde_json::json!({
+                "session_id": session_id,
+            }));
         }
         if state.sessions.remove(&session_id).is_some() {
             state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
