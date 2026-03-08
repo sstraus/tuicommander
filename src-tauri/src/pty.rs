@@ -270,6 +270,8 @@ pub(crate) fn spawn_reader_thread(
         let mut parser = OutputParser::new();
         // Dedup status-line events: only emit when task_name actually changes
         let mut last_status_task: Option<String> = None;
+        // Dedup question events: don't re-emit the same prompt_text
+        let mut last_question_text: Option<String> = None;
         // Resolve session CWD once for resolving relative plan-file paths
         let session_cwd: Option<String> = state
             .sessions
@@ -386,6 +388,15 @@ pub(crate) fn spawn_reader_thread(
                                     continue;
                                 }
                                 last_status_task = Some(task_name.clone());
+                            }
+                            // Dedup question: skip if same prompt_text already emitted.
+                            // Ink agents re-render the screen on every frame, causing the
+                            // same question row to appear in changed_rows repeatedly.
+                            if let ParsedEvent::Question { prompt_text, .. } = event {
+                                if last_question_text.as_deref() == Some(prompt_text.as_str()) {
+                                    continue;
+                                }
+                                last_question_text = Some(prompt_text.clone());
                             }
                             // Resolve relative plan-file paths to absolute using session CWD.
                             // Canonicalize to remove ".." segments so the frontend security

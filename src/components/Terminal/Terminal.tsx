@@ -407,10 +407,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
               appLogger.debug("terminal", `[ParsedEvent] ${props.id} question IGNORED (shellState=busy, low confidence) prompt="${parsed.prompt_text}"`);
               break;
             }
+            // Dedup: don't re-notify if already awaiting input
+            const wasAwaiting = qTerminal?.awaitingInput != null;
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} question prompt="${parsed.prompt_text}" → setAwaitingInput("question")`);
             terminalsStore.setAwaitingInput(props.id, "question", !!parsed.confident);
-            appLogger.info("terminal", `[Notify] ${props.id} question — prompt="${parsed.prompt_text}" confident=${!!parsed.confident}`);
-            notificationsStore.playQuestion();
+            if (!wasAwaiting) {
+              appLogger.info("terminal", `[Notify] ${props.id} question — prompt="${parsed.prompt_text}" confident=${!!parsed.confident}`);
+              notificationsStore.playQuestion();
+            }
             break;
           }
           case "usage-limit": {
