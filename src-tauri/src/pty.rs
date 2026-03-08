@@ -104,6 +104,9 @@ const SILENCE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_se
 /// would otherwise re-trigger notifications for content already on screen.
 const RESIZE_GRACE: std::time::Duration = std::time::Duration::from_millis(1000);
 
+/// How long after user input to ignore `?`-ending echo lines from the PTY.
+const ECHO_SUPPRESS_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// Shared state between the PTY reader thread and the silence-detection timer thread.
 pub(crate) struct SilenceState {
     /// When the last chunk of output was received from the PTY.
@@ -115,6 +118,10 @@ pub(crate) struct SilenceState {
     pub(crate) question_already_emitted: bool,
     /// When the last resize was requested. Used to suppress re-parsing of redrawn output.
     last_resize_at: Option<std::time::Instant>,
+    /// Deadline until which `on_chunk` ignores `?`-ending lines (suppresses PTY echo).
+    /// Set by `suppress_user_input()` so the echo of user-typed text doesn't
+    /// re-enable silence-based question detection.
+    pub(crate) suppress_echo_until: Option<std::time::Instant>,
 }
 
 impl SilenceState {
@@ -124,6 +131,7 @@ impl SilenceState {
             pending_question_line: None,
             question_already_emitted: false,
             last_resize_at: None,
+            suppress_echo_until: None,
         }
     }
 
@@ -148,14 +156,24 @@ impl SilenceState {
     pub(crate) fn on_chunk(&mut self, regex_found_question: bool, last_question_line: Option<String>) {
         self.last_output_at = std::time::Instant::now();
 
+        // Within the echo suppress window, ignore `?`-ending lines — they are
+        // the PTY echoing back user-typed text, not agent questions.
+        let in_echo_window = self.suppress_echo_until
+            .map(|deadline| std::time::Instant::now() < deadline)
+            .unwrap_or(false);
+
         if regex_found_question {
             // The instant detector already fired — suppress the silence timer.
             self.pending_question_line = None;
             self.question_already_emitted = true;
         } else if let Some(line) = last_question_line {
-            // New candidate for silence-based detection.
-            self.pending_question_line = Some(line);
-            self.question_already_emitted = false;
+            if in_echo_window {
+                // Ignore — this is the PTY echo of user input.
+            } else {
+                // New candidate for silence-based detection.
+                self.pending_question_line = Some(line);
+                self.question_already_emitted = false;
+            }
         } else {
             // The agent printed more output that doesn't end with `?` — it moved on.
             self.pending_question_line = None;
@@ -164,9 +182,11 @@ impl SilenceState {
 
     /// Called by write_pty when the user submits a line of input.
     /// Clears any pending question candidate since it was typed by the user, not the agent.
+    /// Also opens a time window to ignore the PTY echo of the typed text.
     pub(crate) fn suppress_user_input(&mut self) {
         self.pending_question_line = None;
         self.question_already_emitted = true;
+        self.suppress_echo_until = Some(std::time::Instant::now() + ECHO_SUPPRESS_WINDOW);
     }
 
     /// Called by the timer thread. Returns the question text if the silence
@@ -1487,6 +1507,31 @@ mod tests {
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         // Should NOT fire — the question was typed by the user
         assert!(s.check_silence().is_none());
+    }
+
+    #[test]
+    fn test_silence_state_suppress_echo_after_user_input() {
+        let mut s = SilenceState::new();
+        // write_pty detects user input and suppresses BEFORE the echo arrives
+        s.suppress_user_input();
+        // PTY echoes the user's text back — this should NOT re-enable detection
+        s.on_chunk(false, Some("lo hai mai provato?".to_string()));
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        // Should NOT fire — the echo window blocks re-enabling
+        assert!(s.check_silence().is_none(), "PTY echo after suppress should not trigger question detection");
+    }
+
+    #[test]
+    fn test_silence_state_suppress_echo_expires() {
+        let mut s = SilenceState::new();
+        s.suppress_user_input();
+        // Expire the echo suppress window
+        s.suppress_echo_until = None;
+        // Agent asks a genuine question after the window expires
+        s.on_chunk(false, Some("Would you like to proceed?".to_string()));
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        // Should fire — this is a real agent question
+        assert_eq!(s.check_silence(), Some("Would you like to proceed?".to_string()));
     }
 
     // --- Resize grace period tests ---
