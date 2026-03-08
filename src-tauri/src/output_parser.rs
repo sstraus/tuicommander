@@ -748,9 +748,9 @@ fn parse_question(clean: &str) -> Option<ParsedEvent> {
     }
 
     lazy_static::lazy_static! {
-        // Claude Code: "Would you like to proceed?" / "Do you want to..."
+        // Agent question prompts: covers top patterns from real session data
         static ref QUESTION_RE: regex::Regex =
-            regex::Regex::new(r"(?i)(Would you like to proceed|Do you want to\b[^?]*\?|Is this (plan|approach) okay)").unwrap();
+            regex::Regex::new(r"(?i)(Would you like\b|Do you want to\b[^?]*\?|Is this (plan|approach) okay|Want me to\b|Shall I\b|Should I\b|What would you like\b|What do you think|What('|')s your\b|Something else\?)").unwrap();
         // Numbered menu choices: ❯ (U+276F), › (U+203A), >, or ) before "1." followed by option text
         static ref MENU_RE: regex::Regex =
             regex::Regex::new(r"[❯›>\)]\s*1\.\s+\S").unwrap();
@@ -1579,6 +1579,79 @@ mod tests {
         let parser = OutputParser::new();
         let events = parser.parse("Building project... done");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+    }
+
+    #[test]
+    fn test_question_want_me_to() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Want me to commit these changes?");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"Want me to\" should trigger question detection");
+    }
+
+    #[test]
+    fn test_question_should_i() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Should I proceed with the refactor?");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"Should I\" should trigger question detection");
+    }
+
+    #[test]
+    fn test_question_what_would_you_like() {
+        let parser = OutputParser::new();
+        let events = parser.parse("What would you like me to do next?");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"What would you like\" should trigger question detection");
+    }
+
+    #[test]
+    fn test_question_something_else() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Something else?");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"Something else?\" should trigger question detection");
+    }
+
+    #[test]
+    fn test_question_what_do_you_think() {
+        let parser = OutputParser::new();
+        let events = parser.parse("What do you think?");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"What do you think\" should trigger question detection");
+    }
+
+    #[test]
+    fn test_question_whats_your_preference() {
+        let parser = OutputParser::new();
+        let events = parser.parse("What's your preference?");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"What's your\" should trigger question detection");
+    }
+
+    #[test]
+    fn test_question_shall_i() {
+        let parser = OutputParser::new();
+        let events = parser.parse("Shall I run the tests first?");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"Shall I\" should trigger question detection");
+    }
+
+    #[test]
+    fn test_no_question_should_in_prose() {
+        let parser = OutputParser::new();
+        // "should" in middle of prose — not a question prompt
+        let events = parser.parse("The function should handle edge cases properly.");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"should\" in prose should NOT trigger question detection");
+    }
+
+    #[test]
+    fn test_no_question_want_in_prose() {
+        let parser = OutputParser::new();
+        let events = parser.parse("If you want to learn more about this pattern, see the docs.");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"want\" in prose should NOT trigger question detection");
     }
 
     #[test]
