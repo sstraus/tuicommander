@@ -367,6 +367,45 @@
   </section>
 
   <!-- ============================================
+       FEATURE: WORKTREE MANAGER
+       ============================================ -->
+  <section class="feature" data-sal="slide-up">
+    <div class="container">
+      <div class="feature-inner">
+        <div class="feature-content">
+          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          <h3>Manage worktrees visually</h3>
+          <div class="feature-problem">
+            "I have 8 worktrees open. Which one has the PR approved? Which one is dirty?"
+          </div>
+          <p class="feature-solution">
+            The Worktree Manager panel gives you a bird's-eye view of every worktree across all repositories — with PR state, dirty file counts, and one-click cleanup.
+          </p>
+          <ul class="feature-points">
+            <li>Visual overlay of all worktrees with PR status, dirty stats, last commit</li>
+            <li>Post-merge cleanup dialog — switch base, pull, delete branch, archive worktree in one click</li>
+            <li>Terminal auto-follows your <code>cd</code> — switch into a worktree and the tab reassigns</li>
+            <li>Auto-fetch on configurable interval (5/15/30/60 min)</li>
+          </ul>
+        </div>
+        <div class="feature-visual">
+          <div class="code-block">
+<span class="cmt">  WORKTREE MANAGER           PR    FILES</span>
+
+  <span class="fn">myapp</span>
+    <span class="var">main</span>                     —      —
+    <span class="fn">feature/auth</span>       <span class="str">Open</span>   <span class="str">+3</span>
+    <span class="fn">bugfix/session</span>     <span class="kw">Merged</span>  0
+    <span class="fn">refactor/api</span>       <span class="str">Draft</span>  <span class="str">+7</span>
+
+  <span class="cmt">[Clean up merged]  [Fetch all]</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
        FEATURE PAIR: VOICE + REMOTE (side by side)
        ============================================ -->
   <section class="feature-pair" data-sal="slide-up">
@@ -386,14 +425,15 @@
         </div>
         <div class="feature-card">
           <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/><path d="M9 6h6"/></svg>
-          <h3>Control from your phone</h3>
+          <h3>Control from anywhere</h3>
           <p class="feature-solution">
-            Built-in HTTP server with a fully functional terminal UI. Access from your local network or anywhere via secure tunnel.
+            Mobile companion PWA with live agent status, suggest chips, and question banners. Access via LAN, Tailscale, or the E2E-encrypted cloud relay — no VPN or port forwarding needed.
           </p>
           <ul class="feature-points">
-            <li>QR code on screen for instant connection</li>
-            <li>Monitor agents or approve prompts from any device</li>
-            <li>Remote access via Cloudflare or Tailscale tunnel</li>
+            <li>QR code scan for instant LAN connection</li>
+            <li>Cloud relay — AES-256-GCM encrypted, zero-knowledge server</li>
+            <li>Answer agent questions with one tap, track rate limits live</li>
+            <li>Works offline — queues commands until reconnected</li>
           </ul>
         </div>
       </div>
@@ -431,6 +471,40 @@
   });
 }
           </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       FEATURE PAIR: KEYBINDINGS + MCP BRIDGE
+       ============================================ -->
+  <section class="feature-pair" data-sal="slide-up">
+    <div class="container">
+      <div class="feature-pair-grid">
+        <div class="feature-card">
+          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6" y2="10.01"/><line x1="10" y1="10" x2="10" y2="10.01"/><line x1="14" y1="10" x2="14" y2="10.01"/><line x1="18" y1="10" x2="18" y2="10.01"/><line x1="8" y1="14" x2="16" y2="14"/></svg>
+          <h3>Customize your workflow</h3>
+          <p class="feature-solution">
+            Rebind every shortcut, with chord support and conflict detection. The command palette gives fuzzy-search access to all actions.
+          </p>
+          <ul class="feature-points">
+            <li>Customizable keybindings with visual editor</li>
+            <li>6 tab status dots — idle, running, unseen, awaiting, background, error</li>
+            <li>31 Tips of the Day covering every discoverable feature</li>
+          </ul>
+        </div>
+        <div class="feature-card">
+          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          <h3>Zero-config MCP bridge</h3>
+          <p class="feature-solution">
+            The <code>tuic-bridge</code> sidecar auto-installs MCP configurations for your AI agents. Connect once, every agent benefits.
+          </p>
+          <ul class="feature-points">
+            <li>Auto-configures Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini</li>
+            <li>MCP Proxy Hub — connect upstream servers once, share across all agents</li>
+            <li>Circuit breakers, health checks, and hot-reload built in</li>
+          </ul>
         </div>
       </div>
     </div>
@@ -505,6 +579,20 @@
               <td class="highlight-col"><span class="check">Local Whisper</span></td>
             </tr>
             <tr>
+              <td>E2E encrypted cloud relay</td>
+              <td><span class="cross">No</span></td>
+              <td><span class="cross">No</span></td>
+              <td><span class="cross">No</span></td>
+              <td class="highlight-col"><span class="check">Built-in</span></td>
+            </tr>
+            <tr>
+              <td>MCP bridge (auto-config)</td>
+              <td><span class="cross">No</span></td>
+              <td><span class="cross">No</span></td>
+              <td><span class="cross">No</span></td>
+              <td class="highlight-col"><span class="check">Zero-config</span></td>
+            </tr>
+            <tr>
               <td>Plugin system</td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
@@ -537,6 +625,10 @@
         <div class="terminal-item"><strong>13 bundled fonts</strong> — JetBrains Mono, Fira Code, and more</div>
         <div class="terminal-item"><strong>Claude usage dashboard</strong> — weekly limits, heatmaps</div>
         <div class="terminal-item"><strong>Prompt library</strong> — saved templates with variable substitution</div>
+        <div class="terminal-item"><strong>Custom keybindings</strong> — rebind shortcuts, chord support, conflict detection</div>
+        <div class="terminal-item"><strong>Tab status dots</strong> — 6 visual states: idle, running, unseen, awaiting, error</div>
+        <div class="terminal-item"><strong>Post-merge cleanup</strong> — one-click branch delete, worktree archive</div>
+        <div class="terminal-item"><strong>CWD tracking</strong> — tabs auto-follow when you <code>cd</code> into a worktree</div>
       </div>
     </div>
   </section>
@@ -581,8 +673,12 @@
           <div class="faq-answer">Yes. TUICommander has an Obsidian-style plugin system with hot reload and a community registry. Plugins can watch terminal output, add status bar widgets, create panels, and respond to agent events. See the <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin Authoring Guide</a>.</div>
         </details>
         <details>
+          <summary>How does the cloud relay work?</summary>
+          <div class="faq-answer">The relay is a lightweight WebSocket server that forwards encrypted messages between your desktop and phone. All traffic is end-to-end encrypted with AES-256-GCM — the relay server is zero-knowledge and never sees your data. The encryption key is derived from your token via HKDF and embedded in the QR code. You can self-host the relay or use the default at relay.tuicommander.com.</div>
+        </details>
+        <details>
           <summary>Is my data sent anywhere?</summary>
-          <div class="faq-answer">No. Zero telemetry, zero analytics, zero cloud dependencies. Everything runs locally on your machine. The only optional network calls are to GitHub's API (for PR badges) and the plugin registry.</div>
+          <div class="faq-answer">No. Zero telemetry, zero analytics, zero cloud dependencies. Everything runs locally on your machine. The only optional network calls are to GitHub's API (for PR badges), the plugin registry, and the cloud relay (if you enable it — all traffic is E2E encrypted).</div>
         </details>
       </div>
     </div>
