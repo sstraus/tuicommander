@@ -53,7 +53,6 @@ import { settingsStore } from "./stores/settings";
 import { githubStore } from "./stores/github";
 import { dictationStore } from "./stores/dictation";
 import { notificationsStore } from "./stores/notifications";
-import { warmUpAudioContext } from "./notifications";
 import { repoSettingsStore } from "./stores/repoSettings";
 import { repoDefaultsStore } from "./stores/repoDefaults";
 import { notesStore } from "./stores/notes";
@@ -259,9 +258,8 @@ const App: Component = () => {
   // SolidJS can track it synchronously (onCleanup inside async onMount is unreliable).
   onCleanup(() => githubStore.stopPolling());
 
-  // Unlock Web Audio on the very first user gesture so notification
-  // sounds work even when triggered from async Tauri events.
-  warmUpAudioContext();
+  // Notification sounds are now played natively via Rust (rodio) —
+  // no Web Audio warmup needed.
 
   onMount(async () => {
     await initApp({

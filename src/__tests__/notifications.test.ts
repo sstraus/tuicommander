@@ -1,59 +1,31 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// Mock the invoke module — NotificationManager delegates to Rust
+vi.mock("../invoke", () => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe("NotificationManager", () => {
   let NotificationManager: typeof import("../notifications").NotificationManager;
   let manager: InstanceType<typeof NotificationManager>;
-
-  const mockOscillator = {
-    type: "",
-    frequency: { setValueAtTime: vi.fn() },
-    connect: vi.fn(),
-    start: vi.fn(),
-    stop: vi.fn(),
-  };
-
-  const mockGainNode = {
-    gain: {
-      setValueAtTime: vi.fn(),
-      linearRampToValueAtTime: vi.fn(),
-    },
-    connect: vi.fn(),
-  };
-
-  const mockAudioContext = {
-    state: "running",
-    currentTime: 0,
-    destination: {},
-    createOscillator: vi.fn(() => mockOscillator),
-    createGain: vi.fn(() => mockGainNode),
-    resume: vi.fn().mockResolvedValue(undefined),
-    addEventListener: vi.fn(),
-  };
-
-  const OriginalAudioContext = globalThis.AudioContext;
+  let mockInvoke: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.useFakeTimers();
     vi.advanceTimersByTime(1000);
     vi.resetModules();
-    // Must use a class so `new AudioContext()` works (arrow/plain fn isn't constructable).
-    // Returns mockAudioContext directly so state mutations propagate.
-    globalThis.AudioContext = class {
-      constructor() { return mockAudioContext as unknown as AudioContext; }
-    } as unknown as typeof AudioContext;
-    mockAudioContext.state = "running";
-    mockAudioContext.createOscillator.mockReturnValue(mockOscillator);
-    mockAudioContext.createGain.mockReturnValue(mockGainNode);
-    mockAudioContext.resume.mockResolvedValue(undefined);
 
     const mod = await import("../notifications");
     NotificationManager = mod.NotificationManager;
     manager = new NotificationManager();
+
+    const invokeModule = await import("../invoke");
+    mockInvoke = invokeModule.invoke as ReturnType<typeof vi.fn>;
+    mockInvoke.mockClear();
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    globalThis.AudioContext = OriginalAudioContext;
   });
 
   describe("constructor", () => {
@@ -71,72 +43,55 @@ describe("NotificationManager", () => {
   });
 
   describe("play()", () => {
-    // playTone() returns new Promise(resolve => setTimeout(resolve, ...)).
-    // With fake timers we must: start play, advance timers, then await.
-    async function playAndFlush(m: InstanceType<typeof NotificationManager>, sound: Parameters<typeof m.play>[0]) {
-      const p = m.play(sound);
-      await vi.advanceTimersByTimeAsync(1000);
-      await p;
-    }
-
-    it("plays sound when enabled", async () => {
-      await playAndFlush(manager, "question");
-      expect(mockAudioContext.createOscillator).toHaveBeenCalled();
+    it("calls Rust play_notification_sound when enabled", async () => {
+      await manager.play("question");
+      expect(mockInvoke).toHaveBeenCalledWith("play_notification_sound", {
+        sound: "question",
+        volume: 0.5,
+      });
     });
 
     it("does nothing when disabled", async () => {
       manager.setEnabled(false);
-      mockAudioContext.createOscillator.mockClear();
-      await playAndFlush(manager, "question");
-      expect(mockAudioContext.createOscillator).not.toHaveBeenCalled();
+      await manager.play("question");
+      expect(mockInvoke).not.toHaveBeenCalled();
     });
 
     it("does nothing when specific sound is disabled", async () => {
       manager.setSoundEnabled("question", false);
-      mockAudioContext.createOscillator.mockClear();
-      await playAndFlush(manager, "question");
-      expect(mockAudioContext.createOscillator).not.toHaveBeenCalled();
+      await manager.play("question");
+      expect(mockInvoke).not.toHaveBeenCalled();
     });
 
     it("rate-limits rapid plays of same sound", async () => {
-      // Start play, but DON'T advance timers yet — just let it set lastPlayTime
-      const p1 = manager.play("question");
-      // Immediately start second play (same tick — no time passed)
-      const p2 = manager.play("question");
-      // Now advance to resolve both setTimeout promises
-      await vi.advanceTimersByTimeAsync(1000);
-      await p1;
-      await p2;
-      // Only the first play should have created oscillators (second was rate-limited).
-      // "question" is a 2-note sequence, so one play = 2 oscillator creations.
-      expect(mockAudioContext.createOscillator).toHaveBeenCalledTimes(2);
+      await manager.play("question");
+      await manager.play("question");
+      // Only first call should go through
+      expect(mockInvoke).toHaveBeenCalledTimes(1);
     });
 
     it("allows play after rate limit interval", async () => {
-      await playAndFlush(manager, "question");
-      const callCount = mockAudioContext.createOscillator.mock.calls.length;
+      await manager.play("question");
+      expect(mockInvoke).toHaveBeenCalledTimes(1);
       // Advance past the 500ms rate limit
       await vi.advanceTimersByTimeAsync(600);
-      await playAndFlush(manager, "question");
-      expect(mockAudioContext.createOscillator.mock.calls.length).toBeGreaterThan(callCount);
+      await manager.play("question");
+      expect(mockInvoke).toHaveBeenCalledTimes(2);
     });
 
-    it("handles audio error gracefully", async () => {
-      mockAudioContext.createOscillator.mockImplementationOnce(() => {
-        throw new Error("audio error");
+    it("handles invoke error gracefully", async () => {
+      mockInvoke.mockRejectedValueOnce(new Error("audio error"));
+      // Should not throw
+      await expect(manager.play("question")).resolves.toBeUndefined();
+    });
+
+    it("passes configured volume to Rust", async () => {
+      manager.setVolume(0.8);
+      await manager.play("completion");
+      expect(mockInvoke).toHaveBeenCalledWith("play_notification_sound", {
+        sound: "completion",
+        volume: 0.8,
       });
-      // appLogger.warn is used instead of console.warn — just verify it doesn't throw
-      await expect(playAndFlush(manager, "question")).resolves.toBeUndefined();
-    });
-
-    it("resumes suspended audio context", async () => {
-      // Play once to create the audio context
-      await playAndFlush(manager, "error");
-      // Now set state to suspended and advance past rate limit
-      mockAudioContext.state = "suspended";
-      await vi.advanceTimersByTimeAsync(600);
-      await playAndFlush(manager, "error");
-      expect(mockAudioContext.resume).toHaveBeenCalled();
     });
   });
 
@@ -163,6 +118,12 @@ describe("NotificationManager", () => {
       const spy = vi.spyOn(manager, "play").mockResolvedValue(undefined);
       await manager.playWarning();
       expect(spy).toHaveBeenCalledWith("warning");
+    });
+
+    it("playInfo delegates to play", async () => {
+      const spy = vi.spyOn(manager, "play").mockResolvedValue(undefined);
+      await manager.playInfo();
+      expect(spy).toHaveBeenCalledWith("info");
     });
   });
 
@@ -192,93 +153,9 @@ describe("NotificationManager", () => {
   });
 
   describe("isAvailable()", () => {
-    it("returns true when AudioContext exists", () => {
+    it("always returns true (native audio via Rust)", () => {
       expect(manager.isAvailable()).toBe(true);
     });
-
-    it("returns false when no AudioContext available", () => {
-      const savedAC = globalThis.AudioContext;
-      // @ts-expect-error — intentionally removing for test
-      delete globalThis.AudioContext;
-      delete (window as unknown as Record<string, unknown>).webkitAudioContext;
-      const m = new NotificationManager();
-      expect(m.isAvailable()).toBe(false);
-      globalThis.AudioContext = savedAC;
-    });
-  });
-});
-
-describe("warmUpAudioContext", () => {
-  const OriginalAudioContext = globalThis.AudioContext;
-
-  afterEach(() => {
-    globalThis.AudioContext = OriginalAudioContext;
-  });
-
-  it("creates AudioContext and resumes on first user click", async () => {
-    vi.resetModules();
-    const mockCtx = {
-      state: "suspended",
-      resume: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn(),
-    };
-    mockCtx.resume.mockImplementation(() => {
-      mockCtx.state = "running";
-      return Promise.resolve();
-    });
-    globalThis.AudioContext = class {
-      constructor() { return mockCtx as unknown as AudioContext; }
-    } as unknown as typeof AudioContext;
-
-    const mod = await import("../notifications");
-    mod.warmUpAudioContext();
-
-    // Before click — no AudioContext created yet
-    expect(mockCtx.resume).not.toHaveBeenCalled();
-
-    // Simulate user click
-    document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(mockCtx.resume).toHaveBeenCalled();
-  });
-
-  it("re-resumes AudioContext when statechange fires suspended", async () => {
-    vi.resetModules();
-    let resumeCallCount = 0;
-    let stateChangeHandler: (() => void) | null = null;
-    const mockCtx = {
-      state: "suspended",
-      resume: vi.fn(() => {
-        resumeCallCount++;
-        mockCtx.state = "running";
-        return Promise.resolve();
-      }),
-      addEventListener: vi.fn((event: string, handler: () => void) => {
-        if (event === "statechange") stateChangeHandler = handler;
-      }),
-    };
-    globalThis.AudioContext = class {
-      constructor() { return mockCtx as unknown as AudioContext; }
-    } as unknown as typeof AudioContext;
-
-    const mod = await import("../notifications");
-    mod.warmUpAudioContext();
-
-    // First click: context goes suspended → running
-    document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(mockCtx.state).toBe("running");
-    const callsAfterFirst = resumeCallCount;
-
-    // Simulate WebKit suspending the context after inactivity
-    mockCtx.state = "suspended";
-    // Fire the statechange handler to re-arm needsResume
-    expect(stateChangeHandler).not.toBeNull();
-    stateChangeHandler!();
-
-    // Next click should re-resume it
-    document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(resumeCallCount).toBeGreaterThan(callsAfterFirst);
-    expect(mockCtx.state).toBe("running");
   });
 });
 

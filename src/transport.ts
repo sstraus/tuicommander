@@ -94,6 +94,8 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
   set_dictation_config: { browserUnsupported: true },
   // --- Browser-unsupported: OS integration ---
   open_in_app: { browserUnsupported: true },
+  // --- Browser-unsupported: Native audio ---
+  play_notification_sound: { browserUnsupported: true },
   // --- Browser-unsupported: MCP upstream (uses OS keyring) ---
   load_mcp_upstreams: { browserUnsupported: true },
   save_mcp_upstreams: { browserUnsupported: true },

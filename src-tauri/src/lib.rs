@@ -19,6 +19,7 @@ pub(crate) mod mcp_proxy;
 pub(crate) mod mcp_upstream_config;
 pub(crate) mod mcp_upstream_credentials;
 mod menu;
+pub(crate) mod notification_sound;
 mod output_parser;
 pub(crate) mod plugin_credentials;
 pub(crate) mod plugin_exec;
@@ -896,7 +897,8 @@ pub fn run() {
             claude_usage::get_claude_project_list,
             app_logger::push_log,
             app_logger::get_logs,
-            app_logger::clear_logs
+            app_logger::clear_logs,
+            notification_sound::play_notification_sound
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
