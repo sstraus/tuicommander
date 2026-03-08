@@ -1851,10 +1851,11 @@ mod tests {
     }
 
     // --- resolve_github_token tests ---
-    // All env var scenarios in a single test to avoid parallel race conditions
-    // (env vars are process-global state).
+    // Must run serially: env vars are process-global state and gh_token crate
+    // also reads them internally, causing races when tests run in parallel.
 
     #[test]
+    #[serial_test::serial]
     fn test_resolve_github_token_env_priority() {
         // Scenario 1: GH_TOKEN takes priority
         unsafe {
@@ -2131,6 +2132,7 @@ mod tests {
     // --- resolve_github_token_candidates tests ---
 
     #[test]
+    #[serial_test::serial]
     fn test_resolve_github_token_candidates() {
         // Set both env vars to known values
         unsafe {
@@ -2179,6 +2181,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_resolve_github_token_candidates_filters_empty() {
         unsafe {
             std::env::set_var("GH_TOKEN", "");

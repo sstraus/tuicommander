@@ -74,6 +74,7 @@ windows-sys = { version = "0.61", features = ["Win32_System_Diagnostics_ToolHelp
 [dev-dependencies]
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
+serial_test = "3"
 
 [[bin]]
 name = "tuic-bridge"
