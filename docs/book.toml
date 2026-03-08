@@ -1,7 +1,7 @@
 [book]
 title = "TUICommander"
 description = "Multi-agent terminal orchestrator"
-authors = ["TUICommander Contributors"]
+authors = ["Stefano Straus"]
 language = "en"
 src = "."
 
@@ -10,6 +10,6 @@ build-dir = "book"
 
 [output.html]
 site-url = "/docs/"
-default-theme = "dark"
-preferred-dark-theme = "ayu"
-git-repository-url = "https://github.com/nicobailon/tuicommander"
+default-theme = "light"
+git-repository-url = "https://github.com/sstraus/tuicommander" 
+additional-css = ["theme/custom.css"]

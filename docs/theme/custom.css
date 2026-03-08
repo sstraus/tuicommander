@@ -1,0 +1,5 @@
+/* Solid white background so content scrolls behind the menu bar */
+#mdbook-menu-bar {
+    background-color: white;
+    z-index: 200;
+}

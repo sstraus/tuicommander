@@ -123,7 +123,6 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     try {
       const preferred = repoSettingsStore.getEffective?.(props.repoPath)?.prMergeStrategy ?? repoDefaultsStore.state.prMergeStrategy;
       const startMethod = effectiveMergeMethod(pr, preferred);
-      let alreadyMerged = false;
       try {
         const usedMethod = await mergeWithFallback(props.repoPath, pr.number, startMethod);
         // Persist the working method so future merges use it directly
@@ -135,7 +134,6 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
         appLogger.info("github", `Merged PR #${pr.number} via ${usedMethod}`);
       } catch (mergeErr) {
         if (isAlreadyMerged(mergeErr)) {
-          alreadyMerged = true;
           appLogger.info("github", `PR #${pr.number} was already merged — proceeding to cleanup`);
         } else {
           throw mergeErr;

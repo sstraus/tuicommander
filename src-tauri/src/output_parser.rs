@@ -735,82 +735,10 @@ fn parse_usage_limit(clean: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Detect when an agent is waiting for user input from pre-stripped text (question, confirmation, menu choice).
-fn parse_question(clean: &str) -> Option<ParsedEvent> {
-    // Fast path: skip chunks that cannot contain any question marker.
-    if !clean.contains('?') && !clean.contains("[Y/") && !clean.contains("[y/")
-        && !clean.contains("[N/") && !clean.contains("[n/")
-        && !clean.contains("(yes/no)") && !clean.contains("Enter to select")
-        && !clean.contains('\u{276F}') && !clean.contains('\u{203A}')
-        && !clean.contains("> ")
-    {
-        return None;
-    }
-
-    lazy_static::lazy_static! {
-        // Agent question prompts: covers top patterns from real session data
-        static ref QUESTION_RE: regex::Regex =
-            regex::Regex::new(r"(?i)(Would you like\b|Do you want to\b[^?]*\?|Is this (plan|approach) okay|Want me to\b|Shall I\b|Should I\b|What would you like\b|What do you think|What('|')s your\b|Something else\?)").unwrap();
-        // Numbered menu choices: ❯ (U+276F), › (U+203A), >, or ) before "1." followed by option text
-        static ref MENU_RE: regex::Regex =
-            regex::Regex::new(r"[❯›>\)]\s*1\.\s+\S").unwrap();
-        // Generic Y/N prompts: [Y/n], [y/N], (yes/no)
-        static ref YN_RE: regex::Regex =
-            regex::Regex::new(r"\[([Yy]/[Nn]|[Nn]/[Yy])\]|\(yes/no\)").unwrap();
-        // "? " prefix (inquirer-style prompts used by many CLI tools)
-        static ref INQUIRER_RE: regex::Regex =
-            regex::Regex::new(r"^\?\s+.+\??\s*$").unwrap();
-        // Ink SelectInput navigation footer: "Enter to select · ↑/↓ to navigate"
-        static ref INK_FOOTER_RE: regex::Regex =
-            regex::Regex::new(r"Enter to select").unwrap();
-    }
-
-    for line in clean.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
-
-        // Skip lines that look like diff output, code, or documentation —
-        // they may contain question-like patterns as content, not real prompts.
-        if line_is_diff_or_code_context(line) {
-            continue;
-        }
-
-        if QUESTION_RE.is_match(trimmed) {
-            return Some(ParsedEvent::Question {
-                prompt_text: trimmed.to_string(),
-                confident: true,
-            });
-        }
-        if MENU_RE.is_match(trimmed) {
-            return Some(ParsedEvent::Question {
-                prompt_text: trimmed.to_string(),
-                confident: true,
-            });
-        }
-        if YN_RE.is_match(trimmed) {
-            return Some(ParsedEvent::Question {
-                prompt_text: trimmed.to_string(),
-                confident: true,
-            });
-        }
-        if INQUIRER_RE.is_match(trimmed) {
-            return Some(ParsedEvent::Question {
-                prompt_text: trimmed.to_string(),
-                confident: true,
-            });
-        }
-        if INK_FOOTER_RE.is_match(trimmed) {
-            return Some(ParsedEvent::Question {
-                prompt_text: trimmed.to_string(),
-                confident: true,
-            });
-        }
-        // Generic `?`-ending lines are NOT detected here. They are handled
-        // exclusively by the silence-based detector in pty.rs — if the agent
-        // goes idle for 10s after printing a `?` line, it's a real question.
-        // Instant detection of streaming fragments causes massive false positives
-        // (e.g., "ad?", "swap?", "linux?", "instead?").
-    }
+/// Question detection is handled exclusively by the silence-based detector
+/// in pty.rs: last line ending with `?` + 10s of silence = real question.
+/// No instant regex detection — it causes too many false positives.
+fn parse_question(_clean: &str) -> Option<ParsedEvent> {
     None
 }
 
@@ -1539,39 +1467,41 @@ mod tests {
         );
     }
 
+    // All question detection is silence-based only (10s idle after `?`-ending line).
+    // No instant regex detection — it causes false positives from streaming output.
     #[test]
-    fn test_question_would_you_like() {
+    fn test_no_instant_question_would_you_like() {
         let parser = OutputParser::new();
         let events = parser.parse("Would you like to proceed?");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
-    fn test_question_do_you_want() {
+    fn test_no_instant_question_do_you_want() {
         let parser = OutputParser::new();
         let events = parser.parse("Do you want to continue with this approach?");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
-    fn test_question_menu_choice() {
+    fn test_no_instant_question_menu_choice() {
         let parser = OutputParser::new();
         let events = parser.parse("❯ 1. Yes, clear context and bypass permissions");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
-    fn test_question_yn_prompt() {
+    fn test_no_instant_question_yn_prompt() {
         let parser = OutputParser::new();
         let events = parser.parse("Apply changes? [Y/n]");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
-    fn test_question_inquirer_style() {
+    fn test_no_instant_question_inquirer_style() {
         let parser = OutputParser::new();
         let events = parser.parse("? Which template would you like to use?");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
@@ -1581,60 +1511,64 @@ mod tests {
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
+    // These phrases end with `?` and are handled by the silence-based detector
+    // (10s idle threshold in pty.rs), NOT by instant regex detection.
+    // Instant detection of generic question-like phrases causes massive false
+    // positives during AI agent streaming output.
     #[test]
-    fn test_question_want_me_to() {
+    fn test_no_instant_question_want_me_to() {
         let parser = OutputParser::new();
         let events = parser.parse("Want me to commit these changes?");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "\"Want me to\" should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"Want me to\" must NOT instant-detect (silence-based only)");
     }
 
     #[test]
-    fn test_question_should_i() {
+    fn test_no_instant_question_should_i() {
         let parser = OutputParser::new();
         let events = parser.parse("Should I proceed with the refactor?");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "\"Should I\" should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"Should I\" must NOT instant-detect (silence-based only)");
     }
 
     #[test]
-    fn test_question_what_would_you_like() {
+    fn test_no_instant_question_what_would_you_like() {
         let parser = OutputParser::new();
         let events = parser.parse("What would you like me to do next?");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "\"What would you like\" should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"What would you like\" must NOT instant-detect (silence-based only)");
     }
 
     #[test]
-    fn test_question_something_else() {
+    fn test_no_instant_question_something_else() {
         let parser = OutputParser::new();
         let events = parser.parse("Something else?");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "\"Something else?\" should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"Something else?\" must NOT instant-detect (silence-based only)");
     }
 
     #[test]
-    fn test_question_what_do_you_think() {
+    fn test_no_instant_question_what_do_you_think() {
         let parser = OutputParser::new();
         let events = parser.parse("What do you think?");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "\"What do you think\" should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"What do you think\" must NOT instant-detect (silence-based only)");
     }
 
     #[test]
-    fn test_question_whats_your_preference() {
+    fn test_no_instant_question_whats_your_preference() {
         let parser = OutputParser::new();
         let events = parser.parse("What's your preference?");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "\"What's your\" should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"What's your\" must NOT instant-detect (silence-based only)");
     }
 
     #[test]
-    fn test_question_shall_i() {
+    fn test_no_instant_question_shall_i() {
         let parser = OutputParser::new();
         let events = parser.parse("Shall I run the tests first?");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "\"Shall I\" should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "\"Shall I\" must NOT instant-detect (silence-based only)");
     }
 
     #[test]
@@ -1706,39 +1640,31 @@ mod tests {
     // --- Ink SelectInput / broadened question detection tests ---
 
     #[test]
-    fn test_question_ink_single_angle_bracket_cursor() {
-        // Ink SelectInput uses › (U+203A) as cursor indicator
+    fn test_no_instant_question_ink_cursor() {
         let parser = OutputParser::new();
         let events = parser.parse("› 1. Create a new story");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "› cursor should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
-    fn test_question_ascii_greater_than_cursor() {
-        // Some CLIs use plain > as cursor indicator
+    fn test_no_instant_question_ascii_cursor() {
         let parser = OutputParser::new();
         let events = parser.parse("> 1. Yes, proceed with changes");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "> cursor should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
-    fn test_question_ink_navigation_footer() {
-        // Ink renders a navigation footer below selection menus
+    fn test_no_instant_question_ink_footer() {
         let parser = OutputParser::new();
         let events = parser.parse("Enter to select · ↑/↓ to navigate · Esc to cancel");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "Ink navigation footer should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
-    fn test_question_ink_navigation_footer_partial() {
-        // Some Ink variants only show "Enter to select"
+    fn test_no_instant_question_ink_footer_partial() {
         let parser = OutputParser::new();
         let events = parser.parse("Enter to select · ↑↓ to navigate");
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "Partial Ink navigation footer should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
@@ -1780,8 +1706,7 @@ mod tests {
     }
 
     #[test]
-    fn test_question_ink_full_menu_block() {
-        // A realistic Ink SelectInput output block
+    fn test_no_instant_question_ink_full_menu_block() {
         let parser = OutputParser::new();
         let block = "\
 What should we do with this story?
@@ -1793,8 +1718,7 @@ What should we do with this story?
 
 Enter to select · ↑/↓ to navigate · Esc to cancel";
         let events = parser.parse(block);
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "Full Ink menu block should trigger question detection");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
@@ -2906,13 +2830,13 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_parse_clean_lines_question() {
+    fn test_parse_clean_lines_no_instant_question() {
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "Would you like to proceed?")];
         let events = parser.parse_clean_lines(&rows);
         assert!(
-            events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
-            "expected Question, got: {:?}", events
+            !events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
+            "no instant question detection — silence-based only"
         );
     }
 
