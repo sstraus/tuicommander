@@ -5,6 +5,7 @@ import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { getModifierSymbol } from "../../platform";
 import { replaceBasename } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
+import { ConfirmDialog } from "../ConfirmDialog";
 import { PromptDialog } from "../PromptDialog";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { t } from "../../i18n";
@@ -53,6 +54,10 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   // Rename dialog state
   const [renameDialogVisible, setRenameDialogVisible] = createSignal(false);
   const [renameTarget, setRenameTarget] = createSignal<DirEntry | null>(null);
+
+  // Delete confirmation dialog state
+  const [deleteDialogVisible, setDeleteDialogVisible] = createSignal(false);
+  const [deleteTarget, setDeleteTarget] = createSignal<DirEntry | null>(null);
 
   // File clipboard state for copy/cut/paste
   const [clipboard, setClipboard] = createSignal<{ entry: DirEntry; mode: "copy" | "cut" } | null>(null);
@@ -177,9 +182,15 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     setRenameDialogVisible(true);
   };
 
-  const handleDelete = async (entry: DirEntry) => {
-    if (!props.repoPath) return;
-    if (entry.is_dir) return; // Safety: only delete files
+  const handleDelete = (entry: DirEntry) => {
+    setDeleteTarget(entry);
+    setDeleteDialogVisible(true);
+  };
+
+  const confirmDelete = async () => {
+    const entry = deleteTarget();
+    if (!entry || !props.repoPath) return;
+    setDeleteDialogVisible(false);
     try {
       await fb.deletePath(props.repoPath, entry.path);
       refresh();
@@ -287,12 +298,10 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       action: () => handleRename(entry),
     });
 
-    if (!entry.is_dir) {
-      items.push({
-        label: t("fileBrowser.delete", "Delete"),
-        action: () => handleDelete(entry),
-      });
-    }
+    items.push({
+      label: t("fileBrowser.delete", "Delete"),
+      action: () => handleDelete(entry),
+    });
 
     items.push({
       label: t("fileBrowser.addGitignore", "Add to .gitignore"),
@@ -518,6 +527,17 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         confirmLabel={t("fileBrowser.renameConfirm", "Rename")}
         onClose={() => setRenameDialogVisible(false)}
         onConfirm={handleRenameConfirm}
+      />
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        visible={deleteDialogVisible()}
+        title={deleteTarget()?.is_dir ? "Delete Folder" : "Delete File"}
+        message={`Permanently delete "${deleteTarget()?.name ?? ""}"${deleteTarget()?.is_dir ? " and all its contents" : ""}?`}
+        confirmLabel="Delete"
+        kind="warning"
+        onClose={() => setDeleteDialogVisible(false)}
+        onConfirm={confirmDelete}
       />
     </div>
   );

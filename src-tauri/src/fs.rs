@@ -453,17 +453,18 @@ pub fn create_directory(repo_path: String, dir: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to create directory: {e}"))
 }
 
-/// Delete a file within a repository. Does NOT delete directories (safety).
+/// Delete a file or directory within a repository.
 #[tauri::command]
 pub fn delete_path(repo_path: String, path: String) -> Result<(), String> {
     let (_canonical_repo, canonical_target) = validate_path(&repo_path, &path)?;
 
     if canonical_target.is_dir() {
-        return Err("Cannot delete directories. Only files can be deleted.".to_string());
+        std::fs::remove_dir_all(&canonical_target)
+            .map_err(|e| format!("Failed to delete directory: {e}"))
+    } else {
+        std::fs::remove_file(&canonical_target)
+            .map_err(|e| format!("Failed to delete file: {e}"))
     }
-
-    std::fs::remove_file(&canonical_target)
-        .map_err(|e| format!("Failed to delete file: {e}"))
 }
 
 /// Rename/move a file or directory within a repository.
@@ -765,13 +766,13 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_path_rejects_directory() {
+    fn test_delete_path_directory() {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        let result = delete_path(repo_path, "src".to_string());
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Cannot delete directories"));
+        assert!(dir.path().join("src").exists());
+        delete_path(repo_path, "src".to_string()).unwrap();
+        assert!(!dir.path().join("src").exists());
     }
 
     #[test]
