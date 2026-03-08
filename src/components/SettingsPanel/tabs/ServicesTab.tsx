@@ -34,6 +34,17 @@ interface AppConfig {
   ipv6_enabled: boolean;
   lan_auth_bypass: boolean;
   disabled_native_tools: string[];
+  relay_enabled: boolean;
+  relay_url: string;
+  relay_token: string;
+  relay_session_id: string;
+}
+
+interface RelayStatus {
+  enabled: boolean;
+  connected: boolean;
+  url: string;
+  session_id: string;
 }
 
 interface LocalIpEntry { ip: string; label: string; }
@@ -79,6 +90,13 @@ export const ServicesTab: Component = () => {
   const [disabledNativeTools, setDisabledNativeTools] = createSignal<string[]>([]);
   const [upstreamStatus, setUpstreamStatus] = createSignal<UpstreamStatusEntry[]>([]);
 
+  // Relay state
+  const [relayEnabled, setRelayEnabled] = createSignal(false);
+  const [relayUrl, setRelayUrl] = createSignal("wss://relay.tuicommander.com");
+  const [relayToken, setRelayToken] = createSignal("");
+  const [relaySessionId, setRelaySessionId] = createSignal("");
+  const [relayConnected, setRelayConnected] = createSignal(false);
+
   // Auto-select best IP when list loads (prefer Tailscale, then LAN/Wi-Fi)
   createEffect(() => {
     const ips = localIps();
@@ -123,6 +141,12 @@ export const ServicesTab: Component = () => {
     } catch {
       // Upstream status not available (e.g. server not running)
     }
+    try {
+      const rs = await rpc<RelayStatus>("get_relay_status");
+      setRelayConnected(rs.connected);
+    } catch {
+      // Relay status not available
+    }
   };
 
   const loadRemoteConfig = async () => {
@@ -136,6 +160,10 @@ export const ServicesTab: Component = () => {
       setIpv6Enabled(config.ipv6_enabled ?? false);
       setLanAuthBypass(config.lan_auth_bypass ?? false);
       setDisabledNativeTools(config.disabled_native_tools ?? []);
+      setRelayEnabled(config.relay_enabled ?? false);
+      setRelayUrl(config.relay_url || "wss://relay.tuicommander.com");
+      setRelayToken(config.relay_token ?? "");
+      setRelaySessionId(config.relay_session_id ?? "");
     } catch (e) {
       appLogger.warn("config", "Failed to load remote access config, using defaults", e);
     }
@@ -439,6 +467,106 @@ export const ServicesTab: Component = () => {
             {lanAuthBypass()
               ? t("services.hint.lanAuthBypassWarning", "Devices on your local network can access without a password. Only use on trusted networks.")
               : t("services.hint.lanAuthBypassDescription", "Skips authentication for private/LAN IP addresses (RFC1918, Tailscale, IPv6 ULA)")}
+          </p>
+        </div>
+      </Show>
+
+      {/* ── Cloud Relay ── */}
+      <h3 style={{ "margin-top": "24px" }}>{t("services.heading.cloudRelay", "Cloud Relay")}</h3>
+
+      <div class={s.group}>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={relayEnabled()}
+            onChange={(e) => {
+              const val = e.currentTarget.checked;
+              setRelayEnabled(val);
+              // Auto-generate session ID on first enable
+              if (val && !relaySessionId()) {
+                const id = crypto.randomUUID();
+                setRelaySessionId(id);
+                saveConfigField((c) => { c.relay_enabled = val; c.relay_session_id = id; });
+              } else {
+                saveConfigField((c) => { c.relay_enabled = val; });
+              }
+            }}
+          />
+          <span>{t("services.toggle.enableRelay", "Enable cloud relay")}</span>
+        </div>
+        <p class={s.hint}>
+          {t("services.hint.relayDescription", "Connect from anywhere via an E2E-encrypted WebSocket relay. No port forwarding or VPN needed.")}
+        </p>
+      </div>
+
+      <Show when={relayEnabled()}>
+        <div class={s.group}>
+          <div class={s.mcpStatusRow}>
+            <span class={cx(s.mcpStatusDot, relayConnected() && s.running)} />
+            <span class={s.mcpStatusText}>
+              {relayConnected()
+                ? t("services.relay.connected", "Connected")
+                : t("services.relay.disconnected", "Disconnected")}
+            </span>
+          </div>
+          <p class={s.hint} style={{ color: "var(--warning, #e5c07b)" }}>
+            {t("services.hint.relayRestart", "Changes require an app restart to take effect.")}
+          </p>
+        </div>
+
+        <div class={s.group}>
+          <label>{t("services.label.relayUrl", "Relay Server URL")}</label>
+          <input
+            type="text"
+            class={s.input}
+            value={relayUrl()}
+            placeholder="wss://relay.tuicommander.com"
+            onInput={(e) => setRelayUrl(e.currentTarget.value)}
+            onChange={() => saveConfigField((c) => { c.relay_url = relayUrl(); })}
+          />
+        </div>
+
+        <div class={s.group}>
+          <label>{t("services.label.relayToken", "Bearer Token")}</label>
+          <input
+            type="password"
+            class={s.input}
+            value={relayToken()}
+            placeholder={t("services.placeholder.relayToken", "Paste token from relay server registration")}
+            onInput={(e) => setRelayToken(e.currentTarget.value)}
+            onChange={() => saveConfigField((c) => { c.relay_token = relayToken(); })}
+          />
+          <p class={s.hint}>
+            {t("services.hint.relayToken", "Obtained from the relay server's /register endpoint. Used for both authentication and E2E encryption key derivation.")}
+          </p>
+        </div>
+
+        <div class={s.group}>
+          <label>{t("services.label.relaySessionId", "Session ID")}</label>
+          <div class={s.passwordRow}>
+            <input
+              type="text"
+              class={s.input}
+              value={relaySessionId()}
+              readOnly
+            />
+            <button
+              class={s.toggleBtn}
+              onClick={() => {
+                const id = crypto.randomUUID();
+                setRelaySessionId(id);
+                saveConfigField((c) => { c.relay_session_id = id; });
+              }}
+              title={t("services.btn.regenerateSessionId", "Generate new session ID")}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+              </svg>
+            </button>
+          </div>
+          <p class={s.hint}>
+            {t("services.hint.relaySessionId", "Shared with the mobile client to join the same relay room. Regenerating disconnects the current mobile session.")}
           </p>
         </div>
       </Show>

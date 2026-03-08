@@ -136,13 +136,16 @@ pub(crate) async fn run(state: Arc<AppState>, mut shutdown_rx: oneshot::Receiver
 
         match connect_and_run(&state, &ws_url, &config.relay_token, &cipher, &mut shutdown_rx).await {
             Ok(ShutdownReason::Signal) => {
+                state.relay_connected.store(false, std::sync::atomic::Ordering::Relaxed);
                 log_via_state(&state, "info", "relay", "shutting down");
                 return;
             }
             Ok(ShutdownReason::Disconnected) => {
+                state.relay_connected.store(false, std::sync::atomic::Ordering::Relaxed);
                 log_via_state(&state, "warn", "relay", &format!("disconnected, reconnecting in {}s", backoff.as_secs()));
             }
             Err(e) => {
+                state.relay_connected.store(false, std::sync::atomic::Ordering::Relaxed);
                 log_via_state(&state, "error", "relay", &format!("connection error: {e}, reconnecting in {}s", backoff.as_secs()));
             }
         }
@@ -183,6 +186,7 @@ async fn connect_and_run(
         .await?;
 
     log_via_state(state, "info", "relay", "authenticated, starting event bridge");
+    state.relay_connected.store(true, std::sync::atomic::Ordering::Relaxed);
 
     // Subscribe to event bus — reset backoff on successful connection
     let mut event_rx = state.event_bus.subscribe();

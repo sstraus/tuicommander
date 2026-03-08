@@ -537,6 +537,19 @@ fn regenerate_session_token(state: State<'_, Arc<AppState>>) -> String {
     new_token
 }
 
+/// Get relay client status (enabled, connected, url, session_id).
+#[tauri::command]
+fn get_relay_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
+    let cfg = state.config.read();
+    let connected = state.relay_connected.load(std::sync::atomic::Ordering::Relaxed);
+    serde_json::json!({
+        "enabled": cfg.relay_enabled,
+        "connected": connected,
+        "url": cfg.relay_url,
+        "session_id": cfg.relay_session_id,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Default worktrees directory: <config_dir>/worktrees
@@ -585,6 +598,7 @@ pub fn run() {
         slash_mode: DashMap::new(),
         last_output_ms: DashMap::new(),
         relay_shutdown: parking_lot::Mutex::new(None),
+        relay_connected: std::sync::atomic::AtomicBool::new(false),
     });
 
     // Wire the event bus into the upstream registry so status changes emit SSE events.
@@ -804,6 +818,7 @@ pub fn run() {
             get_local_ips,
             get_mcp_status,
             regenerate_session_token,
+            get_relay_status,
             dictation::commands::get_dictation_status,
             dictation::commands::get_model_info,
             dictation::commands::download_whisper_model,

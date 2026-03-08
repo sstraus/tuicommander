@@ -560,6 +560,7 @@ mod tests {
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             relay_shutdown: parking_lot::Mutex::new(None),
+            relay_connected: std::sync::atomic::AtomicBool::new(false),
         })
     }
 

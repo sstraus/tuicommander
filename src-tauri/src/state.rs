@@ -748,6 +748,8 @@ pub struct AppState {
     pub(crate) last_output_ms: DashMap<String, AtomicU64>,
     /// Shutdown sender for the relay client — send () to gracefully stop it
     pub(crate) relay_shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    /// Whether the relay client is currently connected to the relay server
+    pub(crate) relay_connected: std::sync::atomic::AtomicBool,
 }
 
 /// Remove dead (closed-receiver) WebSocket senders for a session.
@@ -1967,6 +1969,7 @@ mod tests {
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             relay_shutdown: parking_lot::Mutex::new(None),
+            relay_connected: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
