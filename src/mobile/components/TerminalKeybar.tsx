@@ -20,6 +20,7 @@ const STANDARD_KEYS: KeyDef[] = [
   { label: "Esc", seq: "\x1b" },
   { label: "\u2191", seq: "\x1b[A" },
   { label: "\u2193", seq: "\x1b[B" },
+  { label: "\u21B5", seq: "\r" },
 ];
 
 const CONFIRM_KEYS: KeyDef[] = [
