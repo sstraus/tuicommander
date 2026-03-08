@@ -12,9 +12,7 @@
   font-size: 14px;
   line-height: 1.6;
   color: var(--fg-primary);
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  word-break: normal;
+  white-space: pre;
   margin: 0;
 }
 
