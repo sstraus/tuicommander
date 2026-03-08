@@ -1,7 +1,6 @@
 import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { StatusBadge } from "../components/StatusBadge";
 import { OutputView } from "../components/OutputView";
-import { QuickActions } from "../components/QuickActions";
 import { SuggestChips } from "../components/SuggestChips";
 import { SlashMenuOverlay } from "../components/SlashMenuOverlay";
 import { CommandWidget } from "../components/CommandWidget";
@@ -224,15 +223,13 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
           </div>
         </Show>
       </div>
-      <Show when={sessionState()?.awaiting_input}>
-        <QuickActions sessionId={props.session.session_id} />
-      </Show>
       <Show when={sessionState()?.suggested_actions?.length}>
         <SuggestChips sessionId={props.session.session_id} items={sessionState()!.suggested_actions!} />
       </Show>
       <TerminalKeybar
         sessionId={props.session.session_id}
         agentType={sessionState()?.agent_type as string | null | undefined}
+        awaitingInput={sessionState()?.awaiting_input}
         onCommandWidgetOpen={() => setCommandWidgetOpen(true)}
       />
       <CommandInput sessionId={props.session.session_id} prefillValue={inputPrefill()} ptyInputLine={ptyInputLine()} />

@@ -28,6 +28,12 @@
   opacity: 0.6;
 }
 
+.confirm {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
 .danger {
   color: var(--status-error);
   border-color: var(--status-error);
@@ -39,4 +45,11 @@
   border-color: var(--accent);
   font-weight: 700;
   font-size: 16px;
+}
+
+.divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+  flex-shrink: 0;
 }
