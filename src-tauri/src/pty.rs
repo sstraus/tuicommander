@@ -96,11 +96,6 @@ pub(crate) fn resolve_shell(override_shell: Option<String>) -> String {
 /// false positives from AI agents that pause while thinking between API calls.
 const SILENCE_QUESTION_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// Extended silence threshold when the pending question was followed by
-/// non-`?` output (the agent may have moved on). 30s reduces false positives
-/// from tool calls while still catching genuinely blocked prompts.
-const SILENCE_CHALLENGED_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(30);
-
 /// How often the timer thread wakes up to check for silence.
 const SILENCE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -130,10 +125,6 @@ pub(crate) struct SilenceState {
     /// Whether a Question event has already been emitted for the current pending line
     /// (either by the instant regex detector or by the silence timer).
     pub(crate) question_already_emitted: bool,
-    /// True when the pending question was followed by non-`?` output,
-    /// suggesting the agent may have moved past it. Uses a longer silence
-    /// threshold to reduce false positives.
-    pending_challenged: bool,
     /// When the last resize was requested. Used to suppress re-parsing of redrawn output.
     last_resize_at: Option<std::time::Instant>,
     /// Deadline until which `on_chunk` ignores `?`-ending lines (suppresses PTY echo).
@@ -148,7 +139,6 @@ impl SilenceState {
             last_output_at: std::time::Instant::now(),
             pending_question_line: None,
             question_already_emitted: false,
-            pending_challenged: false,
             last_resize_at: None,
             suppress_echo_until: None,
         }
@@ -192,14 +182,12 @@ impl SilenceState {
                 // New candidate for silence-based detection.
                 self.pending_question_line = Some(line);
                 self.question_already_emitted = false;
-                self.pending_challenged = false;
             }
-        } else if self.pending_question_line.is_some() {
-            // Non-`?` output after a pending question — mark as challenged.
-            // The question is preserved (spinner updates shouldn't kill it) but
-            // check_silence() will use a longer threshold to reduce false positives.
-            self.pending_challenged = true;
         }
+        // Non-`?` output does NOT clear pending_question_line. The question
+        // is preserved through spinner/decoration updates. check_silence()
+        // relies on last_output_at (reset every chunk) to ensure the threshold
+        // is only reached after true silence.
     }
 
     /// Called by write_pty when the user submits a line of input.
@@ -217,13 +205,8 @@ impl SilenceState {
         if self.question_already_emitted {
             return None;
         }
-        let threshold = if self.pending_challenged {
-            SILENCE_CHALLENGED_THRESHOLD
-        } else {
-            SILENCE_QUESTION_THRESHOLD
-        };
         if let Some(ref line) = self.pending_question_line
-            && self.last_output_at.elapsed() >= threshold
+            && self.last_output_at.elapsed() >= SILENCE_QUESTION_THRESHOLD
         {
             self.question_already_emitted = true;
             return Some(line.clone());
@@ -1516,27 +1499,15 @@ mod tests {
     }
 
     #[test]
-    fn test_silence_state_challenged_does_not_fire_at_normal_threshold() {
+    fn test_silence_state_non_question_output_preserves_pending() {
         let mut s = SilenceState::new();
         s.on_chunk(false, Some("Continue?".to_string()));
-        // Spinner/status updates produce chunks with no `?`-ending line.
-        // These mark the question as "challenged" but do NOT clear it.
+        // Non-`?` output (spinners, prompts, decorations) must NOT clear pending.
         s.on_chunk(false, None);
         s.on_chunk(false, None);
-        assert!(s.pending_challenged);
-        // Normal threshold (10s) is not enough for challenged questions
+        s.on_chunk(false, None);
+        // Standard 10s threshold fires normally
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
-        assert!(s.check_silence().is_none(), "challenged question should require longer silence");
-    }
-
-    #[test]
-    fn test_silence_state_challenged_fires_at_extended_threshold() {
-        let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Continue?".to_string()));
-        s.on_chunk(false, None);
-        assert!(s.pending_challenged);
-        // Extended threshold (30s) fires for challenged questions
-        s.last_output_at = std::time::Instant::now() - SILENCE_CHALLENGED_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), Some("Continue?".to_string()));
     }
 
@@ -1739,7 +1710,7 @@ mod tests {
     }
 
     /// End-to-end: VtLogBuffer → extract_question_line → SilenceState → check_silence.
-    /// Question + mode line arrive together → unchallenged → fires at 10s.
+    /// Question + mode line arrive together → fires at 10s.
     #[test]
     fn test_e2e_question_detection_with_mode_line() {
         use crate::state::VtLogBuffer;
@@ -1751,15 +1722,15 @@ mod tests {
         silence.on_chunk(false, extract_question_line(&changed));
 
         assert_eq!(silence.pending_question_line.as_deref(), Some("Le committo?"));
-        assert!(!silence.pending_challenged);
 
         silence.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(silence.check_silence(), Some("Le committo?".to_string()));
     }
 
-    /// End-to-end: question in chunk 1, mode line in chunk 2 → challenged → 30s.
+    /// End-to-end: question in chunk 1, mode line in chunk 2, then silence.
+    /// Non-`?` output must NOT prevent the question from firing at 10s.
     #[test]
-    fn test_e2e_question_then_spinner_then_silence() {
+    fn test_e2e_question_then_decoration_then_silence() {
         use crate::state::VtLogBuffer;
 
         let mut vt_log = VtLogBuffer::new(24, 80, 1000);
@@ -1768,23 +1739,13 @@ mod tests {
         let changed = vt_log.process(b"Le committo?");
         silence.on_chunk(false, extract_question_line(&changed));
 
+        // Mode line / prompt decoration arrives in a separate chunk
         let changed = vt_log.process(b"\r\n\xe2\x8f\xb5\xe2\x8f\xb5 Idle");
         silence.on_chunk(false, extract_question_line(&changed));
-        assert!(silence.pending_challenged);
 
-        // 10s — not enough for challenged
+        // 10s silence → fires
         silence.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
-        assert!(silence.check_silence().is_none());
-
-        // 30s — enough for challenged (fresh state, no double-emit guard)
-        let mut silence2 = SilenceState::new();
-        let mut vt_log2 = VtLogBuffer::new(24, 80, 1000);
-        let changed = vt_log2.process(b"Le committo?");
-        silence2.on_chunk(false, extract_question_line(&changed));
-        let changed = vt_log2.process(b"\r\n\xe2\x8f\xb5\xe2\x8f\xb5 Idle");
-        silence2.on_chunk(false, extract_question_line(&changed));
-        silence2.last_output_at = std::time::Instant::now() - SILENCE_CHALLENGED_THRESHOLD - std::time::Duration::from_millis(100);
-        assert_eq!(silence2.check_silence(), Some("Le committo?".to_string()));
+        assert_eq!(silence.check_silence(), Some("Le committo?".to_string()));
     }
 
     // --- Headless reader structured event tests ---
