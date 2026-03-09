@@ -66,7 +66,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
     on(
       () => [props.repoPath, props.filePath] as const,
       async ([repoPath, filePath]) => {
-        if (!repoPath || !filePath) return;
+        if (!filePath) return;
 
         setLoading(true);
         setError(null);
