@@ -364,34 +364,14 @@ describe("terminalsStore", () => {
       });
     });
 
-    it("sets unseen on awaitingInput transition when not active", () => {
+    it("setAwaitingInput does NOT set unseen (question dot is sufficient)", () => {
       createRoot((dispose) => {
         const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
         const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
         store.setActive(id1);
-        // Terminal id2 is not active — setting awaitingInput should mark it unseen
+        // Terminal id2 is not active — awaitingInput should NOT set unseen
+        // (the orange/red dot already communicates "needs attention")
         store.setAwaitingInput(id2, "question");
-        expect(store.get(id2)!.unseen).toBe(true);
-        dispose();
-      });
-    });
-
-    it("does not set unseen on awaitingInput for active terminal", () => {
-      createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
-        store.setActive(id);
-        store.setAwaitingInput(id, "question");
-        expect(store.get(id)!.unseen).toBe(false);
-        dispose();
-      });
-    });
-
-    it("does not set unseen when clearing awaitingInput", () => {
-      createRoot((dispose) => {
-        const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-        const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: "question" });
-        store.setActive(id1);
-        store.clearAwaitingInput(id2);
         expect(store.get(id2)!.unseen).toBe(false);
         dispose();
       });

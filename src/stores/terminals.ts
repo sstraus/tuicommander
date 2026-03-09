@@ -260,10 +260,6 @@ function createTerminalsStore() {
       batch(() => {
         setState("terminals", id, "awaitingInput", type);
         setState("terminals", id, "awaitingInputConfident", confident);
-        // Mark unseen when a non-active terminal starts awaiting input
-        if (type != null && prev == null && state.activeId !== id) {
-          setState("terminals", id, "unseen", true);
-        }
       });
     },
 
