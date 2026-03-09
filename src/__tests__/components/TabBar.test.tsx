@@ -137,10 +137,9 @@ describe("TabBar", () => {
     expect(tabs[1].classList.contains("active")).toBe(false);
   });
 
-  it("tab with activity has 'hasActivity' class", () => {
+  it("activity flag does NOT produce a visible dot class (busy covers it)", () => {
     const id1 = addTerminal({ name: "Active" });
     const id2 = addTerminal({ name: "Background" });
-    // Set id1 as active, and give id2 activity
     terminalsStore.setActive(id1);
     terminalsStore.update(id2, { activity: true });
 
@@ -148,10 +147,9 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tabs = container.querySelectorAll(".tab");
-    // id1 is active, so hasActivity = !isActive() && activity = false
+    // activity flag no longer drives dot color — busy state does
     expect(tabs[0].classList.contains("hasActivity")).toBe(false);
-    // id2 is not active and has activity
-    expect(tabs[1].classList.contains("hasActivity")).toBe(true);
+    expect(tabs[1].classList.contains("hasActivity")).toBe(false);
   });
 
   it("tab awaiting input has 'awaitingInput awaitingQuestion' class", () => {

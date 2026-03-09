@@ -224,14 +224,7 @@
   opacity: 0.7;
 }
 
-/* Tab activity/idle indicators */
-.tab.hasActivity .tabIcon {
-  color: var(--activity);
-  opacity: 1;
-  font-size: var(--font-3xs);
-  animation: pulse-opacity 1.5s ease-in-out 3;
-}
-
+/* Tab busy/idle indicators */
 .tab.shellBusy .tabIcon {
   color: var(--activity);
   opacity: 1;

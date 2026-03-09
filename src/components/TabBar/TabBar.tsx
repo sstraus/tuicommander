@@ -376,7 +376,6 @@ export const TabBar: Component<TabBarProps> = (props) => {
         {(id, index) => {
           const terminal = () => terminalsStore.get(id);
           const isActive = () => terminalsStore.state.activeId === id;
-          const hasActivity = () => !isActive() && terminal()?.activity;
           const isBusy = () => terminalsStore.isBusy(id);
           const isIdle = () => !isBusy() && terminal()?.shellState === "idle";
           const isUnseen = () => !isActive() && terminal()?.unseen;
@@ -419,9 +418,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   (isActive() || isActiveInUnified()) && s.active,
                   awaitingInput() && s.awaitingInput,
                   awaitingInput() && AWAITING_CLASSES[awaitingInput()!],
-                  // Suppress activity/busy/idle indicators when awaiting input —
-                  // the awaiting state (orange/red) takes visual priority over blue busy dot.
-                  !awaitingInput() && hasActivity() && s.hasActivity,
+                  // Suppress busy/idle indicators when awaiting input —
+                  // the awaiting state (orange/red) takes visual priority.
                   !awaitingInput() && isBusy() && s.shellBusy,
                   !awaitingInput() && !isBusy() && isUnseen() && s.shellUnseen,
                   !awaitingInput() && isIdle() && !isUnseen() && s.shellIdle,
