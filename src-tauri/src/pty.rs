@@ -211,8 +211,14 @@ impl SilenceState {
     /// Called by the reader thread after each chunk.
     /// `regex_found_question`: true if `parse()` already emitted a Question event.
     /// `last_question_line`: the last `?`-ending line in the chunk, if any.
-    pub(crate) fn on_chunk(&mut self, regex_found_question: bool, last_question_line: Option<String>) {
-        self.last_output_at = std::time::Instant::now();
+    /// `status_line_only`: true if the chunk only contained a status-line/mode-line update.
+    ///   Mode-line timer ticks (elapsed time updating every second) are not significant
+    ///   output — they must not reset the silence timer, or questions asked by Ink agents
+    ///   will never be detected (the timer keeps updating while the agent waits for input).
+    pub(crate) fn on_chunk(&mut self, regex_found_question: bool, last_question_line: Option<String>, status_line_only: bool) {
+        if !status_line_only {
+            self.last_output_at = std::time::Instant::now();
+        }
 
         // Within the echo suppress window, ignore `?`-ending lines — they are
         // the PTY echoing back user-typed text, not agent questions.
@@ -561,12 +567,20 @@ pub(crate) fn spawn_reader_thread(
                         // Update silence state for fallback question detection.
                         let has_status_line = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
                         let last_q_line = extract_question_line(&changed_rows);
+                        // A chunk is "status-line only" when the only parsed event is a
+                        // StatusLine and no question line was found. Mode-line timer ticks
+                        // produce such chunks every ~1s; they must NOT reset the silence
+                        // timer or questions from Ink agents will never be detected.
+                        let status_line_only = has_status_line
+                            && !regex_found_question
+                            && last_q_line.is_none()
+                            && events.iter().all(|e| matches!(e, ParsedEvent::StatusLine { .. }));
                         {
                             let mut sl = silence.lock();
                             if has_status_line {
                                 sl.on_status_line();
                             }
-                            sl.on_chunk(regex_found_question, last_q_line);
+                            sl.on_chunk(regex_found_question, last_q_line, status_line_only);
                         }
 
                         // Colorize [intent: ...] tokens yellow before sending to xterm.
@@ -763,12 +777,16 @@ pub(crate) fn spawn_headless_reader_thread(
                         // Update silence state for fallback question detection.
                         let has_status_line = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
                         let last_q_line = extract_question_line(&changed_rows);
+                        let status_line_only = has_status_line
+                            && !regex_found_question
+                            && last_q_line.is_none()
+                            && events.iter().all(|e| matches!(e, ParsedEvent::StatusLine { .. }));
                         {
                             let mut sl = silence.lock();
                             if has_status_line {
                                 sl.on_status_line();
                             }
-                            sl.on_chunk(regex_found_question, last_q_line);
+                            sl.on_chunk(regex_found_question, last_q_line, status_line_only);
                         }
                     }
                 }
@@ -1606,7 +1624,7 @@ mod tests {
     #[test]
     fn test_silence_state_pending_but_too_soon() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Continue?".to_string()));
+        s.on_chunk(false, Some("Continue?".to_string()), false);
         // Just set — not enough time has passed
         assert!(s.check_silence().is_none());
     }
@@ -1614,7 +1632,7 @@ mod tests {
     #[test]
     fn test_silence_state_pending_after_threshold() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Continue?".to_string()));
+        s.on_chunk(false, Some("Continue?".to_string()), false);
         // Simulate time passing by backdating last_output_at
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), Some("Continue?".to_string()));
@@ -1623,7 +1641,7 @@ mod tests {
     #[test]
     fn test_silence_state_no_double_emission() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Continue?".to_string()));
+        s.on_chunk(false, Some("Continue?".to_string()), false);
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert!(s.check_silence().is_some());
         // Second check should return None (already emitted)
@@ -1634,7 +1652,7 @@ mod tests {
     fn test_silence_state_regex_suppresses_timer() {
         let mut s = SilenceState::new();
         // regex_found_question = true means instant detection already fired
-        s.on_chunk(true, Some("Would you like to proceed?".to_string()));
+        s.on_chunk(true, Some("Would you like to proceed?".to_string()), false);
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert!(s.check_silence().is_none());
     }
@@ -1643,10 +1661,10 @@ mod tests {
     fn test_silence_state_regex_clears_prior_pending() {
         let mut s = SilenceState::new();
         // Silence detector has a pending question from an earlier chunk
-        s.on_chunk(false, Some("Earlier question?".to_string()));
+        s.on_chunk(false, Some("Earlier question?".to_string()), false);
         assert!(s.pending_question_line.is_some());
         // Regex fires on a different event — no question line in this chunk
-        s.on_chunk(true, None);
+        s.on_chunk(true, None, false);
         assert!(s.pending_question_line.is_none(), "prior pending should be cleared when regex fires");
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert!(s.check_silence().is_none());
@@ -1655,11 +1673,11 @@ mod tests {
     #[test]
     fn test_silence_state_non_question_output_preserves_pending() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Continue?".to_string()));
+        s.on_chunk(false, Some("Continue?".to_string()), false);
         // Non-`?` output (spinners, prompts, decorations) must NOT clear pending.
-        s.on_chunk(false, None);
-        s.on_chunk(false, None);
-        s.on_chunk(false, None);
+        s.on_chunk(false, None, false);
+        s.on_chunk(false, None, false);
+        s.on_chunk(false, None, false);
         // Standard 10s threshold fires normally
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), Some("Continue?".to_string()));
@@ -1668,8 +1686,8 @@ mod tests {
     #[test]
     fn test_silence_state_new_question_replaces_old() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("First question?".to_string()));
-        s.on_chunk(false, Some("Second question?".to_string()));
+        s.on_chunk(false, Some("First question?".to_string()), false);
+        s.on_chunk(false, Some("Second question?".to_string()), false);
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), Some("Second question?".to_string()));
     }
@@ -1678,7 +1696,7 @@ mod tests {
     fn test_silence_state_suppress_user_input() {
         let mut s = SilenceState::new();
         // User types a line ending with `?` — PTY will echo it back
-        s.on_chunk(false, Some("c'è ancora una storia?".to_string()));
+        s.on_chunk(false, Some("c'è ancora una storia?".to_string()), false);
         // write_pty detects user input and suppresses
         s.suppress_user_input();
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
@@ -1692,7 +1710,7 @@ mod tests {
         // write_pty detects user input and suppresses BEFORE the echo arrives
         s.suppress_user_input();
         // PTY echoes the user's text back — this should NOT re-enable detection
-        s.on_chunk(false, Some("lo hai mai provato?".to_string()));
+        s.on_chunk(false, Some("lo hai mai provato?".to_string()), false);
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         // Should NOT fire — the echo window blocks re-enabling
         assert!(s.check_silence().is_none(), "PTY echo after suppress should not trigger question detection");
@@ -1706,7 +1724,7 @@ mod tests {
         // which means "never suppressed" — a different code path).
         s.suppress_echo_until = Some(std::time::Instant::now() - std::time::Duration::from_millis(1));
         // Agent asks a genuine question after the window expires
-        s.on_chunk(false, Some("Would you like to proceed?".to_string()));
+        s.on_chunk(false, Some("Would you like to proceed?".to_string()), false);
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         // Should fire — this is a real agent question
         assert_eq!(s.check_silence(), Some("Would you like to proceed?".to_string()));
@@ -1716,7 +1734,7 @@ mod tests {
     fn test_silence_state_spinner_suppresses_question() {
         let mut s = SilenceState::new();
         // Agent prints a `?`-line, then a status-line/spinner appears
-        s.on_chunk(false, Some("Want me to proceed?".to_string()));
+        s.on_chunk(false, Some("Want me to proceed?".to_string()), false);
         s.on_status_line(); // spinner active
         // Simulate 10s+ of silence
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
@@ -1727,7 +1745,7 @@ mod tests {
     #[test]
     fn test_silence_state_spinner_expired_allows_question() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Want me to proceed?".to_string()));
+        s.on_chunk(false, Some("Want me to proceed?".to_string()), false);
         s.on_status_line();
         // Spinner was active but long ago (>10s, matching SILENCE_QUESTION_THRESHOLD)
         s.last_status_line_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(12));
@@ -1739,7 +1757,7 @@ mod tests {
     #[test]
     fn test_silence_state_spinner_within_10s_suppresses() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Want me to proceed?".to_string()));
+        s.on_chunk(false, Some("Want me to proceed?".to_string()), false);
         s.on_status_line();
         // Spinner was 8s ago — still within the 10s window
         s.last_status_line_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(8));
@@ -1747,15 +1765,43 @@ mod tests {
         assert_eq!(s.check_silence(), None, "spinner within 10s should suppress question");
     }
 
+    // --- Status-line-only chunk tests ---
+
+    #[test]
+    fn test_silence_state_status_line_only_does_not_reset_silence() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Continue?".to_string()), false);
+        // Backdate last_output_at to simulate 10s of silence
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        // Mode-line timer tick: status_line_only = true, should NOT reset last_output_at
+        s.on_chunk(false, None, true);
+        // The silence threshold should still be met
+        assert_eq!(s.check_silence(), Some("Continue?".to_string()),
+            "status_line_only chunks must not reset the silence timer");
+    }
+
+    #[test]
+    fn test_silence_state_regular_chunk_resets_silence() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Continue?".to_string()), false);
+        // Backdate to simulate 10s silence
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        // Regular (non-status-line) chunk resets the timer
+        s.on_chunk(false, None, false);
+        // Now we need to wait another 10s — should NOT fire yet
+        assert_eq!(s.check_silence(), None,
+            "regular chunk should reset silence timer");
+    }
+
     // --- Staleness counter tests ---
 
     #[test]
     fn test_silence_state_stale_after_many_output_chunks() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Continue?".to_string()));
+        s.on_chunk(false, Some("Continue?".to_string()), false);
         // Simulate 15 non-`?` chunks (well beyond STALE_QUESTION_CHUNKS)
         for _ in 0..15 {
-            s.on_chunk(false, None);
+            s.on_chunk(false, None, false);
         }
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), None, "stale question after many chunks should not fire");
@@ -1764,11 +1810,11 @@ mod tests {
     #[test]
     fn test_silence_state_few_decoration_chunks_still_fires() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Continue?".to_string()));
+        s.on_chunk(false, Some("Continue?".to_string()), false);
         // 3 decoration chunks (mode line, separator, prompt) — within threshold
-        s.on_chunk(false, None);
-        s.on_chunk(false, None);
-        s.on_chunk(false, None);
+        s.on_chunk(false, None, false);
+        s.on_chunk(false, None, false);
+        s.on_chunk(false, None, false);
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), Some("Continue?".to_string()), "few decoration chunks should still fire");
     }
@@ -1776,13 +1822,13 @@ mod tests {
     #[test]
     fn test_silence_state_counter_resets_on_new_question() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("First?".to_string()));
+        s.on_chunk(false, Some("First?".to_string()), false);
         // Many non-`?` chunks → stale
         for _ in 0..15 {
-            s.on_chunk(false, None);
+            s.on_chunk(false, None, false);
         }
         // New `?` line resets the counter
-        s.on_chunk(false, Some("Second?".to_string()));
+        s.on_chunk(false, Some("Second?".to_string()), false);
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), Some("Second?".to_string()), "new question should reset staleness");
     }
@@ -1847,7 +1893,7 @@ mod tests {
     #[test]
     fn test_silence_state_clear_stale_resets_pending() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Continue?".to_string()));
+        s.on_chunk(false, Some("Continue?".to_string()), false);
         s.clear_stale_question();
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), None, "cleared stale should not fire");
@@ -1856,10 +1902,10 @@ mod tests {
     #[test]
     fn test_silence_state_clear_stale_allows_new_question() {
         let mut s = SilenceState::new();
-        s.on_chunk(false, Some("Old?".to_string()));
+        s.on_chunk(false, Some("Old?".to_string()), false);
         s.clear_stale_question();
         // New question after clear
-        s.on_chunk(false, Some("New?".to_string()));
+        s.on_chunk(false, Some("New?".to_string()), false);
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), Some("New?".to_string()), "new question after clear should fire");
     }
@@ -2084,7 +2130,7 @@ mod tests {
         let mut silence = SilenceState::new();
 
         let changed = vt_log.process(b"Le committo?\r\n\r\n\xe2\x8f\xb5\xe2\x8f\xb5 Reading files");
-        silence.on_chunk(false, extract_question_line(&changed));
+        silence.on_chunk(false, extract_question_line(&changed), false);
 
         assert_eq!(silence.pending_question_line.as_deref(), Some("Le committo?"));
 
@@ -2102,11 +2148,11 @@ mod tests {
         let mut silence = SilenceState::new();
 
         let changed = vt_log.process(b"Le committo?");
-        silence.on_chunk(false, extract_question_line(&changed));
+        silence.on_chunk(false, extract_question_line(&changed), false);
 
         // Mode line / prompt decoration arrives in a separate chunk
         let changed = vt_log.process(b"\r\n\xe2\x8f\xb5\xe2\x8f\xb5 Idle");
-        silence.on_chunk(false, extract_question_line(&changed));
+        silence.on_chunk(false, extract_question_line(&changed), false);
 
         // 10s silence → fires
         silence.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);

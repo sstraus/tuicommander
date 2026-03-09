@@ -735,10 +735,27 @@ fn parse_usage_limit(clean: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Question detection is handled exclusively by the silence-based detector
-/// in pty.rs: last line ending with `?` + 10s of silence = real question.
-/// No instant regex detection — it causes too many false positives.
-fn parse_question(_clean: &str) -> Option<ParsedEvent> {
+/// Question detection: most detection is handled by the silence-based detector
+/// in pty.rs (last line ending with `?` + 10s of silence = real question).
+///
+/// Only Ink interactive menu footers are detected instantly — "Enter to select"
+/// is ultra-specific to real interactive prompts and never appears in streaming
+/// agent output, so it doesn't suffer from the false-positive problem that
+/// killed all the other regex patterns.
+fn parse_question(clean: &str) -> Option<ParsedEvent> {
+    lazy_static::lazy_static! {
+        static ref INK_FOOTER_RE: regex::Regex =
+            regex::Regex::new(r"Enter to select").unwrap();
+    }
+    for line in clean.lines() {
+        let trimmed = line.trim();
+        if INK_FOOTER_RE.is_match(trimmed) && !line_is_diff_or_code_context(line) {
+            return Some(ParsedEvent::Question {
+                prompt_text: trimmed.to_string(),
+                confident: true,
+            });
+        }
+    }
     None
 }
 
@@ -1654,17 +1671,21 @@ mod tests {
     }
 
     #[test]
-    fn test_no_instant_question_ink_footer() {
+    fn test_instant_question_ink_footer() {
+        // Ink interactive menu footer IS detected instantly — it's ultra-specific
+        // and only appears when the agent is genuinely waiting for menu selection.
         let parser = OutputParser::new();
         let events = parser.parse("Enter to select · ↑/↓ to navigate · Esc to cancel");
-        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { confident: true, .. })),
+            "Ink footer should be detected as confident question");
     }
 
     #[test]
-    fn test_no_instant_question_ink_footer_partial() {
+    fn test_instant_question_ink_footer_partial() {
         let parser = OutputParser::new();
         let events = parser.parse("Enter to select · ↑↓ to navigate");
-        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { confident: true, .. })),
+            "Partial Ink footer should also be detected");
     }
 
     #[test]
@@ -1706,7 +1727,9 @@ mod tests {
     }
 
     #[test]
-    fn test_no_instant_question_ink_full_menu_block() {
+    fn test_instant_question_ink_full_menu_block() {
+        // Full Ink menu blocks ARE detected as questions now — the "Enter to select"
+        // footer is ultra-specific to real interactive menus.
         let parser = OutputParser::new();
         let block = "\
 What should we do with this story?
@@ -1718,7 +1741,8 @@ What should we do with this story?
 
 Enter to select · ↑/↓ to navigate · Esc to cancel";
         let events = parser.parse(block);
-        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { confident: true, .. })),
+            "Full Ink menu block should be detected as confident question");
     }
 
     #[test]
@@ -3324,6 +3348,38 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             }
             _ => panic!("Expected ActiveSubtasks event with ⏵⏵ prefix, got: {:?}", events),
         }
+    }
+
+    // --- Ink footer question detection ---
+
+    #[test]
+    fn test_ink_footer_detected_as_question() {
+        let input = "Enter to select · ↑/↓ to navigate · Esc to cancel";
+        let evt = parse_question(input);
+        assert!(evt.is_some(), "Ink footer should trigger question detection");
+        match evt.unwrap() {
+            ParsedEvent::Question { confident, .. } => {
+                assert!(confident, "Ink footer should be confident");
+            }
+            other => panic!("Expected Question, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_ink_footer_in_diff_context_ignored() {
+        // "Enter to select" inside a diff hunk should NOT trigger
+        let input = "+  Enter to select an item";
+        let evt = parse_question(input);
+        assert!(evt.is_none(), "Ink footer in diff context should be ignored");
+    }
+
+    #[test]
+    fn test_regular_question_not_detected_by_parser() {
+        // Regular questions should NOT be detected by parse_question — they use
+        // the silence-based detector in pty.rs instead.
+        let input = "Do you want to proceed?";
+        let evt = parse_question(input);
+        assert!(evt.is_none(), "Regular questions use silence detector, not parse_question");
     }
 
 }
