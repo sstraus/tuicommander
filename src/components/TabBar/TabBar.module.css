@@ -267,9 +267,6 @@
   color: var(--error);
 }
 
-.tab.awaitingConfirmation .tabIcon {
-  color: var(--warning);
-}
 
 /* Diff tabs */
 .tab.diffTab {

@@ -17,7 +17,6 @@ import s from "./TabBar.module.css";
 const AWAITING_CLASSES: Record<string, string> = {
   question: s.awaitingQuestion,
   error: s.awaitingError,
-  confirmation: s.awaitingConfirmation,
 };
 
 export interface TabBarProps {
