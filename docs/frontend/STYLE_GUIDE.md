@@ -195,12 +195,12 @@ Used for: terminal tab glow when agent awaits input.
 Used for: status bar notification text that overflows its container.
 
 **Tab status dot color scheme** (single `●` indicator left of tab name):
-- Grey (opacity 0.3): shell process running (default)
-- Green (`--success`): shell idle, prompt ready
+- Grey (opacity 0.3): idle — no session or command never ran
+- Blue (`--activity`, pulse infinite): busy — producing output now
+- Green (`--success`): done — command completed
 - Purple (`--unseen`, static): completed while user wasn't viewing (clears on view)
-- Blue (`--accent`, pulse ×3): background tab produced output
-- Orange (`--warning`, pulse infinite): awaiting user input (question or confirmation)
-- Red (`--error`, pulse infinite): awaiting error acknowledgement
+- Orange (`--attention`, pulse infinite): agent needs user input (question)
+- Red (`--error`, pulse infinite): API error or agent stuck
 
 **Tab type color scheme** (gradient background + colored border-bottom):
 - Red (`#ef4444`): diff tabs

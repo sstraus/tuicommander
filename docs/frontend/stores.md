@@ -28,7 +28,7 @@ interface TerminalData {
   branchName: string;
   fontSize: number;
   cwd: string | null;               // Current working directory (from OSC 7)
-  awaitingInput: AwaitingInputType; // "question" | "error" | "confirmation" | null
+  awaitingInput: AwaitingInputType; // "question" | "error" | null
   shellState: ShellState;           // "busy" | "idle" | null
   activity: boolean;
   progress: number | null;          // OSC 9;4 progress (0-100), null when inactive

@@ -51,12 +51,12 @@ Drag tabs to reorder them. Visual drop indicators show where the tab will land.
 
 | Indicator | Meaning |
 |-----------|---------|
-| Grey dot | Terminal is running |
-| Green dot | Terminal is idle |
-| Purple dot | Terminal completed work while you were viewing another tab (clears when selected) |
-| Blue pulsing dot | Background activity in progress |
-| Orange pulsing dot | Agent is awaiting input |
-| Red pulsing dot | Error detected |
+| Grey dot (dim) | Idle — no session or command never ran |
+| Blue pulsing dot | Busy — producing output now |
+| Green dot | Done — command completed |
+| Purple dot | Unseen — completed while you were viewing another tab (clears when selected) |
+| Orange pulsing dot | Question — agent needs user input |
+| Red pulsing dot | Error — API error or agent stuck |
 | Question icon | Agent is asking a question |
 | Progress bar | Operation in progress (OSC 9;4) |
 | Amber gradient | Session created via HTTP/MCP (remote session) |
