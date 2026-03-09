@@ -891,8 +891,8 @@ describe("Sidebar", () => {
     });
   });
 
-  describe("branch activity indicator", () => {
-    it("adds has-activity class when terminal has activity", () => {
+  describe("branch activity indicator (via isBusy)", () => {
+    it("does not add hasActivity class (activity flag no longer drives sidebar)", () => {
       setRepos({
         "/repo1": makeRepo({
           branches: {
@@ -901,20 +901,6 @@ describe("Sidebar", () => {
         }),
       });
       mockTerminalsGet.mockReturnValue({ activity: true });
-      const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const branchItem = container.querySelector(".branchItem");
-      expect(branchItem!.classList.contains("hasActivity")).toBe(true);
-    });
-
-    it("does not add has-activity class when no terminal activity", () => {
-      mockTerminalsGet.mockReturnValue({ activity: false });
-      setRepos({
-        "/repo1": makeRepo({
-          branches: {
-            main: { name: "main", isMain: true, worktreePath: null, terminals: ["t1"], additions: 0, deletions: 0 },
-          },
-        }),
-      });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       const branchItem = container.querySelector(".branchItem");
       expect(branchItem!.classList.contains("hasActivity")).toBe(false);

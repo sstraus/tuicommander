@@ -56,18 +56,15 @@ const PR_BADGE_CLASSES: Record<string, string> = {
  *
  *  Color priority (highest wins):
  *  1. question  → --attention (pulsing)
- *  2. activity  → --activity  (pulsing)
- *  3. busy      → --activity  (pulsing)
- *  4. unseen    → --unseen    (static purple)
- *  5. idle      → --success
- *  6. base      → --warning (main) or --success (worktree)
+ *  2. busy      → --activity  (pulsing)
+ *  3. unseen    → --unseen    (static purple)
+ *  4. base      → --warning (main) or --success (worktree)
  */
 export const BranchIcon: Component<{
   isMainBranch: boolean;
   isMainWorktree: boolean;
   isShell?: boolean;
   hasQuestion?: boolean;
-  hasActivity?: boolean;
   hasBusy?: boolean;
   hasUnseen?: boolean;
 }> = (props) => {
@@ -80,12 +77,11 @@ export const BranchIcon: Component<{
   };
 
   /** Single source of truth for icon color — priority cascade.
-   *  Activity/busy override the base color; idle does NOT — the base
-   *  color (yellow for main, green for worktree) is already correct
-   *  when nothing special is happening. */
+   *  Busy overrides the base color; idle does NOT — the base color
+   *  (yellow for main, green for worktree) is already correct when
+   *  nothing special is happening. */
   const colorClass = () => {
     if (props.hasQuestion) return "question";
-    if (props.hasActivity) return "activity";
     if (props.hasBusy) return "activity";
     if (props.hasUnseen) return "unseen";
     if (props.isMainBranch) return "main";
@@ -188,17 +184,6 @@ export const BranchItem: Component<{
   const pr = createMemo(() => activePrStatus(props.repoPath, props.branch.name));
   const checks = createMemo(() => githubStore.getCheckSummary(props.repoPath, props.branch.name));
 
-  // Sidebar icon reflects live shell state, not the "unread" activity flag.
-  // A terminal that is shellState=idle should show idle even if activity=true
-  // (the activity flag only means the tab hasn't been viewed yet).
-  const hasActivity = () =>
-    props.branch.terminals.some((id) => {
-      const t = terminalsStore.get(id);
-      return t?.activity && t.shellState !== "idle";
-    });
-
-
-
   const hasQuestion = () =>
     props.branch.terminals.some((id) => terminalsStore.get(id)?.awaitingInput != null);
 
@@ -274,7 +259,7 @@ export const BranchItem: Component<{
 
   return (
     <div
-      class={cx(s.branchItem, props.isActive && s.active, hasActivity() && s.hasActivity)}
+      class={cx(s.branchItem, props.isActive && s.active)}
       onClick={props.onSelect}
       onContextMenu={ctxMenu.open}
     >
@@ -283,7 +268,6 @@ export const BranchItem: Component<{
         isMainWorktree={props.branch.worktreePath === props.repoPath}
         isShell={props.branch.isShell}
         hasQuestion={hasQuestion()}
-        hasActivity={hasActivity()}
         hasBusy={hasBusy()}
         hasUnseen={hasUnseen()}
       />
