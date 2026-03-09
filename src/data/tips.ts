@@ -199,4 +199,9 @@ export const TIPS: Tip[] = [
     description: "Hover the status info text for a tooltip balloon with the full message — no more guessing truncated text.",
     shortcut: null,
   },
+  {
+    feature: "File Drag & Drop",
+    description: "Drag files from Finder onto the terminal area to open them — markdown in the viewer, code in the editor.",
+    shortcut: null,
+  },
 ];

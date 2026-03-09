@@ -99,6 +99,14 @@
 - Per-session flag tracking via `get_kitty_flags` Tauri command
 - Enables correct handling of `Shift+Enter` (multi-line input), `Ctrl+Backspace`, and modifier key combinations in agents that request the protocol (e.g. Claude Code)
 
+### 1.13 File Drag & Drop
+- Drag files from Finder/Explorer onto the terminal area to open them
+- `.md`/`.mdx` files open in Markdown viewer, all other files open in Code Editor (read-only for external files)
+- Multiple files can be dropped at once (last file becomes the active tab)
+- Visual overlay with dashed border appears during drag hover
+- Files inside the active repo open with relative paths; files outside open as standalone tabs
+- macOS file association: `.md`/`.mdx` files registered with TUICommander — double-click in Finder opens them directly
+
 ---
 
 ## 2. Sidebar
