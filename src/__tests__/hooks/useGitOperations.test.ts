@@ -533,7 +533,7 @@ describe("useGitOperations", () => {
       // Branch stays in sidebar — user must choose
       expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeDefined();
       // Dialog context is populated
-      expect(gitOps.mergePendingCtx()).toEqual({ repoPath: "/repo", branchName: "feature/x", baseBranch: "main" });
+      expect(gitOps.mergePendingCtx()).toEqual({ repoPath: "/repo", branchName: "feature/x", baseBranch: "main", hasDirtyFiles: false });
     });
 
     it("dismissMergePending clears the context and keeps branch in sidebar", async () => {
@@ -634,7 +634,7 @@ describe("useGitOperations", () => {
       await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "ask");
 
       expect(mockRepo.mergePrViaGithub).toHaveBeenCalled();
-      expect(gitOps.mergePendingCtx()).toEqual({ repoPath: "/repo", branchName: "feature/x", baseBranch: "main" });
+      expect(gitOps.mergePendingCtx()).toEqual({ repoPath: "/repo", branchName: "feature/x", baseBranch: "main", hasDirtyFiles: false });
       expect(repositoriesStore.get("/repo")?.branches["feature/x"]).toBeDefined();
     });
 
