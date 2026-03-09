@@ -47,6 +47,14 @@
     "createUpdaterArtifacts": true,
     "externalBin": [
       "binaries/tuic-bridge"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["md", "mdx"],
+        "name": "Markdown Document",
+        "role": "Viewer",
+        "mimeType": "text/markdown"
+      }
     ]
   },
   "plugins": {

@@ -671,7 +671,28 @@ const App: Component = () => {
     }
   };
 
+  // Listen for file-open events from macOS file associations
+  createEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<string[]>("file-open", (event) => {
+      for (const absolutePath of event.payload) {
+        const repoPath = repositoriesStore.state.activeRepoPath ?? "";
+        const repoPrefix = repoPath ? (repoPath.endsWith("/") ? repoPath : repoPath + "/") : "";
+        const filePath = repoPrefix && absolutePath.startsWith(repoPrefix)
+          ? absolutePath.slice(repoPrefix.length)
+          : absolutePath;
+        const effectiveRepo = filePath === absolutePath ? "" : repoPath;
 
+        if (absolutePath.endsWith(".md") || absolutePath.endsWith(".mdx")) {
+          mdTabsStore.add(effectiveRepo, filePath);
+        } else {
+          editorTabsStore.add(effectiveRepo, filePath);
+        }
+      }
+    }).then((fn) => { unlisten = fn; }).catch((err) => appLogger.error("app", "Failed to listen for file-open events", err));
+
+    onCleanup(() => unlisten?.());
+  });
 
   /** Patterns in stderr that indicate the command needs interactive terminal input */
   const NEEDS_TERMINAL_PATTERNS = [

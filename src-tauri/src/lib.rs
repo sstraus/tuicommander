@@ -919,13 +919,33 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // Guard against corrupted window-state applied by tauri-plugin-window-state.
-            // Must run at Ready (after plugins have restored persisted position/size),
-            // not in setup() which fires before the plugin applies its state.
-            if let tauri::RunEvent::Ready = event
-                && let Some(window) = app_handle.get_webview_window("main")
-            {
-                ensure_window_visible(&window);
+            match &event {
+                // Guard against corrupted window-state applied by tauri-plugin-window-state.
+                // Must run at Ready (after plugins have restored persisted position/size),
+                // not in setup() which fires before the plugin applies its state.
+                tauri::RunEvent::Ready => {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        ensure_window_visible(&window);
+                    }
+                }
+                // Forward file-open events (macOS file associations) to the frontend
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Opened { urls } => {
+                    let paths: Vec<String> = urls
+                        .iter()
+                        .filter_map(|u| {
+                            if u.scheme() == "file" {
+                                u.to_file_path().ok().map(|p| p.to_string_lossy().into_owned())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !paths.is_empty() {
+                        let _ = app_handle.emit("file-open", paths);
+                    }
+                }
+                _ => {}
             }
         });
 }
