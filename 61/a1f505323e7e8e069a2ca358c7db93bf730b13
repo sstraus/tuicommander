@@ -1,0 +1,23 @@
+src-tauri/src/git.rs
+  2723e9c82889b86d 876-1046
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "61a1f505323e7e8e069a2ca358c7db93bf730b13",
+  "prompts": {
+    "2723e9c82889b86d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "909edd05-1ac1-45ee-b972-bd6857111ea1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 171,
+      "overriden_lines": 0
+    }
+  }
+}
