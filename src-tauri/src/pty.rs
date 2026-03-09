@@ -149,10 +149,11 @@ fn is_plausible_question(line: &str) -> bool {
 /// complete row (trimmed) within the last `max_bottom_rows` non-empty lines.
 /// This prevents ghost notifications from stale `?` lines that have scrolled off.
 pub(crate) fn verify_question_on_screen(screen_rows: &[String], question: &str, max_bottom_rows: usize) -> bool {
+    let q = question.trim();
     screen_rows.iter().rev()
         .filter(|r| !r.is_empty())
         .take(max_bottom_rows)
-        .any(|r| r.trim() == question)
+        .any(|r| r.trim() == q)
 }
 
 /// Shared state between the PTY reader thread and the silence-detection timer thread.
@@ -1798,6 +1799,24 @@ mod tests {
             "".to_string(),
         ];
         assert!(verify_question_on_screen(&screen, "Do you want to proceed?", 5));
+    }
+
+    #[test]
+    fn test_verify_question_on_screen_ink_indented() {
+        // Ink agents indent text with leading whitespace. extract_question_line
+        // captures "  Want me to do that?" (with spaces), screen_rows also has
+        // the same. Verification must match despite leading whitespace.
+        let screen = vec![
+            "⏺ Boss, this is a plan file".to_string(),
+            "  Is that right?".to_string(),
+            "".to_string(),
+            "  Want me to do that?".to_string(),
+            "".to_string(),
+        ];
+        // Question stored with leading whitespace from extract_question_line
+        assert!(verify_question_on_screen(&screen, "  Want me to do that?", 5));
+        // Also works if question was stored without whitespace
+        assert!(verify_question_on_screen(&screen, "Want me to do that?", 5));
     }
 
     #[test]
