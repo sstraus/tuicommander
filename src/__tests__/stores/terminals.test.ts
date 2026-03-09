@@ -223,7 +223,7 @@ describe("terminalsStore", () => {
       createRoot((dispose) => {
         const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
         const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-        store.setAwaitingInput(id2, "confirmation");
+        store.setAwaitingInput(id2, "error");
         const ids = store.getAwaitingInputIds();
         expect(ids).toContain(id2);
         expect(ids).not.toContain(id1);

@@ -166,7 +166,7 @@ export interface TerminalStateSnapshot {
   shellState: "busy" | "idle" | null;
   agentType: string | null;
   agentActive: boolean;
-  awaitingInput: "question" | "error" | "confirmation" | null;
+  awaitingInput: "question" | "error" | null;
   repoPath: string | null;
 }
 

@@ -450,6 +450,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             appLogger.warn("terminal", `[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
             appLogger.error("terminal", `API error (${kind}): ${matchedText}`);
             appLogger.info("terminal", `[Notify] ${props.id} error — api-error pattern=${patternName} kind=${kind} matched="${matchedText}"`);
+            terminalsStore.setAwaitingInput(props.id, "error");
             notificationsStore.playError();
             break;
           }

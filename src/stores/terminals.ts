@@ -4,7 +4,7 @@ import type { AgentType } from "../agents";
 import { appLogger } from "./appLogger";
 
 /** Type of input being awaited */
-export type AwaitingInputType = "question" | "error" | "confirmation" | null;
+export type AwaitingInputType = "question" | "error" | null;
 
 /** Shell activity state: null=never had output, busy=producing output, idle=waiting for input */
 export type ShellState = "busy" | "idle" | null;
