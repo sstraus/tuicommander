@@ -17,6 +17,7 @@ import { repoSettingsStore } from "../stores/repoSettings";
 import { diffTabsStore } from "../stores/diffTabs";
 import { mdTabsStore } from "../stores/mdTabs";
 import { editorTabsStore } from "../stores/editorTabs";
+import { useFileDrop } from "../hooks/useFileDrop";
 
 
 export interface TerminalAreaProps {
@@ -37,6 +38,8 @@ export interface TerminalAreaProps {
 }
 
 export const TerminalArea: Component<TerminalAreaProps> = (props) => {
+  const { isDragging, attachTo } = useFileDrop();
+
   // When a non-terminal tab becomes active, release focus from xterm's textarea.
   // On macOS WKWebView, wheel events follow focus rather than cursor position,
   // so xterm retains focus (even inside display:none) and captures wheel events.
@@ -55,6 +58,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
     <div id="terminal-container">
       <div
         id="terminal-panes"
+        ref={(el) => attachTo(el)}
         classList={{
           "split-vertical": terminalsStore.state.layout.direction === "vertical",
           "split-horizontal": terminalsStore.state.layout.direction === "horizontal",
@@ -276,6 +280,21 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
               </Show>
             );
           })()}
+        </Show>
+
+        {/* Drop overlay for external file drag & drop */}
+        <Show when={isDragging()}>
+          <div class="file-drop-overlay">
+            <div class="file-drop-overlay-content">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="12" y1="18" x2="12" y2="12" />
+                <polyline points="9 15 12 12 15 15" />
+              </svg>
+              <span>Drop files to open</span>
+            </div>
+          </div>
         </Show>
       </div>
 

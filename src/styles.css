@@ -128,6 +128,31 @@
   opacity: 0.15;
 }
 
+/* File drag & drop overlay */
+.file-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.file-drop-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 48px;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 14px;
+  opacity: 0.9;
+}
+
 #terminal-panes {
   flex: 1;
   min-width: 200px;
