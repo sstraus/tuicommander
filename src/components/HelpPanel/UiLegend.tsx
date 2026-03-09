@@ -13,12 +13,12 @@ interface LegendEntry {
 }
 
 const TERMINAL_DOT_LEGEND: LegendEntry[] = [
-  { color: "var(--fg-muted)", label: "Idle", description: "No activity" },
-  { color: "var(--accent)", label: "Activity", description: "Producing output", pulsing: true },
+  { color: "var(--fg-muted)", label: "Idle", description: "No session or never ran" },
+  { color: "var(--accent)", label: "Busy", description: "Producing output", pulsing: true },
   { color: "var(--success)", label: "Done", description: "Command completed" },
   { color: "var(--unseen)", label: "Unseen", description: "Completed while not viewed" },
-  { color: "var(--warning)", label: "Input", description: "Needs user input", pulsing: true },
-  { color: "var(--error)", label: "Error", description: "Error state" },
+  { color: "var(--attention)", label: "Question", description: "Agent needs input", pulsing: true },
+  { color: "var(--error)", label: "Error", description: "API error or agent stuck", pulsing: true },
 ];
 
 interface TabTypeEntry {
