@@ -96,6 +96,11 @@ pub(crate) fn resolve_shell(override_shell: Option<String>) -> String {
 /// false positives from AI agents that pause while thinking between API calls.
 const SILENCE_QUESTION_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Maximum non-`?` chunks allowed after a `?` candidate before considering it stale.
+/// Claude Code prints 2-3 decoration chunks after a question (mode line, separator).
+/// Anything beyond this threshold means the agent continued working — not waiting.
+const STALE_QUESTION_CHUNKS: u32 = 10;
+
 /// How often the timer thread wakes up to check for silence.
 const SILENCE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -110,10 +115,44 @@ const ECHO_SUPPRESS_WINDOW: std::time::Duration = std::time::Duration::from_mill
 /// Extract the last `?`-ending line from changed rows for silence-based question detection.
 /// Searches all changed rows (not just the last non-empty one) so a question row
 /// is found even when a mode/status line with a higher row index arrives in the same chunk.
+/// Applies content filters to reject lines that are clearly not questions (code comments,
+/// diff context, markdown headers, code syntax).
 pub(crate) fn extract_question_line(changed_rows: &[ChangedRow]) -> Option<String> {
     changed_rows.iter().rev()
-        .find(|r| !r.text.is_empty() && r.text.ends_with('?'))
+        .find(|r| !r.text.is_empty() && r.text.ends_with('?') && is_plausible_question(&r.text))
         .map(|r| r.text.clone())
+}
+
+/// Returns false for lines that are clearly not questions: code comments, diff context,
+/// markdown headers, and lines containing code-specific syntax.
+fn is_plausible_question(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    // Comment/diff/markdown prefixes
+    if trimmed.starts_with("//")
+        || trimmed.starts_with('#')
+        || trimmed.starts_with('*')
+        || trimmed.starts_with('+')
+        || trimmed.starts_with('-')
+        || trimmed.starts_with('>')
+    {
+        return false;
+    }
+    // Code syntax markers — real questions don't contain these
+    if line.contains("->") || line.contains("=>") || line.contains("::") || line.contains(")?") {
+        return false;
+    }
+    true
+}
+
+/// Verify that a question candidate is still visible among the bottom rows of the
+/// terminal screen. Returns true only if the exact question text appears as a
+/// complete row (trimmed) within the last `max_bottom_rows` non-empty lines.
+/// This prevents ghost notifications from stale `?` lines that have scrolled off.
+pub(crate) fn verify_question_on_screen(screen_rows: &[String], question: &str, max_bottom_rows: usize) -> bool {
+    screen_rows.iter().rev()
+        .filter(|r| !r.is_empty())
+        .take(max_bottom_rows)
+        .any(|r| r.trim() == question)
 }
 
 /// Shared state between the PTY reader thread and the silence-detection timer thread.
@@ -131,9 +170,13 @@ pub(crate) struct SilenceState {
     /// Set by `suppress_user_input()` so the echo of user-typed text doesn't
     /// re-enable silence-based question detection.
     pub(crate) suppress_echo_until: Option<std::time::Instant>,
-    /// When the last StatusLine (spinner) event was seen. If recent (<3s),
+    /// When the last StatusLine (spinner) event was seen. If recent,
     /// silence-based question detection is suppressed — spinner means the agent is working.
     pub(crate) last_status_line_at: Option<std::time::Instant>,
+    /// How many non-`?` chunks arrived after the current pending question candidate.
+    /// Used to detect stale candidates: if the agent continued producing significant
+    /// output after the `?` line, it was not a real question.
+    output_chunks_after_question: u32,
 }
 
 impl SilenceState {
@@ -145,6 +188,7 @@ impl SilenceState {
             last_resize_at: None,
             suppress_echo_until: None,
             last_status_line_at: None,
+            output_chunks_after_question: 0,
         }
     }
 
@@ -179,6 +223,7 @@ impl SilenceState {
             // The instant detector already fired — suppress the silence timer.
             self.pending_question_line = None;
             self.question_already_emitted = true;
+            self.output_chunks_after_question = 0;
         } else if let Some(line) = last_question_line {
             if in_echo_window {
                 // Ignore — this is the PTY echo of user input.
@@ -186,12 +231,12 @@ impl SilenceState {
                 // New candidate for silence-based detection.
                 self.pending_question_line = Some(line);
                 self.question_already_emitted = false;
+                self.output_chunks_after_question = 0;
             }
+        } else if self.pending_question_line.is_some() {
+            // Non-`?` chunk after a pending candidate — track staleness.
+            self.output_chunks_after_question = self.output_chunks_after_question.saturating_add(1);
         }
-        // Non-`?` output does NOT clear pending_question_line. The question
-        // is preserved through spinner/decoration updates. check_silence()
-        // relies on last_output_at (reset every chunk) to ensure the threshold
-        // is only reached after true silence.
     }
 
     /// Called by write_pty when the user submits a line of input.
@@ -210,10 +255,13 @@ impl SilenceState {
         self.last_status_line_at = Some(std::time::Instant::now());
     }
 
-    /// Returns true if a spinner/status-line was seen recently (within 3s).
+    /// Returns true if a spinner/status-line was seen recently.
+    /// Uses the same threshold as silence detection (10s) so that agents with
+    /// pauses between status-line updates (API calls, file reads) don't trigger
+    /// false question notifications during those gaps.
     fn is_spinner_active(&self) -> bool {
         self.last_status_line_at
-            .map(|t| t.elapsed() < std::time::Duration::from_secs(3))
+            .map(|t| t.elapsed() < SILENCE_QUESTION_THRESHOLD)
             .unwrap_or(false)
     }
 
@@ -227,6 +275,11 @@ impl SilenceState {
         if self.is_spinner_active() {
             return None;
         }
+        // Too much output after the `?` line — the agent continued working,
+        // so the `?` was not a real question (e.g. code comment, markdown).
+        if self.output_chunks_after_question > STALE_QUESTION_CHUNKS {
+            return None;
+        }
         if let Some(ref line) = self.pending_question_line
             && self.last_output_at.elapsed() >= SILENCE_QUESTION_THRESHOLD
         {
@@ -235,6 +288,71 @@ impl SilenceState {
         }
         None
     }
+
+    /// Clear a stale question candidate that failed screen verification.
+    /// Prevents the timer from re-checking the same stale candidate every second.
+    pub(crate) fn clear_stale_question(&mut self) {
+        self.pending_question_line = None;
+        self.question_already_emitted = true;
+    }
+}
+
+/// How many bottom screen rows to check when verifying a question candidate.
+const SCREEN_VERIFY_ROWS: usize = 5;
+
+/// Spawn the silence-detection timer thread. Shared by desktop and headless readers.
+/// Checks every `SILENCE_CHECK_INTERVAL` whether a pending `?` line has been silent
+/// long enough to be a question. Verifies against the terminal screen before emitting.
+fn spawn_silence_timer(
+    silence: Arc<Mutex<SilenceState>>,
+    running: Arc<AtomicBool>,
+    session_id: String,
+    state: Arc<AppState>,
+    app: Option<AppHandle>,
+) {
+    let event_bus = state.event_bus.clone();
+    std::thread::spawn(move || {
+        while running.load(Ordering::Relaxed) {
+            std::thread::sleep(SILENCE_CHECK_INTERVAL);
+            if !running.load(Ordering::Relaxed) {
+                break;
+            }
+            let question = silence.lock().check_silence();
+            if let Some(ref prompt_text) = question {
+                // Screen verification: confirm the question is still visible
+                // among the bottom rows. If it scrolled off, it's stale.
+                let on_screen = state.vt_log_buffers.get(&session_id)
+                    .map(|vt| verify_question_on_screen(
+                        &vt.lock().screen_rows(),
+                        prompt_text,
+                        SCREEN_VERIFY_ROWS,
+                    ))
+                    .unwrap_or(false);
+                if !on_screen {
+                    silence.lock().clear_stale_question();
+                    continue;
+                }
+                let parsed = ParsedEvent::Question {
+                    prompt_text: prompt_text.clone(),
+                    confident: false,
+                };
+                // Broadcast to SSE/WebSocket consumers
+                if let Ok(json) = serde_json::to_value(&parsed) {
+                    let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
+                        session_id: session_id.clone(),
+                        parsed: json,
+                    });
+                }
+                // Tauri IPC for desktop (None for headless sessions)
+                if let Some(ref app) = app {
+                    let _ = app.emit(
+                        &format!("pty-parsed-{session_id}"),
+                        &parsed,
+                    );
+                }
+            }
+        }
+    });
 }
 
 /// Spawn a reader thread that reads from a PTY, emits Tauri events, and writes to the ring buffer.
@@ -253,37 +371,13 @@ pub(crate) fn spawn_reader_thread(
     state.silence_states.insert(session_id.clone(), silence.clone());
 
     // Spawn silence-detection timer thread
-    {
-        let silence = silence.clone();
-        let running = running.clone();
-        let app = app.clone();
-        let session_id = session_id.clone();
-        let event_bus = state.event_bus.clone();
-        std::thread::spawn(move || {
-            while running.load(Ordering::Relaxed) {
-                std::thread::sleep(SILENCE_CHECK_INTERVAL);
-                if !running.load(Ordering::Relaxed) {
-                    break;
-                }
-                let question = silence.lock().check_silence();
-                if let Some(prompt_text) = question {
-                    let parsed = ParsedEvent::Question { prompt_text, confident: false };
-                    // Broadcast to SSE/WebSocket consumers
-                    if let Ok(json) = serde_json::to_value(&parsed) {
-                        let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
-                            session_id: session_id.clone(),
-                            parsed: json,
-                        });
-                    }
-                    // Tauri IPC for desktop backward compat
-                    let _ = app.emit(
-                        &format!("pty-parsed-{session_id}"),
-                        &parsed,
-                    );
-                }
-            }
-        });
-    }
+    spawn_silence_timer(
+        silence.clone(),
+        running.clone(),
+        session_id.clone(),
+        state.clone(),
+        Some(app.clone()),
+    );
 
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -567,13 +661,24 @@ pub(crate) fn spawn_headless_reader_thread(
     session_id: String,
     state: Arc<AppState>,
 ) {
+    let silence = Arc::new(Mutex::new(SilenceState::new()));
+    let running = Arc::new(AtomicBool::new(true));
+
+    state.silence_states.insert(session_id.clone(), silence.clone());
+
+    // Spawn silence-detection timer (headless: event_bus only, no Tauri IPC)
+    spawn_silence_timer(
+        silence.clone(),
+        running.clone(),
+        session_id.clone(),
+        state.clone(),
+        None,
+    );
+
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
-        // Silence-based question detection (mirrors main reader)
-        let silence = Arc::new(Mutex::new(SilenceState::new()));
-        state.silence_states.insert(session_id.clone(), silence.clone());
         let mut parser = OutputParser::new();
         loop {
             while paused.load(Ordering::Relaxed) {
@@ -672,6 +777,9 @@ pub(crate) fn spawn_headless_reader_thread(
                 }
             }
         }
+        // Signal silence timer thread to stop
+        running.store(false, Ordering::Relaxed);
+
         let utf8_tail = utf8_buf.flush();
         let esc_remaining = if utf8_tail.is_empty() {
             esc_buf.flush()
@@ -1620,11 +1728,180 @@ mod tests {
         let mut s = SilenceState::new();
         s.on_chunk(false, Some("Want me to proceed?".to_string()));
         s.on_status_line();
-        // Spinner was active but long ago (>3s)
-        s.last_status_line_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(5));
+        // Spinner was active but long ago (>10s, matching SILENCE_QUESTION_THRESHOLD)
+        s.last_status_line_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(12));
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         // Spinner expired, question should fire
         assert_eq!(s.check_silence(), Some("Want me to proceed?".to_string()));
+    }
+
+    #[test]
+    fn test_silence_state_spinner_within_10s_suppresses() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Want me to proceed?".to_string()));
+        s.on_status_line();
+        // Spinner was 8s ago — still within the 10s window
+        s.last_status_line_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(8));
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(s.check_silence(), None, "spinner within 10s should suppress question");
+    }
+
+    // --- Staleness counter tests ---
+
+    #[test]
+    fn test_silence_state_stale_after_many_output_chunks() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Continue?".to_string()));
+        // Simulate 15 non-`?` chunks (well beyond STALE_QUESTION_CHUNKS)
+        for _ in 0..15 {
+            s.on_chunk(false, None);
+        }
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(s.check_silence(), None, "stale question after many chunks should not fire");
+    }
+
+    #[test]
+    fn test_silence_state_few_decoration_chunks_still_fires() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Continue?".to_string()));
+        // 3 decoration chunks (mode line, separator, prompt) — within threshold
+        s.on_chunk(false, None);
+        s.on_chunk(false, None);
+        s.on_chunk(false, None);
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(s.check_silence(), Some("Continue?".to_string()), "few decoration chunks should still fire");
+    }
+
+    #[test]
+    fn test_silence_state_counter_resets_on_new_question() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("First?".to_string()));
+        // Many non-`?` chunks → stale
+        for _ in 0..15 {
+            s.on_chunk(false, None);
+        }
+        // New `?` line resets the counter
+        s.on_chunk(false, Some("Second?".to_string()));
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(s.check_silence(), Some("Second?".to_string()), "new question should reset staleness");
+    }
+
+    // --- Screen verification tests ---
+
+    #[test]
+    fn test_verify_question_on_screen_found() {
+        let screen = vec![
+            "".to_string(),
+            "Some output".to_string(),
+            "Do you want to proceed?".to_string(),
+            "⏵⏵ task_name".to_string(),
+            "".to_string(),
+        ];
+        assert!(verify_question_on_screen(&screen, "Do you want to proceed?", 5));
+    }
+
+    #[test]
+    fn test_verify_question_on_screen_scrolled_away() {
+        // Question is NOT among the last 5 rows
+        let screen: Vec<String> = (0..24).map(|i| format!("line {i}")).collect();
+        assert!(!verify_question_on_screen(&screen, "Do you want to proceed?", 5));
+    }
+
+    #[test]
+    fn test_verify_question_on_screen_empty() {
+        let screen: Vec<String> = vec![];
+        assert!(!verify_question_on_screen(&screen, "Continue?", 5));
+    }
+
+    #[test]
+    fn test_verify_question_on_screen_partial_match() {
+        let screen = vec![
+            "This is not a question? but has more text".to_string(),
+            "".to_string(),
+        ];
+        // The stored question is just "question?" — substring should not match
+        assert!(!verify_question_on_screen(&screen, "question?", 5));
+    }
+
+    // --- Clear stale question tests ---
+
+    #[test]
+    fn test_silence_state_clear_stale_resets_pending() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Continue?".to_string()));
+        s.clear_stale_question();
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(s.check_silence(), None, "cleared stale should not fire");
+    }
+
+    #[test]
+    fn test_silence_state_clear_stale_allows_new_question() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Old?".to_string()));
+        s.clear_stale_question();
+        // New question after clear
+        s.on_chunk(false, Some("New?".to_string()));
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(s.check_silence(), Some("New?".to_string()), "new question after clear should fire");
+    }
+
+    // --- extract_question_line content filter tests ---
+
+    fn make_rows(texts: &[&str]) -> Vec<ChangedRow> {
+        texts.iter().enumerate().map(|(i, t)| ChangedRow { row_index: i, text: t.to_string() }).collect()
+    }
+
+    #[test]
+    fn test_extract_question_line_rejects_code_comment() {
+        let rows = make_rows(&["// What is this?"]);
+        assert_eq!(extract_question_line(&rows), None);
+    }
+
+    #[test]
+    fn test_extract_question_line_rejects_markdown_header() {
+        let rows = make_rows(&["## FAQ?"]);
+        assert_eq!(extract_question_line(&rows), None);
+    }
+
+    #[test]
+    fn test_extract_question_line_rejects_diff_context() {
+        assert_eq!(extract_question_line(&make_rows(&["+  if x?"])), None);
+        assert_eq!(extract_question_line(&make_rows(&["-  if x?"])), None);
+        assert_eq!(extract_question_line(&make_rows(&[">  quoted?"])), None);
+    }
+
+    #[test]
+    fn test_extract_question_line_rejects_code_syntax() {
+        assert_eq!(extract_question_line(&make_rows(&["fn foo() -> Option<bool>?"])), None);
+        assert_eq!(extract_question_line(&make_rows(&["map.entry(key)?"])), None);
+        assert_eq!(extract_question_line(&make_rows(&["let x = a::b?"])), None);
+    }
+
+    #[test]
+    fn test_extract_question_line_accepts_real_question() {
+        let rows = make_rows(&["Do you want to proceed?"]);
+        assert_eq!(extract_question_line(&rows), Some("Do you want to proceed?".to_string()));
+    }
+
+    #[test]
+    fn test_extract_question_line_accepts_yn_prompt() {
+        // Y/n prompt ends with `]`, not `?` — extract_question_line only matches `?`-ending.
+        // The actual question before the Y/n suffix ends with `?`:
+        let rows = make_rows(&["Continue?"]);
+        assert_eq!(extract_question_line(&rows), Some("Continue?".to_string()));
+    }
+
+    #[test]
+    fn test_extract_question_line_accepts_short_natural_question() {
+        // Boss confirmed: "continuo?" is a valid question
+        let rows = make_rows(&["continuo?"]);
+        assert_eq!(extract_question_line(&rows), Some("continuo?".to_string()));
+    }
+
+    #[test]
+    fn test_extract_question_line_rejects_asterisk_comment() {
+        let rows = make_rows(&["* What is this?"]);
+        assert_eq!(extract_question_line(&rows), None);
     }
 
     // --- Resize grace period tests ---

@@ -71,15 +71,19 @@ ParsedEvent::Question {
 }
 ```
 
-Detected via multiple patterns:
-- **Hardcoded prompts**: "Would you like to proceed?", "Do you want to...?", "Is this plan/approach okay"
-- **Numbered menus**: Lines with `❯`, `›` (Ink), `>`, or `)` before `1.` followed by option text
-- **Y/N prompts**: `[Y/n]`, `[y/N]`, `(yes/no)`
-- **Inquirer-style**: Lines starting with `? ` (standard inquirer prefix)
-- **Ink navigation footer**: "Enter to select" (Ink SelectInput menus)
-- **Generic questions**: Any line ending with `?` that passes false-positive filters (rejects code comments, markdown, indented code, backtick fragments, bold markers, long prose >120 chars)
+Detected exclusively via **screen-verified silence detection** (all instant regex patterns were removed due to false positives from Ink agent streaming):
 
-Additionally, `extract_question_line()` provides silence-based detection: scans all `ChangedRow` entries for lines ending with `?` (skipping mode-line status indicators like `⏵⏵ Reading files`). User-typed lines (detected via a 500ms `suppress_user_input` window) are excluded from question detection to avoid false positives when the user types a line ending with `?`.
+1. `extract_question_line()` scans changed terminal rows for `?`-ending lines, applying content filters to reject code comments (`//`), markdown headers (`#`), diff context (`+/-`), and code syntax (`->`, `=>`, `::`, `)?`)
+2. `SilenceState` stores the candidate and starts a 10s silence timer
+3. When the timer fires, it verifies the candidate is still visible in the bottom 5 rows of the terminal screen (via `VtLogBuffer.screen_rows()`)
+4. If verified, emits `ParsedEvent::Question { confident: false }`
+
+Guards against false positives:
+- **Spinner suppression**: If a status-line event was seen within the last 10s, detection is suppressed
+- **Staleness counter**: If >10 non-`?` output chunks arrived after the candidate, it's considered stale
+- **Screen verification**: Candidate must still be among the last 5 visible lines at fire time
+- **User echo suppression**: 500ms window after user input ignores PTY echo of typed text
+- **Resize grace**: 1s suppression after terminal resize to avoid re-detection of redrawn content
 
 ### ApiError
 
