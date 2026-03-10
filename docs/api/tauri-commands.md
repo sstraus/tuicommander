@@ -39,7 +39,8 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `get_repo_summary` | `repo_path` | `RepoSummary` | Aggregate snapshot: worktree paths + merged branches + per-path diff stats in one IPC |
 | `get_repo_structure` | `repo_path` | `RepoStructure` | Fast phase: worktree paths + merged branches only (Phase 1 of progressive loading) |
 | `get_repo_diff_stats` | `repo_path` | `RepoDiffStats` | Slow phase: per-worktree diff stats + last commit timestamps (Phase 2 of progressive loading) |
-| `run_git_command` | `path, args` | `String` | Run arbitrary git command |
+| `run_git_command` | `path, args` | `GitCommandResult` | Run arbitrary git command (success, stdout, stderr, exit_code) |
+| `get_git_panel_context` | `path` | `GitPanelContext` | Rich context for Git Operations Panel (branch, ahead/behind, staged/changed/stash counts, last commit, rebase/cherry-pick state). Cached 5s TTL. |
 
 ## GitHub Integration (`github.rs`)
 

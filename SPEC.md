@@ -318,6 +318,7 @@ All stores persist to localStorage:
 - [x] Lazy terminal restore (sessions materialize on branch click, not app startup)
 - [x] Windows compatibility (shell escaping, process detection, resolve_cli, IDE detection)
 - [x] Repo watcher for automatic GitOperationsPanel refresh
+- [x] Git Operations Panel v2 (status card, background exec, BranchCombobox, create branch, rebase/cherry-pick UI)
 - [x] Context menu submenus and "New Group..." via PromptDialog
 - [x] File Browser panel (`Cmd+E`)
 - [x] CodeMirror code editor

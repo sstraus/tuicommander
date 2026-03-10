@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Git Operations Panel redesign** — Complete rewrite with 400px panel, rich status card (branch, ahead/behind, staged/changed/stash counts, last commit), background execution via `run_git_command`, inline feedback bar, searchable BranchCombobox, Create Branch form, rebase/cherry-pick in-progress UI, monochrome SVG icons, keyboard navigation (Escape to close, autofocus)
+- **`get_git_panel_context` Tauri command** — Single IPC round-trip for all Git Operations Panel data (cached 5s TTL)
+- **BranchCombobox shared component** — Searchable combobox with keyboard navigation for branch selection
 - **File drag & drop** — Drag files from Finder/Explorer onto the terminal area to open them with the appropriate viewer (`.md`/`.mdx` → Markdown, others → Code Editor). Visual overlay during drag hover. Supports standalone files outside any repo
 - **Markdown file association** — `.md`/`.mdx` files registered with TUICommander on macOS. Double-clicking a markdown file in Finder opens it directly in TUICommander
 

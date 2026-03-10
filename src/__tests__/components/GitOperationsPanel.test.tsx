@@ -537,6 +537,26 @@ describe("GitOperationsPanel", () => {
     });
   });
 
+  describe("keyboard navigation", () => {
+    it("Escape key closes the panel", () => {
+      const onClose = vi.fn();
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} onClose={onClose} />
+      ));
+      const panel = container.querySelector("[data-testid='git-operations-panel']")!;
+      fireEvent.keyDown(panel, { key: "Escape" });
+      expect(onClose).toHaveBeenCalledOnce();
+    });
+
+    it("panel has tabIndex for focus", () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      const panel = container.querySelector("[data-testid='git-operations-panel']")!;
+      expect(panel.getAttribute("tabindex")).toBe("-1");
+    });
+  });
+
   describe("calls get_git_panel_context", () => {
     it("invokes get_git_panel_context when visible with repoPath", () => {
       render(() => (

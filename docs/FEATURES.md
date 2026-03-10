@@ -224,11 +224,19 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Keyboard shortcuts are now in Settings > Keyboard Shortcuts tab (auto-generated from `actionRegistry.ts`)
 
 ### 3.8 Git Operations Panel (`Cmd+Shift+G`)
-- Quick actions: Pull, Push, Fetch
-- Branch operations: Merge, Checkout (with branch selector dropdown)
-- Stash operations: Stash, Pop
-- Merge conflict resolution: Abort Merge, Continue Merge, Accept Ours, Accept Theirs
-- Auto-refreshes branch list via repo watcher
+- 400px side panel with rich status card (branch, ahead/behind, staged/changed/stash counts, last commit)
+- Detached HEAD detection and display
+- Sync operations: Pull, Push, Fetch (background execution via `run_git_command`)
+- Branch operations: Switch, Merge (searchable BranchCombobox replaces native select)
+- Create Branch: inline form with name validation, Create and Create & Switch buttons
+- Stash operations: Stash, Pop with inline stash count
+- Conflict resolution: Merge/Rebase/Cherry-pick in-progress sections with Abort/Continue/Skip
+- Inline feedback bar: success (green, auto-dismiss) / error (red, persists)
+- Spinner on active operation button, all buttons disabled during execution
+- Keyboard: Escape to close, Tab navigation, autofocus on open
+- All icons are monochrome inline SVGs (no Unicode)
+- Single IPC round-trip via `get_git_panel_context`
+- Auto-refreshes via repo revision subscription
 
 ### 3.9 Quick Branch Switch (`Cmd+B`)
 - Fuzzy-search dialog to switch branches instantly

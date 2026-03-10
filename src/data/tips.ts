@@ -115,6 +115,11 @@ export const TIPS: Tip[] = [
     shortcut: `${mod}+G`,
   },
   {
+    feature: "Git Operations Panel",
+    description: "Pull, push, fetch, switch branches, create branches, and manage stash — all without leaving the panel. Background execution with inline feedback.",
+    shortcut: `${mod}+Shift+G`,
+  },
+  {
     feature: "Tab Switching",
     description: "Jump to any of the first 9 tabs by number — no mouse needed.",
     shortcut: `${mod}+1–9`,

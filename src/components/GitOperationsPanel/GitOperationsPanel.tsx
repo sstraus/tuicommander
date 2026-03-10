@@ -293,9 +293,32 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
   };
   const isDetached = () => context()?.is_detached ?? false;
 
+  let panelRef: HTMLDivElement | undefined;
+
+  // Auto-focus panel when opened
+  createEffect(() => {
+    if (props.visible) {
+      requestAnimationFrame(() => panelRef?.focus());
+    }
+  });
+
+  const handlePanelKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && !showNewBranch()) {
+      e.preventDefault();
+      e.stopPropagation();
+      props.onClose();
+    }
+  };
+
   return (
     <Show when={props.visible}>
-      <div class={s.panel} data-testid="git-operations-panel">
+      <div
+        class={s.panel}
+        data-testid="git-operations-panel"
+        ref={panelRef}
+        tabIndex={-1}
+        onKeyDown={handlePanelKeyDown}
+      >
         {/* Header */}
         <div class={s.header}>
           <span class={s.headerTitle}>{t("gitOps.title", "Git Operations")}</span>
