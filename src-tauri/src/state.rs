@@ -963,10 +963,15 @@ impl AppState {
                                     }
                             }
                             "rate-limit" => {
-                                s.rate_limited = true;
-                                s.retry_after_ms = parsed.get("retry_after_ms")
-                                    .and_then(|v| v.as_u64());
-                                s.rate_limit_set_ms = now_ms;
+                                // Only track rate limits on agent sessions.
+                                // Plain shell terminals can match rate-limit patterns
+                                // in their output but should never show the badge.
+                                if s.current_task.is_some() {
+                                    s.rate_limited = true;
+                                    s.retry_after_ms = parsed.get("retry_after_ms")
+                                        .and_then(|v| v.as_u64());
+                                    s.rate_limit_set_ms = now_ms;
+                                }
                             }
                             "usage-limit" => {
                                 s.usage_limit_pct = parsed.get("percentage")
@@ -3495,8 +3500,34 @@ mod tests {
     }
 
     #[test]
+    fn test_rate_limit_ignored_without_agent_activity() {
+        let state = fresh_state();
+        // No agent activity (no status-line received) → rate-limit should be ignored
+        let event = make_parsed("rate-limit", serde_json::json!({ "retry_after_ms": 5000 }));
+        let s = apply(&state, &event);
+        assert!(!s.rate_limited, "rate-limit must be ignored on non-agent session");
+        assert!(s.retry_after_ms.is_none());
+    }
+
+    #[test]
+    fn test_rate_limit_accepted_with_agent_activity() {
+        let state = fresh_state();
+        // Establish agent presence via status-line
+        let status = make_parsed("status-line", serde_json::json!({ "task_name": "Working" }));
+        apply(&state, &status);
+        // Now rate-limit should be accepted
+        let event = make_parsed("rate-limit", serde_json::json!({ "retry_after_ms": 5000 }));
+        let s = apply(&state, &event);
+        assert!(s.rate_limited, "rate-limit must be accepted on agent session");
+        assert_eq!(s.retry_after_ms, Some(5000));
+    }
+
+    #[test]
     fn test_rate_limit_expires_after_retry_after_ms() {
         let state = fresh_state();
+        // Establish agent presence
+        let status = make_parsed("status-line", serde_json::json!({ "task_name": "Working" }));
+        apply(&state, &status);
         // Set rate limited with 5s retry
         let event = make_parsed("rate-limit", serde_json::json!({ "retry_after_ms": 5000 }));
         let s = apply(&state, &event);
@@ -3518,6 +3549,9 @@ mod tests {
     #[test]
     fn test_rate_limit_not_expired_within_retry_window() {
         let state = fresh_state();
+        // Establish agent presence
+        let status = make_parsed("status-line", serde_json::json!({ "task_name": "Working" }));
+        apply(&state, &status);
         let event = make_parsed("rate-limit", serde_json::json!({ "retry_after_ms": 60000 }));
         let s = apply(&state, &event);
         assert!(s.rate_limited);
@@ -3530,6 +3564,9 @@ mod tests {
     #[test]
     fn test_rate_limit_expires_with_default_timeout_when_no_retry_after() {
         let state = fresh_state();
+        // Establish agent presence
+        let status = make_parsed("status-line", serde_json::json!({ "task_name": "Working" }));
+        apply(&state, &status);
         // Rate limit with no retry_after_ms
         let event = make_parsed("rate-limit", serde_json::json!({}));
         let s = apply(&state, &event);

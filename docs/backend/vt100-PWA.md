@@ -292,7 +292,7 @@ Used for all PTY input: typed characters, escape sequences (arrow keys), control
 
 Renders combined log history + current screen with auto-scroll management.
 
-**Text wrapping strategy:** Normal text uses `pre-wrap` so long lines wrap on narrow screens. Lines containing box-drawing characters (U+2500–U+257F) get `white-space: pre` via a `tableLine` CSS class, preserving alignment for tables, tree views, and bordered output. Detection is done by `hasBoxDrawing(line)` in `src/mobile/utils/logLine.ts`.
+**Text wrapping strategy:** Normal text uses `pre-wrap` so long lines wrap on narrow screens. Consecutive lines containing box-drawing characters (U+2500–U+257F) are grouped into scrollable `tableBlock` containers with `white-space: pre` and `overflow-x: auto`, preserving alignment for tables, tree views, and bordered output. Grouping is done by `groupLineBlocks()` and detection by `hasBoxDrawing()` in `src/mobile/utils/logLine.ts`.
 
 **Initialization:**
 1. HTTP fetch: `GET /sessions/{id}/output?format=log`
