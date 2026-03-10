@@ -653,6 +653,103 @@ async fn fetch_usage_from_api(token: &str) -> Result<UsageApiResponse, FetchErro
     })
 }
 
+// ---------------------------------------------------------------------------
+// Fallback: parse rate limits from /v1/messages response headers
+// ---------------------------------------------------------------------------
+
+/// Extract a header value as a string slice.
+fn header_str<'a>(headers: &'a reqwest::header::HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|v| v.to_str().ok())
+}
+
+/// Parse a single claim (e.g. "5h" or "7d") into a `RateBucket`.
+/// Utilization in headers is 0.0–1.0; we convert to 0–100 percentage.
+/// Reset is a unix epoch seconds timestamp; we convert to ISO8601.
+fn parse_claim_bucket(headers: &reqwest::header::HeaderMap, abbrev: &str) -> Option<RateBucket> {
+    let util_str = header_str(headers, &format!("anthropic-ratelimit-unified-{abbrev}-utilization"))?;
+    let utilization_frac: f64 = util_str.parse().ok()?;
+    let reset_epoch = header_str(headers, &format!("anthropic-ratelimit-unified-{abbrev}-reset"))
+        .and_then(|v| v.parse::<i64>().ok());
+    let resets_at = reset_epoch.map(|epoch| {
+        chrono::DateTime::from_timestamp(epoch, 0)
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or_else(|| epoch.to_string())
+    });
+    Some(RateBucket {
+        utilization: utilization_frac * 100.0,
+        resets_at,
+    })
+}
+
+/// Parse `anthropic-ratelimit-unified-*` headers into `UsageApiResponse`.
+/// Pure function, no I/O — used by fallback and tests.
+fn parse_unified_rate_limit_headers(headers: &reqwest::header::HeaderMap) -> UsageApiResponse {
+    let five_hour = parse_claim_bucket(headers, "5h");
+    let seven_day = parse_claim_bucket(headers, "7d");
+
+    // Overage → ExtraUsage
+    let overage_status = header_str(headers, "anthropic-ratelimit-unified-overage-status");
+    let overage_in_use = header_str(headers, "anthropic-ratelimit-unified-overage-in-use")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let extra_usage = if overage_status.is_some() || overage_in_use {
+        Some(ExtraUsage {
+            enabled: true,
+            spend_limit_cents: None,
+            current_spend_cents: None,
+        })
+    } else {
+        None
+    };
+
+    UsageApiResponse {
+        five_hour,
+        seven_day,
+        seven_day_opus: None,
+        seven_day_sonnet: None,
+        seven_day_cowork: None,
+        extra_usage,
+    }
+}
+
+/// Fallback: make a minimal Haiku call and extract rate limits from response headers.
+/// Cost: ~9 tokens per call (~$0.00001).
+async fn fetch_usage_from_headers(token: &str) -> Result<UsageApiResponse, FetchError> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("anthropic-beta", "oauth-2025-04-20")
+        .header("anthropic-version", "2023-06-01")
+        .header("Content-Type", "application/json")
+        .body(r#"{"model":"claude-haiku-4-5-20251001","max_tokens":1,"messages":[{"role":"user","content":"h"}]}"#)
+        .send()
+        .await
+        .map_err(|e| FetchError {
+            status: 0,
+            message: format!("Headers fallback request failed: {e}"),
+            retry_after_secs: None,
+        })?;
+
+    let headers = resp.headers().clone();
+    let status = resp.status().as_u16();
+
+    // Rate limit headers are present on both 200 and 429 from /v1/messages
+    let data = parse_unified_rate_limit_headers(&headers);
+
+    // If no claim data was extracted, treat as failure
+    if data.five_hour.is_none() && data.seven_day.is_none() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(FetchError {
+            status,
+            message: format!("Headers fallback: no rate limit headers in {status} response: {body}"),
+            retry_after_secs: None,
+        });
+    }
+
+    Ok(data)
+}
+
 /// Store a successful response in the cache.
 fn cache_response(data: &UsageApiResponse) {
     *API_CACHE.lock() = Some(ApiCache {
@@ -749,6 +846,18 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
             "[claude_usage] Rate limited — backing off for {}s",
             RATE_LIMIT_BACKOFF.as_secs()
         );
+    }
+
+    // Fallback: extract rate limits from /v1/messages response headers (Haiku, ~9 tokens)
+    match fetch_usage_from_headers(&token).await {
+        Ok(data) => {
+            eprintln!("[claude_usage] Primary API failed, using headers fallback");
+            cache_response(&data);
+            return Ok(data);
+        }
+        Err(e) => {
+            eprintln!("[claude_usage] Headers fallback also failed: {}", e.message);
+        }
     }
 
     // On error, return stale cache if available
@@ -1536,6 +1645,60 @@ mod tests {
         let bucket = parsed.five_hour.unwrap();
         assert!((bucket.utilization - 0.42).abs() < 0.001);
         assert!(bucket.resets_at.is_none());
+    }
+
+    #[test]
+    fn parse_unified_headers_full() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("anthropic-ratelimit-unified-status", "allowed_warning".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-reset", "1773200000".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-5h-utilization", "0.73".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-5h-reset", "1773180000".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-7d-utilization", "0.42".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-7d-reset", "1773200000".parse().unwrap());
+
+        let resp = parse_unified_rate_limit_headers(&headers);
+        let five = resp.five_hour.unwrap();
+        assert!((five.utilization - 73.0).abs() < 0.01); // converted to percentage
+        assert!(five.resets_at.is_some());
+
+        let seven = resp.seven_day.unwrap();
+        assert!((seven.utilization - 42.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_unified_headers_empty() {
+        let headers = reqwest::header::HeaderMap::new();
+        let resp = parse_unified_rate_limit_headers(&headers);
+        assert!(resp.five_hour.is_none());
+        assert!(resp.seven_day.is_none());
+    }
+
+    #[test]
+    fn parse_unified_headers_rejected_with_representative_claim() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("anthropic-ratelimit-unified-status", "rejected".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-representative-claim", "five_hour".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-reset", "1773180000".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-5h-utilization", "1.0".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-5h-reset", "1773180000".parse().unwrap());
+
+        let resp = parse_unified_rate_limit_headers(&headers);
+        let five = resp.five_hour.unwrap();
+        assert!((five.utilization - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_unified_headers_overage() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("anthropic-ratelimit-unified-status", "allowed".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-overage-status", "allowed_warning".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-overage-reset", "1773200000".parse().unwrap());
+
+        let resp = parse_unified_rate_limit_headers(&headers);
+        // Overage info populates extra_usage
+        let extra = resp.extra_usage.unwrap();
+        assert!(extra.enabled);
     }
 
     /// Call the real Anthropic usage API and verify the response deserializes.
