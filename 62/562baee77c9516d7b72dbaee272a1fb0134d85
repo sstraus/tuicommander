@@ -1,0 +1,35 @@
+src/__tests__/components/GitOperationsPanel.test.tsx
+  7db2f161065d28e1 540-559
+SPEC.md
+  7db2f161065d28e1 321
+docs/api/tauri-commands.md
+  7db2f161065d28e1 42-43
+CHANGELOG.md
+  7db2f161065d28e1 10-12
+docs/FEATURES.md
+  7db2f161065d28e1 227-239
+src/components/GitOperationsPanel/GitOperationsPanel.tsx
+  7db2f161065d28e1 296-312,318-320
+src/data/tips.ts
+  7db2f161065d28e1 118-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.9",
+  "base_commit_sha": "62562baee77c9516d7b72dbaee272a1fb0134d85",
+  "prompts": {
+    "7db2f161065d28e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a031b85c-cea3-4e62-9f6a-b148fc46a7c2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 68,
+      "total_deletions": 7,
+      "accepted_lines": 64,
+      "overriden_lines": 0
+    }
+  }
+}
