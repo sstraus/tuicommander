@@ -1,0 +1,25 @@
+src/components/ClaudeUsageDashboard/ClaudeUsageDashboard.module.css
+  7db2f161065d28e1 53-73
+src/components/ClaudeUsageDashboard/ClaudeUsageDashboard.tsx
+  7db2f161065d28e1 580-581,584-586,589,595,604-607,612-616
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.9",
+  "base_commit_sha": "6972107007a58958449c810d670eece2ae69c709",
+  "prompts": {
+    "7db2f161065d28e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a031b85c-cea3-4e62-9f6a-b148fc46a7c2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 59,
+      "total_deletions": 33,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}
