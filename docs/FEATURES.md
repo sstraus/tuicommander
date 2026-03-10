@@ -1045,7 +1045,6 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - Elevated card design: `border-radius: var(--radius-xl)`, `background: var(--bg-secondary)`, margin spacing
 - Safe-area-inset padding for notched devices
 - `font-variant-emoji: text` on output view — forces Unicode symbols (●, ○, ◉) to render as monochrome text glyphs instead of colorful emoji
-- Selective `white-space: pre` on output lines containing box-drawing characters (U+2500–U+257F) — preserves table and tree alignment while normal text wraps via `pre-wrap`
 
 ### 18.11 Standalone CSS
 - Mobile PWA uses its own standalone stylesheet (`src/mobile/mobile.css`), independent from the desktop `global.css`
