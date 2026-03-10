@@ -173,41 +173,35 @@ fn is_separator_line(text: &str) -> bool {
     false
 }
 
+/// Returns true if `text` looks like an agent prompt line.
+/// Matches `❯` (U+276F, Claude Code/Ink), `›` (U+203A, Codex), `> `, and bare `>`.
+fn is_prompt_line(text: &str) -> bool {
+    let t = text.trim_start();
+    t.starts_with('❯') || t.starts_with('›') || t == ">" || t.starts_with("> ")
+}
+
 /// Extract the last chat line from the terminal screen by locating the prompt
-/// box (delimited by two separator lines with a `> ` prompt between them) and
-/// returning the first non-empty line above the upper separator.
+/// line and returning the first non-empty, non-chrome line above it.
 ///
-/// Claude Code screen layout (bottom to top):
-/// ```text
-/// <mode line or empty>
-/// ────────────────────   ← lower separator
-/// > user input           ← prompt box
-/// ────────────────────   ← upper separator
-///                        ← optional empty line(s)
-/// last chat line?        ← THIS IS WHAT WE RETURN
-/// ```
+/// Works across agent UIs:
+/// - **Claude Code**: separator / `> input` / separator / mode line
+/// - **Codex**: (empty) / `› input` / status line
+/// - **Gemini**: `> input` / status line
+///
+/// Algorithm:
+/// 1. Scan from bottom, find the prompt line (`>`, `› `, `❯`)
+/// 2. Walk up past separator lines and empty lines
+/// 3. First non-empty, non-separator line = last chat line
 pub(crate) fn extract_last_chat_line(screen_rows: &[String]) -> Option<String> {
-    // Scan from the bottom, find two separator lines.
-    let mut separators_found = 0u8;
-    let mut above_upper_sep = None;
+    // Scan from the bottom, find the prompt line.
+    let prompt_idx = screen_rows.iter().enumerate().rev()
+        .find(|(_, row)| is_prompt_line(row))?
+        .0;
 
-    for (i, row) in screen_rows.iter().enumerate().rev() {
-        let trimmed = row.trim();
-        if is_separator_line(trimmed) {
-            separators_found += 1;
-            if separators_found == 2 {
-                // Found the upper separator — now find the first non-empty line above it
-                above_upper_sep = Some(i);
-                break;
-            }
-        }
-    }
-
-    let upper_sep_idx = above_upper_sep?;
-    // Walk upward past empty lines to find the last chat line
-    for i in (0..upper_sep_idx).rev() {
+    // Walk upward past separator lines and empty lines to find the last chat line.
+    for i in (0..prompt_idx).rev() {
         let trimmed = screen_rows[i].trim();
-        if !trimmed.is_empty() {
+        if !trimmed.is_empty() && !is_separator_line(trimmed) {
             return Some(trimmed.to_string());
         }
     }
@@ -2112,23 +2106,12 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_last_chat_line_no_prompt_box() {
-        // No separator lines at all — no prompt box visible
+    fn test_extract_last_chat_line_no_prompt_line() {
+        // No prompt line at all
         let rows = screen(&[
             "Just some output",
             "More output",
             "",
-        ]);
-        assert_eq!(extract_last_chat_line(&rows), None);
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_only_one_separator() {
-        // Only one separator — not a complete prompt box
-        let rows = screen(&[
-            "Some text",
-            "────────────────────────────────",
-            "⏵⏵ mode line",
         ]);
         assert_eq!(extract_last_chat_line(&rows), None);
     }
@@ -2189,6 +2172,70 @@ mod tests {
         assert_eq!(
             extract_last_chat_line(&rows),
             Some("Continue with the refactor?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_codex() {
+        // Codex layout: no separator lines, prompt is `›`
+        let rows = screen(&[
+            "⚠ MCP startup incomplete (failed: serena)",
+            "",
+            "Do you want me to proceed?",
+            "",
+            "› Implement {feature}",
+            "",
+            "  gpt-5.3-codex high · 100% left · ~/Gits/personal/tuicommander",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("Do you want me to proceed?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_codex_no_question() {
+        // Codex with no question — last chat line doesn't end with ?
+        let rows = screen(&[
+            "I'll implement the feature now.",
+            "",
+            "› ",
+            "",
+            "  gpt-5.3-codex high · 100% left · ~/project",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("I'll implement the feature now.".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_gemini() {
+        // Gemini layout: `> ` prompt
+        let rows = screen(&[
+            "Should I refactor the module?",
+            "",
+            "> yes",
+            "⠋ Processing...",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("Should I refactor the module?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_prompt_with_separator_above() {
+        // Prompt with only one separator above (no lower separator)
+        let rows = screen(&[
+            "Want to continue?",
+            "────────────────────────────────",
+            "> ok",
+            "⏵⏵ mode line",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("Want to continue?".to_string()),
         );
     }
 
