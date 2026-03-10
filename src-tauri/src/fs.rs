@@ -9,6 +9,8 @@ pub struct DirEntry {
     pub path: String,
     pub is_dir: bool,
     pub size: u64,
+    /// Last modification time as seconds since UNIX epoch.
+    pub modified_at: u64,
     /// Git status: "modified", "staged", "untracked", or "" (clean).
     pub git_status: String,
     /// Whether the file is listed in .gitignore.
@@ -198,6 +200,11 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
 
         let is_dir = metadata.is_dir();
         let size = if is_dir { 0 } else { metadata.len() };
+        let modified_at = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_secs());
 
         // Compute relative path from repo root
         let canonical_entry = entry
@@ -245,6 +252,7 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
             path: relative,
             is_dir,
             size,
+            modified_at,
             git_status,
             is_ignored: false, // populated after collecting all entries
         });
@@ -388,11 +396,17 @@ fn walk_directory(
             // Check if file name or path matches the search pattern
             if pattern.is_match(&name) || pattern.is_match(&relative) {
                 let git_status = git_statuses.get(&relative).cloned().unwrap_or_default();
+                let modified_at = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_secs());
                 results.push(DirEntry {
                     name,
                     path: relative,
                     is_dir: false,
                     size: metadata.len(),
+                    modified_at,
                     git_status,
                     is_ignored: false,
                 });
@@ -828,6 +842,18 @@ mod tests {
         let root_entries = list_directory(repo_path, ".".to_string()).unwrap();
         for entry in &root_entries {
             assert!(!entry.path.contains('\\'), "Path should use / not \\: {}", entry.path);
+        }
+    }
+
+    #[test]
+    fn test_list_directory_modified_at_populated() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        let entries = list_directory(repo_path, ".".to_string()).unwrap();
+
+        for entry in &entries {
+            assert!(entry.modified_at > 0, "modified_at should be non-zero for {}", entry.name);
         }
     }
 

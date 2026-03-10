@@ -63,6 +63,40 @@
   opacity: 0.5;
 }
 
+/* Sort toggle */
+.sortToggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-xs);
+}
+
+.sortBtn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.sortBtn:hover {
+  color: var(--fg-secondary);
+  background: var(--bg-highlight);
+}
+
+.sortBtnActive {
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+  border-color: var(--border);
+  font-weight: 500;
+}
+
 /* Empty states */
 .empty {
   padding: 20px;

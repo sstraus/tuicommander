@@ -62,6 +62,10 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   // File clipboard state for copy/cut/paste
   const [clipboard, setClipboard] = createSignal<{ entry: DirEntry; mode: "copy" | "cut" } | null>(null);
 
+  // Sort mode: "name" (default, dirs first + alpha) or "date" (dirs first + newest first)
+  type SortMode = "name" | "date";
+  const [sortBy, setSortBy] = createSignal<SortMode>("name");
+
   // Track repoPath changes to reset subdir synchronously before fetching
   let lastRepoPath: string | null = null;
 
@@ -135,8 +139,15 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     onCleanup(() => clearTimeout(timer));
   });
 
-  /** Visible entries: search results when query active, directory listing otherwise */
-  const filteredEntries = createMemo(() => searchQuery().trim() ? searchResults() : entries());
+  /** Visible entries: search results when query active, directory listing otherwise, sorted */
+  const filteredEntries = createMemo(() => {
+    const raw = searchQuery().trim() ? searchResults() : entries();
+    if (sortBy() === "name") return raw; // already sorted by name from Rust
+    // Sort by date: dirs first, then newest first
+    return [...raw].sort((a, b) =>
+      (b.is_dir ? 1 : 0) - (a.is_dir ? 1 : 0) || b.modified_at - a.modified_at,
+    );
+  });
 
   const refresh = () => setRefreshTrigger((n) => n + 1);
 
@@ -424,6 +435,24 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         <Show when={searchQuery()}>
           <button class={p.searchClear} onClick={() => { setSearchQuery(""); setSelectedIndex(0); }}>&times;</button>
         </Show>
+      </div>
+
+      {/* Sort toggle */}
+      <div class={s.sortToggle}>
+        <button
+          class={cx(s.sortBtn, sortBy() === "name" && s.sortBtnActive)}
+          onClick={() => setSortBy("name")}
+          title={t("fileBrowser.sortName", "Sort by name")}
+        >
+          Name
+        </button>
+        <button
+          class={cx(s.sortBtn, sortBy() === "date" && s.sortBtnActive)}
+          onClick={() => setSortBy("date")}
+          title={t("fileBrowser.sortDate", "Sort by date")}
+        >
+          Date
+        </button>
       </div>
 
       {/* Breadcrumb navigation */}

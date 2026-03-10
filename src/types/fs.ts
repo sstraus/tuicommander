@@ -5,6 +5,8 @@ export interface DirEntry {
   path: string;
   is_dir: boolean;
   size: number;
+  /** Last modification time as seconds since UNIX epoch */
+  modified_at: number;
   /** Git status: "modified", "staged", "untracked", or "" (clean) */
   git_status: string;
   /** Whether the file is listed in .gitignore */
