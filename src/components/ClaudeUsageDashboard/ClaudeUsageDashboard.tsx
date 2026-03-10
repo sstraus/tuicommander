@@ -577,41 +577,46 @@ export const ClaudeUsageDashboard: Component = () => {
         <div class={s.loadingState}>Loading usage data...</div>
       </Show>
 
-      {/* API error */}
-      <Show when={apiError() && !loading()}>
-        <div class={s.errorState}>
-          <span>Rate limits unavailable</span>
-          <button class={s.retryButton} onClick={() => fetchApi()}>Retry</button>
-        </div>
-      </Show>
-
-      {/* Rate limits */}
-      <Show when={rateBuckets().length > 0}>
+      {/* Rate limits — show section whenever we have data OR an error to report */}
+      <Show when={rateBuckets().length > 0 || (apiError() && !loading())}>
         <div class={s.section}>
-          <div class={s.sectionTitle}>Rate Limits</div>
-          <div class={s.rateGrid}>
-            <For each={rateBuckets()}>
-              {(item) => (
-                <div class={s.rateCard}>
-                  <div class={s.rateLabel}>
-                    <span>{item.label}</span>
-                    <span class={s.rateValue}>{Math.round(item.bucket.utilization)}%</span>
-                  </div>
-                  <div class={s.rateBar}>
-                    <div
-                      class={`${s.rateFill} ${rateClass(item.bucket.utilization)}`}
-                      style={{ width: `${Math.min(100, item.bucket.utilization)}%` }}
-                    />
-                  </div>
-                  <Show when={item.bucket.resets_at}>
-                    <span class={s.rateReset}>
-                      Resets in {formatResetTime(item.bucket.resets_at!)}
-                    </span>
-                  </Show>
-                </div>
-              )}
-            </For>
+          <div class={s.sectionTitle}>
+            <span>Rate Limits</span>
+            <Show when={apiError() && rateBuckets().length > 0}>
+              <span class={s.sectionHint}>(from response headers)</span>
+            </Show>
           </div>
+          <Show when={rateBuckets().length > 0}>
+            <div class={s.rateGrid}>
+              <For each={rateBuckets()}>
+                {(item) => (
+                  <div class={s.rateCard}>
+                    <div class={s.rateLabel}>
+                      <span>{item.label}</span>
+                      <span class={s.rateValue}>{Math.round(item.bucket.utilization)}%</span>
+                    </div>
+                    <div class={s.rateBar}>
+                      <div
+                        class={`${s.rateFill} ${rateClass(item.bucket.utilization)}`}
+                        style={{ width: `${Math.min(100, item.bucket.utilization)}%` }}
+                      />
+                    </div>
+                    <Show when={item.bucket.resets_at}>
+                      <span class={s.rateReset}>
+                        Resets in {formatResetTime(item.bucket.resets_at!)}
+                      </span>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+          <Show when={apiError() && rateBuckets().length === 0}>
+            <div class={s.rateLimitHint}>
+              <span>Rate limit data unavailable</span>
+              <button class={s.retryButton} onClick={() => fetchApi()}>Retry</button>
+            </div>
+          </Show>
         </div>
       </Show>
 

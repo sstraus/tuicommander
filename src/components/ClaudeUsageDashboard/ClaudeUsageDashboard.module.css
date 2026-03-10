@@ -50,6 +50,27 @@
   color: var(--fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.sectionHint {
+  font-weight: 400;
+  font-size: var(--font-xs);
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0.6;
+}
+
+.rateLimitHint {
+  padding: 6px 10px;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .rateGrid {
