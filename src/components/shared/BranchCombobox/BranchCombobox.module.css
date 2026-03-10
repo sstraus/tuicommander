@@ -1,0 +1,111 @@
+/* Searchable branch combobox — dropdown below input */
+.container {
+  position: relative;
+  width: 100%;
+}
+
+.inputWrap {
+  display: flex;
+  align-items: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.inputWrap:focus-within {
+  border-color: var(--accent);
+}
+
+.input {
+  flex: 1;
+  height: 26px;
+  background: transparent;
+  border: none;
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  padding: 0 6px;
+  outline: none;
+  min-width: 0;
+}
+
+.input::placeholder {
+  color: var(--fg-muted);
+}
+
+.chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-dropdown);
+  z-index: 20;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item:hover,
+.itemActive {
+  background: var(--bg-highlight);
+}
+
+.itemCurrent {
+  color: var(--fg-muted);
+}
+
+.itemCurrentBadge {
+  font-size: var(--font-xs);
+  color: var(--accent);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.empty {
+  padding: 8px;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  text-align: center;
+}
+
+.loading {
+  composes: empty;
+}
