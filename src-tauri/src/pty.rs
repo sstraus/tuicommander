@@ -310,6 +310,11 @@ impl SilenceState {
         } else if self.pending_question_line.is_some() {
             // Non-`?` chunk after a pending candidate — track staleness.
             self.output_chunks_after_question = self.output_chunks_after_question.saturating_add(1);
+            // Once stale, clear pending so the repaint guard won't block the
+            // same question text from being detected again in a future session.
+            if self.output_chunks_after_question > STALE_QUESTION_CHUNKS {
+                self.pending_question_line = None;
+            }
         }
     }
 
@@ -2050,6 +2055,28 @@ mod tests {
         assert!(s.question_already_emitted, "repaint of same question must not reset emitted flag");
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert!(s.check_silence().is_none(), "same question repaint must not re-fire");
+    }
+
+    #[test]
+    fn test_silence_state_stale_clears_pending_so_same_question_can_refire() {
+        let mut s = SilenceState::new();
+        // Question fires
+        s.on_chunk(false, Some("Continue?".to_string()), false, false);
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert!(s.check_silence().is_some());
+
+        // Agent resumes: 15 non-`?` chunks (above STALE_QUESTION_CHUNKS)
+        for _ in 0..15 {
+            s.on_chunk(false, None, false, false);
+        }
+        // Pending should be cleared after staleness so repaint guard doesn't block
+        // the same question text from firing again later.
+
+        // Same question arrives again — must be treated as NEW, not repaint
+        s.on_chunk(false, Some("Continue?".to_string()), false, false);
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(s.check_silence(), Some("Continue?".to_string()),
+            "same question text after stale output must fire as new question");
     }
 
     #[test]
