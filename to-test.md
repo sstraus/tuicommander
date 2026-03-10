@@ -282,3 +282,11 @@ Features to test when TUICommander is more usable.
 - [ ] Shell without OSC 7 (vanilla bash) — no regression, behaves as before
 - [ ] Test with zsh (default macOS) — OSC 7 emitted by default
 - [ ] Test with fish — OSC 7 emitted natively
+
+## PWA / Mobile Output View
+- [ ] Normal text wraps on narrow screens (no horizontal scroll)
+- [ ] Box-drawing table output preserves alignment (│ ┌ ─ etc.)
+- [ ] Tree view output preserves alignment (├── └──)
+- [ ] No page-level horizontal scroll when viewing plain text
+- [ ] Long lines without box-drawing characters wrap correctly
+- [ ] Unicode emoji renders as text glyphs (font-variant-emoji: text)
