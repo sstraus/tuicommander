@@ -156,6 +156,64 @@ pub(crate) fn verify_question_on_screen(screen_rows: &[String], question: &str, 
         .any(|r| r.trim() == q)
 }
 
+/// Returns true if `text` contains a run of 4+ box-drawing characters,
+/// indicating a separator line (e.g. `────────` or `──── label ────`).
+fn is_separator_line(text: &str) -> bool {
+    let mut run = 0u32;
+    for c in text.chars() {
+        if matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍') {
+            run += 1;
+            if run >= 4 {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    false
+}
+
+/// Extract the last chat line from the terminal screen by locating the prompt
+/// box (delimited by two separator lines with a `> ` prompt between them) and
+/// returning the first non-empty line above the upper separator.
+///
+/// Claude Code screen layout (bottom to top):
+/// ```text
+/// <mode line or empty>
+/// ────────────────────   ← lower separator
+/// > user input           ← prompt box
+/// ────────────────────   ← upper separator
+///                        ← optional empty line(s)
+/// last chat line?        ← THIS IS WHAT WE RETURN
+/// ```
+pub(crate) fn extract_last_chat_line(screen_rows: &[String]) -> Option<String> {
+    // Scan from the bottom, find two separator lines.
+    let mut separators_found = 0u8;
+    let mut above_upper_sep = None;
+
+    for (i, row) in screen_rows.iter().enumerate().rev() {
+        let trimmed = row.trim();
+        if is_separator_line(trimmed) {
+            separators_found += 1;
+            if separators_found == 2 {
+                // Found the upper separator — now find the first non-empty line above it
+                above_upper_sep = Some(i);
+                break;
+            }
+        }
+    }
+
+    let upper_sep_idx = above_upper_sep?;
+    // Walk upward past empty lines to find the last chat line
+    for i in (0..upper_sep_idx).rev() {
+        let trimmed = screen_rows[i].trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
+}
+
 /// Shared state between the PTY reader thread and the silence-detection timer thread.
 pub(crate) struct SilenceState {
     /// When the last chunk of output was received from the PTY.
@@ -304,14 +362,31 @@ impl SilenceState {
         self.pending_question_line = None;
         self.question_already_emitted = true;
     }
+
+    /// Returns true if the session has been silent long enough and the spinner
+    /// is not active. Used by the timer thread before reading the screen.
+    pub(crate) fn is_silent(&self) -> bool {
+        !self.question_already_emitted
+            && !self.is_spinner_active()
+            && self.last_output_at.elapsed() >= SILENCE_QUESTION_THRESHOLD
+    }
+
+    /// Mark that a question has been emitted (prevents re-emission).
+    pub(crate) fn mark_emitted(&mut self) {
+        self.question_already_emitted = true;
+    }
 }
 
 /// How many bottom screen rows to check when verifying a question candidate.
 const SCREEN_VERIFY_ROWS: usize = 5;
 
 /// Spawn the silence-detection timer thread. Shared by desktop and headless readers.
-/// Checks every `SILENCE_CHECK_INTERVAL` whether a pending `?` line has been silent
-/// long enough to be a question. Verifies against the terminal screen before emitting.
+///
+/// Two strategies run in priority order:
+/// 1. **Screen-based**: read the terminal screen, find the last chat line above the
+///    prompt box (delimited by two separator lines), check if it ends with `?`.
+/// 2. **Chunk-based fallback**: use `check_silence()` with `pending_question_line`
+///    for agents that don't have a prompt box (plain shell, etc.).
 fn spawn_silence_timer(
     silence: Arc<Mutex<SilenceState>>,
     running: Arc<AtomicBool>,
@@ -326,39 +401,66 @@ fn spawn_silence_timer(
             if !running.load(Ordering::Relaxed) {
                 break;
             }
-            let question = silence.lock().check_silence();
-            if let Some(ref prompt_text) = question {
-                // Screen verification: confirm the question is still visible
-                // among the bottom rows. If it scrolled off, it's stale.
-                let on_screen = state.vt_log_buffers.get(&session_id)
-                    .map(|vt| verify_question_on_screen(
-                        &vt.lock().screen_rows(),
-                        prompt_text,
-                        SCREEN_VERIFY_ROWS,
-                    ))
-                    .unwrap_or(false);
-                if !on_screen {
-                    silence.lock().clear_stale_question();
-                    continue;
+
+            // Check temporal conditions first (shared by both strategies).
+            let is_silent = silence.lock().is_silent();
+            if !is_silent {
+                continue;
+            }
+
+            // Strategy 1: screen-based — find last chat line above the prompt box.
+            let screen_question = state.vt_log_buffers.get(&session_id)
+                .and_then(|vt| {
+                    let rows = vt.lock().screen_rows();
+                    let line = extract_last_chat_line(&rows)?;
+                    if line.ends_with('?') && is_plausible_question(&line) {
+                        Some(line)
+                    } else {
+                        None
+                    }
+                });
+
+            // Strategy 2: chunk-based fallback — pending_question_line + screen verify.
+            let prompt_text = if let Some(line) = screen_question {
+                line
+            } else {
+                let question = silence.lock().check_silence();
+                match question {
+                    Some(ref text) => {
+                        let on_screen = state.vt_log_buffers.get(&session_id)
+                            .map(|vt| verify_question_on_screen(
+                                &vt.lock().screen_rows(),
+                                text,
+                                SCREEN_VERIFY_ROWS,
+                            ))
+                            .unwrap_or(false);
+                        if !on_screen {
+                            silence.lock().clear_stale_question();
+                            continue;
+                        }
+                        text.clone()
+                    }
+                    None => continue,
                 }
-                let parsed = ParsedEvent::Question {
-                    prompt_text: prompt_text.clone(),
-                    confident: false,
-                };
-                // Broadcast to SSE/WebSocket consumers
-                if let Ok(json) = serde_json::to_value(&parsed) {
-                    let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
-                        session_id: session_id.clone(),
-                        parsed: json,
-                    });
-                }
-                // Tauri IPC for desktop (None for headless sessions)
-                if let Some(ref app) = app {
-                    let _ = app.emit(
-                        &format!("pty-parsed-{session_id}"),
-                        &parsed,
-                    );
-                }
+            };
+
+            // Emit question event.
+            silence.lock().mark_emitted();
+            let parsed = ParsedEvent::Question {
+                prompt_text: prompt_text.clone(),
+                confident: false,
+            };
+            if let Ok(json) = serde_json::to_value(&parsed) {
+                let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
+                    session_id: session_id.clone(),
+                    parsed: json,
+                });
+            }
+            if let Some(ref app) = app {
+                let _ = app.emit(
+                    &format!("pty-parsed-{session_id}"),
+                    &parsed,
+                );
             }
         }
     });
@@ -569,20 +671,18 @@ pub(crate) fn spawn_reader_thread(
                         // Update silence state for fallback question detection.
                         let has_status_line = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
                         let last_q_line = extract_question_line(&changed_rows);
-                        // A chunk is "status-line only" when the only parsed event is a
-                        // StatusLine and no question line was found. Mode-line timer ticks
-                        // produce such chunks every ~1s; they must NOT reset the silence
-                        // timer or questions from Ink agents will never be detected.
-                        let status_line_only = has_status_line
-                            && !regex_found_question
+                        // A chunk is "chrome-only" when it contains only status-line
+                        // and/or mode-line (ActiveSubTasks) events — no real content.
+                        // These ticks arrive every ~1s and must NOT reset the silence
+                        // timer or questions will never be detected.
+                        let chrome_only = !regex_found_question
                             && last_q_line.is_none()
-                            && events.iter().all(|e| matches!(e, ParsedEvent::StatusLine { .. }));
+                            && events.iter().all(|e| matches!(e,
+                                ParsedEvent::StatusLine { .. } | ParsedEvent::ActiveSubtasks { .. }
+                            ));
                         {
                             let mut sl = silence.lock();
-                            // Only mark spinner as active when the status line
-                            // accompanies real output. Mode-line timer ticks
-                            // (status_line_only) are not agent activity — they
-                            sl.on_chunk(regex_found_question, last_q_line, has_status_line, status_line_only);
+                            sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
                         }
 
                         // Colorize [intent: ...] tokens yellow before sending to xterm.
@@ -779,13 +879,14 @@ pub(crate) fn spawn_headless_reader_thread(
                         // Update silence state for fallback question detection.
                         let has_status_line = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
                         let last_q_line = extract_question_line(&changed_rows);
-                        let status_line_only = has_status_line
-                            && !regex_found_question
+                        let chrome_only = !regex_found_question
                             && last_q_line.is_none()
-                            && events.iter().all(|e| matches!(e, ParsedEvent::StatusLine { .. }));
+                            && events.iter().all(|e| matches!(e,
+                                ParsedEvent::StatusLine { .. } | ParsedEvent::ActiveSubtasks { .. }
+                            ));
                         {
                             let mut sl = silence.lock();
-                            sl.on_chunk(regex_found_question, last_q_line, has_status_line, status_line_only);
+                            sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
                         }
                     }
                 }
@@ -1931,6 +2032,164 @@ mod tests {
         s.on_chunk(false, Some("New?".to_string()), false, false);
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), Some("New?".to_string()), "new question after clear should fire");
+    }
+
+    // --- extract_last_chat_line tests ---
+
+    fn screen(lines: &[&str]) -> Vec<String> {
+        lines.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_standard_claude_code() {
+        // Standard Claude Code layout: question, empty, separator, prompt, separator, mode line
+        let rows = screen(&[
+            "Some earlier output",
+            "Do you want to proceed?",
+            "",
+            "────────────────────────────────",
+            "> yes please",
+            "────────────────────────────────",
+            "⏵⏵ bypass permissions on (shift+tab to cycle)",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("Do you want to proceed?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_no_empty_line_above_separator() {
+        // No empty line between content and upper separator
+        let rows = screen(&[
+            "template minimale o anche CI (lint manifest, validate structure)?",
+            "────────────────────────────────",
+            "> repo separato",
+            "────────────────────────────────",
+            "⏵⏵ accept edits on (shift+tab to cycle)",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("template minimale o anche CI (lint manifest, validate structure)?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_with_wiz_hud() {
+        // Wiz HUD adds extra lines below the lower separator
+        let rows = screen(&[
+            "Quale delle due hai in mente?",
+            "",
+            "────────────────────────────────",
+            "> something",
+            "────────────────────────────────",
+            "[Opus 4.6 | Team] 54% | wiz-agents git:(main)",
+            "5h: 42% (3h) | 7d: 27% (2d)",
+            "✓ Edit ×7 | ✓ Bash ×5",
+            "⏵⏵ bypass permissions on (shift+tab to cycle)",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("Quale delle due hai in mente?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_empty_prompt() {
+        // User hasn't typed anything yet — prompt box is just `>`
+        let rows = screen(&[
+            "What should I do next?",
+            "",
+            "────────────────────────────────",
+            ">",
+            "────────────────────────────────",
+            "⏵⏵ plan mode on (shift+tab to cycle)",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("What should I do next?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_no_prompt_box() {
+        // No separator lines at all — no prompt box visible
+        let rows = screen(&[
+            "Just some output",
+            "More output",
+            "",
+        ]);
+        assert_eq!(extract_last_chat_line(&rows), None);
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_only_one_separator() {
+        // Only one separator — not a complete prompt box
+        let rows = screen(&[
+            "Some text",
+            "────────────────────────────────",
+            "⏵⏵ mode line",
+        ]);
+        assert_eq!(extract_last_chat_line(&rows), None);
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_empty_screen() {
+        let rows: Vec<String> = vec![];
+        assert_eq!(extract_last_chat_line(&rows), None);
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_interrupted_separator() {
+        // Separator with label in the middle (e.g. model indicator)
+        let rows = screen(&[
+            "Vuoi fare un commit?",
+            "",
+            "──────── ■■■ Medium /model ────────",
+            "> si",
+            "──────── ■■■ Medium /model ────────",
+            "⏵⏵ bypass permissions on",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("Vuoi fare un commit?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_plan_mode() {
+        // Plan mode has a different mode line prefix
+        let rows = screen(&[
+            "Should I implement this approach?",
+            "",
+            "────────────────────────────────",
+            "> ",
+            "────────────────────────────────",
+            "⏸ plan mode on (shift+tab to cycle)",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("Should I implement this approach?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_multiple_empty_lines() {
+        // Multiple empty lines between content and separator
+        let rows = screen(&[
+            "Continue with the refactor?",
+            "",
+            "",
+            "",
+            "────────────────────────────────",
+            "> ok",
+            "────────────────────────────────",
+            "",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("Continue with the refactor?".to_string()),
+        );
     }
 
     // --- extract_question_line content filter tests ---
