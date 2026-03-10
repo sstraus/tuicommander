@@ -883,18 +883,18 @@ impl AppState {
     /// Also expires stale rate limits based on retry_after_ms + timestamp.
     pub(crate) fn session_state_with_shell(&self, session_id: &str) -> Option<SessionState> {
         // Expire stale rate limits in-place before building the snapshot.
-        if let Some(mut entry) = self.session_states.get_mut(session_id) {
-            if entry.rate_limited && entry.rate_limit_set_ms > 0 {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                let ttl = entry.retry_after_ms.unwrap_or(Self::RATE_LIMIT_DEFAULT_EXPIRY_MS);
-                if now.saturating_sub(entry.rate_limit_set_ms) > ttl {
-                    entry.rate_limited = false;
-                    entry.retry_after_ms = None;
-                    entry.rate_limit_set_ms = 0;
-                }
+        if let Some(mut entry) = self.session_states.get_mut(session_id)
+            && entry.rate_limited && entry.rate_limit_set_ms > 0
+        {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let ttl = entry.retry_after_ms.unwrap_or(Self::RATE_LIMIT_DEFAULT_EXPIRY_MS);
+            if now.saturating_sub(entry.rate_limit_set_ms) > ttl {
+                entry.rate_limited = false;
+                entry.retry_after_ms = None;
+                entry.rate_limit_set_ms = 0;
             }
         }
         self.session_states.get(session_id).map(|s| {

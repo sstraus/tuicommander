@@ -294,6 +294,13 @@ impl SilenceState {
         } else if let Some(line) = last_question_line {
             if in_echo_window {
                 // Ignore — this is the PTY echo of user input.
+            } else if self.question_already_emitted
+                && self.pending_question_line.as_deref() == Some(&line)
+            {
+                // Terminal repaint re-delivered the same `?` line we already
+                // emitted. Don't reset — otherwise the timer will re-fire
+                // after the next silence window (e.g. user switches to the tab,
+                // xterm redraws, and the same question re-appears as ChangedRow).
             } else {
                 // New candidate for silence-based detection.
                 self.pending_question_line = Some(line);
@@ -2026,6 +2033,37 @@ mod tests {
         s.on_chunk(false, Some("New?".to_string()), false, false);
         s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
         assert_eq!(s.check_silence(), Some("New?".to_string()), "new question after clear should fire");
+    }
+
+    #[test]
+    fn test_silence_state_repaint_same_question_does_not_refire() {
+        let mut s = SilenceState::new();
+        // Question arrives, silence fires, mark emitted
+        s.on_chunk(false, Some("Continue?".to_string()), false, false);
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert!(s.check_silence().is_some());
+        assert!(s.question_already_emitted);
+
+        // Terminal repaint: same `?` line re-appears as a changed row.
+        // This must NOT reset question_already_emitted.
+        s.on_chunk(false, Some("Continue?".to_string()), false, false);
+        assert!(s.question_already_emitted, "repaint of same question must not reset emitted flag");
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert!(s.check_silence().is_none(), "same question repaint must not re-fire");
+    }
+
+    #[test]
+    fn test_silence_state_different_question_after_emitted_does_fire() {
+        let mut s = SilenceState::new();
+        // First question fires
+        s.on_chunk(false, Some("Continue?".to_string()), false, false);
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert!(s.check_silence().is_some());
+
+        // Different question arrives — this IS a new question, must fire
+        s.on_chunk(false, Some("Are you sure?".to_string()), false, false);
+        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert_eq!(s.check_silence(), Some("Are you sure?".to_string()));
     }
 
     // --- extract_last_chat_line tests ---
