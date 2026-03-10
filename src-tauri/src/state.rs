@@ -89,6 +89,9 @@ pub(crate) struct SessionState {
     /// Retry-after in ms from the rate-limit event
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_after_ms: Option<u64>,
+    /// Epoch ms when rate_limited was set; used for auto-expiry.
+    #[serde(skip)]
+    pub rate_limit_set_ms: u64,
     /// Usage limit percentage (0-100), if detected
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage_limit_pct: Option<u8>,
@@ -873,8 +876,27 @@ impl AppState {
         })
     }
 
+    /// Default rate limit expiry when no retry_after_ms is provided (120s).
+    const RATE_LIMIT_DEFAULT_EXPIRY_MS: u64 = 120_000;
+
     /// Get a SessionState snapshot with shell_state computed from output timing.
+    /// Also expires stale rate limits based on retry_after_ms + timestamp.
     pub(crate) fn session_state_with_shell(&self, session_id: &str) -> Option<SessionState> {
+        // Expire stale rate limits in-place before building the snapshot.
+        if let Some(mut entry) = self.session_states.get_mut(session_id) {
+            if entry.rate_limited && entry.rate_limit_set_ms > 0 {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let ttl = entry.retry_after_ms.unwrap_or(Self::RATE_LIMIT_DEFAULT_EXPIRY_MS);
+                if now.saturating_sub(entry.rate_limit_set_ms) > ttl {
+                    entry.rate_limited = false;
+                    entry.retry_after_ms = None;
+                    entry.rate_limit_set_ms = 0;
+                }
+            }
+        }
         self.session_states.get(session_id).map(|s| {
             let mut state = s.clone();
             state.shell_state = self.derive_shell_state(session_id);
@@ -944,6 +966,7 @@ impl AppState {
                                 s.rate_limited = true;
                                 s.retry_after_ms = parsed.get("retry_after_ms")
                                     .and_then(|v| v.as_u64());
+                                s.rate_limit_set_ms = now_ms;
                             }
                             "usage-limit" => {
                                 s.usage_limit_pct = parsed.get("percentage")
@@ -961,6 +984,7 @@ impl AppState {
                                 s.question_text = None;
                                 s.rate_limited = false;
                                 s.retry_after_ms = None;
+                                s.rate_limit_set_ms = 0;
                                 s.last_error = None;
                                 s.suggested_actions = None;
                                 s.slash_menu_items = None;
@@ -1019,6 +1043,8 @@ impl AppState {
                     entry.awaiting_input = false;
                     entry.question_text = None;
                     entry.rate_limited = false;
+                    entry.retry_after_ms = None;
+                    entry.rate_limit_set_ms = 0;
                     entry.active_sub_tasks = 0;
                     entry.last_activity_ms = now_ms;
                 }
@@ -3466,5 +3492,56 @@ mod tests {
         };
         line.strip_structural_tokens();
         assert_eq!(line.spans[0].text, "normal output");
+    }
+
+    #[test]
+    fn test_rate_limit_expires_after_retry_after_ms() {
+        let state = fresh_state();
+        // Set rate limited with 5s retry
+        let event = make_parsed("rate-limit", serde_json::json!({ "retry_after_ms": 5000 }));
+        let s = apply(&state, &event);
+        assert!(s.rate_limited);
+        assert_eq!(s.retry_after_ms, Some(5000));
+        assert!(s.rate_limit_set_ms > 0);
+
+        // Manually backdate the timestamp to simulate expiry
+        if let Some(mut entry) = state.session_states.get_mut("s1") {
+            entry.rate_limit_set_ms = entry.rate_limit_set_ms.saturating_sub(6000);
+        }
+
+        // session_state_with_shell should auto-expire the stale rate limit
+        let ss = state.session_state_with_shell("s1").unwrap();
+        assert!(!ss.rate_limited, "rate limit should have expired after retry_after_ms");
+        assert!(ss.retry_after_ms.is_none());
+    }
+
+    #[test]
+    fn test_rate_limit_not_expired_within_retry_window() {
+        let state = fresh_state();
+        let event = make_parsed("rate-limit", serde_json::json!({ "retry_after_ms": 60000 }));
+        let s = apply(&state, &event);
+        assert!(s.rate_limited);
+
+        // Still within the window — should remain rate limited
+        let ss = state.session_state_with_shell("s1").unwrap();
+        assert!(ss.rate_limited, "rate limit should still be active within retry window");
+    }
+
+    #[test]
+    fn test_rate_limit_expires_with_default_timeout_when_no_retry_after() {
+        let state = fresh_state();
+        // Rate limit with no retry_after_ms
+        let event = make_parsed("rate-limit", serde_json::json!({}));
+        let s = apply(&state, &event);
+        assert!(s.rate_limited);
+        assert!(s.retry_after_ms.is_none());
+
+        // Backdate past the default expiry (120s)
+        if let Some(mut entry) = state.session_states.get_mut("s1") {
+            entry.rate_limit_set_ms = entry.rate_limit_set_ms.saturating_sub(121_000);
+        }
+
+        let ss = state.session_state_with_shell("s1").unwrap();
+        assert!(!ss.rate_limited, "rate limit should expire with default timeout");
     }
 }
