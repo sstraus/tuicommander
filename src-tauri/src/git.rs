@@ -890,7 +890,6 @@ pub(crate) struct GitPanelContext {
 }
 
 /// Core logic for fetching git panel context (no caching, no Tauri state).
-#[allow(dead_code)] // Story 662: will be wired into invoke_handler
 pub(crate) fn get_git_panel_context_impl(path: &Path) -> GitPanelContext {
     let git_dir = resolve_git_dir(path);
 
@@ -1031,7 +1030,6 @@ pub(crate) fn get_git_panel_context_impl(path: &Path) -> GitPanelContext {
 }
 
 /// Get rich git panel context in a single IPC call (cached, 5s TTL).
-#[allow(dead_code)] // Story 662: will be wired into invoke_handler
 #[tauri::command]
 pub(crate) fn get_git_panel_context(
     state: State<'_, Arc<AppState>>,
@@ -1557,5 +1555,55 @@ mod tests {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
         let result = get_last_commit_timestamps(&repo, &[]);
         assert!(result.is_empty());
+    }
+
+    // --- get_git_panel_context_impl tests ---
+
+    #[test]
+    fn git_panel_context_returns_valid_branch() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let ctx = get_git_panel_context_impl(&repo);
+        assert!(!ctx.branch.is_empty(), "branch should not be empty");
+    }
+
+    #[test]
+    fn git_panel_context_status_is_known_value() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let ctx = get_git_panel_context_impl(&repo);
+        assert!(
+            ["clean", "dirty", "conflict"].contains(&ctx.status.as_str()),
+            "status should be clean/dirty/conflict, got: {}",
+            ctx.status
+        );
+    }
+
+    #[test]
+    fn git_panel_context_has_last_commit() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let ctx = get_git_panel_context_impl(&repo);
+        assert!(ctx.last_commit.is_some(), "repo should have at least one commit");
+        let commit = ctx.last_commit.unwrap();
+        assert!(!commit.hash.is_empty());
+        assert!(!commit.short_hash.is_empty());
+        assert!(!commit.subject.is_empty());
+    }
+
+    #[test]
+    fn git_panel_context_not_in_rebase_or_cherry_pick() {
+        // This repo should not be in rebase/cherry-pick during tests
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let ctx = get_git_panel_context_impl(&repo);
+        assert!(!ctx.in_rebase, "should not be in rebase");
+        assert!(!ctx.in_cherry_pick, "should not be in cherry-pick");
+    }
+
+    #[test]
+    fn git_panel_context_nonexistent_repo_returns_defaults() {
+        let ctx = get_git_panel_context_impl(Path::new("/nonexistent/repo"));
+        assert!(ctx.branch.is_empty(), "branch should be empty for non-repo");
+        assert_eq!(ctx.staged_count, 0);
+        assert_eq!(ctx.changed_count, 0);
+        assert_eq!(ctx.stash_count, 0);
+        assert!(ctx.last_commit.is_none());
     }
 }
