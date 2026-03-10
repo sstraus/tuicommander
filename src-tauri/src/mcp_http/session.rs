@@ -970,3 +970,94 @@ fn trim_screen_chrome(rows: Vec<String>) -> TrimResult {
     };
     TrimResult { cutoff }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- is_separator_line ---
+
+    #[test]
+    fn separator_plain() {
+        assert!(is_separator_line("───────────────────────────────"));
+    }
+
+    #[test]
+    fn separator_decorated_with_text() {
+        // Claude Code v2.1.70+ adds model info to separators
+        assert!(is_separator_line("──────── ■■■ Medium /model ─"));
+    }
+
+    #[test]
+    fn separator_with_session_name_badge() {
+        // After /rename, separator has a name badge on the right
+        assert!(is_separator_line("──────────────────────────────────── pwa ──"));
+    }
+
+    #[test]
+    fn separator_heavy_line() {
+        assert!(is_separator_line("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+    }
+
+    #[test]
+    fn not_separator_short_run() {
+        assert!(!is_separator_line("── text ──"));
+    }
+
+    #[test]
+    fn not_separator_plain_text() {
+        assert!(!is_separator_line("hello world"));
+    }
+
+    #[test]
+    fn not_separator_empty() {
+        assert!(!is_separator_line(""));
+    }
+
+    // --- trim_screen_chrome ---
+
+    #[test]
+    fn trim_removes_prompt_and_separator() {
+        let rows: Vec<String> = vec![
+            "content line 1".into(),
+            "content line 2".into(),
+            "────────────────────────────────────────".into(),
+            "❯ ".into(),
+            "────────────────────────────────────────".into(),
+            "  [Opus 4.6 | Max] tuicommander git:(main)".into(),
+            "  ⏵⏵ bypass permissions on".into(),
+        ];
+        let result = trim_screen_chrome(rows);
+        assert_eq!(result.cutoff, 2);
+    }
+
+    #[test]
+    fn trim_handles_decorated_separator_with_badge() {
+        let rows: Vec<String> = vec![
+            "some output".into(),
+            "──────────────────────────────── pwa ──".into(),
+            "❯ hello".into(),
+            "──────────────────────────────── pwa ──".into(),
+            "  status bar".into(),
+        ];
+        let result = trim_screen_chrome(rows);
+        assert_eq!(result.cutoff, 1);
+    }
+
+    #[test]
+    fn trim_no_chrome_keeps_all() {
+        let rows: Vec<String> = vec![
+            "line 1".into(),
+            "line 2".into(),
+            "line 3".into(),
+        ];
+        let result = trim_screen_chrome(rows.clone());
+        assert_eq!(result.cutoff, 3);
+    }
+
+    #[test]
+    fn trim_empty_input() {
+        let result = trim_screen_chrome(vec![]);
+        assert_eq!(result.cutoff, 0);
+    }
+}
