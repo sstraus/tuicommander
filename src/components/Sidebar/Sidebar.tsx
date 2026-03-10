@@ -72,11 +72,13 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     if (prStatus && prState !== "CLOSED" && prState !== "MERGED") {
       setPrDetailTarget({ repoPath: active.path, branch: active.activeBranch });
     } else {
-      // Keep the popover open if it's already showing this branch and the PR
-      // just transitioned to MERGED — the user may be mid-cleanup dialog.
+      // Keep the popover open if it's already showing this branch — the user
+      // may be mid-cleanup dialog. The poll removes merged/closed PRs from the
+      // store (prStatus becomes null), so we can't rely on prState alone.
+      // Auto-close only when showing a different branch (branch switch).
       const current = prDetailTarget();
       const isShowingThisBranch = current?.repoPath === active.path && current?.branch === active.activeBranch;
-      if (!(prState === "MERGED" && isShowingThisBranch)) {
+      if (!isShowingThisBranch) {
         setPrDetailTarget(null);
       }
     }

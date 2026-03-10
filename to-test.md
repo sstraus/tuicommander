@@ -21,6 +21,14 @@ Features to test when TUICommander is more usable.
 - [ ] Switch branches - PR info should persist per branch
 - [ ] GitLab MR URLs detection
 
+## PR Merge & Cleanup Dialog
+- [ ] Merge a ready PR → cleanup dialog appears with checkboxes
+- [ ] Cleanup dialog stays visible for ≥5 seconds (poll doesn't kill it)
+- [ ] Click "Execute" → all checked steps run (switch, pull, delete-local, delete-remote)
+- [ ] After execution, popover auto-closes after ~600ms
+- [ ] Click "Skip" → popover closes, no cleanup actions run
+- [ ] Switching branches while cleanup dialog is open → popover closes (auto-close works)
+
 ## Rename Branch (072-d7d6)
 - [ ] Double-click branch name - dialog should open
 - [ ] Input pre-filled with current name
