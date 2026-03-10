@@ -108,6 +108,32 @@ export function hasBoxDrawing(line: LogLine): boolean {
   return line.spans.some((span) => BOX_DRAWING_RE.test(span.text));
 }
 
+/** A block of lines: either a single text line or consecutive box-drawing lines. */
+export type LineBlock =
+  | { type: "text"; line: LogLine }
+  | { type: "table"; lines: LogLine[] };
+
+/** Group lines into blocks: consecutive box-drawing lines become one table block. */
+export function groupLineBlocks(lines: LogLine[]): LineBlock[] {
+  const blocks: LineBlock[] = [];
+  let tableGroup: LogLine[] = [];
+  for (const line of lines) {
+    if (hasBoxDrawing(line)) {
+      tableGroup.push(line);
+    } else {
+      if (tableGroup.length > 0) {
+        blocks.push({ type: "table", lines: tableGroup });
+        tableGroup = [];
+      }
+      blocks.push({ type: "text", line });
+    }
+  }
+  if (tableGroup.length > 0) {
+    blocks.push({ type: "table", lines: tableGroup });
+  }
+  return blocks;
+}
+
 /** Extract the plain text content of a log line (concatenated spans). */
 export function lineText(line: LogLine): string {
   return line.spans.map((s) => s.text).join("");

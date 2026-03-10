@@ -1,7 +1,7 @@
 import { createSignal, createMemo, onMount, onCleanup, For, Index, Show } from "solid-js";
 import { subscribePty } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
-import { type LogLine, normalizeLogLine, spanStyle, lineMatchesQuery, hasBoxDrawing } from "../utils/logLine";
+import { type LogLine, normalizeLogLine, spanStyle, lineMatchesQuery, groupLineBlocks } from "../utils/logLine";
 import styles from "./OutputView.module.css";
 
 const MAX_LINES = 500;
@@ -118,6 +118,8 @@ export function OutputView(props: OutputViewProps) {
     return allLines().filter((line) => lineMatchesQuery(line, q));
   });
 
+  const lineBlocks = createMemo(() => groupLineBlocks(displayedLines()));
+
   return (
     <div ref={containerEl} class={styles.output}>
       <Show when={subscribeError()}>
@@ -126,19 +128,24 @@ export function OutputView(props: OutputViewProps) {
         )}
       </Show>
       <pre class={styles.text}>
-        <For each={displayedLines()}>
-          {(line) => (
-            <div class={hasBoxDrawing(line) ? `${styles.line} ${styles.tableLine}` : styles.line}>
-              <Index each={line.spans}>
-                {(span) => {
-                  const st = spanStyle(span());
-                  return st
-                    ? <span style={st}>{span().text}</span>
-                    : <>{span().text}</>;
-                }}
-              </Index>
-            </div>
-          )}
+        <For each={lineBlocks()}>
+          {(block) => {
+            const renderLine = (line: LogLine) => (
+              <div class={styles.line}>
+                <Index each={line.spans}>
+                  {(span) => {
+                    const st = spanStyle(span());
+                    return st
+                      ? <span style={st}>{span().text}</span>
+                      : <>{span().text}</>;
+                  }}
+                </Index>
+              </div>
+            );
+            return block.type === "table"
+              ? <div class={styles.tableBlock}><For each={block.lines}>{renderLine}</For></div>
+              : renderLine(block.line);
+          }}
         </For>
       </pre>
     </div>

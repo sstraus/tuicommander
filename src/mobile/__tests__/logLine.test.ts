@@ -4,6 +4,7 @@ import {
   spanStyle,
   normalizeLogLine,
   hasBoxDrawing,
+  groupLineBlocks,
   type LogColor,
   type LogLine,
 } from "../utils/logLine";
@@ -175,5 +176,65 @@ describe("hasBoxDrawing", () => {
 
   it("returns false for ASCII dash -", () => {
     expect(hasBoxDrawing({ spans: [{ text: "--- separator ---" }] })).toBe(false);
+  });
+});
+
+// --- groupLineBlocks ---
+
+const text = (s: string): LogLine => ({ spans: [{ text: s }] });
+
+describe("groupLineBlocks", () => {
+  it("returns empty array for empty input", () => {
+    expect(groupLineBlocks([])).toEqual([]);
+  });
+
+  it("wraps plain text lines as individual text blocks", () => {
+    const lines = [text("hello"), text("world")];
+    const blocks = groupLineBlocks(lines);
+    expect(blocks).toEqual([
+      { type: "text", line: lines[0] },
+      { type: "text", line: lines[1] },
+    ]);
+  });
+
+  it("groups consecutive box-drawing lines into a single table block", () => {
+    const lines = [
+      text("┌───────┐"),
+      text("│ data  │"),
+      text("└───────┘"),
+    ];
+    const blocks = groupLineBlocks(lines);
+    expect(blocks).toEqual([
+      { type: "table", lines },
+    ]);
+  });
+
+  it("interleaves text and table blocks", () => {
+    const lines = [
+      text("before"),
+      text("┌───┐"),
+      text("│ x │"),
+      text("└───┘"),
+      text("after"),
+    ];
+    const blocks = groupLineBlocks(lines);
+    expect(blocks).toHaveLength(3);
+    expect(blocks[0]).toEqual({ type: "text", line: lines[0] });
+    expect(blocks[1]).toEqual({ type: "table", lines: [lines[1], lines[2], lines[3]] });
+    expect(blocks[2]).toEqual({ type: "text", line: lines[4] });
+  });
+
+  it("handles multiple separate table blocks", () => {
+    const lines = [
+      text("├── src/"),
+      text("└── lib/"),
+      text("gap"),
+      text("│ col │"),
+    ];
+    const blocks = groupLineBlocks(lines);
+    expect(blocks).toHaveLength(3);
+    expect(blocks[0]).toEqual({ type: "table", lines: [lines[0], lines[1]] });
+    expect(blocks[1]).toEqual({ type: "text", line: lines[2] });
+    expect(blocks[2]).toEqual({ type: "table", lines: [lines[3]] });
   });
 });

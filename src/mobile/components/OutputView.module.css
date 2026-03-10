@@ -20,7 +20,9 @@
   margin: 0;
 }
 
-.tableLine {
+.tableBlock {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   white-space: pre;
 }
 
