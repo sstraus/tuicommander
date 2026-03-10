@@ -1,30 +1,21 @@
-import type { LanguageSupport } from "@codemirror/language";
+import { LanguageDescription, type LanguageSupport } from "@codemirror/language";
+import { languages } from "@codemirror/language-data";
 
-/** Map file extensions to CodeMirror language support loaders */
-const EXTENSION_MAP: Record<string, () => Promise<LanguageSupport>> = {
-  ts: () => import("@codemirror/lang-javascript").then((m) => m.javascript({ typescript: true })),
-  tsx: () => import("@codemirror/lang-javascript").then((m) => m.javascript({ typescript: true, jsx: true })),
-  js: () => import("@codemirror/lang-javascript").then((m) => m.javascript()),
-  jsx: () => import("@codemirror/lang-javascript").then((m) => m.javascript({ jsx: true })),
-  mjs: () => import("@codemirror/lang-javascript").then((m) => m.javascript()),
-  cjs: () => import("@codemirror/lang-javascript").then((m) => m.javascript()),
-  json: () => import("@codemirror/lang-json").then((m) => m.json()),
-  css: () => import("@codemirror/lang-css").then((m) => m.css()),
-  html: () => import("@codemirror/lang-html").then((m) => m.html()),
-  htm: () => import("@codemirror/lang-html").then((m) => m.html()),
-  md: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
-  markdown: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
-  rs: () => import("@codemirror/lang-rust").then((m) => m.rust()),
-  py: () => import("@codemirror/lang-python").then((m) => m.python()),
-};
+/** Files without a recognized extension that should use Shell highlighting */
+const SHELL_FILENAMES = /^(Makefile|GNUmakefile|makefile)$/;
 
-/** Detect the CodeMirror language support for a filename based on its extension */
+/** Detect the CodeMirror language support for a filename using language-data's 143-language registry */
 export async function detectLanguage(filename: string): Promise<LanguageSupport | null> {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  if (!ext) return null;
+  const basename = filename.split("/").pop() ?? filename;
 
-  const loader = EXTENSION_MAP[ext];
-  if (!loader) return null;
+  const desc = LanguageDescription.matchFilename(languages, basename);
+  if (desc) return desc.load();
 
-  return loader();
+  // Makefile and friends aren't in language-data — use Shell as approximation
+  if (SHELL_FILENAMES.test(basename)) {
+    const shell = LanguageDescription.matchLanguageName(languages, "Shell");
+    if (shell) return shell.load();
+  }
+
+  return null;
 }
