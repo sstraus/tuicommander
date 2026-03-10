@@ -262,6 +262,51 @@
   margin-bottom: 8px;
 }
 
+/* New Branch form */
+.newBranchForm {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.newBranchInputRow {
+  margin-bottom: 6px;
+}
+
+.newBranchInput {
+  width: 100%;
+  height: 26px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  padding: 0 6px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.newBranchInput:focus {
+  border-color: var(--accent);
+}
+
+.newBranchInputError {
+  border-color: var(--error);
+}
+
+.newBranchInputError:focus {
+  border-color: var(--error);
+}
+
+.newBranchErrorMsg {
+  font-size: var(--font-xs);
+  color: var(--error);
+  margin-bottom: 6px;
+}
+
 /* Running state */
 .btnRunning {
   border-color: var(--accent);

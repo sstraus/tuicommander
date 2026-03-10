@@ -9,7 +9,7 @@ import { cx } from "../../utils";
 import { BranchCombobox } from "../shared/BranchCombobox";
 import {
   PullIcon, PushIcon, FetchIcon, MergeIcon, BranchIcon,
-  StashIcon, WarningIcon, CheckIcon, ErrorIcon, CloseIcon,
+  StashIcon, NewBranchIcon, WarningIcon, CheckIcon, ErrorIcon, CloseIcon,
 } from "./icons";
 import s from "./GitOperationsPanel.module.css";
 
@@ -152,6 +152,10 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
   const [isRunning, setIsRunning] = createSignal(false);
   const [runningOp, setRunningOp] = createSignal<string | null>(null);
   const [feedback, setFeedback] = createSignal<OperationFeedback | null>(null);
+  const [showNewBranch, setShowNewBranch] = createSignal(false);
+  const [newBranchName, setNewBranchName] = createSignal("");
+  const [newBranchError, setNewBranchError] = createSignal<string | null>(null);
+  const [creatingBranch, setCreatingBranch] = createSignal(false);
 
   let dismissTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -203,6 +207,54 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
     if (active?.ref) {
       active.ref.write(`${command}\r`);
       props.onBranchChange?.();
+    }
+  };
+
+  /** Create a new branch (optionally switching to it) */
+  const createBranch = async (andSwitch: boolean) => {
+    const name = newBranchName().trim();
+    if (!name) {
+      setNewBranchError("Branch name is required");
+      return;
+    }
+    if (!isValidBranchName(name)) {
+      setNewBranchError("Invalid branch name");
+      return;
+    }
+    if (branches().includes(name)) {
+      setNewBranchError("Branch already exists");
+      return;
+    }
+    if (!props.repoPath) return;
+
+    setNewBranchError(null);
+    setCreatingBranch(true);
+
+    try {
+      const args = andSwitch ? ["checkout", "-b", name] : ["branch", name];
+      const result = await invoke<GitCommandResult>("run_git_command", {
+        path: props.repoPath,
+        args,
+      });
+
+      if (result.success) {
+        setShowNewBranch(false);
+        setNewBranchName("");
+        setNewBranchError(null);
+        repositoriesStore.bumpRevision(props.repoPath!);
+        props.onBranchChange?.();
+        setFeedback({ success: true, message: `Branch '${name}' created${andSwitch ? " and checked out" : ""}` });
+        if (dismissTimer) clearTimeout(dismissTimer);
+        dismissTimer = setTimeout(() => setFeedback(null), FEEDBACK_DISMISS_MS);
+        void fetchContext();
+      } else {
+        const msg = result.stderr.trim().split("\n")[0] || `Exit code ${result.exit_code}`;
+        setNewBranchError(msg);
+      }
+    } catch (err) {
+      setNewBranchError(String(err));
+    } finally {
+      setCreatingBranch(false);
     }
   };
 
@@ -438,7 +490,69 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
                   </button>
                 )}
               </For>
+              <button
+                class={s.btn}
+                onClick={() => { setShowNewBranch(!showNewBranch()); setNewBranchError(null); setNewBranchName(""); }}
+                disabled={!props.repoPath || isRunning()}
+                title="Create a new branch"
+                data-testid="new-branch-toggle"
+              >
+                <span class={s.btnIcon}><NewBranchIcon /></span>
+                New
+              </button>
             </div>
+
+            {/* New Branch inline form */}
+            <Show when={showNewBranch()}>
+              <div class={s.newBranchForm} data-testid="new-branch-form">
+                <div class={s.newBranchInputRow}>
+                  <input
+                    class={cx(s.newBranchInput, newBranchError() && s.newBranchInputError)}
+                    type="text"
+                    placeholder="new-branch-name"
+                    value={newBranchName()}
+                    onInput={(e) => { setNewBranchName(e.currentTarget.value); setNewBranchError(null); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") createBranch(false);
+                      if (e.key === "Escape") { setShowNewBranch(false); setNewBranchError(null); }
+                    }}
+                    disabled={creatingBranch()}
+                    spellcheck={false}
+                    autocomplete="off"
+                  />
+                </div>
+                <Show when={newBranchError()}>
+                  <div class={s.newBranchErrorMsg} data-testid="new-branch-error">{newBranchError()}</div>
+                </Show>
+                <div class={s.buttons}>
+                  <button
+                    class={s.btn}
+                    onClick={() => createBranch(false)}
+                    disabled={creatingBranch() || !newBranchName().trim()}
+                    data-testid="create-branch-btn"
+                  >
+                    {creatingBranch() ? <span class={s.spinner} /> : null}
+                    Create
+                  </button>
+                  <button
+                    class={s.btn}
+                    onClick={() => createBranch(true)}
+                    disabled={creatingBranch() || !newBranchName().trim()}
+                    data-testid="create-switch-btn"
+                  >
+                    {creatingBranch() ? <span class={s.spinner} /> : null}
+                    Create & Switch
+                  </button>
+                  <button
+                    class={s.btn}
+                    onClick={() => { setShowNewBranch(false); setNewBranchError(null); }}
+                    data-testid="cancel-branch-btn"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </Show>
           </div>
 
           {/* Stash section — background execution */}

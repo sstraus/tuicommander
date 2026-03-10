@@ -388,6 +388,155 @@ describe("GitOperationsPanel", () => {
     });
   });
 
+  describe("create branch form", () => {
+    it("New button toggles the inline form", () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      expect(container.querySelector("[data-testid='new-branch-form']")).toBeNull();
+      const newBtn = container.querySelector("[data-testid='new-branch-toggle']")!;
+      fireEvent.click(newBtn);
+      expect(container.querySelector("[data-testid='new-branch-form']")).not.toBeNull();
+      // Toggle off
+      fireEvent.click(newBtn);
+      expect(container.querySelector("[data-testid='new-branch-form']")).toBeNull();
+    });
+
+    it("shows error for empty branch name", () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      fireEvent.click(container.querySelector("[data-testid='new-branch-toggle']")!);
+      fireEvent.click(container.querySelector("[data-testid='create-branch-btn']")!);
+      // Button is disabled when name is empty, so no error shown via click
+      // Enter key on empty input
+      const input = container.querySelector("[data-testid='new-branch-form'] input")!;
+      fireEvent.keyDown(input, { key: "Enter" });
+      const error = container.querySelector("[data-testid='new-branch-error']");
+      expect(error).not.toBeNull();
+      expect(error!.textContent).toContain("required");
+    });
+
+    it("shows error for invalid branch name", () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      fireEvent.click(container.querySelector("[data-testid='new-branch-toggle']")!);
+      const input = container.querySelector("[data-testid='new-branch-form'] input")!;
+      fireEvent.input(input, { target: { value: "bad branch name.." } });
+      fireEvent.click(container.querySelector("[data-testid='create-branch-btn']")!);
+      const error = container.querySelector("[data-testid='new-branch-error']");
+      expect(error).not.toBeNull();
+      expect(error!.textContent).toContain("Invalid");
+    });
+
+    it("shows error for duplicate branch name", async () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      // Wait for context and branches to load (branch name appears in status card)
+      await vi.waitFor(() => {
+        const branch = container.querySelector("[class*='branchName']");
+        expect(branch!.textContent).toBe("feature/test");
+      });
+      fireEvent.click(container.querySelector("[data-testid='new-branch-toggle']")!);
+      const input = container.querySelector("[data-testid='new-branch-form'] input")!;
+      fireEvent.input(input, { target: { value: "main" } });
+      fireEvent.click(container.querySelector("[data-testid='create-branch-btn']")!);
+      const error = container.querySelector("[data-testid='new-branch-error']");
+      expect(error).not.toBeNull();
+      expect(error!.textContent).toContain("already exists");
+    });
+
+    it("Create calls git branch via run_git_command", async () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      fireEvent.click(container.querySelector("[data-testid='new-branch-toggle']")!);
+      const input = container.querySelector("[data-testid='new-branch-form'] input")!;
+      fireEvent.input(input, { target: { value: "new-feature" } });
+      fireEvent.click(container.querySelector("[data-testid='create-branch-btn']")!);
+
+      await vi.waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
+          path: "/repo",
+          args: ["branch", "new-feature"],
+        });
+      });
+    });
+
+    it("Create & Switch calls git checkout -b via run_git_command", async () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      fireEvent.click(container.querySelector("[data-testid='new-branch-toggle']")!);
+      const input = container.querySelector("[data-testid='new-branch-form'] input")!;
+      fireEvent.input(input, { target: { value: "new-feature" } });
+      fireEvent.click(container.querySelector("[data-testid='create-switch-btn']")!);
+
+      await vi.waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
+          path: "/repo",
+          args: ["checkout", "-b", "new-feature"],
+        });
+      });
+    });
+
+    it("Cancel collapses the form", () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      fireEvent.click(container.querySelector("[data-testid='new-branch-toggle']")!);
+      expect(container.querySelector("[data-testid='new-branch-form']")).not.toBeNull();
+      fireEvent.click(container.querySelector("[data-testid='cancel-branch-btn']")!);
+      expect(container.querySelector("[data-testid='new-branch-form']")).toBeNull();
+    });
+
+    it("form collapses on success and shows feedback", async () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      fireEvent.click(container.querySelector("[data-testid='new-branch-toggle']")!);
+      const input = container.querySelector("[data-testid='new-branch-form'] input")!;
+      fireEvent.input(input, { target: { value: "new-feature" } });
+      fireEvent.click(container.querySelector("[data-testid='create-branch-btn']")!);
+
+      await vi.waitFor(() => {
+        expect(container.querySelector("[data-testid='new-branch-form']")).toBeNull();
+        const fb = container.querySelector("[data-testid='feedback-bar']");
+        expect(fb).not.toBeNull();
+        expect(fb!.textContent).toContain("new-feature");
+      });
+    });
+
+    it("form stays open on error and shows inline error", async () => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_git_panel_context") return Promise.resolve(makeContext());
+        if (cmd === "get_git_branches") return Promise.resolve(makeBranches());
+        if (cmd === "run_git_command") return Promise.resolve({
+          success: false, stdout: "", stderr: "fatal: branch already exists\n", exit_code: 128,
+        });
+        return Promise.resolve(null);
+      });
+
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      fireEvent.click(container.querySelector("[data-testid='new-branch-toggle']")!);
+      const input = container.querySelector("[data-testid='new-branch-form'] input")!;
+      fireEvent.input(input, { target: { value: "new-feature" } });
+      fireEvent.click(container.querySelector("[data-testid='create-branch-btn']")!);
+
+      await vi.waitFor(() => {
+        const error = container.querySelector("[data-testid='new-branch-error']");
+        expect(error).not.toBeNull();
+        expect(error!.textContent).toContain("fatal");
+      });
+      // Form should still be visible
+      expect(container.querySelector("[data-testid='new-branch-form']")).not.toBeNull();
+    });
+  });
+
   describe("calls get_git_panel_context", () => {
     it("invokes get_git_panel_context when visible with repoPath", () => {
       render(() => (
