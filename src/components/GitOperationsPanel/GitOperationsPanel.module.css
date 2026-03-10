@@ -1,10 +1,11 @@
-/* Git Operations Panel */
+/* Git Operations Panel — 400px side panel */
 .panel {
   position: fixed;
   right: 0;
   top: 0;
   bottom: 0;
-  width: 320px;
+  width: 400px;
+  max-width: 50vw;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border);
   display: flex;
@@ -17,16 +18,15 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-tertiary);
+  font-size: var(--font-md);
 }
 
-.header h3 {
-  margin: 0;
-  font-size: var(--font-lg);
-  font-weight: 600;
-  color: var(--fg-primary);
+.headerTitle {
+  color: var(--fg-secondary);
+  font-weight: 500;
 }
 
 .closeBtn {
@@ -38,7 +38,6 @@
   background: transparent;
   border: none;
   color: var(--fg-secondary);
-  font-size: var(--font-2xl);
   cursor: pointer;
   border-radius: var(--radius-md);
   transition: background 0.15s, color 0.15s;
@@ -49,36 +48,49 @@
   color: var(--fg-primary);
 }
 
+.closeBtn svg {
+  width: 14px;
+  height: 14px;
+}
+
 .content {
   flex: 1;
   overflow-y: auto;
   padding: 12px;
 }
 
-.status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* Status card */
+.statusCard {
   padding: 12px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
-.branch {
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.branchName {
   font-size: var(--font-base);
   font-weight: 500;
+  font-family: var(--font-mono);
   color: var(--fg-primary);
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.state {
-  font-size: var(--font-sm);
-  padding: 2px 8px;
+.statusBadge {
+  font-size: var(--font-xs);
+  padding: 1px 6px;
   border-radius: var(--radius-pill);
   text-transform: uppercase;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .stateClean {
@@ -102,12 +114,70 @@
   color: var(--text-on-accent);
 }
 
+.detachedBadge {
+  font-size: var(--font-xs);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--attention);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+.countsRow {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+}
+
+.countItem {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.countAhead {
+  color: var(--success);
+}
+
+.countBehind {
+  color: var(--attention);
+}
+
+.countStaged {
+  color: var(--accent);
+}
+
+.countChanged {
+  color: var(--warning);
+}
+
+.countStash {
+  color: var(--merged);
+}
+
+.lastCommit {
+  margin-top: 6px;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.commitHash {
+  color: var(--accent);
+}
+
+/* Sections */
 .section {
   margin-bottom: 16px;
 }
 
 .sectionTitle {
-  font-size: var(--font-sm);
+  font-size: var(--font-xs);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -115,35 +185,52 @@
   letter-spacing: 0.5px;
 }
 
-.mergeSection {
+.alertSection {
   background: rgba(255, 100, 100, 0.1);
   border: 1px solid var(--error);
   border-radius: var(--radius-lg);
   padding: 12px;
-}
-
-.warning {
-  font-size: var(--font-md);
-  color: var(--error);
   margin-bottom: 12px;
 }
 
+.alertTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--error);
+  margin-bottom: 8px;
+}
+
+.alertTitle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.warning {
+  font-size: var(--font-sm);
+  color: var(--error);
+  margin-bottom: 8px;
+}
+
+/* Buttons */
 .buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 5px;
+  padding: 6px 10px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
-  font-size: var(--font-md);
+  font-size: var(--font-sm);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
@@ -159,30 +246,18 @@
 }
 
 .btnIcon {
-  font-size: var(--font-lg);
+  display: flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.btnIcon svg {
+  width: 14px;
+  height: 14px;
 }
 
 .branchSelect {
   margin-bottom: 8px;
-}
-
-.branchSelect select {
-  width: 100%;
-  padding: 8px 12px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--fg-primary);
-  font-size: var(--font-md);
-  cursor: pointer;
-}
-
-.branchSelect select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.branchSelect select:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }

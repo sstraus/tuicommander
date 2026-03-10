@@ -1346,8 +1346,6 @@ const App: Component = () => {
       <GitOperationsPanel
         visible={gitOpsPanelVisible()}
         repoPath={gitOps.currentRepoPath() || null}
-        currentBranch={gitOps.currentBranch()}
-        repoStatus={gitOps.repoStatus()}
         onClose={() => setGitOpsPanelVisible(false)}
         onBranchChange={() => {
           // Refresh repo info after git operation

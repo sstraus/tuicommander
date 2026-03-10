@@ -6,10 +6,29 @@ import { appLogger } from "../../stores/appLogger";
 import { escapeShellArg, isValidBranchName, isValidPath } from "../../utils";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
+import { BranchCombobox } from "../shared/BranchCombobox";
+import {
+  PullIcon, PushIcon, FetchIcon, MergeIcon, BranchIcon,
+  StashIcon, WarningIcon, CloseIcon,
+} from "./icons";
 import s from "./GitOperationsPanel.module.css";
 
-/** Map repo status strings to CSS module classes */
-const STATE_CLASSES: Record<string, string> = {
+/** GitPanelContext returned by the Rust backend */
+interface GitPanelContext {
+  branch: string;
+  is_detached: boolean;
+  status: string;
+  ahead: number | null;
+  behind: number | null;
+  staged_count: number;
+  changed_count: number;
+  stash_count: number;
+  last_commit: { hash: string; short_hash: string; subject: string } | null;
+  in_rebase: boolean;
+  in_cherry_pick: boolean;
+}
+
+const STATUS_CLASSES: Record<string, string> = {
   clean: s.stateClean,
   dirty: s.stateDirty,
   conflict: s.stateConflict,
@@ -20,8 +39,6 @@ const STATE_CLASSES: Record<string, string> = {
 export interface GitOperationsPanelProps {
   visible: boolean;
   repoPath: string | null;
-  currentBranch: string | null;
-  repoStatus: "clean" | "dirty" | "conflict" | "merge" | "unknown";
   onClose: () => void;
   onBranchChange?: () => void;
 }
@@ -29,89 +46,77 @@ export interface GitOperationsPanelProps {
 interface GitOperation {
   id: string;
   label: string;
-  icon: string;
+  Icon: Component;
   command: (repoPath: string, branch?: string) => string;
   requiresBranch?: boolean;
   description: string;
 }
 
-const GIT_OPERATIONS: GitOperation[] = [
+const SYNC_OPERATIONS: GitOperation[] = [
   {
     id: "pull",
     label: "Pull",
-    icon: "↓",
+    Icon: PullIcon,
     command: (repo) => `cd ${escapeShellArg(repo)} && git pull`,
     description: "Fetch and merge changes from remote",
   },
   {
     id: "push",
     label: "Push",
-    icon: "↑",
+    Icon: PushIcon,
     command: (repo) => `cd ${escapeShellArg(repo)} && git push`,
     description: "Push local commits to remote",
   },
   {
     id: "fetch",
     label: "Fetch",
-    icon: "⟳",
+    Icon: FetchIcon,
     command: (repo) => `cd ${escapeShellArg(repo)} && git fetch --all`,
     description: "Download remote changes without merging",
+  },
+];
+
+const BRANCH_OPERATIONS: GitOperation[] = [
+  {
+    id: "switch",
+    label: "Switch",
+    Icon: BranchIcon,
+    command: (repo, branch) => `cd ${escapeShellArg(repo)} && git checkout ${escapeShellArg(branch || "")}`,
+    requiresBranch: true,
+    description: "Switch to selected branch",
   },
   {
     id: "merge",
     label: "Merge",
-    icon: "⊕",
+    Icon: MergeIcon,
     command: (repo, branch) => `cd ${escapeShellArg(repo)} && git merge ${escapeShellArg(branch || "")}`,
     requiresBranch: true,
-    description: "Merge another branch into current",
-  },
-  {
-    id: "checkout",
-    label: "Checkout",
-    icon: "⎇",
-    command: (repo, branch) => `cd ${escapeShellArg(repo)} && git checkout ${escapeShellArg(branch || "")}`,
-    requiresBranch: true,
-    description: "Switch to another branch",
+    description: "Merge selected branch into current",
   },
 ];
 
-const MERGE_OPERATIONS = [
-  {
-    id: "abort",
-    label: "Abort Merge",
-    icon: "✕",
-    command: (repo: string) => `cd ${escapeShellArg(repo)} && git merge --abort`,
-    description: "Cancel the current merge",
-  },
-  {
-    id: "continue",
-    label: "Continue Merge",
-    icon: "→",
-    command: (repo: string) => `cd ${escapeShellArg(repo)} && git merge --continue`,
-    description: "Continue after resolving conflicts",
-  },
-  {
-    id: "ours",
-    label: "Accept Ours",
-    icon: "◀",
-    command: (repo: string) => `cd ${escapeShellArg(repo)} && git checkout --ours .`,
-    description: "Keep our version for all conflicts",
-  },
-  {
-    id: "theirs",
-    label: "Accept Theirs",
-    icon: "▶",
-    command: (repo: string) => `cd ${escapeShellArg(repo)} && git checkout --theirs .`,
-    description: "Keep their version for all conflicts",
-  },
+const MERGE_ACTIONS = [
+  { id: "abort", label: "Abort", command: (repo: string) => `cd ${escapeShellArg(repo)} && git merge --abort` },
+  { id: "continue", label: "Continue", command: (repo: string) => `cd ${escapeShellArg(repo)} && git merge --continue` },
+];
+
+const REBASE_ACTIONS = [
+  { id: "abort", label: "Abort", command: (repo: string) => `cd ${escapeShellArg(repo)} && git rebase --abort` },
+  { id: "continue", label: "Continue", command: (repo: string) => `cd ${escapeShellArg(repo)} && git rebase --continue` },
+  { id: "skip", label: "Skip", command: (repo: string) => `cd ${escapeShellArg(repo)} && git rebase --skip` },
+];
+
+const CHERRY_PICK_ACTIONS = [
+  { id: "abort", label: "Abort", command: (repo: string) => `cd ${escapeShellArg(repo)} && git cherry-pick --abort` },
+  { id: "continue", label: "Continue", command: (repo: string) => `cd ${escapeShellArg(repo)} && git cherry-pick --continue` },
 ];
 
 export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) => {
-  const [selectedBranch, setSelectedBranch] = createSignal<string>("");
+  const [ctx, setCtx] = createSignal<GitPanelContext | null>(null);
+  const [selectedBranch, setSelectedBranch] = createSignal("");
   const [branches, setBranches] = createSignal<string[]>([]);
-  const [loadingBranches, setLoadingBranches] = createSignal(false);
+  const [loading, setLoading] = createSignal(false);
 
-  // Execute git command in terminal
   const executeCommand = (command: string) => {
     const active = terminalsStore.getActive();
     if (active?.ref) {
@@ -121,90 +126,135 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
     }
   };
 
-  // Handle operation click
   const handleOperation = (op: GitOperation) => {
-    if (!props.repoPath) return;
-    if (!isValidPath(props.repoPath)) return;
-
+    if (!props.repoPath || !isValidPath(props.repoPath)) return;
     if (op.requiresBranch) {
       const branch = selectedBranch();
-      if (!branch || !isValidBranchName(branch)) {
-        return; // Need to select a valid branch first
-      }
+      if (!branch || !isValidBranchName(branch)) return;
     }
-
-    const command = op.command(props.repoPath, selectedBranch());
-    executeCommand(command);
+    executeCommand(op.command(props.repoPath, selectedBranch()));
   };
 
-  // Fetch branches when panel opens (gated behind visibility to avoid IPC when hidden)
+  // Fetch context when panel opens or repo changes
   createEffect(() => {
     if (!props.visible || !props.repoPath) return;
-    // Track repo revision so branch list refreshes on git operations
     void repositoriesStore.getRevision(props.repoPath);
-    void fetchBranches();
+    void fetchContext();
   });
 
-  const fetchBranches = async () => {
+  const fetchContext = async () => {
     if (!props.repoPath) return;
-
-    setLoadingBranches(true);
+    setLoading(true);
     try {
-      const result = await invoke<Array<{ name: string; is_current: boolean; is_remote: boolean }>>(
-        "get_git_branches",
-        { path: props.repoPath }
-      );
-      // Only show local branches, exclude current
-      const branchNames = result
-        .filter((b) => !b.is_remote)
-        .map((b) => b.name);
-      setBranches(branchNames);
+      const [context, branchList] = await Promise.all([
+        invoke<GitPanelContext>("get_git_panel_context", { path: props.repoPath }),
+        invoke<Array<{ name: string; is_current: boolean; is_remote: boolean }>>(
+          "get_git_branches", { path: props.repoPath }
+        ),
+      ]);
+      setCtx(context);
+      setBranches(branchList.filter((b) => !b.is_remote).map((b) => b.name));
     } catch (err) {
-      appLogger.error("git", "Failed to fetch branches", err);
+      appLogger.error("git", "Failed to fetch git panel context", err);
+      setCtx(null);
       setBranches([]);
     } finally {
-      setLoadingBranches(false);
+      setLoading(false);
     }
   };
 
-  const isMergeInProgress = () => props.repoStatus === "merge" || props.repoStatus === "conflict";
+  const context = () => ctx();
+  const isMergeInProgress = () => {
+    const c = context();
+    return c?.status === "conflict" || c?.status === "merge";
+  };
+  const isDetached = () => context()?.is_detached ?? false;
 
   return (
     <Show when={props.visible}>
-      <div class={s.panel}>
+      <div class={s.panel} data-testid="git-operations-panel">
+        {/* Header */}
         <div class={s.header}>
-          <h3>{t("gitOps.title", "Git Operations")}</h3>
-          <button class={s.closeBtn} onClick={props.onClose}>
-            &times;
+          <span class={s.headerTitle}>{t("gitOps.title", "Git Operations")}</span>
+          <button class={s.closeBtn} onClick={props.onClose} title="Close">
+            <CloseIcon />
           </button>
         </div>
 
         <div class={s.content}>
-          {/* Current status */}
-          <div class={s.status}>
-            <span class={s.branch}>{props.currentBranch || t("gitOps.noBranch", "No branch")}</span>
-            <span class={cx(s.state, STATE_CLASSES[props.repoStatus])}>
-              {props.repoStatus}
-            </span>
+          {/* Status Card */}
+          <div class={s.statusCard}>
+            <div class={s.statusRow}>
+              <span class={s.branchName}>
+                {context()?.branch || t("gitOps.noBranch", "No branch")}
+              </span>
+              <Show when={isDetached()}>
+                <span class={s.detachedBadge}>DETACHED</span>
+              </Show>
+              <span class={cx(s.statusBadge, STATUS_CLASSES[context()?.status ?? "unknown"])}>
+                {context()?.status ?? "unknown"}
+              </span>
+            </div>
+
+            {/* Counts row */}
+            <Show when={context()}>
+              <div class={s.countsRow}>
+                <Show when={context()!.ahead != null}>
+                  <span class={cx(s.countItem, s.countAhead)} title="Commits ahead">
+                    {"\u2191"}{context()!.ahead}
+                  </span>
+                </Show>
+                <Show when={context()!.behind != null}>
+                  <span class={cx(s.countItem, s.countBehind)} title="Commits behind">
+                    {"\u2193"}{context()!.behind}
+                  </span>
+                </Show>
+                <Show when={context()!.staged_count > 0}>
+                  <span class={cx(s.countItem, s.countStaged)} title="Staged files">
+                    {context()!.staged_count} staged
+                  </span>
+                </Show>
+                <Show when={context()!.changed_count > 0}>
+                  <span class={cx(s.countItem, s.countChanged)} title="Changed files">
+                    {context()!.changed_count} changed
+                  </span>
+                </Show>
+                <Show when={context()!.stash_count > 0}>
+                  <span class={cx(s.countItem, s.countStash)} title="Stash entries">
+                    {context()!.stash_count} stash
+                  </span>
+                </Show>
+              </div>
+            </Show>
+
+            {/* Last commit */}
+            <Show when={context()?.last_commit}>
+              <div class={s.lastCommit}>
+                <span class={s.commitHash}>{context()!.last_commit!.short_hash}</span>
+                {" "}{context()!.last_commit!.subject}
+              </div>
+            </Show>
           </div>
 
-          {/* Merge in progress section */}
+          {/* Merge in progress */}
           <Show when={isMergeInProgress()}>
-            <div class={cx(s.section, s.mergeSection)}>
-              <div class={s.sectionTitle}>{t("gitOps.mergeInProgress", "Merge in Progress")}</div>
+            <div class={s.alertSection}>
+              <div class={s.alertTitle}>
+                <WarningIcon />
+                {t("gitOps.mergeInProgress", "Merge in Progress")}
+              </div>
               <div class={s.warning}>
                 {t("gitOps.resolveConflicts", "Resolve conflicts before continuing")}
               </div>
               <div class={s.buttons}>
-                <For each={MERGE_OPERATIONS}>
-                  {(op) => (
+                <For each={MERGE_ACTIONS}>
+                  {(action) => (
                     <button
                       class={s.btn}
-                      onClick={() => props.repoPath && executeCommand(op.command(props.repoPath))}
-                      title={op.description}
+                      onClick={() => props.repoPath && executeCommand(action.command(props.repoPath))}
+                      title={`${action.label} merge`}
                     >
-                      <span class={s.btnIcon}>{op.icon}</span>
-                      {op.label}
+                      {action.label}
                     </button>
                   )}
                 </For>
@@ -212,11 +262,57 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
             </div>
           </Show>
 
-          {/* Quick actions */}
+          {/* Rebase in progress */}
+          <Show when={context()?.in_rebase}>
+            <div class={s.alertSection}>
+              <div class={s.alertTitle}>
+                <WarningIcon />
+                Rebase in Progress
+              </div>
+              <div class={s.buttons}>
+                <For each={REBASE_ACTIONS}>
+                  {(action) => (
+                    <button
+                      class={s.btn}
+                      onClick={() => props.repoPath && executeCommand(action.command(props.repoPath))}
+                      title={`${action.label} rebase`}
+                    >
+                      {action.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
+
+          {/* Cherry-pick in progress */}
+          <Show when={context()?.in_cherry_pick}>
+            <div class={s.alertSection}>
+              <div class={s.alertTitle}>
+                <WarningIcon />
+                Cherry-pick in Progress
+              </div>
+              <div class={s.buttons}>
+                <For each={CHERRY_PICK_ACTIONS}>
+                  {(action) => (
+                    <button
+                      class={s.btn}
+                      onClick={() => props.repoPath && executeCommand(action.command(props.repoPath))}
+                      title={`${action.label} cherry-pick`}
+                    >
+                      {action.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
+
+          {/* Sync section */}
           <div class={s.section}>
-            <div class={s.sectionTitle}>{t("gitOps.quickActions", "Quick Actions")}</div>
+            <div class={s.sectionTitle}>{t("gitOps.sync", "Sync")}</div>
             <div class={s.buttons}>
-              <For each={GIT_OPERATIONS.filter((op) => !op.requiresBranch)}>
+              <For each={SYNC_OPERATIONS}>
                 {(op) => (
                   <button
                     class={s.btn}
@@ -224,7 +320,7 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
                     disabled={!props.repoPath || isMergeInProgress()}
                     title={op.description}
                   >
-                    <span class={s.btnIcon}>{op.icon}</span>
+                    <span class={s.btnIcon}><op.Icon /></span>
                     {op.label}
                   </button>
                 )}
@@ -232,26 +328,22 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
             </div>
           </div>
 
-          {/* Branch operations */}
+          {/* Branch section */}
           <div class={s.section}>
-            <div class={s.sectionTitle}>{t("gitOps.branchOperations", "Branch Operations")}</div>
-
-            {/* Branch selector */}
+            <div class={s.sectionTitle}>{t("gitOps.branch", "Branch")}</div>
             <div class={s.branchSelect}>
-              <select
+              <BranchCombobox
+                branches={branches().filter((b) => b !== context()?.branch)}
+                currentBranch={context()?.branch ?? null}
                 value={selectedBranch()}
-                onChange={(e) => setSelectedBranch(e.currentTarget.value)}
-                disabled={loadingBranches() || isMergeInProgress()}
-              >
-                <option value="">{t("gitOps.selectBranch", "Select a branch...")}</option>
-                <For each={branches().filter((b) => b !== props.currentBranch)}>
-                  {(branch) => <option value={branch}>{branch}</option>}
-                </For>
-              </select>
+                onChange={setSelectedBranch}
+                placeholder={t("gitOps.selectBranch", "Select a branch...")}
+                loading={loading()}
+                disabled={isMergeInProgress() || isDetached()}
+              />
             </div>
-
             <div class={s.buttons}>
-              <For each={GIT_OPERATIONS.filter((op) => op.requiresBranch)}>
+              <For each={BRANCH_OPERATIONS}>
                 {(op) => (
                   <button
                     class={s.btn}
@@ -259,7 +351,7 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
                     disabled={!props.repoPath || !selectedBranch() || isMergeInProgress()}
                     title={op.description}
                   >
-                    <span class={s.btnIcon}>{op.icon}</span>
+                    <span class={s.btnIcon}><op.Icon /></span>
                     {op.label}
                   </button>
                 )}
@@ -267,9 +359,14 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
             </div>
           </div>
 
-          {/* Stash operations */}
+          {/* Stash section */}
           <div class={s.section}>
-            <div class={s.sectionTitle}>{t("gitOps.stash", "Stash")}</div>
+            <div class={s.sectionTitle}>
+              {t("gitOps.stash", "Stash")}
+              <Show when={(context()?.stash_count ?? 0) > 0}>
+                {" "}({context()!.stash_count})
+              </Show>
+            </div>
             <div class={s.buttons}>
               <button
                 class={s.btn}
@@ -277,7 +374,7 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
                 disabled={!props.repoPath}
                 title={t("gitOps.stashChanges", "Stash current changes")}
               >
-                <span class={s.btnIcon}>⊡</span>
+                <span class={s.btnIcon}><StashIcon /></span>
                 {t("gitOps.stashBtn", "Stash")}
               </button>
               <button
@@ -286,7 +383,7 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
                 disabled={!props.repoPath}
                 title={t("gitOps.stashPop", "Apply and remove latest stash")}
               >
-                <span class={s.btnIcon}>⊞</span>
+                <span class={s.btnIcon}><StashIcon /></span>
                 {t("gitOps.popBtn", "Pop")}
               </button>
             </div>
