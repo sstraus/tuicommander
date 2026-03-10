@@ -52,7 +52,7 @@ check:
 	@echo "Running checks..."
 	@npx tsc --noEmit && echo "  tsc ✓"
 	@cd src-tauri && cargo clippy --release -- -D warnings && echo "  clippy ✓"
-	@cd src-tauri && cargo test && echo "  cargo test ✓"
+	@cd src-tauri && ulimit -n 10240 && cargo test -q && echo "  cargo test ✓"
 	@npx vitest run --reporter=dot 2>&1 | tail -3
 	@npm audit --audit-level=high && echo "  npm audit ✓"
 
