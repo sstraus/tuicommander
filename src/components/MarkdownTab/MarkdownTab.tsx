@@ -12,6 +12,7 @@ import { DomSearchEngine } from "../shared/DomSearchEngine";
 import type { SearchOptions } from "../shared/DomSearchEngine";
 import { SearchBar } from "../shared/SearchBar";
 import { t } from "../../i18n";
+import { shortenHomePath } from "../../platform";
 import e from "../shared/editor-header.module.css";
 import s from "./MarkdownTab.module.css";
 
@@ -244,7 +245,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const handleCopyPath = () => {
     const path = fullPath();
     if (!path) return;
-    navigator.clipboard.writeText(path).catch((err) =>
+    navigator.clipboard.writeText(shortenHomePath(path)).catch((err) =>
       appLogger.error("app", "Failed to copy path", err),
     );
   };

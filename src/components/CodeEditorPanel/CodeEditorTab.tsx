@@ -15,6 +15,7 @@ import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { codeEditorTheme } from "./theme";
 import { detectLanguage } from "./languageDetection";
 import { t } from "../../i18n";
+import { shortenHomePath } from "../../platform";
 import e from "../shared/editor-header.module.css";
 import s from "./CodeEditorTab.module.css";
 
@@ -308,7 +309,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
           label: t("codeEditor.copyPath", "Copy Path"),
           action: () => {
             const fullPath = isExternal() ? props.filePath : `${props.repoPath}/${props.filePath}`;
-            navigator.clipboard.writeText(fullPath).catch((err) =>
+            navigator.clipboard.writeText(shortenHomePath(fullPath)).catch((err) =>
               appLogger.error("app", "Failed to copy path", err),
             );
           },

@@ -106,7 +106,21 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
     activityDashboardStore.close();
   };
 
-  const terminals = createMemo(() => {
+  type TerminalRow = {
+    id: string;
+    name: string;
+    project: string | null;
+    agent: string;
+    status: { label: string; className: string };
+    lastDataAt: number | null;
+    lastPrompt: string | null;
+    agentIntent: string | null;
+    currentTask: string | null;
+    activeSubTasks: number;
+    isActive: boolean;
+  };
+
+  const liveTerminals = createMemo(() => {
     const ids = terminalsStore.getAttachedIds();
     const filtered = ids.map((id) => {
       const term = terminalsStore.get(id);
@@ -126,20 +140,27 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
         activeSubTasks: term.activeSubTasks,
         isActive: terminalsStore.state.activeId === id,
       };
-    }).filter(Boolean) as Array<{
-      id: string;
-      name: string;
-      project: string | null;
-      agent: string;
-      status: { label: string; className: string };
-      lastDataAt: number | null;
-      lastPrompt: string | null;
-      agentIntent: string | null;
-      currentTask: string | null;
-      activeSubTasks: number;
-      isActive: boolean;
-    }>;
+    }).filter(Boolean) as TerminalRow[];
     return filtered.sort((a, b) => (b.lastDataAt ?? 0) - (a.lastDataAt ?? 0));
+  });
+
+  // Snapshot sort order every 10s so rows don't reshuffle on every store mutation.
+  // New items/removals trigger an immediate snapshot via count change.
+  const [snapshot, setSnapshot] = createSignal<TerminalRow[]>(liveTerminals(), { equals: false });
+  createEffect(() => {
+    if (!isOpen()) return;
+    const interval = setInterval(() => setSnapshot(liveTerminals()), 10_000);
+    onCleanup(() => clearInterval(interval));
+  });
+
+  let prevCount = liveTerminals().length;
+  const terminals = createMemo(() => {
+    const current = liveTerminals();
+    if (current.length !== prevCount) {
+      prevCount = current.length;
+      setSnapshot(current);
+    }
+    return snapshot();
   });
 
   return (

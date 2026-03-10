@@ -1,8 +1,9 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import { Component, For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { RepositoryState, BranchState } from "../../stores/repositories";
 import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 import { githubStore } from "../../stores/github";
+import { shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { repoSettingsStore } from "../../stores/repoSettings";
@@ -210,7 +211,7 @@ export const BranchItem: Component<{
     const path = props.branch.worktreePath;
     if (path) {
       try {
-        await navigator.clipboard.writeText(path);
+        await navigator.clipboard.writeText(shortenHomePath(path));
       } catch (err) {
         appLogger.warn("app", "Failed to copy path to clipboard", err);
       }
@@ -356,6 +357,8 @@ export const RemoteOnlyPrPopover: Component<{
   onClose: () => void;
   onCheckout: (branchName: string) => void;
   onCreateWorktree?: (branchName: string) => void;
+  /** Notify parent when post-merge cleanup is active (prevents unmount during cleanup) */
+  onCleanupActive?: (active: boolean) => void;
 }> = (props) => {
   const [expandedBranch, setExpandedBranch] = createSignal<string | null>(null);
   const [mergingPr, setMergingPr] = createSignal<number | null>(null);
@@ -370,6 +373,11 @@ export const RemoteOnlyPrPopover: Component<{
   const [cleanupExecuting, setCleanupExecuting] = createSignal(false);
   const [cleanupStepStatuses, setCleanupStepStatuses] = createSignal<Partial<Record<StepId, StepStatus>>>({});
   const [cleanupStepErrors, setCleanupStepErrors] = createSignal<Partial<Record<StepId, string>>>({});
+
+  // Notify parent when cleanup dialog is active so it keeps us mounted
+  createEffect(() => {
+    props.onCleanupActive?.(!!cleanupCtx());
+  });
 
   const cleanupIsOnBaseBranch = () => {
     const ctx = cleanupCtx();
@@ -696,6 +704,7 @@ export const RepoSection: Component<{
   const repoMenu = createContextMenu();
   const [groupPromptVisible, setGroupPromptVisible] = createSignal(false);
   const [remoteOnlyPopoverVisible, setRemoteOnlyPopoverVisible] = createSignal(false);
+  const [remoteCleanupActive, setRemoteCleanupActive] = createSignal(false);
 
   const branches = createMemo(() => Object.values(props.repo.branches));
   // Pre-compute PR statuses once per poll cycle; avoids calling getPrStatus inside sort comparator
@@ -877,7 +886,7 @@ export const RepoSection: Component<{
           }
         }}
       />
-      <Show when={remoteOnlyPopoverVisible() && remoteOnlyPrs().length > 0}>
+      <Show when={remoteOnlyPopoverVisible() && (remoteOnlyPrs().length > 0 || remoteCleanupActive())}>
         <RemoteOnlyPrPopover
           prs={remoteOnlyPrs()}
           repoPath={props.repo.path}
@@ -887,6 +896,7 @@ export const RepoSection: Component<{
             props.onCheckoutRemoteBranch?.(branch);
           }}
           onCreateWorktree={props.onCreateWorktreeFromBranch}
+          onCleanupActive={setRemoteCleanupActive}
         />
       </Show>
     </div>

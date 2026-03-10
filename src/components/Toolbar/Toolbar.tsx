@@ -93,7 +93,6 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
     );
   });
   const totalBadgeCount = () => activeNotifs().length + visibleActivityCount() + (hasUpdate() ? 1 : 0);
-  const hasAnyItems = () => totalBadgeCount() > 0;
   const lastItem = createMemo(() => getLastItemAcrossStores(repositoriesStore.state.activeRepoPath));
 
   const activeBranch = () => {
@@ -222,66 +221,67 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
       </div>
 
       <div class={s.right}>
-        {/* Notification group: last-item shortcut + bell */}
-        <Show when={hasAnyItems()}>
-          <div class={s.notifGroup} ref={notifRef}>
-            {/* Last-item shortcut */}
-            <Show when={lastItem()}>
-              {(src) => {
-                const activitySrc = () => src().kind === "activity" ? src() as { kind: "activity"; item: ActivityItem } : null;
-                const prSrc = () => src().kind === "pr" ? src() as { kind: "pr"; notif: PrNotification } : null;
-                const updateSrc = () => src().kind === "update" ? src() as { kind: "update"; version: string } : null;
-                return (
-                  <button
-                    class={s.lastItemBtn}
-                    onClick={handleLastItemClick}
-                    title={(() => {
-                      const v = src();
-                      if (v.kind === "update") return `Update to v${v.version}`;
-                      if (v.kind === "activity") return v.item.title;
-                      return v.notif.branch;
-                    })()}
-                  >
-                    <Show when={updateSrc()} keyed>
-                      {(us) => (
-                        <>
-                          <svg class={s.lastItemIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.399l-.008-.078.012-.058h1.916zm.01-2.54a.96.96 0 1 0 0-1.92.96.96 0 0 0 0 1.92z"/></svg>
-                          <span class={s.lastItemTitle}>Update v{us.version}</span>
-                        </>
-                      )}
-                    </Show>
-                    <Show when={activitySrc()} keyed>
-                      {(as) => (
-                        <>
-                          <span class={s.lastItemIcon} innerHTML={as.item.icon} />
-                          <span class={s.lastItemTitle}>{as.item.title}</span>
-                        </>
-                      )}
-                    </Show>
-                    <Show when={prSrc()} keyed>
-                      {(ps) => (
-                        <>
-                          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354Z"/></svg>
-                          <span class={s.lastItemTitle}>{ps.notif.branch}</span>
-                        </>
-                      )}
-                    </Show>
-                  </button>
-                );
-              }}
-            </Show>
+        {/* Notification group: last-item shortcut + bell (bell always visible) */}
+        <div class={s.notifGroup} ref={notifRef}>
+          {/* Last-item shortcut — only when there are items */}
+          <Show when={lastItem()}>
+            {(src) => {
+              const activitySrc = () => src().kind === "activity" ? src() as { kind: "activity"; item: ActivityItem } : null;
+              const prSrc = () => src().kind === "pr" ? src() as { kind: "pr"; notif: PrNotification } : null;
+              const updateSrc = () => src().kind === "update" ? src() as { kind: "update"; version: string } : null;
+              return (
+                <button
+                  class={s.lastItemBtn}
+                  onClick={handleLastItemClick}
+                  title={(() => {
+                    const v = src();
+                    if (v.kind === "update") return `Update to v${v.version}`;
+                    if (v.kind === "activity") return v.item.title;
+                    return v.notif.branch;
+                  })()}
+                >
+                  <Show when={updateSrc()} keyed>
+                    {(us) => (
+                      <>
+                        <svg class={s.lastItemIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.399l-.008-.078.012-.058h1.916zm.01-2.54a.96.96 0 1 0 0-1.92.96.96 0 0 0 0 1.92z"/></svg>
+                        <span class={s.lastItemTitle}>Update v{us.version}</span>
+                      </>
+                    )}
+                  </Show>
+                  <Show when={activitySrc()} keyed>
+                    {(as) => (
+                      <>
+                        <span class={s.lastItemIcon} innerHTML={as.item.icon} />
+                        <span class={s.lastItemTitle}>{as.item.title}</span>
+                      </>
+                    )}
+                  </Show>
+                  <Show when={prSrc()} keyed>
+                    {(ps) => (
+                      <>
+                        <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354Z"/></svg>
+                        <span class={s.lastItemTitle}>{ps.notif.branch}</span>
+                      </>
+                    )}
+                  </Show>
+                </button>
+              );
+            }}
+          </Show>
 
-            {/* Bell */}
-            <button
-              class={s.bell}
-              onClick={() => setShowNotifPopover(!showNotifPopover())}
-              title={`${totalBadgeCount()} ${t("toolbar.notifications", "notification(s)")}`}
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
-              </svg>
+          {/* Bell — always visible */}
+          <button
+            class={s.bell}
+            onClick={() => setShowNotifPopover(!showNotifPopover())}
+            title={`${totalBadgeCount()} ${t("toolbar.notifications", "notification(s)")}`}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+            </svg>
+            <Show when={totalBadgeCount() > 0}>
               <span class={s.notifCount}>{totalBadgeCount()}</span>
-            </button>
+            </Show>
+          </button>
             <Show when={showNotifPopover()}>
               <div class={s.popover}>
                 {/* App update section */}
@@ -410,7 +410,6 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
               </div>
             </Show>
           </div>
-        </Show>
 
         <IdeLauncher repoPath={launchPath()} focusedFilePath={focusedFilePath()} runCommand={props.runCommand} onRun={props.onRun} />
       </div>

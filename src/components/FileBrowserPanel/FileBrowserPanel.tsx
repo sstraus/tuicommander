@@ -2,7 +2,7 @@ import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup
 import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
-import { getModifierSymbol } from "../../platform";
+import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { replaceBasename } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { ConfirmDialog } from "../ConfirmDialog";
@@ -258,7 +258,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     const repoPath = props.repoPath;
     if (!repoPath) return;
     const fullPath = `${repoPath}/${entry.path}`;
-    navigator.clipboard.writeText(fullPath).catch((err) =>
+    navigator.clipboard.writeText(shortenHomePath(fullPath)).catch((err) =>
       appLogger.error("app", "Failed to copy path", err),
     );
   };

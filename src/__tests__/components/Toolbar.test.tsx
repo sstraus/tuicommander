@@ -250,22 +250,27 @@ describe("Toolbar", () => {
   // Bell (Activity Center) — PR notifications
   // -------------------------------------------------------------------------
   describe("PR notification bell", () => {
-    it("hides bell when no active notifications or activity items", () => {
-      const { container } = render(() => <Toolbar />);
-      expect(container.querySelector(".bell")).toBeNull();
-    });
-
-    it("shows bell when there are active PR notifications", () => {
-      addTestNotif();
+    it("bell is always visible even with no notifications", () => {
       const { container } = render(() => <Toolbar />);
       expect(container.querySelector(".bell")).not.toBeNull();
     });
 
-    it("shows bell when there are active activity items", () => {
+    it("badge is hidden when no active notifications or activity items", () => {
+      const { container } = render(() => <Toolbar />);
+      expect(container.querySelector(".notifCount")).toBeNull();
+    });
+
+    it("badge is visible when there are active PR notifications", () => {
+      addTestNotif();
+      const { container } = render(() => <Toolbar />);
+      expect(container.querySelector(".notifCount")).not.toBeNull();
+    });
+
+    it("badge is visible when there are active activity items", () => {
       activityStore.registerSection({ id: "plan", label: "PLAN", priority: 10, canDismissAll: false });
       addTestActivityItem();
       const { container } = render(() => <Toolbar />);
-      expect(container.querySelector(".bell")).not.toBeNull();
+      expect(container.querySelector(".notifCount")).not.toBeNull();
     });
 
     it("bell badge count is sum of PR + activity items", () => {

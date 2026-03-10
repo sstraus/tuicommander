@@ -68,7 +68,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   const handleCopyCwd = async () => {
     if (!props.cwd) return;
     try {
-      await navigator.clipboard.writeText(props.cwd);
+      await navigator.clipboard.writeText(shortenHomePath(props.cwd));
       setCwdCopied(true);
       setTimeout(() => setCwdCopied(false), 1500);
     } catch (err) {

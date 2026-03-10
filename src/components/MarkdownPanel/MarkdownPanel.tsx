@@ -4,7 +4,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
-import { getModifierSymbol } from "../../platform";
+import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { globToRegex } from "../../utils";
 import { pathBasename, pathDirname } from "../../utils/pathUtils";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
@@ -114,7 +114,7 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
     return [{
       label: t("markdownPanel.copyPath", "Copy Path"),
       action: () => {
-        navigator.clipboard.writeText(`${props.repoPath}/${entry.path}`).catch((err) =>
+        navigator.clipboard.writeText(shortenHomePath(`${props.repoPath}/${entry.path}`)).catch((err) =>
           appLogger.error("app", "Failed to copy path", err),
         );
       },
