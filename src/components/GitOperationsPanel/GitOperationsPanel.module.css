@@ -261,3 +261,90 @@
 .branchSelect {
   margin-bottom: 8px;
 }
+
+/* Running state */
+.btnRunning {
+  border-color: var(--accent);
+}
+
+/* Spinner */
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--fg-muted);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Feedback bar */
+.feedbackBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  margin-top: 8px;
+}
+
+.feedbackSuccess {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  border: 1px solid var(--success);
+  color: var(--success);
+}
+
+.feedbackError {
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  border: 1px solid var(--error);
+  color: var(--error);
+}
+
+.feedbackIcon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.feedbackIcon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.feedbackMessage {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.feedbackDismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.feedbackDismiss:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.feedbackDismiss svg {
+  width: 12px;
+  height: 12px;
+}

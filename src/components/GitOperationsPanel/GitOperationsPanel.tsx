@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal, createEffect } from "solid-js";
+import { Component, Show, For, createSignal, createEffect, onCleanup } from "solid-js";
 import { invoke } from "../../invoke";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
@@ -9,7 +9,7 @@ import { cx } from "../../utils";
 import { BranchCombobox } from "../shared/BranchCombobox";
 import {
   PullIcon, PushIcon, FetchIcon, MergeIcon, BranchIcon,
-  StashIcon, WarningIcon, CloseIcon,
+  StashIcon, WarningIcon, CheckIcon, ErrorIcon, CloseIcon,
 } from "./icons";
 import s from "./GitOperationsPanel.module.css";
 
@@ -26,6 +26,14 @@ interface GitPanelContext {
   last_commit: { hash: string; short_hash: string; subject: string } | null;
   in_rebase: boolean;
   in_cherry_pick: boolean;
+}
+
+/** Result from run_git_command */
+interface GitCommandResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  exit_code: number;
 }
 
 const STATUS_CLASSES: Record<string, string> = {
@@ -47,7 +55,7 @@ interface GitOperation {
   id: string;
   label: string;
   Icon: Component;
-  command: (repoPath: string, branch?: string) => string;
+  args: (branch?: string) => string[];
   requiresBranch?: boolean;
   description: string;
 }
@@ -57,21 +65,21 @@ const SYNC_OPERATIONS: GitOperation[] = [
     id: "pull",
     label: "Pull",
     Icon: PullIcon,
-    command: (repo) => `cd ${escapeShellArg(repo)} && git pull`,
+    args: () => ["pull"],
     description: "Fetch and merge changes from remote",
   },
   {
     id: "push",
     label: "Push",
     Icon: PushIcon,
-    command: (repo) => `cd ${escapeShellArg(repo)} && git push`,
+    args: () => ["push"],
     description: "Push local commits to remote",
   },
   {
     id: "fetch",
     label: "Fetch",
     Icon: FetchIcon,
-    command: (repo) => `cd ${escapeShellArg(repo)} && git fetch --all`,
+    args: () => ["fetch", "--all"],
     description: "Download remote changes without merging",
   },
 ];
@@ -81,7 +89,7 @@ const BRANCH_OPERATIONS: GitOperation[] = [
     id: "switch",
     label: "Switch",
     Icon: BranchIcon,
-    command: (repo, branch) => `cd ${escapeShellArg(repo)} && git checkout ${escapeShellArg(branch || "")}`,
+    args: (branch) => ["checkout", branch || ""],
     requiresBranch: true,
     description: "Switch to selected branch",
   },
@@ -89,12 +97,30 @@ const BRANCH_OPERATIONS: GitOperation[] = [
     id: "merge",
     label: "Merge",
     Icon: MergeIcon,
-    command: (repo, branch) => `cd ${escapeShellArg(repo)} && git merge ${escapeShellArg(branch || "")}`,
+    args: (branch) => ["merge", branch || ""],
     requiresBranch: true,
     description: "Merge selected branch into current",
   },
 ];
 
+const STASH_OPERATIONS: GitOperation[] = [
+  {
+    id: "stash",
+    label: "Stash",
+    Icon: StashIcon,
+    args: () => ["stash"],
+    description: "Stash current changes",
+  },
+  {
+    id: "pop",
+    label: "Pop",
+    Icon: StashIcon,
+    args: () => ["stash", "pop"],
+    description: "Apply and remove latest stash",
+  },
+];
+
+/** Terminal-injected actions for conflict resolution (need editor interaction) */
 const MERGE_ACTIONS = [
   { id: "abort", label: "Abort", command: (repo: string) => `cd ${escapeShellArg(repo)} && git merge --abort` },
   { id: "continue", label: "Continue", command: (repo: string) => `cd ${escapeShellArg(repo)} && git merge --continue` },
@@ -111,28 +137,73 @@ const CHERRY_PICK_ACTIONS = [
   { id: "continue", label: "Continue", command: (repo: string) => `cd ${escapeShellArg(repo)} && git cherry-pick --continue` },
 ];
 
+const FEEDBACK_DISMISS_MS = 5000;
+
+interface OperationFeedback {
+  success: boolean;
+  message: string;
+}
+
 export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) => {
   const [ctx, setCtx] = createSignal<GitPanelContext | null>(null);
   const [selectedBranch, setSelectedBranch] = createSignal("");
   const [branches, setBranches] = createSignal<string[]>([]);
   const [loading, setLoading] = createSignal(false);
+  const [isRunning, setIsRunning] = createSignal(false);
+  const [runningOp, setRunningOp] = createSignal<string | null>(null);
+  const [feedback, setFeedback] = createSignal<OperationFeedback | null>(null);
 
-  const executeCommand = (command: string) => {
-    const active = terminalsStore.getActive();
-    if (active?.ref) {
-      active.ref.write(`${command}\r`);
-      props.onClose();
-      props.onBranchChange?.();
-    }
-  };
+  let dismissTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const handleOperation = (op: GitOperation) => {
+  onCleanup(() => {
+    if (dismissTimer) clearTimeout(dismissTimer);
+  });
+
+  /** Run a git operation via run_git_command (background, no terminal) */
+  const runOperation = async (op: GitOperation) => {
     if (!props.repoPath || !isValidPath(props.repoPath)) return;
     if (op.requiresBranch) {
       const branch = selectedBranch();
       if (!branch || !isValidBranchName(branch)) return;
     }
-    executeCommand(op.command(props.repoPath, selectedBranch()));
+
+    setIsRunning(true);
+    setRunningOp(op.id);
+    setFeedback(null);
+    if (dismissTimer) clearTimeout(dismissTimer);
+
+    try {
+      const result = await invoke<GitCommandResult>("run_git_command", {
+        path: props.repoPath,
+        args: op.args(selectedBranch()),
+      });
+
+      if (result.success) {
+        const msg = result.stdout.trim().split("\n")[0] || "Done";
+        setFeedback({ success: true, message: msg.slice(0, 120) });
+        repositoriesStore.bumpRevision(props.repoPath!);
+        props.onBranchChange?.();
+        dismissTimer = setTimeout(() => setFeedback(null), FEEDBACK_DISMISS_MS);
+      } else {
+        const msg = result.stderr.trim().split("\n")[0] || `Exit code ${result.exit_code}`;
+        setFeedback({ success: false, message: msg.slice(0, 200) });
+      }
+    } catch (err) {
+      setFeedback({ success: false, message: String(err) });
+      appLogger.error("git", `Failed to run git ${op.id}`, err);
+    } finally {
+      setIsRunning(false);
+      setRunningOp(null);
+    }
+  };
+
+  /** Terminal injection for conflict resolution actions (need editor/interactive) */
+  const executeInTerminal = (command: string) => {
+    const active = terminalsStore.getActive();
+    if (active?.ref) {
+      active.ref.write(`${command}\r`);
+      props.onBranchChange?.();
+    }
   };
 
   // Fetch context when panel opens or repo changes
@@ -236,7 +307,7 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
             </Show>
           </div>
 
-          {/* Merge in progress */}
+          {/* Merge in progress — terminal injection */}
           <Show when={isMergeInProgress()}>
             <div class={s.alertSection}>
               <div class={s.alertTitle}>
@@ -251,7 +322,8 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
                   {(action) => (
                     <button
                       class={s.btn}
-                      onClick={() => props.repoPath && executeCommand(action.command(props.repoPath))}
+                      onClick={() => props.repoPath && executeInTerminal(action.command(props.repoPath))}
+                      disabled={isRunning()}
                       title={`${action.label} merge`}
                     >
                       {action.label}
@@ -262,7 +334,7 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
             </div>
           </Show>
 
-          {/* Rebase in progress */}
+          {/* Rebase in progress — terminal injection */}
           <Show when={context()?.in_rebase}>
             <div class={s.alertSection}>
               <div class={s.alertTitle}>
@@ -274,7 +346,8 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
                   {(action) => (
                     <button
                       class={s.btn}
-                      onClick={() => props.repoPath && executeCommand(action.command(props.repoPath))}
+                      onClick={() => props.repoPath && executeInTerminal(action.command(props.repoPath))}
+                      disabled={isRunning()}
                       title={`${action.label} rebase`}
                     >
                       {action.label}
@@ -285,7 +358,7 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
             </div>
           </Show>
 
-          {/* Cherry-pick in progress */}
+          {/* Cherry-pick in progress — terminal injection */}
           <Show when={context()?.in_cherry_pick}>
             <div class={s.alertSection}>
               <div class={s.alertTitle}>
@@ -297,7 +370,8 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
                   {(action) => (
                     <button
                       class={s.btn}
-                      onClick={() => props.repoPath && executeCommand(action.command(props.repoPath))}
+                      onClick={() => props.repoPath && executeInTerminal(action.command(props.repoPath))}
+                      disabled={isRunning()}
                       title={`${action.label} cherry-pick`}
                     >
                       {action.label}
@@ -308,19 +382,23 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
             </div>
           </Show>
 
-          {/* Sync section */}
+          {/* Sync section — background execution */}
           <div class={s.section}>
             <div class={s.sectionTitle}>{t("gitOps.sync", "Sync")}</div>
             <div class={s.buttons}>
               <For each={SYNC_OPERATIONS}>
                 {(op) => (
                   <button
-                    class={s.btn}
-                    onClick={() => handleOperation(op)}
-                    disabled={!props.repoPath || isMergeInProgress()}
+                    class={cx(s.btn, runningOp() === op.id && s.btnRunning)}
+                    onClick={() => runOperation(op)}
+                    disabled={!props.repoPath || isMergeInProgress() || isRunning()}
                     title={op.description}
                   >
-                    <span class={s.btnIcon}><op.Icon /></span>
+                    <span class={s.btnIcon}>
+                      <Show when={runningOp() === op.id} fallback={<op.Icon />}>
+                        <span class={s.spinner} />
+                      </Show>
+                    </span>
                     {op.label}
                   </button>
                 )}
@@ -328,7 +406,7 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
             </div>
           </div>
 
-          {/* Branch section */}
+          {/* Branch section — background execution */}
           <div class={s.section}>
             <div class={s.sectionTitle}>{t("gitOps.branch", "Branch")}</div>
             <div class={s.branchSelect}>
@@ -339,19 +417,23 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
                 onChange={setSelectedBranch}
                 placeholder={t("gitOps.selectBranch", "Select a branch...")}
                 loading={loading()}
-                disabled={isMergeInProgress() || isDetached()}
+                disabled={isMergeInProgress() || isDetached() || isRunning()}
               />
             </div>
             <div class={s.buttons}>
               <For each={BRANCH_OPERATIONS}>
                 {(op) => (
                   <button
-                    class={s.btn}
-                    onClick={() => handleOperation(op)}
-                    disabled={!props.repoPath || !selectedBranch() || isMergeInProgress()}
+                    class={cx(s.btn, runningOp() === op.id && s.btnRunning)}
+                    onClick={() => runOperation(op)}
+                    disabled={!props.repoPath || !selectedBranch() || isMergeInProgress() || isRunning()}
                     title={op.description}
                   >
-                    <span class={s.btnIcon}><op.Icon /></span>
+                    <span class={s.btnIcon}>
+                      <Show when={runningOp() === op.id} fallback={<op.Icon />}>
+                        <span class={s.spinner} />
+                      </Show>
+                    </span>
                     {op.label}
                   </button>
                 )}
@@ -359,7 +441,7 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
             </div>
           </div>
 
-          {/* Stash section */}
+          {/* Stash section — background execution */}
           <div class={s.section}>
             <div class={s.sectionTitle}>
               {t("gitOps.stash", "Stash")}
@@ -368,26 +450,49 @@ export const GitOperationsPanel: Component<GitOperationsPanelProps> = (props) =>
               </Show>
             </div>
             <div class={s.buttons}>
-              <button
-                class={s.btn}
-                onClick={() => props.repoPath && executeCommand(`cd ${escapeShellArg(props.repoPath)} && git stash`)}
-                disabled={!props.repoPath}
-                title={t("gitOps.stashChanges", "Stash current changes")}
-              >
-                <span class={s.btnIcon}><StashIcon /></span>
-                {t("gitOps.stashBtn", "Stash")}
-              </button>
-              <button
-                class={s.btn}
-                onClick={() => props.repoPath && executeCommand(`cd ${escapeShellArg(props.repoPath)} && git stash pop`)}
-                disabled={!props.repoPath}
-                title={t("gitOps.stashPop", "Apply and remove latest stash")}
-              >
-                <span class={s.btnIcon}><StashIcon /></span>
-                {t("gitOps.popBtn", "Pop")}
-              </button>
+              <For each={STASH_OPERATIONS}>
+                {(op) => (
+                  <button
+                    class={cx(s.btn, runningOp() === op.id && s.btnRunning)}
+                    onClick={() => runOperation(op)}
+                    disabled={!props.repoPath || isRunning()}
+                    title={op.description}
+                  >
+                    <span class={s.btnIcon}>
+                      <Show when={runningOp() === op.id} fallback={<op.Icon />}>
+                        <span class={s.spinner} />
+                      </Show>
+                    </span>
+                    {op.label}
+                  </button>
+                )}
+              </For>
             </div>
           </div>
+
+          {/* Feedback bar */}
+          <Show when={feedback()}>
+            {(fb) => (
+              <div
+                class={cx(s.feedbackBar, fb().success ? s.feedbackSuccess : s.feedbackError)}
+                data-testid="feedback-bar"
+              >
+                <span class={s.feedbackIcon}>
+                  <Show when={fb().success} fallback={<ErrorIcon />}>
+                    <CheckIcon />
+                  </Show>
+                </span>
+                <span class={s.feedbackMessage}>{fb().message}</span>
+                <button
+                  class={s.feedbackDismiss}
+                  onClick={() => setFeedback(null)}
+                  title="Dismiss"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+            )}
+          </Show>
         </div>
       </div>
     </Show>

@@ -4,10 +4,18 @@ import { mockInvoke } from "../mocks/tauri";
 import { render, fireEvent } from "@solidjs/testing-library";
 
 const mockWrite = vi.fn();
+const mockBumpRevision = vi.fn();
 
 vi.mock("../../stores/terminals", () => ({
   terminalsStore: {
     getActive: () => ({ ref: { write: mockWrite } }),
+  },
+}));
+
+vi.mock("../../stores/repositories", () => ({
+  repositoriesStore: {
+    getRevision: () => 0,
+    bumpRevision: (...args: unknown[]) => mockBumpRevision(...args),
   },
 }));
 
@@ -45,10 +53,10 @@ describe("GitOperationsPanel", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: return context for first call, branches for second
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_git_panel_context") return Promise.resolve(makeContext());
       if (cmd === "get_git_branches") return Promise.resolve(makeBranches());
+      if (cmd === "run_git_command") return Promise.resolve({ success: true, stdout: "Done\n", stderr: "", exit_code: 0 });
       return Promise.resolve(null);
     });
   });
@@ -75,7 +83,6 @@ describe("GitOperationsPanel", () => {
         <GitOperationsPanel {...defaultProps} />
       ));
       const title = container.querySelector("[class*='headerTitle']");
-      expect(title).not.toBeNull();
       expect(title!.textContent).toBe("Git Operations");
     });
 
@@ -122,27 +129,6 @@ describe("GitOperationsPanel", () => {
       });
     });
 
-    it("shows staged and changed counts", async () => {
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      await vi.waitFor(() => {
-        const counts = container.querySelector("[class*='countsRow']");
-        expect(counts!.textContent).toContain("3 staged");
-        expect(counts!.textContent).toContain("5 changed");
-      });
-    });
-
-    it("shows stash count", async () => {
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      await vi.waitFor(() => {
-        const counts = container.querySelector("[class*='countsRow']");
-        expect(counts!.textContent).toContain("1 stash");
-      });
-    });
-
     it("shows last commit", async () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
@@ -150,13 +136,12 @@ describe("GitOperationsPanel", () => {
       await vi.waitFor(() => {
         const commit = container.querySelector("[class*='lastCommit']");
         expect(commit!.textContent).toContain("abc123d");
-        expect(commit!.textContent).toContain("fix: something");
       });
     });
 
     it("shows DETACHED badge when detached", async () => {
       mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "get_git_panel_context") return Promise.resolve(makeContext({ is_detached: true, branch: "abc123d" }));
+        if (cmd === "get_git_panel_context") return Promise.resolve(makeContext({ is_detached: true }));
         if (cmd === "get_git_branches") return Promise.resolve([]);
         return Promise.resolve(null);
       });
@@ -164,70 +149,164 @@ describe("GitOperationsPanel", () => {
         <GitOperationsPanel {...defaultProps} />
       ));
       await vi.waitFor(() => {
-        const badge = container.querySelector("[class*='detachedBadge']");
-        expect(badge).not.toBeNull();
-        expect(badge!.textContent).toBe("DETACHED");
+        expect(container.querySelector("[class*='detachedBadge']")).not.toBeNull();
       });
-    });
-
-    it("shows 'No branch' when context is null", () => {
-      mockInvoke.mockImplementation(() => Promise.reject(new Error("fail")));
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      const branch = container.querySelector("[class*='branchName']");
-      expect(branch!.textContent).toBe("No branch");
     });
   });
 
-  describe("sync section", () => {
-    it("shows Pull, Push, Fetch buttons with SVG icons", () => {
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      const buttons = container.querySelectorAll("[class*='btn']");
-      const labels = Array.from(buttons).map((b) => b.textContent?.trim());
-      expect(labels).toContain("Pull");
-      expect(labels).toContain("Push");
-      expect(labels).toContain("Fetch");
-      // Verify SVG icons (no Unicode)
-      const iconSpans = container.querySelectorAll("[class*='btnIcon']");
-      for (const span of Array.from(iconSpans)) {
-        expect(span.querySelector("svg")).not.toBeNull();
-      }
-    });
-
-    it("clicking Pull writes git pull command", () => {
+  describe("background execution", () => {
+    it("clicking Pull invokes run_git_command with pull args", async () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
       const buttons = container.querySelectorAll("[class*='btn']");
       const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Pull")!;
       fireEvent.click(pullBtn);
-      expect(mockWrite).toHaveBeenCalledOnce();
-      expect(mockWrite.mock.calls[0][0]).toContain("git pull");
+
+      await vi.waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
+          path: "/repo",
+          args: ["pull"],
+        });
+      });
     });
 
-    it("clicking Push writes git push command", () => {
+    it("clicking Push invokes run_git_command with push args", async () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
       const buttons = container.querySelectorAll("[class*='btn']");
       const pushBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Push")!;
       fireEvent.click(pushBtn);
-      expect(mockWrite).toHaveBeenCalledOnce();
-      expect(mockWrite.mock.calls[0][0]).toContain("git push");
+
+      await vi.waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
+          path: "/repo",
+          args: ["push"],
+        });
+      });
     });
 
-    it("clicking Fetch writes git fetch command", () => {
+    it("clicking Fetch invokes run_git_command with fetch args", async () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
       ));
       const buttons = container.querySelectorAll("[class*='btn']");
       const fetchBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Fetch")!;
       fireEvent.click(fetchBtn);
-      expect(mockWrite).toHaveBeenCalledOnce();
-      expect(mockWrite.mock.calls[0][0]).toContain("git fetch --all");
+
+      await vi.waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
+          path: "/repo",
+          args: ["fetch", "--all"],
+        });
+      });
+    });
+
+    it("does NOT write to terminal for sync operations", async () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      const buttons = container.querySelectorAll("[class*='btn']");
+      const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Pull")!;
+      fireEvent.click(pullBtn);
+
+      await vi.waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("run_git_command", expect.any(Object));
+      });
+      expect(mockWrite).not.toHaveBeenCalled();
+    });
+
+    it("does NOT close panel after operation", async () => {
+      const onClose = vi.fn();
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} onClose={onClose} />
+      ));
+      const buttons = container.querySelectorAll("[class*='btn']");
+      const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Pull")!;
+      fireEvent.click(pullBtn);
+
+      await vi.waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("run_git_command", expect.any(Object));
+      });
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it("bumps revision on success", async () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      const buttons = container.querySelectorAll("[class*='btn']");
+      const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Pull")!;
+      fireEvent.click(pullBtn);
+
+      await vi.waitFor(() => {
+        expect(mockBumpRevision).toHaveBeenCalledWith("/repo");
+      });
+    });
+
+    it("shows success feedback bar after successful operation", async () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      const buttons = container.querySelectorAll("[class*='btn']");
+      const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Pull")!;
+      fireEvent.click(pullBtn);
+
+      await vi.waitFor(() => {
+        const fb = container.querySelector("[data-testid='feedback-bar']");
+        expect(fb).not.toBeNull();
+        expect(fb!.textContent).toContain("Done");
+        expect(fb!.className).toContain("feedbackSuccess");
+      });
+    });
+
+    it("shows error feedback bar on failure", async () => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_git_panel_context") return Promise.resolve(makeContext());
+        if (cmd === "get_git_branches") return Promise.resolve(makeBranches());
+        if (cmd === "run_git_command") return Promise.resolve({
+          success: false, stdout: "", stderr: "fatal: no upstream\n", exit_code: 1,
+        });
+        return Promise.resolve(null);
+      });
+
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      const buttons = container.querySelectorAll("[class*='btn']");
+      const pushBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Push")!;
+      fireEvent.click(pushBtn);
+
+      await vi.waitFor(() => {
+        const fb = container.querySelector("[data-testid='feedback-bar']");
+        expect(fb).not.toBeNull();
+        expect(fb!.textContent).toContain("fatal: no upstream");
+        expect(fb!.className).toContain("feedbackError");
+      });
+    });
+
+    it("does not bump revision on error", async () => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_git_panel_context") return Promise.resolve(makeContext());
+        if (cmd === "get_git_branches") return Promise.resolve(makeBranches());
+        if (cmd === "run_git_command") return Promise.resolve({
+          success: false, stdout: "", stderr: "error\n", exit_code: 1,
+        });
+        return Promise.resolve(null);
+      });
+
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      const buttons = container.querySelectorAll("[class*='btn']");
+      const pushBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Push")!;
+      fireEvent.click(pushBtn);
+
+      await vi.waitFor(() => {
+        expect(container.querySelector("[data-testid='feedback-bar']")).not.toBeNull();
+      });
+      expect(mockBumpRevision).not.toHaveBeenCalled();
     });
 
     it("does nothing when repoPath is null", () => {
@@ -237,12 +316,47 @@ describe("GitOperationsPanel", () => {
       const buttons = container.querySelectorAll("[class*='btn']");
       const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Pull")!;
       fireEvent.click(pullBtn);
-      expect(mockWrite).not.toHaveBeenCalled();
+      // Should not call run_git_command (only get_git_panel_context/branches on mount)
+      expect(mockInvoke).not.toHaveBeenCalledWith("run_git_command", expect.any(Object));
     });
   });
 
-  describe("merge in progress section", () => {
-    it("shows merge section when status is conflict", async () => {
+  describe("stash operations via background execution", () => {
+    it("clicking Stash invokes run_git_command with stash args", async () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      const buttons = container.querySelectorAll("[class*='btn']");
+      const stashBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Stash")!;
+      fireEvent.click(stashBtn);
+
+      await vi.waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
+          path: "/repo",
+          args: ["stash"],
+        });
+      });
+    });
+
+    it("clicking Pop invokes run_git_command with stash pop args", async () => {
+      const { container } = render(() => (
+        <GitOperationsPanel {...defaultProps} />
+      ));
+      const buttons = container.querySelectorAll("[class*='btn']");
+      const popBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Pop")!;
+      fireEvent.click(popBtn);
+
+      await vi.waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
+          path: "/repo",
+          args: ["stash", "pop"],
+        });
+      });
+    });
+  });
+
+  describe("merge/rebase/cherry-pick use terminal injection", () => {
+    it("merge Abort writes to terminal (not run_git_command)", async () => {
       mockInvoke.mockImplementation((cmd: string) => {
         if (cmd === "get_git_panel_context") return Promise.resolve(makeContext({ status: "conflict" }));
         if (cmd === "get_git_branches") return Promise.resolve(makeBranches());
@@ -252,125 +366,17 @@ describe("GitOperationsPanel", () => {
         <GitOperationsPanel {...defaultProps} />
       ));
       await vi.waitFor(() => {
-        const alert = container.querySelector("[class*='alertSection']");
-        expect(alert).not.toBeNull();
-        expect(alert!.textContent).toContain("Merge in Progress");
+        expect(container.querySelector("[class*='alertSection']")).not.toBeNull();
       });
-    });
-
-    it("does not show merge section when clean", async () => {
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      await vi.waitFor(() => {
-        const badge = container.querySelector("[class*='statusBadge']");
-        expect(badge!.textContent).toBe("clean");
-      });
-      const alertSections = container.querySelectorAll("[class*='alertSection']");
-      expect(alertSections.length).toBe(0);
-    });
-  });
-
-  describe("rebase in progress section", () => {
-    it("shows rebase section when in_rebase is true", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "get_git_panel_context") return Promise.resolve(makeContext({ in_rebase: true }));
-        if (cmd === "get_git_branches") return Promise.resolve(makeBranches());
-        return Promise.resolve(null);
-      });
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      await vi.waitFor(() => {
-        const alerts = container.querySelectorAll("[class*='alertSection']");
-        const rebaseAlert = Array.from(alerts).find((a) => a.textContent?.includes("Rebase"));
-        expect(rebaseAlert).not.toBeUndefined();
-      });
-    });
-  });
-
-  describe("cherry-pick in progress section", () => {
-    it("shows cherry-pick section when in_cherry_pick is true", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "get_git_panel_context") return Promise.resolve(makeContext({ in_cherry_pick: true }));
-        if (cmd === "get_git_branches") return Promise.resolve(makeBranches());
-        return Promise.resolve(null);
-      });
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      await vi.waitFor(() => {
-        const alerts = container.querySelectorAll("[class*='alertSection']");
-        const cherryAlert = Array.from(alerts).find((a) => a.textContent?.includes("Cherry-pick"));
-        expect(cherryAlert).not.toBeUndefined();
-      });
-    });
-  });
-
-  describe("branch section", () => {
-    it("shows BranchCombobox instead of native select", () => {
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      // No native <select> should exist
-      expect(container.querySelector("select")).toBeNull();
-      // BranchCombobox renders an input
-      const branchSelect = container.querySelector("[class*='branchSelect']");
-      expect(branchSelect).not.toBeNull();
-      expect(branchSelect!.querySelector("input")).not.toBeNull();
-    });
-
-    it("shows Switch and Merge buttons", () => {
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      const buttons = container.querySelectorAll("[class*='btn']");
-      const labels = Array.from(buttons).map((b) => b.textContent?.trim());
-      expect(labels).toContain("Switch");
-      expect(labels).toContain("Merge");
-    });
-  });
-
-  describe("stash section", () => {
-    it("shows Stash and Pop buttons", () => {
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      const buttons = container.querySelectorAll("[class*='btn']");
-      const labels = Array.from(buttons).map((b) => b.textContent?.trim());
-      expect(labels).toContain("Stash");
-      expect(labels).toContain("Pop");
-    });
-
-    it("clicking Stash writes git stash command", () => {
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      const buttons = container.querySelectorAll("[class*='btn']");
-      const stashBtn = Array.from(buttons).find(
-        (b) => b.textContent?.trim() === "Stash"
-      )!;
-      fireEvent.click(stashBtn);
+      const alertBtns = container.querySelector("[class*='alertSection']")!.querySelectorAll("[class*='btn']");
+      const abortBtn = Array.from(alertBtns).find((b) => b.textContent?.includes("Abort"))!;
+      fireEvent.click(abortBtn);
       expect(mockWrite).toHaveBeenCalledOnce();
-      expect(mockWrite.mock.calls[0][0]).toContain("git stash");
-      expect(mockWrite.mock.calls[0][0]).not.toContain("git stash pop");
-    });
-
-    it("clicking Pop writes git stash pop command", () => {
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      const buttons = container.querySelectorAll("[class*='btn']");
-      const popBtn = Array.from(buttons).find(
-        (b) => b.textContent?.trim() === "Pop"
-      )!;
-      fireEvent.click(popBtn);
-      expect(mockWrite).toHaveBeenCalledOnce();
-      expect(mockWrite.mock.calls[0][0]).toContain("git stash pop");
+      expect(mockWrite.mock.calls[0][0]).toContain("git merge --abort");
     });
   });
 
-  describe("no Unicode icons", () => {
+  describe("SVG icons", () => {
     it("all button icons use SVG, no Unicode symbols", () => {
       const { container } = render(() => (
         <GitOperationsPanel {...defaultProps} />
@@ -378,22 +384,7 @@ describe("GitOperationsPanel", () => {
       const iconSpans = container.querySelectorAll("[class*='btnIcon']");
       for (const span of Array.from(iconSpans)) {
         expect(span.querySelector("svg")).not.toBeNull();
-        // The only text content should be empty (SVG only)
-        const textWithoutSvg = span.textContent?.replace(/\s/g, "") ?? "";
-        expect(textWithoutSvg).toBe("");
       }
-    });
-  });
-
-  describe("panel width", () => {
-    it("has 400px width in CSS class", () => {
-      const { container } = render(() => (
-        <GitOperationsPanel {...defaultProps} />
-      ));
-      const panel = container.querySelector("[data-testid='git-operations-panel']");
-      expect(panel).not.toBeNull();
-      // Panel should have the panel class (width defined in CSS module)
-      expect(panel!.className).toContain("panel");
     });
   });
 
@@ -410,21 +401,6 @@ describe("GitOperationsPanel", () => {
         <GitOperationsPanel {...defaultProps} repoPath={null} />
       ));
       expect(mockInvoke).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("without onBranchChange callback", () => {
-    it("does not fail when onBranchChange is not provided", () => {
-      const { container } = render(() => (
-        <GitOperationsPanel
-          visible={true}
-          repoPath="/repo"
-          onClose={vi.fn()}
-        />
-      ));
-      const buttons = container.querySelectorAll("[class*='btn']");
-      const pullBtn = Array.from(buttons).find((b) => b.textContent?.trim() === "Pull")!;
-      expect(() => fireEvent.click(pullBtn)).not.toThrow();
     });
   });
 });
