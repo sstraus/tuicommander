@@ -11,7 +11,7 @@ import { browserCreatedSessions } from "../../hooks/useAppInit";
 import { usePty } from "../../hooks/usePty";
 import { settingsStore, FONT_FAMILIES } from "../../stores/settings";
 import { getTerminalTheme } from "../../themes";
-import { terminalsStore } from "../../stores/terminals";
+import { terminalsStore, type AwaitingInputType } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { appLogger } from "../../stores/appLogger";
 import { notificationsStore } from "../../stores/notifications";
@@ -20,6 +20,7 @@ import { isMacOS } from "../../platform";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { parseOsc7Url } from "../../utils/osc7";
 import { kittySequenceForKey } from "./kittyKeyboard";
+import { getAwaitingInputSound } from "./awaitingInputSound";
 import s from "./Terminal.module.css";
 
 
@@ -177,6 +178,22 @@ export const Terminal: Component<TerminalProps> = (props) => {
   createEffect(() => {
     if (terminalsStore.state.activeId === props.id) {
       activityFlagged = false;
+    }
+  });
+
+  // Edge-detection for notification sounds: play once per awaitingInput transition.
+  // Event handlers set state idempotently; this effect handles the one-shot sound.
+  let prevAwaitingInput: AwaitingInputType = null;
+  createEffect(() => {
+    const current = terminalsStore.get(props.id)?.awaitingInput ?? null;
+    const sound = getAwaitingInputSound(prevAwaitingInput, current);
+    prevAwaitingInput = current;
+    if (sound === "error") {
+      appLogger.info("terminal", `[Notify] ${props.id} error — awaitingInput transition`);
+      notificationsStore.playError();
+    } else if (sound === "question") {
+      appLogger.info("terminal", `[Notify] ${props.id} question — awaitingInput transition`);
+      notificationsStore.playQuestion();
     }
   });
 
@@ -406,14 +423,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
               appLogger.debug("terminal", `[ParsedEvent] ${props.id} question IGNORED (busy=${qTerminal?.shellState === "busy"} subTasks=${qTerminal?.activeSubTasks} low-confidence) prompt="${parsed.prompt_text}"`);
               break;
             }
-            // Dedup: don't re-notify if already awaiting input
-            const wasAwaiting = qTerminal?.awaitingInput != null;
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} question prompt="${parsed.prompt_text}" → setAwaitingInput("question")`);
             terminalsStore.setAwaitingInput(props.id, "question", !!parsed.confident);
-            if (!wasAwaiting) {
-              appLogger.info("terminal", `[Notify] ${props.id} question — prompt="${parsed.prompt_text}" confident=${!!parsed.confident}`);
-              notificationsStore.playQuestion();
-            }
             break;
           }
           case "usage-limit": {
@@ -449,9 +460,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             const { error_kind: kind, pattern_name: patternName, matched_text: matchedText } = parsed;
             appLogger.warn("terminal", `[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
             appLogger.error("terminal", `API error (${kind}): ${matchedText}`);
-            appLogger.info("terminal", `[Notify] ${props.id} error — api-error pattern=${patternName} kind=${kind} matched="${matchedText}"`);
             terminalsStore.setAwaitingInput(props.id, "error");
-            notificationsStore.playError();
             break;
           }
           case "intent":
