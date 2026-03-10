@@ -532,11 +532,7 @@ mod tests {
             mcp_sessions: DashMap::new(),
             ws_clients: DashMap::new(),
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
-            repo_info_cache: DashMap::new(),
-            merged_branches_cache: DashMap::new(),
-            github_status_cache: DashMap::new(),
-            git_status_cache: DashMap::new(),
-            git_panel_context_cache: DashMap::new(),
+            git_cache: crate::state::GitCacheState::new(),
             head_watchers: DashMap::new(),
             repo_watchers: DashMap::new(),
             http_client: std::mem::ManuallyDrop::new(http_client),
@@ -560,8 +556,7 @@ mod tests {
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
-            relay_shutdown: parking_lot::Mutex::new(None),
-            relay_connected: std::sync::atomic::AtomicBool::new(false),
+            relay: crate::state::RelayState::new(),
         })
     }
 

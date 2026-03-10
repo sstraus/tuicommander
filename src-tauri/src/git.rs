@@ -164,12 +164,12 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
 /// Get git repository info for a path (cached, 5s TTL)
 #[tauri::command]
 pub(crate) fn get_repo_info(state: State<'_, Arc<AppState>>, path: String) -> RepoInfo {
-    if let Some(cached) = AppState::get_cached(&state.repo_info_cache, &path, GIT_CACHE_TTL) {
+    if let Some(cached) = AppState::get_cached(&state.git_cache.repo_info, &path, GIT_CACHE_TTL) {
         return cached;
     }
 
     let info = get_repo_info_impl(&path);
-    AppState::set_cached(&state.repo_info_cache, path, info.clone());
+    AppState::set_cached(&state.git_cache.repo_info, path, info.clone());
     info
 }
 
@@ -613,7 +613,7 @@ pub(crate) async fn get_merged_branches(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<Vec<String>, String> {
-    if let Some(cached) = AppState::get_cached(&state.merged_branches_cache, &path, GIT_CACHE_TTL) {
+    if let Some(cached) = AppState::get_cached(&state.git_cache.merged_branches, &path, GIT_CACHE_TTL) {
         return Ok(cached);
     }
 
@@ -624,7 +624,7 @@ pub(crate) async fn get_merged_branches(
     })
     .await
     .map_err(|e| format!("spawn_blocking join error: {e}"))??;
-    AppState::set_cached(&state_arc.merged_branches_cache, path, result.clone());
+    AppState::set_cached(&state_arc.git_cache.merged_branches, path, result.clone());
     Ok(result)
 }
 
@@ -696,7 +696,7 @@ pub(crate) async fn get_repo_summary_impl(state: &AppState, repo_path: String) -
         crate::worktree::get_worktree_paths(wt_path)
     });
 
-    let merged_branches = if let Some(cached) = AppState::get_cached(&state.merged_branches_cache, &repo_path, GIT_CACHE_TTL) {
+    let merged_branches = if let Some(cached) = AppState::get_cached(&state.git_cache.merged_branches, &repo_path, GIT_CACHE_TTL) {
         cached
     } else {
         let mb_path = repo_path.clone();
@@ -705,7 +705,7 @@ pub(crate) async fn get_repo_summary_impl(state: &AppState, repo_path: String) -
         })
         .await
         .map_err(|e| format!("spawn_blocking error: {e}"))??;
-        AppState::set_cached(&state.merged_branches_cache, repo_path.clone(), branches.clone());
+        AppState::set_cached(&state.git_cache.merged_branches, repo_path.clone(), branches.clone());
         branches
     };
 
@@ -762,7 +762,7 @@ pub(crate) async fn get_repo_structure_impl(state: &AppState, repo_path: String)
         crate::worktree::get_worktree_paths(wt_path)
     });
 
-    let merged_branches = if let Some(cached) = AppState::get_cached(&state.merged_branches_cache, &repo_path, GIT_CACHE_TTL) {
+    let merged_branches = if let Some(cached) = AppState::get_cached(&state.git_cache.merged_branches, &repo_path, GIT_CACHE_TTL) {
         cached
     } else {
         let mb_path = repo_path.clone();
@@ -771,7 +771,7 @@ pub(crate) async fn get_repo_structure_impl(state: &AppState, repo_path: String)
         })
         .await
         .map_err(|e| format!("spawn_blocking error: {e}"))??;
-        AppState::set_cached(&state.merged_branches_cache, repo_path.clone(), branches.clone());
+        AppState::set_cached(&state.git_cache.merged_branches, repo_path.clone(), branches.clone());
         branches
     };
 
@@ -1035,12 +1035,12 @@ pub(crate) fn get_git_panel_context(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> GitPanelContext {
-    if let Some(cached) = AppState::get_cached(&state.git_panel_context_cache, &path, GIT_CACHE_TTL) {
+    if let Some(cached) = AppState::get_cached(&state.git_cache.git_panel_context, &path, GIT_CACHE_TTL) {
         return cached;
     }
 
     let ctx = get_git_panel_context_impl(Path::new(&path));
-    AppState::set_cached(&state.git_panel_context_cache, path, ctx.clone());
+    AppState::set_cached(&state.git_cache.git_panel_context, path, ctx.clone());
     ctx
 }
 

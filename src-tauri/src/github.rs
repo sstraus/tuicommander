@@ -831,13 +831,13 @@ pub(crate) async fn get_repo_pr_statuses(
     tokio::task::spawn_blocking(move || {
         // Skip cache when include_merged is true (startup poll only)
         if !include_merged
-            && let Some(cached) = AppState::get_cached(&state.github_status_cache, &path, GITHUB_CACHE_TTL)
+            && let Some(cached) = AppState::get_cached(&state.git_cache.github_status, &path, GITHUB_CACHE_TTL)
         {
             return Ok(cached);
         }
 
         let statuses = get_repo_pr_statuses_impl(&path, include_merged, &state)?;
-        AppState::set_cached(&state.github_status_cache, path.clone(), statuses.clone());
+        AppState::set_cached(&state.git_cache.github_status, path.clone(), statuses.clone());
         Ok(statuses)
     })
     .await
@@ -961,7 +961,7 @@ pub(crate) fn get_all_pr_statuses_impl(
         }
 
         // Update the per-repo cache so get_repo_pr_statuses hits cache on next individual call
-        AppState::set_cached(&state.github_status_cache, path.clone(), statuses.clone());
+        AppState::set_cached(&state.git_cache.github_status, path.clone(), statuses.clone());
         results.insert(path.clone(), statuses);
     }
     Ok(results)
@@ -1038,11 +1038,11 @@ pub(crate) async fn get_github_status(
 ) -> Result<GitHubStatus, String> {
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || {
-        if let Some(cached) = AppState::get_cached(&state.git_status_cache, &path, GIT_CACHE_TTL) {
+        if let Some(cached) = AppState::get_cached(&state.git_cache.git_status, &path, GIT_CACHE_TTL) {
             return cached;
         }
         let status = get_github_status_impl(&path);
-        AppState::set_cached(&state.git_status_cache, path, status.clone());
+        AppState::set_cached(&state.git_cache.git_status, path, status.clone());
         status
     })
     .await

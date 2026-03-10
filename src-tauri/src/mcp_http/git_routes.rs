@@ -159,14 +159,14 @@ pub(super) async fn repo_merged_branches(
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
     let path = q.path;
     // Check cache first (same pattern as Tauri command)
-    if let Some(cached) = crate::AppState::get_cached(&state.merged_branches_cache, &path, crate::state::GIT_CACHE_TTL) {
+    if let Some(cached) = crate::AppState::get_cached(&state.git_cache.merged_branches, &path, crate::state::GIT_CACHE_TTL) {
         return (StatusCode::OK, Json(serde_json::json!(cached))).into_response();
     }
     let state_clone = state.clone();
     let path_clone = path.clone();
     match tokio::task::spawn_blocking(move || crate::git::get_merged_branches_impl(std::path::Path::new(&path_clone))).await {
         Ok(Ok(branches)) => {
-            crate::AppState::set_cached(&state_clone.merged_branches_cache, path, branches.clone());
+            crate::AppState::set_cached(&state_clone.git_cache.merged_branches, path, branches.clone());
             (StatusCode::OK, Json(serde_json::json!(branches))).into_response()
         }
         Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),

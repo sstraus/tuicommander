@@ -674,16 +674,8 @@ pub struct AppState {
     pub ws_clients: DashMap<String, Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
     /// Cached AppConfig to avoid re-reading from disk on every request
     pub(crate) config: parking_lot::RwLock<crate::config::AppConfig>,
-    /// TTL cache for get_repo_info results, keyed by repo path
-    pub(crate) repo_info_cache: DashMap<String, (crate::git::RepoInfo, Instant)>,
-    /// TTL cache for get_merged_branches results, keyed by repo path
-    pub(crate) merged_branches_cache: DashMap<String, (Vec<String>, Instant)>,
-    /// TTL cache for get_repo_pr_statuses results, keyed by repo path
-    pub(crate) github_status_cache: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
-    /// TTL cache for get_github_status results (ahead/behind), keyed by repo path
-    pub(crate) git_status_cache: DashMap<String, (crate::github::GitHubStatus, Instant)>,
-    /// TTL cache for get_git_panel_context results, keyed by repo path
-    pub(crate) git_panel_context_cache: DashMap<String, (crate::git::GitPanelContext, Instant)>,
+    /// TTL caches for git and GitHub query results
+    pub(crate) git_cache: GitCacheState,
     /// File watchers for .git/HEAD per repo (keyed by repo path)
     pub(crate) head_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
     /// File watchers for .git/ directory per repo (keyed by repo path)
@@ -748,10 +740,64 @@ pub struct AppState {
     /// Updated by PTY reader on every non-empty chunk. Used to derive shell_state:
     /// "busy" when now - last < 500ms, "idle" otherwise (matches desktop model).
     pub(crate) last_output_ms: DashMap<String, AtomicU64>,
-    /// Shutdown sender for the relay client — send () to gracefully stop it
-    pub(crate) relay_shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
-    /// Whether the relay client is currently connected to the relay server
-    pub(crate) relay_connected: std::sync::atomic::AtomicBool,
+    /// Cloud relay client state
+    pub(crate) relay: RelayState,
+}
+
+/// Cloud relay client state (connection + shutdown handle).
+pub(crate) struct RelayState {
+    /// Shutdown sender — send () to gracefully stop the relay client
+    pub(crate) shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    /// Whether the relay client is currently connected
+    pub(crate) connected: std::sync::atomic::AtomicBool,
+}
+
+impl RelayState {
+    pub(crate) fn new() -> Self {
+        Self {
+            shutdown: parking_lot::Mutex::new(None),
+            connected: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+}
+
+/// TTL caches for git and GitHub query results, keyed by repo path.
+pub(crate) struct GitCacheState {
+    pub(crate) repo_info: DashMap<String, (crate::git::RepoInfo, Instant)>,
+    pub(crate) merged_branches: DashMap<String, (Vec<String>, Instant)>,
+    pub(crate) github_status: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
+    pub(crate) git_status: DashMap<String, (crate::github::GitHubStatus, Instant)>,
+    pub(crate) git_panel_context: DashMap<String, (crate::git::GitPanelContext, Instant)>,
+}
+
+impl GitCacheState {
+    pub(crate) fn new() -> Self {
+        Self {
+            repo_info: DashMap::new(),
+            merged_branches: DashMap::new(),
+            github_status: DashMap::new(),
+            git_status: DashMap::new(),
+            git_panel_context: DashMap::new(),
+        }
+    }
+
+    /// Invalidate all caches.
+    pub(crate) fn clear_all(&self) {
+        self.repo_info.clear();
+        self.merged_branches.clear();
+        self.github_status.clear();
+        self.git_status.clear();
+        self.git_panel_context.clear();
+    }
+
+    /// Invalidate caches for a specific repo path.
+    pub(crate) fn invalidate_repo(&self, path: &str) {
+        self.repo_info.remove(path);
+        self.merged_branches.remove(path);
+        self.github_status.remove(path);
+        self.git_status.remove(path);
+        self.git_panel_context.remove(path);
+    }
 }
 
 /// Remove dead (closed-receiver) WebSocket senders for a session.
@@ -796,20 +842,12 @@ impl AppState {
 
     /// Invalidate all operation caches (git + GitHub).
     pub(crate) fn clear_caches(&self) {
-        self.repo_info_cache.clear();
-        self.merged_branches_cache.clear();
-        self.github_status_cache.clear();
-        self.git_status_cache.clear();
-        self.git_panel_context_cache.clear();
+        self.git_cache.clear_all();
     }
 
     /// Invalidate caches for a specific repo path.
     pub(crate) fn invalidate_repo_caches(&self, path: &str) {
-        self.repo_info_cache.remove(path);
-        self.merged_branches_cache.remove(path);
-        self.github_status_cache.remove(path);
-        self.git_status_cache.remove(path);
-        self.git_panel_context_cache.remove(path);
+        self.git_cache.invalidate_repo(path);
     }
 
     /// Shell idle timeout: 500ms without PTY output → "idle" (matches desktop model).
@@ -1947,11 +1985,7 @@ mod tests {
             mcp_sessions: dashmap::DashMap::new(),
             ws_clients: dashmap::DashMap::new(),
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
-            repo_info_cache: dashmap::DashMap::new(),
-            merged_branches_cache: dashmap::DashMap::new(),
-            github_status_cache: dashmap::DashMap::new(),
-            git_status_cache: dashmap::DashMap::new(),
-            git_panel_context_cache: dashmap::DashMap::new(),
+            git_cache: GitCacheState::new(),
             head_watchers: dashmap::DashMap::new(),
             repo_watchers: dashmap::DashMap::new(),
             http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
@@ -1975,8 +2009,7 @@ mod tests {
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
-            relay_shutdown: parking_lot::Mutex::new(None),
-            relay_connected: std::sync::atomic::AtomicBool::new(false),
+            relay: RelayState::new(),
         }
     }
 
@@ -2067,7 +2100,7 @@ mod tests {
     #[test]
     fn test_clear_caches_empties_all() {
         let state = make_test_app_state();
-        state.repo_info_cache.insert(
+        state.git_cache.repo_info.insert(
             "/some/path".to_string(),
             (
                 crate::git::RepoInfo {
@@ -2081,24 +2114,24 @@ mod tests {
                 Instant::now(),
             ),
         );
-        state.github_status_cache.insert(
+        state.git_cache.github_status.insert(
             "/some/path".to_string(),
             (vec![], Instant::now()),
         );
 
-        assert!(!state.repo_info_cache.is_empty());
-        assert!(!state.github_status_cache.is_empty());
+        assert!(!state.git_cache.repo_info.is_empty());
+        assert!(!state.git_cache.github_status.is_empty());
 
         state.clear_caches();
 
-        assert!(state.repo_info_cache.is_empty());
-        assert!(state.github_status_cache.is_empty());
+        assert!(state.git_cache.repo_info.is_empty());
+        assert!(state.git_cache.github_status.is_empty());
     }
 
     #[test]
     fn test_invalidate_repo_caches_removes_specific_path() {
         let state = make_test_app_state();
-        state.repo_info_cache.insert(
+        state.git_cache.repo_info.insert(
             "/repo/a".to_string(),
             (
                 crate::git::RepoInfo {
@@ -2112,7 +2145,7 @@ mod tests {
                 Instant::now(),
             ),
         );
-        state.repo_info_cache.insert(
+        state.git_cache.repo_info.insert(
             "/repo/b".to_string(),
             (
                 crate::git::RepoInfo {
@@ -2129,8 +2162,8 @@ mod tests {
 
         state.invalidate_repo_caches("/repo/a");
 
-        assert!(state.repo_info_cache.get("/repo/a").is_none());
-        assert!(state.repo_info_cache.get("/repo/b").is_some());
+        assert!(state.git_cache.repo_info.get("/repo/a").is_none());
+        assert!(state.git_cache.repo_info.get("/repo/b").is_some());
     }
 
     // --- KittyKeyboardState tests ---

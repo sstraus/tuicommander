@@ -541,7 +541,7 @@ fn regenerate_session_token(state: State<'_, Arc<AppState>>) -> String {
 #[tauri::command]
 fn get_relay_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
     let cfg = state.config.read();
-    let connected = state.relay_connected.load(std::sync::atomic::Ordering::Relaxed);
+    let connected = state.relay.connected.load(std::sync::atomic::Ordering::Relaxed);
     serde_json::json!({
         "enabled": cfg.relay_enabled,
         "connected": connected,
@@ -570,11 +570,7 @@ pub fn run() {
         mcp_sessions: DashMap::new(),
         ws_clients: DashMap::new(),
         config: parking_lot::RwLock::new(config.clone()),
-        repo_info_cache: DashMap::new(),
-        merged_branches_cache: DashMap::new(),
-        github_status_cache: DashMap::new(),
-        git_status_cache: DashMap::new(),
-        git_panel_context_cache: DashMap::new(),
+        git_cache: crate::state::GitCacheState::new(),
         head_watchers: DashMap::new(),
         repo_watchers: DashMap::new(),
         http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
@@ -598,8 +594,7 @@ pub fn run() {
         mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
         slash_mode: DashMap::new(),
         last_output_ms: DashMap::new(),
-        relay_shutdown: parking_lot::Mutex::new(None),
-        relay_connected: std::sync::atomic::AtomicBool::new(false),
+        relay: crate::state::RelayState::new(),
     });
 
     // Wire the event bus into the upstream registry so status changes emit SSE events.
@@ -630,7 +625,7 @@ pub fn run() {
     // Start relay client if configured
     if config.relay_enabled {
         let (relay_tx, relay_rx) = tokio::sync::oneshot::channel();
-        *state.relay_shutdown.lock() = Some(relay_tx);
+        *state.relay.shutdown.lock() = Some(relay_tx);
         let relay_state = state.clone();
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new()
