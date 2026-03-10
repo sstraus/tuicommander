@@ -2,6 +2,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   background: var(--bg-primary);
   padding: 8px 12px;
@@ -12,9 +13,15 @@
   font-size: 14px;
   line-height: 1.6;
   color: var(--fg-primary);
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
   font-variant-emoji: text;
   margin: 0;
+}
+
+.tableLine {
+  white-space: pre;
 }
 
 .line {

@@ -1,7 +1,7 @@
 import { createSignal, createMemo, onMount, onCleanup, For, Index, Show } from "solid-js";
 import { subscribePty } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
-import { type LogLine, normalizeLogLine, spanStyle, lineMatchesQuery } from "../utils/logLine";
+import { type LogLine, normalizeLogLine, spanStyle, lineMatchesQuery, hasBoxDrawing } from "../utils/logLine";
 import styles from "./OutputView.module.css";
 
 const MAX_LINES = 500;
@@ -128,7 +128,7 @@ export function OutputView(props: OutputViewProps) {
       <pre class={styles.text}>
         <For each={displayedLines()}>
           {(line) => (
-            <div class={styles.line}>
+            <div class={hasBoxDrawing(line) ? `${styles.line} ${styles.tableLine}` : styles.line}>
               <Index each={line.spans}>
                 {(span) => {
                   const st = spanStyle(span());

@@ -3,6 +3,7 @@ import {
   logColorToCss,
   spanStyle,
   normalizeLogLine,
+  hasBoxDrawing,
   type LogColor,
   type LogLine,
 } from "../utils/logLine";
@@ -129,5 +130,50 @@ describe("normalizeLogLine", () => {
 
   it("wraps undefined as string span", () => {
     expect(normalizeLogLine(undefined)).toEqual({ spans: [{ text: "undefined" }] });
+  });
+});
+
+// --- hasBoxDrawing ---
+
+describe("hasBoxDrawing", () => {
+  it("returns false for plain text", () => {
+    expect(hasBoxDrawing({ spans: [{ text: "hello world" }] })).toBe(false);
+  });
+
+  it("returns false for empty line", () => {
+    expect(hasBoxDrawing({ spans: [] })).toBe(false);
+  });
+
+  it("returns true for line with vertical bar │", () => {
+    expect(hasBoxDrawing({ spans: [{ text: "│ col1 │ col2 │" }] })).toBe(true);
+  });
+
+  it("returns true for line with tree branch ├──", () => {
+    expect(hasBoxDrawing({ spans: [{ text: "├── src/" }] })).toBe(true);
+  });
+
+  it("returns true for line with corner └", () => {
+    expect(hasBoxDrawing({ spans: [{ text: "└── README.md" }] })).toBe(true);
+  });
+
+  it("returns true for horizontal rule ─", () => {
+    expect(hasBoxDrawing({ spans: [{ text: "┌─────────┐" }] })).toBe(true);
+  });
+
+  it("detects box-drawing in any span", () => {
+    expect(hasBoxDrawing({
+      spans: [
+        { text: "prefix ", fg: { idx: 2 } },
+        { text: "│ data" },
+      ],
+    })).toBe(true);
+  });
+
+  it("returns false for ASCII pipe |", () => {
+    expect(hasBoxDrawing({ spans: [{ text: "echo foo | grep bar" }] })).toBe(false);
+  });
+
+  it("returns false for ASCII dash -", () => {
+    expect(hasBoxDrawing({ spans: [{ text: "--- separator ---" }] })).toBe(false);
   });
 });

@@ -101,6 +101,13 @@ export function spanStyle(
   return hasStyle ? s : undefined;
 }
 
+/** Whether a line contains Unicode box-drawing characters (U+2500–U+257F). */
+const BOX_DRAWING_RE = /[\u2500-\u257F]/;
+
+export function hasBoxDrawing(line: LogLine): boolean {
+  return line.spans.some((span) => BOX_DRAWING_RE.test(span.text));
+}
+
 /** Extract the plain text content of a log line (concatenated spans). */
 export function lineText(line: LogLine): string {
   return line.spans.map((s) => s.text).join("");
