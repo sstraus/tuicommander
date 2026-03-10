@@ -1,0 +1,23 @@
+src-tauri/src/claude_usage.rs
+  7db2f161065d28e1 656-752,851-862,1650-1703
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.9",
+  "base_commit_sha": "bda8c27c8807e139b447affd0adbd8dbfc3d867f",
+  "prompts": {
+    "7db2f161065d28e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a031b85c-cea3-4e62-9f6a-b148fc46a7c2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 163,
+      "total_deletions": 0,
+      "accepted_lines": 163,
+      "overriden_lines": 0
+    }
+  }
+}
