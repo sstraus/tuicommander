@@ -1,7 +1,7 @@
 import { createStore } from "solid-js/store";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { isTauri } from "../transport";
+import { isTauri, rpc } from "../transport";
 import { settingsStore } from "./settings";
 import type { UpdateChannel } from "./settings";
 import { appLogger } from "./appLogger";
@@ -77,19 +77,13 @@ function createUpdaterStore() {
             setState({ available: false, version: null, body: null, downloadUrl: null });
           }
         } else {
-          // Beta/Nightly: fetch manifest manually, offer browser download
+          // Beta/Nightly: fetch manifest via Rust (bypasses WebView CSP)
           pendingUpdate = null;
           const endpoint = CHANNEL_ENDPOINTS[channel];
-          const resp = await Promise.race([
-            fetch(endpoint),
-            new Promise<Response>((_, reject) =>
-              setTimeout(() => reject(new Error("Timeout")), 10_000)
-            ),
-          ]);
-          if (!resp.ok) {
-            throw new Error(`No ${channel} release found (HTTP ${resp.status})`);
-          }
-          const manifest = await resp.json() as { version?: string; notes?: string };
+          const manifest = await rpc<{ version?: string; notes?: string }>(
+            "fetch_update_manifest",
+            { url: endpoint },
+          );
           if (manifest.version) {
             setState({
               available: true,

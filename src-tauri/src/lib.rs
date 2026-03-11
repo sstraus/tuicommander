@@ -340,6 +340,21 @@ fn get_local_ip(state: State<'_, Arc<AppState>>) -> Option<String> {
 }
 
 
+/// Fetch a JSON manifest from a URL (used by the updater for beta/nightly channels).
+/// Runs from Rust to bypass WebView CSP restrictions on connect-src.
+#[tauri::command]
+async fn fetch_update_manifest(url: String) -> Result<serde_json::Value, String> {
+    let resp = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("fetch failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("invalid JSON: {e}"))
+}
+
 /// A markdown file with its git status
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct MarkdownFileEntry {
@@ -813,6 +828,7 @@ pub fn run() {
             clear_caches,
             get_local_ip,
             get_local_ips,
+            fetch_update_manifest,
             get_mcp_status,
             regenerate_session_token,
             get_relay_status,

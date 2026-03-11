@@ -4,6 +4,7 @@ import { createRoot } from "solid-js";
 // Mocks must be defined before module import
 const mockCheck = vi.fn();
 const mockRelaunch = vi.fn().mockResolvedValue(undefined);
+const mockRpc = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@tauri-apps/plugin-updater", () => ({
   check: mockCheck,
@@ -11,6 +12,11 @@ vi.mock("@tauri-apps/plugin-updater", () => ({
 
 vi.mock("@tauri-apps/plugin-process", () => ({
   relaunch: mockRelaunch,
+}));
+
+vi.mock("../../transport", () => ({
+  isTauri: () => true,
+  rpc: mockRpc,
 }));
 
 // Mock settings store — default to "stable" channel
@@ -27,10 +33,12 @@ describe("updaterStore", () => {
     vi.useFakeTimers();
     mockCheck.mockReset();
     mockRelaunch.mockReset().mockResolvedValue(undefined);
+    mockRpc.mockReset().mockResolvedValue(undefined);
     mockSettingsState.updateChannel = "stable";
 
     vi.doMock("@tauri-apps/plugin-updater", () => ({ check: mockCheck }));
     vi.doMock("@tauri-apps/plugin-process", () => ({ relaunch: mockRelaunch }));
+    vi.doMock("../../transport", () => ({ isTauri: () => true, rpc: mockRpc }));
     vi.doMock("../../stores/settings", () => ({
       settingsStore: { state: mockSettingsState },
     }));
@@ -150,13 +158,9 @@ describe("updaterStore", () => {
   });
 
   describe("checkForUpdate() — beta/nightly channel", () => {
-    it("fetches manifest from beta endpoint and sets downloadUrl", async () => {
+    it("fetches manifest from beta endpoint via rpc and sets downloadUrl", async () => {
       mockSettingsState.updateChannel = "beta";
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ version: "2.0.0-beta.1", notes: "Beta release" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
+      mockRpc.mockResolvedValue({ version: "2.0.0-beta.1", notes: "Beta release" });
 
       await createRoot(async (dispose) => {
         await store.checkForUpdate();
@@ -165,16 +169,16 @@ describe("updaterStore", () => {
         expect(store.state.body).toBe("Beta release");
         expect(store.state.downloadUrl).toBe("https://github.com/sstraus/tuicommander/releases/tag/beta");
         expect(mockCheck).not.toHaveBeenCalled();
+        expect(mockRpc).toHaveBeenCalledWith("fetch_update_manifest", {
+          url: "https://github.com/sstraus/tuicommander/releases/download/beta/latest.json",
+        });
         dispose();
       });
-
-      vi.unstubAllGlobals();
     });
 
     it("sets noRelease for non-stable 404", async () => {
       mockSettingsState.updateChannel = "nightly";
-      const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 404 });
-      vi.stubGlobal("fetch", mockFetch);
+      mockRpc.mockRejectedValue(new Error("HTTP 404"));
 
       await createRoot(async (dispose) => {
         await store.checkForUpdate();
@@ -183,8 +187,6 @@ describe("updaterStore", () => {
         expect(store.state.available).toBe(false);
         dispose();
       });
-
-      vi.unstubAllGlobals();
     });
   });
 
@@ -229,14 +231,8 @@ describe("updaterStore", () => {
 
     it("opens browser for non-stable channel updates", async () => {
       mockSettingsState.updateChannel = "beta";
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ version: "2.0.0-beta.1", notes: "Beta" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
+      mockRpc.mockResolvedValue({ version: "2.0.0-beta.1", notes: "Beta" });
       const mockOpen = vi.fn();
-      vi.stubGlobal("open", mockOpen);
-      // window.open
       Object.defineProperty(window, "open", { value: mockOpen, writable: true });
 
       await createRoot(async (dispose) => {
@@ -248,8 +244,6 @@ describe("updaterStore", () => {
         );
         dispose();
       });
-
-      vi.unstubAllGlobals();
     });
 
     it("sets error when install fails", async () => {
