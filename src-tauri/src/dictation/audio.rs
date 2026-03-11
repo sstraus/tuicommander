@@ -52,12 +52,7 @@ pub struct AudioCapture {
 unsafe impl Send for AudioCapture {}
 
 impl AudioCapture {
-    /// Start capturing audio from the default input device.
-    pub fn start() -> Result<Self, String> {
-        Self::start_with_device(None)
-    }
-
-    /// Start capturing audio from a specific device (or default if None).
+    /// Start capturing audio from a specific device (or system default if None).
     pub fn start_with_device(device_name: Option<&str>) -> Result<Self, String> {
         let host = cpal::default_host();
 

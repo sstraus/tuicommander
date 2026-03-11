@@ -206,9 +206,16 @@ pub fn start_dictation(
     drop(active_model_lock);
     drop(transcriber_arc_lock);
 
-    // Start audio capture
-    let capture = audio::AudioCapture::start().map_err(|e| {
+    // Start audio capture using the configured device (or system default)
+    let config = get_dictation_config();
+    let device_name = config.device.as_deref().filter(|s| !s.is_empty());
+    let capture = audio::AudioCapture::start_with_device(device_name).map_err(|e| {
         app_logger::log_via_handle(&app, "error", "dictation", &format!("Audio capture failed: {e}"));
+        // If a specific device failed, hint the user
+        if device_name.is_some() {
+            app_logger::log_via_handle(&app, "warn", "dictation",
+                "Configured device not available — check Settings > Dictation > Microphone");
+        }
         e
     })?;
 
@@ -420,6 +427,9 @@ pub struct DictationConfig {
     /// Selected whisper model name (e.g. "large-v3-turbo", "small")
     #[serde(default = "default_model")]
     pub model: String,
+    /// Selected audio input device name. None or empty = system default.
+    #[serde(default)]
+    pub device: Option<String>,
 }
 
 fn default_model() -> String {
@@ -433,6 +443,7 @@ impl Default for DictationConfig {
             hotkey: "F5".to_string(),
             language: "auto".to_string(),
             model: default_model(),
+            device: None,
         }
     }
 }

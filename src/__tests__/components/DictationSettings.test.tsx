@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import "../mocks/tauri";
+import { mockInvoke } from "../mocks/tauri";
 import { render, fireEvent } from "@solidjs/testing-library";
 
 const mockStore = vi.hoisted(() => ({
@@ -8,6 +8,7 @@ const mockStore = vi.hoisted(() => ({
     hotkey: "F5",
     language: "auto",
     selectedModel: "large-v3-turbo",
+    selectedDevice: null as string | null,
     models: [
       { name: "small", display_name: "Small", size_hint_mb: 488, downloaded: false, actual_size_mb: 0 },
       { name: "large-v3-turbo", display_name: "Large V3 Turbo", size_hint_mb: 1620, downloaded: true, actual_size_mb: 1620 },
@@ -29,6 +30,7 @@ const mockStore = vi.hoisted(() => ({
   setEnabled: vi.fn(),
   setHotkey: vi.fn(),
   setLanguage: vi.fn(),
+  setDevice: vi.fn(),
   setModel: vi.fn(),
   deleteModel: vi.fn(),
   downloadModel: vi.fn(),
@@ -38,6 +40,7 @@ const mockStore = vi.hoisted(() => ({
   startRecording: vi.fn(),
   stopRecording: vi.fn(),
   injectText: vi.fn(),
+  setCapturingHotkey: vi.fn(),
 }));
 
 vi.mock("../../stores/dictation", () => ({
@@ -50,14 +53,18 @@ import { DictationSettings } from "../../components/SettingsPanel/DictationSetti
 describe("DictationSettings – Model Selector", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: check_microphone_permission returns "not_determined" (no auto-detect)
+    mockInvoke.mockResolvedValue("not_determined");
     // Reset models to default test data
     mockStore.state.models = [
       { name: "small", display_name: "Small", size_hint_mb: 488, downloaded: false, actual_size_mb: 0 },
       { name: "large-v3-turbo", display_name: "Large V3 Turbo", size_hint_mb: 1620, downloaded: true, actual_size_mb: 1620 },
     ];
     mockStore.state.selectedModel = "large-v3-turbo";
+    mockStore.state.selectedDevice = null;
     mockStore.state.downloading = false;
     mockStore.state.downloadPercent = 0;
+    mockStore.state.devices = [];
   });
 
   it("calls refreshModels on mount", () => {
@@ -163,5 +170,94 @@ describe("DictationSettings – Model Selector", () => {
     const { container } = render(() => <DictationSettings />);
     const progressBar = container.querySelector(".progressFill");
     expect(progressBar).not.toBeNull();
+  });
+});
+
+describe("DictationSettings – Microphone Selector", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockInvoke.mockResolvedValue("not_determined");
+    mockStore.state.devices = [];
+    mockStore.state.selectedDevice = null;
+  });
+
+  it("shows Detect Microphones button when no devices loaded", () => {
+    const { container } = render(() => <DictationSettings />);
+    const btn = container.querySelector("button");
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const detectBtn = buttons.find(b => b.textContent?.includes("Detect"));
+    expect(detectBtn).not.toBeNull();
+  });
+
+  /** Find the device <select> by looking for one whose first option says "System Default" */
+  function findDeviceSelect(container: HTMLElement): HTMLSelectElement | null {
+    const selects = container.querySelectorAll("select");
+    for (const s of selects) {
+      if (s.querySelector("option")?.textContent?.includes("System Default")) return s;
+    }
+    return null;
+  }
+
+  it("shows device dropdown with System Default when devices are loaded", () => {
+    mockStore.state.devices = [
+      { name: "Built-in Microphone", is_default: true },
+      { name: "USB Mic", is_default: false },
+    ];
+
+    const { container } = render(() => <DictationSettings />);
+    const select = findDeviceSelect(container);
+    expect(select).not.toBeNull();
+    const options = select!.querySelectorAll("option");
+    // System Default + 2 devices = 3 options
+    expect(options.length).toBe(3);
+    expect(options[0].textContent).toContain("System Default");
+    expect(options[0].value).toBe("");
+    expect(options[1].textContent).toContain("Built-in Microphone");
+    expect(options[2].textContent).toContain("USB Mic");
+  });
+
+  it("calls setDevice when selecting a specific device", () => {
+    mockStore.state.devices = [
+      { name: "Built-in Microphone", is_default: true },
+      { name: "USB Mic", is_default: false },
+    ];
+
+    const { container } = render(() => <DictationSettings />);
+    const select = findDeviceSelect(container)!;
+    fireEvent.change(select, { target: { value: "USB Mic" } });
+    expect(mockStore.setDevice).toHaveBeenCalledWith("USB Mic");
+  });
+
+  it("calls setDevice(null) when selecting System Default", () => {
+    mockStore.state.devices = [
+      { name: "Built-in Microphone", is_default: true },
+    ];
+    mockStore.state.selectedDevice = "Built-in Microphone";
+
+    const { container } = render(() => <DictationSettings />);
+    const select = findDeviceSelect(container)!;
+    fireEvent.change(select, { target: { value: "" } });
+    expect(mockStore.setDevice).toHaveBeenCalledWith(null);
+  });
+
+  it("auto-detects devices on mount when mic is authorized", async () => {
+    mockInvoke.mockResolvedValue("authorized");
+
+    render(() => <DictationSettings />);
+    // Wait for the async onMount to complete
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockInvoke).toHaveBeenCalledWith("check_microphone_permission");
+    expect(mockStore.refreshDevices).toHaveBeenCalled();
+  });
+
+  it("does not auto-detect devices when mic is not authorized", async () => {
+    mockInvoke.mockResolvedValue("not_determined");
+
+    render(() => <DictationSettings />);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockInvoke).toHaveBeenCalledWith("check_microphone_permission");
+    expect(mockStore.refreshDevices).not.toHaveBeenCalled();
   });
 });

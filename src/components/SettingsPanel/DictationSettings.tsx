@@ -2,6 +2,7 @@ import { Component, For, Show, createSignal, onMount } from "solid-js";
 import { dictationStore, WHISPER_LANGUAGES } from "../../stores/dictation";
 import { appLogger } from "../../stores/appLogger";
 import type { ModelInfo } from "../../stores/dictation";
+import { invoke } from "../../invoke";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { KeyComboCapture } from "../shared/KeyComboCapture";
@@ -82,12 +83,21 @@ export const DictationSettings: Component = () => {
   const [newFrom, setNewFrom] = createSignal("");
   const [newTo, setNewTo] = createSignal("");
 
-  // Load data on mount (skip devices — triggers macOS mic permission dialog)
-  onMount(() => {
+  // Load data on mount. Auto-detect devices only if mic is already authorized
+  // (avoids triggering the macOS TCC permission dialog unexpectedly).
+  onMount(async () => {
     dictationStore.refreshConfig();
     dictationStore.refreshStatus();
     dictationStore.refreshCorrections();
     dictationStore.refreshModels();
+    try {
+      const perm = await invoke<string>("check_microphone_permission");
+      if (perm === "authorized") {
+        dictationStore.refreshDevices();
+      }
+    } catch {
+      appLogger.warn("dictation", "Failed to check microphone permission");
+    }
   });
 
   const handleAddCorrection = () => {
@@ -222,18 +232,24 @@ export const DictationSettings: Component = () => {
             </div>
           }
         >
-          <select disabled>
+          <select
+            value={dictationStore.state.selectedDevice ?? ""}
+            onChange={(e) => {
+              const val = e.currentTarget.value;
+              dictationStore.setDevice(val === "" ? null : val);
+            }}
+          >
+            <option value="">{t("dictation.systemDefault", "System Default")}</option>
             <For each={dictationStore.state.devices}>
               {(device) => (
-                <option selected={device.is_default}>
+                <option value={device.name}>
                   {device.name}
-                  {device.is_default ? ` ${t("dictation.defaultDevice", "(Default)")}` : ""}
                 </option>
               )}
             </For>
           </select>
           <p class={s.hint}>
-            {t("dictation.microphoneHint", "The default input device is used.")}
+            {t("dictation.microphoneHint", "Select the input device to use for dictation.")}
           </p>
         </Show>
       </div>

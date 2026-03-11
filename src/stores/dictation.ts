@@ -8,6 +8,7 @@ interface DictationConfig {
   hotkey: string;
   language: string;
   model: string;
+  device: string | null;
 }
 
 /** Model info from Rust backend */
@@ -73,6 +74,7 @@ interface DictationStoreState {
   hotkey: string;
   language: string;
   selectedModel: string;
+  selectedDevice: string | null;
   models: ModelInfo[];
   modelStatus: ModelStatus;
   modelName: string;
@@ -94,6 +96,7 @@ function createDictationStore() {
     hotkey: "F5",
     language: "auto",
     selectedModel: "large-v3-turbo",
+    selectedDevice: null,
     models: [],
     modelStatus: "not_downloaded",
     modelName: "",
@@ -129,6 +132,7 @@ function createDictationStore() {
           hotkey: config.hotkey,
           language: config.language,
           selectedModel: config.model ?? "large-v3-turbo",
+          selectedDevice: config.device ?? null,
         });
       } catch (err) {
         appLogger.error("dictation", "Failed to get dictation config", err);
@@ -142,6 +146,7 @@ function createDictationStore() {
         hotkey: partial.hotkey ?? state.hotkey,
         language: partial.language ?? state.language,
         model: partial.model ?? state.selectedModel,
+        device: partial.device !== undefined ? partial.device : state.selectedDevice,
       };
       try {
         await invoke("set_dictation_config", { config });
@@ -151,6 +156,7 @@ function createDictationStore() {
         if (partial.hotkey !== undefined) storeUpdate.hotkey = partial.hotkey;
         if (partial.language !== undefined) storeUpdate.language = partial.language;
         if (partial.model !== undefined) storeUpdate.selectedModel = partial.model;
+        if (partial.device !== undefined) storeUpdate.selectedDevice = partial.device;
         setState(storeUpdate);
       } catch (err) {
         appLogger.error("dictation", "Failed to save dictation config", err);
@@ -171,6 +177,10 @@ function createDictationStore() {
 
     setLanguage(value: string): void {
       actions.saveConfig({ language: value });
+    },
+
+    setDevice(value: string | null): void {
+      actions.saveConfig({ device: value });
     },
 
     /** Refresh status from Rust backend */

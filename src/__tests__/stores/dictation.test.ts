@@ -19,6 +19,7 @@ describe("dictationStore", () => {
         expect(store.state.hotkey).toBe("F5");
         expect(store.state.language).toBe("auto");
         expect(store.state.selectedModel).toBe("large-v3-turbo");
+        expect(store.state.selectedDevice).toBeNull();
         expect(store.state.models).toEqual([]);
         expect(store.state.modelStatus).toBe("not_downloaded");
         expect(store.state.recording).toBe(false);
@@ -32,12 +33,13 @@ describe("dictationStore", () => {
   });
 
   describe("refreshConfig()", () => {
-    it("loads config including model field from backend", async () => {
+    it("loads config including model and device fields from backend", async () => {
       mockInvoke.mockResolvedValueOnce({
         enabled: true,
         hotkey: "F6",
         language: "en",
         model: "small",
+        device: "USB Microphone",
       });
 
       await createRoot(async (dispose) => {
@@ -47,6 +49,7 @@ describe("dictationStore", () => {
         expect(store.state.hotkey).toBe("F6");
         expect(store.state.language).toBe("en");
         expect(store.state.selectedModel).toBe("small");
+        expect(store.state.selectedDevice).toBe("USB Microphone");
         dispose();
       });
     });
@@ -61,6 +64,21 @@ describe("dictationStore", () => {
       await createRoot(async (dispose) => {
         await store.refreshConfig();
         expect(store.state.selectedModel).toBe("large-v3-turbo");
+        dispose();
+      });
+    });
+
+    it("defaults device to null when config has no device field", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        enabled: false,
+        hotkey: "F5",
+        language: "auto",
+        model: "large-v3-turbo",
+      });
+
+      await createRoot(async (dispose) => {
+        await store.refreshConfig();
+        expect(store.state.selectedDevice).toBeNull();
         dispose();
       });
     });
@@ -249,7 +267,7 @@ describe("dictationStore", () => {
   });
 
   describe("saveConfig()", () => {
-    it("includes model in config when saving", async () => {
+    it("includes model and device in config when saving", async () => {
       mockInvoke.mockResolvedValueOnce(undefined);
 
       await createRoot(async (dispose) => {
@@ -258,6 +276,7 @@ describe("dictationStore", () => {
           config: expect.objectContaining({
             model: "large-v3-turbo",
             language: "en",
+            device: null,
           }),
         });
         dispose();
@@ -510,6 +529,32 @@ describe("dictationStore", () => {
         store.setLanguage("fr");
         expect(mockInvoke).toHaveBeenCalledWith("set_dictation_config",
           expect.objectContaining({ config: expect.objectContaining({ language: "fr" }) }),
+        );
+        dispose();
+      });
+    });
+  });
+
+  describe("setDevice()", () => {
+    it("saves config with specific device", async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await createRoot(async (dispose) => {
+        store.setDevice("USB Microphone");
+        expect(mockInvoke).toHaveBeenCalledWith("set_dictation_config",
+          expect.objectContaining({ config: expect.objectContaining({ device: "USB Microphone" }) }),
+        );
+        dispose();
+      });
+    });
+
+    it("saves null device to use system default", async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await createRoot(async (dispose) => {
+        store.setDevice(null);
+        expect(mockInvoke).toHaveBeenCalledWith("set_dictation_config",
+          expect.objectContaining({ config: expect.objectContaining({ device: null }) }),
         );
         dispose();
       });
