@@ -1,0 +1,23 @@
+src-tauri/src/dictation/permission.rs
+  4bd2668b50df4198 18,21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "0370081bad9792b88dcede97437c6d0ae4f36aca",
+  "prompts": {
+    "4bd2668b50df4198": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92228039-37c0-46d0-94e4-bd9653f44347",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Roberto Serafin <roberto.serafin@lansweeper.com>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 0,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
