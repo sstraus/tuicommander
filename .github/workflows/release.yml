@@ -21,7 +21,7 @@ jobs:
             args: ''
             label: Linux-x64
           - platform: windows-latest
-            args: ''
+            args: '--bundles nsis'
             label: Windows-x64
 
     runs-on: ${{ matrix.platform }}
