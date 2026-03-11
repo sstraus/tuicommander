@@ -677,22 +677,25 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
       }
 
-      // Suppress bare arrow keys when a non-interactive command is running.
-      // Prevents ugly ^[[A/B/C/D echo during e.g. cargo build.
-      // Allow arrows when:
+      // Suppress printable keys and arrows when no interactive program is reading input.
+      // Prevents ugly raw echo during e.g. cargo build or before shell is ready.
+      // Allow input when:
+      //  - shell is idle (prompt is active, readline handles input)
       //  - alternate screen (vim, htop, Ink/Claude Code)
       //  - agent awaits input (question prompt)
       //  - kitty keyboard active (app explicitly requested key protocol = reads input)
-      //  - any modifier held (Ctrl/Alt/Shift combos are intentional)
-      if (event.type === "keydown"
-        && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)
-        && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
-        && terminalsStore.get(props.id)?.shellState === "busy"
-        && !terminalsStore.get(props.id)?.awaitingInput
-        && terminal!.buffer.active.type === "normal"
-        && !(kittyFlags & 1)
-      ) {
-        return false;
+      // Control keys (Ctrl+C/Z/D) always pass through to allow killing commands.
+      {
+        const shell = terminalsStore.get(props.id);
+        const noReader = (shell?.shellState === "busy" || shell?.shellState === null)
+          && !shell?.awaitingInput
+          && terminal!.buffer.active.type === "normal"
+          && !(kittyFlags & 1);
+        if (noReader && event.type === "keydown") {
+          const isArrow = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key);
+          const isPrintable = !event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1;
+          if (isArrow || isPrintable) return false;
+        }
       }
 
       // Kitty keyboard protocol: encode special keys when flag 1 (disambiguate) is active
