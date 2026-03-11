@@ -1,0 +1,25 @@
+src/components/FileBrowserPanel/FileBrowserPanel.tsx
+  54b7bf520258388a 9,70,485-486,505-527,551,553-555,557
+src/components/FileBrowserPanel/FileBrowserPanel.module.css
+  54b7bf520258388a 29-38,43-44,74-77,80-85,89,94,139-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "6343173170d53ce094b8968daa085bdf3945ac4f",
+  "prompts": {
+    "54b7bf520258388a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "283696f2-196e-4dff-b443-6da5fc622b6d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 62,
+      "total_deletions": 51,
+      "accepted_lines": 60,
+      "overriden_lines": 0
+    }
+  }
+}
