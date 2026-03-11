@@ -109,12 +109,11 @@ export const GeneralTab: Component = () => {
           onChange={(e) => settingsStore.setUpdateChannel(e.currentTarget.value as UpdateChannel)}
         >
           <option value="stable">{t("general.channel.stable", "Stable")}</option>
-          <option value="beta">{t("general.channel.beta", "Beta")}</option>
           <option value="nightly">{t("general.channel.nightly", "Nightly")}</option>
         </select>
         <Show when={settingsStore.state.updateChannel !== "stable"}>
           <p class={s.hint} style={{ color: "var(--warning, #e5c07b)" }}>
-            {t("general.hint.updateChannelWarning", "Beta and nightly builds may be unstable")}
+            {t("general.hint.updateChannelWarning", "Nightly builds may be unstable")}
           </p>
         </Show>
         <Show when={settingsStore.state.updateChannel === "stable"}>

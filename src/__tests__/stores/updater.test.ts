@@ -158,25 +158,25 @@ describe("updaterStore", () => {
     });
   });
 
-  describe("checkForUpdate() — beta/nightly channel", () => {
+  describe("checkForUpdate() — nightly channel", () => {
     it("calls check_update_channel and sets downloadUrl from result", async () => {
-      mockSettingsState.updateChannel = "beta";
+      mockSettingsState.updateChannel = "nightly";
       mockRpc.mockResolvedValue({
         available: true,
-        version: "2.0.0-beta.1",
-        notes: "Beta release",
-        release_page: "https://github.com/sstraus/tuicommander/releases/tag/beta",
+        version: "2.0.0-nightly.1",
+        notes: "Nightly release",
+        release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
         not_found: false,
       });
 
       await createRoot(async (dispose) => {
         await store.checkForUpdate();
         expect(store.state.available).toBe(true);
-        expect(store.state.version).toBe("2.0.0-beta.1");
-        expect(store.state.body).toBe("Beta release");
-        expect(store.state.downloadUrl).toBe("https://github.com/sstraus/tuicommander/releases/tag/beta");
+        expect(store.state.version).toBe("2.0.0-nightly.1");
+        expect(store.state.body).toBe("Nightly release");
+        expect(store.state.downloadUrl).toBe("https://github.com/sstraus/tuicommander/releases/tag/nightly");
         expect(mockCheck).not.toHaveBeenCalled();
-        expect(mockRpc).toHaveBeenCalledWith("check_update_channel", { channel: "beta" });
+        expect(mockRpc).toHaveBeenCalledWith("check_update_channel", { channel: "nightly" });
         dispose();
       });
     });
@@ -201,7 +201,7 @@ describe("updaterStore", () => {
     });
 
     it("sets error on network failure", async () => {
-      mockSettingsState.updateChannel = "beta";
+      mockSettingsState.updateChannel = "nightly";
       mockRpc.mockRejectedValue(new Error("Network error: connection refused"));
 
       await createRoot(async (dispose) => {
@@ -213,12 +213,12 @@ describe("updaterStore", () => {
     });
 
     it("sets available=false when result has no version", async () => {
-      mockSettingsState.updateChannel = "beta";
+      mockSettingsState.updateChannel = "nightly";
       mockRpc.mockResolvedValue({
         available: false,
         version: null,
         notes: null,
-        release_page: "https://github.com/sstraus/tuicommander/releases/tag/beta",
+        release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
         not_found: false,
       });
 
@@ -231,7 +231,7 @@ describe("updaterStore", () => {
     });
 
     it("clears noRelease on retry", async () => {
-      mockSettingsState.updateChannel = "beta";
+      mockSettingsState.updateChannel = "nightly";
       // First call: not_found
       mockRpc.mockResolvedValueOnce({
         available: false, version: null, notes: null,
@@ -295,10 +295,10 @@ describe("updaterStore", () => {
     });
 
     it("opens browser for non-stable channel updates", async () => {
-      mockSettingsState.updateChannel = "beta";
+      mockSettingsState.updateChannel = "nightly";
       mockRpc.mockResolvedValue({
-        available: true, version: "2.0.0-beta.1", notes: "Beta",
-        release_page: "https://github.com/sstraus/tuicommander/releases/tag/beta",
+        available: true, version: "2.0.0-nightly.1", notes: "Nightly",
+        release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
         not_found: false,
       });
       const mockOpen = vi.fn();
@@ -308,7 +308,7 @@ describe("updaterStore", () => {
         await store.checkForUpdate();
         await store.downloadAndInstall();
         expect(mockOpen).toHaveBeenCalledWith(
-          "https://github.com/sstraus/tuicommander/releases/tag/beta",
+          "https://github.com/sstraus/tuicommander/releases/tag/nightly",
           "_blank",
         );
         dispose();
@@ -335,7 +335,7 @@ describe("updaterStore", () => {
 
   describe("dismiss()", () => {
     it("clears available state and noRelease", async () => {
-      mockSettingsState.updateChannel = "beta";
+      mockSettingsState.updateChannel = "nightly";
       mockRpc.mockResolvedValue({
         available: false, version: null, notes: null,
         release_page: "https://example.com", not_found: true,

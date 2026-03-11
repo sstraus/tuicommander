@@ -311,7 +311,7 @@ pub(crate) struct AppConfig {
     /// Plugin IDs that the user has disabled (not loaded on startup)
     #[serde(default)]
     pub(crate) disabled_plugin_ids: Vec<String>,
-    /// Update channel: "stable", "beta", or "nightly"
+    /// Update channel: "stable" or "nightly"
     #[serde(default = "default_update_channel")]
     pub(crate) update_channel: String,
     /// Session token cookie duration in seconds (0 = session cookie, 31536000 = "never")
@@ -913,7 +913,7 @@ mod tests {
             auto_update_enabled: false,
             language: "it".to_string(),
             disabled_plugin_ids: vec!["test-disabled".to_string()],
-            update_channel: "beta".to_string(),
+            update_channel: "nightly".to_string(),
             session_token_duration_secs: 3600,
             ipv6_enabled: true,
             lan_auth_bypass: true,
@@ -945,7 +945,7 @@ mod tests {
         assert!(!loaded.auto_update_enabled);
         assert_eq!(loaded.language, "it");
         assert_eq!(loaded.disabled_plugin_ids, vec!["test-disabled".to_string()]);
-        assert_eq!(loaded.update_channel, "beta");
+        assert_eq!(loaded.update_channel, "nightly");
         assert_eq!(loaded.session_token_duration_secs, 3600);
         assert!(loaded.ipv6_enabled);
         assert!(loaded.lan_auth_bypass);

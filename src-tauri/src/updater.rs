@@ -1,4 +1,4 @@
-//! Update channel checker for beta/nightly releases.
+//! Update channel checker for nightly releases.
 //!
 //! Owns URL mapping, HTTP fetch (with timeout + size cap), manifest parsing,
 //! and error classification. The TypeScript frontend is a pure state consumer.
@@ -24,13 +24,6 @@ struct ChannelConfig {
 
 const CHANNELS: &[(&str, ChannelConfig)] = &[
     (
-        "beta",
-        ChannelConfig {
-            manifest_url: "https://github.com/sstraus/tuicommander/releases/download/beta/latest.json",
-            release_page: "https://github.com/sstraus/tuicommander/releases/tag/beta",
-        },
-    ),
-    (
         "nightly",
         ChannelConfig {
             manifest_url: "https://github.com/sstraus/tuicommander/releases/download/nightly/latest.json",
@@ -51,7 +44,7 @@ fn get_channel_config(channel: &str) -> Result<&'static ChannelConfig, String> {
         .iter()
         .find(|(name, _)| *name == channel)
         .map(|(_, cfg)| cfg)
-        .ok_or_else(|| format!("Unknown update channel: \"{channel}\". Valid channels: beta, nightly"))
+        .ok_or_else(|| format!("Unknown update channel: \"{channel}\". Valid channels: nightly"))
 }
 
 /// Internal implementation that accepts a URL — enables testing with mock server.
@@ -136,7 +129,7 @@ async fn fetch_channel_manifest(
     })
 }
 
-/// Check a beta/nightly update channel for available updates.
+/// Check a nightly update channel for available updates.
 ///
 /// URLs are hardcoded — no user-supplied URLs accepted (SSRF prevention).
 #[tauri::command]
@@ -175,7 +168,6 @@ mod tests {
 
     #[test]
     fn test_get_channel_config_valid() {
-        assert!(get_channel_config("beta").is_ok());
         assert!(get_channel_config("nightly").is_ok());
     }
 

@@ -207,7 +207,7 @@ function validateFont(value: string | null): FontType {
 export type SplitTabMode = "separate" | "unified";
 
 /** Update channel */
-export type UpdateChannel = "stable" | "beta" | "nightly";
+export type UpdateChannel = "stable" | "nightly";
 
 /** Settings store state */
 interface SettingsStoreState {
@@ -285,7 +285,7 @@ function createSettingsStore() {
         setState("language", config.language || "en");
         setLocale(config.language || "en");
         const channel = config.update_channel;
-        setState("updateChannel", (channel === "beta" || channel === "nightly") ? channel : "stable");
+        setState("updateChannel", channel === "nightly" ? channel : "stable");
         setState("disabledAgents", config.disabled_agents ?? []);
         setState("intentTabTitle", config.intent_tab_title ?? true);
         setState("suggestFollowups", config.suggest_followups ?? true);
