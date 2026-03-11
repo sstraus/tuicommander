@@ -29,21 +29,8 @@ pub(crate) fn default_shell() -> String {
     }
 }
 
-// TODO(v1.1): delete AgentTeamsEnv and the commented-out it2 shim infrastructure
-// if not reimplemented by then. The it2 shim approach was superseded by direct
-// MCP tool spawning — CC calls `agent spawn` via our MCP server instead of
-// using iTerm2's `it2 session split`. See agent_mcp.rs for the commented-out shim.
-
-/// When Agent Teams is enabled, inject the feature flag env var into PTY sessions
-/// so Claude Code unlocks the TeamCreate/TaskCreate/SendMessage tools.
-pub(crate) fn build_agent_teams_env() -> Vec<(String, String)> {
-    vec![
-        ("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS".to_string(), "1".to_string()),
-    ]
-}
-
 /// Build a CommandBuilder for the given shell with platform-appropriate flags.
-pub(crate) fn build_shell_command(shell: &str, agent_teams: bool) -> CommandBuilder {
+pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
     #[allow(unused_mut)]
     let mut cmd = CommandBuilder::new(shell);
     // Login shell flag is Unix-only; PowerShell/cmd.exe don't support -l
@@ -76,12 +63,8 @@ pub(crate) fn build_shell_command(shell: &str, agent_teams: bool) -> CommandBuil
             // Fallback: ensure UTF-8 is available even when LANG is completely unset
             cmd.env("LANG", "en_US.UTF-8");
         }
-        // Agent Teams: inject feature flag so CC unlocks team tools
-        if agent_teams {
-            for (k, v) in build_agent_teams_env() {
-                cmd.env(k, v);
-            }
-        }
+        // Agent Teams: always inject feature flag so CC unlocks team tools
+        cmd.env("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
     }
     cmd
 }
@@ -981,8 +964,7 @@ pub(crate) async fn create_pty(
             }
         };
 
-        let agent_teams = state.config.read().agent_teams_shim;
-        let mut cmd = build_shell_command(&shell, agent_teams);
+        let mut cmd = build_shell_command(&shell);
 
         if let Some(ref cwd) = config.cwd {
             cmd.cwd(cwd);
@@ -1088,8 +1070,7 @@ pub(crate) async fn create_pty_with_worktree(
 
         let shell = resolve_shell(pty_config.shell);
 
-        let agent_teams = state.config.read().agent_teams_shim;
-        let mut cmd = build_shell_command(&shell, agent_teams);
+        let mut cmd = build_shell_command(&shell);
         cmd.cwd(&worktree_path);
 
         let child = pair
@@ -2399,27 +2380,6 @@ mod tests {
         assert!(s.is_resize_grace(), "second resize should restart grace period");
     }
 
-    // --- Agent Teams env injection tests ---
-    // TODO(v1.1): delete commented-out it2 shim tests if not reimplemented
-    /*
-    #[test]
-    fn agent_teams_env_sets_iterm_session_id() { ... }
-    #[test]
-    fn agent_teams_env_sets_term_program() { ... }
-    #[test]
-    fn agent_teams_env_prepends_tuic_bin_to_path() { ... }
-    #[test]
-    fn agent_teams_env_sets_tuic_http_port() { ... }
-    #[test]
-    fn agent_teams_env_sets_tuic_socket_path() { ... }
-    */
-
-    #[test]
-    fn agent_teams_env_sets_feature_flag() {
-        let vars = build_agent_teams_env();
-        let val = vars.iter().find(|(k, _)| k == "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS").map(|(_, v)| v.as_str());
-        assert_eq!(val, Some("1"));
-    }
 
     // --- VtLogBuffer + parse_clean_lines pipeline tests ---
 

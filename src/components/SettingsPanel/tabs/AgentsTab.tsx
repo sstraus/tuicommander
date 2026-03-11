@@ -327,23 +327,9 @@ const AgentRow: Component<{
             </div>
           </div>
 
-          {/* Claude-specific: Usage Dashboard toggle + Agent Teams */}
+          {/* Claude-specific: Usage Dashboard toggle */}
           <Show when={props.agentType === "claude"}>
             <ClaudeUsageToggle />
-            <div class={a.expandedSection}>
-              <div class={a.expandedLabel}>Agent Teams</div>
-              <div class={a.actionsRow}>
-                <label class={a.toggleRow}>
-                  <input
-                    type="checkbox"
-                    checked={settingsStore.state.agentTeamsShim}
-                    onChange={(e) => settingsStore.setAgentTeamsShim(e.currentTarget.checked)}
-                  />
-                  <span>Enable it2 shim</span>
-                </label>
-                <span class={s.hint}>Enables Agent Teams to use TUIC tabs instead of tmux panes</span>
-              </div>
-            </div>
           </Show>
         </div>
       </Show>

@@ -297,8 +297,7 @@ fn spawn_pty_session(
         Json(serde_json::json!({"error": format!("Failed to open PTY: {}", e)})),
     ))?;
 
-    let agent_teams = state.config.read().agent_teams_shim;
-    let mut cmd = build_shell_command(&shell, agent_teams);
+    let mut cmd = build_shell_command(&shell);
     if let Some(ref dir) = cwd {
         cmd.cwd(dir);
     }
