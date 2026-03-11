@@ -159,6 +159,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const RESIZE_GRACE_MS = 500;
 
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
+  let lastPlanFilePath = ""; // Deduplicate repeated plan-file notifications
 
   /** Fit terminal to container, guarded against undersized containers.
    *  Preserves viewport scroll position across reflows (e.g. font size zoom). */
@@ -439,8 +440,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
           case "plan-file":
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} plan-file path="${parsed.path}"`);
-            // Plan file detected — play a subtle info tone (not a question).
-            if (terminalsStore.state.activeId !== props.id) {
+            // Play info tone once per plan file (deduplicate repeated matches)
+            if (terminalsStore.state.activeId !== props.id && parsed.path !== lastPlanFilePath) {
+              lastPlanFilePath = parsed.path;
               appLogger.info("terminal", `[Notify] ${props.id} info — plan-file path="${parsed.path}" (background tab)`);
               notificationsStore.playInfo();
             }
@@ -448,7 +450,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           case "user-input":
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} user-input content="${parsed.content.slice(0, 80)}"`);
-            // New user input means a new agent cycle — reset sub-task count, allow suggest to re-appear
+            // New user input means a new agent cycle — reset dedup and sub-task count
+            lastPlanFilePath = "";
             terminalsStore.update(props.id, { suggestDismissed: false, activeSubTasks: 0 });
             // Refresh last relevant prompt from Rust (word-count filtering happens backend-side)
             invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
