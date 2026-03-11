@@ -79,6 +79,7 @@ function createStatusBarTicker() {
     setMessages((prev) =>
       prev.filter((m) => m.ttlMs === 0 || now - m.createdAt < m.ttlMs),
     );
+    if (messages().length === 0) stopTimers();
   }
 
   /** Advance rotation index */
@@ -142,11 +143,13 @@ function createStatusBarTicker() {
       setMessages((prev) =>
         prev.filter((m) => !(m.id === id && m.pluginId === pluginId)),
       );
+      if (messages().length === 0) stopTimers();
     },
 
     /** Remove all messages from a plugin */
     removeAllForPlugin(pluginId: string): void {
       setMessages((prev) => prev.filter((m) => m.pluginId !== pluginId));
+      if (messages().length === 0) stopTimers();
     },
 
     /**

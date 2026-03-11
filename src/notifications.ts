@@ -32,6 +32,8 @@ export class NotificationManager {
   private config: NotificationConfig;
   private lastPlayTime: Map<NotificationSound, number> = new Map();
   private readonly minInterval = 500; // Minimum ms between same sound
+  private consecutiveFailures = 0;
+  private backoffUntil = 0;
 
   constructor(config: Partial<NotificationConfig> = {}) {
     this.config = { ...DEFAULT_NOTIFICATION_CONFIG, ...config };
@@ -42,8 +44,12 @@ export class NotificationManager {
     if (!this.config.enabled) return;
     if (!this.config.sounds[sound]) return;
 
-    // Rate limit: prevent spam
     const now = Date.now();
+
+    // Back off after repeated failures (exponential: 5s, 30s, 5min cap)
+    if (now < this.backoffUntil) return;
+
+    // Rate limit: prevent spam
     const lastPlay = this.lastPlayTime.get(sound) || 0;
     if (now - lastPlay < this.minInterval) return;
     this.lastPlayTime.set(sound, now);
@@ -53,8 +59,14 @@ export class NotificationManager {
         sound,
         volume: this.config.volume,
       });
+      this.consecutiveFailures = 0;
     } catch (err) {
-      appLogger.warn("app", "Failed to play notification sound", err);
+      this.consecutiveFailures++;
+      if (this.consecutiveFailures >= 3) {
+        const delay = Math.min(300_000, 5_000 * Math.pow(2, this.consecutiveFailures - 3));
+        this.backoffUntil = now + delay;
+        appLogger.warn("app", `Notification sound failing, backing off ${Math.round(delay / 1000)}s`, err);
+      }
     }
   }
 

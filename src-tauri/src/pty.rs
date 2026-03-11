@@ -1175,12 +1175,15 @@ pub(crate) fn list_worktrees(state: State<'_, Arc<AppState>>) -> Vec<serde_json:
 
 /// Write data to a PTY session
 #[tauri::command]
-pub(crate) fn write_pty(
+pub(crate) async fn write_pty(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
     session_id: String,
     data: String,
 ) -> Result<(), String> {
+    let state = Arc::clone(&state);
+    let app = app.clone();
+    tokio::task::spawn_blocking(move || {
     if let Some(entry) = state.sessions.get(&session_id) {
         let mut session = entry.lock();
         session
@@ -1254,6 +1257,9 @@ pub(crate) fn write_pty(
     } else {
         Err("Session not found".to_string())
     }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
 }
 
 /// Get the last relevant user prompt (>= 10 words) for a PTY session.

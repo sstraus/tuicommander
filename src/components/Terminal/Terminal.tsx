@@ -1055,46 +1055,27 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
   });
 
-  // Handle font size changes (per-terminal zoom from store)
-  // Access store path directly for reliable SolidJS reactivity tracking
+  // Handle font size changes (per-terminal zoom OR global default)
   createEffect(() => {
-    const fontSize = terminalsStore.state.terminals[props.id]?.fontSize;
-    if (terminal && fontSize !== undefined) {
-      terminal.options.fontSize = fontSize;
-      doFit();
-    }
-  });
-
-  // Handle default font size changes (global setting from Appearance)
-  createEffect(() => {
-    const defaultSize = settingsStore.state.defaultFontSize;
     const perTerminalSize = terminalsStore.state.terminals[props.id]?.fontSize;
-    // Only apply default if terminal has no per-terminal zoom override
-    if (terminal && perTerminalSize === undefined) {
-      terminal.options.fontSize = defaultSize;
-      doFit();
-    }
+    const defaultSize = settingsStore.state.defaultFontSize;
+    if (!terminal) return;
+    terminal.options.fontSize = perTerminalSize ?? defaultSize;
+    doFit();
   });
 
-  // Handle font family changes (global setting)
+  // Handle font family + theme changes (global settings)
   // Preload via CSS Font Loading API before applying — canvas/WebGL renderers
   // cannot trigger @font-face loading on their own.
   createEffect(() => {
     const font = settingsStore.state.font;
-    if (terminal) {
-      preloadFont(font).then(() => {
-        terminal!.options.fontFamily = getFontFamily();
-        doFit();
-      });
-    }
-  });
-
-  // Handle theme changes (global setting)
-  createEffect(() => {
-    settingsStore.state.theme;
-    if (terminal) {
-      terminal.options.theme = currentTheme();
-    }
+    void settingsStore.state.theme;
+    if (!terminal) return;
+    terminal.options.theme = currentTheme();
+    preloadFont(font).then(() => {
+      terminal!.options.fontFamily = getFontFamily();
+      doFit();
+    });
   });
 
   // Cleanup on unmount - detach UI but keep PTY session alive

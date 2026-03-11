@@ -16,19 +16,27 @@ const lastFetchAt = new Map<string, number>();
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Perform a single background fetch for a repo */
+/** Track consecutive failures per repo for exponential backoff */
+const failCount = new Map<string, number>();
+
 async function fetchRepo(repoPath: string): Promise<void> {
   try {
     const result = await invoke<{ success: boolean; stdout: string; stderr: string; exit_code: number }>(
       "run_git_command",
-      { path: repoPath, args: ["fetch", "--all"] },
+      { path: repoPath, args: ["-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=15", "fetch", "--all"] },
     );
     if (result.success) {
       repositoriesStore.bumpRevision(repoPath);
+      failCount.delete(repoPath);
       appLogger.debug("git", `Auto-fetch completed for ${repoPath}`);
     } else {
+      const count = (failCount.get(repoPath) ?? 0) + 1;
+      failCount.set(repoPath, count);
       appLogger.warn("git", `Auto-fetch failed for ${repoPath}`, { stderr: result.stderr });
     }
   } catch (err) {
+    const count = (failCount.get(repoPath) ?? 0) + 1;
+    failCount.set(repoPath, count);
     appLogger.warn("git", `Auto-fetch error for ${repoPath}`, err);
   }
 }
@@ -46,7 +54,10 @@ function tick(): void {
     const intervalMs = Math.max(intervalMin * 60 * 1000, MIN_INTERVAL_MS);
     const lastAt = lastFetchAt.get(repo.path) ?? 0;
 
-    if (now - lastAt >= intervalMs) {
+    // Exponential backoff: double interval per consecutive failure (cap at 8x)
+    const fails = failCount.get(repo.path) ?? 0;
+    const backoffMultiplier = Math.min(8, Math.pow(2, fails));
+    if (now - lastAt >= intervalMs * backoffMultiplier) {
       lastFetchAt.set(repo.path, now);
       fetchRepo(repo.path);
     }
@@ -66,4 +77,5 @@ export function stopAutoFetch(): void {
     tickTimer = null;
   }
   lastFetchAt.clear();
+  failCount.clear();
 }

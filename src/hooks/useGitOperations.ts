@@ -1025,7 +1025,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
     terminalsStore.setActive(id);
     repositoriesStore.addTerminalToBranch(activeRepo.path, activeRepo.activeBranch, id);
 
+    let waitAttempts = 0;
     const waitForSession = setInterval(async () => {
+      waitAttempts++;
       const terminal = terminalsStore.get(id);
       if (terminal?.sessionId) {
         clearInterval(waitForSession);
@@ -1034,10 +1036,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
         } catch (err) {
           appLogger.error("terminal", "Failed to send run command", err);
         }
+      } else if (waitAttempts >= 20) {
+        clearInterval(waitForSession);
+        appLogger.warn("terminal", "Timed out waiting for session on run command");
       }
-    }, 100);
-
-    setTimeout(() => clearInterval(waitForSession), 10000);
+    }, 500);
   };
 
   const generateWorktreeName = async (): Promise<string> => {

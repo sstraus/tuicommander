@@ -4,6 +4,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  on,
   onCleanup,
   onMount,
 } from "solid-js";
@@ -339,34 +340,20 @@ const App: Component = () => {
   // Enforce mutual exclusivity between tab stores.
   // When a non-terminal tab becomes active (e.g. from mdTabsStore.add()),
   // deactivate the terminal so its pane hides and xterm releases focus.
-  createEffect(() => {
-    if (mdTabsStore.state.activeId) {
-      terminalsStore.setActive(null);
-      diffTabsStore.setActive(null);
-      editorTabsStore.setActive(null);
-    }
-  });
-  createEffect(() => {
-    if (diffTabsStore.state.activeId) {
-      terminalsStore.setActive(null);
-      mdTabsStore.setActive(null);
-      editorTabsStore.setActive(null);
-    }
-  });
-  createEffect(() => {
-    if (editorTabsStore.state.activeId) {
-      terminalsStore.setActive(null);
-      diffTabsStore.setActive(null);
-      mdTabsStore.setActive(null);
-    }
-  });
-  createEffect(() => {
-    if (terminalsStore.state.activeId) {
-      diffTabsStore.setActive(null);
-      mdTabsStore.setActive(null);
-      editorTabsStore.setActive(null);
-    }
-  });
+  // Using `on()` with `defer: true` so each effect only fires on its own store's change,
+  // preventing the setActive(null) calls from triggering cascading re-runs.
+  createEffect(on(() => mdTabsStore.state.activeId, (id) => {
+    if (id) { terminalsStore.setActive(null); diffTabsStore.setActive(null); editorTabsStore.setActive(null); }
+  }, { defer: true }));
+  createEffect(on(() => diffTabsStore.state.activeId, (id) => {
+    if (id) { terminalsStore.setActive(null); mdTabsStore.setActive(null); editorTabsStore.setActive(null); }
+  }, { defer: true }));
+  createEffect(on(() => editorTabsStore.state.activeId, (id) => {
+    if (id) { terminalsStore.setActive(null); diffTabsStore.setActive(null); mdTabsStore.setActive(null); }
+  }, { defer: true }));
+  createEffect(on(() => terminalsStore.state.activeId, (id) => {
+    if (id) { diffTabsStore.setActive(null); mdTabsStore.setActive(null); editorTabsStore.setActive(null); }
+  }, { defer: true }));
 
   // Prevent system sleep while any terminal is busy (debounced — Story 258/405)
   let lastSleepBlocked: boolean | null = null;
