@@ -3,22 +3,16 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { isTauri, rpc } from "../transport";
 import { settingsStore } from "./settings";
-import type { UpdateChannel } from "./settings";
 import { appLogger } from "./appLogger";
 
-/** GitHub release manifest URLs per update channel */
-const CHANNEL_ENDPOINTS: Record<UpdateChannel, string> = {
-  stable: "https://github.com/sstraus/tuicommander/releases/latest/download/latest.json",
-  beta: "https://github.com/sstraus/tuicommander/releases/download/beta/latest.json",
-  nightly: "https://github.com/sstraus/tuicommander/releases/download/nightly/latest.json",
-};
-
-/** GitHub release page URLs per channel (for manual download) */
-const CHANNEL_RELEASE_PAGES: Record<UpdateChannel, string> = {
-  stable: "https://github.com/sstraus/tuicommander/releases/latest",
-  beta: "https://github.com/sstraus/tuicommander/releases/tag/beta",
-  nightly: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
-};
+/** Typed result from the Rust `check_update_channel` command. */
+interface UpdateChannelResult {
+  available: boolean;
+  version: string | null;
+  notes: string | null;
+  release_page: string | null;
+  not_found: boolean;
+}
 
 interface UpdaterState {
   available: boolean;
@@ -33,6 +27,9 @@ interface UpdaterState {
   /** For non-stable channels, a URL to the release page for manual download */
   downloadUrl: string | null;
 }
+
+/** Sentinel to distinguish "check() timed out" from "no update available". */
+const TIMEOUT_SENTINEL = Symbol("timeout");
 
 function createUpdaterStore() {
   const [state, setState] = createStore<UpdaterState>({
@@ -62,9 +59,14 @@ function createUpdaterStore() {
           // Stable: use Tauri's built-in updater (supports downloadAndInstall)
           const update = await Promise.race([
             check(),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000)),
+            new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
+              setTimeout(() => resolve(TIMEOUT_SENTINEL), 10_000),
+            ),
           ]);
-          if (update) {
+          if (update === TIMEOUT_SENTINEL) {
+            pendingUpdate = null;
+            setState({ available: false, version: null, body: null, downloadUrl: null, error: "Update check timed out" });
+          } else if (update) {
             pendingUpdate = update;
             setState({
               available: true,
@@ -77,19 +79,21 @@ function createUpdaterStore() {
             setState({ available: false, version: null, body: null, downloadUrl: null });
           }
         } else {
-          // Beta/Nightly: fetch manifest via Rust (bypasses WebView CSP)
+          // Beta/Nightly: Rust owns URL mapping, fetch, parsing, and error classification
           pendingUpdate = null;
-          const endpoint = CHANNEL_ENDPOINTS[channel];
-          const manifest = await rpc<{ version?: string; notes?: string }>(
-            "fetch_update_manifest",
-            { url: endpoint },
+          const result = await rpc<UpdateChannelResult>(
+            "check_update_channel",
+            { channel },
           );
-          if (manifest.version) {
+          if (result.not_found) {
+            appLogger.debug("app", `No ${channel} release found`);
+            setState({ noRelease: true });
+          } else if (result.available) {
             setState({
               available: true,
-              version: manifest.version,
-              body: manifest.notes ?? null,
-              downloadUrl: CHANNEL_RELEASE_PAGES[channel],
+              version: result.version,
+              body: result.notes ?? null,
+              downloadUrl: result.release_page ?? null,
             });
           } else {
             setState({ available: false, version: null, body: null, downloadUrl: null });
@@ -97,8 +101,8 @@ function createUpdaterStore() {
         }
       } catch (err) {
         const raw = err instanceof Error ? err.message : String(err);
-        if (/fetch|load failed|valid release|404|not found/i.test(raw)) {
-          // No release published for this channel — informational, not an error
+        if (channel === "stable" && /fetch|load failed|valid release|404|not found/i.test(raw)) {
+          // No release published for stable — informational, not an error
           appLogger.debug("app", `No ${channel} release found`, raw);
           setState({ noRelease: true });
         } else {

@@ -140,7 +140,7 @@ export const GeneralTab: Component = () => {
         </Show>
         <Show when={updaterStore.state.noRelease}>
           <p class={s.hint} style={{ color: "var(--fg-muted)" }}>
-            No {settingsStore.state.updateChannel} releases published yet
+            {t("general.hint.noRelease", "No {channel} releases published yet", { channel: settingsStore.state.updateChannel })}
           </p>
         </Show>
         <Show when={updaterStore.state.error}>

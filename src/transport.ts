@@ -98,6 +98,8 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
   play_notification_sound: { browserUnsupported: true },
   // --- Browser-unsupported: Relay (desktop config only) ---
   get_relay_status: { browserUnsupported: true },
+  // --- Browser-unsupported: Update channel check (hardcoded GitHub URLs) ---
+  check_update_channel: { browserUnsupported: true },
   // --- Browser-unsupported: MCP upstream (uses OS keyring) ---
   load_mcp_upstreams: { browserUnsupported: true },
   save_mcp_upstreams: { browserUnsupported: true },

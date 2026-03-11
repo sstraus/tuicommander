@@ -99,7 +99,7 @@ describe("updaterStore", () => {
       });
     });
 
-    it("times out after 10s and resolves with no update", async () => {
+    it("times out after 10s and shows error", async () => {
       // check() never resolves
       mockCheck.mockReturnValue(new Promise(() => {}));
 
@@ -109,6 +109,7 @@ describe("updaterStore", () => {
         await checkPromise;
         expect(store.state.available).toBe(false);
         expect(store.state.checking).toBe(false);
+        expect(store.state.error).toBe("Update check timed out");
         dispose();
       });
     });
@@ -158,9 +159,15 @@ describe("updaterStore", () => {
   });
 
   describe("checkForUpdate() — beta/nightly channel", () => {
-    it("fetches manifest from beta endpoint via rpc and sets downloadUrl", async () => {
+    it("calls check_update_channel and sets downloadUrl from result", async () => {
       mockSettingsState.updateChannel = "beta";
-      mockRpc.mockResolvedValue({ version: "2.0.0-beta.1", notes: "Beta release" });
+      mockRpc.mockResolvedValue({
+        available: true,
+        version: "2.0.0-beta.1",
+        notes: "Beta release",
+        release_page: "https://github.com/sstraus/tuicommander/releases/tag/beta",
+        not_found: false,
+      });
 
       await createRoot(async (dispose) => {
         await store.checkForUpdate();
@@ -169,22 +176,80 @@ describe("updaterStore", () => {
         expect(store.state.body).toBe("Beta release");
         expect(store.state.downloadUrl).toBe("https://github.com/sstraus/tuicommander/releases/tag/beta");
         expect(mockCheck).not.toHaveBeenCalled();
-        expect(mockRpc).toHaveBeenCalledWith("fetch_update_manifest", {
-          url: "https://github.com/sstraus/tuicommander/releases/download/beta/latest.json",
-        });
+        expect(mockRpc).toHaveBeenCalledWith("check_update_channel", { channel: "beta" });
         dispose();
       });
     });
 
-    it("sets noRelease for non-stable 404", async () => {
+    it("sets noRelease when result has not_found=true", async () => {
       mockSettingsState.updateChannel = "nightly";
-      mockRpc.mockRejectedValue(new Error("HTTP 404"));
+      mockRpc.mockResolvedValue({
+        available: false,
+        version: null,
+        notes: null,
+        release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
+        not_found: true,
+      });
 
       await createRoot(async (dispose) => {
         await store.checkForUpdate();
         expect(store.state.noRelease).toBe(true);
         expect(store.state.error).toBeNull();
         expect(store.state.available).toBe(false);
+        dispose();
+      });
+    });
+
+    it("sets error on network failure", async () => {
+      mockSettingsState.updateChannel = "beta";
+      mockRpc.mockRejectedValue(new Error("Network error: connection refused"));
+
+      await createRoot(async (dispose) => {
+        await store.checkForUpdate();
+        expect(store.state.error).toBe("Network error: connection refused");
+        expect(store.state.noRelease).toBe(false);
+        dispose();
+      });
+    });
+
+    it("sets available=false when result has no version", async () => {
+      mockSettingsState.updateChannel = "beta";
+      mockRpc.mockResolvedValue({
+        available: false,
+        version: null,
+        notes: null,
+        release_page: "https://github.com/sstraus/tuicommander/releases/tag/beta",
+        not_found: false,
+      });
+
+      await createRoot(async (dispose) => {
+        await store.checkForUpdate();
+        expect(store.state.available).toBe(false);
+        expect(store.state.version).toBeNull();
+        dispose();
+      });
+    });
+
+    it("clears noRelease on retry", async () => {
+      mockSettingsState.updateChannel = "beta";
+      // First call: not_found
+      mockRpc.mockResolvedValueOnce({
+        available: false, version: null, notes: null,
+        release_page: "https://example.com", not_found: true,
+      });
+
+      await createRoot(async (dispose) => {
+        await store.checkForUpdate();
+        expect(store.state.noRelease).toBe(true);
+
+        // Second call: available
+        mockRpc.mockResolvedValueOnce({
+          available: true, version: "1.0.0", notes: "hi",
+          release_page: "https://example.com", not_found: false,
+        });
+        await store.checkForUpdate();
+        expect(store.state.noRelease).toBe(false);
+        expect(store.state.available).toBe(true);
         dispose();
       });
     });
@@ -231,7 +296,11 @@ describe("updaterStore", () => {
 
     it("opens browser for non-stable channel updates", async () => {
       mockSettingsState.updateChannel = "beta";
-      mockRpc.mockResolvedValue({ version: "2.0.0-beta.1", notes: "Beta" });
+      mockRpc.mockResolvedValue({
+        available: true, version: "2.0.0-beta.1", notes: "Beta",
+        release_page: "https://github.com/sstraus/tuicommander/releases/tag/beta",
+        not_found: false,
+      });
       const mockOpen = vi.fn();
       Object.defineProperty(window, "open", { value: mockOpen, writable: true });
 
@@ -265,18 +334,22 @@ describe("updaterStore", () => {
   });
 
   describe("dismiss()", () => {
-    it("clears available state", async () => {
-      const fakeUpdate = { version: "1.0.0", body: null, downloadAndInstall: vi.fn() };
-      mockCheck.mockResolvedValue(fakeUpdate);
+    it("clears available state and noRelease", async () => {
+      mockSettingsState.updateChannel = "beta";
+      mockRpc.mockResolvedValue({
+        available: false, version: null, notes: null,
+        release_page: "https://example.com", not_found: true,
+      });
 
       await createRoot(async (dispose) => {
         await store.checkForUpdate();
-        expect(store.state.available).toBe(true);
+        expect(store.state.noRelease).toBe(true);
         store.dismiss();
         expect(store.state.available).toBe(false);
         expect(store.state.version).toBeNull();
         expect(store.state.body).toBeNull();
         expect(store.state.error).toBeNull();
+        expect(store.state.noRelease).toBe(false);
         expect(store.state.downloadUrl).toBeNull();
         dispose();
       });
