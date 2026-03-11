@@ -131,9 +131,9 @@ function createTerminalsStore() {
       }
       busyDurationMap.delete(id);
       // Agent resumed output after being idle — clear question state immediately.
-      // Micro-render false positives are now prevented upstream: Rust SilenceState
-      // suppresses silence-based questions when spinner is active (#658-785c).
-      if (prev === "idle" && state.terminals[id]?.awaitingInput != null) {
+      // Error state is NOT cleared here: API errors are persistent and should only
+      // be cleared by explicit agent activity (status-line, user-input) or process exit.
+      if (prev === "idle" && state.terminals[id]?.awaitingInput === "question") {
         terminalsStore.clearAwaitingInput(id);
       }
     } else if (next !== "busy" && prev === "busy") {

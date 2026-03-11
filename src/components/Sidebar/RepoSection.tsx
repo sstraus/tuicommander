@@ -28,6 +28,7 @@ import s from "./Sidebar.module.css";
 const BRANCH_ICON_CLASSES: Record<string, string> = {
   main: s.branchIconMain,
   worktree: s.branchIconWorktree,
+  error: s.branchIconError,
   question: s.branchIconQuestion,
   activity: s.branchIconActivity,
   unseen: s.branchIconUnseen,
@@ -65,11 +66,13 @@ export const BranchIcon: Component<{
   isMainBranch: boolean;
   isMainWorktree: boolean;
   isShell?: boolean;
+  hasError?: boolean;
   hasQuestion?: boolean;
   hasBusy?: boolean;
   hasUnseen?: boolean;
 }> = (props) => {
   const iconShape = () => {
+    if (props.hasError) return "error";
     if (props.hasQuestion) return "question";
     if (props.isShell) return "shell";
     if (props.isMainWorktree && props.isMainBranch) return "star";
@@ -78,10 +81,12 @@ export const BranchIcon: Component<{
   };
 
   /** Single source of truth for icon color — priority cascade.
+   *  Error > question > busy > unseen > base.
    *  Busy overrides the base color; idle does NOT — the base color
    *  (yellow for main, green for worktree) is already correct when
    *  nothing special is happening. */
   const colorClass = () => {
+    if (props.hasError) return "error";
     if (props.hasQuestion) return "question";
     if (props.hasBusy) return "activity";
     if (props.hasUnseen) return "unseen";
@@ -93,6 +98,7 @@ export const BranchIcon: Component<{
     <span class={cx(s.branchIcon, BRANCH_ICON_CLASSES[colorClass()])}>
       {(() => {
         switch (iconShape()) {
+          case "error": return "!";
           case "question": return "?";
           case "shell": return (
             <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M1 3l5 5-5 5h2l5-5-5-5H1zm7 9h7v2H8v-2z"/></svg>
@@ -185,8 +191,11 @@ export const BranchItem: Component<{
   const pr = createMemo(() => activePrStatus(props.repoPath, props.branch.name));
   const checks = createMemo(() => githubStore.getCheckSummary(props.repoPath, props.branch.name));
 
+  const hasError = () =>
+    props.branch.terminals.some((id) => terminalsStore.get(id)?.awaitingInput === "error");
+
   const hasQuestion = () =>
-    props.branch.terminals.some((id) => terminalsStore.get(id)?.awaitingInput != null);
+    props.branch.terminals.some((id) => terminalsStore.get(id)?.awaitingInput === "question");
 
   // Debounced busy — centralized in terminalsStore with 2s hold
   const hasBusy = () =>
@@ -268,6 +277,7 @@ export const BranchItem: Component<{
         isMainBranch={props.branch.isMain}
         isMainWorktree={props.branch.worktreePath === props.repoPath}
         isShell={props.branch.isShell}
+        hasError={hasError()}
         hasQuestion={hasQuestion()}
         hasBusy={hasBusy()}
         hasUnseen={hasUnseen()}

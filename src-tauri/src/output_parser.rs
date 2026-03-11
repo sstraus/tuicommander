@@ -106,6 +106,9 @@ pub struct OutputParser {
     api_error_patterns: &'static [ApiErrorPattern],
     /// Dedup: last emitted suggest items to suppress re-emission on scroll.
     last_suggest_items: Option<Vec<String>>,
+    /// Dedup: last emitted api-error matched text to suppress re-emission
+    /// when the same error remains visible in the terminal buffer.
+    last_api_error_match: Option<String>,
 }
 
 struct RateLimitPattern {
@@ -134,6 +137,7 @@ impl OutputParser {
             rate_limit_patterns: &RATE_LIMIT_PATTERNS,
             api_error_patterns: &API_ERROR_PATTERNS,
             last_suggest_items: None,
+            last_api_error_match: None,
         }
     }
 
@@ -142,7 +146,7 @@ impl OutputParser {
     /// Strips ANSI escape sequences via the vt100 crate before parsing.
     /// Only available in tests — the production pipeline uses [`parse_clean_lines`].
     #[cfg(test)]
-    pub fn parse(&self, text: &str) -> Vec<ParsedEvent> {
+    pub fn parse(&mut self, text: &str) -> Vec<ParsedEvent> {
         let mut events = Vec::new();
 
         // OSC 9;4 progress (cheap byte scan first, no stripping needed)
@@ -276,9 +280,10 @@ impl OutputParser {
             }
         }
 
-        // Reset suggest dedup on user-input (new agent cycle may produce new suggestions)
+        // Reset dedup state on user-input (new agent cycle may produce new errors/suggestions)
         if events.iter().any(|e| matches!(e, ParsedEvent::UserInput { .. })) {
             self.last_suggest_items = None;
+            self.last_api_error_match = None;
         }
 
         events
@@ -328,7 +333,7 @@ impl OutputParser {
         None
     }
 
-    fn parse_api_error(&self, text: &str) -> Option<ParsedEvent> {
+    fn parse_api_error(&mut self, text: &str) -> Option<ParsedEvent> {
         // Fast path: every api-error pattern requires at least one of these keywords.
         if !text.contains("api_error") && !text.contains("authentication_error")
             && !text.contains("server_error") && !text.contains("UNAVAILABLE")
@@ -353,9 +358,16 @@ impl OutputParser {
                 {
                     continue;
                 }
+                // Dedup: suppress re-emission when the same error text is still
+                // visible in the terminal buffer (e.g. prompt redraws, user typing).
+                let matched = m.as_str();
+                if self.last_api_error_match.as_deref() == Some(matched) {
+                    return None;
+                }
+                self.last_api_error_match = Some(matched.to_string());
                 return Some(ParsedEvent::ApiError {
                     pattern_name: pattern.name.to_string(),
-                    matched_text: m.as_str().to_string(),
+                    matched_text: matched.to_string(),
                     error_kind: pattern.error_kind.to_string(),
                 });
             }
@@ -1124,7 +1136,7 @@ mod tests {
 
     #[test]
     fn test_rate_limit_claude_429() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Error: rate_limit_error - please try again");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1137,7 +1149,7 @@ mod tests {
 
     #[test]
     fn test_rate_limit_with_retry_after() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("retry-after: 30");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1150,7 +1162,7 @@ mod tests {
 
     #[test]
     fn test_rate_limit_openai() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("RateLimitError: Too many requests");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1163,7 +1175,7 @@ mod tests {
 
     #[test]
     fn test_rate_limit_gemini() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("RESOURCE_EXHAUSTED: quota exceeded");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1176,14 +1188,14 @@ mod tests {
 
     #[test]
     fn test_no_rate_limit() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Hello world, everything is fine");
         assert!(events.is_empty());
     }
 
     #[test]
     fn test_github_pr_url() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Created PR: https://github.com/owner/repo/pull/42");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1198,7 +1210,7 @@ mod tests {
 
     #[test]
     fn test_gitlab_mr_url() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("MR: https://gitlab.com/org/repo/-/merge_requests/7");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1212,7 +1224,7 @@ mod tests {
 
     #[test]
     fn test_osc94_progress() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\x1b]9;4;1;75\x07");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1226,7 +1238,7 @@ mod tests {
 
     #[test]
     fn test_osc94_progress_clear() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\x1b]9;4;0;0\x07");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1240,7 +1252,7 @@ mod tests {
 
     #[test]
     fn test_status_line_claude() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("* Reading files... (12s)");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1254,7 +1266,7 @@ mod tests {
 
     #[test]
     fn test_status_line_with_tokens() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("* Updating synthesis phase... (57s \u{b7} \u{2193} 2.4k tokens)");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1269,7 +1281,7 @@ mod tests {
     #[test]
     fn test_status_line_claude_dingbat() {
         // Claude Code v2.1.63+ uses ✢ (U+2722) instead of * for status lines
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{2722}Updating verification document\u{2026} (5m1s\u{b7} \u{2191} 4.6k tokens \u{b7} thought for 4s)");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1284,7 +1296,7 @@ mod tests {
 
     #[test]
     fn test_status_line_running() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("[Running] npm test");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1298,7 +1310,7 @@ mod tests {
     #[test]
     fn test_status_line_aider_spinner() {
         // Aider uses a Knight Rider scanner: "░█        Waiting for claude-3-5-sonnet"
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{2591}\u{2588}        Waiting for claude-3-5-sonnet");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1312,7 +1324,7 @@ mod tests {
     #[test]
     fn test_status_line_aider_token_report() {
         // Aider token report: "Tokens: 5.2k sent, 1.3k received."
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Tokens: 5.2k sent, 1.3k received.");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1327,7 +1339,7 @@ mod tests {
     #[test]
     fn test_status_line_aider_token_report_with_cache() {
         // Aider with cache: "Tokens: 2,345 sent, 123 cache write, 456 cache hit, 789 received."
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Tokens: 2,345 sent, 123 cache write, 456 cache hit, 789 received.");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1342,7 +1354,7 @@ mod tests {
     #[test]
     fn test_status_line_codex_working() {
         // Codex CLI: "• Working (5s • esc to interrupt)"
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{2022} Working (5s \u{2022} esc to interrupt)");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1357,7 +1369,7 @@ mod tests {
     #[test]
     fn test_status_line_codex_working_hollow() {
         // Codex CLI alternate spinner: "◦ Working (12s)"
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{25E6} Working (12s)");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1372,7 +1384,7 @@ mod tests {
     #[test]
     fn test_status_line_gemini_braille_with_phrase() {
         // Gemini CLI: braille spinner + loading phrase
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{280B} Analyzing your codebase");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1386,7 +1398,7 @@ mod tests {
     #[test]
     fn test_status_line_claude_middle_dot() {
         // Claude Code uses · (U+00B7 middle dot) as one of its spinner frames
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{00B7} Considering\u{2026}");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1400,7 +1412,7 @@ mod tests {
     #[test]
     fn test_status_line_copilot_therefore() {
         // GitHub Copilot CLI uses ∴ (U+2234 THEREFORE) for thinking state
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{2234} Thinking\u{2026}");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1414,7 +1426,7 @@ mod tests {
     #[test]
     fn test_status_line_copilot_bullet() {
         // GitHub Copilot CLI uses ● (U+25CF) for active tool calls
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{25CF} Read file...");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1428,7 +1440,7 @@ mod tests {
     #[test]
     fn test_status_line_amazon_q_thinking() {
         // Amazon Q: "⠹ Thinking..." (braille + ASCII dots, not Unicode ellipsis)
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{2839} Thinking...");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1443,7 +1455,7 @@ mod tests {
     fn test_status_line_rejects_glob_pattern() {
         // Code output like ("*/*") ... must NOT be captured as a status line.
         // The `*` is not at the start of the line.
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse(r#"    ("*/*") ..."#);
         assert!(
             !events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
@@ -1454,7 +1466,7 @@ mod tests {
     #[test]
     fn test_status_line_rejects_stats_suffix() {
         // Claude Code stats like ") | [C2 S31 K30 A30 M7 H..." must NOT match.
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("* ) | [C2 S31 K30 A30 M7 H...");
         assert!(
             !events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
@@ -1465,7 +1477,7 @@ mod tests {
     #[test]
     fn test_status_line_rejects_mid_line_asterisk() {
         // Asterisk mid-line in code should not trigger status-line detection
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse(r#"  let result = a * b... done"#);
         assert!(
             !events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
@@ -1476,7 +1488,7 @@ mod tests {
     #[test]
     fn test_status_line_rejects_path_with_asterisk() {
         // Paths with wildcard should not trigger
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("src/**/*.ts...");
         assert!(
             !events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
@@ -1488,42 +1500,42 @@ mod tests {
     // No instant regex detection — it causes false positives from streaming output.
     #[test]
     fn test_no_instant_question_would_you_like() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Would you like to proceed?");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
     fn test_no_instant_question_do_you_want() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Do you want to continue with this approach?");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
     fn test_no_instant_question_menu_choice() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("❯ 1. Yes, clear context and bypass permissions");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
     fn test_no_instant_question_yn_prompt() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Apply changes? [Y/n]");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
     fn test_no_instant_question_inquirer_style() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("? Which template would you like to use?");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
     fn test_no_question_normal_output() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Building project... done");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
@@ -1534,7 +1546,7 @@ mod tests {
     // positives during AI agent streaming output.
     #[test]
     fn test_no_instant_question_want_me_to() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Want me to commit these changes?");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
             "\"Want me to\" must NOT instant-detect (silence-based only)");
@@ -1542,7 +1554,7 @@ mod tests {
 
     #[test]
     fn test_no_instant_question_should_i() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Should I proceed with the refactor?");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
             "\"Should I\" must NOT instant-detect (silence-based only)");
@@ -1550,7 +1562,7 @@ mod tests {
 
     #[test]
     fn test_no_instant_question_what_would_you_like() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("What would you like me to do next?");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
             "\"What would you like\" must NOT instant-detect (silence-based only)");
@@ -1558,7 +1570,7 @@ mod tests {
 
     #[test]
     fn test_no_instant_question_something_else() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Something else?");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
             "\"Something else?\" must NOT instant-detect (silence-based only)");
@@ -1566,7 +1578,7 @@ mod tests {
 
     #[test]
     fn test_no_instant_question_what_do_you_think() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("What do you think?");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
             "\"What do you think\" must NOT instant-detect (silence-based only)");
@@ -1574,7 +1586,7 @@ mod tests {
 
     #[test]
     fn test_no_instant_question_whats_your_preference() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("What's your preference?");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
             "\"What's your\" must NOT instant-detect (silence-based only)");
@@ -1582,7 +1594,7 @@ mod tests {
 
     #[test]
     fn test_no_instant_question_shall_i() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Shall I run the tests first?");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
             "\"Shall I\" must NOT instant-detect (silence-based only)");
@@ -1590,7 +1602,7 @@ mod tests {
 
     #[test]
     fn test_no_question_should_in_prose() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // "should" in middle of prose — not a question prompt
         let events = parser.parse("The function should handle edge cases properly.");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
@@ -1599,7 +1611,7 @@ mod tests {
 
     #[test]
     fn test_no_question_want_in_prose() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("If you want to learn more about this pattern, see the docs.");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
             "\"want\" in prose should NOT trigger question detection");
@@ -1607,7 +1619,7 @@ mod tests {
 
     #[test]
     fn test_no_false_positives() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Normal terminal output should produce no events
         let events = parser.parse("ls -la\ntotal 42\ndrwxr-xr-x  5 user staff 160 Jan 1 00:00 .\n");
         assert!(events.is_empty());
@@ -1615,7 +1627,7 @@ mod tests {
 
     #[test]
     fn test_usage_limit_weekly() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("You've used 78% of your weekly limit · resets Feb 21 at 9am (Europe/Madrid)");
         assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { percentage: 78, .. })));
         match events.iter().find(|e| matches!(e, ParsedEvent::UsageLimit { .. })) {
@@ -1629,7 +1641,7 @@ mod tests {
 
     #[test]
     fn test_usage_limit_session() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("You've used 45% of your session limit");
         match events.iter().find(|e| matches!(e, ParsedEvent::UsageLimit { .. })) {
             Some(ParsedEvent::UsageLimit { percentage, limit_type }) => {
@@ -1642,14 +1654,14 @@ mod tests {
 
     #[test]
     fn test_usage_limit_with_ansi() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\x1b[33mYou've used 90% of your weekly limit\x1b[0m");
         assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { percentage: 90, .. })));
     }
 
     #[test]
     fn test_usage_limit_smart_quote() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("You\u{2019}ve used 50% of your weekly limit");
         assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { percentage: 50, .. })));
     }
@@ -1658,14 +1670,14 @@ mod tests {
 
     #[test]
     fn test_no_instant_question_ink_cursor() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("› 1. Create a new story");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
     fn test_no_instant_question_ascii_cursor() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("> 1. Yes, proceed with changes");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
@@ -1674,7 +1686,7 @@ mod tests {
     fn test_instant_question_ink_footer() {
         // Ink interactive menu footer IS detected instantly — it's ultra-specific
         // and only appears when the agent is genuinely waiting for menu selection.
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Enter to select · ↑/↓ to navigate · Esc to cancel");
         assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { confident: true, .. })),
             "Ink footer should be detected as confident question");
@@ -1682,7 +1694,7 @@ mod tests {
 
     #[test]
     fn test_instant_question_ink_footer_partial() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Enter to select · ↑↓ to navigate");
         assert!(events.iter().any(|e| matches!(e, ParsedEvent::Question { confident: true, .. })),
             "Partial Ink footer should also be detected");
@@ -1693,7 +1705,7 @@ mod tests {
         // Generic `?`-ending lines are NOT detected by the instant parser —
         // they are handled by the silence-based detector in pty.rs to avoid
         // false positives from streaming fragments like "ad?", "swap?", "?"
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("What should we do with this story?");
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
             "Generic ?-ending lines should NOT trigger instant detection");
@@ -1702,7 +1714,7 @@ mod tests {
     #[test]
     fn test_question_generic_not_prose() {
         // Lines that look like prose/code should NOT trigger the generic ? match
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Code comment
         assert!(!parser.parse("// should we handle this case?")
             .iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
@@ -1730,7 +1742,7 @@ mod tests {
     fn test_instant_question_ink_full_menu_block() {
         // Full Ink menu blocks ARE detected as questions now — the "Enter to select"
         // footer is ultra-specific to real interactive menus.
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let block = "\
 What should we do with this story?
 
@@ -1747,14 +1759,14 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_question_blockquote_with_question() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(!parser.parse("> Do you agree with this approach?")
             .iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
 
     #[test]
     fn test_no_question_bold_markdown() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(!parser.parse("**Should we refactor this?**")
             .iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
@@ -1762,7 +1774,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     #[test]
     fn test_no_question_shell_prompt_with_greater_than() {
         // Shell prompts like "> command" should NOT trigger menu detection
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(!parser.parse("> git status")
             .iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
@@ -1771,7 +1783,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_no_question_enter_in_prose() {
         // Prose mentioning "Enter to select" in a different context should still match,
         // but "Press Enter to continue" should NOT
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(!parser.parse("Press Enter to continue installing")
             .iter().any(|e| matches!(e, ParsedEvent::Question { .. })));
     }
@@ -1787,35 +1799,35 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_plan_file_relative() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Plan saved to plans/my-feature.md");
         assert_eq!(get_plan_path(&events), Some("plans/my-feature.md".to_string()));
     }
 
     #[test]
     fn test_plan_file_dot_claude() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Writing plan: .claude/plans/auth-flow.md");
         assert_eq!(get_plan_path(&events), Some(".claude/plans/auth-flow.md".to_string()));
     }
 
     #[test]
     fn test_plan_file_absolute() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Created /Users/dev/project/plans/refactor.md");
         assert_eq!(get_plan_path(&events), Some("/Users/dev/project/plans/refactor.md".to_string()));
     }
 
     #[test]
     fn test_plan_file_claude_private() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Plan: .claude-private/plans/serene-waterfall.md");
         assert_eq!(get_plan_path(&events), Some(".claude-private/plans/serene-waterfall.md".to_string()));
     }
 
     #[test]
     fn test_plan_file_tilde_expanded() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Plan saved to ~/.claude/plans/graceful-rolling-quasar.md");
         let path = get_plan_path(&events).expect("should detect tilde plan path");
         // Tilde must be expanded to an absolute path
@@ -1826,14 +1838,14 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_plan_file_no_match() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Building project... done");
         assert!(get_plan_path(&events).is_none());
     }
 
     #[test]
     fn test_plan_file_not_md() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // "plans/foo.ts" should NOT match (not a markdown file)
         let events = parser.parse("Reading plans/foo.ts");
         assert!(get_plan_path(&events).is_none());
@@ -1841,7 +1853,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_plan_file_template_placeholder_rejected() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Template placeholders like <file> or <filename> should NOT match
         assert!(get_plan_path(&parser.parse("plans/<file>.md")).is_none());
         assert!(get_plan_path(&parser.parse("plans/<filename>.md")).is_none());
@@ -1850,7 +1862,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_plan_file_interpolation_rejected() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Shell/JS interpolation and backticks should NOT match
         assert!(get_plan_path(&parser.parse("plans/new-${i}.md")).is_none());
         assert!(get_plan_path(&parser.parse("plans/${name}.md")).is_none());
@@ -1860,7 +1872,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_plan_file_glob_rejected() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Glob patterns should NOT match as plan files
         assert!(get_plan_path(&parser.parse("plans/*.md")).is_none());
         assert!(get_plan_path(&parser.parse("/repo/plans/*.md")).is_none());
@@ -1875,7 +1887,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_false_positive_conversational_rate_limit() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Agent discussing rate limits in prose should NOT trigger detection
         assert!(!has_rate_limit(&parser.parse("The rate limit detection was triggering false positives")));
         assert!(!has_rate_limit(&parser.parse("I fixed the rate-limited pattern matching")));
@@ -1885,7 +1897,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_false_positive_code_output() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Code snippets mentioning rate limits should NOT trigger
         assert!(!has_rate_limit(&parser.parse("rl(\"rate-limit-keyword\", r\"rate[- ]?limit\", Some(60000))")));
         assert!(!has_rate_limit(&parser.parse("// Handle too many requests from the API")));
@@ -1894,7 +1906,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_false_positive_tpm_rpm_acronyms() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // TPM/RPM in non-rate-limit context should NOT trigger
         assert!(!has_rate_limit(&parser.parse("TPM 2.0 module detected")));
         assert!(!has_rate_limit(&parser.parse("RPM package manager installed")));
@@ -1903,7 +1915,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_http_429_real_errors_still_detected() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Real HTTP 429 errors should still be detected
         assert!(has_rate_limit(&parser.parse("HTTP/1.1 429 Too Many Requests")));
         assert!(has_rate_limit(&parser.parse("429 Too Many Requests")));
@@ -1912,7 +1924,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_real_api_errors_still_detected() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Real API error codes should still be detected
         assert!(has_rate_limit(&parser.parse("Error: rate_limit_error")));
         assert!(has_rate_limit(&parser.parse("overloaded_error: service busy")));
@@ -1925,7 +1937,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_false_positive_rust_source_reading() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Agent reading output_parser.rs — the exact lines that caused the bug
         assert!(!has_rate_limit(&parser.parse(r#"        rl("claude-http-429", r"(?i)rate_limit_error", Some(60000), false),"#)));
         assert!(!has_rate_limit(&parser.parse(r#"        rl("claude-overloaded", r"(?i)overloaded_error", Some(30000), false),"#)));
@@ -1936,21 +1948,21 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_false_positive_code_comments() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(!has_rate_limit(&parser.parse("// Error: rate_limit_error")));
         assert!(!has_rate_limit(&parser.parse("# Handle RESOURCE_EXHAUSTED from Gemini")));
     }
 
     #[test]
     fn test_no_false_positive_test_assertions() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(!has_rate_limit(&parser.parse(r#"        assert!(has_rate_limit(&parser.parse("Error: rate_limit_error")));"#)));
         assert!(!has_rate_limit(&parser.parse(r#"        assert!(has_rate_limit(&parser.parse("RateLimitError: exceeded quota")));"#)));
     }
 
     #[test]
     fn test_no_false_positive_markdown_code_fences() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(!has_rate_limit(&parser.parse("```rust\nrl(\"claude-http-429\", r\"rate_limit_error\")")));
         assert!(!has_rate_limit(&parser.parse("- `rate_limit_error` — Claude API error code")));
         assert!(!has_rate_limit(&parser.parse("* Pattern `RateLimitError` matches OpenAI errors")));
@@ -1958,7 +1970,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_false_positive_markdown_table() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(!has_rate_limit(&parser.parse("| `claude-http-429` | `rate_limit_error` | Claude API |")));
     }
 
@@ -1999,7 +2011,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_claude_500() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = r#"API Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"},"request_id":"req_011CYV92oEFMbcz45mjVYssM"}"#;
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Claude API error");
@@ -2009,7 +2021,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_claude_529_overloaded() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // 529 overloaded should be caught by rate limit (overloaded_error), not api-error
         // But the api_error JSON type should NOT match overloaded_error
         let input = r#"API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#;
@@ -2020,7 +2032,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_claude_auth() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = r#"API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid bearer token"}}"#;
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Claude auth error");
@@ -2030,7 +2042,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_gemini_unavailable() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = r#"API Error: got status: UNAVAILABLE. {"error":{"code":503,"message":"The model is overloaded."}}"#;
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Gemini UNAVAILABLE");
@@ -2040,7 +2052,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_gemini_internal() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = r#"API Error: got status: INTERNAL. {"error":{"code":500,"message":"An internal error has occurred."}}"#;
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Gemini INTERNAL");
@@ -2050,7 +2062,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_aider_server() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = r#"litellm.InternalServerError: AnthropicException - {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#;
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Aider server error");
@@ -2060,7 +2072,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_aider_auth() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = "litellm.AuthenticationError: AnthropicException - invalid x-api-key";
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Aider auth error");
@@ -2070,7 +2082,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_aider_translated_server() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = "The API provider's servers are down or overloaded.";
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Aider translated msg");
@@ -2080,7 +2092,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_aider_translated_auth() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = "The API provider is not able to authenticate you. Check your API key.";
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Aider auth msg");
@@ -2090,7 +2102,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_codex_stream_error() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = "⚠  stream error: exceeded retry limit, last status: 401 Unauthorized; retrying 5/5 in 3.087s…";
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Codex stream error");
@@ -2100,7 +2112,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_codex_500() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = "stream error: exceeded retry limit, last status: 500 Internal Server Error";
         let events = parser.parse(input);
         assert!(has_api_error(&events));
@@ -2108,7 +2120,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_copilot_token() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = "Failed to get copilot token";
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Copilot token error");
@@ -2120,7 +2132,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_no_api_error_generic_request_failed() {
         // "request failed unexpectedly" is too generic — should NOT trigger api error
         // (was causing false positives on Claude Code output, see log scan 2026-03-01)
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = "request failed unexpectedly";
         let events = parser.parse(input);
         assert!(!has_api_error(&events));
@@ -2130,7 +2142,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_openai_server_error() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = r#"{"error":{"message":"The server had an error","type":"server_error","param":null,"code":null}}"#;
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect OpenAI server_error");
@@ -2140,7 +2152,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_google_internal() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = r#"{"error":{"code":500,"message":"An internal error has occurred.","status":"INTERNAL"}}"#;
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Google INTERNAL");
@@ -2150,7 +2162,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_google_unavailable() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = r#"{"error":{"code":503,"message":"The service is currently unavailable.","status":"UNAVAILABLE"}}"#;
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Google UNAVAILABLE");
@@ -2160,7 +2172,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_google_auth() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = r#"{"error":{"code":401,"message":"Request had invalid authentication credentials.","status":"UNAUTHENTICATED"}}"#;
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect Google UNAUTHENTICATED");
@@ -2170,7 +2182,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_openrouter() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = r#"{"error":{"code":502,"message":"Your chosen model is down","metadata":{"provider_name":"Anthropic"}}}"#;
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect OpenRouter error");
@@ -2180,7 +2192,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_api_error_minimax() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = r#"{"id":"abc","base_resp":{"status_code":1013,"status_msg":"internal service error"}}"#;
         let events = parser.parse(input);
         let (name, _, kind) = get_api_error(&events).expect("should detect MiniMax error");
@@ -2190,7 +2202,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_api_error_normal_output() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(!has_api_error(&parser.parse("Building project... done")));
         assert!(!has_api_error(&parser.parse("ls -la\ntotal 42")));
         assert!(!has_api_error(&parser.parse("Hello world, everything is fine")));
@@ -2198,11 +2210,45 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_api_error_false_positive_source_code() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Agent reading this very source file should not trigger
         assert!(!has_api_error(&parser.parse("        ae(\"claude-api-error\", \"type\":\"api_error\", \"server\"),")));
         assert!(!has_api_error(&parser.parse("// detect \"type\":\"api_error\" in JSON")));
         assert!(!has_api_error(&parser.parse("# Handle authentication_error from Claude")));
+    }
+
+    #[test]
+    fn test_api_error_dedup_same_text() {
+        let mut parser = OutputParser::new();
+        let input = r#"API Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"}}"#;
+        // First parse should detect the error
+        assert!(has_api_error(&parser.parse(input)));
+        // Same text again (e.g. prompt redraw) should be suppressed
+        assert!(!has_api_error(&parser.parse(input)));
+    }
+
+    #[test]
+    fn test_api_error_dedup_resets_when_cleared() {
+        let mut parser = OutputParser::new();
+        let error_input = r#"API Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"}}"#;
+        // First detection
+        assert!(has_api_error(&parser.parse(error_input)));
+        // Suppressed on repeat
+        assert!(!has_api_error(&parser.parse(error_input)));
+        // Manually clear dedup (simulates user-input reset in production)
+        parser.last_api_error_match = None;
+        // Same error text should fire again (new agent cycle)
+        assert!(has_api_error(&parser.parse(error_input)));
+    }
+
+    #[test]
+    fn test_api_error_dedup_different_error_fires() {
+        let mut parser = OutputParser::new();
+        let error1 = r#"API Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"}}"#;
+        let error2 = r#"{"error":{"message":"The server had an error","type":"server_error","param":null}}"#;
+        assert!(has_api_error(&parser.parse(error1)));
+        // Different error text should fire even without user-input reset
+        assert!(has_api_error(&parser.parse(error2)));
     }
 
     // --- Diff output false-positive prevention tests ---
@@ -2213,7 +2259,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_question_diff_line_with_menu_pattern() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Diff line from output_parser.rs containing ") 1." pattern — NOT a real menu
         assert!(!has_question(&parser.parse(
             "462 -        // Numbered menu choices: ❯ 1. or ) 1. followed by option text"
@@ -2222,7 +2268,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_question_diff_line_with_yn_pattern() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Diff line from docs containing [Y/n] pattern — NOT a real Y/N prompt
         assert!(!has_question(&parser.parse(
             "465 //GenericY/Nprompts:[Y/n],[y/N],(yes/no)"
@@ -2231,7 +2277,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_question_diff_line_with_hardcoded_prompts() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Markdown doc line in diff containing question patterns — NOT a real question
         assert!(!has_question(&parser.parse(
             r#"75 +- **Hardcoded prompts**: "Would you like to proceed?", "Do you want to...?", "Is this plan/a"#
@@ -2240,7 +2286,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_question_diff_line_with_yn_doc() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Markdown doc line in diff listing Y/N patterns — NOT a real prompt
         assert!(!has_question(&parser.parse(
             "77 +- **Y/N prompts**: `[Y/n]`, `[y/N]`, `(yes/no)`"
@@ -2249,7 +2295,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_question_diff_hunk_with_code_changes() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Claude Code diff summary block — NOT a real question
         assert!(!has_question(&parser.parse(
             "⏺⎿ Added16lines,removed2lines     459          // Claude Code: \"Would you like to proceed?\" / \"Do you want to...\""
@@ -2258,7 +2304,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_rate_limit_in_diff_output() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Diff lines showing test assertions that mention RESOURCE_EXHAUSTED — NOT real errors
         assert!(!has_rate_limit(&parser.parse(
             "+        assert!(has_rate_limit(&parser.parse(\"RESOURCE_EXHAUSTED\")));"
@@ -2274,7 +2320,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_question_unified_diff_plus_minus_lines() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Unified diff lines with + or - prefix containing question patterns
         assert!(!has_question(&parser.parse(
             "+        if QUESTION_RE.is_match(trimmed) {"
@@ -2305,14 +2351,14 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_intent_basic() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("[intent: Refactoring the auth module]");
         assert_eq!(get_intent(&events), Some("Refactoring the auth module".to_string()));
     }
 
     #[test]
     fn test_intent_double_brackets() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Double brackets still accepted for backward compatibility
         let events = parser.parse("[[intent: Refactoring the auth module]]");
         assert_eq!(get_intent(&events), Some("Refactoring the auth module".to_string()));
@@ -2320,35 +2366,35 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_intent_unicode_brackets() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{27E6}intent: Writing unit tests\u{27E7}");
         assert_eq!(get_intent(&events), Some("Writing unit tests".to_string()));
     }
 
     #[test]
     fn test_intent_in_multiline_output() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("Some output\n[intent: Debugging login flow]\nMore output");
         assert_eq!(get_intent(&events), Some("Debugging login flow".to_string()));
     }
 
     #[test]
     fn test_intent_with_ansi() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\x1b[33m[intent: Reviewing PR changes]\x1b[0m");
         assert_eq!(get_intent(&events), Some("Reviewing PR changes".to_string()));
     }
 
     #[test]
     fn test_no_intent_normal_output() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(get_intent(&parser.parse("Building project... done")).is_none());
         assert!(get_intent(&parser.parse("The intent is to refactor")).is_none());
     }
 
     #[test]
     fn test_intent_single_brackets() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Single brackets now accepted as the canonical format
         let events = parser.parse("[intent: something cool]");
         assert_eq!(get_intent(&events), Some("something cool".to_string()));
@@ -2356,26 +2402,26 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_intent_trims_whitespace() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("[intent:   Fix the flaky test   ]");
         assert_eq!(get_intent(&events), Some("Fix the flaky test".to_string()));
     }
 
     #[test]
     fn test_intent_ellipsis_filtered() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(get_intent(&parser.parse("[intent: ...]")).is_none());
     }
 
     #[test]
     fn test_intent_template_placeholder_filtered() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(get_intent(&parser.parse("[intent: <text>]")).is_none());
     }
 
     #[test]
     fn test_intent_too_short_filtered() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(get_intent(&parser.parse("[intent: ab]")).is_none());
     }
 
@@ -2407,7 +2453,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_status_line_in_diff_output() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Diff line containing * and ... in JSON — should not trigger status line
         assert!(!has_status_line(&parser.parse(
             "484 + *   - {\"type\":\"output\",\"data\":\"...\"} for raw PTY output"
@@ -2416,7 +2462,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_status_line_in_css_comment() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // CSS block comment with * prefix — should not trigger status line
         assert!(!has_status_line(&parser.parse(
             "/* Last prompt sub-row */"
@@ -2428,7 +2474,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_status_line_in_code_listing() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Code listing with line numbers and * in a comment
         assert!(!has_status_line(&parser.parse(
             "156  /* Last prompt sub-row */                                                                                                                    "
@@ -2437,7 +2483,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_status_line_from_markdown_bullet() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Markdown bullet list — should NOT trigger Codex bullet pattern
         assert!(!has_status_line(&parser.parse("• This is a bullet point in a list")));
         assert!(!has_status_line(&parser.parse("  • Another nested bullet item")));
@@ -2445,7 +2491,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_intent_from_ansi_garbage() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // ANSI-stripped garbage producing ]che[[intent: — not a real intent token
         assert!(get_intent(&parser.parse("]che[[intent: some text]]")).is_none());
         // Must be at line start or after whitespace
@@ -2456,7 +2502,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_intent_with_title() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("[[intent: Reading auth module for token flow(Reading auth)]]");
         assert_eq!(get_intent(&events), Some("Reading auth module for token flow".to_string()));
         assert_eq!(get_intent_title(&events), Some("Reading auth".to_string()));
@@ -2464,7 +2510,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_intent_with_title_single_brackets() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("[intent: Writing parser unit tests(Writing tests)]");
         assert_eq!(get_intent(&events), Some("Writing parser unit tests".to_string()));
         assert_eq!(get_intent_title(&events), Some("Writing tests".to_string()));
@@ -2472,7 +2518,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_intent_with_title_unicode_brackets() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{27E6}intent: Debugging login redirect(Debugging redirect)\u{27E7}");
         assert_eq!(get_intent(&events), Some("Debugging login redirect".to_string()));
         assert_eq!(get_intent_title(&events), Some("Debugging redirect".to_string()));
@@ -2480,7 +2526,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_intent_without_title_still_works() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("[[intent: Refactoring the auth module]]");
         assert_eq!(get_intent(&events), Some("Refactoring the auth module".to_string()));
         assert_eq!(get_intent_title(&events), None);
@@ -2488,7 +2534,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_intent_title_trimmed() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("[[intent: Some task here(  Tab title  )]]");
         assert_eq!(get_intent_title(&events), Some("Tab title".to_string()));
     }
@@ -2510,7 +2556,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     #[test]
     fn test_intent_with_bullet_prefix() {
         // Claude Code prefixes output lines with ⏺ (U+25CF)
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = "\u{25CF} [[intent: Implementing agentTeamsShim config field(Config field)]]";
         let events = parser.parse(input);
         let text = get_intent(&events);
@@ -2535,7 +2581,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     #[test]
     fn test_intent_with_ansi_codes_interleaved() {
         // ANSI codes wrapping bullet + dim around the intent token
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let raw = "\x1b[1m\u{25CF}\x1b[0m \x1b[2m[[intent: Implementing config(Config field)]]\x1b[0m";
         let events = parser.parse(raw);
         assert_eq!(get_intent(&events), Some("Implementing config".to_string()));
@@ -2584,7 +2630,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_rate_limit_story_429() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Conversational text mentioning "story 429" — not an HTTP 429
         assert!(!has_rate_limit(&parser.parse(
             "che sembrano provenire da altre sessioni (story 429"
@@ -2593,7 +2639,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_no_rate_limit_ansi_bridged_429() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Raw ANSI output where \S* bridges http/ to 429 through escape codes
         assert!(!has_rate_limit(&parser.parse(
             "http/\x1b[1C\x1b[39me\x1b[1C\x1b[38;2;177;185;249mstate.rs\x1b[1Cche\x1b[1Csembrano\x1b[1Cprovenire\x1b[1Cda\x1b[1Caltre\x1b[1Csessioni\x1b[1C(story\x1b[1C429"
@@ -2660,7 +2706,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_suggest_basic() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("[[suggest: Fix the test | Refactor code | Add docs]]");
         let items = get_suggest(&events).expect("should parse suggest");
         assert_eq!(items, vec!["Fix the test", "Refactor code", "Add docs"]);
@@ -2668,7 +2714,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_suggest_single_brackets() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("[suggest: Option A | Option B]");
         let items = get_suggest(&events).expect("should parse suggest");
         assert_eq!(items, vec!["Option A", "Option B"]);
@@ -2676,7 +2722,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_suggest_unicode_brackets() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{27E6}suggest: Alpha | Beta | Gamma\u{27E7}");
         let items = get_suggest(&events).expect("should parse suggest");
         assert_eq!(items, vec!["Alpha", "Beta", "Gamma"]);
@@ -2684,7 +2730,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_suggest_trims_whitespace() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("[[suggest:   Fix test  |  Refactor  |  Add docs  ]]");
         let items = get_suggest(&events).expect("should parse suggest");
         assert_eq!(items, vec!["Fix test", "Refactor", "Add docs"]);
@@ -2692,7 +2738,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_suggest_filters_empty_items() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // Double pipe or trailing pipe should not produce empty items
         let events = parser.parse("[[suggest: Fix test || Add docs |]]");
         let items = get_suggest(&events).expect("should parse suggest");
@@ -2701,21 +2747,21 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_suggest_needs_at_least_one_item() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(get_suggest(&parser.parse("[[suggest: ]]")).is_none());
         assert!(get_suggest(&parser.parse("[[suggest: |  | ]]")).is_none());
     }
 
     #[test]
     fn test_no_suggest_normal_text() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(get_suggest(&parser.parse("I suggest we refactor")).is_none());
         assert!(get_suggest(&parser.parse("Building project...")).is_none());
     }
 
     #[test]
     fn test_suggest_no_ansi_garbage() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         assert!(get_suggest(&parser.parse("]garbage[[suggest: A | B]]")).is_none());
     }
 
@@ -3163,7 +3209,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_local_agents() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{203A}\u{203A} bypass permissions on \u{00B7} 2 local agents");
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
             Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
@@ -3176,7 +3222,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_single_bash() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{203A}\u{203A} reading config files \u{00B7} 1 bash");
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
             Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
@@ -3189,7 +3235,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_background_tasks() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{203A}\u{203A} fixing tests \u{00B7} 3 background tasks");
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
             Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
@@ -3202,7 +3248,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_single_local_agent() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{203A}\u{203A} writing code \u{00B7} 1 local agent");
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
             Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
@@ -3215,7 +3261,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_bare_mode_line_resets_to_zero() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // ›› line without · N type → count=0
         let events = parser.parse("\u{203A}\u{203A} bypass permissions on");
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
@@ -3228,7 +3274,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_explicit_zero_count() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         // ›› mode · 0 bash → count=0 (sub-tasks finished, via count-regex branch)
         let events = parser.parse("\u{203A}\u{203A} finishing \u{00B7} 0 bash");
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
@@ -3241,7 +3287,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_embedded_in_multiline_output() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = "some other output\n\u{203A}\u{203A} working \u{00B7} 2 bash\nmore output after";
         let events = parser.parse(input);
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
@@ -3255,7 +3301,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_not_triggered_by_regular_text() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("some regular output with \u{203A} single guillemet");
         assert!(
             !events.iter().any(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })),
@@ -3267,7 +3313,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_triangle_local_agents() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{23F5}\u{23F5} bypass permissions on \u{00B7} 2 local agents");
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
             Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
@@ -3280,7 +3326,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_triangle_bare_resets_to_zero() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{23F5}\u{23F5} bypass permissions on");
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
             Some(ParsedEvent::ActiveSubtasks { count, .. }) => {
@@ -3292,7 +3338,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_triangle_single_bash() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{23F5}\u{23F5} reading config files \u{00B7} 1 bash");
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
             Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
@@ -3305,7 +3351,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_not_triggered_by_single_triangle() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("some output with \u{23F5} single triangle");
         assert!(
             !events.iter().any(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })),
@@ -3315,7 +3361,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_triangle_explicit_zero_count() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{23F5}\u{23F5} finishing \u{00B7} 0 bash");
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
             Some(ParsedEvent::ActiveSubtasks { count, .. }) => assert_eq!(*count, 0),
@@ -3325,7 +3371,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_triangle_embedded_in_multiline() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let input = "some other output\n\u{23F5}\u{23F5} working \u{00B7} 2 bash\nmore output after";
         let events = parser.parse(input);
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
@@ -3339,7 +3385,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_active_subtasks_triangle_background_tasks() {
-        let parser = OutputParser::new();
+        let mut parser = OutputParser::new();
         let events = parser.parse("\u{23F5}\u{23F5} fixing tests \u{00B7} 3 background tasks");
         match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
             Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
