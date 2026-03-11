@@ -123,7 +123,7 @@ describe("notesStore", () => {
   describe("hydrate()", () => {
     it("loads notes from backend", async () => {
       const savedNotes = [
-        { id: "note-1", text: "from backend", createdAt: 1000, repoPath: null, repoDisplayName: null, usedAt: null },
+        { id: "note-1", text: "from backend", createdAt: 1000, repoPath: null, repoDisplayName: null, usedAt: null, images: [] },
       ];
       mockInvoke.mockResolvedValueOnce({ notes: savedNotes });
 
@@ -327,6 +327,145 @@ describe("notesStore", () => {
         expect(store.state.notes[0].repoPath).toBeNull();
         expect(store.state.notes[0].repoDisplayName).toBeNull();
         expect(store.state.notes[0].usedAt).toBeNull();
+        dispose();
+      });
+    });
+  });
+
+  describe("addNote() with images", () => {
+    it("stores images array when provided", () => {
+      createRoot((dispose) => {
+        store.addNote("idea with image", null, null, ["/path/img.png"]);
+        expect(store.state.notes[0].images).toEqual(["/path/img.png"]);
+        dispose();
+      });
+    });
+
+    it("defaults images to empty array when not provided", () => {
+      createRoot((dispose) => {
+        store.addNote("plain idea");
+        expect(store.state.notes[0].images).toEqual([]);
+        dispose();
+      });
+    });
+
+    it("allows image-only notes (no text)", () => {
+      createRoot((dispose) => {
+        store.addNote("", null, null, ["/path/img.png"]);
+        expect(store.state.notes.length).toBe(1);
+        expect(store.state.notes[0].text).toBe("");
+        expect(store.state.notes[0].images).toEqual(["/path/img.png"]);
+        dispose();
+      });
+    });
+
+    it("rejects notes with no text AND no images", () => {
+      createRoot((dispose) => {
+        store.addNote("", null, null, []);
+        expect(store.state.notes.length).toBe(0);
+        dispose();
+      });
+    });
+
+    it("accepts optional noteId parameter", () => {
+      createRoot((dispose) => {
+        store.addNote("with id", null, null, [], "custom-id-123");
+        expect(store.state.notes[0].id).toBe("custom-id-123");
+        dispose();
+      });
+    });
+  });
+
+  describe("updateNote()", () => {
+    it("updates text in-place preserving id and createdAt", () => {
+      createRoot((dispose) => {
+        store.addNote("original");
+        const note = store.state.notes[0];
+        const { id, createdAt } = note;
+        store.updateNote(id, "updated text", []);
+        expect(store.state.notes[0].id).toBe(id);
+        expect(store.state.notes[0].createdAt).toBe(createdAt);
+        expect(store.state.notes[0].text).toBe("updated text");
+        dispose();
+      });
+    });
+
+    it("updates images in-place", () => {
+      createRoot((dispose) => {
+        store.addNote("idea", null, null, ["/old.png"]);
+        const id = store.state.notes[0].id;
+        store.updateNote(id, "idea", ["/old.png", "/new.png"]);
+        expect(store.state.notes[0].images).toEqual(["/old.png", "/new.png"]);
+        dispose();
+      });
+    });
+
+    it("preserves repoPath and repoDisplayName", () => {
+      createRoot((dispose) => {
+        store.addNote("idea", "/repo", "my-repo");
+        const id = store.state.notes[0].id;
+        store.updateNote(id, "updated", []);
+        expect(store.state.notes[0].repoPath).toBe("/repo");
+        expect(store.state.notes[0].repoDisplayName).toBe("my-repo");
+        dispose();
+      });
+    });
+
+    it("persists via save_notes", () => {
+      createRoot((dispose) => {
+        store.addNote("idea");
+        mockInvoke.mockClear();
+        store.updateNote(store.state.notes[0].id, "updated", []);
+        expect(mockInvoke).toHaveBeenCalledWith("save_notes", expect.anything());
+        dispose();
+      });
+    });
+
+    it("ignores unknown id", () => {
+      createRoot((dispose) => {
+        store.addNote("idea");
+        expect(() => store.updateNote("nonexistent", "x", [])).not.toThrow();
+        dispose();
+      });
+    });
+  });
+
+  describe("removeNote() with image cleanup", () => {
+    it("calls delete_note_assets on removal", () => {
+      createRoot((dispose) => {
+        store.addNote("to remove", null, null, ["/img.png"]);
+        const id = store.state.notes[0].id;
+        mockInvoke.mockClear();
+        store.removeNote(id);
+        expect(mockInvoke).toHaveBeenCalledWith("delete_note_assets", { noteId: id });
+        dispose();
+      });
+    });
+  });
+
+  describe("hydrate() images migration", () => {
+    it("defaults missing images field to empty array", async () => {
+      const legacyNotes = [
+        { id: "note-1", text: "old note", createdAt: 1000, repoPath: null, repoDisplayName: null, usedAt: null },
+      ];
+      mockInvoke.mockResolvedValueOnce({ notes: legacyNotes });
+
+      await createRoot(async (dispose) => {
+        await store.hydrate();
+        expect(store.state.notes[0].images).toEqual([]);
+        dispose();
+      });
+    });
+
+    it("preserves existing images field", async () => {
+      const notes = [
+        { id: "note-1", text: "with image", createdAt: 1000, repoPath: null, repoDisplayName: null, usedAt: null, images: ["/path/img.png"] },
+      ];
+      mockInvoke.mockResolvedValueOnce({ notes });
+
+      await createRoot(async (dispose) => {
+        await store.hydrate();
+        expect(store.state.notes[0].images).toEqual(["/path/img.png"]);
         dispose();
       });
     });

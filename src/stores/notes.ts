@@ -10,6 +10,7 @@ export interface Note {
   repoPath: string | null;
   repoDisplayName: string | null;
   usedAt: number | null;
+  images: string[];
 }
 
 /** Notes store state */
@@ -46,6 +47,7 @@ function createNotesStore() {
             repoPath: n.repoPath ?? null,
             repoDisplayName: n.repoDisplayName ?? null,
             usedAt: n.usedAt ?? null,
+            images: (n as Note & { images?: string[] }).images ?? [],
           }));
           setState("notes", migrated);
         }
@@ -54,18 +56,26 @@ function createNotesStore() {
       }
     },
 
-    /** Add a new note, optionally tagged with a repo */
-    addNote(text: string, repoPath?: string | null, repoDisplayName?: string | null): void {
+    /** Add a new note, optionally tagged with a repo and images */
+    addNote(
+      text: string,
+      repoPath?: string | null,
+      repoDisplayName?: string | null,
+      images?: string[],
+      noteId?: string,
+    ): void {
       const trimmed = text.trim();
-      if (!trimmed) return;
+      const imgs = images ?? [];
+      if (!trimmed && imgs.length === 0) return;
 
       const note: Note = {
-        id: generateId(),
+        id: noteId ?? generateId(),
         text: trimmed,
         createdAt: Date.now(),
         repoPath: repoPath ?? null,
         repoDisplayName: repoDisplayName ?? null,
         usedAt: null,
+        images: imgs,
       };
 
       setState(
@@ -76,9 +86,26 @@ function createNotesStore() {
       saveNotes(state.notes);
     },
 
-    /** Remove a note by ID */
+    /** Remove a note by ID, cleaning up image assets on disk */
     removeNote(id: string): void {
       setState("notes", (notes) => notes.filter((n) => n.id !== id));
+      saveNotes(state.notes);
+      invoke("delete_note_assets", { noteId: id }).catch((err) =>
+        appLogger.debug("store", "Failed to delete note assets", err),
+      );
+    },
+
+    /** Update a note in-place, preserving id, createdAt, and repo assignment */
+    updateNote(id: string, text: string, images: string[]): void {
+      setState(
+        produce((s) => {
+          const note = s.notes.find((n) => n.id === id);
+          if (note) {
+            note.text = text.trim();
+            note.images = images;
+          }
+        }),
+      );
       saveNotes(state.notes);
     },
 
