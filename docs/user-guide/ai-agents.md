@@ -4,17 +4,17 @@ TUICommander detects, monitors, and manages AI coding agents running in your ter
 
 ## Supported Agents
 
-| Agent | Binary | Resume Command |
-|-------|--------|----------------|
-| Claude Code | `claude` | `claude --continue` |
-| Codex CLI | `codex` | `codex resume --last` |
-| Aider | `aider` | `aider --restore-chat-history` |
-| Gemini CLI | `gemini` | `gemini --resume` |
-| OpenCode | `opencode` | `opencode -c` |
-| Amp | `amp` | `amp threads continue` |
-| Cursor Agent | `cursor-agent` | `cursor-agent resume` |
-| Warp Oz | `oz` | — |
-| Droid (Factory) | `droid` | — |
+| Agent | Binary | Resume Command | Session Binding |
+|-------|--------|----------------|-----------------|
+| Claude Code | `claude` | `claude --continue` | `claude --resume $TUIC_SESSION` |
+| Codex CLI | `codex` | `codex resume --last` | `codex resume $TUIC_SESSION` |
+| Aider | `aider` | `aider --restore-chat-history` | — |
+| Gemini CLI | `gemini` | `gemini --resume` | `gemini --resume $TUIC_SESSION` |
+| OpenCode | `opencode` | `opencode -c` | — |
+| Amp | `amp` | `amp threads continue` | — |
+| Cursor Agent | `cursor-agent` | `cursor-agent resume` | — |
+| Warp Oz | `oz` | — | — |
+| Droid (Factory) | `droid` | — | — |
 
 ## Agent Detection
 
@@ -90,6 +90,58 @@ Agent Teams lets Claude Code spawn teammate agents as TUIC terminal tabs. Enable
 When enabled, PTY sessions receive the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` environment variable, which unlocks Claude Code's `TeamCreate`, `TaskCreate`, and `SendMessage` tools. Agent spawning uses direct MCP tool calls (`agent spawn`) — the earlier it2 shim approach (iTerm2 CLI emulation) is deprecated.
 
 Spawned sessions automatically emit lifecycle events (`session-created`, `session-closed`) so they appear as tabs and clean up on exit.
+
+## Session Binding (TUIC_SESSION)
+
+Every terminal tab has a stable UUID that persists across app restarts. This UUID is injected into the PTY shell as the `TUIC_SESSION` environment variable.
+
+### How It Works
+
+1. When a terminal tab is created, a UUID is generated via `crypto.randomUUID()`
+2. The UUID is saved with the tab and restored when the app restarts
+3. On PTY creation, the UUID is injected as `TUIC_SESSION=<uuid>` in the shell environment
+4. Agents can use `$TUIC_SESSION` for session-specific operations
+
+### Use Cases
+
+**Start a Claude Code session bound to this tab:**
+
+```bash
+claude --session-id $TUIC_SESSION
+```
+
+Claude Code stores the session locally. When you restart TUICommander and switch to this branch, the session resumes automatically via `claude --resume <uuid>`.
+
+**Resume a specific session (manual):**
+
+```bash
+claude --resume $TUIC_SESSION
+```
+
+**Gemini CLI session binding:**
+
+```bash
+gemini --resume $TUIC_SESSION
+```
+
+**Custom scripts that persist state per-tab:**
+
+```bash
+# Use TUIC_SESSION as a stable key for any tab-specific state
+echo "Last run: $(date)" > "/tmp/tuic-$TUIC_SESSION.log"
+```
+
+### Automatic Resume
+
+When TUICommander restores saved terminals after a restart, it checks whether the agent session file exists on disk before deciding the resume strategy:
+
+1. **Verified session** — If `$TUIC_SESSION` maps to an existing session file (e.g. `~/.claude/projects/…/<uuid>.jsonl`), the agent resumes with `--resume <uuid>`
+2. **No session file** — Falls back to the agent's default resume behavior (e.g. `claude --continue` for the last session)
+3. **No agent detected** — Tab opens a plain shell; `$TUIC_SESSION` is still available for manual use
+
+### UI Agent Spawn
+
+When you spawn an agent via the context menu or command palette, TUICommander automatically uses the tab's `TUIC_SESSION` as the `--session-id`. This ensures the spawned session is bound to the tab and will resume correctly on restart.
 
 ## Sleep Prevention
 

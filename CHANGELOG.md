@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **TUIC_SESSION env var** — Every terminal tab gets a stable UUID injected as `TUIC_SESSION` in the shell. Use `claude --session-id $TUIC_SESSION` for tab-bound sessions that resume automatically on restart. Supported agents: Claude Code, Gemini CLI, Codex CLI
 - **Git Operations Panel redesign** — Complete rewrite with 400px panel, rich status card (branch, ahead/behind, staged/changed/stash counts, last commit), background execution via `run_git_command`, inline feedback bar, searchable BranchCombobox, Create Branch form, rebase/cherry-pick in-progress UI, monochrome SVG icons, keyboard navigation (Escape to close, autofocus)
 - **`get_git_panel_context` Tauri command** — Single IPC round-trip for all Git Operations Panel data (cached 5s TTL)
 - **BranchCombobox shared component** — Searchable combobox with keyboard navigation for branch selection
