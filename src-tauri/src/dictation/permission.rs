@@ -15,8 +15,10 @@ pub enum MicPermission {
     /// User granted access.
     Authorized,
     /// User denied access — must re-enable via System Settings.
+    #[cfg_attr(not(target_os = "macos"), expect(dead_code))]
     Denied,
     /// Restricted by MDM or parental controls.
+    #[cfg_attr(not(target_os = "macos"), expect(dead_code))]
     Restricted,
 }
 
@@ -66,6 +68,50 @@ pub fn check() -> MicPermission {
 #[cfg(not(target_os = "macos"))]
 pub fn check() -> MicPermission {
     MicPermission::Authorized
+}
+
+/// Explicitly request microphone access, triggering the macOS TCC prompt.
+///
+/// CoreAudio (used by cpal) does NOT trigger the TCC prompt on its own —
+/// only AVCaptureDevice.requestAccessForMediaType: does. This must be called
+/// when the status is `NotDetermined` before starting audio capture.
+///
+/// Blocks the current thread until the user responds to the prompt.
+/// Returns `true` if access was granted.
+#[cfg(target_os = "macos")]
+pub fn request() -> bool {
+    use objc2_foundation::NSString;
+
+    let cls: Option<&objc2::runtime::AnyClass> =
+        objc2::runtime::AnyClass::get(c"AVCaptureDevice");
+    let Some(cls) = cls else {
+        return false;
+    };
+
+    let media_type = NSString::from_str("soun");
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let handler = block2::RcBlock::new(move |granted: objc2::runtime::Bool| {
+        let _ = tx.send(granted.as_bool());
+    });
+
+    // +[AVCaptureDevice requestAccessForMediaType:completionHandler:]
+    let () = unsafe {
+        objc2::msg_send![
+            cls,
+            requestAccessForMediaType: &*media_type,
+            completionHandler: &*handler
+        ]
+    };
+
+    // Block until the user responds (or timeout after 60s)
+    rx.recv_timeout(std::time::Duration::from_secs(60)).unwrap_or(false)
+}
+
+/// Non-macOS fallback: always granted.
+#[cfg(not(target_os = "macos"))]
+pub fn request() -> bool {
+    true
 }
 
 /// Open the macOS System Settings pane for microphone privacy.
