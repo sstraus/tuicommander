@@ -61,7 +61,7 @@ async fn fetch_channel_manifest(
 ) -> Result<UpdateCheckResult, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
@@ -337,6 +337,40 @@ mod tests {
         assert!(result.version.is_none());
         assert!(!result.not_found);
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_check_update_channel_follows_redirect() {
+        let mut server = mockito::Server::new_async().await;
+        let body = serde_json::json!({
+            "version": "3.0.0-beta.1",
+            "notes": "Redirect test",
+        });
+        let target_mock = server
+            .mock("GET", "/cdn/latest.json")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body.to_string())
+            .create_async()
+            .await;
+        let redirect_mock = server
+            .mock("GET", "/beta/latest.json")
+            .with_status(302)
+            .with_header("location", &format!("{}/cdn/latest.json", server.url()))
+            .create_async()
+            .await;
+
+        let result = fetch_channel_manifest(
+            &format!("{}/beta/latest.json", server.url()),
+            "https://github.com/sstraus/tuicommander/releases/tag/beta",
+        )
+        .await
+        .expect("302 redirect should be followed transparently");
+
+        assert!(result.available);
+        assert_eq!(result.version.as_deref(), Some("3.0.0-beta.1"));
+        redirect_mock.assert_async().await;
+        target_mock.assert_async().await;
     }
 
     #[tokio::test]
