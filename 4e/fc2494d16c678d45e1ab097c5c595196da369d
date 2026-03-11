@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "4efc2494d16c678d45e1ab097c5c595196da369d",
+  "prompts": {
+    "d7b15f8b124535b9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c5996119-74c6-44a5-b114-174b7ba24687",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Roberto Serafin <roberto.serafin@lansweeper.com>",
+      "messages": [],
+      "total_additions": 1341,
+      "total_deletions": 129,
+      "accepted_lines": 1177,
+      "overriden_lines": 0
+    }
+  }
+}
