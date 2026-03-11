@@ -1,0 +1,35 @@
+src/hooks/useAutoFetch.ts
+  986f5f383ed04210 19-21,26,30,33-34,38-39,57-60,80
+src/stores/statusBarTicker.ts
+  986f5f383ed04210 82,146,152
+src/hooks/useGitOperations.ts
+  986f5f383ed04210 1028,1030,1039-1041,1043
+src/notifications.ts
+  986f5f383ed04210 35-36,48-52,62,64-69
+src-tauri/src/pty.rs
+  986f5f383ed04210 1178,1184-1186,1260-1262
+src/components/Terminal/Terminal.tsx
+  986f5f383ed04210 1058,1061-1063,1067,1072-1074
+src/App.tsx
+  986f5f383ed04210 7,343-356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "a2a6a2fd2897793a85cde204b5169ae9e8b0db27",
+  "prompts": {
+    "986f5f383ed04210": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a895b4e-0168-4e18-b101-a0d851cb5591",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 73,
+      "total_deletions": 69,
+      "accepted_lines": 67,
+      "overriden_lines": 0
+    }
+  }
+}
