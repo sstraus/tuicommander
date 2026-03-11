@@ -41,6 +41,8 @@ function createGitHubStore() {
   let pollingActive = false;
   /** True until the first poll completes — startup poll includes MERGED state for offline transition detection */
   let isStartupPoll = true;
+  /** Consecutive batch failures (non-rate-limit) for backoff */
+  let batchFailCount = 0;
   /** Pending per-repo immediate polls (debounced to 2s to coalesce rapid git events) */
   const pendingRepoPollTimers = new Map<string, number>();
 
@@ -258,13 +260,19 @@ function createGitHubStore() {
         updateRepoData(path, statuses);
       }
       batchSucceeded = true;
+      batchFailCount = 0;
     } catch (err) {
       const errStr = String(err);
       if (errStr.startsWith("rate-limit:") || errStr.includes("circuit breaker open")) {
         hitRateLimit = true;
         appLogger.warn("github", `GitHub API unavailable: ${errStr}`);
       } else {
-        appLogger.warn("github", "Batch PR poll failed, falling back to per-repo calls", err);
+        batchFailCount++;
+        const backoff = Math.min(MAX_INTERVAL, BASE_INTERVAL * Math.pow(2, batchFailCount - 1));
+        appLogger.warn("github", `Batch PR poll failed (${batchFailCount}x, next in ${Math.round(backoff / 1000)}s)`, err);
+        currentInterval = backoff;
+        scheduleNext();
+        return; // Skip per-repo fallback — batch error likely affects all repos
       }
     }
 
