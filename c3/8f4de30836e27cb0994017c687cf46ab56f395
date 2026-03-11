@@ -1,0 +1,29 @@
+src/types/fs.ts
+  4005a3617d773743 8-9
+src/components/FileBrowserPanel/FileBrowserPanel.module.css
+  4005a3617d773743 66-99
+src-tauri/src/fs.rs
+  4005a3617d773743 12-13,203-207,255,399-403,409,848-859
+src/components/FileBrowserPanel/FileBrowserPanel.tsx
+  4005a3617d773743 65-68,142-150,440-457
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.9",
+  "base_commit_sha": "c38f4de30836e27cb0994017c687cf46ab56f395",
+  "prompts": {
+    "4005a3617d773743": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4e01d874-5f7a-481d-90ee-ed5881489270",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 93,
+      "total_deletions": 2,
+      "accepted_lines": 93,
+      "overriden_lines": 0
+    }
+  }
+}

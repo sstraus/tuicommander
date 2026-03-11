@@ -1,0 +1,23 @@
+src/mobile/components/TerminalKeybar.tsx
+  577f5f4898fc20b8 1,49,57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "4ebb0aca827d7ec428288a0ce0df3d9e90549486",
+  "prompts": {
+    "577f5f4898fc20b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "23120500-43b1-4168-ad0d-b4407c6e2850",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 2,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  }
+}

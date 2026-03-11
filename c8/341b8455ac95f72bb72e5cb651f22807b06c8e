@@ -1,0 +1,37 @@
+tools/relay/src/types.rs
+  f96de85ea1b9fe27 1-28
+tools/relay/Cargo.toml
+  f96de85ea1b9fe27 1-25
+tools/relay/src/relay.rs
+  f96de85ea1b9fe27 1-217
+tools/relay/tests/relay_core.rs
+  f96de85ea1b9fe27 1-178
+tools/relay/src/main.rs
+  f96de85ea1b9fe27 1-35
+tools/relay/src/lib.rs
+  f96de85ea1b9fe27 1-3
+tools/relay/.gitignore
+  f96de85ea1b9fe27 1-2
+tools/relay/src/routes.rs
+  f96de85ea1b9fe27 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "c8341b8455ac95f72bb72e5cb651f22807b06c8e",
+  "prompts": {
+    "f96de85ea1b9fe27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e94d3a09-e54e-4517-96eb-2b090c2a33e2",
+        "model": "unknown"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 545,
+      "total_deletions": 21,
+      "accepted_lines": 524,
+      "overriden_lines": 0
+    }
+  }
+}

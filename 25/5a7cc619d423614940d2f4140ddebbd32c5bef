@@ -1,0 +1,27 @@
+src/stores/updater.ts
+  4005a3617d773743 31-32,46,56,106-113,149
+src/__tests__/stores/updater.test.ts
+  4005a3617d773743 108,113-114,119,124-125,174,181-182
+src/components/SettingsPanel/tabs/GeneralTab.tsx
+  4005a3617d773743 138,141-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "255a7cc619d423614940d2f4140ddebbd32c5bef",
+  "prompts": {
+    "4005a3617d773743": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4e01d874-5f7a-481d-90ee-ed5881489270",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 28,
+      "total_deletions": 14,
+      "accepted_lines": 28,
+      "overriden_lines": 0
+    }
+  }
+}

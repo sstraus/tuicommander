@@ -1,0 +1,49 @@
+src-tauri/src/pty.rs
+  608b0ae814542c3d 470-473,509-510,512-514,523-538,540-544,1536-1575
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "ae04d7ed3788f46407e44d8c5612bb6f0e112548",
+  "prompts": {
+    "3cf58d5cd968e347": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a19c10c-ffc9-4018-97ac-4824ba78e802",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 529,
+      "overriden_lines": 0
+    },
+    "608b0ae814542c3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0f7ff646-8eff-4236-936c-a5aff808d9e4",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 61,
+      "total_deletions": 47,
+      "accepted_lines": 71,
+      "overriden_lines": 0
+    },
+    "f96de85ea1b9fe27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e94d3a09-e54e-4517-96eb-2b090c2a33e2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 457,
+      "overriden_lines": 0
+    }
+  }
+}

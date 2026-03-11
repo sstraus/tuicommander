@@ -1,0 +1,36 @@
+src-tauri/src/git.rs
+  2bddf5a94845e865 9,137-139,143,146,198-200,202-207,209,235-238,240,278-282,284,295-296,301,313-314,328-332,338-342,345,357,377-379,381-382,445-448,452-455,459,461,464,471-472,474-477,479,585-588,590,630-633,635,733-734,740-742,747,1021-1023,1042-1045
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "45f9972ed91b18235699929a7285f5ab6fdd65b8",
+  "prompts": {
+    "2bddf5a94845e865": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0602e11c-ac39-4020-8612-6caa1938a17c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 114,
+      "total_deletions": 200,
+      "accepted_lines": 94,
+      "overriden_lines": 0
+    },
+    "c12f3445dc144e17": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "883abde1-becd-48c2-8e16-a98bcb4f84e2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}

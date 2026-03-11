@@ -1,0 +1,40 @@
+src/components/PlanPanel/PlanPanel.module.css
+  dc0e9f7f1c82b7e2 1-77
+src/__tests__/components/PlanPanel.test.tsx
+  dc0e9f7f1c82b7e2 1-190
+src/components/PlanPanel/PlanPanel.tsx
+  dc0e9f7f1c82b7e2 1-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "003ecd79be8064e87ffc437da436dff85b2a3c02",
+  "prompts": {
+    "9391906e2518348a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c62acd64-bb36-46eb-b9fb-f1501b220c4e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 30,
+      "overriden_lines": 0
+    },
+    "dc0e9f7f1c82b7e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e3b1dd10-9aa3-4581-80bd-9185732c4196",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 73,
+      "total_deletions": 0,
+      "accepted_lines": 354,
+      "overriden_lines": 0
+    }
+  }
+}

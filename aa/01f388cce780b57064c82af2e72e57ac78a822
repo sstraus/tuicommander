@@ -1,0 +1,89 @@
+src/components/TaskQueuePanel/TaskQueuePanel.module.css
+  09097f6aa2d97018 43,62,206,224
+src/components/GitOperationsPanel/GitOperationsPanel.module.css
+  09097f6aa2d97018 40
+src/components/IdeLauncher/IdeLauncher.module.css
+  09097f6aa2d97018 59,135
+src/components/ActivityDashboard/ActivityDashboard.module.css
+  09097f6aa2d97018 42,173,179
+src/components/Sidebar/Sidebar.module.css
+  09097f6aa2d97018 64,97,194,214,300,314,493-494,570,598,618,714,808
+src/components/SettingsPanel/tabs/PluginsTab.module.css
+  09097f6aa2d97018 43,72,234,257,344
+src/components/PromptDrawer/PromptDrawer.module.css
+  09097f6aa2d97018 42,86,189
+src/components/PrDetailPopover/PrDetailPopover.module.css
+  09097f6aa2d97018 220
+src/components/HelpPanel/HelpPanel.module.css
+  09097f6aa2d97018 40
+src/styles.css
+  09097f6aa2d97018 782
+src/components/ErrorLogPanel/ErrorLogPanel.module.css
+  09097f6aa2d97018 46,78,134,240
+src/components/TabBar/TabBar.module.css
+  09097f6aa2d97018 51,173,206
+src/components/StatusBar/StatusBar.module.css
+  09097f6aa2d97018 50,79,205,255
+src/components/shared/panel.module.css
+  09097f6aa2d97018 34,81
+src/components/SettingsPanel/tabs/AgentsTab.module.css
+  09097f6aa2d97018 104,196
+src/components/FileBrowserPanel/FileBrowserPanel.module.css
+  09097f6aa2d97018 46,106
+src/components/SettingsPanel/DictationSettings.module.css
+  09097f6aa2d97018 95,216
+src/components/SettingsPanel/Settings.module.css
+  09097f6aa2d97018 48,81,85,102,112-113,192,406,502,536,595
+src/components/NotesPanel/NotesPanel.module.css
+  09097f6aa2d97018 105,148
+src/components/Toolbar/Toolbar.module.css
+  09097f6aa2d97018 76,108,224,295,337,411
+src/components/WorktreeManager/WorktreeManager.module.css
+  09097f6aa2d97018 42,70,272,311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "aa01f388cce780b57064c82af2e72e57ac78a822",
+  "prompts": {
+    "09097f6aa2d97018": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "709efc34-8085-4d2b-a3cf-59d220c9bba1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 127,
+      "total_deletions": 137,
+      "accepted_lines": 82,
+      "overriden_lines": 0
+    },
+    "3cf58d5cd968e347": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a19c10c-ffc9-4018-97ac-4824ba78e802",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 529,
+      "overriden_lines": 0
+    },
+    "a2ee18c16fe483dc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "990c2ef5-e426-4176-b953-7562a4614f84",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 131,
+      "overriden_lines": 0
+    }
+  }
+}

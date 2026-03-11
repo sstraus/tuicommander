@@ -1,0 +1,25 @@
+src/__tests__/components/DictationSettings.test.tsx
+  00412559f160434c 254,263-277
+src/components/SettingsPanel/DictationSettings.tsx
+  00412559f160434c 97-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "5f4bca0457130cd982d8ab4807270f60818b8a3c",
+  "prompts": {
+    "00412559f160434c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21a1f632-0de5-4187-b156-334b1f71c68d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 22,
+      "total_deletions": 4,
+      "accepted_lines": 19,
+      "overriden_lines": 0
+    }
+  }
+}

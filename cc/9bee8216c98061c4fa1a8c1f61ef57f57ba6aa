@@ -1,0 +1,36 @@
+docs/frontend/STYLE_GUIDE.md
+  08bbcbd815fb92f9 65-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "cc9bee8216c98061c4fa1a8c1f61ef57f57ba6aa",
+  "prompts": {
+    "08bbcbd815fb92f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "70ced487-2afd-44ee-b764-391cc8aac120",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 2,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    },
+    "9391906e2518348a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c62acd64-bb36-46eb-b9fb-f1501b220c4e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 30,
+      "overriden_lines": 0
+    }
+  }
+}

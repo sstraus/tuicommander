@@ -1,0 +1,33 @@
+CHANGELOG.md
+  b90003bea2fc81ca 10
+docs/backend/mcp-proxy.md
+  b90003bea2fc81ca 1-274
+docs/FEATURES.md
+  b90003bea2fc81ca 890-956
+docs/api/tauri-commands.md
+  b90003bea2fc81ca 101-150
+docs/user-guide/mcp-proxy.md
+  b90003bea2fc81ca 1-180
+SPEC.md
+  b90003bea2fc81ca 332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "451eb0c7346afe635b40bbe721cd1feff41a8580",
+  "prompts": {
+    "b90003bea2fc81ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e65d89a4-0976-4295-9eb6-be7e2893c71b",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 573,
+      "overriden_lines": 0
+    }
+  }
+}

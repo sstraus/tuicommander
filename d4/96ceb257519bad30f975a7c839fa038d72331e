@@ -1,0 +1,25 @@
+src-tauri/Cargo.toml
+  76a2baf8ac1260dd 61
+src-tauri/src/state.rs
+  76a2baf8ac1260dd 5,1002-1151,1957-2121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "d496ceb257519bad30f975a7c839fa038d72331e",
+  "prompts": {
+    "76a2baf8ac1260dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "15d6d929-641f-46f0-930b-2ca7c650d8a1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 354,
+      "total_deletions": 37,
+      "accepted_lines": 317,
+      "overriden_lines": 0
+    }
+  }
+}

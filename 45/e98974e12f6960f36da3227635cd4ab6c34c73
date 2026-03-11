@@ -1,0 +1,29 @@
+src-tauri/src/plugins.rs
+  c5c42bfa80788506 412-525,559,589,606
+src/components/SettingsPanel/tabs/PluginsTab.tsx
+  c5c42bfa80788506 276,279,291-313,361,375,378-382,385
+src/stores/pluginStore.ts
+  c5c42bfa80788506 168-172,186
+src-tauri/src/lib.rs
+  c5c42bfa80788506 812
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "45e98974e12f6960f36da3227635cd4ab6c34c73",
+  "prompts": {
+    "c5c42bfa80788506": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00f46460-02c5-45a9-a27c-a499fc2c7393",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 159,
+      "total_deletions": 37,
+      "accepted_lines": 159,
+      "overriden_lines": 0
+    }
+  }
+}

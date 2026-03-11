@@ -1,0 +1,23 @@
+src/components/GitOperationsPanel/icons.tsx
+  7db2f161065d28e1 1-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.9",
+  "base_commit_sha": "f9bd9e1f448fae31bddb55e3ea527a6226c1bf88",
+  "prompts": {
+    "7db2f161065d28e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a031b85c-cea3-4e62-9f6a-b148fc46a7c2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 363,
+      "total_deletions": 0,
+      "accepted_lines": 363,
+      "overriden_lines": 0
+    }
+  }
+}

@@ -1,0 +1,29 @@
+docs/api/tauri-commands.md
+  b303056691ec7eab 23-24,56-58,75-80,107-108,121,132,219-220,235,249,260-261,311-327
+docs/FEATURES.md
+  b303056691ec7eab 200,396-397,403-406
+SPEC.md
+  b303056691ec7eab 140,142-146,148,153,156
+CHANGELOG.md
+  b303056691ec7eab 15-16,22,28-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "3fd00aa73da61c873afd11e8f47b97276e568fd4",
+  "prompts": {
+    "b303056691ec7eab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2ea1e4b9-df35-4e05-847e-d47f798499d8",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 67,
+      "total_deletions": 51,
+      "accepted_lines": 66,
+      "overriden_lines": 0
+    }
+  }
+}

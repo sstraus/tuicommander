@@ -1,0 +1,27 @@
+SPEC.md
+  b303056691ec7eab 3-4
+docs/api/tauri-commands.md
+  b303056691ec7eab 53
+docs/FEATURES.md
+  b303056691ec7eab 6,253,260,272,286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "91afcce89e5b341382d9d2b4e38beec13fbaf09e",
+  "prompts": {
+    "b303056691ec7eab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2ea1e4b9-df35-4e05-847e-d47f798499d8",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 9,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    }
+  }
+}

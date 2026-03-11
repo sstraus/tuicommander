@@ -1,0 +1,27 @@
+src/App.tsx
+  4edf3f37670677e5 92,971
+src-tauri/src/mcp_http/static_files.rs
+  4edf3f37670677e5 24-33,54-57,83-85
+src/components/MobileViewBanner.tsx
+  4edf3f37670677e5 1-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "b406f526e5b3a37892302efef3bbf5efb576ece0",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 88,
+      "total_deletions": 5,
+      "accepted_lines": 88,
+      "overriden_lines": 0
+    }
+  }
+}

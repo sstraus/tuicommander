@@ -1,0 +1,41 @@
+src-tauri/src/github.rs
+  e00c433839850e2c 1541
+src-tauri/src/dictation/permission.rs
+  e00c433839850e2c 13
+src-tauri/src/worktree.rs
+  e00c433839850e2c 1142
+src/components/Sidebar/RepoSection.tsx
+  e00c433839850e2c 277
+src-tauri/src/claude_usage.rs
+  e00c433839850e2c 1260-1264,1443-1445
+src/components/Sidebar/Sidebar.module.css
+  e00c433839850e2c 373-376
+src-tauri/src/mcp_http/mod.rs
+  e00c433839850e2c 1856-1857,1859
+src/__tests__/stores/github.test.ts
+  e00c433839850e2c 501-508,511,534,563,593,603-604,620,642,669,717,774,805
+src-tauri/src/config.rs
+  e00c433839850e2c 1420-1423
+src/__tests__/components/TabBar.test.tsx
+  e00c433839850e2c 561-567,569,581,594,607,620-625,627,639,652
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "6da9de29fd78b7640ca476b7eb71f9e3c5c74a95",
+  "prompts": {
+    "e00c433839850e2c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8de55755-0287-44bd-934d-c662a75251e4",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 65,
+      "total_deletions": 15,
+      "accepted_lines": 63,
+      "overriden_lines": 0
+    }
+  }
+}

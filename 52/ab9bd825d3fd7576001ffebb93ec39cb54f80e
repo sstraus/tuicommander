@@ -1,0 +1,42 @@
+src/stores/ratelimit.ts
+  4edf3f37670677e5 1,72
+src/__tests__/hooks/useAgentPolling.test.ts
+  4edf3f37670677e5 30-31,88,108
+src/__tests__/stores/activityStore.test.ts
+  4edf3f37670677e5 306-309,312,318,321,327,330,336,339,345,348,354
+src/__tests__/components/TabBar.test.tsx
+  4edf3f37670677e5 206,215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "52ab9bd825d3fd7576001ffebb93ec39cb54f80e",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "unknown"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 22,
+      "total_deletions": 8,
+      "accepted_lines": 22,
+      "overriden_lines": 0
+    },
+    "b90003bea2fc81ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e65d89a4-0976-4295-9eb6-be7e2893c71b",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 543,
+      "total_deletions": 0,
+      "accepted_lines": 543,
+      "overriden_lines": 0
+    }
+  }
+}

@@ -1,0 +1,35 @@
+src-tauri/src/github.rs
+  c8cd94e095227087 792,794
+src/stores/appLogger.ts
+  c8cd94e095227087 32
+src-tauri/src/mcp_http/mod.rs
+  c8cd94e095227087 1668-1670
+src-tauri/src/config.rs
+  c8cd94e095227087 5-22,34-37
+src-tauri/src/plugin_fs.rs
+  c8cd94e095227087 20-53,71,362,407,446,455,463,521-524,538-540,542,557,593-595,611-613,642,658-660,678-681,700,715-717
+src/__tests__/components/PluginPanel.test.tsx
+  c8cd94e095227087 101,112,118,148
+src/__tests__/stores/registryStore.test.ts
+  c8cd94e095227087 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "e63ea37d8c67fd5360d5683f1c87eca9384ca53f",
+  "prompts": {
+    "c8cd94e095227087": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7548d0d3-365e-4ba8-b520-25179e736afe",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 109,
+      "total_deletions": 85,
+      "accepted_lines": 100,
+      "overriden_lines": 0
+    }
+  }
+}

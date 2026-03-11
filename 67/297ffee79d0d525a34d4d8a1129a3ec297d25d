@@ -1,0 +1,23 @@
+src-tauri/src/mcp_http/types.rs
+  08bbcbd815fb92f9 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "67297ffee79d0d525a34d4d8a1129a3ec297d25d",
+  "prompts": {
+    "08bbcbd815fb92f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "70ced487-2afd-44ee-b764-391cc8aac120",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}

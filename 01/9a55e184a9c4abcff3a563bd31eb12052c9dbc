@@ -1,0 +1,27 @@
+tools/relay/Cargo.toml
+  565843328bbd8c9a 25-28
+tools/relay/src/push.rs
+  565843328bbd8c9a 1-179
+tools/relay/src/lib.rs
+  565843328bbd8c9a 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "019a55e184a9c4abcff3a563bd31eb12052c9dbc",
+  "prompts": {
+    "565843328bbd8c9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d951fac9-300b-4db1-8ad9-758f7f2b0e41",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 247,
+      "total_deletions": 65,
+      "accepted_lines": 184,
+      "overriden_lines": 0
+    }
+  }
+}

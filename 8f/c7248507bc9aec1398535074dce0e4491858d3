@@ -1,0 +1,25 @@
+examples/plugins/telegram-notifier/manifest.json
+  c12f3445dc144e17 9
+examples/plugins/telegram-notifier/main.js
+  c12f3445dc144e17 5-6,8,14,42,44-49,60,101,112,114,176-178,180,194-195,201,204,319-320,327-330,465,467,471,482-483,513,517
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "8fc7248507bc9aec1398535074dce0e4491858d3",
+  "prompts": {
+    "c12f3445dc144e17": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "883abde1-becd-48c2-8e16-a98bcb4f84e2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}

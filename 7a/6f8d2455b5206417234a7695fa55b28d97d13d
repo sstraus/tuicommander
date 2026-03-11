@@ -1,0 +1,40 @@
+src/global.css
+  08bbcbd815fb92f9 182
+src/components/Sidebar/Sidebar.module.css
+  08bbcbd815fb92f9 397,402
+src/components/TabBar/TabBar.module.css
+  08bbcbd815fb92f9 229,236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "7a6f8d2455b5206417234a7695fa55b28d97d13d",
+  "prompts": {
+    "08bbcbd815fb92f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "70ced487-2afd-44ee-b764-391cc8aac120",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 5,
+      "total_deletions": 4,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "9391906e2518348a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c62acd64-bb36-46eb-b9fb-f1501b220c4e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 30,
+      "overriden_lines": 0
+    }
+  }
+}

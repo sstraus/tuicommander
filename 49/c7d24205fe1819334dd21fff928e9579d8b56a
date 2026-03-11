@@ -1,0 +1,27 @@
+tools/relay/Dockerfile
+  f96de85ea1b9fe27 1-21
+tools/relay/docker-compose.yml
+  f96de85ea1b9fe27 1-37
+tools/relay/Caddyfile
+  f96de85ea1b9fe27 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "49c7d24205fe1819334dd21fff928e9579d8b56a",
+  "prompts": {
+    "f96de85ea1b9fe27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e94d3a09-e54e-4517-96eb-2b090c2a33e2",
+        "model": "unknown"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 62,
+      "total_deletions": 0,
+      "accepted_lines": 62,
+      "overriden_lines": 0
+    }
+  }
+}

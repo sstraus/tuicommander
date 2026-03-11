@@ -1,0 +1,25 @@
+src/components/Sidebar/Sidebar.module.css
+  c144e146ed27eab6 11,38,365
+src/dev/simulator.ts
+  c144e146ed27eab6 338-367,494-499
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "ba773aa0f997a24f850491f0deb183c5e625bf87",
+  "prompts": {
+    "c144e146ed27eab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1e381c86-a80e-4463-b77e-f9b315825df5",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 39,
+      "overriden_lines": 0
+    }
+  }
+}

@@ -1,0 +1,44 @@
+src-tauri/src/git.rs
+  2bddf5a94845e865 445,448-454
+src-tauri/src/git_cli.rs
+  2bddf5a94845e865 7,82-85,99,104,111,115-117,119-126
+src-tauri/src/worktree.rs
+  2bddf5a94845e865 372-373,381,383-385,658,660-662,855,858-860
+reviews/review-2026-02-27-story415-git-cli.md
+  2bddf5a94845e865 1-167
+src-tauri/src/fs.rs
+  2bddf5a94845e865 135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "d8e5c40d77fb7145cd8ca35a1ea5befbe95e5044",
+  "prompts": {
+    "2bddf5a94845e865": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0602e11c-ac39-4020-8612-6caa1938a17c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 235,
+      "total_deletions": 61,
+      "accepted_lines": 209,
+      "overriden_lines": 0
+    },
+    "c12f3445dc144e17": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "883abde1-becd-48c2-8e16-a98bcb4f84e2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}

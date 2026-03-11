@@ -1,0 +1,29 @@
+mobile.html
+  4edf3f37670677e5 1-27
+src/mobile/index.tsx
+  4edf3f37670677e5 1-66
+vite.config.ts
+  4edf3f37670677e5 63-68
+src/mobile/MobileApp.tsx
+  4edf3f37670677e5 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "94bd2aa9aab7fb0c0986a53ef24c2c01663d7a5c",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 118,
+      "total_deletions": 0,
+      "accepted_lines": 118,
+      "overriden_lines": 0
+    }
+  }
+}

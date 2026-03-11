@@ -1,0 +1,25 @@
+tools/relay/tests/auth_db.rs
+  565843328bbd8c9a 186-261
+tools/relay/src/routes.rs
+  565843328bbd8c9a 9,12,21,128-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "393443bd552a9a3e05ce9ae9d1c90fc20e118472",
+  "prompts": {
+    "565843328bbd8c9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d951fac9-300b-4db1-8ad9-758f7f2b0e41",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 138,
+      "total_deletions": 3,
+      "accepted_lines": 137,
+      "overriden_lines": 0
+    }
+  }
+}

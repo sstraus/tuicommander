@@ -1,0 +1,33 @@
+src-tauri/src/mcp_http/mcp_transport.rs
+  54b7bf520258388a 341
+src/components/SettingsPanel/tabs/AgentsTab.tsx
+  54b7bf520258388a 330
+src-tauri/src/mcp_http/session.rs
+  54b7bf520258388a 300
+website/index.html
+  54b7bf520258388a 683-686
+src-tauri/src/pty.rs
+  54b7bf520258388a 66-67
+docs/user-guide/agent-teams.md
+  54b7bf520258388a 3,5-7,11,13,15-31,33,35,37-40,42,44,46-51,53,55-58,60,62-75,79-90,92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "2db034e25899264e1d02f2ba4b2dd8efad5a67cd",
+  "prompts": {
+    "54b7bf520258388a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "283696f2-196e-4dff-b443-6da5fc622b6d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 85,
+      "total_deletions": 296,
+      "accepted_lines": 82,
+      "overriden_lines": 0
+    }
+  }
+}

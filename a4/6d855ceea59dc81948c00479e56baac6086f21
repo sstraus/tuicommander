@@ -1,0 +1,53 @@
+src/notifications.ts
+  7a3e1bea8be6638a 86-88,93-94,96-98,100-101,104-105,108,113-115,117-128,135
+src/__tests__/notifications-class.test.ts
+  7a3e1bea8be6638a 33
+src/__tests__/notifications.test.ts
+  7a3e1bea8be6638a 30,223,245,248,256-258,274-276
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "a46d855ceea59dc81948c00479e56baac6086f21",
+  "prompts": {
+    "3cf58d5cd968e347": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a19c10c-ffc9-4018-97ac-4824ba78e802",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 529,
+      "overriden_lines": 0
+    },
+    "7a3e1bea8be6638a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc270507-e8e4-421f-8bc5-5cd5dbfee390",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 41,
+      "total_deletions": 16,
+      "accepted_lines": 40,
+      "overriden_lines": 0
+    },
+    "f96de85ea1b9fe27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e94d3a09-e54e-4517-96eb-2b090c2a33e2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 457,
+      "overriden_lines": 0
+    }
+  }
+}

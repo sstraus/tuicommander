@@ -1,0 +1,27 @@
+src-tauri/src/dictation/audio.rs
+  4edf3f37670677e5 82,84-86,91-92,98-102,107-110,116,171-173,179-180,182-184,186,190-191,193,195-196,199-200,203,208,281-282,284,289
+src-tauri/src/dictation/streaming.rs
+  4edf3f37670677e5 119-120,131,134-135,138-140,158-162,166,176-177,179,181
+src-tauri/src/dictation/vad.rs
+  4edf3f37670677e5 29-40,44,50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.7",
+  "base_commit_sha": "945210fefe2f0512c2dc1e634039acbe1434b99f",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "unknown"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 90,
+      "total_deletions": 56,
+      "accepted_lines": 70,
+      "overriden_lines": 0
+    }
+  }
+}

@@ -1,0 +1,27 @@
+src/mobile/MobileApp.tsx
+  4edf3f37670677e5 6,49
+src/mobile/screens/SettingsScreen.module.css
+  4edf3f37670677e5 1-107
+src/mobile/screens/SettingsScreen.tsx
+  4edf3f37670677e5 1-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "90494c521a160a9c6a6f632a7231954220267bf4",
+  "prompts": {
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 172,
+      "total_deletions": 4,
+      "accepted_lines": 172,
+      "overriden_lines": 0
+    }
+  }
+}

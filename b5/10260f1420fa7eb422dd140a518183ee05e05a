@@ -1,0 +1,27 @@
+src/__tests__/components/GitOperationsPanel.test.tsx
+  7db2f161065d28e1 7,15-21,59,144,152,157-158,165-171,174,181-187,190,197-203,206,208,213-216,220-230,232-235,239-242,244,248,252-255,257-260,264,266,268-270,273,277-280,282-285,289,291,293-295,298,302-305,307,309,312,314,317-320,324-325,330-338,341,346-354,356,358-364,368-373,375,379
+src/components/GitOperationsPanel/GitOperationsPanel.tsx
+  7db2f161065d28e1 1,12,31-38,58,68,75,82,92,100,106-119,123,140-145,152-154,156,158-160,162-163,169-201,205,310,325-326,337,349-350,361,373-374,385,392-394,398-400,409,420,427-429,433-435,444,453-459,461-464,466-469,472-495
+src/components/GitOperationsPanel/GitOperationsPanel.module.css
+  7db2f161065d28e1 264-350
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.9",
+  "base_commit_sha": "b510260f1420fa7eb422dd140a518183ee05e05a",
+  "prompts": {
+    "7db2f161065d28e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a031b85c-cea3-4e62-9f6a-b148fc46a7c2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 386,
+      "total_deletions": 218,
+      "accepted_lines": 377,
+      "overriden_lines": 0
+    }
+  }
+}

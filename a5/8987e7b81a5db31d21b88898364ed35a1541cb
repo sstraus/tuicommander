@@ -1,0 +1,27 @@
+docs/FEATURES.md
+  e5458edc56702a98 519-521,533-541
+src/data/tips.ts
+  e5458edc56702a98 172-176
+CHANGELOG.md
+  e5458edc56702a98 30-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "a58987e7b81a5db31d21b88898364ed35a1541cb",
+  "prompts": {
+    "e5458edc56702a98": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12601615-ef15-4b09-b4da-179fc019ce6c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 19,
+      "total_deletions": 2,
+      "accepted_lines": 19,
+      "overriden_lines": 0
+    }
+  }
+}
