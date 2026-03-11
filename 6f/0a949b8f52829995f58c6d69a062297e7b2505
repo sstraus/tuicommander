@@ -1,0 +1,31 @@
+docs/api/tauri-commands.md
+  54b7bf520258388a 296-297
+docs/api/http-api.md
+  54b7bf520258388a 663-671
+docs/FEATURES.md
+  54b7bf520258388a 194,196,201
+CHANGELOG.md
+  54b7bf520258388a 16-17
+src-tauri/src/dir_watcher.rs
+  54b7bf520258388a 164-166,168,172-175,179,181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "6f0a949b8f52829995f58c6d69a062297e7b2505",
+  "prompts": {
+    "54b7bf520258388a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "283696f2-196e-4dff-b443-6da5fc622b6d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 33,
+      "total_deletions": 43,
+      "accepted_lines": 27,
+      "overriden_lines": 0
+    }
+  }
+}
