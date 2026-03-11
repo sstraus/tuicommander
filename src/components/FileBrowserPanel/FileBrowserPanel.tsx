@@ -6,6 +6,7 @@ import { invoke, listen } from "../../invoke";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { replaceBasename } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
+import { Dropdown } from "../ui/Dropdown";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { PromptDialog } from "../PromptDialog";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
@@ -66,6 +67,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   // Sort mode: "name" (default, dirs first + alpha) or "date" (dirs first + newest first)
   type SortMode = "name" | "date";
   const [sortBy, setSortBy] = createSignal<SortMode>("name");
+  const [sortDropdownOpen, setSortDropdownOpen] = createSignal(false);
 
   // Directory watcher revision — bumped when dir-changed event arrives
   const [dirRevision, setDirRevision] = createSignal(0);
@@ -480,26 +482,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         </Show>
       </div>
 
-      {/* Sort toggle */}
-      <div class={s.sortToggle}>
-        <button
-          class={cx(s.sortBtn, sortBy() === "name" && s.sortBtnActive)}
-          onClick={() => setSortBy("name")}
-          title={t("fileBrowser.sortName", "Sort by name")}
-        >
-          Name
-        </button>
-        <button
-          class={cx(s.sortBtn, sortBy() === "date" && s.sortBtnActive)}
-          onClick={() => setSortBy("date")}
-          title={t("fileBrowser.sortDate", "Sort by date")}
-        >
-          Date
-        </button>
-      </div>
-
-      {/* Breadcrumb navigation */}
-      <Show when={breadcrumbs().length > 0}>
+      {/* Toolbar: breadcrumb + sort */}
+      <div class={s.toolbar}>
         <div class={s.breadcrumb}>
           <span class={s.breadcrumbSegment} onClick={() => handleBreadcrumbClick(-1)}>
             /
@@ -518,7 +502,29 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
             )}
           </For>
         </div>
-      </Show>
+        <div class={s.sortControl}>
+          <button
+            class={s.sortTrigger}
+            onClick={() => setSortDropdownOpen((v) => !v)}
+            title={`${t("fileBrowser.sortBy", "Sort by")} ${sortBy()}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M6 3v10l-3.5-3.5L1.1 10.9 6.2 16h3.6l5.1-5.1-1.4-1.4L10 13V3H6z" transform="rotate(90 8 8)" />
+              <path d="M1 1h14v2H1zM3 5h10v2H3zM5 9h6v2H5z" />
+            </svg>
+          </button>
+          <Dropdown
+            items={[
+              { id: "name", label: t("fileBrowser.sortName", "Name") },
+              { id: "date", label: t("fileBrowser.sortDate", "Date") },
+            ]}
+            selected={sortBy()}
+            visible={sortDropdownOpen()}
+            onSelect={(id) => { setSortBy(id as SortMode); setSortDropdownOpen(false); }}
+            onClose={() => setSortDropdownOpen(false)}
+          />
+        </div>
+      </div>
 
       <div class={p.content}>
         <Show when={loading() || searching()}>
@@ -542,9 +548,13 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         <Show when={!loading() && !searching() && !error() && filteredEntries().length > 0}>
           {/* Go up entry when in a subdirectory and not searching */}
           <Show when={!searchQuery().trim() && currentSubdir() !== "." && currentSubdir() !== ""}>
-            <div class={cx(s.entry, s.entryUp)} onClick={navigateUp}>
-              <span class={s.entryIcon}>..</span>
-              <span class={s.entryName}>{t("fileBrowser.parent", "(parent)")}</span>
+            <div class={cx(s.entry, s.entryParent)} onClick={navigateUp}>
+              <span class={s.entryIcon}>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 2L2 8l6 6V10h6V6H8V2z" />
+                </svg>
+              </span>
+              <span class={s.entryName}>..</span>
             </div>
           </Show>
 

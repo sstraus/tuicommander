@@ -26,17 +26,25 @@
   outline: none;
 }
 
-/* Breadcrumb navigation */
+/* Toolbar: breadcrumb + sort control */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 4px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
 .breadcrumb {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px 12px;
+  flex: 1;
+  min-width: 0;
   font-size: var(--font-sm);
   font-family: var(--font-mono);
   color: var(--fg-muted);
-  background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border);
   overflow-x: auto;
   white-space: nowrap;
 }
@@ -63,38 +71,30 @@
   opacity: 0.5;
 }
 
-/* Sort toggle */
-.sortToggle {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 3px 6px;
-  border-bottom: 1px solid var(--border);
-  font-size: var(--font-xs);
+/* Sort control (inline with breadcrumb) */
+.sortControl {
+  position: relative;
+  flex-shrink: 0;
 }
 
-.sortBtn {
+.sortTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   background: none;
   border: 1px solid transparent;
-  color: var(--fg-muted);
-  font-size: var(--font-xs);
-  font-family: var(--font-mono);
-  padding: 1px 6px;
   border-radius: var(--radius-sm);
+  color: var(--fg-muted);
   cursor: pointer;
   transition: color 0.1s, background 0.1s;
 }
 
-.sortBtn:hover {
+.sortTrigger:hover {
   color: var(--fg-secondary);
   background: var(--bg-highlight);
-}
-
-.sortBtnActive {
-  color: var(--fg-primary);
-  background: var(--bg-highlight);
   border-color: var(--border);
-  font-weight: 500;
 }
 
 /* Empty states */
@@ -136,9 +136,10 @@
   font-style: italic;
 }
 
-.entryUp {
-  color: var(--fg-secondary);
-  font-style: italic;
+.entryParent {
+  padding: 2px 12px;
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
 }
 
 .entryIcon {
