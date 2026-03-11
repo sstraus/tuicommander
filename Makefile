@@ -137,6 +137,11 @@ bump:
 	echo "  src-tauri/Cargo.toml  → $(V)"; \
 	echo "  src-tauri/tauri.conf.json → $(V)"; \
 	echo "  package.json          → $(V)"; \
+	sed -i '' 's/^\*\*Version:\*\* '"$$CUR"'/**Version:** $(V)/' SPEC.md; \
+	echo "  SPEC.md               → $(V)"; \
+	TODAY=$$(date +%Y-%m-%d); \
+	sed -i '' 's/^## \[Unreleased\]/## [Unreleased]\n\n## [$(V)] - '"$$TODAY"'/' CHANGELOG.md; \
+	echo "  CHANGELOG.md          → $(V) ($$TODAY)"; \
 	echo "==> Done. Run 'cargo check' or 'make github-release' to continue."
 
 # Full versioned release: bump version, commit, tag, push, wait for CI, publish.
