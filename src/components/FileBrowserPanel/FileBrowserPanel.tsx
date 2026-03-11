@@ -509,8 +509,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
             title={`${t("fileBrowser.sortBy", "Sort by")} ${sortBy()}`}
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M6 3v10l-3.5-3.5L1.1 10.9 6.2 16h3.6l5.1-5.1-1.4-1.4L10 13V3H6z" transform="rotate(90 8 8)" />
-              <path d="M1 1h14v2H1zM3 5h10v2H3zM5 9h6v2H5z" />
+              <path d="M1 2h14L9.5 8.5V13l-3 1.5V8.5z" />
             </svg>
           </button>
           <Dropdown
