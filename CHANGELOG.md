@@ -13,7 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **BranchCombobox shared component** — Searchable combobox with keyboard navigation for branch selection
 - **File drag & drop** — Drag files from Finder/Explorer onto the terminal area to open them with the appropriate viewer (`.md`/`.mdx` → Markdown, others → Code Editor). Visual overlay during drag hover. Supports standalone files outside any repo
 - **Markdown file association** — `.md`/`.mdx` files registered with TUICommander on macOS. Double-clicking a markdown file in Finder opens it directly in TUICommander
-- **File browser: sort by name/date** — Toggle between alphabetical and last-modified sort order in the file browser panel
+- **File browser: auto-refresh** — Directory watcher (notify crate) detects external file changes and refreshes automatically within ~1s, preserving selection by path
+- **File browser: sort dropdown + UI polish** — Sort toggle replaced with compact inline dropdown (funnel icon) next to breadcrumb path. Parent row ("..") is now smaller and subtler
 - **Claude Usage: rate-limit headers fallback** — Falls back to unified rate-limit response headers when per-model header data is unavailable, improving accuracy of the usage dashboard
 
 ### Changed

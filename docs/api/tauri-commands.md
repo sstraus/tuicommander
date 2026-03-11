@@ -293,6 +293,8 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `stop_head_watcher` | `path` | `()` | Stop watching .git/HEAD |
 | `start_repo_watcher` | `path` | `()` | Watch .git/ for repo changes |
 | `stop_repo_watcher` | `path` | `()` | Stop watching .git/ |
+| `start_dir_watcher` | `path` | `()` | Watch directory for file changes (non-recursive) |
+| `stop_dir_watcher` | `path` | `()` | Stop watching directory |
 
 ## System (`lib.rs`)
 

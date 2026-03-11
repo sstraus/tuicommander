@@ -660,6 +660,15 @@ DELETE /watchers/repo?path=/path/to/repo
 
 Start/stop watching `.git/` for repository state changes. Browser-only mode.
 
+### Directory Watcher
+
+```
+POST   /watchers/dir?path=/path/to/directory
+DELETE /watchers/dir?path=/path/to/directory
+```
+
+Start/stop watching a directory (non-recursive) for file changes (create/delete/rename). Emits `dir-changed` SSE event. Used by File Browser panel for auto-refresh.
+
 ## Agent Endpoints
 
 ### Detect All Agents

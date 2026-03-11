@@ -191,13 +191,14 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 
 ### 3.4 File Browser Panel (`Cmd+E`)
 - Directory tree of active repository
+- **Auto-refresh**: directory watcher detects external file changes (create/delete/rename) and refreshes automatically within ~1s, preserving selection
 - Navigation: `↑/↓` (navigate), `Enter` (open/enter dir), `Backspace` (parent dir)
-- Breadcrumb bar: click any segment to jump to that directory
+- Breadcrumb toolbar: always-visible path bar with click-to-navigate segments + inline sort dropdown (funnel icon)
 - Search filter: text input with `*` and `**` glob wildcard support
 - Git status indicators: orange (modified), green (staged), blue (untracked)
 - Context menu (right-click): Copy (`Cmd+C`), Cut (`Cmd+X`), Paste (`Cmd+V`), Rename, Delete, Add to .gitignore
 - Keyboard shortcuts work when panel is focused (copy/cut/paste)
-- Sort toggle: Name (alphabetical, directories first) or Date (newest first, directories first)
+- Sort dropdown: Name (alphabetical, directories first) or Date (newest first, directories first)
 - Click file to open in code editor tab
 
 ### 3.5 Code Editor (CodeMirror 6)
