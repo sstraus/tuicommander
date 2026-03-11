@@ -61,6 +61,7 @@ function collectTerminalSnapshots(): Map<string, Map<string, SavedTerminal[]>> {
           fontSize: t.fontSize,
           agentType: t.agentType,
           agentSessionId: t.agentSessionId ?? null,
+          tuicSession: t.tuicSession ?? null,
         });
       }
 

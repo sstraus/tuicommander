@@ -1,4 +1,5 @@
 import { AGENTS, type AgentType } from "../agents";
+import { rpc } from "../transport";
 
 /**
  * Build the launch command for an agent, injecting --session-id when applicable.
@@ -32,4 +33,37 @@ export function buildResumeCommand(agentType: AgentType, agentSessionId?: string
     if (disc) return disc.resumeWithId(agentSessionId);
   }
   return AGENTS[agentType].resumeCommand;
+}
+
+/**
+ * Verify a TUIC_SESSION UUID against the agent's local session storage, then
+ * build the appropriate resume command.
+ *
+ * Priority: tuicSession (verified on disk) > agentSessionId > static resumeCommand.
+ * Falls back gracefully when verify_agent_session is unavailable (browser mode).
+ */
+export async function verifyAndBuildResumeCommand(
+  agentType: AgentType,
+  cwd: string | null,
+  tuicSession?: string | null,
+  agentSessionId?: string | null,
+): Promise<string | null> {
+  // Try tuicSession first — it's the stable tab UUID injected as env var
+  if (tuicSession && cwd && AGENTS[agentType].sessionDiscovery) {
+    try {
+      const exists = await rpc<boolean>("verify_agent_session", {
+        agentType,
+        sessionId: tuicSession,
+        cwd,
+      });
+      if (exists) {
+        return AGENTS[agentType].sessionDiscovery!.resumeWithId(tuicSession);
+      }
+    } catch {
+      // verify_agent_session unavailable (browser mode) — fall through
+    }
+  }
+
+  // Fall back to discovered agentSessionId or static resumeCommand
+  return buildResumeCommand(agentType, agentSessionId);
 }

@@ -100,6 +100,8 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
   get_relay_status: { browserUnsupported: true },
   // --- Browser-unsupported: Update channel check (hardcoded GitHub URLs) ---
   check_update_channel: { browserUnsupported: true },
+  // --- Browser-unsupported: Agent session verification (local filesystem) ---
+  verify_agent_session: { browserUnsupported: true },
   // --- Browser-unsupported: MCP upstream (uses OS keyring) ---
   load_mcp_upstreams: { browserUnsupported: true },
   save_mcp_upstreams: { browserUnsupported: true },

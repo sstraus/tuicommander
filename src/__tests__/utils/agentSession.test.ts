@@ -1,6 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { buildAgentLaunchCommand, buildResumeCommand } from "../../utils/agentSession";
+import { describe, it, expect, vi } from "vitest";
+import { buildAgentLaunchCommand, buildResumeCommand, verifyAndBuildResumeCommand } from "../../utils/agentSession";
 import { AGENTS } from "../../agents";
+
+// Mock rpc for verifyAndBuildResumeCommand tests
+const mockRpc = vi.fn();
+vi.mock("../../transport", () => ({
+  rpc: (...args: unknown[]) => mockRpc(...args),
+}));
 
 describe("buildAgentLaunchCommand", () => {
   it("injects --session-id for claude when UUID provided", () => {
@@ -115,5 +121,74 @@ describe("sessionDiscovery in AgentConfig", () => {
 
   it("opencode has null sessionDiscovery (SQLite, not implemented)", () => {
     expect(AGENTS.opencode.sessionDiscovery).toBeNull();
+  });
+});
+
+describe("verifyAndBuildResumeCommand", () => {
+  beforeEach(() => {
+    mockRpc.mockReset();
+  });
+
+  it("uses tuicSession when verified on disk", async () => {
+    mockRpc.mockResolvedValueOnce(true);
+    const result = await verifyAndBuildResumeCommand("claude", "/tmp/repo", "tuic-uuid-1", "old-session-id");
+    expect(mockRpc).toHaveBeenCalledWith("verify_agent_session", {
+      agentType: "claude",
+      sessionId: "tuic-uuid-1",
+      cwd: "/tmp/repo",
+    });
+    expect(result).toBe("claude --resume tuic-uuid-1");
+  });
+
+  it("falls back to agentSessionId when tuicSession not verified", async () => {
+    mockRpc.mockResolvedValueOnce(false);
+    const result = await verifyAndBuildResumeCommand("claude", "/tmp/repo", "tuic-uuid-1", "old-session-id");
+    expect(result).toBe("claude --resume old-session-id");
+  });
+
+  it("falls back to static resume when neither session exists", async () => {
+    mockRpc.mockResolvedValueOnce(false);
+    const result = await verifyAndBuildResumeCommand("claude", "/tmp/repo", "tuic-uuid-1", null);
+    expect(result).toBe("claude --continue");
+  });
+
+  it("falls back gracefully when rpc throws (browser mode)", async () => {
+    mockRpc.mockRejectedValueOnce(new Error("browser unsupported"));
+    const result = await verifyAndBuildResumeCommand("claude", "/tmp/repo", "tuic-uuid-1", "old-session-id");
+    expect(result).toBe("claude --resume old-session-id");
+  });
+
+  it("skips verification when tuicSession is null", async () => {
+    const result = await verifyAndBuildResumeCommand("claude", "/tmp/repo", null, "old-session-id");
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(result).toBe("claude --resume old-session-id");
+  });
+
+  it("skips verification when cwd is null", async () => {
+    const result = await verifyAndBuildResumeCommand("claude", null, "tuic-uuid-1", "old-session-id");
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(result).toBe("claude --resume old-session-id");
+  });
+
+  it("skips verification for agents without sessionDiscovery", async () => {
+    const result = await verifyAndBuildResumeCommand("aider", "/tmp/repo", "tuic-uuid-1", null);
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(result).toBe("aider --restore-chat-history");
+  });
+
+  it("returns null for agents without resume support", async () => {
+    const result = await verifyAndBuildResumeCommand("warp", "/tmp/repo", "tuic-uuid-1", null);
+    expect(result).toBeNull();
+  });
+
+  it("verifies gemini tuicSession correctly", async () => {
+    mockRpc.mockResolvedValueOnce(true);
+    const result = await verifyAndBuildResumeCommand("gemini", "/tmp/repo", "tuic-uuid-1", null);
+    expect(mockRpc).toHaveBeenCalledWith("verify_agent_session", {
+      agentType: "gemini",
+      sessionId: "tuic-uuid-1",
+      cwd: "/tmp/repo",
+    });
+    expect(result).toBe("gemini --resume tuic-uuid-1");
   });
 });

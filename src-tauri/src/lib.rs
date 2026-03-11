@@ -773,6 +773,7 @@ pub fn run() {
             agent::detect_lazygit_binary,
             agent::spawn_agent,
             agent_session::discover_agent_session,
+            agent_session::verify_agent_session,
             worktree::remove_worktree,
             worktree::check_worktree_dirty,
             worktree::delete_local_branch,

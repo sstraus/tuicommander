@@ -545,11 +545,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
       }
       if (!reconnected) {
         appLogger.warn("terminal", `initSession(${props.id}) — creating FRESH PTY session (no prior sessionId)`);
+        const termData = terminalsStore.get(props.id);
         sessionId = await pty.createSession({
           rows: terminal.rows,
           cols: terminal.cols,
           shell: null,
           cwd: props.cwd || null,
+          tuic_session: termData?.tuicSession ?? null,
         });
         if (sessionId) {
           // Track browser-created sessions so beforeunload only closes our own

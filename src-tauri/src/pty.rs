@@ -970,6 +970,12 @@ pub(crate) async fn create_pty(
             cmd.cwd(cwd);
         }
 
+        // Inject stable session UUID so agents can use it for session binding
+        // (e.g. `claude --session-id $TUIC_SESSION`, then `claude --resume $TUIC_SESSION`)
+        if let Some(ref tuic_session) = config.tuic_session {
+            cmd.env("TUIC_SESSION", tuic_session);
+        }
+
         match pair.slave.spawn_command(cmd) {
             Ok(child) => {
                 pair_and_child = Some((pair, child));

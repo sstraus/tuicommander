@@ -42,6 +42,8 @@ export interface PtyConfig {
   cols: number;
   shell: string | null;
   cwd: string | null;
+  /** Pre-generated stable session UUID — injected as `TUIC_SESSION` env var in the PTY. */
+  tuic_session?: string | null;
 }
 
 /** PTY exit event data */
@@ -168,6 +170,8 @@ export interface SavedTerminal {
   agentType: import("../agents").AgentType | null;
   /** Agent session ID — enables session-specific resume (e.g. claude --resume <uuid>) */
   agentSessionId?: string | null;
+  /** Stable tab UUID — injected as TUIC_SESSION env var, persists across restarts */
+  tuicSession?: string | null;
 }
 
 /** Orchestrator stats from backend */

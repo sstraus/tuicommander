@@ -1106,6 +1106,9 @@ pub(crate) struct PtyConfig {
     pub(crate) cols: u16,
     pub(crate) shell: Option<String>,
     pub(crate) cwd: Option<String>,
+    /// Pre-generated stable session UUID — injected as `TUIC_SESSION` env var.
+    /// Persists across app restarts so agents can resume the same session.
+    pub(crate) tuic_session: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

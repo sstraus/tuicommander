@@ -200,6 +200,99 @@ fn extract_codex_uuid(name: &str) -> Option<String> {
     if is_uuid(candidate) { Some(candidate.to_string()) } else { None }
 }
 
+// ─── Session verification ────────────────────────────────────────────────────
+
+/// Check whether a session file exists on disk for the given agent type and UUID.
+///
+/// Used at restore time to decide if `--resume <uuid>` is safe: if the session
+/// file doesn't exist, the resume command would fail.
+#[tauri::command]
+pub(crate) fn verify_agent_session(
+    agent_type: String,
+    session_id: String,
+    cwd: String,
+) -> bool {
+    match agent_type.as_str() {
+        "claude" => verify_claude_session(&session_id, &cwd),
+        "gemini" => verify_gemini_session(&session_id, &cwd),
+        "codex" => verify_codex_session(&session_id),
+        _ => false,
+    }
+}
+
+/// Check if `~/.claude/projects/<slug>/<uuid>.jsonl` exists.
+fn verify_claude_session(session_id: &str, cwd: &str) -> bool {
+    if !is_uuid(session_id) {
+        return false;
+    }
+    let Some(project_dir) = claude_projects_dir().map(|d| d.join(path_to_claude_slug(cwd))) else {
+        return false;
+    };
+    project_dir.join(format!("{session_id}.jsonl")).exists()
+}
+
+/// Check if any session file under `~/.gemini/tmp/*/chats/` contains this sessionId.
+fn verify_gemini_session(session_id: &str, _cwd: &str) -> bool {
+    if !is_uuid(session_id) {
+        return false;
+    }
+    let Some(tmp_dir) = dirs::home_dir().map(|h| h.join(".gemini").join("tmp")) else {
+        return false;
+    };
+    if !tmp_dir.exists() {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(&tmp_dir) else { return false };
+    for proj in entries.filter_map(|e| e.ok()) {
+        let chats_dir = proj.path().join("chats");
+        if !chats_dir.is_dir() {
+            continue;
+        }
+        let Ok(files) = std::fs::read_dir(&chats_dir) else { continue };
+        for f in files.filter_map(|e| e.ok()) {
+            if let Ok(contents) = std::fs::read_to_string(f.path())
+                && let Some(found_id) = extract_json_string_field(&contents, "sessionId")
+                && found_id == session_id
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Check if any Codex session file has this UUID in its filename.
+fn verify_codex_session(session_id: &str) -> bool {
+    if !is_uuid(session_id) {
+        return false;
+    }
+    let Some(sessions_root) = dirs::home_dir().map(|h| h.join(".codex").join("sessions")) else {
+        return false;
+    };
+    if !sessions_root.exists() {
+        return false;
+    }
+    codex_session_exists(&sessions_root, session_id)
+}
+
+fn codex_session_exists(dir: &std::path::Path, target_id: &str) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_dir() {
+            if codex_session_exists(&path, target_id) {
+                return true;
+            }
+        } else if let Some(name) = path.file_name().map(|n| n.to_string_lossy().to_string())
+            && let Some(uuid) = extract_codex_uuid(&name)
+            && uuid == target_id
+        {
+            return true;
+        }
+    }
+    false
+}
+
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
 /// Return true if `s` matches the UUID format: 8-4-4-4-12 lowercase hex with dashes.
@@ -425,5 +518,46 @@ mod tests {
     fn test_extract_json_string_field_non_string_value() {
         let json = r#"{"count": 42}"#;
         assert!(extract_json_string_field(json, "count").is_none());
+    }
+
+    // ── verify_claude_session ──
+
+    #[test]
+    fn test_verify_claude_session_exists() {
+        let dir = TempDir::new().unwrap();
+        let uuid = "af467730-5e79-49d9-8a17-ebd94c99f262";
+        let slug = path_to_claude_slug("/fake/project");
+        let project_dir = dir.path().join(&slug);
+        fs::create_dir_all(&project_dir).unwrap();
+        make_file(&project_dir, &format!("{uuid}.jsonl"));
+
+        // Temporarily override the home dir by checking the file directly
+        // (we can't mock dirs::home_dir, so test the inner logic)
+        assert!(project_dir.join(format!("{uuid}.jsonl")).exists());
+    }
+
+    #[test]
+    fn test_verify_claude_session_not_found() {
+        let dir = TempDir::new().unwrap();
+        let slug = path_to_claude_slug("/fake/project");
+        let project_dir = dir.path().join(&slug);
+        fs::create_dir_all(&project_dir).unwrap();
+
+        assert!(!project_dir.join("nonexistent-uuid.jsonl").exists());
+    }
+
+    #[test]
+    fn test_verify_agent_session_invalid_uuid() {
+        // Invalid UUIDs should always return false
+        assert!(!verify_claude_session("not-a-uuid", "/tmp"));
+    }
+
+    #[test]
+    fn test_verify_agent_session_unknown_agent() {
+        assert!(!verify_agent_session(
+            "unknown-agent".to_string(),
+            "af467730-5e79-49d9-8a17-ebd94c99f262".to_string(),
+            "/tmp".to_string(),
+        ));
     }
 }

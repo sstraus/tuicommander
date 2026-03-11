@@ -474,7 +474,8 @@ const App: Component = () => {
   const launchAgentInActiveTerminal = (agentType: AgentType, cmd: string) => {
     const active = terminalsStore.getActive();
     if (!active?.ref) return;
-    const agentSessionId = agentType === "claude" ? crypto.randomUUID() : null;
+    // Use the tab's stable tuicSession UUID as --session-id so resume works via TUIC_SESSION
+    const agentSessionId = active.tuicSession ?? (agentType === "claude" ? crypto.randomUUID() : null);
     const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId);
     active.ref.write(`${finalCmd}\r`);
     terminalsStore.update(active.id, {
@@ -532,10 +533,12 @@ const App: Component = () => {
       const runConfigs = agentConfigsStore.getRunConfigs(agent.type);
 
       const launchAgent = async (cmd: string) => {
-        const agentSessionId = agent.type === "claude" ? crypto.randomUUID() : null;
-        const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId);
         const termId = await gitOps.handleAddTerminalToBranch(repoPath, branchName);
         if (termId) {
+          // Use the new tab's stable tuicSession UUID as --session-id
+          const term = terminalsStore.get(termId);
+          const agentSessionId = term?.tuicSession ?? (agent.type === "claude" ? crypto.randomUUID() : null);
+          const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId);
           terminalsStore.update(termId, {
             name: agentConfig.name,
             nameIsCustom: true,

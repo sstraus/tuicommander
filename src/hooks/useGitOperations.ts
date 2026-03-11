@@ -7,7 +7,7 @@ import { isTauri } from "../transport";
 import { invoke } from "../invoke";
 import { findOrphanTerminals } from "../utils/terminalOrphans";
 import { filterValidTerminals } from "../utils/terminalFilter";
-import { buildResumeCommand } from "../utils/agentSession";
+import { verifyAndBuildResumeCommand } from "../utils/agentSession";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { githubStore } from "../stores/github";
 import { effectiveMergeMethod, isMergeMethodNotAllowed } from "../utils/prMerge";
@@ -379,6 +379,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       name: `${branchName.split("/").pop()} ${termCount + 1}`,
       cwd: branch?.worktreePath || null,
       awaitingInput: null,
+      tuicSession: crypto.randomUUID(),
     });
 
     repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
@@ -489,11 +490,18 @@ export function useGitOperations(deps: GitOperationsDeps) {
           name: terminal.name,
           cwd: terminal.cwd,
           awaitingInput: null,
+          tuicSession: terminal.tuicSession ?? crypto.randomUUID(),
         });
         repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
 
         if (terminal.agentType) {
-          const resumeCmd = buildResumeCommand(terminal.agentType, terminal.agentSessionId);
+          // Prefer tuicSession (verified on disk) for resume, fall back to agentSessionId
+          const resumeCmd = await verifyAndBuildResumeCommand(
+            terminal.agentType,
+            terminal.cwd,
+            terminal.tuicSession,
+            terminal.agentSessionId,
+          );
           if (resumeCmd) {
             terminalsStore.update(id, { pendingResumeCommand: resumeCmd, agentSessionId: terminal.agentSessionId ?? null });
           }
