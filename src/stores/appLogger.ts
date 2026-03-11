@@ -149,9 +149,11 @@ function createAppLogger() {
         setUnseenErrorCount((c) => c + 1);
         setRevision((r) => r + 1);
       });
-    } else {
+    } else if (level === "warn") {
       setRevision((r) => r + 1);
     }
+    // info/debug: written to ring buffer but don't bump revision —
+    // avoids reactive re-renders during high-throughput PTY output.
 
     // Forward to browser console
     const tag = `[${source}]`;
