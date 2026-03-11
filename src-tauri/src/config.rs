@@ -864,6 +864,105 @@ pub(crate) fn save_agents_config(config: AgentsConfig) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// Note images — save/delete/get for Ideas panel image attachments
+// ---------------------------------------------------------------------------
+
+const NOTE_IMAGES_DIR: &str = "note-images";
+
+/// Maximum decoded image size: 10 MB
+const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024;
+
+/// Validate a note ID to prevent path traversal attacks.
+/// Rejects IDs containing `/`, `\`, `..`, or null bytes.
+fn validate_note_id(note_id: &str) -> Result<(), String> {
+    if note_id.is_empty() {
+        return Err("note_id must not be empty".to_string());
+    }
+    if note_id.contains('/')
+        || note_id.contains('\\')
+        || note_id.contains("..")
+        || note_id.contains('\0')
+    {
+        return Err("note_id contains invalid characters".to_string());
+    }
+    Ok(())
+}
+
+/// Save a base64-encoded image to `config_dir()/note-images/<note_id>/<timestamp>.<extension>`.
+/// Returns the absolute path of the saved file.
+#[tauri::command]
+pub(crate) fn save_note_image(
+    note_id: String,
+    data_base64: String,
+    extension: String,
+) -> Result<String, String> {
+    use base64::{engine::general_purpose, Engine as _};
+
+    validate_note_id(&note_id)?;
+
+    let bytes = general_purpose::STANDARD
+        .decode(&data_base64)
+        .map_err(|e| format!("Invalid base64 data: {e}"))?;
+
+    if bytes.len() > MAX_IMAGE_SIZE {
+        return Err(format!(
+            "Image too large: {} bytes (max {} bytes)",
+            bytes.len(),
+            MAX_IMAGE_SIZE
+        ));
+    }
+
+    // Sanitize extension to alphanumeric only
+    let ext = extension
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>();
+    let ext = if ext.is_empty() { "png".to_string() } else { ext };
+
+    let dir = config_dir().join(NOTE_IMAGES_DIR).join(&note_id);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create note-images dir: {e}"))?;
+
+    let filename = format!(
+        "{}.{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        ext
+    );
+    let path = dir.join(&filename);
+
+    std::fs::write(&path, &bytes)
+        .map_err(|e| format!("Failed to write image: {e}"))?;
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Delete all image assets for a note. No-op if the directory doesn't exist.
+#[tauri::command]
+pub(crate) fn delete_note_assets(note_id: String) -> Result<(), String> {
+    validate_note_id(&note_id)?;
+
+    let dir = config_dir().join(NOTE_IMAGES_DIR).join(&note_id);
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir)
+            .map_err(|e| format!("Failed to delete note assets: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Return the absolute path of the note-images root directory.
+/// The frontend needs this as `baseDir` for `convertFileSrc()`.
+#[tauri::command]
+pub(crate) fn get_note_images_dir() -> String {
+    config_dir()
+        .join(NOTE_IMAGES_DIR)
+        .to_string_lossy()
+        .to_string()
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1422,6 +1521,119 @@ mod tests {
             ..RepoSettingsEntry::default()
         };
         assert!(entry.has_custom_settings());
+    }
+
+    // -- Note image tests --
+
+    #[test]
+    fn save_note_image_creates_file() {
+        use base64::{engine::general_purpose, Engine as _};
+
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+
+        // A minimal valid PNG (1x1 pixel)
+        let png_bytes: &[u8] = &[
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1
+            0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
+        ];
+        let b64 = general_purpose::STANDARD.encode(png_bytes);
+
+        let result = save_note_image("test-note-1".to_string(), b64, "png".to_string());
+        assert!(result.is_ok(), "save_note_image should succeed: {:?}", result);
+
+        let path = std::path::PathBuf::from(result.unwrap());
+        assert!(path.exists(), "Image file should exist on disk");
+        assert!(path.to_string_lossy().contains("note-images/test-note-1/"));
+        assert!(path.to_string_lossy().ends_with(".png"));
+
+        // Verify content matches
+        let saved = fs::read(&path).unwrap();
+        assert_eq!(saved, png_bytes);
+    }
+
+    #[test]
+    fn save_note_image_rejects_oversized() {
+        use base64::{engine::general_purpose, Engine as _};
+
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+
+        // Create data slightly over 10 MB
+        let big_data = vec![0u8; MAX_IMAGE_SIZE + 1];
+        let b64 = general_purpose::STANDARD.encode(&big_data);
+
+        let result = save_note_image("test-note-big".to_string(), b64, "png".to_string());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("too large"));
+    }
+
+    #[test]
+    fn save_note_image_rejects_invalid_base64() {
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+
+        let result = save_note_image(
+            "test-note-bad".to_string(),
+            "not-valid-base64!!!@@@".to_string(),
+            "png".to_string(),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid base64"));
+    }
+
+    #[test]
+    fn save_note_image_rejects_path_traversal() {
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+
+        let result = save_note_image("../etc".to_string(), "AAAA".to_string(), "png".to_string());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid characters"));
+
+        let result2 =
+            save_note_image("foo/bar".to_string(), "AAAA".to_string(), "png".to_string());
+        assert!(result2.is_err());
+    }
+
+    #[test]
+    fn delete_note_assets_removes_directory() {
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+
+        // Create a note-images dir with files
+        let note_dir = dir.path().join("note-images").join("note-to-delete");
+        fs::create_dir_all(&note_dir).unwrap();
+        fs::write(note_dir.join("img1.png"), b"fake-png").unwrap();
+        fs::write(note_dir.join("img2.png"), b"fake-png-2").unwrap();
+        assert!(note_dir.exists());
+
+        let result = delete_note_assets("note-to-delete".to_string());
+        assert!(result.is_ok());
+        assert!(!note_dir.exists(), "Directory should be removed");
+    }
+
+    #[test]
+    fn delete_note_assets_noop_when_missing() {
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+
+        let result = delete_note_assets("nonexistent-note".to_string());
+        assert!(result.is_ok(), "Should succeed even if dir doesn't exist");
+    }
+
+    #[test]
+    fn get_note_images_dir_returns_path() {
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+
+        let result = get_note_images_dir();
+        assert!(
+            result.ends_with("note-images"),
+            "Should end with note-images, got: {result}"
+        );
     }
 
 }
