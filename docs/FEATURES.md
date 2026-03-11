@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.7.1 | **Last verified:** 2026-03-08
+**Version:** 0.8.0 | **Last verified:** 2026-03-11
 
 ---
 
@@ -250,14 +250,14 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Task management with status tracking (pending, running, completed, failed, cancelled)
 - Drag-and-drop task reordering
 
-### 3.10 Command Palette (`Cmd+Shift+P`)
+### 3.11 Command Palette (`Cmd+Shift+P`)
 - Fuzzy-search across all app actions by name
 - Recency-weighted ranking: recently used actions surface first
 - Each row shows action label, category badge, and keybinding hint
 - Keyboard-navigable: `↑/↓` to move, `Enter` to execute, `Esc` to close
 - Powered by `actionRegistry.ts` (`ACTION_META` map)
 
-### 3.11 Activity Dashboard (`Cmd+Shift+A`)
+### 3.12 Activity Dashboard (`Cmd+Shift+A`)
 - Real-time view of all active terminal sessions in a compact list
 - Each row shows: terminal name, project name badge (last segment of CWD), agent type, status, last activity time
 - Sub-rows (up to one shown per terminal, in priority order):
@@ -269,7 +269,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Click any row to switch to that terminal and close the dashboard
 - Relative timestamps auto-refresh ("2s ago", "1m ago")
 
-### 3.12 Error Log Panel (`Cmd+Shift+E`)
+### 3.13 Error Log Panel (`Cmd+Shift+E`)
 - Centralized log of all errors, warnings, and info messages across the app
 - Sources: App, Plugin, Git, Network, Terminal, GitHub, Dictation, Store, Config
 - Level filter tabs: All, Error, Warn, Info, Debug
@@ -283,7 +283,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Ring buffer of 1000 entries (oldest dropped when full), Rust-backed — warn/error entries survive webview reloads via `push_log`/`get_logs` Tauri commands
 - Also accessible via Command Palette: "Error log"
 
-### 3.13 Plan Panel (`Cmd+P`)
+### 3.14 Plan Panel (`Cmd+P`)
 - Lists active plan files for the current repository from the activity store
 - Plans are detected via structured `plan-file` events from the output parser
 - Click a plan to open it as a virtual markdown tab (frontmatter auto-stripped)
