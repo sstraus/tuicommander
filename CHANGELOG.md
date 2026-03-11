@@ -12,16 +12,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **BranchCombobox shared component** — Searchable combobox with keyboard navigation for branch selection
 - **File drag & drop** — Drag files from Finder/Explorer onto the terminal area to open them with the appropriate viewer (`.md`/`.mdx` → Markdown, others → Code Editor). Visual overlay during drag hover. Supports standalone files outside any repo
 - **Markdown file association** — `.md`/`.mdx` files registered with TUICommander on macOS. Double-clicking a markdown file in Finder opens it directly in TUICommander
+- **File browser: sort by name/date** — Toggle between alphabetical and last-modified sort order in the file browser panel
+- **Claude Usage: rate-limit headers fallback** — Falls back to unified rate-limit response headers when per-model header data is unavailable, improving accuracy of the usage dashboard
 
 ### Changed
 - **Updater: beta/nightly check moved to Rust** — `check_update_channel` replaces `fetch_update_manifest`. URLs hardcoded in Rust (SSRF-safe), 15s timeout, 64 KB size cap, typed results. TS store is now a pure state consumer with no URL constants or error regex
 - **Post-merge cleanup: auto-stash** — Switch step now auto-stashes uncommitted changes instead of blocking. Dialog shows inline warning with optional "Unstash after switch" checkbox
 - **Mobile Activity Feed: throttled grouping** — Items snapshot every 10s to prevent constant reordering with multiple active sessions
+- **Claude Usage dashboard adaptive layout** — Dashboard adapts gracefully when only partial usage data is available, preventing empty columns
 
 ### Fixed
 - **Ghost question notifications on PWA** — Question state now auto-clears when agent resumes work (status-line event)
 - **Mobile table rendering** — Box-drawing characters preserve alignment via horizontal scroll (`white-space: pre`)
 - **Mobile emoji rendering** — Unicode symbols (●, ○, ◉) forced to text presentation via `font-variant-emoji: text`
+- **Updater CSP bypass** — Beta/nightly update manifest now fetched via Rust backend instead of the webview, bypassing CSP restrictions that blocked update checks. Missing channel releases shown as info, not error
+- **Question detection reliability** — Stale pending state cleared so re-asked questions can refire; repaint-triggered false re-fires suppressed; screen-based detection via `last_chat_line` for accuracy; generalized prompt style recognition for Codex and Gemini
+- **Rate-limit false positives** — Rate-limit events now gated on agent presence; terminals with no active agent no longer show spurious rate-limit badges
+- **Rate-limit auto-expire** — Stale `rate_limited` state automatically clears after `retry_after_ms` elapses, preventing the badge from persisting beyond the actual limit window
+- **Notification sound deduplication** — Plan-file info sound no longer fires multiple times per event; notification sounds decoupled from parsed event handlers to prevent double-firing
+- **Sidebar auto-close** — Sidebar's focus-loss auto-close no longer dismisses the post-merge cleanup dialog mid-workflow
 
 ## [0.7.1] - 2026-03-08
 

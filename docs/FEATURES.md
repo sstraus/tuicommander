@@ -197,6 +197,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Git status indicators: orange (modified), green (staged), blue (untracked)
 - Context menu (right-click): Copy (`Cmd+C`), Cut (`Cmd+X`), Paste (`Cmd+V`), Rename, Delete, Add to .gitignore
 - Keyboard shortcuts work when panel is focused (copy/cut/paste)
+- Sort toggle: Name (alphabetical, directories first) or Date (newest first, directories first)
 - Click file to open in code editor tab
 
 ### 3.5 Code Editor (CodeMirror 6)
@@ -392,13 +393,17 @@ Discovery runs once per terminal on `null→agent` transition. Multiple concurre
 ### 6.3 Rate Limit Detection
 - Provider-specific regex patterns detect rate limit messages
 - Status bar warning with countdown timer
-- Per-session tracking with cleanup of expired limits
+- Per-session tracking: rate-limit events are only accepted for sessions where agent activity has been detected (prevents false warnings in plain shell sessions)
+- Auto-expire: rate limits are cleared automatically after `retry_after_ms` (or 120s default) without requiring agent output
 
 ### 6.4 Question Detection
 - Recognizes interactive prompts (yes/no, multiple choice, numbered options)
 - Tab dot turns orange (pulsing) when awaiting input; sidebar branch icon shows `?` in orange
 - Prompt overlay: keyboard navigation (↑/↓, Enter, number keys 1-9, Escape)
-- Silence-based detection: if terminal output stops for 10s after a line ending with `?`, the session is treated as awaiting input
+- Two detection strategies run in priority order:
+  1. **Screen-based** (Strategy 1): reads the live terminal screen, finds the last chat line above the prompt box (delimited by separator lines), checks if it ends with `?`. Works with Claude Code, Codex (`›` prompt), and Gemini (`> ` prompt) layouts
+  2. **Silence-based** (Strategy 2, fallback): if terminal output stops for 10s after a line ending with `?`, the session is treated as awaiting input
+- Stale candidate clearing: candidates that fail screen verification are purged so the same question can re-fire in a future agent cycle
 - Echo suppression: user-typed input echoed by PTY is ignored for 500ms to prevent false question detection
 - `extract_question_line()` scans all changed rows (not just the last) for question text, applied in both normal and headless reader threads
 - Question state auto-clears when a `status-line` event fires (agent is actively working, so it's no longer awaiting input)

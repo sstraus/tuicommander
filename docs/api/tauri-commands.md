@@ -20,6 +20,8 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `list_worktrees` | -- | `Vec<JSON>` | List managed worktrees |
 | `update_session_cwd` | `session_id, cwd` | `()` | Update session working directory (from OSC 7) |
 | `get_session_foreground_process` | `session_id` | `JSON` | Get foreground process info |
+| `get_kitty_flags` | `session_id` | `u32` | Get Kitty keyboard protocol flags for session |
+| `get_last_prompt` | `session_id` | `Option<String>` | Get last user-typed prompt from input line buffer |
 
 ## Git Operations (`git.rs`)
 
@@ -51,6 +53,9 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `get_repo_pr_statuses` | `path, include_merged` | `Vec<BranchPrStatus>` | Batch PR status (all branches) |
 | `approve_pr` | `repo_path, pr_number` | `String` | Submit approving review via GitHub API |
 | `merge_pr_via_github` | `repo_path, pr_number, merge_method` | `String` | Merge PR via GitHub API |
+| `get_all_pr_statuses` | `path` | `Vec<BranchPrStatus>` | Batch PR status for all branches (includes merged) |
+| `get_pr_diff` | `repo_path, pr_number` | `String` | Get PR diff content |
+| `check_github_circuit` | `path` | `CircuitState` | Check GitHub API circuit breaker state |
 
 ## Worktree Management (`worktree.rs`)
 
@@ -67,6 +72,12 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `checkout_remote_branch` | `repo_path, branch_name` | `()` | Check out a remote-only branch as a new local tracking branch |
 | `detect_orphan_worktrees` | `repo_path` | `Vec<String>` | Detect worktrees in detached HEAD state (branch deleted) |
 | `remove_orphan_worktree` | `repo_path, worktree_path` | `()` | Remove an orphan worktree by filesystem path (validated against repo) |
+| `switch_branch` | `repo_path, branch_name` | `()` | Switch main worktree to a different branch (with dirty-state and process checks) |
+| `merge_and_archive_worktree` | `repo_path, branch_name` | `MergeResult` | Merge worktree branch into base and archive |
+| `finalize_merged_worktree` | `repo_path, branch_name` | `()` | Clean up worktree after merge (delete branch + worktree) |
+| `list_base_ref_options` | `repo_path` | `Vec<String>` | List valid base refs for worktree creation |
+| `run_setup_script` | `repo_path, worktree_path` | `()` | Run post-creation setup script in new worktree |
+| `generate_clone_branch_name_cmd` | `base_name, existing_names` | `String` | Generate hybrid branch name for clone worktree |
 
 ## Configuration (`config.rs`)
 
@@ -93,6 +104,8 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `save_keybindings` | `config` | `()` | Save keybinding overrides |
 | `load_agents_config` | -- | `AgentsConfig` | Load per-agent run configs |
 | `save_agents_config` | `config` | `()` | Save per-agent run configs |
+| `load_activity` | -- | `ActivityConfig` | Load activity dashboard state |
+| `save_activity` | `config` | `()` | Save activity dashboard state |
 
 ## Agent Detection (`agent.rs`)
 
@@ -105,6 +118,7 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `detect_installed_ides` | -- | `Vec<String>` | Detect installed IDEs |
 | `open_in_app` | `path, app` | `()` | Open path in application |
 | `spawn_agent` | `pty_config, agent_config` | `String` (session ID) | Spawn agent in PTY |
+| `discover_agent_session` | `session_id, agent_type, cwd` | `Option<String>` | Discover agent session UUID from filesystem for session-aware resume |
 
 ## MCP Upstream Proxy (`mcp_upstream_config.rs`, `mcp_upstream_credentials.rs`)
 
@@ -115,6 +129,7 @@ Commands for managing upstream MCP servers proxied through TUICommander's `/mcp`
 | `load_mcp_upstreams` | -- | `UpstreamMcpConfig` | Load upstream config from `mcp-upstreams.json` |
 | `save_mcp_upstreams` | `config: UpstreamMcpConfig` | `()` | Validate, persist, and hot-reload upstream config. Errors if validation fails |
 | `reconnect_mcp_upstream` | `name: String` | `()` | Disconnect and reconnect a single upstream by name. Useful after credential changes or transient failures |
+| `get_mcp_upstream_status` | -- | `Vec<UpstreamStatus>` | Get live status of all upstream MCP servers |
 | `save_mcp_upstream_credential` | `name: String, token: String` | `()` | Store a Bearer token for an upstream in the OS keyring |
 | `delete_mcp_upstream_credential` | `name: String` | `()` | Remove a Bearer token from the OS keyring (idempotent) |
 
@@ -201,6 +216,8 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `list_audio_devices` | -- | `Vec<AudioDevice>` | List input devices |
 | `get_dictation_config` | -- | `DictationConfig` | Load config |
 | `set_dictation_config` | `config` | `()` | Save config |
+| `check_microphone_permission` | -- | `String` | Check macOS microphone TCC permission status |
+| `open_microphone_settings` | -- | `()` | Open macOS System Settings > Privacy > Microphone |
 
 ## Filesystem (`fs.rs`)
 
@@ -215,6 +232,7 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `rename_path` | `src, dest` | `()` | Rename/move path |
 | `copy_path` | `src, dest` | `()` | Copy file or directory |
 | `add_to_gitignore` | `path, pattern` | `()` | Add pattern to .gitignore |
+| `search_files` | `path, query` | `Vec<SearchResult>` | Search files by name in directory |
 
 ## Plugin Management (`plugins.rs`)
 
@@ -228,6 +246,7 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `install_plugin_from_zip` | `path` | `PluginManifest` | Install from local ZIP |
 | `install_plugin_from_url` | `url` | `PluginManifest` | Install from HTTPS URL |
 | `uninstall_plugin` | `id` | `()` | Remove plugin and all files |
+| `install_plugin_from_folder` | `path` | `PluginManifest` | Install from local folder |
 
 ## Plugin Filesystem (`plugin_fs.rs`)
 
@@ -238,6 +257,8 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `plugin_list_directory` | `path, pattern?, plugin_id` | `Vec<String>` | List filenames in directory (optional glob filter) |
 | `plugin_watch_path` | `path, plugin_id, recursive?, debounce_ms?` | `String` (watch ID) | Start watching path for changes |
 | `plugin_unwatch` | `watch_id, plugin_id` | `()` | Stop watching a path |
+| `plugin_write_file` | `path, content, plugin_id` | `()` | Write file within $HOME (path-traversal validated) |
+| `plugin_rename_path` | `src, dest, plugin_id` | `()` | Rename/move path within $HOME (path-traversal validated) |
 
 ## Plugin HTTP (`plugin_http.rs`)
 
@@ -287,5 +308,22 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `get_local_ip` | -- | `Option<String>` | Get primary local IP |
 | `get_local_ips` | -- | `Vec<LocalIpEntry>` | List local network interfaces |
 | `regenerate_session_token` | -- | `String` | Regenerate MCP session token |
+| `fetch_update_manifest` | `url` | `JSON` | Fetch update manifest via Rust HTTP (bypasses WebView CSP) |
+| `read_external_file` | `path` | `String` | Read file outside repo (standalone file open) |
+| `get_relay_status` | -- | `JSON` | Cloud relay connection status |
+
+## App Logger (`app_logger.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `push_log` | `level, source, message` | `()` | Push entry to ring buffer (survives webview reloads) |
+| `get_logs` | `level?, source?, limit?` | `Vec<LogEntry>` | Query ring buffer with optional filters |
+| `clear_logs` | -- | `()` | Flush all log entries |
+
+## Notification Sound (`notification_sound.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `play_notification_sound` | `sound_type` | `()` | Play notification sound via Rust rodio (types: completion, question, error, info) |
 | `block_sleep` | -- | `()` | Prevent system sleep |
 | `unblock_sleep` | -- | `()` | Allow system sleep |

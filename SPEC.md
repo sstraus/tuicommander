@@ -75,7 +75,7 @@ interface TerminalData {
   awaitingInput: AwaitingInputType;
 }
 
-type AwaitingInputType = "question" | "error" | "confirmation" | null;
+type AwaitingInputType = "question" | "error" | null;
 ```
 
 #### repositoriesStore
@@ -137,59 +137,23 @@ interface RateLimitInfo {
 
 ## Hooks
 
-### usePty
-PTY session management via Tauri events.
+Key hooks in `src/hooks/`:
 
-```typescript
-interface PtyHook {
-  spawn(cols: number, rows: number): Promise<string>;
-  write(sessionId: string, data: string): Promise<void>;
-  resize(sessionId: string, cols: number, rows: number): Promise<void>;
-  close(sessionId: string): Promise<void>;
-  canSpawn(): Promise<boolean>;
-  onData(sessionId: string, callback: (data: string) => void): () => void;
-  onExit(sessionId: string, callback: () => void): () => void;
-}
-```
+- **usePty** — PTY session lifecycle (spawn, write, resize, close, subscribe to data/exit events)
+- **useRepository** — Git operations (getInfo, getDiff, getDiffStats, openInApp with line/col, renameBranch)
+- **useGitHub** — Reactive wrapper over `githubStore`; returns `{ status, loading, error, refresh, startPolling, stopPolling }`
+- **useKeyboardRedirect** — Redirects keyboard input from non-terminal areas to active terminal
+- **useFileDrop** — External file drag & drop handling
 
-### useRepository
-Git operations.
-
-```typescript
-interface RepositoryHook {
-  getInfo(path: string): Promise<{ path: string; name: string }>;
-  getDiff(path: string): Promise<string>;
-  openInApp(path: string, app: IdeType): Promise<void>;
-}
-```
-
-### useGitHub
-GitHub CLI wrapper.
-
-```typescript
-interface GitHubHook {
-  getPRStatus(path: string): Promise<PRStatus | null>;
-  getBranchInfo(path: string): Promise<BranchInfo>;
-}
-```
-
-### useKeyboardRedirect
-Redirects keyboard input from non-terminal areas to active terminal.
+See `src/hooks/` for full signatures — the above is a representative summary.
 
 ## Agent Types
 
 ```typescript
-type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "unknown";
-
-const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
-  claude: { name: "Claude Code", command: "claude" },
-  gemini: { name: "Gemini CLI", command: "gemini" },
-  opencode: { name: "OpenCode", command: "opencode" },
-  aider: { name: "Aider", command: "aider" },
-  codex: { name: "Codex", command: "codex" },
-  unknown: { name: "Unknown", command: "" },
-};
+type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "cursor" | "warp" | "droid" | "git";
 ```
+
+Full agent configuration (binary, resume command, session discovery, detection patterns) lives in `src/agents.ts`.
 
 ## Rate Limit Detection
 
