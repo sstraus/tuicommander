@@ -135,8 +135,13 @@ export const GeneralTab: Component = () => {
             {t("general.hint.updateAvailable", "Version {version} is available!", { version: updaterStore.state.version ?? "" })}
           </p>
         </Show>
-        <Show when={!updaterStore.state.available && !updaterStore.state.checking && !updaterStore.state.error}>
+        <Show when={!updaterStore.state.available && !updaterStore.state.checking && !updaterStore.state.error && !updaterStore.state.noRelease}>
           <p class={s.hint}>{t("general.hint.latestVersion", "You are on the latest version")}</p>
+        </Show>
+        <Show when={updaterStore.state.noRelease}>
+          <p class={s.hint} style={{ color: "var(--fg-muted)" }}>
+            No {settingsStore.state.updateChannel} releases published yet
+          </p>
         </Show>
         <Show when={updaterStore.state.error}>
           <p class={s.hint} style={{ color: "var(--accent-red, #f44747)" }}>

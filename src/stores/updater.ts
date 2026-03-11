@@ -28,6 +28,8 @@ interface UpdaterState {
   version: string | null;
   body: string | null;
   error: string | null;
+  /** Informational message when no release exists for the channel (not an error) */
+  noRelease: boolean;
   /** For non-stable channels, a URL to the release page for manual download */
   downloadUrl: string | null;
 }
@@ -41,6 +43,7 @@ function createUpdaterStore() {
     version: null,
     body: null,
     error: null,
+    noRelease: false,
     downloadUrl: null,
   });
 
@@ -50,7 +53,7 @@ function createUpdaterStore() {
     async checkForUpdate(): Promise<void> {
       if (!isTauri()) return;
       if (state.checking || state.downloading) return;
-      setState({ checking: true, error: null });
+      setState({ checking: true, error: null, noRelease: false });
 
       const channel = settingsStore.state.updateChannel;
 
@@ -100,11 +103,14 @@ function createUpdaterStore() {
         }
       } catch (err) {
         const raw = err instanceof Error ? err.message : String(err);
-        appLogger.error("app", "Update check failed", raw);
-        const message = /fetch|load failed|valid release|404|not found/i.test(raw)
-          ? "No published releases found yet"
-          : raw;
-        setState({ error: message });
+        if (/fetch|load failed|valid release|404|not found/i.test(raw)) {
+          // No release published for this channel — informational, not an error
+          appLogger.debug("app", `No ${channel} release found`, raw);
+          setState({ noRelease: true });
+        } else {
+          appLogger.error("app", "Update check failed", raw);
+          setState({ error: raw });
+        }
       } finally {
         setState({ checking: false });
       }
@@ -140,7 +146,7 @@ function createUpdaterStore() {
 
     dismiss(): void {
       pendingUpdate = null;
-      setState({ available: false, version: null, body: null, error: null, downloadUrl: null });
+      setState({ available: false, version: null, body: null, error: null, noRelease: false, downloadUrl: null });
     },
 
     /** Simulate an available update (dev/testing only) */

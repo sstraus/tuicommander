@@ -105,22 +105,24 @@ describe("updaterStore", () => {
       });
     });
 
-    it("maps 404/fetch errors to friendly message", async () => {
+    it("sets noRelease (not error) for 404/fetch errors", async () => {
       mockCheck.mockRejectedValue(new Error("fetch error: 404 not found"));
 
       await createRoot(async (dispose) => {
         await store.checkForUpdate();
-        expect(store.state.error).toBe("No published releases found yet");
+        expect(store.state.noRelease).toBe(true);
+        expect(store.state.error).toBeNull();
         dispose();
       });
     });
 
-    it("maps Safari 'Load failed' to friendly message", async () => {
+    it("sets noRelease (not error) for Safari 'Load failed'", async () => {
       mockCheck.mockRejectedValue(new TypeError("Load failed"));
 
       await createRoot(async (dispose) => {
         await store.checkForUpdate();
-        expect(store.state.error).toBe("No published releases found yet");
+        expect(store.state.noRelease).toBe(true);
+        expect(store.state.error).toBeNull();
         dispose();
       });
     });
@@ -169,14 +171,15 @@ describe("updaterStore", () => {
       vi.unstubAllGlobals();
     });
 
-    it("handles HTTP error for non-stable channel", async () => {
+    it("sets noRelease for non-stable 404", async () => {
       mockSettingsState.updateChannel = "nightly";
       const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 404 });
       vi.stubGlobal("fetch", mockFetch);
 
       await createRoot(async (dispose) => {
         await store.checkForUpdate();
-        expect(store.state.error).toContain("No published releases found yet");
+        expect(store.state.noRelease).toBe(true);
+        expect(store.state.error).toBeNull();
         expect(store.state.available).toBe(false);
         dispose();
       });
