@@ -173,11 +173,21 @@ pub fn start_dictation(
 
     // Check microphone permission before attempting audio capture
     let mic_status = permission::check();
-    if mic_status == permission::MicPermission::Denied {
-        return Err("microphone_denied".to_string());
-    }
-    if mic_status == permission::MicPermission::Restricted {
-        return Err("microphone_restricted".to_string());
+    match mic_status {
+        permission::MicPermission::Denied => {
+            return Err("microphone_denied".to_string());
+        }
+        permission::MicPermission::Restricted => {
+            return Err("microphone_restricted".to_string());
+        }
+        permission::MicPermission::NotDetermined => {
+            // CoreAudio (cpal) does NOT trigger the TCC prompt — we must
+            // explicitly request access via AVCaptureDevice to show the dialog.
+            if !permission::request() {
+                return Err("microphone_denied".to_string());
+            }
+        }
+        permission::MicPermission::Authorized => {}
     }
 
     let whisper_model = configured_model();
