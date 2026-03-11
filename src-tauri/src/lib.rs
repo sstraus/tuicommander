@@ -646,17 +646,15 @@ pub fn run() {
         .plugin(
             tauri::plugin::Builder::<tauri::Wry, ()>::new("navigation-guard")
                 .on_navigation(|_webview, url| {
-                    // Allow internal navigation (tauri://, localhost in dev)
+                    // Allow internal navigation (tauri://, localhost in dev,
+                    // and http://tauri.localhost/ on Windows production builds)
                     let scheme = url.scheme();
                     if scheme == "tauri" || scheme == "asset" || scheme == "plugin" {
                         return true;
                     }
-                    #[cfg(dev)]
-                    {
-                        let host = url.host_str().unwrap_or("");
-                        if host == "localhost" || host == "127.0.0.1" {
-                            return true;
-                        }
+                    let host = url.host_str().unwrap_or("");
+                    if host == "tauri.localhost" || host == "localhost" || host == "127.0.0.1" {
+                        return true;
                     }
                     // External URL — open in system browser, block webview navigation
                     if scheme == "http" || scheme == "https" {
