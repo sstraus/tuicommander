@@ -1,0 +1,31 @@
+src/components/StatusBar/StatusBar.tsx
+  986f5f383ed04210 46
+src/components/MarkdownTab/MarkdownTab.tsx
+  986f5f383ed04210 148
+src/components/CodeEditorPanel/CodeEditorTab.tsx
+  986f5f383ed04210 130
+src/hooks/useAgentPolling.ts
+  986f5f383ed04210 1,31,33-36,39-42,47-55,57
+src/components/TerminalArea.tsx
+  986f5f383ed04210 143,145-148,152-153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "348a8ed4b6c3266f9a77fe5668c3a04a69e919ca",
+  "prompts": {
+    "986f5f383ed04210": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a895b4e-0168-4e18-b101-a0d851cb5591",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 35,
+      "total_deletions": 14,
+      "accepted_lines": 30,
+      "overriden_lines": 0
+    }
+  }
+}
