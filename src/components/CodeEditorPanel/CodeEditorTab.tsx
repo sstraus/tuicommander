@@ -127,6 +127,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
     if (!props.filePath) return;
     const timer = setInterval(() => {
       if (document.visibilityState === "hidden") return;
+      if (editorTabsStore.state.activeId !== props.id) return;
       void checkDiskContent();
     }, 5000);
     onCleanup(() => clearInterval(timer));

@@ -140,11 +140,17 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
               const isVertical = terminalsStore.state.layout.direction === "vertical";
               const rect = container.getBoundingClientRect();
 
+              let rafPending = false;
               const onMouseMove = (e: MouseEvent) => {
-                const ratio = isVertical
-                  ? (e.clientX - rect.left) / rect.width
-                  : (e.clientY - rect.top) / rect.height;
-                terminalsStore.setSplitRatio(ratio);
+                if (rafPending) return;
+                rafPending = true;
+                requestAnimationFrame(() => {
+                  rafPending = false;
+                  const ratio = isVertical
+                    ? (e.clientX - rect.left) / rect.width
+                    : (e.clientY - rect.top) / rect.height;
+                  terminalsStore.setSplitRatio(ratio);
+                });
               };
 
               const onMouseUp = () => {

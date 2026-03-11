@@ -43,7 +43,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   const [prTick, setPrTick] = createSignal(0);
   onMount(() => {
     const sharedTimer = setInterval(() => {
-      setPrTick((t) => t + 1);
+      if (activePrData()?.state === "MERGED") setPrTick((t) => t + 1);
       if (rateLimitStore.getRateLimitedCount() > 0) {
         setRlTick((t) => t + 1);
         rateLimitStore.cleanupExpired();

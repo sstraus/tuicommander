@@ -1,4 +1,4 @@
-import { createEffect, onCleanup } from "solid-js";
+import { createEffect, onCleanup, untrack } from "solid-js";
 import { invoke } from "../invoke";
 import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
@@ -28,20 +28,33 @@ export function useAgentPolling(): void {
   const discoveryAttempted = new Set<string>();
 
   createEffect(() => {
-    // Read all terminal IDs reactively so the effect re-runs when terminals are added/removed
+    // Read terminal IDs reactively so the effect re-runs when terminals are added/removed
     const allIds = terminalsStore.getIds();
-    // Build a snapshot of id→sessionId for terminals that have active sessions
-    const sessions: Array<{ termId: string; sessionId: string }> = [];
-    for (const id of allIds) {
-      const sess = terminalsStore.state.terminals[id]?.sessionId;
-      if (sess) sessions.push({ termId: id, sessionId: sess });
-    }
+    // Snapshot sessionIds WITHOUT tracking — pollAll() mutates the store and we
+    // must not re-trigger this effect on every poll cycle.
+    const sessions = untrack(() => {
+      const result: Array<{ termId: string; sessionId: string }> = [];
+      for (const id of allIds) {
+        const sess = terminalsStore.state.terminals[id]?.sessionId;
+        if (sess) result.push({ termId: id, sessionId: sess });
+      }
+      return result;
+    });
 
     if (sessions.length === 0) return;
 
     const pollAll = async () => {
+      // Re-read current sessions inside poll since they may have changed
+      const currentSessions = untrack(() => {
+        const result: Array<{ termId: string; sessionId: string }> = [];
+        for (const id of allIds) {
+          const sess = terminalsStore.state.terminals[id]?.sessionId;
+          if (sess) result.push({ termId: id, sessionId: sess });
+        }
+        return result;
+      });
       const results = await Promise.allSettled(
-        sessions.map(async ({ termId, sessionId }) => {
+        currentSessions.map(async ({ termId, sessionId }) => {
           const result = await invoke<string | null>("get_session_foreground_process", {
             sessionId,
           });

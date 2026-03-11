@@ -145,6 +145,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 
     const timer = setInterval(async () => {
       if (document.visibilityState === "hidden") return;
+      if (mdTabsStore.state.activeId !== props.tab.id) return;
       try {
         const diskContent = await readFileContent(repoPath, filePath);
         if (diskContent !== content()) setContent(diskContent);
