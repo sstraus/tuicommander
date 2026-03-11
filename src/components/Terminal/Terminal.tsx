@@ -677,6 +677,24 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
       }
 
+      // Suppress bare arrow keys when a non-interactive command is running.
+      // Prevents ugly ^[[A/B/C/D echo during e.g. cargo build.
+      // Allow arrows when:
+      //  - alternate screen (vim, htop, Ink/Claude Code)
+      //  - agent awaits input (question prompt)
+      //  - kitty keyboard active (app explicitly requested key protocol = reads input)
+      //  - any modifier held (Ctrl/Alt/Shift combos are intentional)
+      if (event.type === "keydown"
+        && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)
+        && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+        && terminalsStore.get(props.id)?.shellState === "busy"
+        && !terminalsStore.get(props.id)?.awaitingInput
+        && terminal!.buffer.active.type === "normal"
+        && !(kittyFlags & 1)
+      ) {
+        return false;
+      }
+
       // Kitty keyboard protocol: encode special keys when flag 1 (disambiguate) is active
       if (event.type === "keydown" && (kittyFlags & 1)) {
         const seq = kittySequenceForKey(event.key, event.shiftKey, event.altKey, event.ctrlKey, event.metaKey);
