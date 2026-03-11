@@ -139,8 +139,6 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
           throw mergeErr;
         }
       }
-      githubStore.pollRepo(props.repoPath);
-
       // Show cleanup dialog — pre-check dirty state for stash UX
       const baseBranch = pr.base_ref_name || "main";
       let hasDirtyFiles = false;
@@ -152,6 +150,10 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
         hasDirtyFiles = status.stdout.trim().length > 0;
       } catch { /* ignore — assume clean */ }
       setCleanupCtx({ branchName: props.branch, baseBranch, hasDirtyFiles });
+      // Poll AFTER cleanup state is established — polling earlier could trigger
+      // reactive store updates that attempt to close the popover before the
+      // cleanup dialog is mounted.
+      githubStore.pollRepo(props.repoPath);
     } catch (e) {
       setMergeError(String(e));
       appLogger.error("github", `Failed to merge PR #${pr.number}`, { error: String(e) });

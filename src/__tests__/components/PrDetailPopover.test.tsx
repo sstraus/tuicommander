@@ -885,6 +885,90 @@ describe("PrDetailPopover", () => {
     });
   });
 
+  describe("post-merge cleanup dialog", () => {
+    const mergeablePr = {
+      branch: "feature/x",
+      number: 42,
+      title: "Feature",
+      state: "OPEN",
+      url: "https://github.com/org/repo/pull/42",
+      additions: 10,
+      deletions: 5,
+      author: "alice",
+      commits: 1,
+      checks: { passed: 2, failed: 0, pending: 0, total: 2 },
+      check_details: [],
+      labels: [],
+      is_draft: false,
+      base_ref_name: "main",
+      head_ref_oid: "abc",
+      created_at: "",
+      updated_at: "",
+      merge_state_label: null,
+      review_state_label: null,
+      review_decision: "APPROVED",
+      mergeable: "MERGEABLE",
+      merge_state_status: "CLEAN",
+      merge_commit_allowed: true,
+      squash_merge_allowed: true,
+      rebase_merge_allowed: true,
+    };
+
+    beforeEach(() => {
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { prMergeStrategy: null });
+      mockGetBranchPrData.mockReturnValue(mergeablePr);
+    });
+
+    it("shows cleanup dialog after successful merge", async () => {
+      // merge succeeds, then git status returns clean
+      mockInvoke
+        .mockResolvedValueOnce("sha123") // merge_pr_via_github
+        .mockResolvedValueOnce({ stdout: "" }); // run_git_command (git status --porcelain)
+
+      const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+      const mergeBtn = container.querySelector(".mergeBtn") as HTMLButtonElement;
+      fireEvent.click(mergeBtn);
+
+      await waitFor(() => {
+        expect(container.textContent).toContain("Post-merge cleanup");
+        expect(container.textContent).toContain("feature/x");
+        expect(container.textContent).toContain("main");
+      });
+    });
+
+    it("calls pollRepo AFTER setCleanupCtx (cleanup dialog is mounted first)", async () => {
+      const { githubStore } = await import("../../stores/github");
+      const pollSpy = vi.mocked(githubStore.pollRepo);
+      pollSpy.mockClear();
+
+      // Track when pollRepo is called relative to DOM update
+      let cleanupDialogExistedWhenPollCalled = false;
+      let containerRef: HTMLElement | null = null;
+      pollSpy.mockImplementation(() => {
+        // At the moment pollRepo fires, check if cleanup dialog is in the DOM
+        if (containerRef) {
+          cleanupDialogExistedWhenPollCalled =
+            containerRef.textContent?.includes("Post-merge cleanup") ?? false;
+        }
+      });
+
+      mockInvoke
+        .mockResolvedValueOnce("sha123") // merge_pr_via_github
+        .mockResolvedValueOnce({ stdout: "" }); // run_git_command
+
+      const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+      containerRef = container;
+      const mergeBtn = container.querySelector(".mergeBtn") as HTMLButtonElement;
+      fireEvent.click(mergeBtn);
+
+      await waitFor(() => {
+        expect(pollSpy).toHaveBeenCalledWith("/repo");
+      });
+      expect(cleanupDialogExistedWhenPollCalled).toBe(true);
+    });
+  });
+
   describe("merge button label reflects effective merge method", () => {
     const makePr = (overrides = {}) => ({
       branch: "feature/x", number: 42, title: "Feature", state: "OPEN",
