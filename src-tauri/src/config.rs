@@ -1524,8 +1524,10 @@ mod tests {
     }
 
     // -- Note image tests --
+    // These tests use the global config_dir override and must run serially.
 
     #[test]
+    #[serial_test::serial]
     fn save_note_image_creates_file() {
         use base64::{engine::general_purpose, Engine as _};
 
@@ -1555,6 +1557,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn save_note_image_rejects_oversized() {
         use base64::{engine::general_purpose, Engine as _};
 
@@ -1571,6 +1574,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn save_note_image_rejects_invalid_base64() {
         let dir = TempDir::new().unwrap();
         let _guard = set_config_dir_override(dir.path().to_path_buf());
@@ -1585,6 +1589,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn save_note_image_rejects_path_traversal() {
         let dir = TempDir::new().unwrap();
         let _guard = set_config_dir_override(dir.path().to_path_buf());
@@ -1599,6 +1604,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn delete_note_assets_removes_directory() {
         let dir = TempDir::new().unwrap();
         let _guard = set_config_dir_override(dir.path().to_path_buf());
@@ -1616,6 +1622,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn delete_note_assets_noop_when_missing() {
         let dir = TempDir::new().unwrap();
         let _guard = set_config_dir_override(dir.path().to_path_buf());
@@ -1625,6 +1632,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn get_note_images_dir_returns_path() {
         let dir = TempDir::new().unwrap();
         let _guard = set_config_dir_override(dir.path().to_path_buf());

@@ -219,6 +219,15 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Mark as used: notes sent to terminal are timestamped (`usedAt`) for tracking
 - Badge count: status bar toggle shows count of notes visible for the active repo
 - Per-repo filtering: notes can be tagged to a repository; untagged notes visible everywhere
+- **Image paste**: `Ctrl+V` / `Cmd+V` pastes clipboard images as thumbnails attached to the note
+  - Images saved to `config_dir()/note-images/<note-id>/` on disk
+  - Thumbnails displayed inline below note text and in the input area before submit
+  - Image-only notes (no text) are supported
+  - Images removed from disk when the note is deleted
+  - Send to terminal appends absolute image paths so AI agents can read them
+  - Max 10 MB per image; accepted formats: PNG, JPEG, WebP, GIF
+- Edit preserves note identity (in-place update, no ID change)
+- `Escape` cancels edit mode
 - Data persisted to Rust config backend
 
 ### 3.7 Help Panel (`Cmd+?`)
@@ -881,6 +890,8 @@ All data persisted to platform config directory via Rust:
 |----------|--------|
 | `Enter` | Submit idea |
 | `Shift+Enter` | Insert newline |
+| `Cmd+V` / `Ctrl+V` | Paste image from clipboard |
+| `Escape` | Cancel edit mode |
 
 ### Quick Switcher
 | Shortcut | Action |

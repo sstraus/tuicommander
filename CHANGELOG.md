@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Ideas panel image paste** — `Ctrl+V` / `Cmd+V` pastes clipboard images into notes. Images saved to disk, displayed as thumbnails, and sent as absolute paths when forwarding to terminal (so AI agents can read them). Supports PNG, JPEG, WebP, GIF up to 10 MB. Image-only notes (no text) are allowed. Cleanup on delete.
+- **Ideas panel in-place edit** — Edit now preserves note identity (no ID change). `Escape` cancels edit mode.
+
 ## [0.8.2] - 2026-03-11
 
 ### Added
