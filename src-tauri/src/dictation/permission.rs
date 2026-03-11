@@ -15,8 +15,10 @@ pub enum MicPermission {
     /// User granted access.
     Authorized,
     /// User denied access — must re-enable via System Settings.
+    #[cfg_attr(not(target_os = "macos"), expect(dead_code))]
     Denied,
     /// Restricted by MDM or parental controls.
+    #[cfg_attr(not(target_os = "macos"), expect(dead_code))]
     Restricted,
 }
 
