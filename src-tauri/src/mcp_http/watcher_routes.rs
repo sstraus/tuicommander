@@ -62,3 +62,24 @@ pub(super) async fn stop_repo_watcher_http(
     crate::repo_watcher::stop_watching(&q.path, &state);
     (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
 }
+
+/// Start a directory watcher via HTTP (browser-only mode).
+pub(super) async fn start_dir_watcher_http(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<PathQuery>,
+) -> impl IntoResponse {
+    let app_handle = state.app_handle.read().clone();
+    match crate::dir_watcher::start_watching(&q.path, app_handle.as_ref(), &state) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+    }
+}
+
+/// Stop a directory watcher via HTTP.
+pub(super) async fn stop_dir_watcher_http(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<PathQuery>,
+) -> impl IntoResponse {
+    crate::dir_watcher::stop_watching(&q.path, &state);
+    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+}

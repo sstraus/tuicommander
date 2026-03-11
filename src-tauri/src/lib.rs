@@ -14,6 +14,7 @@ pub(crate) mod git_cli;
 pub(crate) mod github;
 pub(crate) mod head_watcher;
 pub(crate) mod repo_watcher;
+pub(crate) mod dir_watcher;
 pub(crate) mod mcp_http;
 pub(crate) mod mcp_proxy;
 pub(crate) mod mcp_upstream_config;
@@ -575,6 +576,7 @@ pub fn run() {
         git_cache: crate::state::GitCacheState::new(),
         head_watchers: DashMap::new(),
         repo_watchers: DashMap::new(),
+        dir_watchers: DashMap::new(),
         http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
         github_token: parking_lot::RwLock::new(github_token),
         github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
@@ -868,6 +870,8 @@ pub fn run() {
             head_watcher::stop_head_watcher,
             repo_watcher::start_repo_watcher,
             repo_watcher::stop_repo_watcher,
+            dir_watcher::start_dir_watcher,
+            dir_watcher::stop_dir_watcher,
             sleep_prevention::block_sleep,
             sleep_prevention::unblock_sleep,
             fs::resolve_terminal_path,

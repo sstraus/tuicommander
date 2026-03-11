@@ -93,6 +93,7 @@ fn event_type_name(event: &AppEvent) -> &'static str {
         AppEvent::PluginChanged { .. } => "plugin-changed",
         AppEvent::UpstreamStatusChanged { .. } => "upstream-status-changed",
         AppEvent::McpToast { .. } => "mcp-toast",
+        AppEvent::DirChanged { .. } => "dir-changed",
     }
 }
 
@@ -126,6 +127,9 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         }
         AppEvent::McpToast { title, message, level } => {
             serde_json::json!({ "title": title, "message": message, "level": level })
+        }
+        AppEvent::DirChanged { dir_path } => {
+            serde_json::json!({ "dir_path": dir_path })
         }
     }
 }

@@ -427,6 +427,12 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
   stop_repo_watcher: {
     map: (_args, p) => ({ method: "DELETE", path: `/watchers/repo?path=${p("repoPath")}` }),
   },
+  start_dir_watcher: {
+    map: (_args, p) => ({ method: "POST", path: `/watchers/dir?path=${p("path")}` }),
+  },
+  stop_dir_watcher: {
+    map: (_args, p) => ({ method: "DELETE", path: `/watchers/dir?path=${p("path")}` }),
+  },
 
   // --- MCP status ---
   get_mcp_status: { map: () => ({ method: "GET", path: "/mcp/status" }) },

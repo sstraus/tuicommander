@@ -246,6 +246,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Watchers (for browser/mobile clients)
         .route("/watchers/head", post(watcher_routes::start_head_watcher_http).delete(watcher_routes::stop_head_watcher_http))
         .route("/watchers/repo", post(watcher_routes::start_repo_watcher_http).delete(watcher_routes::stop_repo_watcher_http))
+        .route("/watchers/dir", post(watcher_routes::start_dir_watcher_http).delete(watcher_routes::stop_dir_watcher_http))
         // Config
         .route("/config", get(config_routes::get_config).put(config_routes::put_config))
         .route("/config/hash-password", post(config_routes::hash_password_http))
@@ -535,6 +536,7 @@ mod tests {
             git_cache: crate::state::GitCacheState::new(),
             head_watchers: DashMap::new(),
             repo_watchers: DashMap::new(),
+            dir_watchers: DashMap::new(),
             http_client: std::mem::ManuallyDrop::new(http_client),
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),

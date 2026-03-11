@@ -66,6 +66,11 @@ pub enum AppEvent {
         message: Option<String>,
         level: String,
     },
+    /// Directory contents changed (non-git filesystem watcher)
+    #[serde(rename = "dir-changed")]
+    DirChanged {
+        dir_path: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -683,6 +688,8 @@ pub struct AppState {
     pub(crate) head_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
     /// File watchers for .git/ directory per repo (keyed by repo path)
     pub(crate) repo_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
+    /// File watchers for directory contents (keyed by absolute dir path)
+    pub(crate) dir_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
     /// Shared HTTP client for GitHub API requests.
     /// Wrapped in ManuallyDrop because reqwest::blocking::Client owns an internal
     /// tokio runtime that panics on drop inside another runtime (e.g. #[tokio::test]).
@@ -1059,7 +1066,8 @@ impl AppState {
             | AppEvent::RepoChanged { .. }
             | AppEvent::PluginChanged { .. }
             | AppEvent::UpstreamStatusChanged { .. }
-            | AppEvent::McpToast { .. } => {}
+            | AppEvent::McpToast { .. }
+            | AppEvent::DirChanged { .. } => {}
         }
     }
 
@@ -1689,6 +1697,50 @@ fn trim_agent_chrome(lines: Vec<LogLine>, _screen_rows: usize) -> Vec<LogLine> {
     }
 }
 
+/// Test helper: construct a minimal `AppState` for unit tests in other modules.
+#[cfg(test)]
+pub(crate) mod tests_support {
+    use super::*;
+
+    pub fn make_test_app_state() -> AppState {
+        AppState {
+            sessions: dashmap::DashMap::new(),
+            worktrees_dir: std::env::temp_dir().join("test-worktrees"),
+            metrics: SessionMetrics::new(),
+            output_buffers: dashmap::DashMap::new(),
+            mcp_sessions: dashmap::DashMap::new(),
+            ws_clients: dashmap::DashMap::new(),
+            config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
+            git_cache: GitCacheState::new(),
+            head_watchers: dashmap::DashMap::new(),
+            repo_watchers: dashmap::DashMap::new(),
+            dir_watchers: dashmap::DashMap::new(),
+            http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
+            github_token: parking_lot::RwLock::new(None),
+            github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+            server_shutdown: parking_lot::Mutex::new(None),
+            session_token: parking_lot::RwLock::new(String::from("test-token")),
+            app_handle: parking_lot::RwLock::new(None),
+            plugin_watchers: dashmap::DashMap::new(),
+            vt_log_buffers: dashmap::DashMap::new(),
+            kitty_states: dashmap::DashMap::new(),
+            input_buffers: dashmap::DashMap::new(),
+            last_prompts: dashmap::DashMap::new(),
+            silence_states: dashmap::DashMap::new(),
+            claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
+            event_bus: tokio::sync::broadcast::channel(256).0,
+            event_counter: Arc::new(AtomicU64::new(0)),
+            session_states: DashMap::new(),
+            mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
+            mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+            slash_mode: DashMap::new(),
+            last_output_ms: DashMap::new(),
+            relay: RelayState::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2022,6 +2074,7 @@ mod tests {
             git_cache: GitCacheState::new(),
             head_watchers: dashmap::DashMap::new(),
             repo_watchers: dashmap::DashMap::new(),
+            dir_watchers: dashmap::DashMap::new(),
             http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),

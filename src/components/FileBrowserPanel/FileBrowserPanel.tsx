@@ -2,6 +2,7 @@ import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup
 import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
+import { invoke, listen } from "../../invoke";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { replaceBasename } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
@@ -66,6 +67,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   type SortMode = "name" | "date";
   const [sortBy, setSortBy] = createSignal<SortMode>("name");
 
+  // Directory watcher revision — bumped when dir-changed event arrives
+  const [dirRevision, setDirRevision] = createSignal(0);
+
   // Track repoPath changes to reset subdir synchronously before fetching
   let lastRepoPath: string | null = null;
 
@@ -87,8 +91,13 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     const subdir = currentSubdir();
     // Subscribe to repo revision for auto-refresh on git changes
     void repositoriesStore.getRevision(repoPath);
+    // Subscribe to dir watcher revision for auto-refresh on filesystem changes
+    const dirRev = dirRevision();
     // Also subscribe to manual refresh trigger
     void refreshTrigger();
+
+    // Preserve selection by path on dir-watcher refreshes (dirRev > 0)
+    const prevSelectedPath = dirRev > 0 ? filteredEntries()[selectedIndex()]?.path : undefined;
 
     setLoading(true);
     setError(null);
@@ -97,7 +106,13 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       try {
         const result = await fb.listDirectory(repoPath, subdir);
         setEntries(result);
-        setSelectedIndex(0);
+        // Restore selection by path after auto-refresh, reset on initial load
+        if (prevSelectedPath) {
+          const idx = result.findIndex((e) => e.path === prevSelectedPath);
+          setSelectedIndex(idx >= 0 ? idx : 0);
+        } else {
+          setSelectedIndex(0);
+        }
       } catch (err) {
         setError(String(err));
         setEntries([]);
@@ -105,6 +120,34 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         setLoading(false);
       }
     })();
+  });
+
+  // Directory watcher lifecycle: start/stop watcher as directory or visibility changes
+  createEffect(() => {
+    if (!props.visible || !props.repoPath) return;
+
+    const repoPath = props.repoPath;
+    const subdir = currentSubdir();
+    // Don't watch during search (search is recursive, watcher is not)
+    if (searchQuery().trim()) return;
+
+    const absPath = subdir === "." || subdir === "" ? repoPath : `${repoPath}/${subdir}`;
+
+    invoke("start_dir_watcher", { path: absPath }).catch((err) => {
+      appLogger.warn("app", `Dir watcher failed for ${absPath}: ${err}`);
+    });
+
+    // Listen for dir-changed events matching this path
+    const unlisten = listen<{ dir_path: string }>("dir-changed", (event) => {
+      if (event.payload.dir_path === absPath) {
+        setDirRevision((n) => n + 1);
+      }
+    });
+
+    onCleanup(() => {
+      invoke("stop_dir_watcher", { path: absPath }).catch(() => {});
+      unlisten.then((fn) => fn());
+    });
   });
 
   // Search results from recursive Rust search (when query is active)
