@@ -1,0 +1,27 @@
+src/__tests__/stores/updater.test.ts
+  4005a3617d773743 7,17-19,36,41,161,163,172-174,181,234
+src/stores/updater.ts
+  4005a3617d773743 4,80,83-86
+src-tauri/src/lib.rs
+  4005a3617d773743 343-357,831
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "ff3c0c96a2cf4a4067e36e32f9829c4ec372dd3e",
+  "prompts": {
+    "4005a3617d773743": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4e01d874-5f7a-481d-90ee-ed5881489270",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 41,
+      "total_deletions": 37,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}
