@@ -94,6 +94,8 @@ export const DictationSettings: Component = () => {
       const perm = await invoke<string>("check_microphone_permission");
       if (perm === "authorized") {
         dictationStore.refreshDevices();
+      } else if (perm === "denied" || perm === "restricted") {
+        appLogger.warn("dictation", `Microphone access ${perm} — grant permission in System Settings > Privacy > Microphone`);
       }
     } catch {
       appLogger.warn("dictation", "Failed to check microphone permission");

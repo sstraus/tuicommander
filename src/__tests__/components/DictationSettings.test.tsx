@@ -21,7 +21,7 @@ const mockStore = vi.hoisted(() => ({
     downloading: false,
     downloadPercent: 0,
     corrections: {},
-    devices: [],
+    devices: [] as { name: string; is_default: boolean }[],
   },
   refreshConfig: vi.fn(),
   refreshStatus: vi.fn(),
@@ -183,7 +183,6 @@ describe("DictationSettings – Microphone Selector", () => {
 
   it("shows Detect Microphones button when no devices loaded", () => {
     const { container } = render(() => <DictationSettings />);
-    const btn = container.querySelector("button");
     const buttons = Array.from(container.querySelectorAll("button"));
     const detectBtn = buttons.find(b => b.textContent?.includes("Detect"));
     expect(detectBtn).not.toBeNull();
@@ -251,7 +250,7 @@ describe("DictationSettings – Microphone Selector", () => {
     expect(mockStore.refreshDevices).toHaveBeenCalled();
   });
 
-  it("does not auto-detect devices when mic is not authorized", async () => {
+  it("does not auto-detect devices when mic is not determined", async () => {
     mockInvoke.mockResolvedValue("not_determined");
 
     render(() => <DictationSettings />);
@@ -259,5 +258,21 @@ describe("DictationSettings – Microphone Selector", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("check_microphone_permission");
     expect(mockStore.refreshDevices).not.toHaveBeenCalled();
+  });
+
+  it("logs warning when mic is denied", async () => {
+    mockInvoke.mockResolvedValue("denied");
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    render(() => <DictationSettings />);
+    await new Promise((r) => setTimeout(r, 0));
+
+    const warnCalls = consoleSpy.mock.calls;
+    const micWarning = warnCalls.find(
+      (call) => typeof call[1] === "string" && call[1].includes("Microphone access denied"),
+    );
+    expect(micWarning).toBeDefined();
+    expect(mockStore.refreshDevices).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 });
