@@ -1,0 +1,23 @@
+src/stores/github.ts
+  986f5f383ed04210 44-45,263,270-275
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "a3f1d99615b56e8b13336e0d20a3318ed8732746",
+  "prompts": {
+    "986f5f383ed04210": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a895b4e-0168-4e18-b101-a0d851cb5591",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 9,
+      "total_deletions": 1,
+      "accepted_lines": 9,
+      "overriden_lines": 0
+    }
+  }
+}
