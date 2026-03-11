@@ -1,0 +1,23 @@
+.github/workflows/ci.yml
+  986f5f383ed04210 35,37-44,48-82,84,123-124,131-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "b4165841c134b0345ec8349b8b4a3c02d9fb6ef1",
+  "prompts": {
+    "986f5f383ed04210": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a895b4e-0168-4e18-b101-a0d851cb5591",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 61,
+      "total_deletions": 24,
+      "accepted_lines": 49,
+      "overriden_lines": 0
+    }
+  }
+}
