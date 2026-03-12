@@ -354,14 +354,36 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             };
             let paused = Arc::new(AtomicBool::new(false));
             state.sessions.insert(session_id.clone(), Mutex::new(PtySession {
-                writer, master: pair.master, _child: child, paused: paused.clone(), worktree: None, cwd,
+                writer, master: pair.master, _child: child, paused: paused.clone(), worktree: None, cwd: cwd.clone(),
             }));
             state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
             state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
             state.output_buffers.insert(session_id.clone(), Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)));
             state.vt_log_buffers.insert(session_id.clone(), Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)));
             state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
-            spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
+
+            // Broadcast to SSE/WebSocket consumers
+            let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
+                session_id: session_id.clone(),
+                cwd: cwd.clone(),
+            });
+
+            // Use full reader thread (with Tauri events) when AppHandle is available
+            let app_handle = state.app_handle.read().clone();
+            if let Some(ref app) = app_handle {
+                spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state.clone());
+            } else {
+                spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
+            }
+
+            // Emit Tauri IPC event so frontend creates a tab
+            if let Some(app) = app_handle {
+                let _ = app.emit("session-created", serde_json::json!({
+                    "session_id": session_id,
+                    "cwd": cwd,
+                }));
+            }
+
             serde_json::json!({"session_id": session_id})
         }
         "input" => {
@@ -1125,4 +1147,83 @@ pub(crate) fn test_translate_special_key(key: &str) -> Option<&'static str> {
 #[cfg(test)]
 pub(crate) fn test_validate_mcp_repo_path(path: &str) -> Result<(), serde_json::Value> {
     validate_mcp_repo_path(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_state() -> Arc<AppState> {
+        let http_client = std::thread::spawn(reqwest::blocking::Client::new)
+            .join()
+            .expect("blocking client construction thread panicked");
+        Arc::new(AppState {
+            sessions: dashmap::DashMap::new(),
+            worktrees_dir: std::env::temp_dir().join("test-worktrees"),
+            metrics: crate::SessionMetrics::new(),
+            output_buffers: dashmap::DashMap::new(),
+            mcp_sessions: dashmap::DashMap::new(),
+            ws_clients: dashmap::DashMap::new(),
+            config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
+            git_cache: crate::state::GitCacheState::new(),
+            head_watchers: dashmap::DashMap::new(),
+            repo_watchers: dashmap::DashMap::new(),
+            dir_watchers: dashmap::DashMap::new(),
+            http_client: std::mem::ManuallyDrop::new(http_client),
+            github_token: parking_lot::RwLock::new(None),
+            github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+            server_shutdown: parking_lot::Mutex::new(None),
+            session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
+            app_handle: parking_lot::RwLock::new(None),
+            plugin_watchers: dashmap::DashMap::new(),
+            vt_log_buffers: dashmap::DashMap::new(),
+            kitty_states: dashmap::DashMap::new(),
+            input_buffers: dashmap::DashMap::new(),
+            last_prompts: dashmap::DashMap::new(),
+            silence_states: dashmap::DashMap::new(),
+            claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
+            event_bus: tokio::sync::broadcast::channel(256).0,
+            event_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            session_states: dashmap::DashMap::new(),
+            mcp_upstream_registry: std::sync::Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
+            mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+            slash_mode: dashmap::DashMap::new(),
+            last_output_ms: dashmap::DashMap::new(),
+            relay: crate::state::RelayState::new(),
+        })
+    }
+
+    #[test]
+    fn session_create_emits_event_bus_session_created() {
+        let state = test_state();
+        let mut rx = state.event_bus.subscribe();
+
+        let args = serde_json::json!({"action": "create"});
+        let result = handle_session(&state, &args);
+
+        // Session should have been created successfully
+        assert!(result.get("session_id").is_some(), "Expected session_id in result: {result}");
+
+        // event_bus should have received SessionCreated
+        let event = rx.try_recv().expect("Expected SessionCreated event on event_bus");
+        match event {
+            crate::state::AppEvent::SessionCreated { session_id, .. } => {
+                assert_eq!(session_id, result["session_id"].as_str().unwrap());
+            }
+            other => panic!("Expected SessionCreated, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn session_create_registers_vt_log_and_last_output() {
+        let state = test_state();
+        let args = serde_json::json!({"action": "create"});
+        let result = handle_session(&state, &args);
+        let sid = result["session_id"].as_str().unwrap();
+
+        assert!(state.vt_log_buffers.contains_key(sid), "vt_log_buffers should contain session");
+        assert!(state.last_output_ms.contains_key(sid), "last_output_ms should contain session");
+        assert!(state.output_buffers.contains_key(sid), "output_buffers should contain session");
+    }
 }

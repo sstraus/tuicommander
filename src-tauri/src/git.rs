@@ -1647,7 +1647,7 @@ pub(crate) fn get_file_history(
     after: Option<String>,
 ) -> Result<Vec<CommitLogEntry>, String> {
     let repo_path = PathBuf::from(&path);
-    validate_paths_within_repo(&repo_path, &[file.clone()])?;
+    validate_paths_within_repo(&repo_path, std::slice::from_ref(&file))?;
     let n = count.unwrap_or(COMMIT_LOG_DEFAULT_COUNT).min(COMMIT_LOG_MAX_COUNT);
     let n_str = n.to_string();
 
@@ -1756,7 +1756,7 @@ pub(crate) fn get_file_blame(
     file: String,
 ) -> Result<Vec<BlameLine>, String> {
     let repo_path = PathBuf::from(&path);
-    validate_paths_within_repo(&repo_path, &[file.clone()])?;
+    validate_paths_within_repo(&repo_path, std::slice::from_ref(&file))?;
 
     let out = git_cmd(&repo_path)
         .args(["blame", "--porcelain", &file])
