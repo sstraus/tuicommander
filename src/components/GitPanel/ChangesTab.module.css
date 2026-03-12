@@ -130,6 +130,53 @@
   animation: spin 0.6s linear infinite;
 }
 
+/* Filter input */
+.filterRow {
+  position: relative;
+  padding: 4px 12px;
+  flex-shrink: 0;
+}
+
+.filterInput {
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+  padding: 4px 24px 4px 8px;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.filterInput:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.filterInput::placeholder {
+  color: var(--fg-muted);
+}
+
+.filterClear {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--font-md);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.filterClear:hover {
+  color: var(--fg-primary);
+}
+
 /* Section headers (STAGED, CHANGES) */
 .sectionHeader {
   display: flex;
@@ -164,7 +211,6 @@
 }
 
 .sectionLabel {
-  flex: 1;
 }
 
 .sectionCount {
@@ -184,6 +230,10 @@
   border-radius: var(--radius-sm);
   opacity: 0;
   transition: opacity 0.15s ease, background 0.1s ease, color 0.1s ease;
+}
+
+.sectionAction:first-of-type {
+  margin-left: auto;
 }
 
 .sectionHeader:hover .sectionAction {

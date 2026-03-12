@@ -1,10 +1,10 @@
-import { Component, createEffect, createSignal, For, Show, onCleanup } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js";
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore, type DiffStatus } from "../../stores/diffTabs";
 import { appLogger } from "../../stores/appLogger";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { cx } from "../../utils";
+import { cx, globToRegex } from "../../utils";
 import s from "./ChangesTab.module.css";
 
 /** A single entry from the Rust StatusEntry struct */
@@ -109,6 +109,23 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   const [confirmDiscard, setConfirmDiscard] = createSignal<FileEntry | null>(null);
   const [confirmDiscardAll, setConfirmDiscardAll] = createSignal(false);
   const [focusedIndex, setFocusedIndex] = createSignal(-1);
+  const [filterQuery, setFilterQuery] = createSignal("");
+
+  /** Filtered staged files (glob wildcard support) */
+  const filteredStaged = createMemo(() => {
+    const q = filterQuery().trim();
+    if (!q) return staged();
+    const re = globToRegex(q);
+    return staged().filter((f) => re.test(f.path));
+  });
+
+  /** Filtered unstaged files (glob wildcard support) */
+  const filteredUnstaged = createMemo(() => {
+    const q = filterQuery().trim();
+    if (!q) return unstaged();
+    const re = globToRegex(q);
+    return unstaged().filter((f) => re.test(f.path));
+  });
 
   // Commit section signals
   const [commitMsg, setCommitMsg] = createSignal("");
@@ -516,12 +533,30 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
         <div class={s.empty}>No changes</div>
       </Show>
 
+      {/* Filter input */}
+      <Show when={staged().length > 0 || unstaged().length > 0}>
+        <div class={s.filterRow}>
+          <input
+            type="text"
+            class={s.filterInput}
+            placeholder="Filter... (*, ** wildcards)"
+            value={filterQuery()}
+            onInput={(e) => setFilterQuery(e.currentTarget.value)}
+          />
+          <Show when={filterQuery()}>
+            <button class={s.filterClear} onClick={() => setFilterQuery("")}>&times;</button>
+          </Show>
+        </div>
+      </Show>
+
       {/* STAGED section */}
-      <Show when={staged().length > 0}>
+      <Show when={filteredStaged().length > 0}>
         <div class={s.sectionHeader} onClick={() => setStagedExpanded((v) => !v)}>
           <span class={cx(s.chevron, !stagedExpanded() && s.chevronCollapsed)}>&#x25BC;</span>
           <span class={s.sectionLabel}>Staged</span>
-          <span class={s.sectionCount}>{staged().length}</span>
+          <span class={s.sectionCount}>
+            {filterQuery() ? `${filteredStaged().length}/${staged().length}` : staged().length}
+          </span>
           <button
             class={s.sectionAction}
             title="Unstage all"
@@ -531,18 +566,20 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
           </button>
         </div>
         <Show when={stagedExpanded()}>
-          <For each={staged()}>
+          <For each={filteredStaged()}>
             {(file, i) => renderFileEntry(file, "staged", i())}
           </For>
         </Show>
       </Show>
 
       {/* CHANGES (unstaged + untracked) section */}
-      <Show when={unstaged().length > 0}>
+      <Show when={filteredUnstaged().length > 0}>
         <div class={s.sectionHeader} onClick={() => setUnstagedExpanded((v) => !v)}>
           <span class={cx(s.chevron, !unstagedExpanded() && s.chevronCollapsed)}>&#x25BC;</span>
           <span class={s.sectionLabel}>Changes</span>
-          <span class={s.sectionCount}>{unstaged().length}</span>
+          <span class={s.sectionCount}>
+            {filterQuery() ? `${filteredUnstaged().length}/${unstaged().length}` : unstaged().length}
+          </span>
           <button
             class={s.sectionAction}
             title="Stage all"
@@ -559,9 +596,9 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
           </button>
         </div>
         <Show when={unstagedExpanded()}>
-          <For each={unstaged()}>
+          <For each={filteredUnstaged()}>
             {(file, i) => {
-              const offset = stagedExpanded() ? staged().length : 0;
+              const offset = stagedExpanded() ? filteredStaged().length : 0;
               return renderFileEntry(file, "unstaged", offset + i());
             }}
           </For>
