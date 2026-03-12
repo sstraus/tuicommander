@@ -115,7 +115,8 @@
   gap: 8px;
   padding: 4px 12px;
   cursor: pointer;
-  font-size: var(--font-base);
+  font-size: var(--font-md);
+  font-family: var(--font-mono);
   transition: background 0.1s;
 }
 
@@ -151,7 +152,6 @@
 
 .entryName {
   flex: 1;
-  font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

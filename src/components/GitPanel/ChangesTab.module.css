@@ -254,7 +254,7 @@
   padding: 3px 12px 3px 20px;
   cursor: pointer;
   transition: background 0.1s ease;
-  font-size: var(--font-sm);
+  font-size: var(--font-md);
   font-family: var(--font-mono);
 }
 
