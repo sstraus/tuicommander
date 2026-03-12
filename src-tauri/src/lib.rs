@@ -599,6 +599,7 @@ pub fn run() {
         mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
         slash_mode: DashMap::new(),
         last_output_ms: DashMap::new(),
+        shell_states: DashMap::new(),
         relay: crate::state::RelayState::new(),
     });
 

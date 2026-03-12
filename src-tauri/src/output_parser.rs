@@ -88,6 +88,13 @@ pub enum ParsedEvent {
         count: u32,
         task_type: String, // "local agents", "bash", "background tasks", etc.
     },
+    /// Shell activity state derived from PTY output timing.
+    /// Emitted by the reader thread on real-output→busy and idle transitions.
+    /// The frontend consumes this instead of deriving busy/idle from raw PTY data.
+    #[serde(rename = "shell-state")]
+    ShellState {
+        state: String, // "busy" | "idle"
+    },
 }
 
 /// A single item in a slash command autocomplete menu.

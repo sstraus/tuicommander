@@ -1190,6 +1190,7 @@ mod tests {
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             slash_mode: dashmap::DashMap::new(),
             last_output_ms: dashmap::DashMap::new(),
+            shell_states: dashmap::DashMap::new(),
             relay: crate::state::RelayState::new(),
         })
     }

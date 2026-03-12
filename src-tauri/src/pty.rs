@@ -95,6 +95,15 @@ const RESIZE_GRACE: std::time::Duration = std::time::Duration::from_millis(1000)
 /// How long after user input to ignore `?`-ending echo lines from the PTY.
 const ECHO_SUPPRESS_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// Shell idle threshold: 500ms without real PTY output → transition busy→idle.
+/// Matches the frontend's previous 500ms setTimeout in checkIdle.
+const SHELL_IDLE_MS: u64 = 500;
+
+/// AtomicU8 encoding for shell_states DashMap.
+const SHELL_NULL: u8 = 0;
+const SHELL_BUSY: u8 = 1;
+const SHELL_IDLE: u8 = 2;
+
 /// Extract the last `?`-ending line from changed rows for silence-based question detection.
 /// Searches all changed rows (not just the last non-empty one) so a question row
 /// is found even when a mode/status line with a higher row index arrives in the same chunk.
@@ -369,6 +378,71 @@ impl SilenceState {
     }
 }
 
+/// Attempt a shell state transition using compare_exchange.
+/// Returns true if the transition was performed (and a ShellState event should be emitted).
+fn try_shell_transition(
+    state: &crate::state::AppState,
+    session_id: &str,
+    expected: u8,
+    new: u8,
+) -> bool {
+    if let Some(atom) = state.shell_states.get(session_id) {
+        atom.compare_exchange(
+            expected,
+            new,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Relaxed,
+        ).is_ok()
+    } else {
+        false
+    }
+}
+
+/// Check whether the session should transition to idle (busy → idle).
+/// Conditions: last real output > SHELL_IDLE_MS ago AND no active sub-tasks.
+fn should_transition_idle(state: &crate::state::AppState, session_id: &str) -> bool {
+    let last_ms = state.last_output_ms.get(session_id)
+        .map(|ts| ts.load(std::sync::atomic::Ordering::Relaxed))
+        .unwrap_or(0);
+    if last_ms == 0 {
+        return false;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let elapsed = now.saturating_sub(last_ms);
+    if elapsed < SHELL_IDLE_MS {
+        return false;
+    }
+    let sub_tasks = state.session_states.get(session_id)
+        .map(|s| s.active_sub_tasks)
+        .unwrap_or(0);
+    sub_tasks == 0
+}
+
+/// Emit a ShellState parsed event via both event bus and Tauri IPC.
+fn emit_shell_state(
+    state: &crate::state::AppState,
+    app: Option<&tauri::AppHandle>,
+    session_id: &str,
+    shell_state: &str,
+) {
+    let parsed = ParsedEvent::ShellState { state: shell_state.to_string() };
+    if let Ok(json) = serde_json::to_value(&parsed) {
+        let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
+            session_id: session_id.to_string(),
+            parsed: json,
+        });
+    }
+    if let Some(app) = app {
+        let _ = app.emit(
+            &format!("pty-parsed-{session_id}"),
+            &parsed,
+        );
+    }
+}
+
 /// How many bottom screen rows to check when verifying a question candidate.
 const SCREEN_VERIFY_ROWS: usize = 5;
 
@@ -392,6 +466,18 @@ fn spawn_silence_timer(
             std::thread::sleep(SILENCE_CHECK_INTERVAL);
             if !running.load(Ordering::Relaxed) {
                 break;
+            }
+
+            // Backup idle check: when no chunks arrive at all (agent truly silent),
+            // the reader thread never gets a chance to emit idle. The timer catches this.
+            if let Some(atom) = state.shell_states.get(&session_id) {
+                if atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
+                    && should_transition_idle(&state, &session_id)
+                {
+                    if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
+                        emit_shell_state(&state, app.as_ref(), &session_id, "idle");
+                    }
+                }
             }
 
             // Check temporal conditions first (shared by both strategies).
@@ -472,6 +558,7 @@ pub(crate) fn spawn_reader_thread(
 
     // Register in AppState so write_pty can suppress user-typed question lines
     state.silence_states.insert(session_id.clone(), silence.clone());
+    state.shell_states.insert(session_id.clone(), std::sync::atomic::AtomicU8::new(SHELL_NULL));
 
     // Spawn silence-detection timer thread
     spawn_silence_timer(
@@ -539,14 +626,6 @@ pub(crate) fn spawn_reader_thread(
                         );
                     }
                     if !data.is_empty() {
-                        // Stamp last output time for shell_state derivation (busy/idle)
-                        if let Some(ts) = state.last_output_ms.get(&session_id) {
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64;
-                            ts.store(now, std::sync::atomic::Ordering::Relaxed);
-                        }
                         // Feed raw data (post-kitty-strip) into VT100 log buffer.
                         // Capture changed rows for clean-text parsing (both normal and alternate screen).
                         let changed_rows = if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
@@ -677,6 +756,47 @@ pub(crate) fn spawn_reader_thread(
                             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
                         }
 
+                        // Stamp last_output_ms only for real output (not chrome-only ticks).
+                        // This drives both the event-based shellState (reader + timer)
+                        // and the timestamp-based derive_shell_state (HTTP/REST consumers).
+                        if !chrome_only {
+                            if let Some(ts) = state.last_output_ms.get(&session_id) {
+                                let now = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64;
+                                ts.store(now, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        }
+
+                        // Shell state transitions (Rust is the single source of truth).
+                        if !chrome_only {
+                            // Real output: transition to busy (unless in resize grace).
+                            let in_grace = silence.lock().is_resize_grace();
+                            if !in_grace {
+                                // Try null→busy or idle→busy via CAS.
+                                if let Some(atom) = state.shell_states.get(&session_id) {
+                                    let prev = atom.load(std::sync::atomic::Ordering::Acquire);
+                                    if prev != SHELL_BUSY
+                                        && try_shell_transition(&state, &session_id, prev, SHELL_BUSY)
+                                    {
+                                        emit_shell_state(&state, Some(&app), &session_id, "busy");
+                                    }
+                                }
+                            }
+                        } else {
+                            // Chrome-only chunk: check if we should transition busy→idle.
+                            if let Some(atom) = state.shell_states.get(&session_id) {
+                                if atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
+                                    && should_transition_idle(&state, &session_id)
+                                {
+                                    if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
+                                        emit_shell_state(&state, Some(&app), &session_id, "idle");
+                                    }
+                                }
+                            }
+                        }
+
                         // Colorize [intent: ...] tokens yellow before sending to xterm.
                         // Run on every chunk containing "intent:" — not just when
                         // parse_clean_lines detected the Intent event — because Claude Code
@@ -706,6 +826,12 @@ pub(crate) fn spawn_reader_thread(
         }
         // Signal timer thread to stop
         running.store(false, Ordering::Relaxed);
+
+        // Ensure shell state is idle on session end (reader thread exit).
+        // CAS from busy→idle; if already idle or null, this is a harmless no-op.
+        if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
+            emit_shell_state(&state, Some(&app), &session_id, "idle");
+        }
 
         // Flush all buffers at EOF
         let utf8_tail = utf8_buf.flush();
@@ -759,6 +885,7 @@ pub(crate) fn spawn_reader_thread(
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
         state.silence_states.remove(&session_id);
+        state.shell_states.remove(&session_id);
     });
 }
 
@@ -774,6 +901,7 @@ pub(crate) fn spawn_headless_reader_thread(
     let running = Arc::new(AtomicBool::new(true));
 
     state.silence_states.insert(session_id.clone(), silence.clone());
+    state.shell_states.insert(session_id.clone(), std::sync::atomic::AtomicU8::new(SHELL_NULL));
 
     // Spawn silence-detection timer (headless: event_bus only, no Tauri IPC)
     spawn_silence_timer(
@@ -880,6 +1008,40 @@ pub(crate) fn spawn_headless_reader_thread(
                             let mut sl = silence.lock();
                             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
                         }
+
+                        // Stamp last_output_ms only for real output (not chrome-only ticks).
+                        if !chrome_only {
+                            if let Some(ts) = state.last_output_ms.get(&session_id) {
+                                let now = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64;
+                                ts.store(now, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        }
+
+                        // Shell state transitions (headless: event_bus only, no Tauri IPC).
+                        if !chrome_only {
+                            let in_grace = silence.lock().is_resize_grace();
+                            if !in_grace {
+                                if let Some(atom) = state.shell_states.get(&session_id) {
+                                    let prev = atom.load(std::sync::atomic::Ordering::Acquire);
+                                    if prev != SHELL_BUSY
+                                        && try_shell_transition(&state, &session_id, prev, SHELL_BUSY)
+                                    {
+                                        emit_shell_state(&state, None, &session_id, "busy");
+                                    }
+                                }
+                            }
+                        } else if let Some(atom) = state.shell_states.get(&session_id) {
+                            if atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
+                                && should_transition_idle(&state, &session_id)
+                            {
+                                if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
+                                    emit_shell_state(&state, None, &session_id, "idle");
+                                }
+                            }
+                        }
                     }
                 }
                 Err(e) => {
@@ -890,6 +1052,11 @@ pub(crate) fn spawn_headless_reader_thread(
         }
         // Signal silence timer thread to stop
         running.store(false, Ordering::Relaxed);
+
+        // Ensure shell state is idle on session end.
+        if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
+            emit_shell_state(&state, None, &session_id, "idle");
+        }
 
         let utf8_tail = utf8_buf.flush();
         let esc_remaining = if utf8_tail.is_empty() {
@@ -926,6 +1093,7 @@ pub(crate) fn spawn_headless_reader_thread(
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
         state.silence_states.remove(&session_id);
+        state.shell_states.remove(&session_id);
     });
 }
 
@@ -1361,6 +1529,7 @@ pub(crate) fn close_pty(
         state.kitty_states.remove(&session_id);
         state.input_buffers.remove(&session_id);
         state.silence_states.remove(&session_id);
+        state.shell_states.remove(&session_id);
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
         let mut session = session_mutex.into_inner();
 
@@ -2787,5 +2956,114 @@ mod tests {
             assert!(!row.text.contains("1F"),
                 "fragmented delivery leaked '1F': {:?}", row.text);
         }
+    }
+
+    // --- Shell state transition tests ---
+
+    #[test]
+    fn test_shell_state_busy_on_real_output() {
+        use std::sync::atomic::{AtomicU8, Ordering};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_NULL));
+        state.last_output_ms.insert(sid.to_string(), std::sync::atomic::AtomicU64::new(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_millis() as u64
+        ));
+
+        // Transition null → busy
+        assert!(try_shell_transition(&state, sid, SHELL_NULL, SHELL_BUSY),
+            "should transition null → busy");
+        assert_eq!(state.shell_states.get(sid).unwrap().load(Ordering::Relaxed), SHELL_BUSY);
+
+        // Transition busy → busy should fail (already busy, no re-emit)
+        assert!(!try_shell_transition(&state, sid, SHELL_NULL, SHELL_BUSY),
+            "should NOT re-transition to busy");
+    }
+
+    #[test]
+    fn test_shell_state_idle_after_500ms() {
+        use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
+        state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
+
+        // Set last output to 600ms ago (> SHELL_IDLE_MS)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap().as_millis() as u64;
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 600));
+
+        assert!(should_transition_idle(&state, sid),
+            "should be ready to transition idle (600ms elapsed, no sub-tasks)");
+        assert!(try_shell_transition(&state, sid, SHELL_BUSY, SHELL_IDLE),
+            "should transition busy → idle");
+        assert_eq!(state.shell_states.get(sid).unwrap().load(Ordering::Relaxed), SHELL_IDLE);
+    }
+
+    #[test]
+    fn test_shell_state_no_idle_with_subtasks() {
+        use std::sync::atomic::{AtomicU8, AtomicU64};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
+
+        let mut ss = crate::state::SessionState::default();
+        ss.active_sub_tasks = 2;
+        state.session_states.insert(sid.to_string(), ss);
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap().as_millis() as u64;
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 600));
+
+        assert!(!should_transition_idle(&state, sid),
+            "should NOT transition idle when active_sub_tasks > 0");
+    }
+
+    #[test]
+    fn test_shell_state_no_idle_before_500ms() {
+        use std::sync::atomic::{AtomicU8, AtomicU64};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
+        state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap().as_millis() as u64;
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 200));
+
+        assert!(!should_transition_idle(&state, sid),
+            "should NOT transition idle when only 200ms elapsed");
+    }
+
+    #[test]
+    fn test_shell_state_cas_prevents_duplicate_idle() {
+        use std::sync::atomic::{AtomicU8, Ordering};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
+
+        // First CAS succeeds
+        assert!(try_shell_transition(&state, sid, SHELL_BUSY, SHELL_IDLE));
+        // Second CAS fails (already idle)
+        assert!(!try_shell_transition(&state, sid, SHELL_BUSY, SHELL_IDLE),
+            "second idle transition must fail — already idle");
+        assert_eq!(state.shell_states.get(sid).unwrap().load(Ordering::Relaxed), SHELL_IDLE);
+    }
+
+    #[test]
+    fn test_shell_state_idle_to_busy_on_real_output() {
+        use std::sync::atomic::{AtomicU8, Ordering};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_IDLE));
+
+        assert!(try_shell_transition(&state, sid, SHELL_IDLE, SHELL_BUSY),
+            "should transition idle → busy on real output");
+        assert_eq!(state.shell_states.get(sid).unwrap().load(Ordering::Relaxed), SHELL_BUSY);
     }
 }

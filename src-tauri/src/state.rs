@@ -750,6 +750,11 @@ pub struct AppState {
     /// Updated by PTY reader on every non-empty chunk. Used to derive shell_state:
     /// "busy" when now - last < 500ms, "idle" otherwise (matches desktop model).
     pub(crate) last_output_ms: DashMap<String, AtomicU64>,
+    /// Per-session shell activity state (AtomicU8: 0=null, 1=busy, 2=idle).
+    /// Updated by the reader thread and silence timer via compare_exchange.
+    /// The single source of truth for busy/idle — the frontend consumes events,
+    /// it does not derive this state from raw PTY output timing.
+    pub(crate) shell_states: DashMap<String, std::sync::atomic::AtomicU8>,
     /// Cloud relay client state
     pub(crate) relay: RelayState,
 }
@@ -1736,6 +1741,7 @@ pub(crate) mod tests_support {
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
+            shell_states: DashMap::new(),
             relay: RelayState::new(),
         }
     }
@@ -2096,6 +2102,7 @@ mod tests {
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
+            shell_states: DashMap::new(),
             relay: RelayState::new(),
         }
     }
