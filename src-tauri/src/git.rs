@@ -575,7 +575,8 @@ fn detect_default_branch(git_dir: &Path) -> Option<String> {
 }
 
 /// Get local branches that are fully merged into the repo's main branch.
-/// Returns branch names whose tips are reachable from the main branch HEAD.
+/// Returns branch names whose tips are reachable from the main branch HEAD,
+/// excluding branches whose tip is identical to main (never diverged).
 /// Returns an empty vec (not an error) when the repo has no detectable default branch.
 pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, String> {
     let git_dir = match resolve_git_dir(repo_path) {
@@ -593,7 +594,31 @@ pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, 
         .run()
         .map_err(|e| format!("git branch --merged failed: {e}"))?;
 
-    Ok(out.stdout.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    // Get main branch SHA to exclude branches that never diverged
+    let main_sha = git_cmd(repo_path)
+        .args(["rev-parse", &main_branch])
+        .run()
+        .map(|o| o.stdout.trim().to_string())
+        .unwrap_or_default();
+
+    let candidates: Vec<String> = out.stdout.lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    if main_sha.is_empty() {
+        return Ok(candidates);
+    }
+
+    // Filter out branches whose tip SHA matches main — they never diverged
+    Ok(candidates.into_iter().filter(|branch| {
+        let tip = git_cmd(repo_path)
+            .args(["rev-parse", branch])
+            .run()
+            .map(|o| o.stdout.trim().to_string())
+            .unwrap_or_default();
+        tip != main_sha
+    }).collect())
 }
 
 /// Check whether a ref exists in .git/packed-refs (for repos that have been gc'd).
@@ -1612,9 +1637,8 @@ fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
     let mut is_first_header = true; // first occurrence of a hash needs full header parsing
 
     for line in output.lines() {
-        if line.starts_with('\t') {
+        if let Some(content) = line.strip_prefix('\t') {
             // Content line — finalize this blame entry
-            let content = &line[1..]; // strip leading tab
             let (cached_author, cached_time) = commit_cache
                 .entry(current_hash.clone())
                 .or_insert_with(|| (author.clone(), author_time));
@@ -1968,16 +1992,15 @@ mod tests {
         let merged = get_merged_branches_impl(&repo_root)
             .expect("get_merged_branches_impl should succeed on real repo");
 
-        // The main branch itself should always appear in its own --merged list
+        // The main branch should NOT appear — it has the same SHA as itself,
+        // so the "never diverged" filter correctly excludes it.
         let has_main = merged.iter().any(|b| MAIN_BRANCH_CANDIDATES.contains(&b.as_str()));
-        assert!(has_main, "at least one main branch candidate should be in the merged list, got: {merged:?}");
+        assert!(!has_main, "main branch should not appear in its own merged list, got: {merged:?}");
 
-        // On main, the current branch must be in the list; on a feature branch it may not be
-        if let Some(current) = read_branch_from_head(&repo_root)
-            && is_main_branch(&current) {
-                assert!(merged.contains(&current), "main branch '{current}' should be in its own merged list");
-            }
-        // Detached HEAD: the merged list is still non-empty (at minimum the main branch itself)
+        // All returned branches should be truly merged (not main itself)
+        for branch in &merged {
+            assert!(!is_main_branch(branch), "main branch should not be in merged list");
+        }
     }
 
     #[test]
@@ -2638,5 +2661,79 @@ aaaa234567890123456789012345678901234aaaa 2 2
             "file.txt".to_string(),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_merged_branches_excludes_branch_at_same_sha_as_main() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        // Rename to "main" for predictability
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["branch", "-M", "main"])
+            .output()
+            .expect("rename to main");
+
+        // Create a new branch at the same commit (no new commits)
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["branch", "new-worktree-branch"])
+            .output()
+            .expect("create branch");
+
+        let merged = get_merged_branches_impl(&path)
+            .expect("get_merged_branches_impl should succeed");
+
+        // The new branch has the same SHA as main — it should NOT be in the merged list
+        assert!(
+            !merged.iter().any(|b| b == "new-worktree-branch"),
+            "branch at same SHA as main should not be considered merged, got: {merged:?}"
+        );
+    }
+
+    #[test]
+    fn get_merged_branches_includes_truly_merged_branch() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["branch", "-M", "main"])
+            .output()
+            .expect("rename to main");
+
+        // Create a feature branch, add a commit, then merge it back
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["checkout", "-b", "feat-merged"])
+            .output()
+            .expect("checkout -b");
+        std::fs::write(path.join("feature.txt"), "feature").expect("write");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["add", "feature.txt"])
+            .output()
+            .expect("add");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["commit", "-m", "feat"])
+            .output()
+            .expect("commit");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["checkout", "main"])
+            .output()
+            .expect("checkout main");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["merge", "--no-ff", "feat-merged", "-m", "merge feat"])
+            .output()
+            .expect("merge");
+
+        let merged = get_merged_branches_impl(&path)
+            .expect("get_merged_branches_impl should succeed");
+
+        // feat-merged is truly merged — it should be in the list
+        assert!(
+            merged.iter().any(|b| b == "feat-merged"),
+            "truly merged branch should be in the merged list, got: {merged:?}"
+        );
     }
 }

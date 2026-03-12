@@ -130,9 +130,9 @@ fn assign_lanes(commits: &[RawCommit]) -> Vec<GraphNode> {
         // (d) Handle parents
         // Close any OTHER lanes that were also expecting this commit
         // (happens with merge commits where multiple lanes converge)
-        for i in 0..active_lanes.len() {
-            if i != column && active_lanes[i].as_deref() == Some(&commit.hash) {
-                active_lanes[i] = None;
+        for (i, lane) in active_lanes.iter_mut().enumerate() {
+            if i != column && lane.as_deref() == Some(&commit.hash) {
+                *lane = None;
             }
         }
 
