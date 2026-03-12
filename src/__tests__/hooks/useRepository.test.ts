@@ -79,6 +79,7 @@ describe("useRepository", () => {
         repoPath: "/repos/my-repo",
         branchName: "feature-x",
         deleteBranch: true,
+        archiveScript: null,
       });
     });
 
@@ -89,6 +90,7 @@ describe("useRepository", () => {
         repoPath: "/repos/my-repo",
         branchName: "feature-x",
         deleteBranch: false,
+        archiveScript: null,
       });
     });
   });

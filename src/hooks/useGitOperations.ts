@@ -33,14 +33,14 @@ export interface GitOperationsDeps {
       diff_stats: Record<string, { additions: number; deletions: number }>;
       last_commit_ts: Record<string, number | null>;
     }>;
-    removeWorktree: (repoPath: string, branchName: string, deleteBranch: boolean) => Promise<void>;
+    removeWorktree: (repoPath: string, branchName: string, deleteBranch: boolean, archiveScript?: string) => Promise<void>;
     createWorktree: (baseRepo: string, branchName: string, createBranch?: boolean, baseRef?: string) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;
     renameBranch: (repoPath: string, oldName: string, newName: string) => Promise<void>;
     generateWorktreeName: (existingNames: string[]) => Promise<string>;
     generateCloneBranchName: (sourceBranch: string, existingNames: string[]) => Promise<string>;
     listBaseRefOptions: (repoPath: string) => Promise<string[]>;
-    mergeAndArchiveWorktree: (repoPath: string, branchName: string, targetBranch: string, afterMerge: string) => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
-    finalizeMergedWorktree: (repoPath: string, branchName: string, action: "archive" | "delete") => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
+    mergeAndArchiveWorktree: (repoPath: string, branchName: string, targetBranch: string, afterMerge: string, archiveScript?: string) => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
+    finalizeMergedWorktree: (repoPath: string, branchName: string, action: "archive" | "delete", archiveScript?: string) => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
     listLocalBranches: (repoPath: string) => Promise<string[]>;
     getMergedBranches: (repoPath: string) => Promise<string[]>;
     checkoutRemoteBranch: (repoPath: string, branchName: string) => Promise<void>;
@@ -342,7 +342,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
     let archived = 0;
     for (const branch of mergedLinkedBranches) {
       try {
-        await deps.repo.finalizeMergedWorktree(repoPath, branch.name, "archive");
+        const script = repoSettingsStore.getEffective(repoPath)?.archiveScript;
+        await deps.repo.finalizeMergedWorktree(repoPath, branch.name, "archive", script || undefined);
         archived++;
       } catch (err) {
         appLogger.warn("git", `Failed to auto-archive merged worktree for "${branch.name}"`, err);
@@ -570,10 +571,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
       await deps.closeTerminal(termId, true);
     }
 
-    const deleteBranch = repoSettingsStore.getEffective(repoPath)?.deleteBranchOnRemove ?? true;
+    const effective = repoSettingsStore.getEffective(repoPath);
+    const deleteBranch = effective?.deleteBranchOnRemove ?? true;
+    const archiveScript = effective?.archiveScript || undefined;
 
     try {
-      await deps.repo.removeWorktree(repoPath, branchName, deleteBranch);
+      await deps.repo.removeWorktree(repoPath, branchName, deleteBranch, archiveScript);
       deps.setStatusInfo(`Removed ${branchName}`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -885,7 +888,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
           return;
         }
         const action = afterMerge as "archive" | "delete";
-        await deps.repo.finalizeMergedWorktree(repoPath, branchName, action);
+        const script = repoSettingsStore.getEffective(repoPath)?.archiveScript || undefined;
+        await deps.repo.finalizeMergedWorktree(repoPath, branchName, action, script);
         deps.setStatusInfo(`Merged ${branchName} via GitHub (${action === "archive" ? "archived" : "deleted"})`);
         repositoriesStore.removeBranch(repoPath, branchName);
         refreshAllBranchStats();
@@ -910,7 +914,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
     targetBranch: string,
     afterMerge: string,
   ) => {
-    const result = await deps.repo.mergeAndArchiveWorktree(repoPath, branchName, targetBranch, afterMerge);
+    const script = repoSettingsStore.getEffective(repoPath)?.archiveScript || undefined;
+    const result = await deps.repo.mergeAndArchiveWorktree(repoPath, branchName, targetBranch, afterMerge, script);
 
     // Merge succeeded — close terminals now (not before, to avoid orphaning the branch on failure)
     await closeTerminalsForBranch(repoPath, branchName);

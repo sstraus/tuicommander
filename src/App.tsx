@@ -209,6 +209,7 @@ const App: Component = () => {
       baseBranch: ctx.baseBranch,
       steps: steps.map((s) => ({ id: s.id, checked: s.checked })),
       worktreeAction: worktreeCleanupAction(),
+      archiveScript: repoSettingsStore.getEffective(ctx.repoPath)?.archiveScript || undefined,
       unstash: options?.unstash,
       onStepStart: (id) => setWorktreeCleanupStepStatuses((prev) => ({ ...prev, [id]: "running" as StepStatus })),
       onStepDone: (id, result, error) => {

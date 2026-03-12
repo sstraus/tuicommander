@@ -92,7 +92,7 @@ pub(super) async fn remove_worktree_http(
     Query(q): Query<RemoveWorktreeQuery>,
 ) -> Response {
     if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
-    match crate::worktree::remove_worktree_by_branch(&q.repo_path, &branch, q.delete_branch.unwrap_or(true)) {
+    match crate::worktree::remove_worktree_by_branch(&q.repo_path, &branch, q.delete_branch.unwrap_or(true), None) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }
@@ -190,9 +190,9 @@ pub(super) async fn finalize_merged_worktree_http(
     let repo_path = body.repo_path.clone();
     let base_repo = std::path::PathBuf::from(&repo_path);
     let result = match body.action.as_str() {
-        "archive" => crate::worktree::archive_worktree(&base_repo, &body.branch_name)
+        "archive" => crate::worktree::archive_worktree(&base_repo, &body.branch_name, None)
             .map(|ap| serde_json::json!({"merged": true, "action": "archived", "archive_path": ap})),
-        "delete" => crate::worktree::remove_worktree_by_branch(&repo_path, &body.branch_name, true)
+        "delete" => crate::worktree::remove_worktree_by_branch(&repo_path, &body.branch_name, true, None)
             .map(|_| serde_json::json!({"merged": true, "action": "deleted", "archive_path": null})),
         other => Err(format!("Unknown action '{other}': expected 'archive' or 'delete'")),
     };

@@ -43,8 +43,8 @@ export function useRepository() {
   }
 
   /** Remove a worktree by branch name */
-  async function removeWorktree(repoPath: string, branchName: string, deleteBranch: boolean): Promise<void> {
-    await invoke("remove_worktree", { repoPath, branchName, deleteBranch });
+  async function removeWorktree(repoPath: string, branchName: string, deleteBranch: boolean, archiveScript?: string): Promise<void> {
+    await invoke("remove_worktree", { repoPath, branchName, deleteBranch, archiveScript: archiveScript || null });
   }
 
   /** Create a new worktree with a branch */
@@ -147,12 +147,14 @@ export function useRepository() {
     branchName: string,
     targetBranch: string,
     afterMerge: string,
+    archiveScript?: string,
   ): Promise<MergeArchiveResult> {
     return await invoke<MergeArchiveResult>("merge_and_archive_worktree", {
       repoPath,
       branchName,
       targetBranch,
       afterMerge,
+      archiveScript: archiveScript || null,
     });
   }
 
@@ -161,11 +163,13 @@ export function useRepository() {
     repoPath: string,
     branchName: string,
     action: "archive" | "delete",
+    archiveScript?: string,
   ): Promise<MergeArchiveResult> {
     return await invoke<MergeArchiveResult>("finalize_merged_worktree", {
       repoPath,
       branchName,
       action,
+      archiveScript: archiveScript || null,
     });
   }
 
