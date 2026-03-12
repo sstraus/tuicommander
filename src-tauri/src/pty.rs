@@ -290,8 +290,11 @@ impl SilenceState {
                 self.question_already_emitted = false;
                 self.output_chunks_after_question = 0;
             }
-        } else if self.pending_question_line.is_some() {
-            // Non-`?` chunk after a pending candidate — track staleness.
+        } else if self.pending_question_line.is_some() && !status_line_only {
+            // Non-`?` chunk with real output after a pending candidate — track staleness.
+            // Mode-line timer ticks (status_line_only) are NOT real output and must not
+            // count toward staleness, or they will clear the pending question before
+            // the silence timer has a chance to detect it.
             self.output_chunks_after_question = self.output_chunks_after_question.saturating_add(1);
             // Once stale, clear pending so the repaint guard won't block the
             // same question text from being detected again in a future session.
@@ -1901,6 +1904,32 @@ mod tests {
         // mode-line ticks kept coming in.
         assert_eq!(s.check_silence(), Some("Vuoi fare un commit?".to_string()),
             "mode-line-only ticks must not keep is_spinner_active() alive");
+    }
+
+    #[test]
+    fn test_silence_state_mode_line_ticks_do_not_stale_question() {
+        // Regression: mode-line timer ticks (status_line_only=true) were incrementing
+        // output_chunks_after_question, clearing the pending question as "stale"
+        // before the silence timer could detect it.
+        let mut s = SilenceState::new();
+        s.on_chunk(false, Some("Procedo?".to_string()), true, false);
+
+        // Simulate 15 mode-line ticks (> STALE_QUESTION_CHUNKS=10)
+        for _ in 0..15 {
+            s.on_chunk(false, None, true, true);
+        }
+
+        // pending_question_line must still be present — mode-line ticks are not real output
+        assert_eq!(s.pending_question_line.as_deref(), Some("Procedo?"),
+            "mode-line-only ticks must not count toward staleness");
+
+        // Backdate to simulate silence threshold reached
+        let past = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        s.last_output_at = past;
+        s.last_status_line_at = Some(past);
+
+        assert_eq!(s.check_silence(), Some("Procedo?".to_string()),
+            "question must be detectable after mode-line-only ticks");
     }
 
     #[test]
