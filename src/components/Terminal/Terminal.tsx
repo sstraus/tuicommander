@@ -161,17 +161,27 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
   let lastPlanFilePath = ""; // Deduplicate repeated plan-file notifications
 
+  // Scroll position saved when terminal is hidden (display:none resets scrollTop in WebKit)
+  let pendingScrollRestore: { viewportY: number; wasAtBottom: boolean } | null = null;
+
   /** Fit terminal to container, guarded against undersized containers.
-   *  Preserves viewport scroll position across reflows (e.g. font size zoom). */
+   *  Preserves viewport scroll position across reflows (e.g. font size zoom).
+   *  Uses saved scroll state when recovering from display:none (tab switch). */
   const doFit = () => {
     if (!containerRef || !fitAddon || !terminal) return;
     if (containerRef.offsetWidth < MIN_FIT_WIDTH || containerRef.offsetHeight < MIN_FIT_HEIGHT) return;
     const buf = terminal.buffer.active;
-    const wasAtBottom = buf.viewportY === buf.baseY;
-    const savedViewportY = buf.viewportY;
+    // Use saved scroll state if recovering from display:none, otherwise read live
+    const scrollState = pendingScrollRestore ?? {
+      viewportY: buf.viewportY,
+      wasAtBottom: buf.viewportY === buf.baseY,
+    };
+    pendingScrollRestore = null;
     fitAddon.fit();
-    if (!wasAtBottom) {
-      terminal.scrollToLine(savedViewportY);
+    if (!scrollState.wasAtBottom) {
+      // Clamp to current baseY — agent compact/clear may have shrunk the buffer
+      const maxLine = terminal.buffer.active.baseY;
+      terminal.scrollToLine(Math.min(scrollState.viewportY, maxLine));
     }
   };
 
@@ -1028,6 +1038,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
       });
 
       onCleanup(() => {
+        // Save scroll position before hiding — display:none resets scrollTop in WebKit
+        if (terminal) {
+          const buf = terminal.buffer.active;
+          pendingScrollRestore = {
+            viewportY: buf.viewportY,
+            wasAtBottom: buf.viewportY === buf.baseY,
+          };
+        }
         if (rafHandle) cancelAnimationFrame(rafHandle);
         resizeObserver?.disconnect();
       });
