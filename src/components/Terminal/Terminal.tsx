@@ -11,7 +11,7 @@ import { browserCreatedSessions } from "../../hooks/useAppInit";
 import { usePty } from "../../hooks/usePty";
 import { settingsStore, FONT_FAMILIES } from "../../stores/settings";
 import { getTerminalTheme } from "../../themes";
-import { terminalsStore, type AwaitingInputType } from "../../stores/terminals";
+import { terminalsStore, type AwaitingInputType, type ShellState } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { appLogger } from "../../stores/appLogger";
 import { notificationsStore } from "../../stores/notifications";
@@ -36,7 +36,8 @@ type ParsedEvent =
   | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string }
   | { type: "intent"; text: string; title?: string }
   | { type: "suggest"; items: string[] }
-  | { type: "active-subtasks"; count: number; task_type: string };
+  | { type: "active-subtasks"; count: number; task_type: string }
+  | { type: "shell-state"; state: "busy" | "idle" };
 
 export interface TerminalProps {
   id: string;
@@ -146,18 +147,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // rAF handle for the visibility effect — cancellable on cleanup
   let rafHandle = 0;
 
-  // Shell idle detection: after 500ms of no PTY output, shell is idle
-  let idleTimer: ReturnType<typeof setTimeout> | undefined;
-  let lastOutputTime = 0;
-  let activityFlagged = false; // Avoids redundant store updates per data chunk
-  let busyFlagged = false;
-
-  // Resize grace period: PTY resize causes the shell to redraw the prompt,
-  // which looks like output activity. Track when we last resized so
-  // handlePtyData can suppress spurious busy→idle transitions.
-  let lastResizeAt = 0;
-  const RESIZE_GRACE_MS = 500;
-
+  let activityFlagged = false; // Avoids redundant activity store updates per data chunk
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
   let lastPlanFilePath = ""; // Deduplicate repeated plan-file notifications
 
@@ -275,52 +265,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
       terminalsStore.update(props.id, { activity: true });
     }
 
-    // Shell idle detection: mark busy on output, start 500ms idle timer.
-    // Suppress spurious busy→idle cycles from resize redraws: when the shell
-    // was already idle and we just resized, the PTY redraws the prompt which
-    // generates output. Without this guard the tab indicator pulses blue again.
-    const storeState = terminalsStore.get(props.id)?.shellState;
-    const isResizeRedraw = storeState === "idle" && (now - lastResizeAt) < RESIZE_GRACE_MS;
-    if (isResizeRedraw) {
-      // Still update lastOutputTime so a genuine command typed right after
-      // resize is detected, but don't flip shellState to busy.
-      lastOutputTime = now;
-      return;
-    }
-
-    // Always reconcile: if the store drifted (e.g. was reset externally), re-assert busy.
-    if (!busyFlagged || storeState !== "busy") {
-      busyFlagged = true;
-      if (storeState !== "busy") {
-        appLogger.debug("terminal", `[ShellState] ${props.id} → "busy" (PTY output, was "${storeState}")`);
-        terminalsStore.update(props.id, { shellState: "busy" });
-      }
-      // awaitingInput is cleared by handleShellStateChange when transitioning
-      // idle→busy (agent resumed = no longer waiting). Not cleared on every
-      // busy→busy output to avoid losing state during brief PTY redraws.
-    }
-    lastOutputTime = now;
-    if (!idleTimer) {
-      idleTimer = setTimeout(function checkIdle() {
-        const elapsed = Date.now() - lastOutputTime;
-        // 490ms accounts for timer imprecision (setTimeout can fire slightly early)
-        if (elapsed >= 490) {
-          idleTimer = undefined;
-          busyFlagged = false;
-          appLogger.debug("terminal", `[ShellState] ${props.id} → "idle" (500ms timeout)`);
-          terminalsStore.update(props.id, { shellState: "idle" });
-
-          // Auto-execute pending init command (run script) on first idle
-          const initCmd = terminalsStore.get(props.id)?.pendingInitCommand;
-          if (initCmd && sessionId) {
-            terminalsStore.update(props.id, { pendingInitCommand: null });
-            pty.write(sessionId, initCmd + "\r").catch((e) => appLogger.error("terminal", "Failed to write init command", { error: String(e) }));
-          }
-        } else {
-          idleTimer = setTimeout(checkIdle, 500 - elapsed);
-        }
-      }, 500);
-    }
+    // shellState is now derived in Rust (reader thread + silence timer).
+    // handlePtyData no longer touches shellState — see ParsedEvent "shell-state" handler.
   };
 
   /** Replay buffered output into the now-open terminal */
@@ -492,6 +438,21 @@ export const Terminal: Component<TerminalProps> = (props) => {
               }
             }
             break;
+          case "shell-state": {
+            appLogger.debug("terminal", `[ShellState] ${props.id} → "${parsed.state}" (from Rust)`);
+            terminalsStore.update(props.id, { shellState: parsed.state });
+            // Execute pending init command on first idle (migrated from checkIdle)
+            if (parsed.state === "idle") {
+              const initCmd = terminalsStore.get(props.id)?.pendingInitCommand;
+              if (initCmd && targetSessionId) {
+                terminalsStore.update(props.id, { pendingInitCommand: null });
+                pty.write(targetSessionId, initCmd + "\r").catch((e) =>
+                  appLogger.error("terminal", "Failed to write init command", { error: String(e) }),
+                );
+              }
+            }
+            break;
+          }
         }
 
         // Also dispatch to plugin structured event handlers
@@ -510,6 +471,18 @@ export const Terminal: Component<TerminalProps> = (props) => {
       if (flags > 0 && kittyFlags === preListenFlags) {
         kittyFlags = flags;
       }
+
+      // Sync shell state from Rust — covers events missed while unsubscribed
+      // (e.g. tab switch, branch switch, component remount).
+      invoke<string | null>("get_shell_state", { sessionId: targetSessionId }).then((rustState) => {
+        if (rustState) {
+          const current = terminalsStore.get(props.id)?.shellState;
+          if (current !== rustState) {
+            appLogger.debug("terminal", `[ShellState] ${props.id} sync from Rust: "${current}" → "${rustState}"`);
+            terminalsStore.update(props.id, { shellState: rustState as ShellState });
+          }
+        }
+      }).catch(() => {});
     }
   };
 
@@ -518,11 +491,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const existingSessionId = terminalsStore.get(props.id)?.sessionId;
   if (existingSessionId) {
     sessionId = existingSessionId;
-    // Reset stale shellState from previous mount — if the PTY is actually busy,
-    // the next output chunk will set it back to "busy" within milliseconds.
-    if (terminalsStore.get(props.id)?.shellState === "busy") {
-      terminalsStore.update(props.id, { shellState: "idle" });
-    }
+    // attachSessionListeners syncs shell state from Rust via get_shell_state
     attachSessionListeners(existingSessionId).catch((err) =>
       appLogger.error("terminal", "Failed to attach session listeners", err),
     );
@@ -539,7 +508,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       if (sessionId) {
         // Already have a session (eagerly attached above) — just resize to current dimensions
         try {
-          lastResizeAt = Date.now();
+
           await pty.resize(sessionId, terminal.rows, terminal.cols);
           reconnected = true;
           appLogger.info("terminal", `initSession(${props.id}) — reconnected to ${sessionId}`);
@@ -935,7 +904,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           // the authoritative dimensions ourselves.
           clearTimeout(resizeTimer);
           if (sessionId && terminal && terminal.rows > 0 && terminal.cols > 0) {
-            lastResizeAt = Date.now();
+  
             pty.resize(sessionId, terminal.rows, terminal.cols).catch((err) => {
               appLogger.error("terminal", "ResizeObserver resize failed", err);
             });
@@ -965,7 +934,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         resizeTimer = setTimeout(async () => {
           if (sessionId) {
             try {
-              lastResizeAt = Date.now();
+    
               await pty.resize(sessionId, rows, cols);
             } catch (err) {
               appLogger.error("terminal", "Failed to resize PTY", err);
@@ -1023,7 +992,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // may not fire (debounced 150ms + xterm may already report the fitted dimensions).
         // Force a resize to ensure PTY is in sync with the newly-fitted container.
         if (sessionId && terminal && terminal.rows > 0 && terminal.cols > 0) {
-          lastResizeAt = Date.now();
+
           pty.resize(sessionId, terminal.rows, terminal.cols).catch(() => {
             // Silently ignore resize errors (PTY may have exited)
           });
@@ -1079,14 +1048,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
   onCleanup(() => {
     clearTimeout(resizeTimer);
     clearTimeout(resizeObserverTimer);
-    // Transition shellState to "idle" if it's currently "busy", so the
-    // debounce cooldown starts. Without this, shellState stays "busy"
-    // forever in the store because unsubscribePty() below stops PTY
-    // output and the idleTimer (if pending) is about to be cancelled.
-    if (terminalsStore.get(props.id)?.shellState === "busy") {
-      terminalsStore.update(props.id, { shellState: "idle" });
-    }
-    clearTimeout(idleTimer);
+    // shellState is now Rust-authoritative — no need to force idle on unmount.
+    // Rust will emit idle when the agent actually stops. On remount,
+    // attachSessionListeners syncs via get_shell_state.
     resizeObserver?.disconnect();
     unsubscribePty?.();
     unlistenParsed?.();
