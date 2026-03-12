@@ -10,6 +10,7 @@
   flex-direction: column;
   overflow: hidden;
   opacity: 1;
+  outline: none;
   transition: opacity 150ms ease, display 150ms allow-discrete;
 
   @starting-style {

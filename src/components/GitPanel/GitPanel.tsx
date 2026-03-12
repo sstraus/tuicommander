@@ -30,8 +30,33 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
   const [historyFile, _setHistoryFile] = createSignal<string | null>(null);
   const [blameFile, _setBlameFile] = createSignal<string | null>(null);
 
+  function handlePanelKeyDown(e: KeyboardEvent) {
+    // Escape closes the panel
+    if (e.key === "Escape") {
+      e.preventDefault();
+      props.onClose();
+      return;
+    }
+
+    // Ctrl+1-5 (or Cmd+1-5) switches tabs within the panel
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key >= "1" && e.key <= "5") {
+      const idx = parseInt(e.key) - 1;
+      if (idx < TABS.length) {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveTab(TABS[idx].id);
+      }
+    }
+  }
+
   return (
-    <div id="git-panel" class={cx(s.panel, !props.visible && s.hidden)}>
+    <div
+      id="git-panel"
+      class={cx(s.panel, !props.visible && s.hidden)}
+      tabIndex={0}
+      onKeyDown={handlePanelKeyDown}
+    >
       <PanelResizeHandle panelId="git-panel" />
       <div class={p.header}>
         <div class={s.tabs}>

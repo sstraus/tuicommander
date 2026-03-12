@@ -104,6 +104,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   const [unstagedExpanded, setUnstagedExpanded] = createSignal(true);
   const [confirmDiscard, setConfirmDiscard] = createSignal<FileEntry | null>(null);
   const [confirmDiscardAll, setConfirmDiscardAll] = createSignal(false);
+  const [focusedIndex, setFocusedIndex] = createSignal(-1);
 
   // Commit section signals
   const [commitMsg, setCommitMsg] = createSignal("");
@@ -320,12 +321,67 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     setConfirmDiscardAll(false);
   }
 
+  /** Build a flat list of visible file entries for keyboard navigation */
+  function visibleFiles(): { file: FileEntry; section: "staged" | "unstaged" }[] {
+    const result: { file: FileEntry; section: "staged" | "unstaged" }[] = [];
+    if (stagedExpanded()) {
+      for (const f of staged()) result.push({ file: f, section: "staged" });
+    }
+    if (unstagedExpanded()) {
+      for (const f of unstaged()) result.push({ file: f, section: "unstaged" });
+    }
+    return result;
+  }
+
+  function handleListKeyDown(e: KeyboardEvent) {
+    const files = visibleFiles();
+    if (files.length === 0) return;
+
+    const idx = focusedIndex();
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusedIndex(Math.min(idx + 1, files.length - 1));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusedIndex(Math.max(idx - 1, 0));
+      return;
+    }
+
+    if (idx < 0 || idx >= files.length) return;
+    const { file, section } = files[idx];
+
+    if (e.key === " ") {
+      e.preventDefault();
+      if (section === "unstaged") stageFile(file.path);
+      else unstageFile(file.path);
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      openDiff(file);
+      return;
+    }
+    if ((e.key === "Delete" || e.key === "Backspace") && section === "unstaged") {
+      e.preventDefault();
+      setConfirmDiscard(file);
+      return;
+    }
+  }
+
   // --- Rendering helpers ---
 
-  function renderFileEntry(file: FileEntry, section: "staged" | "unstaged") {
+  function renderFileEntry(file: FileEntry, section: "staged" | "unstaged", flatIndex: number) {
     const { dir, base } = splitPath(file.path);
     return (
-      <div class={s.fileEntry} title={file.path}>
+      <div
+        class={cx(s.fileEntry, focusedIndex() === flatIndex && s.fileFocused)}
+        title={file.path}
+        data-focused={focusedIndex() === flatIndex ? "" : undefined}
+        onClick={() => setFocusedIndex(flatIndex)}
+      >
         <span class={cx(s.statusBadge, statusClass(file.status))}>{file.status}</span>
         <span class={s.filePath}>
           <Show when={dir}>
@@ -381,7 +437,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   }
 
   return (
-    <div class={s.container}>
+    <div class={s.container} onKeyDown={handleListKeyDown} tabIndex={-1}>
       {/* Commit section */}
       <Show when={props.repoPath}>
         <div class={s.commitSection} onKeyDown={handleCommitKeyDown}>
@@ -458,7 +514,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
         </div>
         <Show when={stagedExpanded()}>
           <For each={staged()}>
-            {(file) => renderFileEntry(file, "staged")}
+            {(file, i) => renderFileEntry(file, "staged", i())}
           </For>
         </Show>
       </Show>
@@ -486,7 +542,10 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
         </div>
         <Show when={unstagedExpanded()}>
           <For each={unstaged()}>
-            {(file) => renderFileEntry(file, "unstaged")}
+            {(file, i) => {
+              const offset = stagedExpanded() ? staged().length : 0;
+              return renderFileEntry(file, "unstaged", offset + i());
+            }}
           </For>
         </Show>
       </Show>

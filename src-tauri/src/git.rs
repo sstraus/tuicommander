@@ -589,36 +589,29 @@ pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, 
         None => return Ok(vec![]),  // No default branch — graceful no-op
     };
 
+    // Single command: get branch name + SHA together, plus main SHA for filtering
     let out = git_cmd(repo_path)
-        .args(["branch", "--merged", &main_branch, "--format=%(refname:short)"])
+        .args(["branch", "--merged", &main_branch, "--format=%(objectname) %(refname:short)"])
         .run()
         .map_err(|e| format!("git branch --merged failed: {e}"))?;
 
-    // Get main branch SHA to exclude branches that never diverged
     let main_sha = git_cmd(repo_path)
         .args(["rev-parse", &main_branch])
         .run()
         .map(|o| o.stdout.trim().to_string())
         .unwrap_or_default();
 
-    let candidates: Vec<String> = out.stdout.lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
-
-    if main_sha.is_empty() {
-        return Ok(candidates);
-    }
-
     // Filter out branches whose tip SHA matches main — they never diverged
-    Ok(candidates.into_iter().filter(|branch| {
-        let tip = git_cmd(repo_path)
-            .args(["rev-parse", branch])
-            .run()
-            .map(|o| o.stdout.trim().to_string())
-            .unwrap_or_default();
-        tip != main_sha
-    }).collect())
+    Ok(out.stdout.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let (sha, name) = line.split_once(' ')?;
+            if name.is_empty() { return None; }
+            // Exclude branches at the exact same SHA as main
+            if !main_sha.is_empty() && sha == main_sha { return None; }
+            Some(name.to_string())
+        })
+        .collect())
 }
 
 /// Check whether a ref exists in .git/packed-refs (for repos that have been gc'd).

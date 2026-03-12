@@ -39,6 +39,7 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
   const [expandedRef, setExpandedRef] = createSignal<string | null>(null);
   const [diffs, setDiffs] = createSignal<Record<string, string>>({});
   const [diffLoading, setDiffLoading] = createSignal<Record<string, boolean>>({});
+  const [focusedIndex, setFocusedIndex] = createSignal(-1);
 
   // Confirm dialog state
   const [confirmVisible, setConfirmVisible] = createSignal(false);
@@ -156,20 +157,47 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
     }
   }
 
+  function handleListKeyDown(e: KeyboardEvent) {
+    const total = stashes().length;
+    if (total === 0) return;
+
+    const idx = focusedIndex();
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusedIndex(Math.min(idx + 1, total - 1));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusedIndex(Math.max(idx - 1, 0));
+      return;
+    }
+    if (e.key === "Enter" && idx >= 0 && idx < total) {
+      e.preventDefault();
+      toggleDiff(stashes()[idx].ref_name);
+      return;
+    }
+  }
+
   return (
-    <div class={s.container}>
+    <div class={s.container} onKeyDown={handleListKeyDown} tabIndex={-1}>
       <Show when={!loading()} fallback={<div class={s.empty}>Loading stashes...</div>}>
         <Show when={stashes().length > 0} fallback={<div class={s.empty}>No stashes</div>}>
           <div class={s.scrollContainer}>
             <For each={stashes()}>
-              {(stash) => {
+              {(stash, i) => {
                 const isBusy = () => busyRef() === stash.ref_name;
                 const isExpanded = () => expandedRef() === stash.ref_name;
                 const diff = () => diffs()[stash.ref_name];
                 const isDiffLoading = () => diffLoading()[stash.ref_name];
+                const isFocused = () => focusedIndex() === i();
 
                 return (
-                  <div class={s.stashEntry}>
+                  <div
+                    class={cx(s.stashEntry, isFocused() && s.stashEntryFocused)}
+                    onClick={() => setFocusedIndex(i())}
+                  >
                     {/* Line 1: ref name + message */}
                     <div class={s.stashHeader}>
                       <span class={s.stashRef}>{stash.ref_name}</span>
