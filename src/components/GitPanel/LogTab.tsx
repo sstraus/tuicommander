@@ -95,7 +95,15 @@ export const LogTab: Component<LogTabProps> = (props) => {
   const [viewportHeight, setViewportHeight] = createSignal(0);
   const [focusedIndex, setFocusedIndex] = createSignal(-1);
 
-  const [scrollRef, setScrollRef] = createSignal<HTMLDivElement | undefined>(undefined);
+  // Plain ref for the virtualizer (needs synchronous access during JSX creation).
+  // Signal for reactive effects (ResizeObserver, scroll sync) that must re-run
+  // when <Show> conditionally mounts the scroll container.
+  let scrollEl: HTMLDivElement | undefined;
+  const [scrollMounted, setScrollMounted] = createSignal(false);
+  function assignScrollRef(el: HTMLDivElement) {
+    scrollEl = el;
+    setScrollMounted(true);
+  }
 
   const PAGE_SIZE = 50;
 
@@ -213,14 +221,16 @@ export const LogTab: Component<LogTabProps> = (props) => {
 
   const virtualizer = createVirtualizer({
     get count() { return commits().length; },
-    getScrollElement: () => scrollRef() ?? null,
+    getScrollElement: () => scrollEl ?? null,
     estimateSize,
     overscan: 5,
   });
 
-  // Sync scroll position and viewport size for the graph canvas
+  // Sync scroll position and viewport size for the graph canvas.
+  // Depends on scrollMounted() signal to re-run when <Show> mounts the div.
   createEffect(() => {
-    const el = scrollRef();
+    if (!scrollMounted()) return;
+    const el = scrollEl;
     if (!el) return;
 
     setViewportHeight(el.clientHeight);
@@ -280,7 +290,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
     <div class={s.container} onKeyDown={handleListKeyDown} tabIndex={-1}>
       <Show when={!loading()} fallback={<div class={s.empty}>Loading commits...</div>}>
         <Show when={commits().length > 0} fallback={<div class={s.empty}>No commits</div>}>
-          <div ref={setScrollRef} class={s.scrollContainer}>
+          <div ref={assignScrollRef} class={s.scrollContainer}>
             <CommitGraph
               nodes={graphNodes()}
               scrollTop={scrollTop()}
