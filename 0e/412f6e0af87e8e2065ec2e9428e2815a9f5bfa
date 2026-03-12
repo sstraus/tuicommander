@@ -1,0 +1,27 @@
+src-tauri/crates/tuic-bridge/Cargo.toml
+  fb0c6dd6c38d5eb3 1-15
+src-tauri/build-sidecar.mjs
+  fb0c6dd6c38d5eb3 21-22
+src-tauri/crates/tuic-bridge/src/main.rs
+  fb0c6dd6c38d5eb3 1-467
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "0e412f6e0af87e8e2065ec2e9428e2815a9f5bfa",
+  "prompts": {
+    "fb0c6dd6c38d5eb3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cfe8ad28-48df-4c36-90a5-72a5f4a29bf6",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 484,
+      "overriden_lines": 0
+    }
+  }
+}
