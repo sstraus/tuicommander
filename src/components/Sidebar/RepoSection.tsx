@@ -601,6 +601,13 @@ export const RemoteOnlyPrPopover: Component<{
                 </div>
                 <Show when={expandedBranch() === pr.branch}>
                   <div class={s.remoteOnlyDetail}>
+                    <button
+                      class={s.remoteOnlyDetailDismiss}
+                      onClick={() => handleDismiss(pr.number)}
+                      title={t("sidebar.dismissPr", "Hide this PR from view")}
+                    >
+                      &times;
+                    </button>
                     <PrDetailContent repoPath={props.repoPath} branch={pr.branch}>
                       <div class={s.remoteOnlyDetailActions}>
                         <button
@@ -651,14 +658,7 @@ export const RemoteOnlyPrPopover: Component<{
                         >
                           {diffLoading()
                             ? t("sidebar.loadingDiff", "Loading...")
-                            : t("sidebar.viewDiff", "View Diff")}
-                        </button>
-                        <button
-                          class={s.remoteOnlyDismiss}
-                          onClick={() => handleDismiss(pr.number)}
-                          title={t("sidebar.dismissPr", "Hide this PR from view")}
-                        >
-                          {t("sidebar.dismiss", "Dismiss")}
+                            : t("sidebar.diff", "Diff")}
                         </button>
                       </div>
                       <Show when={approveError()}>

@@ -870,13 +870,38 @@
 
 /* ── Remote-only PR accordion detail ── */
 .remoteOnlyDetail {
+  position: relative;
   padding: 0 4px 8px;
   background: var(--bg-tertiary);
   border-top: 1px solid var(--border);
 }
 
+.remoteOnlyDetailDismiss {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--font-md);
+  z-index: 1;
+}
+
+.remoteOnlyDetailDismiss:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
 .remoteOnlyDetailActions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 8px 8px 4px;
 }
@@ -989,7 +1014,6 @@
   color: var(--fg-muted);
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
-  margin-left: auto;
 }
 
 .remoteOnlyDismiss:hover {
