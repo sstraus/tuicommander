@@ -46,7 +46,7 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
       <div class={p.content}>
         <Switch>
           <Match when={activeTab() === "changes"}>
-            <div class={s.placeholder}>Changes tab placeholder</div>
+            <ChangesTab repoPath={props.repoPath} />
           </Match>
           <Match when={activeTab() === "log"}>
             <LogTab repoPath={props.repoPath} />
