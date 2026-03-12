@@ -50,7 +50,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "toggle-plan": { label: "Toggle plan panel", category: "Panels" },
 
   "open-lazygit": { label: "Open lazygit", category: "Git" },
-  "toggle-git-ops": { label: "Git operations panel", category: "Git" },
+  "toggle-git-ops": { label: "Git panel", category: "Git" },
   "open-lazygit-pane": { label: "Lazygit split pane", category: "Git" },
 
   "split-vertical": { label: "Split vertically", category: "Split Panes" },

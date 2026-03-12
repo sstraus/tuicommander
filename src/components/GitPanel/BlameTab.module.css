@@ -1,0 +1,182 @@
+/* BlameTab — line-by-line blame annotations with age heatmap */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.fileHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+  color: var(--fg-secondary);
+  min-height: 28px;
+}
+
+.fileLabel {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.filePath {
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}
+
+.loading {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}
+
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.loadingDot {
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+/* Scrollable blame content — gutter and code scroll together vertically */
+.blameScroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  min-height: 0;
+}
+
+.blameTable {
+  width: 100%;
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+  line-height: 20px;
+}
+
+.blameLine {
+  display: flex;
+  cursor: default;
+  transition: background 0.1s ease;
+}
+
+.blameLine:hover {
+  background: var(--bg-highlight) !important;
+}
+
+/* Highlight all lines from the same commit when one is clicked */
+.blameLineHighlighted {
+  background: color-mix(in srgb, var(--accent) 12%, transparent) !important;
+}
+
+/* First line of a commit group gets a top border separator */
+.blameLineGroupStart {
+  border-top: 1px solid var(--border);
+}
+
+/* Gutter: hash + author + age */
+.gutter {
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+  padding: 0 8px;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+  user-select: none;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+/* Continuation lines in same commit group — empty gutter */
+.gutterContinuation {
+  color: transparent;
+}
+
+.gutterHash {
+  color: var(--fg-secondary);
+  margin-right: 6px;
+}
+
+.gutterAuthor {
+  color: var(--fg-muted);
+  margin-right: 6px;
+  max-width: 70px;
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.gutterAge {
+  color: var(--fg-muted);
+  opacity: 0.8;
+}
+
+/* Code content */
+.code {
+  flex: 1;
+  padding: 0 8px;
+  white-space: pre;
+  color: var(--fg-primary);
+  overflow: hidden;
+}
+
+/* Line number */
+.lineNumber {
+  width: 40px;
+  min-width: 40px;
+  padding: 0 6px;
+  text-align: right;
+  color: var(--fg-muted);
+  opacity: 0.5;
+  font-size: var(--font-xs);
+  user-select: none;
+}
+
+/* Heatmap legend at bottom */
+.heatmapLegend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+}
+
+.heatmapBar {
+  display: flex;
+  height: 8px;
+  width: 80px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.heatmapRecent {
+  flex: 1;
+  background: rgba(100, 200, 100, 0.25);
+}
+
+.heatmapOld {
+  flex: 1;
+  background: rgba(100, 200, 100, 0.03);
+}

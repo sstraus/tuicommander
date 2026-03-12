@@ -4,6 +4,7 @@ import { MarkdownPanel } from "./MarkdownPanel";
 import { NotesPanel } from "./NotesPanel";
 import { DiffPanel } from "./DiffPanel";
 import { PlanPanel } from "./PlanPanel/PlanPanel";
+import { GitPanel } from "./GitPanel/GitPanel";
 import { uiStore } from "../stores/ui";
 import { terminalsStore } from "../stores/terminals";
 
@@ -51,6 +52,12 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
         visible={uiStore.state.planPanelVisible}
         repoPath={props.repoPath}
         onClose={() => uiStore.togglePlanPanel()}
+      />
+
+      <GitPanel
+        visible={uiStore.state.gitPanelVisible}
+        repoPath={props.repoPath}
+        onClose={() => uiStore.toggleGitPanel()}
       />
     </>
   );

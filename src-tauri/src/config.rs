@@ -496,6 +496,8 @@ pub(crate) struct UIPrefsConfig {
     pub(crate) file_browser_panel_visible: bool,
     #[serde(default)]
     pub(crate) plan_panel_visible: bool,
+    #[serde(default)]
+    pub(crate) git_panel_visible: bool,
     #[serde(default = "default_panel_width")]
     pub(crate) diff_panel_width: u32,
     #[serde(default = "default_panel_width")]
@@ -504,6 +506,8 @@ pub(crate) struct UIPrefsConfig {
     pub(crate) notes_panel_width: u32,
     #[serde(default = "default_plan_panel_width")]
     pub(crate) plan_panel_width: u32,
+    #[serde(default = "default_git_panel_width")]
+    pub(crate) git_panel_width: u32,
     #[serde(default = "default_settings_nav_width")]
     pub(crate) settings_nav_width: u32,
 }
@@ -518,10 +522,12 @@ impl Default for UIPrefsConfig {
             notes_panel_visible: false,
             file_browser_panel_visible: false,
             plan_panel_visible: false,
+            git_panel_visible: false,
             diff_panel_width: default_panel_width(),
             markdown_panel_width: default_panel_width(),
             notes_panel_width: default_notes_panel_width(),
             plan_panel_width: default_plan_panel_width(),
+            git_panel_width: default_git_panel_width(),
             settings_nav_width: default_settings_nav_width(),
         }
     }
@@ -531,6 +537,7 @@ fn default_sidebar_width() -> u32 { 260 }
 fn default_panel_width() -> u32 { 400 }
 fn default_notes_panel_width() -> u32 { 350 }
 fn default_plan_panel_width() -> u32 { 350 }
+fn default_git_panel_width() -> u32 { 380 }
 fn default_settings_nav_width() -> u32 { 180 }
 
 // ---------------------------------------------------------------------------
@@ -1185,10 +1192,12 @@ mod tests {
             notes_panel_visible: false,
             file_browser_panel_visible: true,
             plan_panel_visible: false,
+            git_panel_visible: false,
             diff_panel_width: 500,
             markdown_panel_width: 450,
             notes_panel_width: 320,
             plan_panel_width: 350,
+            git_panel_width: 380,
             settings_nav_width: 200,
         };
         let loaded: UIPrefsConfig = round_trip_in_dir(dir.path(), "ui-prefs.json", &cfg);

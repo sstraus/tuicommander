@@ -11,6 +11,7 @@ pub(crate) mod fs;
 mod input_line_buffer;
 pub(crate) mod git;
 pub(crate) mod git_cli;
+pub(crate) mod git_graph;
 pub(crate) mod github;
 pub(crate) mod head_watcher;
 pub(crate) mod repo_watcher;
@@ -790,6 +791,19 @@ pub fn run() {
             git::get_initials,
             git::run_git_command,
             git::get_git_panel_context,
+            git::get_working_tree_status,
+            git::git_stage_files,
+            git::git_unstage_files,
+            git::git_discard_files,
+            git::git_commit,
+            git::get_commit_log,
+            git::get_stash_list,
+            git::git_stash_apply,
+            git::git_stash_pop,
+            git::git_stash_drop,
+            git::git_stash_show,
+            git::get_file_history,
+            git::get_file_blame,
             github::check_github_circuit,
             github::get_ci_checks,
             github::get_repo_pr_statuses,
@@ -913,7 +927,8 @@ pub fn run() {
             app_logger::push_log,
             app_logger::get_logs,
             app_logger::clear_logs,
-            notification_sound::play_notification_sound
+            notification_sound::play_notification_sound,
+            git_graph::get_commit_graph
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

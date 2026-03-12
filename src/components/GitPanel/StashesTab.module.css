@@ -1,0 +1,175 @@
+/* StashesTab — stash list with apply/pop/drop actions */
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.scrollContainer {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Stash entry card */
+.stashEntry {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s ease;
+}
+
+.stashEntry:hover {
+  background: var(--bg-highlight);
+}
+
+.stashEntryFocused {
+  background: var(--bg-highlight);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Line 1: ref name + message */
+.stashHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stashRef {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--accent);
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.stashMessage {
+  font-size: var(--font-sm);
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Line 2: action buttons */
+.stashActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.actionBtn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  font-family: var(--font-ui);
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.actionBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.actionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actionBtnDanger {
+  composes: actionBtn;
+}
+
+.actionBtnDanger:hover {
+  background: color-mix(in srgb, var(--error) 20%, transparent);
+  color: var(--error);
+}
+
+/* Show diff toggle */
+.diffToggle {
+  background: none;
+  border: none;
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  padding: 2px 0;
+  margin-left: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.1s ease;
+}
+
+.diffToggle:hover {
+  color: var(--fg-primary);
+}
+
+.chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  font-size: var(--font-2xs);
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+/* Diff preview */
+.diffPreview {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.diffLine {
+  font-family: var(--font-mono);
+  font-size: var(--font-2xs);
+  white-space: pre;
+  line-height: 1.5;
+}
+
+.diffAdd {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+
+.diffDel {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+}
+
+.diffHunk {
+  color: var(--accent);
+}
+
+.diffContext {
+  color: var(--fg-muted);
+}
+
+.diffLoading {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  padding: 4px 0;
+}
+
+/* Empty / loading states */
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}

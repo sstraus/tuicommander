@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Git Panel** — Tabbed side panel (`Cmd+Shift+G`) replacing the Git Operations Panel floating overlay. Five tabs: Changes (staging/unstaging, commit with amend, discard), Log (virtual scroll + Canvas commit graph with lane assignment and Bezier connections), Stashes (apply/pop/drop), History (per-file commit log following renames), Blame (per-line blame with age heatmap). Keyboard navigation: Escape to close, Ctrl/Cmd+1–5 to switch tabs
+- **Canvas-based commit graph** — Visual commit graph in the Log tab rendered on Canvas with lane assignment, 8-color palette, ref badges, and Bezier curve connections between parent/child commits
 - **Ideas panel image paste** — `Ctrl+V` / `Cmd+V` pastes clipboard images into notes. Images saved to disk, displayed as thumbnails, and sent as absolute paths when forwarding to terminal (so AI agents can read them). Supports PNG, JPEG, WebP, GIF up to 10 MB. Image-only notes (no text) are allowed. Cleanup on delete.
 - **Ideas panel in-place edit** — Edit now preserves note identity (no ID change). `Escape` cancels edit mode.
 - **Archive script** — Per-repo lifecycle hook that runs before a worktree is archived or deleted; non-zero exit blocks the operation. Configurable via Settings → Repository → Scripts or `.tuic.json`

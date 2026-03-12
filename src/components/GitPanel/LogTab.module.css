@@ -1,0 +1,219 @@
+/* LogTab — commit list with virtual scroll */
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.scrollContainer {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+.virtualList {
+  position: relative;
+  width: 100%;
+}
+
+/* Commit row */
+.commitRow {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.commitRow:hover {
+  background: var(--bg-highlight);
+}
+
+.commitRowExpanded {
+  background: var(--bg-tertiary);
+}
+
+.commitRowFocused {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Line 1: dot + hash + subject */
+.commitLine1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.commitDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.commitHash {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  flex-shrink: 0;
+}
+
+.commitSubject {
+  font-size: var(--font-sm);
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Line 2: author + time + ref badges */
+.commitLine2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 16px;
+  min-width: 0;
+}
+
+.commitMeta {
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  flex-shrink: 0;
+}
+
+.refBadge {
+  font-size: var(--font-2xs);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  line-height: 16px;
+}
+
+.refBranch {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+.refTag {
+  background: color-mix(in srgb, var(--warning) 20%, transparent);
+  color: var(--warning);
+}
+
+.refHead {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+/* Expanded: changed files */
+.changedFiles {
+  padding: 4px 0 4px 28px;
+}
+
+.changedFile {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  color: var(--fg-secondary);
+}
+
+.fileStatus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-2xs);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.statusM {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+.statusA {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+.statusD {
+  background: color-mix(in srgb, var(--error) 20%, transparent);
+  color: var(--error);
+}
+
+.statusR {
+  background: color-mix(in srgb, var(--merged) 20%, transparent);
+  color: var(--merged);
+}
+
+.statusOther {
+  background: color-mix(in srgb, var(--fg-muted) 20%, transparent);
+  color: var(--fg-muted);
+}
+
+.filePath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.filesLoading {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  padding: 4px 0;
+}
+
+/* Load more button */
+.loadMore {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+}
+
+.loadMoreBtn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  padding: 4px 16px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.loadMoreBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.loadMoreBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Empty / loading states */
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}

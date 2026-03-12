@@ -1,0 +1,328 @@
+/* ChangesTab — staged/unstaged file tree with actions */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Commit section */
+.commitSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.commitTextarea {
+  width: 100%;
+  min-height: 38px;
+  max-height: 114px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+  padding: 6px 8px;
+  resize: none;
+  line-height: 1.6;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.commitTextarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.commitTextarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.commitRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.commitBtn {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  padding: 4px 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.15s ease;
+}
+
+.commitBtn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.commitBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.commitBtnDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.amendLabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  user-select: none;
+}
+
+.amendCheckbox {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.commitError {
+  color: var(--error);
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.commitSuccess {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--success);
+  font-size: var(--font-xs);
+  font-family: var(--font-ui);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--text-on-accent);
+  border-top-color: transparent;
+  border-radius: var(--radius-full);
+  animation: spin 0.6s linear infinite;
+}
+
+/* Section headers (STAGED, CHANGES) */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s ease;
+}
+
+.sectionHeader:hover {
+  background: var(--bg-highlight);
+}
+
+.chevron {
+  font-size: var(--font-xs);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.chevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.sectionLabel {
+  flex: 1;
+}
+
+.sectionCount {
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  font-weight: 400;
+}
+
+.sectionAction {
+  background: none;
+  border: none;
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.1s ease, color 0.1s ease;
+}
+
+.sectionHeader:hover .sectionAction {
+  opacity: 1;
+}
+
+.sectionAction:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+/* File entries */
+.fileEntry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 20px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+}
+
+.fileEntry:hover {
+  background: var(--bg-highlight);
+}
+
+.fileFocused {
+  background: var(--bg-highlight);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.fileFocused .actions {
+  opacity: 1;
+}
+
+/* Status badge (M, A, D, R, ?) */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-2xs);
+  font-weight: 700;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.statusM {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+.statusA {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+.statusD {
+  background: color-mix(in srgb, var(--error) 20%, transparent);
+  color: var(--error);
+}
+
+.statusR {
+  background: color-mix(in srgb, var(--merged) 20%, transparent);
+  color: var(--merged);
+}
+
+.statusUntracked {
+  background: color-mix(in srgb, var(--fg-muted) 20%, transparent);
+  color: var(--fg-muted);
+}
+
+/* File path: directory dimmed, basename highlighted */
+.filePath {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.fileDir {
+  color: var(--fg-muted);
+}
+
+.fileBasename {
+  color: var(--fg-primary);
+}
+
+/* Action buttons (visible on hover) */
+.actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.fileEntry:hover .actions {
+  opacity: 1;
+}
+
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 0;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.actionBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.actionBtnDanger:hover {
+  color: var(--error);
+}
+
+.actionBtnStage:hover {
+  color: var(--success);
+}
+
+/* Empty state */
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+}

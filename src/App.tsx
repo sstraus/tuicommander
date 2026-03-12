@@ -21,7 +21,6 @@ import { PromptDrawer } from "./components/PromptDrawer";
 import { SettingsPanel, type SettingsContext } from "./components/SettingsPanel";
 import { TaskQueuePanel } from "./components/TaskQueuePanel";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "./components/ContextMenu";
-import { GitOperationsPanel } from "./components/GitOperationsPanel";
 import { RenameBranchDialog } from "./components/RenameBranchDialog";
 import { CreateWorktreeDialog } from "./components/CreateWorktreeDialog";
 import { PromptDialog } from "./components/PromptDialog";
@@ -126,7 +125,6 @@ const App: Component = () => {
     setSettingsPanelVisible(true);
   };
   const [taskQueueVisible, setTaskQueueVisible] = createSignal(false);
-  const [gitOpsPanelVisible, setGitOpsPanelVisible] = createSignal(false);
 
   // Help panel state (Story 053)
   const [helpPanelVisible, setHelpPanelVisible] = createSignal(false);
@@ -865,7 +863,7 @@ const App: Component = () => {
     togglePromptLibrary: promptLibraryStore.toggleDrawer,
     toggleSettings: () => setSettingsPanelVisible((v) => !v),
     toggleTaskQueue: () => setTaskQueueVisible((v) => !v),
-    toggleGitOpsPanel: () => setGitOpsPanelVisible((v) => !v),
+    toggleGitOpsPanel: uiStore.toggleGitPanel,
     toggleHelpPanel: () => setHelpPanelVisible((v) => !v),
     toggleNotesPanel: uiStore.toggleNotesPanel,
     toggleFileBrowserPanel: uiStore.toggleFileBrowserPanel,
@@ -1068,7 +1066,7 @@ const App: Component = () => {
         case "edit-run-command": gitOps.handleRunCommand(true, () => setRunCommandDialogVisible(true)); break;
         case "lazygit": if (lazygit.lazygitAvailable()) lazygit.spawnLazygit(); break;
         case "lazygit-split": if (lazygit.lazygitAvailable()) lazygit.openLazygitPane(); break;
-        case "git-operations": setGitOpsPanelVisible((v) => !v); break;
+        case "git-operations": uiStore.toggleGitPanel(); break;
         case "task-queue": setTaskQueueVisible((v) => !v); break;
 
         // Help
@@ -1340,24 +1338,6 @@ const App: Component = () => {
         onClose={() => setTaskQueueVisible(false)}
       />
 
-      {/* Git operations panel */}
-      <GitOperationsPanel
-        visible={gitOpsPanelVisible()}
-        repoPath={gitOps.currentRepoPath() || null}
-        onClose={() => setGitOpsPanelVisible(false)}
-        onBranchChange={() => {
-          // Refresh repo info after git operation
-          if (gitOps.currentRepoPath()) {
-            repo.getInfo(gitOps.currentRepoPath()!).then((info) => {
-              gitOps.setCurrentBranch(info.branch);
-              gitOps.setRepoStatus(info.status === "not-git" ? "unknown" : info.status);
-            }).catch((err) => {
-              appLogger.error("git", "Failed to refresh repo info", err);
-              gitOps.setRepoStatus("unknown");
-            });
-          }
-        }}
-      />
 
       {/* Context menu */}
       <ContextMenu
