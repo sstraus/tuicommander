@@ -173,22 +173,20 @@ describe("uiStore.resetLayout() — batch() coalescing", () => {
     dispose?.();
   });
 
-  it("coalesces all 5 setState calls in resetLayout() into one notification", async () => {
+  it("coalesces all 4 setState calls in resetLayout() into one notification", async () => {
     let notificationCount = 0;
 
     createRoot((d) => {
       dispose = d;
       // Mutate to non-default values first so each field actually changes
       store.setSidebarWidth(250);
-      store.setDiffPanelWidth(500);
       store.setMarkdownPanelWidth(500);
       store.setNotesPanelWidth(400);
       store.setSettingsNavWidth(200);
 
       createEffect(() => {
-        // Track all 5 fields that resetLayout() resets
+        // Track all 4 fields that resetLayout() resets
         void store.state.sidebarWidth;
-        void store.state.diffPanelWidth;
         void store.state.markdownPanelWidth;
         void store.state.notesPanelWidth;
         void store.state.settingsNavWidth;
@@ -203,12 +201,11 @@ describe("uiStore.resetLayout() — batch() coalescing", () => {
 
     await flushEffects();
 
-    // With batch(): 1 notification instead of 5
+    // With batch(): 1 notification instead of 4
     expect(notificationCount).toBe(1);
 
     // Verify values are actually reset to defaults
     expect(store.state.sidebarWidth).toBe(300);
-    expect(store.state.diffPanelWidth).toBe(400);
     expect(store.state.markdownPanelWidth).toBe(400);
     expect(store.state.notesPanelWidth).toBe(350);
     expect(store.state.settingsNavWidth).toBe(180);

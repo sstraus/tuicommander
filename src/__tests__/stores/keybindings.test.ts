@@ -22,7 +22,6 @@ describe("keybindingDefaults", () => {
         "split-horizontal",
         "run-command",
         "edit-command",
-        "toggle-diff",
         "toggle-markdown",
         "toggle-notes",
         "toggle-file-browser",
@@ -120,11 +119,11 @@ describe("keybindingsStore", () => {
   describe("defaults (no overrides)", () => {
     it("resolves default action for a known combo", () => {
       // Store not hydrated — should still have defaults
-      expect(store.getActionForCombo("cmd+shift+d")).toBe("toggle-diff");
+      expect(store.getActionForCombo("cmd+shift+d")).toBe("toggle-git-ops");
     });
 
     it("returns display key for an action", () => {
-      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Shift+D");
+      expect(store.getKeyForAction("toggle-git-ops")).toBe("Cmd+Shift+D");
     });
 
     it("returns undefined for unknown combo", () => {
@@ -141,7 +140,7 @@ describe("keybindingsStore", () => {
       mockInvoke.mockImplementation((cmd: string) => {
         if (cmd === "load_keybindings") {
           return Promise.resolve([
-            { action: "toggle-diff", key: "Cmd+Y" },
+            { action: "toggle-git-ops", key: "Cmd+Y" },
           ]);
         }
         return Promise.resolve(undefined);
@@ -150,18 +149,18 @@ describe("keybindingsStore", () => {
       await store.hydrate();
 
       // Override should work
-      expect(store.getActionForCombo("cmd+y")).toBe("toggle-diff");
+      expect(store.getActionForCombo("cmd+y")).toBe("toggle-git-ops");
       // Old combo should no longer map to toggle-diff
       expect(store.getActionForCombo("cmd+shift+d")).toBeUndefined();
       // Display key should reflect override
-      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Y");
+      expect(store.getKeyForAction("toggle-git-ops")).toBe("Cmd+Y");
     });
 
     it("unbinds action when key is empty string", async () => {
       mockInvoke.mockImplementation((cmd: string) => {
         if (cmd === "load_keybindings") {
           return Promise.resolve([
-            { action: "toggle-diff", key: "" },
+            { action: "toggle-git-ops", key: "" },
           ]);
         }
         return Promise.resolve(undefined);
@@ -170,14 +169,14 @@ describe("keybindingsStore", () => {
       await store.hydrate();
 
       expect(store.getActionForCombo("cmd+shift+d")).toBeUndefined();
-      expect(store.getKeyForAction("toggle-diff")).toBeUndefined();
+      expect(store.getKeyForAction("toggle-git-ops")).toBeUndefined();
     });
 
     it("unbinds action when key is null", async () => {
       mockInvoke.mockImplementation((cmd: string) => {
         if (cmd === "load_keybindings") {
           return Promise.resolve([
-            { action: "toggle-diff", key: null },
+            { action: "toggle-git-ops", key: null },
           ]);
         }
         return Promise.resolve(undefined);
@@ -186,7 +185,7 @@ describe("keybindingsStore", () => {
       await store.hydrate();
 
       expect(store.getActionForCombo("cmd+shift+d")).toBeUndefined();
-      expect(store.getKeyForAction("toggle-diff")).toBeUndefined();
+      expect(store.getKeyForAction("toggle-git-ops")).toBeUndefined();
     });
 
     it("ignores invalid action names in overrides", async () => {
@@ -204,14 +203,14 @@ describe("keybindingsStore", () => {
       // bogus-action should not appear in lookup
       expect(store.getActionForCombo("cmd+y")).toBeUndefined();
       // Existing defaults should still work
-      expect(store.getActionForCombo("cmd+shift+d")).toBe("toggle-diff");
+      expect(store.getActionForCombo("cmd+shift+d")).toBe("toggle-git-ops");
     });
 
     it("preserves unmodified defaults after hydrate", async () => {
       mockInvoke.mockImplementation((cmd: string) => {
         if (cmd === "load_keybindings") {
           return Promise.resolve([
-            { action: "toggle-diff", key: "Cmd+Y" },
+            { action: "toggle-git-ops", key: "Cmd+Y" },
           ]);
         }
         return Promise.resolve(undefined);
@@ -236,7 +235,7 @@ describe("keybindingsStore", () => {
       await store.hydrate();
 
       // All defaults should work
-      expect(store.getActionForCombo("cmd+shift+d")).toBe("toggle-diff");
+      expect(store.getActionForCombo("cmd+shift+d")).toBe("toggle-git-ops");
     });
 
     it("handles invoke failure gracefully", async () => {
@@ -253,7 +252,7 @@ describe("keybindingsStore", () => {
       await store.hydrate();
 
       // All defaults should still work
-      expect(store.getActionForCombo("cmd+shift+d")).toBe("toggle-diff");
+      expect(store.getActionForCombo("cmd+shift+d")).toBe("toggle-git-ops");
       // Verify the error was logged
       expect(debugSpy).toHaveBeenCalledWith(
         "[config]",
@@ -267,7 +266,7 @@ describe("keybindingsStore", () => {
   describe("getAllBindings", () => {
     it("returns all action-to-key mappings", () => {
       const all = store.getAllBindings();
-      expect(all["toggle-diff"]).toBe("Cmd+Shift+D");
+      expect(all["toggle-git-ops"]).toBe("Cmd+Shift+D");
       expect(all["new-terminal"]).toBe("Cmd+T");
     });
 
@@ -275,7 +274,7 @@ describe("keybindingsStore", () => {
       mockInvoke.mockImplementation((cmd: string) => {
         if (cmd === "load_keybindings") {
           return Promise.resolve([
-            { action: "toggle-diff", key: "Cmd+Y" },
+            { action: "toggle-git-ops", key: "Cmd+Y" },
           ]);
         }
         return Promise.resolve(undefined);
@@ -284,7 +283,7 @@ describe("keybindingsStore", () => {
       await store.hydrate();
 
       const all = store.getAllBindings();
-      expect(all["toggle-diff"]).toBe("Cmd+Y");
+      expect(all["toggle-git-ops"]).toBe("Cmd+Y");
     });
   });
 
@@ -292,20 +291,20 @@ describe("keybindingsStore", () => {
     it("overrides a binding and updates lookups", async () => {
       mockInvoke.mockResolvedValue(undefined);
 
-      await store.setOverride("toggle-diff", "Cmd+Y");
+      await store.setOverride("toggle-git-ops", "Cmd+Y");
 
-      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Y");
-      expect(store.getActionForCombo("cmd+y")).toBe("toggle-diff");
+      expect(store.getKeyForAction("toggle-git-ops")).toBe("Cmd+Y");
+      expect(store.getActionForCombo("cmd+y")).toBe("toggle-git-ops");
       expect(store.getActionForCombo("cmd+shift+d")).toBeUndefined();
     });
 
     it("calls save_keybindings with overrides", async () => {
       mockInvoke.mockResolvedValue(undefined);
 
-      await store.setOverride("toggle-diff", "Cmd+Y");
+      await store.setOverride("toggle-git-ops", "Cmd+Y");
 
       expect(mockInvoke).toHaveBeenCalledWith("save_keybindings", {
-        config: [{ action: "toggle-diff", key: "Cmd+Y" }],
+        config: [{ action: "toggle-git-ops", key: "Cmd+Y" }],
       });
     });
 
@@ -313,13 +312,13 @@ describe("keybindingsStore", () => {
       mockInvoke.mockResolvedValue(undefined);
 
       // First override to something different
-      await store.setOverride("toggle-diff", "Cmd+Y");
-      expect(store.isOverridden("toggle-diff")).toBe(true);
+      await store.setOverride("toggle-git-ops", "Cmd+Y");
+      expect(store.isOverridden("toggle-git-ops")).toBe(true);
 
       // Then set back to default
-      await store.setOverride("toggle-diff", "Cmd+Shift+D");
-      expect(store.isOverridden("toggle-diff")).toBe(false);
-      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Shift+D");
+      await store.setOverride("toggle-git-ops", "Cmd+Shift+D");
+      expect(store.isOverridden("toggle-git-ops")).toBe(false);
+      expect(store.getKeyForAction("toggle-git-ops")).toBe("Cmd+Shift+D");
     });
   });
 
@@ -327,12 +326,12 @@ describe("keybindingsStore", () => {
     it("reverts a single action to its default", async () => {
       mockInvoke.mockResolvedValue(undefined);
 
-      await store.setOverride("toggle-diff", "Cmd+Y");
-      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Y");
+      await store.setOverride("toggle-git-ops", "Cmd+Y");
+      expect(store.getKeyForAction("toggle-git-ops")).toBe("Cmd+Y");
 
-      await store.resetAction("toggle-diff");
-      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Shift+D");
-      expect(store.isOverridden("toggle-diff")).toBe(false);
+      await store.resetAction("toggle-git-ops");
+      expect(store.getKeyForAction("toggle-git-ops")).toBe("Cmd+Shift+D");
+      expect(store.isOverridden("toggle-git-ops")).toBe(false);
     });
   });
 
@@ -340,21 +339,21 @@ describe("keybindingsStore", () => {
     it("clears all overrides and reverts to defaults", async () => {
       mockInvoke.mockResolvedValue(undefined);
 
-      await store.setOverride("toggle-diff", "Cmd+Y");
+      await store.setOverride("toggle-git-ops", "Cmd+Y");
       await store.setOverride("new-terminal", "Cmd+N");
 
       await store.resetAll();
 
-      expect(store.getKeyForAction("toggle-diff")).toBe("Cmd+Shift+D");
+      expect(store.getKeyForAction("toggle-git-ops")).toBe("Cmd+Shift+D");
       expect(store.getKeyForAction("new-terminal")).toBe("Cmd+T");
-      expect(store.isOverridden("toggle-diff")).toBe(false);
+      expect(store.isOverridden("toggle-git-ops")).toBe(false);
       expect(store.isOverridden("new-terminal")).toBe(false);
     });
 
     it("persists empty overrides array", async () => {
       mockInvoke.mockResolvedValue(undefined);
 
-      await store.setOverride("toggle-diff", "Cmd+Y");
+      await store.setOverride("toggle-git-ops", "Cmd+Y");
       await store.resetAll();
 
       expect(mockInvoke).toHaveBeenLastCalledWith("save_keybindings", {
@@ -365,25 +364,25 @@ describe("keybindingsStore", () => {
 
   describe("isOverridden", () => {
     it("returns false for default bindings", () => {
-      expect(store.isOverridden("toggle-diff")).toBe(false);
+      expect(store.isOverridden("toggle-git-ops")).toBe(false);
     });
 
     it("returns true after setOverride", async () => {
       mockInvoke.mockResolvedValue(undefined);
-      await store.setOverride("toggle-diff", "Cmd+Y");
-      expect(store.isOverridden("toggle-diff")).toBe(true);
+      await store.setOverride("toggle-git-ops", "Cmd+Y");
+      expect(store.isOverridden("toggle-git-ops")).toBe(true);
     });
 
     it("returns true after hydrate with overrides", async () => {
       mockInvoke.mockImplementation((cmd: string) => {
         if (cmd === "load_keybindings") {
-          return Promise.resolve([{ action: "toggle-diff", key: "Cmd+Y" }]);
+          return Promise.resolve([{ action: "toggle-git-ops", key: "Cmd+Y" }]);
         }
         return Promise.resolve(undefined);
       });
 
       await store.hydrate();
-      expect(store.isOverridden("toggle-diff")).toBe(true);
+      expect(store.isOverridden("toggle-git-ops")).toBe(true);
     });
   });
 });

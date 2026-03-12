@@ -42,7 +42,6 @@ export interface ShortcutHandlers {
   lazygitAvailable: () => boolean;
   spawnLazygit: () => void;
   openLazygitPane: () => void;
-  toggleDiffPanel: () => void;
   toggleMarkdownPanel: () => void;
   toggleSidebar: () => void;
   togglePromptLibrary: () => void;
@@ -118,7 +117,6 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "edit-command": handlers.handleRunCommand(true); return true;
 
     // Panel toggles
-    case "toggle-diff": handlers.toggleDiffPanel(); return true;
     case "toggle-markdown": handlers.toggleMarkdownPanel(); return true;
     case "toggle-notes": handlers.toggleNotesPanel(); return true;
     case "toggle-file-browser": handlers.toggleFileBrowserPanel(); return true;

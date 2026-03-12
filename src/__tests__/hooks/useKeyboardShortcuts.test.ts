@@ -29,7 +29,6 @@ function createMockHandlers(): ShortcutHandlers {
     lazygitAvailable: vi.fn().mockReturnValue(true),
     spawnLazygit: vi.fn(),
     openLazygitPane: vi.fn(),
-    toggleDiffPanel: vi.fn(),
     toggleMarkdownPanel: vi.fn(),
     toggleSidebar: vi.fn(),
     togglePromptLibrary: vi.fn(),
@@ -167,9 +166,9 @@ describe("useKeyboardShortcuts", () => {
   });
 
   describe("panel toggles", () => {
-    it("Cmd+Shift+D toggles diff panel", () => {
+    it("Cmd+Shift+D toggles git panel", () => {
       fireKeydown("D", { metaKey: true, shiftKey: true });
-      expect(handlers.toggleDiffPanel).toHaveBeenCalled();
+      expect(handlers.toggleGitOpsPanel).toHaveBeenCalled();
     });
 
     it("Cmd+M toggles markdown panel", () => {
@@ -212,8 +211,8 @@ describe("useKeyboardShortcuts", () => {
       expect(handlers.toggleFileBrowserPanel).toHaveBeenCalled();
     });
 
-    it("Cmd+Shift+G toggles git ops panel", () => {
-      fireKeydown("G", { metaKey: true, shiftKey: true });
+    it("Cmd+Shift+D toggles git ops panel", () => {
+      fireKeydown("D", { metaKey: true, shiftKey: true });
       expect(handlers.toggleGitOpsPanel).toHaveBeenCalled();
     });
   });

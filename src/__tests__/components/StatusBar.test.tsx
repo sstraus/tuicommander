@@ -166,10 +166,10 @@ describe("StatusBar", () => {
     expect(mdBtn).not.toBeNull();
   });
 
-  it("renders Diff toggle button", () => {
+  it("renders Git toggle button", () => {
     const { container } = render(() => <StatusBar {...defaultProps} />);
-    const diffBtn = findToggleByTitle(container, "Diff");
-    expect(diffBtn).not.toBeNull();
+    const gitBtn = findToggleByTitle(container, "Git");
+    expect(gitBtn).not.toBeNull();
   });
 
   it("calls onToggleMarkdown when MD button clicked", () => {
@@ -182,13 +182,13 @@ describe("StatusBar", () => {
     expect(onToggleMarkdown).toHaveBeenCalledOnce();
   });
 
-  it("calls onToggleDiff when Diff button clicked", () => {
+  it("calls onToggleDiff when Git button clicked", () => {
     const onToggleDiff = vi.fn();
     const { container } = render(() => (
       <StatusBar {...defaultProps} onToggleDiff={onToggleDiff} />
     ));
-    const diffBtn = findToggleByTitle(container, "Diff")!;
-    fireEvent.click(diffBtn);
+    const gitBtn = findToggleByTitle(container, "Git")!;
+    fireEvent.click(gitBtn);
     expect(onToggleDiff).toHaveBeenCalledOnce();
   });
 

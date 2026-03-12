@@ -22,7 +22,6 @@ function createMockHandlers(): ShortcutHandlers {
     lazygitAvailable: vi.fn().mockReturnValue(true),
     spawnLazygit: vi.fn(),
     openLazygitPane: vi.fn(),
-    toggleDiffPanel: vi.fn(),
     toggleMarkdownPanel: vi.fn(),
     toggleSidebar: vi.fn(),
     togglePromptLibrary: vi.fn(),
@@ -66,7 +65,7 @@ describe("actionRegistry", () => {
     it("includes common actions", () => {
       const ids = entries.map((e) => e.id);
       expect(ids).toContain("new-terminal");
-      expect(ids).toContain("toggle-diff");
+      expect(ids).toContain("toggle-markdown");
       expect(ids).toContain("zoom-in");
       expect(ids).toContain("toggle-sidebar");
       expect(ids).toContain("command-palette");
@@ -84,7 +83,7 @@ describe("actionRegistry", () => {
       const terminalEntry = entries.find((e) => e.id === "new-terminal");
       expect(terminalEntry?.category).toBe("Terminal");
 
-      const panelEntry = entries.find((e) => e.id === "toggle-diff");
+      const panelEntry = entries.find((e) => e.id === "toggle-markdown");
       expect(panelEntry?.category).toBe("Panels");
 
       const gitEntry = entries.find((e) => e.id === "open-lazygit");

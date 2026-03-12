@@ -198,33 +198,6 @@ describe("uiStore", () => {
     });
   });
 
-  describe("diff panel", () => {
-    it("defaults to hidden", () => {
-      createRoot((dispose) => {
-        expect(store.state.diffPanelVisible).toBe(false);
-        dispose();
-      });
-    });
-
-    it("toggleDiffPanel toggles", () => {
-      createRoot((dispose) => {
-        store.toggleDiffPanel();
-        expect(store.state.diffPanelVisible).toBe(true);
-        store.toggleDiffPanel();
-        expect(store.state.diffPanelVisible).toBe(false);
-        dispose();
-      });
-    });
-
-    it("setDiffPanelVisible sets directly", () => {
-      createRoot((dispose) => {
-        store.setDiffPanelVisible(true);
-        expect(store.state.diffPanelVisible).toBe(true);
-        dispose();
-      });
-    });
-  });
-
   describe("markdown panel", () => {
     it("toggleMarkdownPanel toggles", () => {
       createRoot((dispose) => {
@@ -238,16 +211,6 @@ describe("uiStore", () => {
       createRoot((dispose) => {
         store.setMarkdownPanelVisible(true);
         expect(store.state.markdownPanelVisible).toBe(true);
-        dispose();
-      });
-    });
-  });
-
-  describe("diff repo", () => {
-    it("setCurrentDiffRepo sets repo path", () => {
-      createRoot((dispose) => {
-        store.setCurrentDiffRepo("/path/to/repo");
-        expect(store.state.currentDiffRepo).toBe("/path/to/repo");
         dispose();
       });
     });
@@ -301,21 +264,9 @@ describe("uiStore", () => {
   describe("panel widths", () => {
     it("defaults to expected widths", () => {
       createRoot((dispose) => {
-        expect(store.state.diffPanelWidth).toBe(400);
         expect(store.state.markdownPanelWidth).toBe(400);
         expect(store.state.notesPanelWidth).toBe(350);
         expect(store.state.settingsNavWidth).toBe(180);
-        dispose();
-      });
-    });
-
-    it("setDiffPanelWidth updates and persists", () => {
-      createRoot((dispose) => {
-        store.setDiffPanelWidth(500);
-        expect(store.state.diffPanelWidth).toBe(500);
-        expect(mockInvoke).toHaveBeenCalledWith("save_ui_prefs", {
-          config: expect.objectContaining({ diff_panel_width: 500 }),
-        });
         dispose();
       });
     });
@@ -368,7 +319,6 @@ describe("uiStore", () => {
       mockInvoke.mockResolvedValueOnce({
         sidebar_visible: true,
         sidebar_width: 300,
-        diff_panel_width: 500,
         markdown_panel_width: 450,
         notes_panel_width: 320,
         settings_nav_width: 200,
@@ -376,7 +326,6 @@ describe("uiStore", () => {
 
       await createRoot(async (dispose) => {
         await store.hydrate();
-        expect(store.state.diffPanelWidth).toBe(500);
         expect(store.state.markdownPanelWidth).toBe(450);
         expect(store.state.notesPanelWidth).toBe(320);
         expect(store.state.settingsNavWidth).toBe(200);
@@ -389,7 +338,6 @@ describe("uiStore", () => {
 
       await createRoot(async (dispose) => {
         await store.hydrate();
-        expect(store.state.diffPanelWidth).toBe(400);
         expect(store.state.markdownPanelWidth).toBe(400);
         expect(store.state.notesPanelWidth).toBe(350);
         expect(store.state.settingsNavWidth).toBe(180);
@@ -404,7 +352,6 @@ describe("uiStore", () => {
           config: expect.objectContaining({
             sidebar_visible: true,
             sidebar_width: 300,
-            diff_panel_width: 400,
             markdown_panel_width: 400,
             notes_panel_width: 350,
             settings_nav_width: 180,

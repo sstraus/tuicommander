@@ -2,7 +2,6 @@ import { Component } from "solid-js";
 import { FileBrowserPanel } from "./FileBrowserPanel";
 import { MarkdownPanel } from "./MarkdownPanel";
 import { NotesPanel } from "./NotesPanel";
-import { DiffPanel } from "./DiffPanel";
 import { PlanPanel } from "./PlanPanel/PlanPanel";
 import { GitPanel } from "./GitPanel/GitPanel";
 import { uiStore } from "../stores/ui";
@@ -40,12 +39,6 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
             requestAnimationFrame(() => active.ref?.focus());
           }
         }}
-      />
-
-      <DiffPanel
-        visible={uiStore.state.diffPanelVisible}
-        repoPath={props.repoPath}
-        onClose={() => uiStore.toggleDiffPanel()}
       />
 
       <PlanPanel

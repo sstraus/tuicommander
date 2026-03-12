@@ -39,7 +39,6 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "zoom-out": { label: "Zoom out", category: "Zoom" },
   "zoom-reset": { label: "Reset zoom", category: "Zoom" },
 
-  "toggle-diff": { label: "Toggle diff panel", category: "Panels" },
   "toggle-markdown": { label: "Toggle markdown panel", category: "Panels" },
   "toggle-settings": { label: "Open settings", category: "Panels" },
   "toggle-task-queue": { label: "Toggle task queue", category: "Panels" },
@@ -90,7 +89,6 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "zoom-in": handlers.zoomIn,
     "zoom-out": handlers.zoomOut,
     "zoom-reset": handlers.zoomReset,
-    "toggle-diff": handlers.toggleDiffPanel,
     "toggle-markdown": handlers.toggleMarkdownPanel,
     "toggle-settings": handlers.toggleSettings,
     "toggle-task-queue": handlers.toggleTaskQueue,

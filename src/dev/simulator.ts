@@ -202,7 +202,7 @@ const simulator = {
   panel(name: "diff" | "markdown" | "files" | "notes"): void {
     switch (name) {
       case "diff":
-        uiStore.toggleDiffPanel();
+        uiStore.toggleGitPanel();
         break;
       case "markdown":
         uiStore.toggleMarkdownPanel();

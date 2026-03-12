@@ -857,7 +857,6 @@ const App: Component = () => {
     lazygitAvailable: lazygit.lazygitAvailable,
     spawnLazygit: lazygit.spawnLazygit,
     openLazygitPane: lazygit.openLazygitPane,
-    toggleDiffPanel: uiStore.toggleDiffPanel,
     toggleMarkdownPanel: uiStore.toggleMarkdownPanel,
     toggleSidebar: uiStore.toggleSidebar,
     togglePromptLibrary: promptLibraryStore.toggleDrawer,
@@ -1051,7 +1050,7 @@ const App: Component = () => {
         case "zoom-in": terminalLifecycle.zoomIn(); break;
         case "zoom-out": terminalLifecycle.zoomOut(); break;
         case "zoom-reset": terminalLifecycle.zoomReset(); break;
-        case "diff-panel": uiStore.toggleDiffPanel(); break;
+        case "diff-panel": uiStore.toggleGitPanel(); break;
         case "markdown-panel": uiStore.toggleMarkdownPanel(); break;
         case "notes-panel": uiStore.toggleNotesPanel(); break;
         case "file-browser": uiStore.toggleFileBrowserPanel(); break;
@@ -1261,7 +1260,7 @@ const App: Component = () => {
           fontSize={terminalLifecycle.activeFontSize()}
           defaultFontSize={getDefaultFontSize()}
           statusInfo={statusInfo()}
-          onToggleDiff={() => uiStore.toggleDiffPanel()}
+          onToggleDiff={() => uiStore.toggleGitPanel()}
           onToggleMarkdown={() => uiStore.toggleMarkdownPanel()}
           onToggleNotes={() => uiStore.toggleNotesPanel()}
           onToggleFileBrowser={() => uiStore.toggleFileBrowserPanel()}

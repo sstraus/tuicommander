@@ -58,7 +58,6 @@ function getShortcutSections(): ShortcutSection[] {
   {
     title: t("helpPanel.panels", "Panels"),
     shortcuts: [
-      { action: "toggle-diff", keys: keyFor("toggle-diff"), description: t("helpPanel.toggleDiffPanel", "Toggle git diff panel") },
       { action: "toggle-markdown", keys: keyFor("toggle-markdown"), description: t("helpPanel.toggleMarkdownPanel", "Toggle markdown panel") },
       { action: "toggle-settings", keys: keyFor("toggle-settings"), description: t("helpPanel.openSettings", "Open settings") },
       { action: "toggle-task-queue", keys: keyFor("toggle-task-queue"), description: t("helpPanel.toggleTaskQueue", "Toggle task queue") },
