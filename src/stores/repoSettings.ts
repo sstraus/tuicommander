@@ -93,9 +93,27 @@ const OVERRIDABLE_NULL_DEFAULTS: Pick<
   autoDeleteOnPrClose: null,
 };
 
+/** Repo-local config loaded from .tuic.json (team-shareable, snake_case from Rust) */
+interface RepoLocalConfig {
+  base_branch?: string;
+  copy_ignored_files?: boolean;
+  copy_untracked_files?: boolean;
+  setup_script?: string;
+  run_script?: string;
+  archive_script?: string;
+  worktree_storage?: WorktreeStorage;
+  delete_branch_on_remove?: boolean;
+  auto_archive_merged?: boolean;
+  orphan_cleanup?: OrphanCleanup;
+  pr_merge_strategy?: MergeStrategy;
+  after_merge?: WorktreeAfterMerge;
+  auto_delete_on_pr_close?: AutoDeleteOnPrClose;
+}
+
 /** Repository settings store state */
 interface RepoSettingsState {
   settings: Record<string, RepoSettings>;
+  localConfigs: Record<string, RepoLocalConfig | null>;
   activeRepoPath: string | null;
 }
 
@@ -112,6 +130,7 @@ function saveSettings(settings: Record<string, RepoSettings>): void {
 function createRepoSettingsStore() {
   const [state, setState] = createStore<RepoSettingsState>({
     settings: {},
+    localConfigs: {},
     activeRepoPath: null,
   });
 
@@ -162,32 +181,44 @@ function createRepoSettingsStore() {
       return newSettings;
     },
 
-    /** Get fully resolved settings, merging global defaults with per-repo overrides */
+    /** Load .tuic.json for a repository and cache the result */
+    async loadLocalConfig(path: string): Promise<void> {
+      try {
+        const config = await invoke<RepoLocalConfig | null>("load_repo_local_config", { repoPath: path });
+        setState("localConfigs", path, config ?? null);
+      } catch (err) {
+        appLogger.debug("config", "Failed to load .tuic.json", { path, err });
+        setState("localConfigs", path, null);
+      }
+    },
+
+    /** Get fully resolved settings: per-repo > .tuic.json > global defaults */
     getEffective(path: string): EffectiveRepoSettings | undefined {
       const settings = state.settings[path];
       if (!settings) return undefined;
 
+      const local = state.localConfigs[path];
       const defaults = repoDefaultsStore.state;
       return {
         path: settings.path,
         displayName: settings.displayName,
         color: settings.color,
-        baseBranch: settings.baseBranch ?? defaults.baseBranch,
-        copyIgnoredFiles: settings.copyIgnoredFiles ?? defaults.copyIgnoredFiles,
-        copyUntrackedFiles: settings.copyUntrackedFiles ?? defaults.copyUntrackedFiles,
-        setupScript: settings.setupScript ?? defaults.setupScript,
-        runScript: settings.runScript ?? defaults.runScript,
-        archiveScript: settings.archiveScript ?? defaults.archiveScript,
+        baseBranch: settings.baseBranch ?? local?.base_branch ?? defaults.baseBranch,
+        copyIgnoredFiles: settings.copyIgnoredFiles ?? local?.copy_ignored_files ?? defaults.copyIgnoredFiles,
+        copyUntrackedFiles: settings.copyUntrackedFiles ?? local?.copy_untracked_files ?? defaults.copyUntrackedFiles,
+        setupScript: settings.setupScript ?? local?.setup_script ?? defaults.setupScript,
+        runScript: settings.runScript ?? local?.run_script ?? defaults.runScript,
+        archiveScript: settings.archiveScript ?? local?.archive_script ?? defaults.archiveScript,
         terminalMetaHotkeys: settings.terminalMetaHotkeys ?? true,
-        worktreeStorage: settings.worktreeStorage ?? defaults.worktreeStorage,
+        worktreeStorage: settings.worktreeStorage ?? local?.worktree_storage ?? defaults.worktreeStorage,
         promptOnCreate: settings.promptOnCreate ?? defaults.promptOnCreate,
-        deleteBranchOnRemove: settings.deleteBranchOnRemove ?? defaults.deleteBranchOnRemove,
-        autoArchiveMerged: settings.autoArchiveMerged ?? defaults.autoArchiveMerged,
-        orphanCleanup: settings.orphanCleanup ?? defaults.orphanCleanup,
-        prMergeStrategy: settings.prMergeStrategy ?? defaults.prMergeStrategy,
-        afterMerge: settings.afterMerge ?? defaults.afterMerge,
+        deleteBranchOnRemove: settings.deleteBranchOnRemove ?? local?.delete_branch_on_remove ?? defaults.deleteBranchOnRemove,
+        autoArchiveMerged: settings.autoArchiveMerged ?? local?.auto_archive_merged ?? defaults.autoArchiveMerged,
+        orphanCleanup: settings.orphanCleanup ?? local?.orphan_cleanup ?? defaults.orphanCleanup,
+        prMergeStrategy: settings.prMergeStrategy ?? local?.pr_merge_strategy ?? defaults.prMergeStrategy,
+        afterMerge: settings.afterMerge ?? local?.after_merge ?? defaults.afterMerge,
         autoFetchIntervalMinutes: settings.autoFetchIntervalMinutes ?? defaults.autoFetchIntervalMinutes,
-        autoDeleteOnPrClose: settings.autoDeleteOnPrClose ?? defaults.autoDeleteOnPrClose,
+        autoDeleteOnPrClose: settings.autoDeleteOnPrClose ?? local?.auto_delete_on_pr_close ?? defaults.autoDeleteOnPrClose,
       };
     },
 

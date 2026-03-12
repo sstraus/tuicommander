@@ -4,6 +4,7 @@ import { settingsStore } from "../stores/settings";
 import { githubStore } from "../stores/github";
 import { appLogger } from "../stores/appLogger";
 import { activityStore } from "../stores/activityStore";
+import { repoSettingsStore } from "../stores/repoSettings";
 import { invoke, listen } from "../invoke";
 import { isTauri } from "../transport";
 import type { SavedTerminal } from "../types";
@@ -159,6 +160,11 @@ export async function initApp(deps: AppInitDeps) {
     deps.setStatusInfo("Warning: 1 store(s) failed to load");
   }
 
+  // Load .tuic.json local configs for all repos (fire-and-forget, non-blocking)
+  for (const repoPath of repositoriesStore.getPaths()) {
+    repoSettingsStore.loadLocalConfig(repoPath).catch(() => {});
+  }
+
   // Recover log entries from Rust backend (survives webview reloads)
   appLogger.hydrateFromRust().catch(() => {});
 
@@ -233,6 +239,8 @@ export async function initApp(deps: AppInitDeps) {
     );
     // Bump revision counter — panels tracking this signal will re-fetch
     repositoriesStore.bumpRevision(repo_path);
+    // Reload .tuic.json (may have changed)
+    repoSettingsStore.loadLocalConfig(repo_path).catch(() => {});
     // Trigger immediate PR refresh (debounced 2s to coalesce rapid git events)
     githubStore.pollRepo(repo_path);
     // Discover external worktree changes (debounced 500ms to coalesce rapid events)
