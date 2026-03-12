@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "crates/tuic-bridge"]
+
 [package]
 name = "tuicommander"
 version = "0.8.2"
@@ -55,6 +58,7 @@ tauri-plugin-process = "2"
 tauri-plugin-deep-link = "2"
 zip = "8"
 glob = "0.3"
+ignore = "0.4"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 url = "2"
 chrono = { version = "0.4", features = ["serde"] }
@@ -79,8 +83,4 @@ tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 serial_test = "3"
 mockito = "1"
-
-[[bin]]
-name = "tuic-bridge"
-path = "src/bin/tuic_bridge.rs"
 

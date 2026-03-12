@@ -277,7 +277,7 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
 
 /// Recursively search files in a repository matching a glob-like query.
 /// Returns up to `limit` results (default 200) to avoid blowing up on huge repos.
-/// Respects .gitignore by checking `git check-ignore`.
+/// Respects .gitignore natively via the `ignore` crate (no subprocess).
 #[tauri::command]
 pub fn search_files(
     repo_path: String,
@@ -292,17 +292,73 @@ pub fn search_files(
     let max_results = limit.unwrap_or(200);
     let pattern = build_search_pattern(&query);
 
-    // Get all git statuses for the whole repo
-    let git_statuses = parse_git_status(&repo_path, ".");
-
     let mut results = Vec::new();
-    walk_directory(&canonical_repo, &canonical_repo, &pattern, &git_statuses, &mut results, max_results);
 
-    // Detect gitignored paths
-    let all_relative_paths: Vec<String> = results.iter().map(|e| e.path.clone()).collect();
-    let ignored_set = get_ignored_paths(&repo_path, &all_relative_paths);
-    for entry in &mut results {
-        entry.is_ignored = ignored_set.contains(&entry.path);
+    // Walk using the `ignore` crate: respects .gitignore, .git/info/exclude,
+    // global gitignore — skips ignored directories entirely during traversal.
+    let walker = ignore::WalkBuilder::new(&canonical_repo)
+        .hidden(false) // show dotfiles (except .git which is always skipped)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .build();
+
+    for entry in walker {
+        if results.len() >= max_results {
+            break;
+        }
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let is_file = entry.file_type().map_or(false, |ft| ft.is_file());
+        if !is_file {
+            continue;
+        }
+
+        let relative = match entry.path().strip_prefix(&canonical_repo) {
+            Ok(p) => p.to_string_lossy().replace('\\', "/"),
+            Err(_) => continue,
+        };
+
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        // Match against file name or relative path
+        if !pattern.is_match(&name) && !pattern.is_match(&relative) {
+            continue;
+        }
+
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+
+        let modified_at = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_secs());
+
+        results.push(DirEntry {
+            name,
+            path: relative,
+            is_dir: false,
+            size: metadata.len(),
+            modified_at,
+            git_status: String::new(), // populated below
+            is_ignored: false, // walker already filtered gitignored entries
+        });
+    }
+
+    // Get git statuses only for matched results (not the whole repo)
+    if !results.is_empty() {
+        let git_statuses = parse_git_status(&repo_path, ".");
+        for entry in &mut results {
+            if let Some(status) = git_statuses.get(&entry.path) {
+                entry.git_status = status.clone();
+            }
+        }
     }
 
     // Sort by path for predictable results
@@ -855,6 +911,62 @@ mod tests {
         for entry in &entries {
             assert!(entry.modified_at > 0, "modified_at should be non-zero for {}", entry.name);
         }
+    }
+
+    // --- search_files tests ---
+
+    #[test]
+    fn test_search_files_basic() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        let results = search_files(repo_path, "lib".to_string(), None).unwrap();
+        assert!(
+            results.iter().any(|e| e.name == "lib.rs"),
+            "Should find lib.rs matching 'lib', got: {:?}",
+            results.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        // All results should have forward-slash paths
+        for entry in &results {
+            assert!(!entry.path.contains('\\'), "Path should use / not \\: {}", entry.path);
+        }
+    }
+
+    #[test]
+    fn test_search_files_respects_gitignore() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // Create an ignored directory with files
+        fs::create_dir(dir.path().join("build_output")).unwrap();
+        fs::write(dir.path().join("build_output/artifact.rs"), "// build").unwrap();
+        fs::write(dir.path().join(".gitignore"), "build_output/\n").unwrap();
+
+        let results = search_files(repo_path, "artifact".to_string(), None).unwrap();
+        assert!(
+            results.iter().all(|e| !e.path.contains("build_output")),
+            "Should NOT find files inside gitignored directory, got: {:?}",
+            results.iter().map(|e| &e.path).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_search_files_limit() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // Create many files
+        fs::create_dir(dir.path().join("many")).unwrap();
+        for i in 0..20 {
+            fs::write(dir.path().join(format!("many/file_{i}.txt")), "content").unwrap();
+        }
+
+        let results = search_files(repo_path, "file_".to_string(), Some(5)).unwrap();
+        assert!(
+            results.len() <= 5,
+            "Should respect limit of 5, got {}",
+            results.len()
+        );
     }
 
     // --- strip_line_col_suffix tests ---
