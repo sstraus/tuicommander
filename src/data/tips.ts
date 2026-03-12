@@ -115,9 +115,19 @@ export const TIPS: Tip[] = [
     shortcut: `${mod}+G`,
   },
   {
-    feature: "Git Operations Panel",
-    description: "Pull, push, fetch, switch branches, create branches, and manage stash — all without leaving the panel. Background execution with inline feedback.",
+    feature: "Git Panel",
+    description: "Stage, commit, browse history, and view blame — all in a tabbed side panel with five tabs.",
     shortcut: `${mod}+Shift+G`,
+  },
+  {
+    feature: "Commit Graph",
+    description: "The Log tab in the Git Panel shows a visual commit graph with color-coded lanes and branch connections.",
+    shortcut: null,
+  },
+  {
+    feature: "Blame Heatmap",
+    description: "The Blame tab shows an age heatmap — recent changes are highlighted in green, older changes fade to neutral.",
+    shortcut: null,
   },
   {
     feature: "Tab Switching",

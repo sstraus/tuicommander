@@ -234,19 +234,42 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Shows app info and links (About, GitHub, docs)
 - Keyboard shortcuts are now in Settings > Keyboard Shortcuts tab (auto-generated from `actionRegistry.ts`)
 
-### 3.8 Git Operations Panel (`Cmd+Shift+G`)
-- 400px side panel with rich status card (branch, ahead/behind, staged/changed/stash counts, last commit)
-- Detached HEAD detection and display
-- Sync operations: Pull, Push, Fetch (background execution via `run_git_command`)
-- Branch operations: Switch, Merge (searchable BranchCombobox replaces native select)
-- Create Branch: inline form with name validation, Create and Create & Switch buttons
-- Stash operations: Stash, Pop with inline stash count
-- Conflict resolution: Merge/Rebase/Cherry-pick in-progress sections with Abort/Continue/Skip
-- Inline feedback bar: success (green, auto-dismiss) / error (red, persists)
-- Spinner on active operation button, all buttons disabled during execution
-- Keyboard: Escape to close, Tab navigation, autofocus on open
-- All icons are monochrome inline SVGs (no Unicode)
-- Single IPC round-trip via `get_git_panel_context`
+### 3.8 Git Panel (`Cmd+Shift+G`)
+Tabbed side panel with five tabs: Changes, Log, Stashes, History, Blame. Replaces the former Git Operations Panel floating overlay.
+
+**Changes tab:**
+- Porcelain v2 working tree status via `get_working_tree_status` (branch, upstream, ahead/behind, stash count, staged/unstaged/untracked files)
+- Sync row: Pull, Push, Fetch buttons (background execution via `run_git_command`)
+- Stage / unstage individual files or stage all / unstage all
+- Discard unstaged changes (with confirmation dialog)
+- Inline commit form with message input and Amend toggle
+- Click a file row to open its diff in the diff panel
+- Status icons per file: Modified, Added, Deleted, Renamed, Untracked
+- Path-traversal validation on all stage/unstage/discard operations
+
+**Log tab:**
+- Paginated commit log via `get_commit_log` (default 50, max 500)
+- Virtual scroll via `@tanstack/solid-virtual` for large histories
+- Canvas-based commit graph via `get_commit_graph`: lane assignment, Bezier curve connections, 8-color palette, ref badges (branch, tag, HEAD)
+- Click a commit row to expand and see its changed files (via `get_changed_files`)
+- Relative timestamps (e.g., "3h ago")
+
+**Stashes tab:**
+- List all stash entries via `get_stash_list`
+- Per-stash actions: Apply, Pop, Drop (via `run_git_command`)
+
+**History tab:**
+- Per-file commit history via `get_file_history` (follows renames)
+- Paginated, same virtual scroll pattern as Log tab
+
+**Blame tab:**
+- Per-line blame via `get_file_blame` (porcelain format)
+- Age heatmap: recent changes highlighted in green, older changes fade toward neutral
+- Commit metadata per line: author, timestamp, hash
+
+**Keyboard navigation:**
+- `Escape` to close the panel
+- `Ctrl/Cmd+1–5` to switch between tabs
 - Auto-refreshes via repo revision subscription
 
 ### 3.9 Quick Branch Switch (`Cmd+B`)
