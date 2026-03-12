@@ -1,0 +1,15 @@
+[package]
+name = "tuic-bridge"
+version = "0.8.2"
+description = "MCP stdio-to-IPC bridge sidecar for TUICommander"
+authors = ["Stefano Straus <github.com/sstraus>"]
+edition = "2024"
+
+[[bin]]
+name = "tuic-bridge"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "net", "io-util", "sync", "time", "macros"] }
+dirs = "6"

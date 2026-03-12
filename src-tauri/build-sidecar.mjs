@@ -18,8 +18,8 @@ const binDir = join(root, "src-tauri", "binaries");
 // Touch placeholder so Tauri's build.rs finds it at compile time
 writeFileSync(join(binDir, sidecarName), "");
 
-// Build the release binary
-execSync("cargo build --release --bin tuic-bridge", {
+// Build the release binary from the standalone sub-crate
+execSync("cargo build --release --package tuic-bridge", {
   cwd: join(root, "src-tauri"),
   stdio: "inherit",
 });
