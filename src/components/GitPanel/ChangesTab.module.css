@@ -197,6 +197,7 @@
 
 /* File entries */
 .fileEntry {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -277,13 +278,14 @@
   color: var(--fg-primary);
 }
 
-/* Diff stats (+N -M) */
+/* Diff stats (+N -M) — hidden when action buttons show */
 .diffStats {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
   font-size: var(--font-2xs);
   font-family: var(--font-mono);
+  transition: opacity 0.15s ease;
 }
 
 .diffAdd {
@@ -294,17 +296,26 @@
   color: var(--error);
 }
 
-/* Action buttons (visible on hover) */
+/* Action buttons — overlay on hover, replacing diff stats */
 .actions {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   gap: 2px;
-  flex-shrink: 0;
   opacity: 0;
   transition: opacity 0.15s ease;
+  background: inherit;
+  padding-left: 4px;
 }
 
 .fileEntry:hover .actions {
   opacity: 1;
+}
+
+.fileEntry:hover .diffStats {
+  opacity: 0;
 }
 
 .actionBtn {
