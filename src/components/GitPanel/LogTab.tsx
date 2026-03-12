@@ -95,15 +95,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
   const [viewportHeight, setViewportHeight] = createSignal(0);
   const [focusedIndex, setFocusedIndex] = createSignal(-1);
 
-  // Plain ref for the virtualizer (needs synchronous access during JSX creation).
-  // Signal for reactive effects (ResizeObserver, scroll sync) that must re-run
-  // when <Show> conditionally mounts the scroll container.
-  let scrollEl: HTMLDivElement | undefined;
-  const [scrollMounted, setScrollMounted] = createSignal(false);
-  function assignScrollRef(el: HTMLDivElement) {
-    scrollEl = el;
-    setScrollMounted(true);
-  }
+  let scrollRef!: HTMLDivElement;
 
   const PAGE_SIZE = 50;
 
@@ -221,16 +213,14 @@ export const LogTab: Component<LogTabProps> = (props) => {
 
   const virtualizer = createVirtualizer({
     get count() { return commits().length; },
-    getScrollElement: () => scrollEl ?? null,
+    getScrollElement: () => scrollRef,
     estimateSize,
     overscan: 5,
   });
 
   // Sync scroll position and viewport size for the graph canvas.
-  // Depends on scrollMounted() signal to re-run when <Show> mounts the div.
   createEffect(() => {
-    if (!scrollMounted()) return;
-    const el = scrollEl;
+    const el = scrollRef;
     if (!el) return;
 
     setViewportHeight(el.clientHeight);
@@ -288,104 +278,109 @@ export const LogTab: Component<LogTabProps> = (props) => {
 
   return (
     <div class={s.container} onKeyDown={handleListKeyDown} tabIndex={-1}>
-      <Show when={!loading()} fallback={<div class={s.empty}>Loading commits...</div>}>
-        <Show when={commits().length > 0} fallback={<div class={s.empty}>No commits</div>}>
-          <div ref={assignScrollRef} class={s.scrollContainer}>
-            <CommitGraph
-              nodes={graphNodes()}
-              scrollTop={scrollTop()}
-              viewportHeight={viewportHeight()}
-              totalHeight={virtualizer.getTotalSize()}
-            />
-            <div class={s.virtualList} style={{ height: `${virtualizer.getTotalSize()}px` }}>
-              <For each={virtualizer.getVirtualItems()}>
-                {(virtualItem) => {
-                  const commit = () => commits()[virtualItem.index];
-                  const isExpanded = () => expandedHash() === commit()?.hash;
-                  const files = () => commit() ? changedFiles()[commit()!.hash] : undefined;
-                  const isFilesLoading = () => commit() ? filesLoading()[commit()!.hash] : false;
-
-                  const isFocused = () => focusedIndex() === virtualItem.index;
-
-                  return (
-                    <div
-                      class={cx(s.commitRow, isExpanded() && s.commitRowExpanded, isFocused() && s.commitRowFocused)}
-                      style={{
-                        position: "absolute",
-                        top: `${virtualItem.start}px`,
-                        height: `${virtualItem.size}px`,
-                        width: "100%",
-                        "padding-left": graphPad() > 0 ? `${graphPad() + 12}px` : undefined,
-                      }}
-                      onClick={() => {
-                        setFocusedIndex(virtualItem.index);
-                        commit() && toggleExpand(commit()!.hash);
-                      }}
-                    >
-                      {/* Line 1: dot (only without graph) + hash + subject */}
-                      <div class={s.commitLine1}>
-                        <Show when={graphNodes().length === 0}>
-                          <span class={s.commitDot} />
-                        </Show>
-                        <span class={s.commitHash}>{commit()?.hash.slice(0, 7)}</span>
-                        <span class={s.commitSubject}>{commit()?.subject}</span>
-                      </div>
-                      {/* Line 2: author + time + ref badges */}
-                      <div class={s.commitLine2}>
-                        <span class={s.commitMeta}>
-                          {commit()?.author_name} · {commit() ? relativeTime(commit()!.author_date) : ""}
-                        </span>
-                        <For each={commit()?.refs ?? []}>
-                          {(ref) => {
-                            const kind = classifyRef(ref);
-                            return (
-                              <span class={cx(s.refBadge, REF_CLASS[kind])}>
-                                {displayRef(ref)}
-                              </span>
-                            );
-                          }}
-                        </For>
-                      </div>
-                      {/* Expanded: changed files list */}
-                      <Show when={isExpanded()}>
-                        <div class={s.changedFiles}>
-                          <Show when={!isFilesLoading()} fallback={<div class={s.filesLoading}>Loading files...</div>}>
-                            <For each={files() ?? []}>
-                              {(file) => (
-                                <div class={s.changedFile}>
-                                  <span class={cx(s.fileStatus, FILE_STATUS_CLASS[file.status] ?? s.statusOther)}>
-                                    {file.status}
-                                  </span>
-                                  <span class={s.filePath}>{file.path}</span>
-                                </div>
-                              )}
-                            </For>
-                            <Show when={files()?.length === 0}>
-                              <div class={s.filesLoading}>No changed files</div>
-                            </Show>
-                          </Show>
-                        </div>
-                      </Show>
-                    </div>
-                  );
-                }}
-              </For>
-            </div>
-            {/* Load more button */}
-            <Show when={hasMore() && commits().length > 0}>
-              <div class={s.loadMore}>
-                <button
-                  class={s.loadMoreBtn}
-                  onClick={(e) => { e.stopPropagation(); loadMore(); }}
-                  disabled={loadingMore()}
-                >
-                  {loadingMore() ? "Loading..." : "Load more"}
-                </button>
-              </div>
-            </Show>
-          </div>
+      {/* Always-mounted scroll container so virtualizer has a valid ref */}
+      <div ref={scrollRef!} class={s.scrollContainer}>
+        <Show when={loading()}>
+          <div class={s.empty}>Loading commits...</div>
         </Show>
-      </Show>
+        <Show when={!loading() && commits().length === 0}>
+          <div class={s.empty}>No commits</div>
+        </Show>
+        <Show when={!loading() && commits().length > 0}>
+          <CommitGraph
+            nodes={graphNodes()}
+            scrollTop={scrollTop()}
+            viewportHeight={viewportHeight()}
+            totalHeight={virtualizer.getTotalSize()}
+          />
+          <div class={s.virtualList} style={{ height: `${virtualizer.getTotalSize()}px` }}>
+            <For each={virtualizer.getVirtualItems()}>
+              {(virtualItem) => {
+                const commit = () => commits()[virtualItem.index];
+                const isExpanded = () => expandedHash() === commit()?.hash;
+                const files = () => commit() ? changedFiles()[commit()!.hash] : undefined;
+                const isFilesLoading = () => commit() ? filesLoading()[commit()!.hash] : false;
+
+                const isFocused = () => focusedIndex() === virtualItem.index;
+
+                return (
+                  <div
+                    class={cx(s.commitRow, isExpanded() && s.commitRowExpanded, isFocused() && s.commitRowFocused)}
+                    style={{
+                      position: "absolute",
+                      top: `${virtualItem.start}px`,
+                      height: `${virtualItem.size}px`,
+                      width: "100%",
+                      "padding-left": graphPad() > 0 ? `${graphPad() + 12}px` : undefined,
+                    }}
+                    onClick={() => {
+                      setFocusedIndex(virtualItem.index);
+                      commit() && toggleExpand(commit()!.hash);
+                    }}
+                  >
+                    {/* Line 1: dot (only without graph) + hash + subject */}
+                    <div class={s.commitLine1}>
+                      <Show when={graphNodes().length === 0}>
+                        <span class={s.commitDot} />
+                      </Show>
+                      <span class={s.commitHash}>{commit()?.hash.slice(0, 7)}</span>
+                      <span class={s.commitSubject}>{commit()?.subject}</span>
+                    </div>
+                    {/* Line 2: author + time + ref badges */}
+                    <div class={s.commitLine2}>
+                      <span class={s.commitMeta}>
+                        {commit()?.author_name} · {commit() ? relativeTime(commit()!.author_date) : ""}
+                      </span>
+                      <For each={commit()?.refs ?? []}>
+                        {(ref) => {
+                          const kind = classifyRef(ref);
+                          return (
+                            <span class={cx(s.refBadge, REF_CLASS[kind])}>
+                              {displayRef(ref)}
+                            </span>
+                          );
+                        }}
+                      </For>
+                    </div>
+                    {/* Expanded: changed files list */}
+                    <Show when={isExpanded()}>
+                      <div class={s.changedFiles}>
+                        <Show when={!isFilesLoading()} fallback={<div class={s.filesLoading}>Loading files...</div>}>
+                          <For each={files() ?? []}>
+                            {(file) => (
+                              <div class={s.changedFile}>
+                                <span class={cx(s.fileStatus, FILE_STATUS_CLASS[file.status] ?? s.statusOther)}>
+                                  {file.status}
+                                </span>
+                                <span class={s.filePath}>{file.path}</span>
+                              </div>
+                            )}
+                          </For>
+                          <Show when={files()?.length === 0}>
+                            <div class={s.filesLoading}>No changed files</div>
+                          </Show>
+                        </Show>
+                      </div>
+                    </Show>
+                  </div>
+                );
+              }}
+            </For>
+          </div>
+          {/* Load more button */}
+          <Show when={hasMore()}>
+            <div class={s.loadMore}>
+              <button
+                class={s.loadMoreBtn}
+                onClick={(e) => { e.stopPropagation(); loadMore(); }}
+                disabled={loadingMore()}
+              >
+                {loadingMore() ? "Loading..." : "Load more"}
+              </button>
+            </div>
+          </Show>
+        </Show>
+      </div>
     </div>
   );
 };
