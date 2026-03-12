@@ -226,6 +226,17 @@ export const GeneralTab: Component = () => {
         <p class={s.hint}>{t("general.hint.defaultRunScript", "Shell script run when launching the worktree")}</p>
       </div>
 
+      <div class={s.group}>
+        <label>{t("general.label.defaultArchiveScript", "Default Archive Script")}</label>
+        <textarea
+          value={repoDefaultsStore.state.archiveScript}
+          onInput={(e) => repoDefaultsStore.setArchiveScript(e.currentTarget.value)}
+          placeholder="#!/bin/bash&#10;docker compose down"
+          rows={4}
+        />
+        <p class={s.hint}>{t("general.hint.defaultArchiveScript", "Shell script run before archiving or deleting a worktree")}</p>
+      </div>
+
       <h3>{t("general.heading.worktreeDefaults", "Worktree Defaults")}</h3>
       <p class={s.hint} style={{ "margin-bottom": "12px" }}>
         {t("general.hint.worktreeDefaults", "Default worktree behavior for all repositories")}

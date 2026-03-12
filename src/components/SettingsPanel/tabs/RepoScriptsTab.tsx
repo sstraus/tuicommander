@@ -14,6 +14,11 @@ export const RepoScriptsTab: Component<RepoTabProps> = (props) => {
       ? `${t("repoScripts.placeholder.inheriting", "Inheriting:")} ${props.defaults.runScript}`
       : "#!/bin/bash\nnpm run dev";
 
+  const archivePlaceholder = () =>
+    props.settings.archiveScript === null && props.defaults.archiveScript
+      ? `${t("repoScripts.placeholder.inheriting", "Inheriting:")} ${props.defaults.archiveScript}`
+      : "#!/bin/bash\ndocker compose down";
+
   return (
     <div class={s.section}>
       <h3>{t("repoScripts.heading.automationScripts", "Automation Scripts")}</h3>
@@ -49,6 +54,23 @@ export const RepoScriptsTab: Component<RepoTabProps> = (props) => {
         <p class={s.hint}>
           {t("repoScripts.hint.runScript", "Shell script run when launching the worktree.")}
           {props.settings.runScript === null ? ` ${t("repoScripts.hint.useGlobalDefault", "Using global default.")}` : ""}
+        </p>
+      </div>
+
+      <div class={s.group}>
+        <label>{t("repoScripts.label.archiveScript", "Archive Script")}</label>
+        <textarea
+          value={props.settings.archiveScript ?? ""}
+          onInput={(e) => {
+            const val = e.currentTarget.value;
+            props.onUpdate("archiveScript", val === "" ? null : val);
+          }}
+          placeholder={archivePlaceholder()}
+          rows={6}
+        />
+        <p class={s.hint}>
+          {t("repoScripts.hint.archiveScript", "Shell script run before archiving or deleting a worktree.")}
+          {props.settings.archiveScript === null ? ` ${t("repoScripts.hint.useGlobalDefault", "Using global default.")}` : ""}
         </p>
       </div>
     </div>

@@ -217,7 +217,13 @@ createEffect(() => {
 
 ## Architecture Rule: Logic in Rust
 
-**All business logic, data transformation, and parsing MUST be implemented in Rust (backend), NOT in the UI layer (TypeScript/SolidJS stores or components).** The frontend should only handle rendering and user interaction — never data reshaping or computation.
+**All business logic, data transformation, parsing, and script execution MUST be implemented in Rust (backend), NOT in the UI layer (TypeScript/SolidJS stores or components).** The frontend handles ONLY rendering and user interaction — never data reshaping, computation, or process orchestration.
+
+Concrete examples:
+- Script execution (setup, run, archive hooks) → Rust runs `sh -c` / `cmd /C`
+- Config merging / effective-settings resolution → Rust when possible
+- Git operations, file I/O, process spawning → always Rust
+- Frontend passes inputs to Tauri commands; Rust decides and acts
 
 ## Debugging: App Log Access
 

@@ -87,6 +87,7 @@ describe("SettingsPanel — repo context", () => {
       copyUntrackedFiles: false,
       setupScript: "",
       runScript: "",
+      archiveScript: "",
       color: "",
       terminalMetaHotkeys: null,
       worktreeStorage: null,
