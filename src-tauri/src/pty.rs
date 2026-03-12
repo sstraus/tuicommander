@@ -470,14 +470,12 @@ fn spawn_silence_timer(
 
             // Backup idle check: when no chunks arrive at all (agent truly silent),
             // the reader thread never gets a chance to emit idle. The timer catches this.
-            if let Some(atom) = state.shell_states.get(&session_id) {
-                if atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
-                    && should_transition_idle(&state, &session_id)
-                {
-                    if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
-                        emit_shell_state(&state, app.as_ref(), &session_id, "idle");
-                    }
-                }
+            if let Some(atom) = state.shell_states.get(&session_id)
+                && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
+                && should_transition_idle(&state, &session_id)
+                && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE)
+            {
+                emit_shell_state(&state, app.as_ref(), &session_id, "idle");
             }
 
             // Check temporal conditions first (shared by both strategies).
@@ -759,42 +757,36 @@ pub(crate) fn spawn_reader_thread(
                         // Stamp last_output_ms only for real output (not chrome-only ticks).
                         // This drives both the event-based shellState (reader + timer)
                         // and the timestamp-based derive_shell_state (HTTP/REST consumers).
-                        if !chrome_only {
-                            if let Some(ts) = state.last_output_ms.get(&session_id) {
-                                let now = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_millis() as u64;
-                                ts.store(now, std::sync::atomic::Ordering::Relaxed);
-                            }
+                        if !chrome_only
+                            && let Some(ts) = state.last_output_ms.get(&session_id)
+                        {
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
+                            ts.store(now, std::sync::atomic::Ordering::Relaxed);
                         }
 
                         // Shell state transitions (Rust is the single source of truth).
                         if !chrome_only {
                             // Real output: transition to busy (unless in resize grace).
-                            let in_grace = silence.lock().is_resize_grace();
-                            if !in_grace {
-                                // Try null→busy or idle→busy via CAS.
-                                if let Some(atom) = state.shell_states.get(&session_id) {
-                                    let prev = atom.load(std::sync::atomic::Ordering::Acquire);
-                                    if prev != SHELL_BUSY
-                                        && try_shell_transition(&state, &session_id, prev, SHELL_BUSY)
-                                    {
-                                        emit_shell_state(&state, Some(&app), &session_id, "busy");
-                                    }
-                                }
-                            }
-                        } else {
-                            // Chrome-only chunk: check if we should transition busy→idle.
-                            if let Some(atom) = state.shell_states.get(&session_id) {
-                                if atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
-                                    && should_transition_idle(&state, &session_id)
+                            if !silence.lock().is_resize_grace()
+                                && let Some(atom) = state.shell_states.get(&session_id)
+                            {
+                                let prev = atom.load(std::sync::atomic::Ordering::Acquire);
+                                if prev != SHELL_BUSY
+                                    && try_shell_transition(&state, &session_id, prev, SHELL_BUSY)
                                 {
-                                    if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
-                                        emit_shell_state(&state, Some(&app), &session_id, "idle");
-                                    }
+                                    emit_shell_state(&state, Some(&app), &session_id, "busy");
                                 }
                             }
+                        } else if let Some(atom) = state.shell_states.get(&session_id)
+                            && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
+                            && should_transition_idle(&state, &session_id)
+                            && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE)
+                        {
+                            // Chrome-only chunk: transition busy→idle.
+                            emit_shell_state(&state, Some(&app), &session_id, "idle");
                         }
 
                         // Colorize [intent: ...] tokens yellow before sending to xterm.
@@ -1010,37 +1002,34 @@ pub(crate) fn spawn_headless_reader_thread(
                         }
 
                         // Stamp last_output_ms only for real output (not chrome-only ticks).
-                        if !chrome_only {
-                            if let Some(ts) = state.last_output_ms.get(&session_id) {
-                                let now = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_millis() as u64;
-                                ts.store(now, std::sync::atomic::Ordering::Relaxed);
-                            }
+                        if !chrome_only
+                            && let Some(ts) = state.last_output_ms.get(&session_id)
+                        {
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
+                            ts.store(now, std::sync::atomic::Ordering::Relaxed);
                         }
 
                         // Shell state transitions (headless: event_bus only, no Tauri IPC).
                         if !chrome_only {
-                            let in_grace = silence.lock().is_resize_grace();
-                            if !in_grace {
-                                if let Some(atom) = state.shell_states.get(&session_id) {
-                                    let prev = atom.load(std::sync::atomic::Ordering::Acquire);
-                                    if prev != SHELL_BUSY
-                                        && try_shell_transition(&state, &session_id, prev, SHELL_BUSY)
-                                    {
-                                        emit_shell_state(&state, None, &session_id, "busy");
-                                    }
-                                }
-                            }
-                        } else if let Some(atom) = state.shell_states.get(&session_id) {
-                            if atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
-                                && should_transition_idle(&state, &session_id)
+                            if !silence.lock().is_resize_grace()
+                                && let Some(atom) = state.shell_states.get(&session_id)
                             {
-                                if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
-                                    emit_shell_state(&state, None, &session_id, "idle");
+                                let prev = atom.load(std::sync::atomic::Ordering::Acquire);
+                                if prev != SHELL_BUSY
+                                    && try_shell_transition(&state, &session_id, prev, SHELL_BUSY)
+                                {
+                                    emit_shell_state(&state, None, &session_id, "busy");
                                 }
                             }
+                        } else if let Some(atom) = state.shell_states.get(&session_id)
+                            && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
+                            && should_transition_idle(&state, &session_id)
+                            && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE)
+                        {
+                            emit_shell_state(&state, None, &session_id, "idle");
                         }
                     }
                 }
