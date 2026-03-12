@@ -1160,6 +1160,258 @@ pub(crate) async fn run_git_command(
     .map_err(|e| format!("Git command task failed: {e}"))
 }
 
+// --- Working tree status (porcelain v2) ---
+
+/// A single staged or unstaged file entry.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub(crate) struct StatusEntry {
+    pub path: String,
+    /// Status code: "M", "A", "D", "R", etc.
+    pub status: String,
+    /// Original path for renames/copies.
+    pub original_path: Option<String>,
+}
+
+/// Full working tree status parsed from `git status --porcelain=v2`.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub(crate) struct WorkingTreeStatus {
+    pub branch: Option<String>,
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+    pub stash_count: u32,
+    pub staged: Vec<StatusEntry>,
+    pub unstaged: Vec<StatusEntry>,
+    pub untracked: Vec<String>,
+}
+
+/// Parse porcelain v2 output into a `WorkingTreeStatus`.
+fn parse_porcelain_v2(output: &str) -> WorkingTreeStatus {
+    let mut branch: Option<String> = None;
+    let mut upstream: Option<String> = None;
+    let mut ahead: u32 = 0;
+    let mut behind: u32 = 0;
+    let mut stash_count: u32 = 0;
+    let mut staged = Vec::new();
+    let mut unstaged = Vec::new();
+    let mut untracked = Vec::new();
+
+    for line in output.lines() {
+        if let Some(rest) = line.strip_prefix("# branch.head ") {
+            branch = if rest == "(detached)" { None } else { Some(rest.to_string()) };
+        } else if let Some(rest) = line.strip_prefix("# branch.upstream ") {
+            upstream = Some(rest.to_string());
+        } else if let Some(rest) = line.strip_prefix("# branch.ab ") {
+            // Format: "+N -M"
+            for part in rest.split_whitespace() {
+                if let Some(n) = part.strip_prefix('+') {
+                    ahead = n.parse().unwrap_or(0);
+                } else if let Some(n) = part.strip_prefix('-') {
+                    behind = n.parse().unwrap_or(0);
+                }
+            }
+        } else if let Some(rest) = line.strip_prefix("# stash ") {
+            stash_count = rest.parse().unwrap_or(0);
+        } else if let Some(rest) = line.strip_prefix("1 ") {
+            // Ordinary changed entry: 1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
+            parse_ordinary_entry(rest, &mut staged, &mut unstaged);
+        } else if let Some(rest) = line.strip_prefix("2 ") {
+            // Renamed/copied entry: 2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path>\t<origPath>
+            parse_rename_entry(rest, &mut staged, &mut unstaged);
+        } else if let Some(rest) = line.strip_prefix("? ") {
+            untracked.push(rest.to_string());
+        }
+        // We ignore "u " (unmerged) entries for now — they are conflict markers
+    }
+
+    WorkingTreeStatus { branch, upstream, ahead, behind, stash_count, staged, unstaged, untracked }
+}
+
+/// Map a porcelain v2 status character to a human-readable status code.
+/// `.` means no change (returns None to skip), `?` is untracked.
+fn status_char_to_code(c: char) -> Option<&'static str> {
+    match c {
+        'M' => Some("M"),
+        'T' => Some("T"),
+        'A' => Some("A"),
+        'D' => Some("D"),
+        'R' => Some("R"),
+        'C' => Some("C"),
+        _ => None, // '.' or unknown
+    }
+}
+
+/// Parse an ordinary (type 1) porcelain v2 entry.
+fn parse_ordinary_entry(rest: &str, staged: &mut Vec<StatusEntry>, unstaged: &mut Vec<StatusEntry>) {
+    // Fields are space-separated: XY sub mH mI mW hH hI path
+    // We need XY (index 0) and path (index 7)
+    let fields: Vec<&str> = rest.splitn(8, ' ').collect();
+    if fields.len() < 8 { return; }
+    let xy = fields[0];
+    let path = fields[7].to_string();
+    let mut chars = xy.chars();
+    let x = chars.next().unwrap_or('.');
+    let y = chars.next().unwrap_or('.');
+    if let Some(code) = status_char_to_code(x) {
+        staged.push(StatusEntry { path: path.clone(), status: code.to_string(), original_path: None });
+    }
+    if let Some(code) = status_char_to_code(y) {
+        unstaged.push(StatusEntry { path, status: code.to_string(), original_path: None });
+    }
+}
+
+/// Parse a rename/copy (type 2) porcelain v2 entry.
+fn parse_rename_entry(rest: &str, staged: &mut Vec<StatusEntry>, unstaged: &mut Vec<StatusEntry>) {
+    // Fields: XY sub mH mI mW hH hI Xscore path\torigPath
+    // 9 space-separated fields, but last contains tab-separated path pair
+    let fields: Vec<&str> = rest.splitn(9, ' ').collect();
+    if fields.len() < 9 { return; }
+    let xy = fields[0];
+    let path_part = fields[8]; // "newpath\torigpath"
+    let (path, orig) = match path_part.split_once('\t') {
+        Some((p, o)) => (p.to_string(), Some(o.to_string())),
+        None => (path_part.to_string(), None),
+    };
+    let mut chars = xy.chars();
+    let x = chars.next().unwrap_or('.');
+    let y = chars.next().unwrap_or('.');
+    if let Some(code) = status_char_to_code(x) {
+        staged.push(StatusEntry { path: path.clone(), status: code.to_string(), original_path: orig.clone() });
+    }
+    if let Some(code) = status_char_to_code(y) {
+        unstaged.push(StatusEntry { path, status: code.to_string(), original_path: orig });
+    }
+}
+
+/// Get full working tree status from porcelain v2 output.
+#[tauri::command]
+pub(crate) fn get_working_tree_status(path: String) -> Result<WorkingTreeStatus, String> {
+    let repo_path = PathBuf::from(&path);
+    let out = git_cmd(&repo_path)
+        .args(["status", "--porcelain=v2", "--branch", "--show-stash"])
+        .run()
+        .map_err(|e| format!("git status failed: {e}"))?;
+    Ok(parse_porcelain_v2(&out.stdout))
+}
+
+// --- Stage / unstage / discard ---
+
+/// Validate that all file paths stay within the repo root.
+/// Returns an error message if any path escapes.
+fn validate_paths_within_repo(repo_path: &Path, files: &[String]) -> Result<(), String> {
+    let canonical_repo = repo_path.canonicalize()
+        .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
+    for file in files {
+        let full = repo_path.join(file);
+        // For files that don't exist yet (e.g. deleted), canonicalize will fail.
+        // In that case, do a manual check: normalize the joined path and verify prefix.
+        match full.canonicalize() {
+            Ok(canonical) => {
+                if !canonical.starts_with(&canonical_repo) {
+                    return Err(format!("Access denied: path '{}' is outside repository", file));
+                }
+            }
+            Err(_) => {
+                // File doesn't exist on disk — check for obvious traversal
+                if file.contains("..") {
+                    // Normalize manually: join with repo and check components
+                    let mut components = Vec::new();
+                    for component in full.components() {
+                        match component {
+                            std::path::Component::ParentDir => {
+                                if components.is_empty() {
+                                    return Err(format!("Access denied: path '{}' is outside repository", file));
+                                }
+                                components.pop();
+                            }
+                            std::path::Component::Normal(c) => components.push(c.to_os_string()),
+                            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                                components.clear();
+                                components.push(component.as_os_str().to_os_string());
+                            }
+                            std::path::Component::CurDir => {}
+                        }
+                    }
+                    let normalized: PathBuf = components.iter().collect();
+                    if !normalized.starts_with(&canonical_repo) {
+                        return Err(format!("Access denied: path '{}' is outside repository", file));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Stage files (`git add -- <files>`).
+#[tauri::command]
+pub(crate) fn git_stage_files(path: String, files: Vec<String>) -> Result<(), String> {
+    let repo_path = PathBuf::from(&path);
+    validate_paths_within_repo(&repo_path, &files)?;
+    let mut args: Vec<String> = vec!["add".into(), "--".into()];
+    args.extend(files);
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    git_cmd(&repo_path)
+        .args(&args_str)
+        .run()
+        .map_err(|e| format!("git add failed: {e}"))?;
+    Ok(())
+}
+
+/// Unstage files (`git restore --staged -- <files>`).
+#[tauri::command]
+pub(crate) fn git_unstage_files(path: String, files: Vec<String>) -> Result<(), String> {
+    let repo_path = PathBuf::from(&path);
+    validate_paths_within_repo(&repo_path, &files)?;
+    let mut args: Vec<String> = vec!["restore".into(), "--staged".into(), "--".into()];
+    args.extend(files);
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    git_cmd(&repo_path)
+        .args(&args_str)
+        .run()
+        .map_err(|e| format!("git restore --staged failed: {e}"))?;
+    Ok(())
+}
+
+/// Discard working tree changes (`git restore -- <files>`). Destructive!
+#[tauri::command]
+pub(crate) fn git_discard_files(path: String, files: Vec<String>) -> Result<(), String> {
+    let repo_path = PathBuf::from(&path);
+    validate_paths_within_repo(&repo_path, &files)?;
+    let mut args: Vec<String> = vec!["restore".into(), "--".into()];
+    args.extend(files);
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    git_cmd(&repo_path)
+        .args(&args_str)
+        .run()
+        .map_err(|e| format!("git restore failed: {e}"))?;
+    Ok(())
+}
+
+// --- git commit ---
+
+/// Commit staged changes and return the new commit hash.
+#[tauri::command]
+pub(crate) fn git_commit(path: String, message: String, amend: Option<bool>) -> Result<String, String> {
+    let repo_path = PathBuf::from(&path);
+    let mut args: Vec<String> = vec!["commit".into(), "-m".into(), message];
+    if amend == Some(true) {
+        args.push("--amend".into());
+    }
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    git_cmd(&repo_path)
+        .args(&args_str)
+        .run()
+        .map_err(|e| format!("git commit failed: {e}"))?;
+
+    // Read back the new commit hash
+    let hash_out = git_cmd(&repo_path)
+        .args(["rev-parse", "HEAD"])
+        .run()
+        .map_err(|e| format!("Failed to read commit hash: {e}"))?;
+    Ok(hash_out.stdout.trim().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1523,6 +1775,276 @@ mod tests {
         assert_eq!(NULL_DEVICE, "/dev/null");
         #[cfg(windows)]
         assert_eq!(NULL_DEVICE, "NUL");
+    }
+
+    // --- parse_porcelain_v2 unit tests ---
+
+    #[test]
+    fn parse_porcelain_v2_branch_info() {
+        let output = "# branch.oid abc123\n# branch.head main\n# branch.upstream origin/main\n# branch.ab +3 -1\n";
+        let status = parse_porcelain_v2(output);
+        assert_eq!(status.branch, Some("main".to_string()));
+        assert_eq!(status.upstream, Some("origin/main".to_string()));
+        assert_eq!(status.ahead, 3);
+        assert_eq!(status.behind, 1);
+    }
+
+    #[test]
+    fn parse_porcelain_v2_detached_head() {
+        let output = "# branch.oid abc123\n# branch.head (detached)\n";
+        let status = parse_porcelain_v2(output);
+        assert_eq!(status.branch, None);
+    }
+
+    #[test]
+    fn parse_porcelain_v2_stash_count() {
+        let output = "# branch.oid abc123\n# branch.head main\n# stash 5\n";
+        let status = parse_porcelain_v2(output);
+        assert_eq!(status.stash_count, 5);
+    }
+
+    #[test]
+    fn parse_porcelain_v2_staged_modified() {
+        // Ordinary entry: staged modification
+        let output = "1 M. N... 100644 100644 100644 abc123 def456 src/main.rs\n";
+        let status = parse_porcelain_v2(output);
+        assert_eq!(status.staged.len(), 1);
+        assert_eq!(status.staged[0].path, "src/main.rs");
+        assert_eq!(status.staged[0].status, "M");
+        assert!(status.unstaged.is_empty());
+    }
+
+    #[test]
+    fn parse_porcelain_v2_unstaged_modified() {
+        let output = "1 .M N... 100644 100644 100644 abc123 def456 src/lib.rs\n";
+        let status = parse_porcelain_v2(output);
+        assert!(status.staged.is_empty());
+        assert_eq!(status.unstaged.len(), 1);
+        assert_eq!(status.unstaged[0].path, "src/lib.rs");
+        assert_eq!(status.unstaged[0].status, "M");
+    }
+
+    #[test]
+    fn parse_porcelain_v2_both_staged_and_unstaged() {
+        // File is partially staged (modified in both index and worktree)
+        let output = "1 MM N... 100644 100644 100644 abc123 def456 src/both.rs\n";
+        let status = parse_porcelain_v2(output);
+        assert_eq!(status.staged.len(), 1);
+        assert_eq!(status.unstaged.len(), 1);
+        assert_eq!(status.staged[0].path, "src/both.rs");
+        assert_eq!(status.unstaged[0].path, "src/both.rs");
+    }
+
+    #[test]
+    fn parse_porcelain_v2_added_file() {
+        let output = "1 A. N... 000000 100644 100644 0000000 abc123 new_file.rs\n";
+        let status = parse_porcelain_v2(output);
+        assert_eq!(status.staged.len(), 1);
+        assert_eq!(status.staged[0].status, "A");
+    }
+
+    #[test]
+    fn parse_porcelain_v2_deleted_file() {
+        let output = "1 D. N... 100644 000000 000000 abc123 0000000 removed.rs\n";
+        let status = parse_porcelain_v2(output);
+        assert_eq!(status.staged.len(), 1);
+        assert_eq!(status.staged[0].status, "D");
+    }
+
+    #[test]
+    fn parse_porcelain_v2_untracked() {
+        let output = "? new_untracked.txt\n? another.log\n";
+        let status = parse_porcelain_v2(output);
+        assert_eq!(status.untracked, vec!["new_untracked.txt", "another.log"]);
+    }
+
+    #[test]
+    fn parse_porcelain_v2_rename_staged() {
+        // Type 2 entry: rename in index
+        let output = "2 R. N... 100644 100644 100644 abc123 def456 R100 new_name.rs\told_name.rs\n";
+        let status = parse_porcelain_v2(output);
+        assert_eq!(status.staged.len(), 1);
+        assert_eq!(status.staged[0].path, "new_name.rs");
+        assert_eq!(status.staged[0].status, "R");
+        assert_eq!(status.staged[0].original_path, Some("old_name.rs".to_string()));
+    }
+
+    #[test]
+    fn parse_porcelain_v2_empty_output() {
+        let status = parse_porcelain_v2("");
+        assert_eq!(status.branch, None);
+        assert_eq!(status.upstream, None);
+        assert_eq!(status.ahead, 0);
+        assert_eq!(status.behind, 0);
+        assert_eq!(status.stash_count, 0);
+        assert!(status.staged.is_empty());
+        assert!(status.unstaged.is_empty());
+        assert!(status.untracked.is_empty());
+    }
+
+    #[test]
+    fn parse_porcelain_v2_full_scenario() {
+        let output = "\
+# branch.oid deadbeef
+# branch.head feature/test
+# branch.upstream origin/feature/test
+# branch.ab +2 -0
+# stash 1
+1 M. N... 100644 100644 100644 abc123 def456 src/staged.rs
+1 .M N... 100644 100644 100644 abc123 def456 src/unstaged.rs
+1 A. N... 000000 100644 100644 0000000 abc123 src/new.rs
+? untracked.txt
+";
+        let status = parse_porcelain_v2(output);
+        assert_eq!(status.branch, Some("feature/test".to_string()));
+        assert_eq!(status.upstream, Some("origin/feature/test".to_string()));
+        assert_eq!(status.ahead, 2);
+        assert_eq!(status.behind, 0);
+        assert_eq!(status.stash_count, 1);
+        assert_eq!(status.staged.len(), 2); // M. and A.
+        assert_eq!(status.unstaged.len(), 1); // .M
+        assert_eq!(status.untracked, vec!["untracked.txt"]);
+    }
+
+    // --- Integration tests for get_working_tree_status ---
+
+    #[test]
+    fn get_working_tree_status_on_real_repo() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let result = get_working_tree_status(repo.to_string_lossy().to_string());
+        assert!(result.is_ok(), "should succeed on real repo");
+        let status = result.unwrap();
+        // We're in a git repo, so branch should be set (unless detached)
+        // At minimum, the parse should not panic
+        assert!(status.ahead == 0 || status.ahead > 0); // trivially true, but confirms it ran
+    }
+
+    #[test]
+    fn get_working_tree_status_nonexistent_path() {
+        let result = get_working_tree_status("/nonexistent/repo/xyz".to_string());
+        assert!(result.is_err());
+    }
+
+    // --- validate_paths_within_repo tests ---
+
+    #[test]
+    fn validate_paths_rejects_traversal() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let result = validate_paths_within_repo(&repo, &["../../etc/passwd".to_string()]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("outside repository"));
+    }
+
+    #[test]
+    fn validate_paths_accepts_normal_paths() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let result = validate_paths_within_repo(&repo, &["src/git.rs".to_string()]);
+        assert!(result.is_ok());
+    }
+
+    // --- Integration tests for stage/unstage/discard ---
+
+    /// Helper: create a temp git repo with an initial commit.
+    fn setup_test_repo_with_commit() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().to_path_buf();
+        std::process::Command::new("git").current_dir(&path).args(["init"]).output().expect("git init");
+        std::process::Command::new("git").current_dir(&path).args(["config", "user.email", "test@test.com"]).output().expect("config email");
+        std::process::Command::new("git").current_dir(&path).args(["config", "user.name", "Test"]).output().expect("config name");
+        // Create an initial file and commit
+        std::fs::write(path.join("initial.txt"), "hello").expect("write initial");
+        std::process::Command::new("git").current_dir(&path).args(["add", "initial.txt"]).output().expect("add");
+        std::process::Command::new("git").current_dir(&path).args(["commit", "-m", "initial"]).output().expect("commit");
+        (dir, path)
+    }
+
+    #[test]
+    fn stage_files_adds_to_index() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        std::fs::write(path.join("new.txt"), "content").expect("write");
+        let result = git_stage_files(path.to_string_lossy().to_string(), vec!["new.txt".to_string()]);
+        assert!(result.is_ok());
+        // Verify it's staged
+        let status = get_working_tree_status(path.to_string_lossy().to_string()).unwrap();
+        assert!(status.staged.iter().any(|e| e.path == "new.txt"), "new.txt should be staged");
+    }
+
+    #[test]
+    fn unstage_files_removes_from_index() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        std::fs::write(path.join("staged.txt"), "content").expect("write");
+        std::process::Command::new("git").current_dir(&path).args(["add", "staged.txt"]).output().expect("add");
+        let result = git_unstage_files(path.to_string_lossy().to_string(), vec!["staged.txt".to_string()]);
+        assert!(result.is_ok());
+        // Verify it's no longer staged (should be untracked now)
+        let status = get_working_tree_status(path.to_string_lossy().to_string()).unwrap();
+        assert!(!status.staged.iter().any(|e| e.path == "staged.txt"), "staged.txt should not be staged");
+        assert!(status.untracked.contains(&"staged.txt".to_string()), "staged.txt should be untracked");
+    }
+
+    #[test]
+    fn discard_files_restores_working_tree() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        // Modify the initial file
+        std::fs::write(path.join("initial.txt"), "modified").expect("write");
+        let result = git_discard_files(path.to_string_lossy().to_string(), vec!["initial.txt".to_string()]);
+        assert!(result.is_ok());
+        // Content should be restored
+        let content = std::fs::read_to_string(path.join("initial.txt")).expect("read");
+        assert_eq!(content, "hello");
+    }
+
+    #[test]
+    fn stage_files_rejects_path_traversal() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let result = git_stage_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("outside repository"));
+    }
+
+    #[test]
+    fn unstage_files_rejects_path_traversal() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let result = git_unstage_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn discard_files_rejects_path_traversal() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let result = git_discard_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]);
+        assert!(result.is_err());
+    }
+
+    // --- git_commit tests ---
+
+    #[test]
+    fn git_commit_creates_commit_and_returns_hash() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        std::fs::write(path.join("commit_test.txt"), "data").expect("write");
+        std::process::Command::new("git").current_dir(&path).args(["add", "commit_test.txt"]).output().expect("add");
+        let result = git_commit(path.to_string_lossy().to_string(), "test commit".to_string(), None);
+        assert!(result.is_ok());
+        let hash = result.unwrap();
+        assert_eq!(hash.len(), 40, "should return full 40-char SHA");
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()), "hash should be hex");
+    }
+
+    #[test]
+    fn git_commit_amend_works() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let result = git_commit(path.to_string_lossy().to_string(), "amended message".to_string(), Some(true));
+        assert!(result.is_ok());
+        // Verify the commit message changed
+        let out = git_cmd(&path).args(["log", "--format=%s", "-1"]).run().unwrap();
+        assert_eq!(out.stdout.trim(), "amended message");
+    }
+
+    #[test]
+    fn git_commit_fails_with_nothing_staged() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let result = git_commit(path.to_string_lossy().to_string(), "empty commit".to_string(), None);
+        assert!(result.is_err(), "commit with nothing staged should fail");
     }
 
     // --- get_last_commit_timestamps tests ---
