@@ -3,6 +3,9 @@ import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { cx } from "../../utils";
 import { ChangesTab } from "./ChangesTab";
 import { LogTab } from "./LogTab";
+import { StashesTab } from "./StashesTab";
+import { HistoryTab } from "./HistoryTab";
+import { BlameTab } from "./BlameTab";
 import p from "../shared/panel.module.css";
 import s from "./GitPanel.module.css";
 
@@ -24,6 +27,8 @@ export interface GitPanelProps {
 
 export const GitPanel: Component<GitPanelProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<GitTab>("changes");
+  const [historyFile, setHistoryFile] = createSignal<string | null>(null);
+  const [blameFile, setBlameFile] = createSignal<string | null>(null);
 
   return (
     <div id="git-panel" class={cx(s.panel, !props.visible && s.hidden)}>
@@ -52,13 +57,13 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
             <LogTab repoPath={props.repoPath} />
           </Match>
           <Match when={activeTab() === "stashes"}>
-            <div class={s.placeholder}>Stashes tab placeholder</div>
+            <StashesTab repoPath={props.repoPath} />
           </Match>
           <Match when={activeTab() === "history"}>
-            <div class={s.placeholder}>History tab placeholder</div>
+            <HistoryTab repoPath={props.repoPath} filePath={historyFile()} />
           </Match>
           <Match when={activeTab() === "blame"}>
-            <div class={s.placeholder}>Blame tab placeholder</div>
+            <BlameTab repoPath={props.repoPath} filePath={blameFile()} />
           </Match>
         </Switch>
       </div>
