@@ -23,8 +23,9 @@ Rust-side per-session state:
 | `SilenceState.last_output_at` | `pty.rs` | Timestamp of last **real** output (not mode-line ticks) |
 | `SilenceState.last_status_line_at` | `pty.rs` | Timestamp of last spinner/status-line |
 | `SilenceState.pending_question_line` | `pty.rs` | Candidate `?`-ending line for silence detection |
-| `active_sub_tasks` | `AppState` | Sub-agent count per session |
-| `shell_state` | `AppState` | Current shell state per session |
+| `active_sub_tasks` | `AppState.session_states` | Sub-agent count per session |
+| `shell_states` | `AppState.shell_states` | `DashMap<String, AtomicU8>`: 0=null, 1=busy, 2=idle. Transitions use `compare_exchange` to prevent duplicate events when reader thread and silence timer race. |
+| `last_output_ms` | `AppState.last_output_ms` | Epoch ms of last **real** output (not chrome-only). Stamped only when `!chrome_only`. |
 
 ## 1. Tab Indicator — Visual Priority
 

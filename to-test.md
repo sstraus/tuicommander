@@ -2,6 +2,17 @@
 
 Features to test when TUICommander is more usable.
 
+## Shell State Rust Derivation (741-3faf)
+- [ ] Agent runs → tab shows blue busy indicator
+- [ ] Agent stops → tab transitions to green idle (no mode-line flicker)
+- [ ] Agent asks "Procedo?" → question notification fires (no false completion)
+- [ ] Resize during idle → no brief blue flash on tab
+- [ ] pendingInitCommand (worktree run script) executes on first idle
+- [ ] Sub-agents running → terminal stays busy until they finish
+- [ ] Terminal remount (tab switch) correctly syncs shell state from Rust
+- [ ] Completion notification fires after agent works ≥5s then goes idle (background tab)
+- [ ] No completion notification when terminal is awaiting input (question/error)
+
 ## Plan Panel (515-660c / 516-41a5 / 517-74c2)
 - [ ] `Cmd+P` opens plan panel on right side
 - [ ] Plan panel shows plans only for the active repository

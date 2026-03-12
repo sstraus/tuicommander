@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Shell state derivation** — Moved shellState (busy/idle) from frontend timer-based derivation to Rust-authoritative AtomicU8 CAS transitions. Fixes: mode-line ticks no longer cause false busy/idle oscillation, question notifications fire correctly for silence-based detection, completion notifications no longer fire when terminal is awaiting input, no blue tab flash on resize when idle. Sub-agents now correctly keep the terminal in busy state. Frontend syncs on remount via `get_shell_state` Tauri command
+
 ### Added
 - **Git Panel** — Tabbed side panel (`Cmd+Shift+G`) replacing the Git Operations Panel floating overlay. Five tabs: Changes (staging/unstaging, commit with amend, discard), Log (virtual scroll + Canvas commit graph with lane assignment and Bezier connections), Stashes (apply/pop/drop), History (per-file commit log following renames), Blame (per-line blame with age heatmap). Keyboard navigation: Escape to close, Ctrl/Cmd+1–5 to switch tabs
 - **Canvas-based commit graph** — Visual commit graph in the Log tab rendered on Canvas with lane assignment, 8-color palette, ref badges, and Bezier curve connections between parent/child commits
