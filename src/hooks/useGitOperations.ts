@@ -707,6 +707,16 @@ export function useGitOperations(deps: GitOperationsDeps) {
       setCurrentBranch(info.branch || (!info.is_git_repo ? "shell" : ""));
       setRepoStatus(info.status === "not-git" ? "unknown" : info.status);
 
+      // Start file watchers so HEAD/ref changes are detected in real time
+      if (info.is_git_repo) {
+        invoke("start_head_watcher", { repoPath: info.path }).catch((err) =>
+          appLogger.warn("app", `HeadWatcher failed to start for ${info.path}`, err),
+        );
+        invoke("start_repo_watcher", { repoPath: info.path }).catch((err) =>
+          appLogger.warn("app", `RepoWatcher failed to start for ${info.path}`, err),
+        );
+      }
+
       refreshAllBranchStats();
     } catch (err) {
       appLogger.error("git", "Failed to add repository", err);
