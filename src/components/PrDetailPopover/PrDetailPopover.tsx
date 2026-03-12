@@ -4,16 +4,20 @@ import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
+import { agentConfigsStore } from "../../stores/agentConfigs";
+import { terminalsStore } from "../../stores/terminals";
 import { appLogger } from "../../stores/appLogger";
 import { invoke } from "../../invoke";
 import { canMergePr, effectiveMergeMethod } from "../Sidebar/RepoSection";
 import { mergeWithFallback, isAlreadyMerged } from "../../utils/prMerge";
+import { interpolateTemplate } from "../../utils/templateInterpolation";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { PrDetailContent } from "./PrDetailContent";
 import { PostMergeCleanupDialog, type CleanupStep, type StepId, type StepStatus } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
 import { executeCleanup } from "../../hooks/usePostMergeCleanup";
+import type { AgentType } from "../../agents";
 import s from "./PrDetailPopover.module.css";
 
 /** Extract "owner/repo" from a GitHub PR URL, e.g. https://github.com/owner/repo/pull/67 */
@@ -39,6 +43,8 @@ export interface PrDetailPopoverProps {
   onClose: () => void;
   /** Anchor to top-right (toolbar) or bottom-right (status bar, default) */
   anchor?: "top" | "bottom";
+  /** Called when user clicks "Review" — provides the interpolated command string */
+  onReview?: (repoPath: string, branch: string, command: string) => void;
 }
 
 /** Rich PR detail popover showing PR metadata, diff stats, and CI checks */
@@ -53,6 +59,40 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
   const [cleanupExecuting, setCleanupExecuting] = createSignal(false);
   const [cleanupStepStatuses, setCleanupStepStatuses] = createSignal<Partial<Record<StepId, StepStatus>>>({});
   const [cleanupStepErrors, setCleanupStepErrors] = createSignal<Partial<Record<StepId, string>>>({});
+
+  /** Find a "review" run config from the branch's detected agent type */
+  const reviewCommand = createMemo(() => {
+    if (!props.onReview) return null;
+    const p = prData();
+    if (!p || p.state === "merged" || p.state === "closed") return null;
+
+    const repo = repositoriesStore.get(props.repoPath);
+    const branch = repo?.branches[props.branch];
+    if (!branch?.terminals?.length) return null;
+
+    // Find first terminal with a detected agent
+    let agentType: AgentType | null = null;
+    for (const termId of branch.terminals) {
+      const term = terminalsStore.get(termId);
+      if (term?.agentType) { agentType = term.agentType; break; }
+    }
+    if (!agentType) return null;
+
+    const configs = agentConfigsStore.getRunConfigs(agentType);
+    const reviewCfg = configs.find((c) => c.name.toLowerCase() === "review");
+    if (!reviewCfg) return null;
+
+    // Build the interpolated command
+    const vars = {
+      pr_number: String(p.number),
+      branch: props.branch,
+      base_branch: p.base_ref_name ?? null,
+      repo: extractGithubRepo(p.url) ?? null,
+      pr_url: p.url ?? null,
+    };
+    const args = reviewCfg.args.map((a) => interpolateTemplate(a, vars)).join(" ");
+    return `${reviewCfg.command}${args ? " " + args : ""}`;
+  });
 
   const isOnBaseBranch = () => {
     const ctx = cleanupCtx();
@@ -291,6 +331,20 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                       ? t("prDetail.loadingDiff", "Loading...")
                       : t("prDetail.viewDiff", "View Diff")}
                   </button>
+                  <Show when={reviewCommand()}>
+                    <button
+                      class={s.viewDiffBtn}
+                      onClick={() => {
+                        const cmd = reviewCommand();
+                        if (cmd && props.onReview) {
+                          props.onReview(props.repoPath, props.branch, cmd);
+                          props.onClose();
+                        }
+                      }}
+                    >
+                      {t("prDetail.review", "Review")}
+                    </button>
+                  </Show>
                   <Show when={canMergePr(pr())}>
                     <button
                       class={s.mergeBtn}
