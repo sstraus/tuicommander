@@ -8,7 +8,7 @@ use super::validate_repo_path;
 
 pub(super) async fn list_directory_http(Query(q): Query<FsDirQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
-    match crate::fs::list_directory(q.repo_path, q.subdir.unwrap_or_default()) {
+    match crate::fs::list_directory_impl(q.repo_path, q.subdir.unwrap_or_default()) {
         Ok(entries) => (StatusCode::OK, Json(serde_json::json!(entries))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }
@@ -16,7 +16,7 @@ pub(super) async fn list_directory_http(Query(q): Query<FsDirQuery>) -> Response
 
 pub(super) async fn search_files_http(Query(q): Query<FsSearchQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
-    match crate::fs::search_files(q.repo_path, q.query, q.limit) {
+    match crate::fs::search_files_impl(q.repo_path, q.query, q.limit) {
         Ok(entries) => (StatusCode::OK, Json(serde_json::json!(entries))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }

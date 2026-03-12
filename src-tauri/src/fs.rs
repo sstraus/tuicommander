@@ -158,7 +158,11 @@ pub(crate) fn get_ignored_paths(repo_path: &str, paths: &[String]) -> std::colle
 
 /// List entries in a directory within a repository.
 #[tauri::command]
-pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>, String> {
+pub async fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>, String> {
+    list_directory_impl(repo_path, subdir)
+}
+
+pub(crate) fn list_directory_impl(repo_path: String, subdir: String) -> Result<Vec<DirEntry>, String> {
     let repo = PathBuf::from(&repo_path);
 
     // Canonicalize repo root ONCE — all relative paths derived via join + strip_prefix
@@ -225,7 +229,7 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
             .replace('\\', "/");
 
         // Check gitignore status without subprocess
-        let is_ignored = gitignore.as_ref().map_or(false, |gi| {
+        let is_ignored = gitignore.as_ref().is_some_and(|gi| {
             gi.matched_path_or_any_parents(&abs_path, is_dir).is_ignore()
         });
 
@@ -283,7 +287,15 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
 /// Returns up to `limit` results (default 200) to avoid blowing up on huge repos.
 /// Respects .gitignore natively via the `ignore` crate (no subprocess).
 #[tauri::command]
-pub fn search_files(
+pub async fn search_files(
+    repo_path: String,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<DirEntry>, String> {
+    search_files_impl(repo_path, query, limit)
+}
+
+pub(crate) fn search_files_impl(
     repo_path: String,
     query: String,
     limit: Option<usize>,
@@ -316,7 +328,7 @@ pub fn search_files(
             Err(_) => continue,
         };
 
-        let is_file = entry.file_type().map_or(false, |ft| ft.is_file());
+        let is_file = entry.file_type().is_some_and(|ft| ft.is_file());
         if !is_file {
             continue;
         }
@@ -397,83 +409,7 @@ fn build_search_pattern(query: &str) -> regex::Regex {
     })
 }
 
-/// Recursively walk a directory, collecting entries that match the pattern.
-fn walk_directory(
-    root: &PathBuf,
-    dir: &PathBuf,
-    pattern: &regex::Regex,
-    git_statuses: &std::collections::HashMap<String, String>,
-    results: &mut Vec<DirEntry>,
-    max_results: usize,
-) {
-    if results.len() >= max_results {
-        return;
-    }
 
-    let read_dir = match std::fs::read_dir(dir) {
-        Ok(rd) => rd,
-        Err(_) => return,
-    };
-
-    for entry in read_dir {
-        if results.len() >= max_results {
-            return;
-        }
-
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-
-        let name = entry.file_name().to_string_lossy().to_string();
-
-        // Skip hidden/special directories
-        if name == ".git" || name == "node_modules" || name == ".DS_Store" {
-            continue;
-        }
-
-        let metadata = match entry.metadata() {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-
-        let canonical_entry = match entry.path().canonicalize() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-
-        let relative = match canonical_entry.strip_prefix(root) {
-            Ok(p) => p.to_string_lossy().replace('\\', "/"),
-            Err(_) => continue,
-        };
-
-        let is_dir = metadata.is_dir();
-
-        if is_dir {
-            // Recurse into subdirectories
-            walk_directory(root, &canonical_entry, pattern, git_statuses, results, max_results);
-        } else {
-            // Check if file name or path matches the search pattern
-            if pattern.is_match(&name) || pattern.is_match(&relative) {
-                let git_status = git_statuses.get(&relative).cloned().unwrap_or_default();
-                let modified_at = metadata
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map_or(0, |d| d.as_secs());
-                results.push(DirEntry {
-                    name,
-                    path: relative,
-                    is_dir: false,
-                    size: metadata.len(),
-                    modified_at,
-                    git_status,
-                    is_ignored: false,
-                });
-            }
-        }
-    }
-}
 
 /// Read a file's content within a repository.
 /// Re-uses the existing `read_file_impl` from lib.rs.
@@ -748,7 +684,7 @@ mod tests {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        let entries = list_directory(repo_path, ".".to_string()).unwrap();
+        let entries = list_directory_impl(repo_path, ".".to_string()).unwrap();
 
         // Should have: src/ dir, README.md, main.rs (no .git)
         assert!(entries.len() >= 3);
@@ -772,7 +708,7 @@ mod tests {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        let entries = list_directory(repo_path, "src".to_string()).unwrap();
+        let entries = list_directory_impl(repo_path, "src".to_string()).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "lib.rs");
         assert!(!entries[0].is_dir);
@@ -784,7 +720,7 @@ mod tests {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        let result = list_directory(repo_path, "../".to_string());
+        let result = list_directory_impl(repo_path, "../".to_string());
         assert!(result.is_err());
     }
 
@@ -799,7 +735,7 @@ mod tests {
         // Add an untracked file
         fs::write(dir.path().join("new_file.txt"), "new").unwrap();
 
-        let entries = list_directory(repo_path, ".".to_string()).unwrap();
+        let entries = list_directory_impl(repo_path, ".".to_string()).unwrap();
 
         let readme = entries.iter().find(|e| e.name == "README.md").unwrap();
         assert_eq!(readme.git_status, "modified");
@@ -894,12 +830,12 @@ mod tests {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        let entries = list_directory(repo_path.clone(), "src".to_string()).unwrap();
+        let entries = list_directory_impl(repo_path.clone(), "src".to_string()).unwrap();
         for entry in &entries {
             assert!(!entry.path.contains('\\'), "Path should use / not \\: {}", entry.path);
         }
 
-        let root_entries = list_directory(repo_path, ".".to_string()).unwrap();
+        let root_entries = list_directory_impl(repo_path, ".".to_string()).unwrap();
         for entry in &root_entries {
             assert!(!entry.path.contains('\\'), "Path should use / not \\: {}", entry.path);
         }
@@ -910,7 +846,7 @@ mod tests {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        let entries = list_directory(repo_path, ".".to_string()).unwrap();
+        let entries = list_directory_impl(repo_path, ".".to_string()).unwrap();
 
         for entry in &entries {
             assert!(entry.modified_at > 0, "modified_at should be non-zero for {}", entry.name);
@@ -926,7 +862,7 @@ mod tests {
         fs::write(dir.path().join("build.log"), "build output").unwrap();
         fs::write(dir.path().join(".gitignore"), "build.log\n").unwrap();
 
-        let entries = list_directory(repo_path, ".".to_string()).unwrap();
+        let entries = list_directory_impl(repo_path, ".".to_string()).unwrap();
 
         let build_log = entries.iter().find(|e| e.name == "build.log");
         assert!(build_log.is_some(), "build.log should still appear in listing");
@@ -951,7 +887,7 @@ mod tests {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        let results = search_files(repo_path, "lib".to_string(), None).unwrap();
+        let results = search_files_impl(repo_path, "lib".to_string(), None).unwrap();
         assert!(
             results.iter().any(|e| e.name == "lib.rs"),
             "Should find lib.rs matching 'lib', got: {:?}",
@@ -973,7 +909,7 @@ mod tests {
         fs::write(dir.path().join("build_output/artifact.rs"), "// build").unwrap();
         fs::write(dir.path().join(".gitignore"), "build_output/\n").unwrap();
 
-        let results = search_files(repo_path, "artifact".to_string(), None).unwrap();
+        let results = search_files_impl(repo_path, "artifact".to_string(), None).unwrap();
         assert!(
             results.iter().all(|e| !e.path.contains("build_output")),
             "Should NOT find files inside gitignored directory, got: {:?}",
@@ -992,7 +928,7 @@ mod tests {
             fs::write(dir.path().join(format!("many/file_{i}.txt")), "content").unwrap();
         }
 
-        let results = search_files(repo_path, "file_".to_string(), Some(5)).unwrap();
+        let results = search_files_impl(repo_path, "file_".to_string(), Some(5)).unwrap();
         assert!(
             results.len() <= 5,
             "Should respect limit of 5, got {}",
