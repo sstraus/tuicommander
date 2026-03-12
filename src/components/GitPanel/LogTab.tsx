@@ -95,7 +95,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
   const [viewportHeight, setViewportHeight] = createSignal(0);
   const [focusedIndex, setFocusedIndex] = createSignal(-1);
 
-  let scrollRef: HTMLDivElement | undefined;
+  const [scrollRef, setScrollRef] = createSignal<HTMLDivElement | undefined>(undefined);
 
   const PAGE_SIZE = 50;
 
@@ -213,14 +213,14 @@ export const LogTab: Component<LogTabProps> = (props) => {
 
   const virtualizer = createVirtualizer({
     get count() { return commits().length; },
-    getScrollElement: () => scrollRef ?? null,
+    getScrollElement: () => scrollRef() ?? null,
     estimateSize,
     overscan: 5,
   });
 
   // Sync scroll position and viewport size for the graph canvas
   createEffect(() => {
-    const el = scrollRef;
+    const el = scrollRef();
     if (!el) return;
 
     setViewportHeight(el.clientHeight);
@@ -280,7 +280,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
     <div class={s.container} onKeyDown={handleListKeyDown} tabIndex={-1}>
       <Show when={!loading()} fallback={<div class={s.empty}>Loading commits...</div>}>
         <Show when={commits().length > 0} fallback={<div class={s.empty}>No commits</div>}>
-          <div ref={scrollRef} class={s.scrollContainer}>
+          <div ref={setScrollRef} class={s.scrollContainer}>
             <CommitGraph
               nodes={graphNodes()}
               scrollTop={scrollTop()}

@@ -1,4 +1,4 @@
-import { Component, createEffect, on } from "solid-js";
+import { Component, createEffect, createSignal, on } from "solid-js";
 import s from "./CommitGraph.module.css";
 
 // ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ export interface CommitGraphProps {
 }
 
 export const CommitGraph: Component<CommitGraphProps> = (props) => {
-  let canvasRef: HTMLCanvasElement | undefined;
+  const [canvasRef, setCanvasRef] = createSignal<HTMLCanvasElement | undefined>(undefined);
 
   const maxCol = () =>
     props.nodes.length === 0
@@ -108,9 +108,9 @@ export const CommitGraph: Component<CommitGraphProps> = (props) => {
 
   createEffect(
     on(
-      () => [props.nodes, props.scrollTop, props.viewportHeight, props.totalHeight] as const,
+      () => [props.nodes, props.scrollTop, props.viewportHeight, props.totalHeight, canvasRef()] as const,
       () => {
-        const canvas = canvasRef;
+        const canvas = canvasRef();
         if (!canvas) return;
 
         const ctx = canvas.getContext("2d");
@@ -159,7 +159,7 @@ export const CommitGraph: Component<CommitGraphProps> = (props) => {
 
   return (
     <canvas
-      ref={canvasRef}
+      ref={setCanvasRef}
       class={s.canvas}
       style={{ width: `${width()}px`, height: `${props.viewportHeight}px` }}
     />
