@@ -181,6 +181,7 @@ pub fn register_plugin_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::B
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .header("Content-Type", "text/plain")
+                .header("Access-Control-Allow-Origin", "*")
                 .body(b"Invalid plugin path".to_vec())
                 .unwrap();
         };
@@ -198,12 +199,14 @@ pub fn register_plugin_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::B
                 Response::builder()
                     .status(StatusCode::OK)
                     .header("Content-Type", mime)
+                    .header("Access-Control-Allow-Origin", "*")
                     .body(data)
                     .unwrap()
             }
             Err(_) => Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .header("Content-Type", "text/plain")
+                .header("Access-Control-Allow-Origin", "*")
                 .body(b"Plugin file not found".to_vec())
                 .unwrap(),
         }
