@@ -1,8 +1,10 @@
-import { Component, createEffect, createSignal, For, Show, on } from "solid-js";
+import { Component, createEffect, createSignal, For, Show, on, onCleanup } from "solid-js";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
+import { CommitGraph, graphWidth } from "./CommitGraph";
+import type { GraphNode } from "./CommitGraph";
 import s from "./LogTab.module.css";
 
 /** Mirrors the Rust CommitLogEntry struct from git.rs */
@@ -88,28 +90,40 @@ export const LogTab: Component<LogTabProps> = (props) => {
   const [expandedHash, setExpandedHash] = createSignal<string | null>(null);
   const [changedFiles, setChangedFiles] = createSignal<Record<string, ChangedFile[]>>({});
   const [filesLoading, setFilesLoading] = createSignal<Record<string, boolean>>({});
+  const [graphNodes, setGraphNodes] = createSignal<GraphNode[]>([]);
+  const [scrollTop, setScrollTop] = createSignal(0);
+  const [viewportHeight, setViewportHeight] = createSignal(0);
 
   let scrollRef: HTMLDivElement | undefined;
 
   const PAGE_SIZE = 50;
 
-  /** Fetch the initial commit page */
+  /** Fetch the initial commit page and graph data */
   async function fetchCommits(repoPath: string) {
     setLoading(true);
     setCommits([]);
+    setGraphNodes([]);
     setExpandedHash(null);
     setChangedFiles({});
     setHasMore(true);
     try {
-      const result = await invoke<CommitLogEntry[]>("get_commit_log", {
-        path: repoPath,
-        count: PAGE_SIZE,
-      });
-      setCommits(result);
-      setHasMore(result.length >= PAGE_SIZE);
+      const [logResult, graphResult] = await Promise.all([
+        invoke<CommitLogEntry[]>("get_commit_log", {
+          path: repoPath,
+          count: PAGE_SIZE,
+        }),
+        invoke<GraphNode[]>("get_commit_graph", {
+          path: repoPath,
+          count: 200,
+        }).catch(() => [] as GraphNode[]),
+      ]);
+      setCommits(logResult);
+      setGraphNodes(graphResult);
+      setHasMore(logResult.length >= PAGE_SIZE);
     } catch {
       // Silently handle — repo may not have commits yet
       setCommits([]);
+      setGraphNodes([]);
       setHasMore(false);
     } finally {
       setLoading(false);
@@ -203,11 +217,48 @@ export const LogTab: Component<LogTabProps> = (props) => {
     overscan: 5,
   });
 
+  // Sync scroll position and viewport size for the graph canvas
+  createEffect(() => {
+    const el = scrollRef;
+    if (!el) return;
+
+    setViewportHeight(el.clientHeight);
+
+    let rafId = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        setScrollTop(el.scrollTop);
+      });
+    };
+
+    const onResize = () => setViewportHeight(el.clientHeight);
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(onResize);
+    ro.observe(el);
+
+    onCleanup(() => {
+      el.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(rafId);
+      ro.disconnect();
+    });
+  });
+
+  /** Left padding for commit rows to leave room for the graph */
+  const graphPad = () => graphWidth(graphNodes());
+
   return (
     <div class={s.container}>
       <Show when={!loading()} fallback={<div class={s.empty}>Loading commits...</div>}>
         <Show when={commits().length > 0} fallback={<div class={s.empty}>No commits</div>}>
           <div ref={scrollRef} class={s.scrollContainer}>
+            <CommitGraph
+              nodes={graphNodes()}
+              scrollTop={scrollTop()}
+              viewportHeight={viewportHeight()}
+              totalHeight={virtualizer.getTotalSize()}
+            />
             <div class={s.virtualList} style={{ height: `${virtualizer.getTotalSize()}px` }}>
               <For each={virtualizer.getVirtualItems()}>
                 {(virtualItem) => {
@@ -224,12 +275,15 @@ export const LogTab: Component<LogTabProps> = (props) => {
                         top: `${virtualItem.start}px`,
                         height: `${virtualItem.size}px`,
                         width: "100%",
+                        "padding-left": graphPad() > 0 ? `${graphPad() + 12}px` : undefined,
                       }}
                       onClick={() => commit() && toggleExpand(commit()!.hash)}
                     >
-                      {/* Line 1: dot + hash + subject */}
+                      {/* Line 1: dot (only without graph) + hash + subject */}
                       <div class={s.commitLine1}>
-                        <span class={s.commitDot} />
+                        <Show when={graphNodes().length === 0}>
+                          <span class={s.commitDot} />
+                        </Show>
                         <span class={s.commitHash}>{commit()?.hash.slice(0, 7)}</span>
                         <span class={s.commitSubject}>{commit()?.subject}</span>
                       </div>
