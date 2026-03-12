@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, For, Show } from "solid-js";
+import { Component, createEffect, createSignal, For, Show, onCleanup } from "solid-js";
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore, type DiffStatus } from "../../stores/diffTabs";
@@ -24,6 +24,16 @@ interface WorkingTreeStatus {
   staged: StatusEntry[];
   unstaged: StatusEntry[];
   untracked: string[];
+}
+
+/** Commit log entry from Rust `get_commit_log` */
+interface CommitLogEntry {
+  hash: string;
+  parents: string[];
+  refs: string[];
+  author_name: string;
+  author_date: string;
+  subject: string;
 }
 
 /** Unified file entry for rendering */
@@ -62,6 +72,12 @@ const DiscardIcon = () => (
   </svg>
 );
 
+const CheckIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z" />
+  </svg>
+);
+
 /** Map status code to CSS class */
 function statusClass(status: string): string {
   switch (status) {
@@ -88,6 +104,20 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   const [unstagedExpanded, setUnstagedExpanded] = createSignal(true);
   const [confirmDiscard, setConfirmDiscard] = createSignal<FileEntry | null>(null);
   const [confirmDiscardAll, setConfirmDiscardAll] = createSignal(false);
+
+  // Commit section signals
+  const [commitMsg, setCommitMsg] = createSignal("");
+  const [isAmend, setIsAmend] = createSignal(false);
+  const [committing, setCommitting] = createSignal(false);
+  const [commitError, setCommitError] = createSignal<string | null>(null);
+  const [commitSuccess, setCommitSuccess] = createSignal(false);
+  // Stores the user-typed message when switching to amend mode
+  let savedDraftMsg = "";
+  let successTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  onCleanup(() => {
+    if (successTimeout) clearTimeout(successTimeout);
+  });
 
   // Fetch working tree status on mount and revision changes
   createEffect(() => {
@@ -201,6 +231,82 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     );
   }
 
+  async function doCommit() {
+    const repoPath = props.repoPath;
+    if (!repoPath) return;
+    const msg = commitMsg().trim();
+    if (!msg && !isAmend()) return;
+    if (staged().length === 0 && !isAmend()) return;
+
+    setCommitting(true);
+    setCommitError(null);
+    setCommitSuccess(false);
+    try {
+      await invoke<string>("git_commit", {
+        path: repoPath,
+        message: msg,
+        amend: isAmend() || null,
+      });
+      setCommitMsg("");
+      setIsAmend(false);
+      savedDraftMsg = "";
+      repositoriesStore.bumpRevision(repoPath);
+      setCommitSuccess(true);
+      if (successTimeout) clearTimeout(successTimeout);
+      successTimeout = setTimeout(() => setCommitSuccess(false), 3000);
+    } catch (err) {
+      const errStr = typeof err === "string" ? err : String(err);
+      setCommitError(errStr);
+      appLogger.error("git", "Commit failed", err);
+    } finally {
+      setCommitting(false);
+    }
+  }
+
+  async function toggleAmend() {
+    const next = !isAmend();
+    if (next) {
+      // Save current draft before overwriting with last commit message
+      savedDraftMsg = commitMsg();
+      if (props.repoPath) {
+        try {
+          const log = await invoke<CommitLogEntry[]>("get_commit_log", {
+            path: props.repoPath,
+            count: 1,
+          });
+          if (log.length > 0) {
+            setCommitMsg(log[0].subject);
+          }
+        } catch (err) {
+          appLogger.error("git", "Failed to fetch last commit for amend", err);
+        }
+      }
+    } else {
+      // Restore previously typed message
+      setCommitMsg(savedDraftMsg);
+      savedDraftMsg = "";
+    }
+    setIsAmend(next);
+    setCommitError(null);
+  }
+
+  function handleCommitKeyDown(e: KeyboardEvent) {
+    // Cmd+Enter (Mac) or Ctrl+Enter (others) to commit
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      doCommit();
+    }
+  }
+
+  /** Auto-resize textarea to fit content */
+  function autoResize(el: HTMLTextAreaElement) {
+    el.style.height = "auto";
+    // Clamp between 2 lines (~38px) and 6 lines (~114px) at font-sm (12px + line-height ~1.6)
+    const minH = 38;
+    const maxH = 114;
+    el.style.height = `${Math.max(minH, Math.min(el.scrollHeight, maxH))}px`;
+  }
+
   function handleConfirmDiscard() {
     const file = confirmDiscard();
     if (file) {
@@ -276,6 +382,57 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 
   return (
     <div class={s.container}>
+      {/* Commit section */}
+      <Show when={props.repoPath}>
+        <div class={s.commitSection} onKeyDown={handleCommitKeyDown}>
+          <textarea
+            class={s.commitTextarea}
+            placeholder="Commit message..."
+            value={commitMsg()}
+            onInput={(e) => {
+              setCommitMsg(e.currentTarget.value);
+              autoResize(e.currentTarget);
+            }}
+            ref={(el) => {
+              // Set initial height after mount
+              requestAnimationFrame(() => autoResize(el));
+            }}
+            disabled={committing()}
+          />
+          <div class={s.commitRow}>
+            <button
+              class={cx(s.commitBtn, committing() && s.commitBtnDisabled)}
+              disabled={committing() || (!commitMsg().trim() && !isAmend()) || (staged().length === 0 && !isAmend())}
+              onClick={doCommit}
+              title="Commit staged changes"
+            >
+              <Show when={committing()} fallback="Commit">
+                <span class={s.spinner} />
+                Committing...
+              </Show>
+            </button>
+            <label class={s.amendLabel}>
+              <input
+                type="checkbox"
+                class={s.amendCheckbox}
+                checked={isAmend()}
+                onChange={toggleAmend}
+                disabled={committing()}
+              />
+              Amend
+            </label>
+          </div>
+          <Show when={commitError()}>
+            <div class={s.commitError}>{commitError()}</div>
+          </Show>
+          <Show when={commitSuccess()}>
+            <div class={s.commitSuccess}>
+              <CheckIcon /> Committed successfully
+            </div>
+          </Show>
+        </div>
+      </Show>
+
       {/* Empty state */}
       <Show when={!props.repoPath}>
         <div class={s.empty}>No repository selected</div>
