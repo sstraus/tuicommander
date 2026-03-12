@@ -6,6 +6,8 @@ authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"
 default-run = "tuicommander"
 
+[profile.release]
+incremental = true
 [lib]
 name = "tuicommander_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
