@@ -76,19 +76,19 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
       <div class={p.content}>
         <Switch>
           <Match when={activeTab() === "changes"}>
-            <ChangesTab repoPath={props.repoPath} />
+            <ChangesTab repoPath={props.visible ? props.repoPath : null} />
           </Match>
           <Match when={activeTab() === "log"}>
-            <LogTab repoPath={props.repoPath} />
+            <LogTab repoPath={props.visible ? props.repoPath : null} />
           </Match>
           <Match when={activeTab() === "stashes"}>
-            <StashesTab repoPath={props.repoPath} />
+            <StashesTab repoPath={props.visible ? props.repoPath : null} />
           </Match>
           <Match when={activeTab() === "history"}>
-            <HistoryTab repoPath={props.repoPath} filePath={historyFile()} />
+            <HistoryTab repoPath={props.visible ? props.repoPath : null} filePath={historyFile()} />
           </Match>
           <Match when={activeTab() === "blame"}>
-            <BlameTab repoPath={props.repoPath} filePath={blameFile()} />
+            <BlameTab repoPath={props.visible ? props.repoPath : null} filePath={blameFile()} />
           </Match>
         </Switch>
       </div>
