@@ -1160,6 +1160,266 @@ pub(crate) async fn run_git_command(
     .map_err(|e| format!("Git command task failed: {e}"))
 }
 
+// --- Commit log, stash, file history, blame commands ---
+
+/// A commit log entry with full metadata for the GitLens-style panel.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct CommitLogEntry {
+    pub hash: String,
+    pub parents: Vec<String>,
+    pub refs: Vec<String>,
+    pub author_name: String,
+    pub author_date: String,
+    pub subject: String,
+}
+
+/// Parse a NUL-delimited commit log line into a `CommitLogEntry`.
+fn parse_commit_log_line(line: &str) -> Option<CommitLogEntry> {
+    let parts: Vec<&str> = line.splitn(6, '\0').collect();
+    if parts.len() != 6 {
+        return None;
+    }
+    let parents = if parts[1].is_empty() {
+        vec![]
+    } else {
+        parts[1].split(' ').map(|s| s.to_string()).collect()
+    };
+    let refs = if parts[2].is_empty() {
+        vec![]
+    } else {
+        parts[2].split(", ").map(|s| s.trim().to_string()).collect()
+    };
+    Some(CommitLogEntry {
+        hash: parts[0].to_string(),
+        parents,
+        refs,
+        author_name: parts[3].to_string(),
+        author_date: parts[4].to_string(),
+        subject: parts[5].to_string(),
+    })
+}
+
+const COMMIT_LOG_FORMAT: &str = "%H%x00%P%x00%D%x00%an%x00%aI%x00%s";
+const COMMIT_LOG_MAX_COUNT: u32 = 500;
+const COMMIT_LOG_DEFAULT_COUNT: u32 = 50;
+
+/// Get paginated commit log with full metadata.
+#[tauri::command]
+pub(crate) fn get_commit_log(
+    path: String,
+    count: Option<u32>,
+    after: Option<String>,
+) -> Result<Vec<CommitLogEntry>, String> {
+    let repo_path = PathBuf::from(&path);
+    let n = count.unwrap_or(COMMIT_LOG_DEFAULT_COUNT).min(COMMIT_LOG_MAX_COUNT);
+    let n_str = n.to_string();
+
+    let mut args = vec![
+        "log".to_string(),
+        "--topo-order".to_string(),
+        "-n".to_string(),
+        n_str,
+        format!("--pretty=format:{COMMIT_LOG_FORMAT}"),
+    ];
+
+    if let Some(ref hash) = after {
+        args.push(hash.clone());
+    }
+
+    let out = git_cmd(&repo_path)
+        .args(&args)
+        .run()
+        .map_err(|e| format!("git log failed: {e}"))?;
+
+    let commits = out
+        .stdout
+        .lines()
+        .filter_map(parse_commit_log_line)
+        .collect();
+
+    Ok(commits)
+}
+
+/// A stash entry.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct StashEntry {
+    pub index: u32,
+    pub ref_name: String,
+    pub message: String,
+    pub hash: String,
+}
+
+/// List all stash entries.
+#[tauri::command]
+pub(crate) fn get_stash_list(path: String) -> Result<Vec<StashEntry>, String> {
+    let repo_path = PathBuf::from(&path);
+
+    let out = git_cmd(&repo_path)
+        .args(["stash", "list", "--format=%gd%x00%s%x00%H"])
+        .run_silent();
+
+    let Some(out) = out else {
+        // No stashes or not a git repo — return empty
+        return Ok(vec![]);
+    };
+
+    if out.stdout.trim().is_empty() {
+        return Ok(vec![]);
+    }
+
+    let entries = out
+        .stdout
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(3, '\0').collect();
+            if parts.len() != 3 {
+                return None;
+            }
+            let ref_name = parts[0].to_string();
+            // Parse index from "stash@{N}"
+            let index = ref_name
+                .strip_prefix("stash@{")
+                .and_then(|s| s.strip_suffix('}'))
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0);
+            Some(StashEntry {
+                index,
+                ref_name,
+                message: parts[1].to_string(),
+                hash: parts[2].to_string(),
+            })
+        })
+        .collect();
+
+    Ok(entries)
+}
+
+/// Get commit log for a specific file, following renames.
+#[tauri::command]
+pub(crate) fn get_file_history(
+    path: String,
+    file: String,
+    count: Option<u32>,
+    after: Option<String>,
+) -> Result<Vec<CommitLogEntry>, String> {
+    let repo_path = PathBuf::from(&path);
+    let n = count.unwrap_or(COMMIT_LOG_DEFAULT_COUNT).min(COMMIT_LOG_MAX_COUNT);
+    let n_str = n.to_string();
+
+    let mut args = vec![
+        "log".to_string(),
+        "--follow".to_string(),
+        "--topo-order".to_string(),
+        "-n".to_string(),
+        n_str,
+        format!("--pretty=format:{COMMIT_LOG_FORMAT}"),
+    ];
+
+    if let Some(ref hash) = after {
+        args.push(hash.clone());
+    }
+
+    args.push("--".to_string());
+    args.push(file);
+
+    let out = git_cmd(&repo_path)
+        .args(&args)
+        .run()
+        .map_err(|e| format!("git log failed: {e}"))?;
+
+    let commits = out
+        .stdout
+        .lines()
+        .filter_map(parse_commit_log_line)
+        .collect();
+
+    Ok(commits)
+}
+
+/// A single blame line with commit metadata.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct BlameLine {
+    pub hash: String,
+    pub author: String,
+    pub author_time: i64,
+    pub line_number: u32,
+    pub content: String,
+}
+
+/// Parse `git blame --porcelain` output into `BlameLine` entries.
+fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
+    let mut lines = Vec::new();
+    let mut current_hash = String::new();
+    let mut current_line_number: u32 = 0;
+
+    // Cache commit metadata to avoid re-parsing for consecutive lines from same commit
+    let mut commit_cache: HashMap<String, (String, i64)> = HashMap::new();
+
+    let mut author = String::new();
+    let mut author_time: i64 = 0;
+    let mut is_first_header = true; // first occurrence of a hash needs full header parsing
+
+    for line in output.lines() {
+        if line.starts_with('\t') {
+            // Content line — finalize this blame entry
+            let content = &line[1..]; // strip leading tab
+            let (cached_author, cached_time) = commit_cache
+                .entry(current_hash.clone())
+                .or_insert_with(|| (author.clone(), author_time));
+
+            lines.push(BlameLine {
+                hash: current_hash.clone(),
+                author: cached_author.clone(),
+                author_time: *cached_time,
+                line_number: current_line_number,
+                content: content.to_string(),
+            });
+
+            is_first_header = true;
+        } else if is_first_header && line.len() >= 40 && line.as_bytes().iter().take(40).all(|b| b.is_ascii_hexdigit()) {
+            // Hash line: "<hash> <orig_line> <final_line> [<num_lines>]"
+            let parts: Vec<&str> = line.split(' ').collect();
+            current_hash = parts[0].to_string();
+            // final_line is the second or third number depending on whether this is the first
+            // line of a group. In porcelain format, the line number we want is the "final line"
+            // which is always the third field (index 2).
+            current_line_number = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+            if commit_cache.contains_key(&current_hash) {
+                // Already cached — skip header lines until content
+                is_first_header = false;
+            } else {
+                // Need to parse headers
+                author.clear();
+                author_time = 0;
+                is_first_header = false;
+            }
+        } else if let Some(rest) = line.strip_prefix("author ") {
+            author = rest.to_string();
+        } else if let Some(rest) = line.strip_prefix("author-time ") {
+            author_time = rest.parse().unwrap_or(0);
+        }
+    }
+
+    lines
+}
+
+/// Get per-line blame information for a file.
+#[tauri::command]
+pub(crate) fn get_file_blame(
+    path: String,
+    file: String,
+) -> Result<Vec<BlameLine>, String> {
+    let repo_path = PathBuf::from(&path);
+
+    let out = git_cmd(&repo_path)
+        .args(["blame", "--porcelain", &file])
+        .run()
+        .map_err(|e| format!("git blame failed: {e}"))?;
+
+    Ok(parse_blame_porcelain(&out.stdout))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1605,5 +1865,256 @@ mod tests {
         assert_eq!(ctx.changed_count, 0);
         assert_eq!(ctx.stash_count, 0);
         assert!(ctx.last_commit.is_none());
+    }
+
+    // --- parse_commit_log_line tests ---
+
+    #[test]
+    fn parse_commit_log_line_basic() {
+        let line = "abc123\0def456 ghi789\0HEAD -> main, tag: v1.0\0Alice\02024-01-15T10:30:00+01:00\0Initial commit";
+        let entry = parse_commit_log_line(line).expect("should parse");
+        assert_eq!(entry.hash, "abc123");
+        assert_eq!(entry.parents, vec!["def456", "ghi789"]);
+        assert_eq!(entry.refs, vec!["HEAD -> main", "tag: v1.0"]);
+        assert_eq!(entry.author_name, "Alice");
+        assert_eq!(entry.author_date, "2024-01-15T10:30:00+01:00");
+        assert_eq!(entry.subject, "Initial commit");
+    }
+
+    #[test]
+    fn parse_commit_log_line_no_parents_no_refs() {
+        let line = "abc123\0\0\0Bob\02024-01-15T10:30:00Z\0Root commit";
+        let entry = parse_commit_log_line(line).expect("should parse");
+        assert!(entry.parents.is_empty());
+        assert!(entry.refs.is_empty());
+    }
+
+    #[test]
+    fn parse_commit_log_line_malformed_returns_none() {
+        assert!(parse_commit_log_line("not enough fields").is_none());
+        assert!(parse_commit_log_line("a\0b\0c").is_none());
+    }
+
+    // --- get_commit_log integration tests ---
+
+    #[test]
+    fn get_commit_log_returns_commits_for_real_repo() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let result = get_commit_log(repo.to_string_lossy().to_string(), Some(5), None);
+        let commits = result.expect("should succeed on real repo");
+        assert!(!commits.is_empty(), "repo should have commits");
+        assert!(commits.len() <= 5, "should respect count limit");
+        // First commit should have a valid hash (40 hex chars)
+        assert_eq!(commits[0].hash.len(), 40);
+        assert!(commits[0].hash.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(!commits[0].author_name.is_empty());
+        assert!(!commits[0].author_date.is_empty());
+        assert!(!commits[0].subject.is_empty());
+    }
+
+    #[test]
+    fn get_commit_log_default_count_is_50() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let result = get_commit_log(repo.to_string_lossy().to_string(), None, None);
+        let commits = result.expect("should succeed");
+        // We know this repo has many commits; default limit is 50
+        assert!(commits.len() <= 50);
+    }
+
+    #[test]
+    fn get_commit_log_count_clamped_to_500() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        // Requesting 9999 should be clamped to 500
+        let result = get_commit_log(repo.to_string_lossy().to_string(), Some(9999), None);
+        let commits = result.expect("should succeed");
+        assert!(commits.len() <= 500);
+    }
+
+    #[test]
+    fn get_commit_log_pagination_with_after() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let repo_str = repo.to_string_lossy().to_string();
+
+        // Get first page
+        let page1 = get_commit_log(repo_str.clone(), Some(3), None).expect("page 1");
+        assert!(page1.len() >= 3, "need at least 3 commits for this test");
+
+        // Get second page starting from the last commit of page 1
+        let last_hash = &page1[2].hash;
+        let page2 = get_commit_log(repo_str, Some(3), Some(last_hash.clone())).expect("page 2");
+        assert!(!page2.is_empty(), "page 2 should have commits");
+
+        // First commit of page 2 should be the same as last of page 1 (the `after` hash)
+        assert_eq!(page2[0].hash, *last_hash, "pagination should start from the `after` commit");
+    }
+
+    #[test]
+    fn get_commit_log_fails_for_nonexistent_repo() {
+        let result = get_commit_log("/nonexistent/repo".to_string(), None, None);
+        assert!(result.is_err());
+    }
+
+    // --- get_stash_list tests ---
+
+    #[test]
+    fn get_stash_list_real_repo_does_not_error() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let result = get_stash_list(repo.to_string_lossy().to_string());
+        // Should succeed regardless of whether there are stashes
+        assert!(result.is_ok(), "get_stash_list should not error on a real repo");
+    }
+
+    #[test]
+    fn get_stash_list_nonexistent_repo_returns_empty() {
+        let result = get_stash_list("/nonexistent/repo".to_string());
+        // run_silent returns None for non-git dir, so we get empty vec
+        assert_eq!(result.unwrap(), vec![]);
+    }
+
+    // --- get_file_history integration tests ---
+
+    #[test]
+    fn get_file_history_returns_commits_for_known_file() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let result = get_file_history(
+            repo.to_string_lossy().to_string(),
+            "src-tauri/src/git.rs".to_string(),
+            Some(5),
+            None,
+        );
+        let commits = result.expect("should succeed for a file in the repo");
+        assert!(!commits.is_empty(), "git.rs should have commit history");
+        assert!(commits.len() <= 5);
+    }
+
+    #[test]
+    fn get_file_history_nonexistent_file_returns_empty() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let result = get_file_history(
+            repo.to_string_lossy().to_string(),
+            "nonexistent-file-xyz.txt".to_string(),
+            Some(5),
+            None,
+        );
+        // git log with a nonexistent file returns empty output, not an error
+        let commits = result.expect("should not error");
+        assert!(commits.is_empty());
+    }
+
+    #[test]
+    fn get_file_history_fails_for_nonexistent_repo() {
+        let result = get_file_history(
+            "/nonexistent/repo".to_string(),
+            "file.txt".to_string(),
+            None,
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    // --- parse_blame_porcelain tests ---
+
+    #[test]
+    fn parse_blame_porcelain_single_line() {
+        let output = "\
+abc1234567890123456789012345678901234abcd 1 1 1
+author Alice
+author-mail <alice@example.com>
+author-time 1700000000
+author-tz +0100
+committer Alice
+committer-mail <alice@example.com>
+committer-time 1700000000
+committer-tz +0100
+summary Initial commit
+filename test.txt
+\tHello, world!
+";
+        let lines = parse_blame_porcelain(output);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].hash, "abc1234567890123456789012345678901234abcd");
+        assert_eq!(lines[0].author, "Alice");
+        assert_eq!(lines[0].author_time, 1700000000);
+        assert_eq!(lines[0].line_number, 1);
+        assert_eq!(lines[0].content, "Hello, world!");
+    }
+
+    #[test]
+    fn parse_blame_porcelain_multiple_lines_same_commit() {
+        let output = "\
+aaaa234567890123456789012345678901234aaaa 1 1 2
+author Bob
+author-mail <bob@example.com>
+author-time 1700000001
+author-tz +0000
+committer Bob
+committer-mail <bob@example.com>
+committer-time 1700000001
+committer-tz +0000
+summary Add two lines
+filename test.txt
+\tLine one
+aaaa234567890123456789012345678901234aaaa 2 2
+\tLine two
+";
+        let lines = parse_blame_porcelain(output);
+        assert_eq!(lines.len(), 2);
+        // Both lines should share the same commit metadata
+        assert_eq!(lines[0].hash, lines[1].hash);
+        assert_eq!(lines[0].author, "Bob");
+        assert_eq!(lines[1].author, "Bob");
+        assert_eq!(lines[0].line_number, 1);
+        assert_eq!(lines[1].line_number, 2);
+        assert_eq!(lines[0].content, "Line one");
+        assert_eq!(lines[1].content, "Line two");
+    }
+
+    #[test]
+    fn parse_blame_porcelain_empty_output() {
+        let lines = parse_blame_porcelain("");
+        assert!(lines.is_empty());
+    }
+
+    // --- get_file_blame integration test ---
+
+    #[test]
+    fn get_file_blame_returns_lines_for_known_file() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let result = get_file_blame(
+            repo.to_string_lossy().to_string(),
+            "src-tauri/src/git.rs".to_string(),
+        );
+        let lines = result.expect("should succeed for a file in the repo");
+        assert!(!lines.is_empty(), "git.rs should have blame lines");
+        // Every line should have a 40-char hex hash
+        for bl in &lines {
+            assert_eq!(bl.hash.len(), 40, "hash should be 40 chars: {}", bl.hash);
+            assert!(!bl.author.is_empty(), "author should not be empty");
+            assert!(bl.author_time > 0, "author_time should be positive");
+            assert!(bl.line_number > 0, "line_number should be positive");
+        }
+        // Line numbers should be sequential
+        for (i, bl) in lines.iter().enumerate() {
+            assert_eq!(bl.line_number, (i + 1) as u32, "line numbers should be sequential");
+        }
+    }
+
+    #[test]
+    fn get_file_blame_fails_for_nonexistent_file() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let result = get_file_blame(
+            repo.to_string_lossy().to_string(),
+            "nonexistent-file-xyz.txt".to_string(),
+        );
+        assert!(result.is_err(), "blame on nonexistent file should fail");
+    }
+
+    #[test]
+    fn get_file_blame_fails_for_nonexistent_repo() {
+        let result = get_file_blame(
+            "/nonexistent/repo".to_string(),
+            "file.txt".to_string(),
+        );
+        assert!(result.is_err());
     }
 }
