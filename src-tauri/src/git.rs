@@ -1188,6 +1188,10 @@ pub(crate) struct StatusEntry {
     pub status: String,
     /// Original path for renames/copies.
     pub original_path: Option<String>,
+    /// Lines added (from --numstat). 0 for binary or unknown.
+    pub additions: u32,
+    /// Lines deleted (from --numstat). 0 for binary or unknown.
+    pub deletions: u32,
 }
 
 /// Full working tree status parsed from `git status --porcelain=v2`.
@@ -1271,10 +1275,10 @@ fn parse_ordinary_entry(rest: &str, staged: &mut Vec<StatusEntry>, unstaged: &mu
     let x = chars.next().unwrap_or('.');
     let y = chars.next().unwrap_or('.');
     if let Some(code) = status_char_to_code(x) {
-        staged.push(StatusEntry { path: path.clone(), status: code.to_string(), original_path: None });
+        staged.push(StatusEntry { path: path.clone(), status: code.to_string(), original_path: None, additions: 0, deletions: 0 });
     }
     if let Some(code) = status_char_to_code(y) {
-        unstaged.push(StatusEntry { path, status: code.to_string(), original_path: None });
+        unstaged.push(StatusEntry { path, status: code.to_string(), original_path: None, additions: 0, deletions: 0 });
     }
 }
 
@@ -1294,10 +1298,40 @@ fn parse_rename_entry(rest: &str, staged: &mut Vec<StatusEntry>, unstaged: &mut 
     let x = chars.next().unwrap_or('.');
     let y = chars.next().unwrap_or('.');
     if let Some(code) = status_char_to_code(x) {
-        staged.push(StatusEntry { path: path.clone(), status: code.to_string(), original_path: orig.clone() });
+        staged.push(StatusEntry { path: path.clone(), status: code.to_string(), original_path: orig.clone(), additions: 0, deletions: 0 });
     }
     if let Some(code) = status_char_to_code(y) {
-        unstaged.push(StatusEntry { path, status: code.to_string(), original_path: orig });
+        unstaged.push(StatusEntry { path, status: code.to_string(), original_path: orig, additions: 0, deletions: 0 });
+    }
+}
+
+/// Parse `git diff --numstat` output into a path→(additions, deletions) map.
+fn parse_numstat(output: &str) -> HashMap<String, (u32, u32)> {
+    let mut map = HashMap::new();
+    for line in output.lines() {
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() != 3 { continue; }
+        // Binary files show "-" for additions/deletions
+        let add = parts[0].parse::<u32>().unwrap_or(0);
+        let del = parts[1].parse::<u32>().unwrap_or(0);
+        map.insert(parts[2].to_string(), (add, del));
+    }
+    map
+}
+
+/// Enrich status entries with line counts from `git diff --numstat`.
+fn enrich_with_numstat(repo_path: &Path, entries: &mut [StatusEntry], staged: bool) {
+    let mut args = vec!["diff", "--numstat"];
+    if staged {
+        args.push("--cached");
+    }
+    let Ok(out) = git_cmd(repo_path).args(&args).run() else { return };
+    let stats = parse_numstat(&out.stdout);
+    for entry in entries.iter_mut() {
+        if let Some(&(add, del)) = stats.get(&entry.path) {
+            entry.additions = add;
+            entry.deletions = del;
+        }
     }
 }
 
@@ -1309,7 +1343,10 @@ pub(crate) fn get_working_tree_status(path: String) -> Result<WorkingTreeStatus,
         .args(["status", "--porcelain=v2", "--branch", "--show-stash"])
         .run()
         .map_err(|e| format!("git status failed: {e}"))?;
-    Ok(parse_porcelain_v2(&out.stdout))
+    let mut status = parse_porcelain_v2(&out.stdout);
+    enrich_with_numstat(&repo_path, &mut status.staged, true);
+    enrich_with_numstat(&repo_path, &mut status.unstaged, false);
+    Ok(status)
 }
 
 // --- Stage / unstage / discard ---

@@ -12,6 +12,8 @@ interface StatusEntry {
   path: string;
   status: string;
   original_path: string | null;
+  additions: number;
+  deletions: number;
 }
 
 /** Full working tree status from `get_working_tree_status` */
@@ -40,6 +42,8 @@ interface CommitLogEntry {
 interface FileEntry {
   path: string;
   status: string;
+  additions: number;
+  deletions: number;
 }
 
 export interface ChangesTabProps {
@@ -134,12 +138,16 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 
     invoke<WorkingTreeStatus>("get_working_tree_status", { path: repoPath })
       .then((status) => {
-        setStaged(status.staged.map((e) => ({ path: e.path, status: e.status })));
+        setStaged(status.staged.map((e) => ({
+          path: e.path, status: e.status, additions: e.additions ?? 0, deletions: e.deletions ?? 0,
+        })));
 
         // Combine unstaged (tracked changes) and untracked into one list
         const combined: FileEntry[] = [
-          ...status.unstaged.map((e) => ({ path: e.path, status: e.status })),
-          ...status.untracked.map((p) => ({ path: p, status: "?" })),
+          ...status.unstaged.map((e) => ({
+            path: e.path, status: e.status, additions: e.additions ?? 0, deletions: e.deletions ?? 0,
+          })),
+          ...status.untracked.map((p) => ({ path: p, status: "?", additions: 0, deletions: 0 })),
         ];
         setUnstaged(combined);
       })
@@ -389,6 +397,16 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
           </Show>
           <span class={s.fileBasename}>{base}</span>
         </span>
+        <Show when={file.additions > 0 || file.deletions > 0}>
+          <span class={s.diffStats}>
+            <Show when={file.additions > 0}>
+              <span class={s.diffAdd}>+{file.additions}</span>
+            </Show>
+            <Show when={file.deletions > 0}>
+              <span class={s.diffDel}>-{file.deletions}</span>
+            </Show>
+          </span>
+        </Show>
         <span class={s.actions}>
           <Show when={section === "staged"}>
             <button
