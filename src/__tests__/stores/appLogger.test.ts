@@ -306,4 +306,108 @@ describe("appLogger", () => {
       expect(appLogger.getEntries()).toHaveLength(1);
     });
   });
+
+  // ---- Deduplication tests ----
+
+  it("dedup coalesces identical consecutive messages", () => {
+    createRoot(() => {
+      appLogger.warn("github", "poll failed");
+      appLogger.warn("github", "poll failed");
+      appLogger.warn("github", "poll failed");
+
+      const entries = appLogger.getEntries();
+      expect(entries).toHaveLength(1);
+      expect(entries[0].message).toBe("poll failed");
+      expect(entries[0].repeatCount).toBe(2);
+    });
+  });
+
+  it("dedup resets on different message", () => {
+    createRoot(() => {
+      appLogger.warn("github", "poll failed");
+      appLogger.warn("github", "poll failed");
+      appLogger.info("app", "something else");
+      appLogger.warn("github", "poll failed");
+
+      const entries = appLogger.getEntries();
+      expect(entries).toHaveLength(3);
+      expect(entries[0].repeatCount).toBe(1);
+      expect(entries[1].repeatCount).toBeUndefined();
+      expect(entries[2].repeatCount).toBeUndefined();
+    });
+  });
+
+  it("dedup requires matching level+source+message", () => {
+    createRoot(() => {
+      appLogger.warn("github", "poll failed");
+      appLogger.warn("git", "poll failed"); // different source
+      appLogger.error("github", "poll failed"); // different level
+
+      expect(appLogger.getEntries()).toHaveLength(3);
+    });
+  });
+
+  it("dedup updates timestamp", () => {
+    createRoot(() => {
+      appLogger.warn("github", "poll failed");
+      const ts1 = appLogger.getEntries()[0].timestamp;
+
+      // Push duplicate after a tick
+      appLogger.warn("github", "poll failed");
+
+      const entries = appLogger.getEntries();
+      expect(entries).toHaveLength(1);
+      expect(entries[0].timestamp).toBeGreaterThanOrEqual(ts1);
+    });
+  });
+
+  it("dedup preserves original id", () => {
+    createRoot(() => {
+      appLogger.warn("github", "poll failed");
+      const id1 = appLogger.getEntries()[0].id;
+
+      appLogger.warn("github", "poll failed");
+
+      const entries = appLogger.getEntries();
+      expect(entries[0].id).toBe(id1);
+    });
+  });
+
+  it("dedup does not re-push to Rust backend", async () => {
+    createRoot(() => {
+      mockRpc.mockClear();
+      appLogger.warn("github", "poll failed");
+      appLogger.warn("github", "poll failed");
+      appLogger.warn("github", "poll failed");
+    });
+
+    await vi.waitFor(() => {
+      // Only ONE push_log call, not three
+      const pushCalls = mockRpc.mock.calls.filter(
+        (c) => c[0] === "push_log",
+      );
+      expect(pushCalls).toHaveLength(1);
+    });
+  });
+
+  it("dedup does not increment unseenErrorCount for repeated errors", () => {
+    createRoot(() => {
+      appLogger.error("app", "crash");
+      appLogger.error("app", "crash");
+      appLogger.error("app", "crash");
+
+      // Only 1 unseen error, not 3
+      expect(appLogger.unseenErrorCount()).toBe(1);
+    });
+  });
+
+  it("entryCount reflects coalesced count", () => {
+    createRoot(() => {
+      appLogger.warn("github", "a");
+      appLogger.warn("github", "a");
+      appLogger.warn("github", "a");
+
+      expect(appLogger.entryCount()).toBe(1);
+    });
+  });
 });

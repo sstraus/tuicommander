@@ -934,12 +934,34 @@ pub(crate) fn get_all_pr_statuses_impl(
 
     let response = graphql_with_retry(state, &query, serde_json::Value::Null)?;
 
+    // Build alias→(owner, name) lookup for logging null repos
+    let alias_repo_names: std::collections::HashMap<&str, (&str, &str)> = repos
+        .iter()
+        .enumerate()
+        .map(|(i, (_path, owner, name))| {
+            // aliases are "r0", "r1", … matching the enumerate index
+            let alias_key: &str = aliases[i].0.as_str();
+            (alias_key, (owner.as_str(), name.as_str()))
+        })
+        .collect();
+
     let mut results = std::collections::HashMap::new();
     for (alias, path) in &aliases {
         let repo_json = &response["data"][alias];
         let nodes = match repo_json["pullRequests"]["nodes"].as_array() {
             Some(arr) => arr,
-            None => continue,
+            None => {
+                // Null repo — likely doesn't exist on GitHub. Log once
+                // (the ring buffer dedup will suppress repeats).
+                if repo_json.is_null()
+                    && let Some((owner, name)) = alias_repo_names.get(alias.as_str())
+                {
+                    let msg = format!("Repository {owner}/{name} not found on GitHub — skipping PR poll");
+                    let mut buf = state.log_buffer.lock();
+                    buf.push("warn".into(), "github".into(), msg, None);
+                }
+                continue;
+            }
         };
         let mut statuses: Vec<BranchPrStatus> = nodes.iter().filter_map(parse_pr_node).collect();
         stamp_merge_policy(&mut statuses, repo_json);

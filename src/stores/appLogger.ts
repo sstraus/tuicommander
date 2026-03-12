@@ -38,6 +38,8 @@ export interface AppLogEntry {
   source: AppLogSource;
   message: string;
   data?: unknown;
+  /** How many consecutive duplicate messages were coalesced (0 = first, 1 = seen twice, etc.) */
+  repeatCount?: number;
 }
 
 /** Shape returned by the Rust get_logs command */
@@ -127,6 +129,21 @@ function createAppLogger() {
   }
 
   function push(level: AppLogLevel, source: AppLogSource, message: string, data?: unknown): void {
+    // Dedup: coalesce with the most recent entry if level+source+message match
+    if (count > 0) {
+      const lastIdx = count < MAX_ENTRIES
+        ? count - 1
+        : (head + count - 1) % MAX_ENTRIES;
+      const last = buffer[lastIdx];
+      if (last && last.level === level && last.source === source && last.message === message) {
+        last.repeatCount = (last.repeatCount ?? 0) + 1;
+        last.timestamp = Date.now();
+        // Bump revision so UI sees updated repeat count
+        setRevision((r) => r + 1);
+        return;
+      }
+    }
+
     const entry: AppLogEntry = {
       id: nextId++,
       timestamp: Date.now(),
