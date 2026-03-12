@@ -1442,6 +1442,23 @@ pub(crate) fn get_last_prompt(
     state.last_prompts.get(&session_id).map(|v| v.clone())
 }
 
+/// Get the current shell state for a PTY session.
+/// Used by the frontend on remount to sync state missed while unsubscribed.
+/// Returns "busy", "idle", or null (session never produced output / removed).
+#[tauri::command]
+pub(crate) fn get_shell_state(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Option<String> {
+    state.shell_states.get(&session_id).map(|atom| {
+        match atom.load(std::sync::atomic::Ordering::Relaxed) {
+            SHELL_BUSY => "busy".to_string(),
+            SHELL_IDLE => "idle".to_string(),
+            _ => "idle".to_string(), // null → treat as idle for frontend
+        }
+    })
+}
+
 /// Resize a PTY session
 #[tauri::command]
 pub(crate) fn resize_pty(
