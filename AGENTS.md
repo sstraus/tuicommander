@@ -237,6 +237,18 @@ Concrete examples:
 
 Use this **before asking Boss** to paste logs — check the ring buffer yourself first.
 
+## Logging Rule: Always Use appLogger
+
+**NEVER use `console.log`, `console.warn`, or `console.error` directly in application code.** Always use `appLogger` from `src/stores/appLogger.ts`. It writes to the centralized ring-buffer log store, forwards to the browser console automatically, and surfaces errors in the ErrorLogPanel — visible without opening DevTools.
+
+```typescript
+import { appLogger } from "../stores/appLogger";
+
+appLogger.info("plugin", "Plan loaded", { path });
+appLogger.warn("git", "Stale worktree reference");
+appLogger.error("network", "GitHub API failed", err);
+```
+
 ## Release & Tag Checklist
 
 When Boss asks to tag a release:

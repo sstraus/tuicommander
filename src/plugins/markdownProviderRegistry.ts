@@ -1,4 +1,5 @@
 import type { Disposable, MarkdownProvider } from "./types";
+import { appLogger } from "../stores/appLogger";
 
 /**
  * Routes virtual content URIs to registered MarkdownProvider implementations.
@@ -32,6 +33,7 @@ function createMarkdownProviderRegistry() {
     try {
       uri = new URL(uriString);
     } catch {
+      appLogger.warn("plugin", `Invalid content URI: ${uriString}`);
       return null;
     }
 
@@ -40,7 +42,10 @@ function createMarkdownProviderRegistry() {
     if (!scheme) return null;
 
     const provider = providers.get(scheme);
-    if (!provider) return null;
+    if (!provider) {
+      appLogger.warn("plugin", `No provider for scheme "${scheme}" (registered: ${[...providers.keys()].join(", ")})`);
+      return null;
+    }
 
     return provider.provideContent(uri);
   }
