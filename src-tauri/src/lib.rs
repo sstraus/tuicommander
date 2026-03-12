@@ -11,6 +11,7 @@ pub(crate) mod fs;
 mod input_line_buffer;
 pub(crate) mod git;
 pub(crate) mod git_cli;
+pub(crate) mod git_graph;
 pub(crate) mod github;
 pub(crate) mod head_watcher;
 pub(crate) mod repo_watcher;
@@ -922,7 +923,8 @@ pub fn run() {
             app_logger::push_log,
             app_logger::get_logs,
             app_logger::clear_logs,
-            notification_sound::play_notification_sound
+            notification_sound::play_notification_sound,
+            git_graph::get_commit_graph
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
