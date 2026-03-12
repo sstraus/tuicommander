@@ -534,6 +534,61 @@ fn default_plan_panel_width() -> u32 { 350 }
 fn default_settings_nav_width() -> u32 { 180 }
 
 // ---------------------------------------------------------------------------
+// RepoLocalConfig — team-shareable settings loaded from .tuic.json in repo root
+// ---------------------------------------------------------------------------
+
+/// Settings loaded from `.tuic.json` at the repository root.
+/// These are team-shareable (committed to the repo) and override global defaults
+/// but are overridden by per-repo app settings.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub(crate) struct RepoLocalConfig {
+    #[serde(default)]
+    pub(crate) base_branch: Option<String>,
+    #[serde(default)]
+    pub(crate) copy_ignored_files: Option<bool>,
+    #[serde(default)]
+    pub(crate) copy_untracked_files: Option<bool>,
+    #[serde(default)]
+    pub(crate) setup_script: Option<String>,
+    #[serde(default)]
+    pub(crate) run_script: Option<String>,
+    #[serde(default)]
+    pub(crate) archive_script: Option<String>,
+    #[serde(default)]
+    pub(crate) worktree_storage: Option<WorktreeStorage>,
+    #[serde(default)]
+    pub(crate) delete_branch_on_remove: Option<bool>,
+    #[serde(default)]
+    pub(crate) auto_archive_merged: Option<bool>,
+    #[serde(default)]
+    pub(crate) orphan_cleanup: Option<OrphanCleanup>,
+    #[serde(default)]
+    pub(crate) pr_merge_strategy: Option<MergeStrategy>,
+    #[serde(default)]
+    pub(crate) after_merge: Option<WorktreeAfterMerge>,
+    #[serde(default)]
+    pub(crate) auto_delete_on_pr_close: Option<AutoDeleteOnPrClose>,
+}
+
+const REPO_LOCAL_CONFIG_FILE: &str = ".tuic.json";
+
+/// Load `.tuic.json` from a repository root.
+/// Returns `None` if the file doesn't exist or is malformed.
+pub(crate) fn load_repo_local_config_from_path(repo_path: &std::path::Path) -> Option<RepoLocalConfig> {
+    let path = repo_path.join(REPO_LOCAL_CONFIG_FILE);
+    match std::fs::read_to_string(&path) {
+        Ok(contents) => match serde_json::from_str::<RepoLocalConfig>(&contents) {
+            Ok(config) => Some(config),
+            Err(e) => {
+                eprintln!("Warning: malformed {}: {e}", path.display());
+                None
+            }
+        },
+        Err(_) => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // RepoSettingsMap — per-repo settings keyed by repo path
 // ---------------------------------------------------------------------------
 
@@ -791,6 +846,12 @@ pub(crate) fn save_repo_settings(config: RepoSettingsMap) -> Result<(), String> 
 pub(crate) fn check_has_custom_settings(path: String) -> bool {
     let settings: RepoSettingsMap = load_json_config(REPO_SETTINGS_FILE);
     settings.repos.get(&path).is_some_and(|entry| entry.has_custom_settings())
+}
+
+// Repo local config (.tuic.json in repo root)
+#[tauri::command]
+pub(crate) fn load_repo_local_config(repo_path: String) -> Option<RepoLocalConfig> {
+    load_repo_local_config_from_path(std::path::Path::new(&repo_path))
 }
 
 // Repo defaults (global defaults for all repos)
@@ -1647,6 +1708,66 @@ mod tests {
 
         let result = delete_note_assets("nonexistent-note".to_string());
         assert!(result.is_ok(), "Should succeed even if dir doesn't exist");
+    }
+
+    #[test]
+    fn repo_local_config_loads_valid_json() {
+        let dir = TempDir::new().unwrap();
+        let json = r#"{
+            "base_branch": "develop",
+            "setup_script": "npm ci",
+            "delete_branch_on_remove": false,
+            "pr_merge_strategy": "squash"
+        }"#;
+        fs::write(dir.path().join(".tuic.json"), json).unwrap();
+
+        let config = load_repo_local_config_from_path(dir.path());
+        assert!(config.is_some());
+        let config = config.unwrap();
+        assert_eq!(config.base_branch.as_deref(), Some("develop"));
+        assert_eq!(config.setup_script.as_deref(), Some("npm ci"));
+        assert_eq!(config.delete_branch_on_remove, Some(false));
+        assert_eq!(config.pr_merge_strategy, Some(MergeStrategy::Squash));
+        // Fields not specified should be None
+        assert!(config.run_script.is_none());
+        assert!(config.archive_script.is_none());
+        assert!(config.copy_ignored_files.is_none());
+    }
+
+    #[test]
+    fn repo_local_config_returns_none_when_missing() {
+        let dir = TempDir::new().unwrap();
+        let config = load_repo_local_config_from_path(dir.path());
+        assert!(config.is_none());
+    }
+
+    #[test]
+    fn repo_local_config_returns_none_for_malformed_json() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".tuic.json"), "not valid json {{{").unwrap();
+        let config = load_repo_local_config_from_path(dir.path());
+        assert!(config.is_none());
+    }
+
+    #[test]
+    fn repo_local_config_handles_empty_object() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".tuic.json"), "{}").unwrap();
+        let config = load_repo_local_config_from_path(dir.path());
+        assert!(config.is_some());
+        let config = config.unwrap();
+        assert!(config.base_branch.is_none());
+        assert!(config.setup_script.is_none());
+    }
+
+    #[test]
+    fn repo_local_config_ignores_unknown_fields() {
+        let dir = TempDir::new().unwrap();
+        let json = r#"{"base_branch": "main", "unknown_field": 42}"#;
+        fs::write(dir.path().join(".tuic.json"), json).unwrap();
+        let config = load_repo_local_config_from_path(dir.path());
+        assert!(config.is_some());
+        assert_eq!(config.unwrap().base_branch.as_deref(), Some("main"));
     }
 
     #[test]
