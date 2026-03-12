@@ -1,0 +1,137 @@
+/* HistoryTab — per-file commit history */
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* File header at top */
+.fileHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-md);
+  font-family: var(--font-mono);
+  color: var(--fg-primary);
+  min-width: 0;
+}
+
+.fileIcon {
+  flex-shrink: 0;
+  color: var(--fg-secondary);
+}
+
+.filePath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.scrollContainer {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Commit row — matches LogTab pattern */
+.commitRow {
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.commitRow:hover {
+  background: var(--bg-highlight);
+}
+
+/* Line 1: dot + hash + subject */
+.commitLine1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.commitDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.commitHash {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  flex-shrink: 0;
+}
+
+.commitSubject {
+  font-size: var(--font-sm);
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Line 2: author + time */
+.commitLine2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 16px;
+  min-width: 0;
+}
+
+.commitMeta {
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  flex-shrink: 0;
+}
+
+/* Load more button */
+.loadMore {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+}
+
+.loadMoreBtn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  padding: 4px 16px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.loadMoreBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.loadMoreBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Empty / loading states */
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}

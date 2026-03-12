@@ -27,8 +27,8 @@ export interface GitPanelProps {
 
 export const GitPanel: Component<GitPanelProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<GitTab>("changes");
-  const [historyFile, setHistoryFile] = createSignal<string | null>(null);
-  const [blameFile, setBlameFile] = createSignal<string | null>(null);
+  const [historyFile, _setHistoryFile] = createSignal<string | null>(null);
+  const [blameFile, _setBlameFile] = createSignal<string | null>(null);
 
   return (
     <div id="git-panel" class={cx(s.panel, !props.visible && s.hidden)}>
