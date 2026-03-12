@@ -14,6 +14,7 @@ const mockDefaults = {
   copyUntrackedFiles: false,
   setupScript: "",
   runScript: "",
+  archiveScript: "",
 };
 
 vi.mock("../../stores/repoDefaults", () => ({
@@ -35,6 +36,7 @@ describe("repoSettingsStore", () => {
       copyUntrackedFiles: false,
       setupScript: "",
       runScript: "",
+      archiveScript: "",
     });
 
     vi.doMock("@tauri-apps/api/core", () => ({
@@ -186,6 +188,27 @@ describe("repoSettingsStore", () => {
     it("returns undefined for unknown repo", () => {
       createRoot((dispose) => {
         expect(store.getEffective("/unknown")).toBeUndefined();
+        dispose();
+      });
+    });
+
+    it("returns archiveScript from global default when not overridden", () => {
+      createRoot((dispose) => {
+        store.getOrCreate("/repo", "my-repo");
+        mockDefaults.archiveScript = "cleanup.sh";
+        const effective = store.getEffective("/repo");
+        expect(effective!.archiveScript).toBe("cleanup.sh");
+        dispose();
+      });
+    });
+
+    it("uses per-repo archiveScript override when set", () => {
+      createRoot((dispose) => {
+        store.getOrCreate("/repo", "my-repo");
+        store.update("/repo", { archiveScript: "my-cleanup.sh" });
+        mockDefaults.archiveScript = "global-cleanup.sh";
+        const effective = store.getEffective("/repo");
+        expect(effective!.archiveScript).toBe("my-cleanup.sh");
         dispose();
       });
     });

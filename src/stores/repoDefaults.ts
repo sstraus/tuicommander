@@ -24,6 +24,7 @@ export interface RepoDefaults {
   copyUntrackedFiles: boolean;
   setupScript: string;
   runScript: string;
+  archiveScript: string;
   worktreeStorage: WorktreeStorage;
   promptOnCreate: boolean;
   deleteBranchOnRemove: boolean;
@@ -41,6 +42,7 @@ const INITIAL_DEFAULTS: RepoDefaults = {
   copyUntrackedFiles: false,
   setupScript: "",
   runScript: "",
+  archiveScript: "",
   worktreeStorage: "sibling",
   promptOnCreate: true,
   deleteBranchOnRemove: true,
@@ -63,6 +65,7 @@ function createRepoDefaultsStore() {
         copy_untracked_files: state.copyUntrackedFiles,
         setup_script: state.setupScript,
         run_script: state.runScript,
+        archive_script: state.archiveScript,
         worktree_storage: state.worktreeStorage,
         prompt_on_create: state.promptOnCreate,
         delete_branch_on_remove: state.deleteBranchOnRemove,
@@ -87,6 +90,7 @@ function createRepoDefaultsStore() {
           copy_untracked_files?: boolean;
           setup_script?: string;
           run_script?: string;
+          archive_script?: string;
           worktree_storage?: WorktreeStorage;
           prompt_on_create?: boolean;
           delete_branch_on_remove?: boolean;
@@ -104,6 +108,7 @@ function createRepoDefaultsStore() {
             copyUntrackedFiles: loaded.copy_untracked_files ?? INITIAL_DEFAULTS.copyUntrackedFiles,
             setupScript: loaded.setup_script ?? INITIAL_DEFAULTS.setupScript,
             runScript: loaded.run_script ?? INITIAL_DEFAULTS.runScript,
+            archiveScript: loaded.archive_script ?? INITIAL_DEFAULTS.archiveScript,
             worktreeStorage: loaded.worktree_storage ?? INITIAL_DEFAULTS.worktreeStorage,
             promptOnCreate: loaded.prompt_on_create ?? INITIAL_DEFAULTS.promptOnCreate,
             deleteBranchOnRemove: loaded.delete_branch_on_remove ?? INITIAL_DEFAULTS.deleteBranchOnRemove,
@@ -142,6 +147,11 @@ function createRepoDefaultsStore() {
 
     setRunScript(value: string): void {
       setState("runScript", value);
+      save();
+    },
+
+    setArchiveScript(value: string): void {
+      setState("archiveScript", value);
       save();
     },
 

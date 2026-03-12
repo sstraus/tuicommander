@@ -557,6 +557,9 @@ pub(crate) struct RepoSettingsEntry {
     /// null = inherit from global repo defaults
     #[serde(default)]
     pub(crate) run_script: Option<String>,
+    /// null = inherit from global repo defaults
+    #[serde(default)]
+    pub(crate) archive_script: Option<String>,
     #[serde(default)]
     pub(crate) color: String,
     // -- Worktree settings (null = inherit from global) --
@@ -590,6 +593,7 @@ impl RepoSettingsEntry {
             || self.copy_untracked_files.is_some()
             || self.setup_script.is_some()
             || self.run_script.is_some()
+            || self.archive_script.is_some()
             || !self.color.is_empty()
             || self.worktree_storage.is_some()
             || self.prompt_on_create.is_some()
@@ -616,6 +620,8 @@ pub(crate) struct RepoDefaultsConfig {
     pub(crate) setup_script: String,
     #[serde(default)]
     pub(crate) run_script: String,
+    #[serde(default)]
+    pub(crate) archive_script: String,
     // -- Worktree settings --
     #[serde(default)]
     pub(crate) worktree_storage: WorktreeStorage,
@@ -647,6 +653,7 @@ impl Default for RepoDefaultsConfig {
             copy_untracked_files: false,
             setup_script: String::new(),
             run_script: String::new(),
+            archive_script: String::new(),
             worktree_storage: WorktreeStorage::default(),
             prompt_on_create: true,
             delete_branch_on_remove: true,
@@ -1146,6 +1153,7 @@ mod tests {
                 copy_untracked_files: None,
                 setup_script: Some("npm install".to_string()),
                 run_script: Some("npm start".to_string()),
+                archive_script: Some("cleanup.sh".to_string()),
                 color: String::new(),
                 worktree_storage: None,
                 prompt_on_create: None,
@@ -1166,6 +1174,7 @@ mod tests {
         assert_eq!(entry.base_branch, Some("main".to_string()));
         assert_eq!(entry.copy_ignored_files, Some(true));
         assert_eq!(entry.copy_untracked_files, None);
+        assert_eq!(entry.archive_script, Some("cleanup.sh".to_string()));
     }
 
     #[test]
@@ -1289,6 +1298,15 @@ mod tests {
     fn has_custom_settings_true_when_run_script_set() {
         let entry = RepoSettingsEntry {
             run_script: Some("npm start".to_string()),
+            ..RepoSettingsEntry::default()
+        };
+        assert!(entry.has_custom_settings());
+    }
+
+    #[test]
+    fn has_custom_settings_true_when_archive_script_set() {
+        let entry = RepoSettingsEntry {
+            archive_script: Some("cleanup.sh".to_string()),
             ..RepoSettingsEntry::default()
         };
         assert!(entry.has_custom_settings());
