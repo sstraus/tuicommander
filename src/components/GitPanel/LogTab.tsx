@@ -278,6 +278,15 @@ export const LogTab: Component<LogTabProps> = (props) => {
 
   return (
     <div class={s.container} onKeyDown={handleListKeyDown} tabIndex={-1}>
+      {/* Graph canvas overlays the scroll container from outside the scroll flow */}
+      <Show when={!loading() && graphNodes().length > 0}>
+        <CommitGraph
+          nodes={graphNodes()}
+          scrollTop={scrollTop()}
+          viewportHeight={viewportHeight()}
+          totalHeight={virtualizer.getTotalSize()}
+        />
+      </Show>
       {/* Always-mounted scroll container so virtualizer has a valid ref */}
       <div ref={scrollRef!} class={s.scrollContainer}>
         <Show when={loading()}>
@@ -287,12 +296,6 @@ export const LogTab: Component<LogTabProps> = (props) => {
           <div class={s.empty}>No commits</div>
         </Show>
         <Show when={!loading() && commits().length > 0}>
-          <CommitGraph
-            nodes={graphNodes()}
-            scrollTop={scrollTop()}
-            viewportHeight={viewportHeight()}
-            totalHeight={virtualizer.getTotalSize()}
-          />
           <div class={s.virtualList} style={{ height: `${virtualizer.getTotalSize()}px` }}>
             <For each={virtualizer.getVirtualItems()}>
               {(virtualItem) => {

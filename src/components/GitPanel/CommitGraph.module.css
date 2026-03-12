@@ -1,15 +1,12 @@
 /* CommitGraph — Canvas overlay for commit lane visualization.
-   sticky keeps the canvas fixed in the scroll viewport while
-   the commit rows scroll underneath. The canvas draws only the
-   visible slice using a scrollTop-offset translate. */
+   Positioned absolutely over the scroll container (rendered as a
+   sibling outside the scroll flow). The canvas stays fixed in the
+   viewport while content scrolls; the draw pass applies a
+   translate(-scrollTop) to render the visible slice. */
 .canvas {
-  position: sticky;
+  position: absolute;
   top: 0;
   left: 0;
-  pointer-events: none;
   z-index: 1;
-  /* Pull canvas out of normal flow so it overlays the virtualList
-     without pushing it down. */
-  float: left;
-  margin-bottom: -100%;
+  pointer-events: none;
 }
