@@ -513,6 +513,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Base ref selection: choose which branch to start from when creating new worktrees
 - Per-repo settings: storage strategy, prompt on create, delete branch on remove, auto-archive, orphan cleanup, PR merge strategy, after-merge behavior
 - Setup script: runs once after creation (e.g., `npm install`)
+- Archive script: runs before a worktree is archived or deleted; non-zero exit blocks the operation
 - Merge & Archive: right-click → merge branch into main, then archive or delete based on setting
 - External worktree detection: monitors `.git/worktrees/` for changes from CLI or other tools
 - Remove via sidebar `×` button or context menu (with confirmation)
@@ -572,6 +573,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Merge button: visible when PR is open, approved, CI green — merges via GitHub API. Merge method auto-detected from repo-allowed methods; auto-fallback to squash on HTTP 405 rejection
 - Approve button: submit an approving review via GitHub API (remote-only PRs)
 - Post-merge cleanup dialog: after merge, offers checkable steps (switch to base, pull, delete local/remote branch)
+- Review button: if the branch's active agent has a run config named "review", spawns a terminal running the interpolated command with `{pr_number}`, `{branch}`, `{base_branch}`, `{repo}`, `{pr_url}`. Hidden when no matching config exists
 - Triggered from: sidebar PR badge, status bar PR badge, status bar CI badge, toolbar notification bell
 
 ### 8.4 PR Notifications
@@ -711,7 +713,8 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 ### 11.4 Repository Settings (per-repo)
 - Display name
 - Worktree tab: storage strategy, prompt on create, delete branch on remove, auto-archive, orphan cleanup, PR merge strategy, after-merge action (each overridable from global defaults)
-- Scripts tab: setup script (post-worktree), run script (`Cmd+R`)
+- Scripts tab: setup script (post-worktree), run script (`Cmd+R`), archive script (pre-archive/delete hook)
+- Repo-local config: `.tuic.json` in repo root provides team-shared settings. Three-tier precedence: `.tuic.json` > per-repo app settings > global defaults
 
 ### 11.5 Notifications
 - Master toggle, volume (0-100%)
@@ -748,6 +751,7 @@ All data persisted to platform config directory via Rust:
 - `prompt_library.json` — saved prompts
 - `notes.json` — ideas panel data
 - `dictation_config.json` — dictation settings
+- `.tuic.json` — repo-root team config (read-only from app, highest precedence for overridable fields)
 - `claude-usage-cache.json` — incremental session transcript parse cache
 
 ### 12.2 Hydration Safety

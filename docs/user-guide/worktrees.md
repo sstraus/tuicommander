@@ -80,6 +80,15 @@ The merge uses `--no-edit` for a clean fast-forward or merge commit. If conflict
 
 When using **Ask** mode, the cleanup dialog detects uncommitted changes and auto-stashes them during the branch switch. An "Unstash after switch" checkbox lets you restore changes on the target branch.
 
+### Archive Script
+
+A per-repo lifecycle hook that runs **before** a worktree is archived or deleted. Configure it in Settings → Repository → Scripts tab, or via `.tuic.json` (`archive_script` field).
+
+- The script runs in the worktree directory that is about to be removed
+- If the script exits with a non-zero code, the archive/delete operation is **blocked** and an error is shown
+- Use cases: backing up local data, cleaning up resources, notifying external systems
+- The script is invoked via the platform shell (`sh -c` on macOS/Linux, `cmd /C` on Windows)
+
 ## Moving Terminals Between Worktrees
 
 Right-click a terminal tab → **Move to Worktree** to move it to a different worktree. The terminal will `cd` into the target worktree path, and the tab automatically reassigns to the new branch in the sidebar.

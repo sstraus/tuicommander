@@ -92,6 +92,7 @@ Per-repository fields:
 | `run_script` | `String` | `""` | Default run command |
 | `auto_fetch_interval_minutes` | `u32` | `0` | Auto-fetch interval in minutes (0 = disabled) |
 | `auto_delete_on_pr_close` | `AutoDeleteOnPrClose` | `"off"` | Auto-delete branch when PR merged/closed (`off`/`ask`/`auto`) |
+| `archive_script` | `String` | `""` | Script to run before archive/delete (non-zero exit blocks) |
 
 **Commands:** `load_repo_settings()`, `save_repo_settings(config)`, `check_has_custom_settings(path)`
 
@@ -108,6 +109,7 @@ Default values applied to new repositories when no per-repo override exists.
 | `copy_untracked_files` | `bool` | `false` | Copy untracked files to worktree |
 | `setup_script` | `String` | `""` | Default setup script |
 | `run_script` | `String` | `""` | Default run command |
+| `archive_script` | `String` | `""` | Default archive script |
 
 **Commands:** `load_repo_defaults()`, `save_repo_defaults(config)`
 
@@ -194,6 +196,34 @@ struct AgentsConfig {
 Persistent cache for incremental JSONL parsing of Claude session transcripts. Stored in the config directory. The cache maps `project_slug -> (filename -> CachedFileStats)` and tracks per-file byte offsets so only newly appended data is parsed on subsequent scans.
 
 This is an internal cache file, not user-editable. It is automatically pruned when projects or session files are deleted.
+
+## Repo-Local Config (`.tuic.json`)
+
+**Module:** `src-tauri/src/config.rs`
+
+A `.tuic.json` file in the repository root provides team-shareable settings. It is read-only from the app — teams edit it directly in their repo and commit it.
+
+**Precedence chain:** `.tuic.json` > per-repo app settings (`repo-settings.json`) > global defaults (`repo-defaults.json`)
+
+**Type:** `RepoLocalConfig` (all fields `Option<T>`, missing fields fall through to lower tiers)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `base_branch` | `String` | Base branch for worktrees |
+| `copy_ignored_files` | `bool` | Copy .gitignored files to worktree |
+| `copy_untracked_files` | `bool` | Copy untracked files to worktree |
+| `setup_script` | `String` | Script to run after worktree creation |
+| `run_script` | `String` | Default run command |
+| `archive_script` | `String` | Script to run before archive/delete |
+| `worktree_storage` | `WorktreeStorage` | Storage strategy (sibling/app-dir/inside-repo) |
+| `delete_branch_on_remove` | `bool` | Delete branch when removing worktree |
+| `auto_archive_merged` | `bool` | Auto-archive merged worktrees |
+| `orphan_cleanup` | `OrphanCleanup` | Orphan worktree handling |
+| `pr_merge_strategy` | `MergeStrategy` | PR merge method preference |
+| `after_merge` | `WorktreeAfterMerge` | Post-merge worktree action |
+| `auto_delete_on_pr_close` | `AutoDeleteOnPrClose` | Auto-delete on PR close |
+
+**Command:** `load_repo_local_config(repo_path)` — returns `RepoLocalConfig` or `null` if file is missing or malformed.
 
 ## Additional Commands
 

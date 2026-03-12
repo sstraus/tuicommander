@@ -109,6 +109,7 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `save_agents_config` | `config` | `()` | Save per-agent run configs |
 | `load_activity` | -- | `ActivityConfig` | Load activity dashboard state |
 | `save_activity` | `config` | `()` | Save activity dashboard state |
+| `load_repo_local_config` | `repo_path` | `RepoLocalConfig?` | Read `.tuic.json` from repo root; returns null if absent or malformed |
 
 ## Agent Detection (`agent.rs`)
 

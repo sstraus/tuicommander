@@ -35,7 +35,7 @@ Each supported agent has an expandable row showing detection status, version, an
 | Setting | Description |
 |---------|-------------|
 | **Agent Detection** | Auto-detects running agents from terminal output patterns. Shows "Available" or "Not found" for each agent. |
-| **Run Configurations** | Custom launch configs (binary path, args, model, prompt) per agent. Add, set default, or delete configurations. |
+| **Run Configurations** | Custom launch configs (binary path, args, model, prompt) per agent. Add, set default, or delete configurations. A config named **"review"** enables the Review button in the PR Detail Popover — its args are interpolated with `{pr_number}`, `{branch}`, `{base_branch}`, `{repo}`, `{pr_url}`. |
 | **MCP Integration** | Install/remove TUICommander as MCP server for supported agents. Shows install status with a dot indicator. |
 | **Claude Usage Dashboard** | (Claude Code only) Toggle under Features when the Claude row is expanded. Enables rate limit monitoring, session analytics, token usage charts, activity heatmap, and per-project breakdowns. Usage data appears in the status bar agent badge and in a dedicated dashboard tab. |
 
@@ -111,6 +111,17 @@ Per-repository settings accessed via sidebar `⋯` → "Repo Settings".
 
 - **Setup Script** — Runs once after worktree creation (e.g., `npm install`)
 - **Run Script** — On-demand script launchable from toolbar with `Cmd+R`
+- **Archive Script** — Runs before a worktree is archived or deleted; non-zero exit blocks the operation
+
+### Repo-Local Config (`.tuic.json`)
+
+A `.tuic.json` file in the repository root provides team-shareable settings that override per-repo app settings and global defaults. The file is read-only from TUICommander (edit it in your repo directly).
+
+**Precedence:** `.tuic.json` > per-repo app settings > global defaults
+
+Supported fields: `base_branch`, `copy_ignored_files`, `copy_untracked_files`, `setup_script`, `run_script`, `archive_script`, `worktree_storage`, `delete_branch_on_remove`, `auto_archive_merged`, `orphan_cleanup`, `pr_merge_strategy`, `after_merge`, `auto_delete_on_pr_close`.
+
+User-specific settings (`promptOnCreate`, `autoFetchIntervalMinutes`) are intentionally excluded from `.tuic.json`.
 
 ## Notification Settings
 
