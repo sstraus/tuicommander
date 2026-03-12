@@ -400,6 +400,10 @@ const App: Component = () => {
         appLogger.debug("terminal", `[Notify] ${id} completion SUPPRESSED — ${terminal.activeSubTasks} active sub-tasks`);
         return;
       }
+      if (terminal.awaitingInput) {
+        appLogger.debug("terminal", `[Notify] ${id} completion SUPPRESSED — awaitingInput=${terminal.awaitingInput}`);
+        return;
+      }
       appLogger.info("terminal", `[Notify] ${id} completion — busy for ${Math.round(durationMs / 1000)}s then idle`);
       terminalsStore.update(id, { activity: true, unseen: true });
       notificationsStore.playCompletion();
