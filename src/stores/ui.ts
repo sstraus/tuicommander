@@ -14,6 +14,7 @@ const DIFF_PANEL_DEFAULT_WIDTH = 400;
 const MARKDOWN_PANEL_DEFAULT_WIDTH = 400;
 const NOTES_PANEL_DEFAULT_WIDTH = 350;
 const PLAN_PANEL_DEFAULT_WIDTH = 350;
+const GIT_PANEL_DEFAULT_WIDTH = 380;
 const SETTINGS_NAV_DEFAULT_WIDTH = 180;
 
 /** UI store state */
@@ -30,12 +31,14 @@ interface UIStoreState {
   notesPanelVisible: boolean;
   fileBrowserPanelVisible: boolean;
   planPanelVisible: boolean;
+  gitPanelVisible: boolean;
 
   // Resizable panel widths (persisted)
   diffPanelWidth: number;
   markdownPanelWidth: number;
   notesPanelWidth: number;
   planPanelWidth: number;
+  gitPanelWidth: number;
   settingsNavWidth: number;
 
   // Diff panel state
@@ -63,10 +66,12 @@ function createUIStore() {
     notesPanelVisible: false,
     fileBrowserPanelVisible: false,
     planPanelVisible: false,
+    gitPanelVisible: false,
     diffPanelWidth: DIFF_PANEL_DEFAULT_WIDTH,
     markdownPanelWidth: MARKDOWN_PANEL_DEFAULT_WIDTH,
     notesPanelWidth: NOTES_PANEL_DEFAULT_WIDTH,
     planPanelWidth: PLAN_PANEL_DEFAULT_WIDTH,
+    gitPanelWidth: GIT_PANEL_DEFAULT_WIDTH,
     settingsNavWidth: SETTINGS_NAV_DEFAULT_WIDTH,
     currentDiffRepo: null,
     activeDropdown: null,
@@ -85,10 +90,12 @@ function createUIStore() {
         notes_panel_visible: state.notesPanelVisible,
         file_browser_panel_visible: state.fileBrowserPanelVisible,
         plan_panel_visible: state.planPanelVisible,
+        git_panel_visible: state.gitPanelVisible,
         diff_panel_width: state.diffPanelWidth,
         markdown_panel_width: state.markdownPanelWidth,
         notes_panel_width: state.notesPanelWidth,
         plan_panel_width: state.planPanelWidth,
+        git_panel_width: state.gitPanelWidth,
         settings_nav_width: state.settingsNavWidth,
       },
     }).catch((err) => appLogger.debug("store", "Failed to save UI prefs", err));
@@ -120,10 +127,12 @@ function createUIStore() {
           notes_panel_visible?: boolean;
           file_browser_panel_visible?: boolean;
           plan_panel_visible?: boolean;
+          git_panel_visible?: boolean;
           diff_panel_width?: number;
           markdown_panel_width?: number;
           notes_panel_width?: number;
           plan_panel_width?: number;
+          git_panel_width?: number;
           settings_nav_width?: number;
         }>("load_ui_prefs");
         if (loaded) {
@@ -148,6 +157,9 @@ function createUIStore() {
           if (loaded.plan_panel_visible !== undefined) {
             setState("planPanelVisible", loaded.plan_panel_visible);
           }
+          if (loaded.git_panel_visible !== undefined) {
+            setState("gitPanelVisible", loaded.git_panel_visible);
+          }
           if (loaded.diff_panel_width !== undefined) {
             setState("diffPanelWidth", loaded.diff_panel_width);
           }
@@ -159,6 +171,9 @@ function createUIStore() {
           }
           if (loaded.plan_panel_width !== undefined) {
             setState("planPanelWidth", loaded.plan_panel_width);
+          }
+          if (loaded.git_panel_width !== undefined) {
+            setState("gitPanelWidth", loaded.git_panel_width);
           }
           if (loaded.settings_nav_width !== undefined) {
             setState("settingsNavWidth", loaded.settings_nav_width);
@@ -178,6 +193,7 @@ function createUIStore() {
           setState("markdownPanelVisible", false);
           setState("fileBrowserPanelVisible", false);
           setState("planPanelVisible", false);
+          setState("gitPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -191,6 +207,7 @@ function createUIStore() {
           setState("diffPanelVisible", false);
           setState("fileBrowserPanelVisible", false);
           setState("planPanelVisible", false);
+          setState("gitPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -203,6 +220,7 @@ function createUIStore() {
           setState("markdownPanelVisible", false);
           setState("fileBrowserPanelVisible", false);
           setState("planPanelVisible", false);
+          setState("gitPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -215,6 +233,7 @@ function createUIStore() {
           setState("diffPanelVisible", false);
           setState("fileBrowserPanelVisible", false);
           setState("planPanelVisible", false);
+          setState("gitPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -238,6 +257,7 @@ function createUIStore() {
           setState("diffPanelVisible", false);
           setState("markdownPanelVisible", false);
           setState("planPanelVisible", false);
+          setState("gitPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -250,6 +270,7 @@ function createUIStore() {
           setState("diffPanelVisible", false);
           setState("markdownPanelVisible", false);
           setState("planPanelVisible", false);
+          setState("gitPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -263,6 +284,7 @@ function createUIStore() {
           setState("diffPanelVisible", false);
           setState("markdownPanelVisible", false);
           setState("fileBrowserPanelVisible", false);
+          setState("gitPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -275,6 +297,34 @@ function createUIStore() {
           setState("diffPanelVisible", false);
           setState("markdownPanelVisible", false);
           setState("fileBrowserPanelVisible", false);
+          setState("gitPanelVisible", false);
+        }
+      });
+      saveUIPrefs();
+    },
+
+    toggleGitPanel(): void {
+      const next = !state.gitPanelVisible;
+      batch(() => {
+        setState("gitPanelVisible", next);
+        if (next) {
+          setState("diffPanelVisible", false);
+          setState("markdownPanelVisible", false);
+          setState("fileBrowserPanelVisible", false);
+          setState("planPanelVisible", false);
+        }
+      });
+      saveUIPrefs();
+    },
+
+    setGitPanelVisible(visible: boolean): void {
+      batch(() => {
+        setState("gitPanelVisible", visible);
+        if (visible) {
+          setState("diffPanelVisible", false);
+          setState("markdownPanelVisible", false);
+          setState("fileBrowserPanelVisible", false);
+          setState("planPanelVisible", false);
         }
       });
       saveUIPrefs();
@@ -340,6 +390,11 @@ function createUIStore() {
       saveUIPrefs();
     },
 
+    setGitPanelWidth(width: number): void {
+      setState("gitPanelWidth", width);
+      saveUIPrefs();
+    },
+
     setSettingsNavWidth(width: number): void {
       setState("settingsNavWidth", width);
     },
@@ -357,6 +412,7 @@ function createUIStore() {
         setState("markdownPanelWidth", MARKDOWN_PANEL_DEFAULT_WIDTH);
         setState("notesPanelWidth", NOTES_PANEL_DEFAULT_WIDTH);
         setState("planPanelWidth", PLAN_PANEL_DEFAULT_WIDTH);
+        setState("gitPanelWidth", GIT_PANEL_DEFAULT_WIDTH);
         setState("settingsNavWidth", SETTINGS_NAV_DEFAULT_WIDTH);
       });
       saveUIPrefs();

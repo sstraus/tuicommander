@@ -1,0 +1,60 @@
+/* Git Panel — tabbed container for git operations */
+.panel {
+  position: relative;
+  width: 380px;
+  min-width: 300px;
+  max-width: 50%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 150ms ease, display 150ms allow-discrete;
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+.hidden {
+  display: none;
+  opacity: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+}
+
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.1s ease, border-color 0.15s ease;
+}
+
+.tab:hover {
+  color: var(--fg-primary);
+}
+
+.tabActive {
+  color: var(--fg-primary);
+  border-bottom-color: var(--accent);
+}
+
+.placeholder {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}

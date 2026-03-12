@@ -865,7 +865,7 @@ const App: Component = () => {
     togglePromptLibrary: promptLibraryStore.toggleDrawer,
     toggleSettings: () => setSettingsPanelVisible((v) => !v),
     toggleTaskQueue: () => setTaskQueueVisible((v) => !v),
-    toggleGitOpsPanel: () => setGitOpsPanelVisible((v) => !v),
+    toggleGitOpsPanel: uiStore.toggleGitPanel,
     toggleHelpPanel: () => setHelpPanelVisible((v) => !v),
     toggleNotesPanel: uiStore.toggleNotesPanel,
     toggleFileBrowserPanel: uiStore.toggleFileBrowserPanel,
