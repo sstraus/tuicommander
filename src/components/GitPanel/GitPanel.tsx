@@ -1,6 +1,8 @@
 import { Component, createSignal, Match, Switch } from "solid-js";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { cx } from "../../utils";
+import { ChangesTab } from "./ChangesTab";
+import { LogTab } from "./LogTab";
 import p from "../shared/panel.module.css";
 import s from "./GitPanel.module.css";
 
@@ -47,7 +49,7 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
             <div class={s.placeholder}>Changes tab placeholder</div>
           </Match>
           <Match when={activeTab() === "log"}>
-            <div class={s.placeholder}>Log tab placeholder</div>
+            <LogTab repoPath={props.repoPath} />
           </Match>
           <Match when={activeTab() === "stashes"}>
             <div class={s.placeholder}>Stashes tab placeholder</div>
