@@ -13,13 +13,6 @@ interface StashEntry {
   hash: string;
 }
 
-/** Mirrors the Rust GitCommandResult struct from git.rs */
-interface GitCommandResult {
-  success: boolean;
-  stdout: string;
-  stderr: string;
-}
-
 export interface StashesTabProps {
   repoPath: string | null;
 }
@@ -73,21 +66,12 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
     ),
   );
 
-  async function runStashAction(args: string[]) {
+  async function runStashCommand(command: string, stashRef: string) {
     const repoPath = props.repoPath;
     if (!repoPath) return;
-    const refName = args[args.length - 1];
-    setBusyRef(refName);
+    setBusyRef(stashRef);
     try {
-      const result = await invoke<GitCommandResult>("run_git_command", {
-        path: repoPath,
-        args,
-      });
-      if (!result.success) {
-        // Let the user see the error via the app's standard error handling
-        throw new Error(result.stderr || "Git stash operation failed");
-      }
-      // Re-fetch stash list after successful operation
+      await invoke<void>(command, { path: repoPath, stashRef });
       await fetchStashes(repoPath);
     } finally {
       setBusyRef(null);
@@ -95,7 +79,7 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
   }
 
   function handleApply(refName: string) {
-    runStashAction(["stash", "apply", refName]);
+    void runStashCommand("git_stash_apply", refName);
   }
 
   function showConfirm(title: string, message: string, action: () => void) {
@@ -109,7 +93,7 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
     showConfirm(
       "Pop Stash",
       `Apply and remove "${refName}"?\nThis cannot be undone.`,
-      () => runStashAction(["stash", "pop", refName]),
+      () => void runStashCommand("git_stash_pop", refName),
     );
   }
 
@@ -117,7 +101,7 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
     showConfirm(
       "Drop Stash",
       `Permanently delete "${refName}"?\nThis cannot be undone.`,
-      () => runStashAction(["stash", "drop", refName]),
+      () => void runStashCommand("git_stash_drop", refName),
     );
   }
 
@@ -144,11 +128,11 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
     if (!diffs()[refName]) {
       setDiffLoading((prev) => ({ ...prev, [refName]: true }));
       try {
-        const result = await invoke<GitCommandResult>("run_git_command", {
+        const diff = await invoke<string>("git_stash_show", {
           path: props.repoPath!,
-          args: ["stash", "show", "-p", refName],
+          stashRef: refName,
         });
-        setDiffs((prev) => ({ ...prev, [refName]: result.stdout }));
+        setDiffs((prev) => ({ ...prev, [refName]: diff }));
       } catch {
         setDiffs((prev) => ({ ...prev, [refName]: "" }));
       } finally {

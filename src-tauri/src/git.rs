@@ -1320,6 +1320,10 @@ fn validate_paths_within_repo(repo_path: &Path, files: &[String]) -> Result<(), 
     let canonical_repo = repo_path.canonicalize()
         .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
     for file in files {
+        // Reject absolute paths — all file args must be relative to repo root
+        if Path::new(file).is_absolute() {
+            return Err(format!("Access denied: absolute path '{}' not allowed", file));
+        }
         let full = repo_path.join(file);
         // For files that don't exist yet (e.g. deleted), canonicalize will fail.
         // In that case, do a manual check: normalize the joined path and verify prefix.
@@ -1473,6 +1477,14 @@ const COMMIT_LOG_FORMAT: &str = "%H%x00%P%x00%D%x00%an%x00%aI%x00%s";
 const COMMIT_LOG_MAX_COUNT: u32 = 500;
 const COMMIT_LOG_DEFAULT_COUNT: u32 = 50;
 
+/// Validate a git object hash (4-40 hex chars). Prevents injection via `after` parameters.
+fn validate_git_hash(hash: &str) -> Result<(), String> {
+    if hash.len() < 4 || hash.len() > 40 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("Invalid git hash: '{hash}'"));
+    }
+    Ok(())
+}
+
 /// Get paginated commit log with full metadata.
 #[tauri::command]
 pub(crate) fn get_commit_log(
@@ -1493,6 +1505,7 @@ pub(crate) fn get_commit_log(
     ];
 
     if let Some(ref hash) = after {
+        validate_git_hash(hash)?;
         args.push(hash.clone());
     }
 
@@ -1564,6 +1577,67 @@ pub(crate) fn get_stash_list(path: String) -> Result<Vec<StashEntry>, String> {
     Ok(entries)
 }
 
+/// Validate a stash ref format (e.g. "stash@{0}").
+fn validate_stash_ref(stash_ref: &str) -> Result<(), String> {
+    if !stash_ref.starts_with("stash@{")
+        || !stash_ref.ends_with('}')
+        || stash_ref["stash@{".len()..stash_ref.len() - 1]
+            .parse::<u32>()
+            .is_err()
+    {
+        return Err(format!("Invalid stash ref: '{stash_ref}'"));
+    }
+    Ok(())
+}
+
+/// Apply a stash without removing it.
+#[tauri::command]
+pub(crate) fn git_stash_apply(path: String, stash_ref: String) -> Result<(), String> {
+    let repo_path = PathBuf::from(&path);
+    validate_stash_ref(&stash_ref)?;
+    git_cmd(&repo_path)
+        .args(["stash", "apply", &stash_ref])
+        .run()
+        .map_err(|e| format!("git stash apply failed: {e}"))?;
+    Ok(())
+}
+
+/// Apply and remove a stash.
+#[tauri::command]
+pub(crate) fn git_stash_pop(path: String, stash_ref: String) -> Result<(), String> {
+    let repo_path = PathBuf::from(&path);
+    validate_stash_ref(&stash_ref)?;
+    git_cmd(&repo_path)
+        .args(["stash", "pop", &stash_ref])
+        .run()
+        .map_err(|e| format!("git stash pop failed: {e}"))?;
+    Ok(())
+}
+
+/// Drop (delete) a stash.
+#[tauri::command]
+pub(crate) fn git_stash_drop(path: String, stash_ref: String) -> Result<(), String> {
+    let repo_path = PathBuf::from(&path);
+    validate_stash_ref(&stash_ref)?;
+    git_cmd(&repo_path)
+        .args(["stash", "drop", &stash_ref])
+        .run()
+        .map_err(|e| format!("git stash drop failed: {e}"))?;
+    Ok(())
+}
+
+/// Show diff for a stash entry.
+#[tauri::command]
+pub(crate) fn git_stash_show(path: String, stash_ref: String) -> Result<String, String> {
+    let repo_path = PathBuf::from(&path);
+    validate_stash_ref(&stash_ref)?;
+    let out = git_cmd(&repo_path)
+        .args(["stash", "show", "-p", &stash_ref])
+        .run()
+        .map_err(|e| format!("git stash show failed: {e}"))?;
+    Ok(out.stdout)
+}
+
 /// Get commit log for a specific file, following renames.
 #[tauri::command]
 pub(crate) fn get_file_history(
@@ -1573,6 +1647,7 @@ pub(crate) fn get_file_history(
     after: Option<String>,
 ) -> Result<Vec<CommitLogEntry>, String> {
     let repo_path = PathBuf::from(&path);
+    validate_paths_within_repo(&repo_path, &[file.clone()])?;
     let n = count.unwrap_or(COMMIT_LOG_DEFAULT_COUNT).min(COMMIT_LOG_MAX_COUNT);
     let n_str = n.to_string();
 
@@ -1586,6 +1661,7 @@ pub(crate) fn get_file_history(
     ];
 
     if let Some(ref hash) = after {
+        validate_git_hash(hash)?;
         args.push(hash.clone());
     }
 
@@ -1680,6 +1756,7 @@ pub(crate) fn get_file_blame(
     file: String,
 ) -> Result<Vec<BlameLine>, String> {
     let repo_path = PathBuf::from(&path);
+    validate_paths_within_repo(&repo_path, &[file.clone()])?;
 
     let out = git_cmd(&repo_path)
         .args(["blame", "--porcelain", &file])

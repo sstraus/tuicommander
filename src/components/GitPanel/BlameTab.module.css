@@ -64,16 +64,14 @@
 }
 
 .blameTable {
-  display: table;
   width: 100%;
-  border-collapse: collapse;
   font-size: var(--font-sm);
   font-family: var(--font-mono);
-  line-height: 1.5;
+  line-height: 20px;
 }
 
 .blameLine {
-  display: table-row;
+  display: flex;
   cursor: default;
   transition: background 0.1s ease;
 }
@@ -94,7 +92,6 @@
 
 /* Gutter: hash + author + age */
 .gutter {
-  display: table-cell;
   width: 180px;
   min-width: 180px;
   max-width: 180px;
@@ -103,9 +100,9 @@
   white-space: nowrap;
   color: var(--fg-muted);
   font-size: var(--font-xs);
-  vertical-align: top;
   user-select: none;
   border-right: 1px solid var(--border);
+  overflow: hidden;
 }
 
 /* Continuation lines in same commit group — empty gutter */
@@ -135,16 +132,15 @@
 
 /* Code content */
 .code {
-  display: table-cell;
+  flex: 1;
   padding: 0 8px;
   white-space: pre;
   color: var(--fg-primary);
-  vertical-align: top;
+  overflow: hidden;
 }
 
 /* Line number */
 .lineNumber {
-  display: table-cell;
   width: 40px;
   min-width: 40px;
   padding: 0 6px;
@@ -152,7 +148,6 @@
   color: var(--fg-muted);
   opacity: 0.5;
   font-size: var(--font-xs);
-  vertical-align: top;
   user-select: none;
 }
 

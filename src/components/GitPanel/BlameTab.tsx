@@ -1,4 +1,5 @@
-import { Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, Show } from "solid-js";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { formatRelativeTime } from "../../utils/time";
@@ -20,9 +21,11 @@ export interface BlameTabProps {
   filePath: string | null;
 }
 
+/** Row height for virtualization (matches line-height: 1.5 at ~13px font) */
+const ROW_HEIGHT = 20;
+
 /** Compute a heatmap background color based on age fraction (0 = newest, 1 = oldest) */
 function heatmapBackground(ageFraction: number): string {
-  // Interpolate opacity: recent = 0.15, old = 0.02
   const opacity = 0.15 - ageFraction * 0.13;
   return `rgba(100, 200, 100, ${opacity.toFixed(3)})`;
 }
@@ -32,6 +35,7 @@ export const BlameTab: Component<BlameTabProps> = (props) => {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [highlightedHash, setHighlightedHash] = createSignal<string | null>(null);
+  let scrollRef!: HTMLDivElement;
 
   // Fetch blame data when file or repo changes
   createEffect(() => {
@@ -64,6 +68,13 @@ export const BlameTab: Component<BlameTabProps> = (props) => {
       });
   });
 
+  const virtualizer = createVirtualizer({
+    get count() { return lines().length; },
+    getScrollElement: () => scrollRef,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 20,
+  });
+
   // Compute age range for heatmap normalization
   const ageRange = createMemo(() => {
     const data = lines();
@@ -77,14 +88,12 @@ export const BlameTab: Component<BlameTabProps> = (props) => {
     return { oldest, newest };
   });
 
-  /** Calculate age fraction for a given timestamp (0 = newest, 1 = oldest) */
   function ageFraction(authorTime: number): number {
     const { oldest, newest } = ageRange();
-    if (newest === oldest) return 0; // all same age
+    if (newest === oldest) return 0;
     return (newest - authorTime) / (newest - oldest);
   }
 
-  /** Check if this line starts a new commit group (different hash from previous line) */
   function isGroupStart(index: number): boolean {
     if (index === 0) return true;
     const data = lines();
@@ -124,43 +133,53 @@ export const BlameTab: Component<BlameTabProps> = (props) => {
         <div class={s.empty}>{error()}</div>
       </Show>
 
-      {/* Blame content */}
+      {/* Virtualized blame content */}
       <Show when={!loading() && !error() && lines().length > 0}>
-        <div class={s.blameScroll}>
-          <div class={s.blameTable}>
-            <For each={lines()}>
-              {(line, index) => {
-                const groupStart = () => isGroupStart(index());
-                const highlighted = () => highlightedHash() === line.hash;
-                const fraction = () => ageFraction(line.author_time);
+        <div class={s.blameScroll} ref={scrollRef!}>
+          <div
+            class={s.blameTable}
+            style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}
+          >
+            {virtualizer.getVirtualItems().map((vItem) => {
+              const line = lines()[vItem.index];
+              const groupStart = isGroupStart(vItem.index);
+              const highlighted = highlightedHash() === line.hash;
+              const fraction = ageFraction(line.author_time);
 
-                return (
-                  <div
-                    class={cx(
-                      s.blameLine,
-                      groupStart() && s.blameLineGroupStart,
-                      highlighted() && s.blameLineHighlighted,
-                    )}
-                    style={{ background: highlighted() ? undefined : heatmapBackground(fraction()) }}
+              return (
+                <div
+                  class={cx(
+                    s.blameLine,
+                    groupStart && s.blameLineGroupStart,
+                    highlighted && s.blameLineHighlighted,
+                  )}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: `${vItem.size}px`,
+                    transform: `translateY(${vItem.start}px)`,
+                    background: highlighted ? undefined : heatmapBackground(fraction),
+                  }}
+                >
+                  <span
+                    class={cx(s.gutter, !groupStart && s.gutterContinuation)}
+                    onClick={() => handleGutterClick(line.hash)}
                   >
-                    <span
-                      class={cx(s.gutter, !groupStart() && s.gutterContinuation)}
-                      onClick={() => handleGutterClick(line.hash)}
-                    >
-                      <Show when={groupStart()}>
-                        <span class={s.gutterHash}>{line.hash.slice(0, 7)}</span>
-                        <span class={s.gutterAuthor}>{line.author}</span>
-                        <span class={s.gutterAge}>
-                          {formatRelativeTime(line.author_time * 1000)}
-                        </span>
-                      </Show>
-                    </span>
-                    <span class={s.lineNumber}>{line.line_number}</span>
-                    <span class={s.code}>{line.content}</span>
-                  </div>
-                );
-              }}
-            </For>
+                    <Show when={groupStart}>
+                      <span class={s.gutterHash}>{line.hash.slice(0, 7)}</span>
+                      <span class={s.gutterAuthor}>{line.author}</span>
+                      <span class={s.gutterAge}>
+                        {formatRelativeTime(line.author_time * 1000)}
+                      </span>
+                    </Show>
+                  </span>
+                  <span class={s.lineNumber}>{line.line_number}</span>
+                  <span class={s.code}>{line.content}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
