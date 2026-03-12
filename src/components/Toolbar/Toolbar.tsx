@@ -62,6 +62,7 @@ export interface ToolbarProps {
   runCommand?: string;
   onBranchClick?: () => void;
   onRun?: (shiftKey: boolean) => void;
+  onReviewPr?: (repoPath: string, branchName: string, command: string) => void;
 }
 
 export const Toolbar: Component<ToolbarProps> = (props) => {
@@ -422,6 +423,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
             branch={target().branch}
             anchor="top"
             onClose={() => setPrDetailTarget(null)}
+            onReview={props.onReviewPr}
           />
         )}
       </Show>

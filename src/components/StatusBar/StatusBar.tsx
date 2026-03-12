@@ -32,6 +32,7 @@ export interface StatusBarProps {
   currentRepoPath?: string;
   cwd?: string;
   onBranchRenamed?: (oldName: string, newName: string) => void;
+  onReviewPr?: (repoPath: string, branchName: string, command: string) => void;
 }
 
 export const StatusBar: Component<StatusBarProps> = (props) => {
@@ -309,6 +310,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           repoPath={props.currentRepoPath || ""}
           branch={github.status()?.current_branch || ""}
           onClose={() => setShowPrDetailPopover(false)}
+          onReview={props.onReviewPr}
         />
       </Show>
 

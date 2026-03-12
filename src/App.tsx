@@ -1151,6 +1151,7 @@ const App: Component = () => {
           }
         }}
         onRun={(shiftKey) => gitOps.handleRunCommand(shiftKey, () => setRunCommandDialogVisible(true))}
+        onReviewPr={gitOps.handleReviewPr}
       />
 
       {/* Body: sidebar + main content side by side */}
@@ -1196,6 +1197,7 @@ const App: Component = () => {
           currentBranches={gitOps.currentBranches()}
           onBackgroundGit={handleBackgroundGit}
           runningGitOps={runningGitOps()}
+          onReviewPr={gitOps.handleReviewPr}
         />
 
         {/* Main content */}
@@ -1276,6 +1278,7 @@ const App: Component = () => {
             }
             setStatusInfo(`Renamed branch ${oldName} to ${newName}`);
           }}
+          onReviewPr={gitOps.handleReviewPr}
         />
         </main>
       </div>

@@ -1368,5 +1368,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
     refreshBranchLists,
     getWorktreeTargets,
     moveTerminalToWorktree,
+    /** Create a new terminal for the branch and queue the review command */
+    handleReviewPr: async (repoPath: string, branchName: string, command: string) => {
+      const termId = await handleAddTerminalToBranch(repoPath, branchName);
+      if (termId) {
+        terminalsStore.update(termId, { pendingInitCommand: command });
+      }
+    },
   };
 }

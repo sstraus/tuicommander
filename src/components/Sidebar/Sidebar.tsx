@@ -38,6 +38,8 @@ export interface SidebarProps {
   onSwitchBranch?: (repoPath: string, branchName: string) => void;
   switchBranchLists?: Record<string, string[]>;
   currentBranches?: Record<string, string>;
+  /** Called when user clicks Review in PrDetailPopover — creates terminal and queues command */
+  onReviewPr?: (repoPath: string, branchName: string, command: string) => void;
 }
 
 const DRAG_CLASSES: Record<string, string> = {
@@ -410,6 +412,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
             repoPath={target().repoPath}
             branch={target().branch}
             onClose={() => setPrDetailTarget(null)}
+            onReview={props.onReviewPr}
           />
         )}
       </Show>
