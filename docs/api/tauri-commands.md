@@ -100,6 +100,9 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `save_prompt_library` | `config` | `()` | Save prompts |
 | `load_notes` | -- | `JSON` | Load notes |
 | `save_notes` | `config` | `()` | Save notes |
+| `save_note_image` | `note_id, data_base64, extension` | `String` (absolute path) | Decode base64 image, validate ≤10 MB, write to `config_dir()/note-images/<note_id>/<timestamp>.<ext>` |
+| `delete_note_assets` | `note_id` | `()` | Remove `note-images/<note_id>/` directory recursively (no-op if missing) |
+| `get_note_images_dir` | -- | `String` | Return `config_dir()/note-images/` absolute path |
 | `load_keybindings` | -- | `JSON` | Load keybinding overrides |
 | `save_keybindings` | `config` | `()` | Save keybinding overrides |
 | `load_agents_config` | -- | `AgentsConfig` | Load per-agent run configs |

@@ -301,6 +301,7 @@ All stores persist to localStorage:
 - [x] Status bar unified agent badge with priority cascade (rate limit > usage API > PTY usage > name)
 - [x] PR lifecycle filtering (CLOSED hidden, MERGED hidden after 5min user activity)
 - [x] Notes/Ideas: mark as used, badge count in status bar
+- [x] Notes/Ideas: image paste support (Ctrl+V), thumbnails, send absolute paths to terminal
 
 ### Completed (Voice Dictation)
 - [x] Local Whisper inference via whisper-rs (Metal GPU acceleration)

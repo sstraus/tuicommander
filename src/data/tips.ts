@@ -209,4 +209,9 @@ export const TIPS: Tip[] = [
     description: "Drag files from Finder onto the terminal area to open them — markdown in the viewer, code in the editor.",
     shortcut: null,
   },
+  {
+    feature: "Image Paste in Notes",
+    description: "Paste images into the Notes panel with Ctrl+V — thumbnails render inline, and paths are sent to agents so they can read the files.",
+    shortcut: null,
+  },
 ];
