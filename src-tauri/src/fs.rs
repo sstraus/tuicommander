@@ -161,12 +161,16 @@ pub(crate) fn get_ignored_paths(repo_path: &str, paths: &[String]) -> std::colle
 pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>, String> {
     let repo = PathBuf::from(&repo_path);
 
+    // Canonicalize repo root ONCE — all relative paths derived via join + strip_prefix
+    let canonical_repo = repo
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
+
     // Validate the subdir is within the repo
     let dir_to_read = if subdir.is_empty() || subdir == "." {
-        repo.canonicalize()
-            .map_err(|e| format!("Failed to resolve repo path: {e}"))?
+        canonical_repo.clone()
     } else {
-        let (_canonical_repo, canonical_dir) = validate_path(&repo_path, &subdir)?;
+        let (_cr, canonical_dir) = validate_path(&repo_path, &subdir)?;
         canonical_dir
     };
 
@@ -177,9 +181,15 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
     // Get git statuses for this subdir
     let git_statuses = parse_git_status(&repo_path, &subdir);
 
-    let canonical_repo = repo
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
+    // Build gitignore matcher from the repo's .gitignore (no subprocess)
+    let gitignore_path = canonical_repo.join(".gitignore");
+    let gitignore = if gitignore_path.exists() {
+        let mut builder = ignore::gitignore::GitignoreBuilder::new(&canonical_repo);
+        builder.add(&gitignore_path);
+        builder.build().ok()
+    } else {
+        None
+    };
 
     let mut entries = Vec::new();
     let read_dir = std::fs::read_dir(&dir_to_read)
@@ -206,16 +216,18 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| d.as_secs());
 
-        // Compute relative path from repo root
-        let canonical_entry = entry
-            .path()
-            .canonicalize()
-            .map_err(|e| format!("Failed to canonicalize {name}: {e}"))?;
-        let relative = canonical_entry
+        // Compute relative path via join + strip_prefix (no canonicalize per entry)
+        let abs_path = dir_to_read.join(&name);
+        let relative = abs_path
             .strip_prefix(&canonical_repo)
             .map_err(|_| format!("Entry {name} is outside repo"))?
             .to_string_lossy()
             .replace('\\', "/");
+
+        // Check gitignore status without subprocess
+        let is_ignored = gitignore.as_ref().map_or(false, |gi| {
+            gi.matched_path_or_any_parents(&abs_path, is_dir).is_ignore()
+        });
 
         // Look up git status — for dirs, propagate the most relevant child status
         let git_status = if is_dir {
@@ -233,7 +245,6 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
                     }
                 }
             }
-            // Priority: staged > modified > untracked
             if has_staged {
                 "staged".to_string()
             } else if has_modified {
@@ -254,15 +265,8 @@ pub fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>
             size,
             modified_at,
             git_status,
-            is_ignored: false, // populated after collecting all entries
+            is_ignored,
         });
-    }
-
-    // Detect gitignored paths
-    let all_relative_paths: Vec<String> = entries.iter().map(|e| e.path.clone()).collect();
-    let ignored_set = get_ignored_paths(&repo_path, &all_relative_paths);
-    for entry in &mut entries {
-        entry.is_ignored = ignored_set.contains(&entry.path);
     }
 
     // Sort: directories first, then alphabetical (case-insensitive)
@@ -911,6 +915,33 @@ mod tests {
         for entry in &entries {
             assert!(entry.modified_at > 0, "modified_at should be non-zero for {}", entry.name);
         }
+    }
+
+    #[test]
+    fn test_list_directory_marks_ignored() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // Create a file and a gitignore that ignores it
+        fs::write(dir.path().join("build.log"), "build output").unwrap();
+        fs::write(dir.path().join(".gitignore"), "build.log\n").unwrap();
+
+        let entries = list_directory(repo_path, ".".to_string()).unwrap();
+
+        let build_log = entries.iter().find(|e| e.name == "build.log");
+        assert!(build_log.is_some(), "build.log should still appear in listing");
+        assert!(
+            build_log.unwrap().is_ignored,
+            "build.log should be marked as ignored"
+        );
+
+        // .gitignore itself should NOT be ignored
+        let gitignore = entries.iter().find(|e| e.name == ".gitignore");
+        assert!(gitignore.is_some(), ".gitignore should appear in listing");
+        assert!(
+            !gitignore.unwrap().is_ignored,
+            ".gitignore should NOT be marked as ignored"
+        );
     }
 
     // --- search_files tests ---
