@@ -291,6 +291,14 @@ Features to test when TUICommander is more usable.
 - [ ] Test with zsh (default macOS) — OSC 7 emitted by default
 - [ ] Test with fish — OSC 7 emitted natively
 
+## Remote-Only PR Badge (reported intermittent)
+- [ ] Blue badge with PR count visible on repo header when remote-only PRs exist
+- [ ] Badge appears after GitHub polling completes (may take a few seconds on startup)
+- [ ] NOT a collapsed-repo issue (confirmed by reporter)
+- [ ] Suspect: polling hasn't completed yet, or circuit breaker is open
+- [ ] Suspect: race between `localBranchNames()` update and GitHub poll — if branch names briefly match, PR is excluded from remote-only filter
+- [ ] To diagnose: check `githubStore.state.repos[path]` in console when badge is missing
+
 ## PWA / Mobile Output View
 - [ ] Normal text wraps on narrow screens (no horizontal scroll)
 - [ ] Box-drawing table output preserves alignment (│ ┌ ─ etc.)
