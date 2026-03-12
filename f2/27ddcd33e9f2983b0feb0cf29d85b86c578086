@@ -1,0 +1,23 @@
+src/hooks/useGitOperations.ts
+  0e1e7de81a3faa9d 437,440-441,443,450,453-458,461,464-465,489-490,501-505,507-510,512,520
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "f227ddcd33e9f2983b0feb0cf29d85b86c578086",
+  "prompts": {
+    "0e1e7de81a3faa9d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a86544d2-6015-4478-9018-381c958d1e03",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 27,
+      "total_deletions": 25,
+      "accepted_lines": 27,
+      "overriden_lines": 0
+    }
+  }
+}
