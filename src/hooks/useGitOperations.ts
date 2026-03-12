@@ -434,36 +434,35 @@ export function useGitOperations(deps: GitOperationsDeps) {
     setCurrentBranch(branchName);
 
     const t1 = performance.now();
+    // Fire-and-forget: diff stats are cosmetic, don't block branch switch
     const selectedBranch = repositoriesStore.get(repoPath)?.branches[branchName];
     if (selectedBranch?.worktreePath) {
-      try {
-        const stats = await deps.repo.getDiffStats(selectedBranch.worktreePath);
+      const wtPath = selectedBranch.worktreePath;
+      deps.repo.getDiffStats(wtPath).then((stats) => {
         repositoriesStore.updateBranchStats(repoPath, branchName, stats.additions, stats.deletions);
-      } catch {
-        // Ignore stats errors
-      }
+      }).catch(() => {});
     }
     const t2 = performance.now();
 
     let branch = repositoriesStore.get(repoPath)?.branches[branchName];
 
     // Adopt orphaned terminals whose cwd matches this branch's worktree path.
-    // This recovers terminals that lost their branch association (e.g. after a
-    // refreshAllBranchStats race condition recreated the branch fresh).
+    // Pre-compute claimed set O(B×T) once, then check in O(1) per terminal.
     if (branch?.worktreePath) {
       const branchTermSet = new Set(branch.terminals);
+      const claimedIds = new Set<string>();
+      for (const b of Object.values(repositoriesStore.get(repoPath)?.branches ?? {})) {
+        if (b.name !== branchName) {
+          for (const tid of b.terminals) claimedIds.add(tid);
+        }
+      }
       for (const id of terminalsStore.getIds()) {
         if (branchTermSet.has(id)) continue;
+        if (claimedIds.has(id)) continue;
         const term = terminalsStore.get(id);
         if (term?.cwd === branch.worktreePath) {
-          // Check this terminal isn't claimed by another branch
-          const claimedElsewhere = Object.values(
-            repositoriesStore.get(repoPath)?.branches ?? {},
-          ).some((b) => b.name !== branchName && b.terminals.includes(id));
-          if (!claimedElsewhere) {
-            appLogger.info("terminal", `BranchSelect: adopting orphan ${id} into ${branchName} (cwd matches worktreePath)`);
-            repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
-          }
+          appLogger.info("terminal", `BranchSelect: adopting orphan ${id} into ${branchName} (cwd matches worktreePath)`);
+          repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
         }
       }
       // Re-read branch state after potential adoptions
@@ -487,7 +486,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
       }
     } else if (branch?.savedTerminals && branch.savedTerminals.length > 0) {
       // Lazy restore: create terminals from persisted session state
-      let firstId: string | null = null;
+      // First pass: create all terminals synchronously (instant UI)
+      const restoredIds: { id: string; terminal: (typeof branch.savedTerminals)[number] }[] = [];
       for (const terminal of branch.savedTerminals) {
         const id = terminalsStore.add({
           sessionId: null,
@@ -498,11 +498,18 @@ export function useGitOperations(deps: GitOperationsDeps) {
           tuicSession: terminal.tuicSession ?? crypto.randomUUID(),
         });
         repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
+        restoredIds.push({ id, terminal });
+      }
+      // Clear savedTerminals for this branch (consume-once)
+      repositoriesStore.setBranch(repoPath, branchName, { savedTerminals: [] });
+      if (restoredIds.length > 0) terminalsStore.setActive(restoredIds[0].id);
 
-        if (terminal.agentType) {
-          // Prefer tuicSession (verified on disk) for resume, fall back to agentSessionId
+      // Second pass: verify resume commands in parallel (non-blocking)
+      const agentTerminals = restoredIds.filter((r) => r.terminal.agentType);
+      if (agentTerminals.length > 0) {
+        Promise.all(agentTerminals.map(async ({ id, terminal }) => {
           const resumeCmd = await verifyAndBuildResumeCommand(
-            terminal.agentType,
+            terminal.agentType!,
             terminal.cwd,
             terminal.tuicSession,
             terminal.agentSessionId,
@@ -510,13 +517,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
           if (resumeCmd) {
             terminalsStore.update(id, { pendingResumeCommand: resumeCmd, agentSessionId: terminal.agentSessionId ?? null });
           }
-        }
-
-        if (!firstId) firstId = id;
+        })).catch((e) => appLogger.warn("terminal", "Resume command verification failed", { error: String(e) }));
       }
-      // Clear savedTerminals for this branch (consume-once)
-      repositoriesStore.setBranch(repoPath, branchName, { savedTerminals: [] });
-      if (firstId) terminalsStore.setActive(firstId);
     } else if (!branch?.hadTerminals) {
       // First time selecting this branch — auto-spawn a terminal
       await handleAddTerminalToBranch(repoPath, branchName);
