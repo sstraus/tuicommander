@@ -1,6 +1,6 @@
 //! Commit graph lane assignment for visual git log rendering.
 //!
-//! Parses `git log --all --topo-order` output and assigns each commit
+//! Parses `git log --topo-order` output and assigns each commit
 //! a column (lane) and color index, producing connection metadata for
 //! Bezier curve rendering in the frontend.
 
@@ -222,9 +222,6 @@ pub(crate) fn get_commit_graph(path: String, count: Option<u32>) -> Result<Vec<G
     let output = git_cmd(repo_path)
         .args([
             "log",
-            "--branches",
-            "--tags",
-            "--remotes",
             "--topo-order",
             &format!("-n{count}"),
             "--pretty=format:%H%x00%P%x00%D",
@@ -556,13 +553,13 @@ mod tests {
         git(&["add", "d.txt"]);
         git(&["commit", "-m", "feat: third on main", "--no-verify"]);
 
-        // Call the actual command
+        // Call the actual command (follows HEAD only, so feature branch is not visible)
         let result = get_commit_graph(path.to_string_lossy().to_string(), Some(50));
         assert!(result.is_ok(), "get_commit_graph failed: {result:?}");
 
         let nodes = result.unwrap();
-        // We have exactly 4 commits
-        assert_eq!(nodes.len(), 4, "Expected 4 commits, got {}", nodes.len());
+        // Only main branch commits are visible (3 commits on main, 1 on feature)
+        assert_eq!(nodes.len(), 3, "Expected 3 commits (HEAD only), got {}", nodes.len());
 
         // All nodes should have valid columns and rows
         for (i, node) in nodes.iter().enumerate() {
@@ -578,9 +575,9 @@ mod tests {
         let has_refs = nodes.iter().any(|n| !n.refs.is_empty());
         assert!(has_refs, "At least one commit should have refs");
 
-        // Should use at least 2 columns (main + feature branch)
+        // Linear history on main — single column
         let max_col = nodes.iter().map(|n| n.column).max().unwrap_or(0);
-        assert!(max_col >= 1, "Should have at least 2 columns for 2 branches");
+        assert_eq!(max_col, 0, "Linear main branch should use single column");
     }
 
     #[test]
