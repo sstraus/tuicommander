@@ -311,26 +311,19 @@ export const LogTab: Component<LogTabProps> = (props) => {
                       top: `${virtualItem.start}px`,
                       height: `${virtualItem.size}px`,
                       width: "100%",
-                      "padding-left": graphPad() > 0 ? `${graphPad() + 12}px` : undefined,
+                      "padding-left": graphPad() > 0 ? `${graphPad() + 4}px` : undefined,
                     }}
                     onClick={() => {
                       setFocusedIndex(virtualItem.index);
                       commit() && toggleExpand(commit()!.hash);
                     }}
                   >
-                    {/* Line 1: dot (only without graph) + hash + subject */}
-                    <div class={s.commitLine1}>
+                    {/* Line 1: subject (full width) */}
+                    <div class={s.commitLine1} title={commit()?.subject}>
                       <Show when={graphNodes().length === 0}>
                         <span class={s.commitDot} />
                       </Show>
-                      <span class={s.commitHash}>{commit()?.hash.slice(0, 7)}</span>
                       <span class={s.commitSubject}>{commit()?.subject}</span>
-                    </div>
-                    {/* Line 2: author + time + ref badges */}
-                    <div class={s.commitLine2}>
-                      <span class={s.commitMeta}>
-                        {commit()?.author_name} · {commit() ? relativeTime(commit()!.author_date) : ""}
-                      </span>
                       <For each={commit()?.refs ?? []}>
                         {(ref) => {
                           const kind = classifyRef(ref);
@@ -341,6 +334,13 @@ export const LogTab: Component<LogTabProps> = (props) => {
                           );
                         }}
                       </For>
+                    </div>
+                    {/* Line 2: hash + author + time */}
+                    <div class={s.commitLine2}>
+                      <span class={s.commitHash}>{commit()?.hash.slice(0, 7)}</span>
+                      <span class={s.commitMeta}>
+                        {commit()?.author_name} · {commit() ? relativeTime(commit()!.author_date) : ""}
+                      </span>
                     </div>
                     {/* Expanded: changed files list */}
                     <Show when={isExpanded()}>

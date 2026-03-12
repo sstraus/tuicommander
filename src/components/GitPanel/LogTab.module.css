@@ -76,12 +76,11 @@
   min-width: 0;
 }
 
-/* Line 2: author + time + ref badges */
+/* Line 2: hash + author + time */
 .commitLine2 {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding-left: 16px;
   min-width: 0;
 }
 
