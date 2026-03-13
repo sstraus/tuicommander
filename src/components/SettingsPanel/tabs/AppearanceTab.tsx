@@ -5,8 +5,8 @@ import { repositoriesStore } from "../../../stores/repositories";
 import type { RepoGroup } from "../../../stores/repositories";
 import type { FontType } from "../../../stores/settings";
 import { THEME_NAMES } from "../../../themes";
+import { ColorSwatchPicker } from "../../shared/ColorSwatchPicker";
 import { t } from "../../../i18n";
-import { cx } from "../../../utils";
 import s from "../Settings.module.css";
 
 /** Preset colors for groups and sidebar */
@@ -89,25 +89,10 @@ const GroupSettingsItem: Component<{
       <Show when={nameError()}>
         <div class={s.groupNameError}>{nameError()}</div>
       </Show>
-      <div class={s.groupColorPicker}>
-        <For each={PRESET_COLORS}>
-          {(preset) => (
-            <button
-              class={cx(s.colorSwatch, props.group.color === preset.hex && s.active)}
-              style={{ background: preset.hex }}
-              onClick={() => repositoriesStore.setGroupColor(props.group.id, preset.hex)}
-              title={preset.name}
-            />
-          )}
-        </For>
-        <button
-          class={cx(s.colorSwatch, s.colorSwatchClear, !props.group.color && s.active)}
-          onClick={() => repositoriesStore.setGroupColor(props.group.id, "")}
-          title={t("groups.btn.noColor", "No color")}
-        >
-          ×
-        </button>
-      </div>
+      <ColorSwatchPicker
+        color={props.group.color}
+        onChange={(c) => repositoriesStore.setGroupColor(props.group.id, c)}
+      />
     </div>
   );
 };

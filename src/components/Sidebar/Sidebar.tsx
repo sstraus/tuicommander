@@ -9,6 +9,7 @@ import type { ContextMenuItem } from "../ContextMenu";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { ParkedReposPopover } from "./ParkedReposPopover";
 import { PromptDialog } from "../PromptDialog";
+import { ColorPickerDialog } from "../shared/ColorPickerDialog";
 import { t } from "../../i18n";
 import { RepoSection } from "./RepoSection";
 import { GroupSection } from "./GroupSection";
@@ -432,11 +433,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       />
 
       {/* Group color dialog */}
-      <PromptDialog
+      <ColorPickerDialog
         visible={colorGroupTarget() !== null}
         title="Group Color"
-        placeholder="#ff6b6b"
-        confirmLabel="Apply"
+        currentColor={colorGroupTarget() ? repositoriesStore.state.groups[colorGroupTarget()!]?.color ?? "" : ""}
         onClose={() => setColorGroupTarget(null)}
         onConfirm={(color) => {
           const groupId = colorGroupTarget();
