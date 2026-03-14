@@ -1,0 +1,29 @@
+src-tauri/src/mcp_http/types.rs
+  1537c9edddb101a8 296-343
+src-tauri/src/mcp_http/git_routes.rs
+  1537c9edddb101a8 202-417
+src-tauri/src/mcp_http/mod.rs
+  1537c9edddb101a8 305-320
+src/transport.ts
+  1537c9edddb101a8 295-390
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "e1ac9d06f76fbb560f4bbcbeb17a96b6370ee9ad",
+  "prompts": {
+    "1537c9edddb101a8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f7dcc4c-e940-47df-860e-15040b46009a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 376,
+      "overriden_lines": 0
+    }
+  }
+}
