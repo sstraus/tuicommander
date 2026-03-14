@@ -405,7 +405,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
   };
 
   const handleBranchSelectInner = async (repoPath: string, branchName: string) => {
-    const t0 = performance.now();
     // Log the state we're LEAVING — critical for diagnosing terminal disappearance
     const prevRepo = repositoriesStore.getActive();
     const prevBranchName = prevRepo?.activeBranch;
@@ -432,7 +431,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
     repositoriesStore.setActiveBranch(repoPath, branchName);
     setCurrentBranch(branchName);
 
-    const t1 = performance.now();
     // Fire-and-forget: diff stats are cosmetic, don't block branch switch
     const selectedBranch = repositoriesStore.get(repoPath)?.branches[branchName];
     if (selectedBranch?.worktreePath) {
@@ -441,8 +439,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
         repositoriesStore.updateBranchStats(repoPath, branchName, stats.additions, stats.deletions);
       }).catch(() => {});
     }
-    const t2 = performance.now();
-
     let branch = repositoriesStore.get(repoPath)?.branches[branchName];
 
     // Adopt orphaned terminals whose cwd matches this branch's worktree path.
@@ -467,8 +463,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
       // Re-read branch state after potential adoptions
       branch = repositoriesStore.get(repoPath)?.branches[branchName];
     }
-    const t3 = performance.now();
-
     const validTerminals = filterValidTerminals(branch?.terminals, terminalsStore.getIds());
     appLogger.info("terminal", `BranchSelect → ${branchName}`, { branchTerminals: branch?.terminals, storeIds: terminalsStore.getIds(), valid: validTerminals, hadTerminals: branch?.hadTerminals, savedTerminals: branch?.savedTerminals?.length ?? 0 });
     if (validTerminals.length === 0 && (branch?.terminals?.length ?? 0) > 0) {
@@ -526,15 +520,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
       // Clear activeId so the previous branch's terminal doesn't bleed through.
       terminalsStore.setActive(null);
     }
-
-    const t4 = performance.now();
-    appLogger.info("terminal", `BranchSelect TIMING ${branchName}`, {
-      storeUpdate: Math.round(t1 - t0),
-      diffStats: Math.round(t2 - t1),
-      adoption: Math.round(t3 - t2),
-      terminalRestore: Math.round(t4 - t3),
-      total: Math.round(t4 - t0),
-    });
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
