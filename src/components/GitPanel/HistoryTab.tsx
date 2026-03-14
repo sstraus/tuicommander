@@ -4,6 +4,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { relativeTime } from "../../utils/time";
 import type { CommitLogEntry } from "./types";
+import { appLogger } from "../../stores/appLogger";
 import s from "./HistoryTab.module.css";
 
 const PAGE_SIZE = 50;
@@ -32,7 +33,8 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
       });
       setCommits(result);
       setHasMore(result.length >= PAGE_SIZE);
-    } catch {
+    } catch (err) {
+      appLogger.debug("git", "Failed to load file history", err);
       setCommits([]);
       setHasMore(false);
     } finally {
@@ -66,7 +68,8 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
         setCommits((prev) => [...prev, ...newCommits]);
         setHasMore(newCommits.length >= PAGE_SIZE - 1);
       }
-    } catch {
+    } catch (err) {
+      appLogger.debug("git", "Failed to load more file history", err);
       setHasMore(false);
     } finally {
       setLoadingMore(false);

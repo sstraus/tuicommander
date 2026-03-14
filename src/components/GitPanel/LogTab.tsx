@@ -3,6 +3,7 @@ import { createVirtualizer } from "@tanstack/solid-virtual";
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
+import { appLogger } from "../../stores/appLogger";
 import { CommitGraph, graphWidth } from "./CommitGraph";
 import type { GraphNode } from "./CommitGraph";
 import type { CommitLogEntry, ChangedFile } from "./types";
@@ -81,13 +82,16 @@ export const LogTab: Component<LogTabProps> = (props) => {
         invoke<GraphNode[]>("get_commit_graph", {
           path: repoPath,
           count: 200,
-        }).catch(() => [] as GraphNode[]),
+        }).catch((err) => {
+          appLogger.debug("git", "Failed to load commit graph", err);
+          return [] as GraphNode[];
+        }),
       ]);
       setCommits(logResult);
       setGraphNodes(graphResult);
       setHasMore(logResult.length >= PAGE_SIZE);
-    } catch {
-      // Silently handle — repo may not have commits yet
+    } catch (err) {
+      appLogger.debug("git", "Failed to load commit log", err);
       setCommits([]);
       setGraphNodes([]);
       setHasMore(false);
@@ -120,7 +124,8 @@ export const LogTab: Component<LogTabProps> = (props) => {
         setCommits((prev) => [...prev, ...newCommits]);
         setHasMore(newCommits.length >= PAGE_SIZE - 1);
       }
-    } catch {
+    } catch (err) {
+      appLogger.debug("git", "Failed to load more commits", err);
       setHasMore(false);
     } finally {
       setLoadingMore(false);
@@ -147,7 +152,8 @@ export const LogTab: Component<LogTabProps> = (props) => {
           scope: hash,
         });
         setChangedFiles((prev) => ({ ...prev, [hash]: files }));
-      } catch {
+      } catch (err) {
+        appLogger.debug("git", "Failed to load changed files for commit", err);
         setChangedFiles((prev) => ({ ...prev, [hash]: [] }));
       } finally {
         setFilesLoading((prev) => ({ ...prev, [hash]: false }));
