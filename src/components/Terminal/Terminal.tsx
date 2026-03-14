@@ -168,8 +168,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
     };
     pendingScrollRestore = null;
     fitAddon.fit();
-    if (!scrollState.wasAtBottom) {
-      // Clamp to current baseY — agent compact/clear may have shrunk the buffer
+    // fit() can reset scroll position to 0 (WebKit/WebGL race).
+    // Always restore explicitly: scroll to bottom if was there, otherwise
+    // clamp to saved position (agent compact/clear may have shrunk buffer).
+    if (scrollState.wasAtBottom) {
+      terminal.scrollToBottom();
+    } else {
       const maxLine = terminal.buffer.active.baseY;
       terminal.scrollToLine(Math.min(scrollState.viewportY, maxLine));
     }
