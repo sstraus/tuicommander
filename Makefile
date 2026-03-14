@@ -144,33 +144,17 @@ bump:
 	echo "  CHANGELOG.md          → $(V) ($$TODAY)"; \
 	echo "==> Done. Run 'cargo check' or 'make github-release' to continue."
 
-# Full versioned release: bump version, commit, tag, push, wait for CI, publish.
-# Usage: make github-release BUMP=patch  (patch|minor|major, default: patch)
+# Full versioned release: tag current version, push, wait for CI, publish.
+# To bump first: make bump BUMP=patch (or minor|major), then make github-release.
 # NOTE: sed -i '' is macOS syntax — run this from macOS only.
-BUMP ?= patch
 github-release:
 	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
 	if [ "$$BRANCH" != "main" ]; then echo "ERROR: must be on main (currently on $$BRANCH)" && exit 1; fi; \
 	if [ -n "$$(git status --porcelain)" ]; then echo "ERROR: working tree is dirty — commit or stash first" && exit 1; fi; \
 	CUR=$$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'); \
-	IFS='.' read -r MAJOR MINOR PATCH <<< "$$CUR"; \
-	case "$(BUMP)" in \
-		major) MAJOR=$$((MAJOR+1)); MINOR=0; PATCH=0;; \
-		minor) MINOR=$$((MINOR+1)); PATCH=0;; \
-		patch) PATCH=$$((PATCH+1));; \
-		*) echo "ERROR: BUMP must be patch|minor|major (got $(BUMP))" && exit 1;; \
-	esac; \
-	NEW="$$MAJOR.$$MINOR.$$PATCH"; \
-	TAG="v$$NEW"; \
-	echo "==> Releasing $$TAG (was $$CUR)"; \
-	echo "--- Bumping version to $$NEW..."; \
-	sed -i '' "s/^version = \"$$CUR\"/version = \"$$NEW\"/" src-tauri/Cargo.toml; \
-	sed -i '' "s/\"version\": \"$$CUR\"/\"version\": \"$$NEW\"/" src-tauri/tauri.conf.json; \
-	sed -i '' "s/\"version\": \"$$CUR\"/\"version\": \"$$NEW\"/" package.json; \
-	cd src-tauri && cargo check --quiet; cd ..; \
-	echo "--- Committing and tagging..."; \
-	git add src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/Cargo.lock package.json; \
-	git commit -m "chore: bump version to $$TAG"; \
+	TAG="v$$CUR"; \
+	if git rev-parse "$$TAG" >/dev/null 2>&1; then echo "ERROR: tag $$TAG already exists" && exit 1; fi; \
+	echo "==> Releasing $$TAG"; \
 	git tag "$$TAG"; \
 	COMMIT=$$(git rev-parse HEAD); \
 	echo "--- Pushing..."; \
