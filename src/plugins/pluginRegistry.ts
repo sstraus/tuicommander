@@ -209,21 +209,14 @@ function createPluginRegistry() {
       getRepoPathForSession(sessionId: string): string | null {
         const termId = terminalsStore.getTerminalForSession(sessionId);
         if (!termId) return null;
-        for (const repoPath of repositoriesStore.getPaths()) {
-          const repo = repositoriesStore.get(repoPath);
-          if (!repo) continue;
-          for (const branch of Object.values(repo.branches)) {
-            if (branch.terminals.includes(termId)) return repoPath;
-          }
-        }
-        return null;
+        return repositoriesStore.getRepoPathForTerminal(termId);
       },
 
       getSessionCwd(sessionId: string): string | null {
-        for (const t of Object.values(terminalsStore.state.terminals)) {
-          if (t.sessionId === sessionId) return t.cwd ?? null;
-        }
-        return null;
+        const termId = terminalsStore.getTerminalForSession(sessionId);
+        if (!termId) return null;
+        const terminal = terminalsStore.get(termId);
+        return terminal?.cwd ?? null;
       },
 
       getActiveRepoPath(): string | null {
