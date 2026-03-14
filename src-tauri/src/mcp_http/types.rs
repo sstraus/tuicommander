@@ -293,3 +293,51 @@ pub(super) struct GetAllPrStatusesRequest {
     #[serde(default)]
     pub include_merged: bool,
 }
+
+// --- GitPanel commands ---
+
+#[derive(Deserialize)]
+pub(super) struct CommitLogQuery {
+    pub path: String,
+    pub count: Option<u32>,
+    pub after: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct StashRefRequest {
+    pub path: String,
+    pub stash_ref: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct FilePathQuery {
+    pub path: String,
+    pub file: String,
+    pub count: Option<u32>,
+    pub after: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct FileBlameQuery {
+    pub path: String,
+    pub file: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct StageFilesRequest {
+    pub path: String,
+    pub files: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct CommitRequest {
+    pub path: String,
+    pub message: String,
+    pub amend: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct RunGitCommandRequest {
+    pub path: String,
+    pub args: Vec<String>,
+}

@@ -292,6 +292,102 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
   check_is_main_branch: {
     map: (_args, p) => ({ method: "GET", path: `/repo/is-main-branch?branch=${p("branch")}` }),
   },
+  get_remote_url: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/remote-url?path=${p("path")}` }),
+  },
+  get_git_panel_context: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/panel-context?path=${p("path")}` }),
+  },
+  run_git_command: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/run-git",
+      body: { path: args.path, args: args.args },
+    }),
+  },
+  get_working_tree_status: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/working-tree-status?path=${p("path")}` }),
+  },
+  git_stage_files: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/stage",
+      body: { path: args.path, files: args.files },
+    }),
+  },
+  git_unstage_files: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/unstage",
+      body: { path: args.path, files: args.files },
+    }),
+  },
+  git_discard_files: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/discard",
+      body: { path: args.path, files: args.files },
+    }),
+  },
+  git_commit: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/commit",
+      body: { path: args.path, message: args.message, amend: args.amend },
+    }),
+  },
+  get_commit_log: {
+    map: (args, p) => {
+      let url = `/repo/commit-log?path=${p("path")}`;
+      if (args.count != null) url += `&count=${args.count}`;
+      if (args.after) url += `&after=${encodeURIComponent(String(args.after))}`;
+      return { method: "GET", path: url };
+    },
+  },
+  get_stash_list: {
+    map: (_args, p) => ({ method: "GET", path: `/repo/stash?path=${p("path")}` }),
+  },
+  git_stash_apply: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/stash/apply",
+      body: { path: args.path, stash_ref: args.stashRef },
+    }),
+  },
+  git_stash_pop: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/stash/pop",
+      body: { path: args.path, stash_ref: args.stashRef },
+    }),
+  },
+  git_stash_drop: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/stash/drop",
+      body: { path: args.path, stash_ref: args.stashRef },
+    }),
+  },
+  git_stash_show: {
+    map: (_args, p) => ({
+      method: "GET",
+      path: `/repo/stash/show?path=${p("path")}&stash_ref=${p("stashRef")}`,
+    }),
+  },
+  get_file_history: {
+    map: (args, p) => {
+      let url = `/repo/file-history?path=${p("path")}&file=${p("file")}`;
+      if (args.count != null) url += `&count=${args.count}`;
+      if (args.after) url += `&after=${encodeURIComponent(String(args.after))}`;
+      return { method: "GET", path: url };
+    },
+  },
+  get_file_blame: {
+    map: (_args, p) => ({
+      method: "GET",
+      path: `/repo/file-blame?path=${p("path")}&file=${p("file")}`,
+    }),
+  },
 
   // --- Worktrees ---
   list_worktrees: { map: () => ({ method: "GET", path: "/worktrees" }) },
