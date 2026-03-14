@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, on } from "solid-js";
+import { Component, createEffect, createSignal, on, onCleanup } from "solid-js";
 import s from "./CommitGraph.module.css";
 
 // ---------------------------------------------------------------------------
@@ -48,11 +48,16 @@ const COLORS = [
   "#BA55D3", // purple
 ];
 
+/** Maximum offscreen canvas height in CSS pixels (browser safety limit) */
+const MAX_OFFSCREEN_HEIGHT = 32768;
+
 // ---------------------------------------------------------------------------
-// Drawing helpers
+// Drawing helpers — accept both on-screen and offscreen 2D contexts
 // ---------------------------------------------------------------------------
 
-function drawConnection(ctx: CanvasRenderingContext2D, conn: Connection): void {
+type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+function drawConnection(ctx: Ctx2D, conn: Connection): void {
   const x1 = conn.from_col * LANE_WIDTH + LANE_WIDTH / 2;
   const y1 = conn.from_row * ROW_HEIGHT + ROW_HEIGHT / 2;
   const x2 = conn.to_col * LANE_WIDTH + LANE_WIDTH / 2;
@@ -74,7 +79,7 @@ function drawConnection(ctx: CanvasRenderingContext2D, conn: Connection): void {
   ctx.stroke();
 }
 
-function drawDot(ctx: CanvasRenderingContext2D, node: GraphNode): void {
+function drawDot(ctx: Ctx2D, node: GraphNode): void {
   const x = node.column * LANE_WIDTH + LANE_WIDTH / 2;
   const y = node.row * ROW_HEIGHT + ROW_HEIGHT / 2;
   const color = COLORS[node.color_index % COLORS.length];
@@ -99,6 +104,9 @@ export interface CommitGraphProps {
 export const CommitGraph: Component<CommitGraphProps> = (props) => {
   const [canvasRef, setCanvasRef] = createSignal<HTMLCanvasElement | undefined>(undefined);
 
+  // Offscreen canvas holding the full pre-rendered graph
+  let offscreen: OffscreenCanvas | null = null;
+
   const maxCol = () =>
     props.nodes.length === 0
       ? 0
@@ -106,12 +114,53 @@ export const CommitGraph: Component<CommitGraphProps> = (props) => {
 
   const width = () => (maxCol() + 1) * LANE_WIDTH;
 
+  // --- Effect 1: rebuild offscreen canvas when nodes change ---
   createEffect(
     on(
-      () => [props.nodes, props.scrollTop, props.viewportHeight, props.totalHeight, canvasRef()] as const,
+      () => [props.nodes, props.totalHeight] as const,
+      () => {
+        const nodes = props.nodes;
+        const dpr = window.devicePixelRatio || 1;
+        const w = width();
+        // Cap height to browser maximum; graphs taller than this are rare
+        const fullHeight = Math.min(props.totalHeight || 1, MAX_OFFSCREEN_HEIGHT);
+
+        if (w === 0 || fullHeight === 0) {
+          offscreen = null;
+          return;
+        }
+
+        offscreen = new OffscreenCanvas(w * dpr, fullHeight * dpr);
+        const ctx = offscreen.getContext("2d");
+        if (!ctx) {
+          offscreen = null;
+          return;
+        }
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        // Draw all connections first (lines behind dots)
+        for (const node of nodes) {
+          for (const conn of node.connections) {
+            drawConnection(ctx, conn);
+          }
+        }
+
+        // Draw commit dots on top
+        for (const node of nodes) {
+          drawDot(ctx, node);
+        }
+      },
+    ),
+  );
+
+  // --- Effect 2: blit visible slice on scroll — O(1) per frame ---
+  createEffect(
+    on(
+      () => [props.scrollTop, props.viewportHeight, canvasRef()] as const,
       () => {
         const canvas = canvasRef();
-        if (!canvas) return;
+        if (!canvas || !offscreen) return;
 
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
@@ -120,42 +169,29 @@ export const CommitGraph: Component<CommitGraphProps> = (props) => {
         const w = width();
         const h = props.viewportHeight;
 
-        // Size the canvas backing store for retina
+        // Resize visible canvas backing store for retina
         canvas.width = w * dpr;
         canvas.height = h * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-        // Clear
         ctx.clearRect(0, 0, w, h);
 
-        // Translate so we only render the visible viewport slice
-        ctx.save();
-        ctx.translate(0, -props.scrollTop);
+        // Source rectangle in offscreen (in CSS pixels, scaled by dpr)
+        const sy = props.scrollTop * dpr;
+        const sh = h * dpr;
+        const sw = w * dpr;
 
-        const viewTop = props.scrollTop;
-        const viewBottom = props.scrollTop + h;
+        // Clamp source to offscreen bounds
+        const clampedSh = Math.min(sh, offscreen.height - sy);
+        if (clampedSh <= 0 || sw <= 0) return;
 
-        // Draw connections first (lines behind dots)
-        for (const node of props.nodes) {
-          for (const conn of node.connections) {
-            const minY = Math.min(conn.from_row, conn.to_row) * ROW_HEIGHT;
-            const maxY = Math.max(conn.from_row, conn.to_row) * ROW_HEIGHT + ROW_HEIGHT;
-            if (maxY < viewTop || minY > viewBottom) continue;
-            drawConnection(ctx, conn);
-          }
-        }
-
-        // Draw commit dots on top
-        for (const node of props.nodes) {
-          const y = node.row * ROW_HEIGHT + ROW_HEIGHT / 2;
-          if (y < viewTop - ROW_HEIGHT || y > viewBottom + ROW_HEIGHT) continue;
-          drawDot(ctx, node);
-        }
-
-        ctx.restore();
+        ctx.drawImage(offscreen, 0, sy, sw, clampedSh, 0, 0, w, clampedSh / dpr);
       },
     ),
   );
+
+  onCleanup(() => {
+    offscreen = null;
+  });
 
   return (
     <canvas
