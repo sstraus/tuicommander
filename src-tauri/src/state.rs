@@ -785,6 +785,10 @@ pub(crate) struct GitCacheState {
     pub(crate) github_status: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
     pub(crate) git_status: DashMap<String, (crate::github::GitHubStatus, Instant)>,
     pub(crate) git_panel_context: DashMap<String, (crate::git::GitPanelContext, Instant)>,
+    /// Repos that returned null from GitHub GraphQL (not found / no access).
+    /// Keyed by "owner/name", value is the cooldown expiry time.
+    /// Excluded from batch queries until the cooldown expires (1 hour).
+    pub(crate) github_repo_cooldown: DashMap<String, Instant>,
 }
 
 impl GitCacheState {
@@ -795,6 +799,7 @@ impl GitCacheState {
             github_status: DashMap::new(),
             git_status: DashMap::new(),
             git_panel_context: DashMap::new(),
+            github_repo_cooldown: DashMap::new(),
         }
     }
 
@@ -805,6 +810,7 @@ impl GitCacheState {
         self.github_status.clear();
         self.git_status.clear();
         self.git_panel_context.clear();
+        self.github_repo_cooldown.clear();
     }
 
     /// Invalidate caches for a specific repo path.

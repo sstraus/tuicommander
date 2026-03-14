@@ -233,6 +233,47 @@ fn header_as_u64(headers: &reqwest::header::HeaderMap, name: &str) -> Option<u64
     headers.get(name)?.to_str().ok()?.parse().ok()
 }
 
+/// Check a GraphQL JSON response for errors.
+///
+/// - Rate-limited errors always fail.
+/// - Non-rate-limit errors fail only when `data` is absent (pure error).
+///   When `data` is present alongside errors (partial success, e.g. one repo
+///   not found in a batch query), the caller receives `Ok(())` so it can
+///   process the valid portion.  The `get_all_pr_statuses_impl` loop already
+///   handles null repos gracefully.
+pub(crate) fn check_graphql_errors(
+    json: &serde_json::Value,
+    ratelimit_reset: Option<u64>,
+    retry_after: Option<u64>,
+) -> Result<(), GqlError> {
+    let errors = match json["errors"].as_array() {
+        Some(arr) if !arr.is_empty() => arr,
+        _ => return Ok(()),
+    };
+
+    // Rate-limit errors always bubble up — partial data is stale anyway
+    let has_rate_limit_error = errors.iter().any(|e| {
+        e["type"].as_str() == Some("RATE_LIMITED")
+    });
+    if has_rate_limit_error {
+        let msg = errors[0]["message"].as_str().unwrap_or("GraphQL rate limit");
+        return Err(GqlError::RateLimit {
+            reset_at: ratelimit_reset,
+            retry_after,
+            message: msg.to_string(),
+        });
+    }
+
+    // If the response includes valid data alongside the errors, treat as
+    // partial success — the caller will skip null repos individually.
+    if json["data"].is_object() {
+        return Ok(());
+    }
+
+    let msg = errors[0]["message"].as_str().unwrap_or("Unknown GraphQL error");
+    Err(GqlError::Other(format!("GraphQL error: {msg}")))
+}
+
 /// Execute a GraphQL query against the GitHub API.
 /// Returns the parsed JSON response or a typed error.
 /// Detects rate limits from HTTP status codes, headers, and GraphQL error types.
@@ -309,26 +350,8 @@ pub(crate) async fn graphql_request(
         return Err(GqlError::Other(err_msg));
     }
 
-    // 4. HTTP 200 + GraphQL errors with type "RATE_LIMITED"
-    if let Some(errors) = json["errors"].as_array()
-        && !errors.is_empty()
-    {
-        let has_rate_limit_error = errors.iter().any(|e| {
-            e["type"].as_str() == Some("RATE_LIMITED")
-        });
-
-        if has_rate_limit_error {
-            let msg = errors[0]["message"].as_str().unwrap_or("GraphQL rate limit");
-            return Err(GqlError::RateLimit {
-                reset_at: ratelimit_reset,
-                retry_after,
-                message: msg.to_string(),
-            });
-        }
-
-        let msg = errors[0]["message"].as_str().unwrap_or("Unknown GraphQL error");
-        return Err(GqlError::Other(format!("GraphQL error: {msg}")));
-    }
+    // 4. HTTP 200 + GraphQL errors
+    check_graphql_errors(&json, ratelimit_reset, retry_after)?;
 
     Ok(json)
 }
@@ -907,6 +930,10 @@ pub(crate) async fn get_all_pr_statuses_impl(
         return Ok(std::collections::HashMap::new());
     }
 
+    // Evict expired cooldowns before filtering
+    let now = Instant::now();
+    state.git_cache.github_repo_cooldown.retain(|_key, expiry| *expiry > now);
+
     // Resolve (path, owner, repo) for each path that has a GitHub remote
     let repos: Vec<(String, String, String)> = paths
         .iter()
@@ -914,6 +941,11 @@ pub(crate) async fn get_all_pr_statuses_impl(
             let repo_path = PathBuf::from(path);
             let url = get_github_remote_url(&repo_path)?;
             let (owner, name) = parse_remote_url(&url)?;
+            // Skip repos in cooldown (not found on GitHub)
+            let cooldown_key = format!("{owner}/{name}");
+            if state.git_cache.github_repo_cooldown.contains_key(&cooldown_key) {
+                return None;
+            }
             Some((path.clone(), owner, name))
         })
         .collect();
@@ -943,12 +975,15 @@ pub(crate) async fn get_all_pr_statuses_impl(
         let nodes = match repo_json["pullRequests"]["nodes"].as_array() {
             Some(arr) => arr,
             None => {
-                // Null repo — likely doesn't exist on GitHub. Log once
-                // (the ring buffer dedup will suppress repeats).
+                // Null repo — likely doesn't exist on GitHub.
+                // Add to 1-hour cooldown so future batch polls skip it.
                 if repo_json.is_null()
                     && let Some((owner, name)) = alias_repo_names.get(alias.as_str())
                 {
-                    let msg = format!("Repository {owner}/{name} not found on GitHub — skipping PR poll");
+                    let cooldown_key = format!("{owner}/{name}");
+                    let expiry = Instant::now() + std::time::Duration::from_secs(3600);
+                    state.git_cache.github_repo_cooldown.insert(cooldown_key, expiry);
+                    let msg = format!("Repository {owner}/{name} not found on GitHub — cooldown 1h");
                     let mut buf = state.log_buffer.lock();
                     buf.push("warn".into(), "github".into(), msg, None);
                 }
@@ -2402,5 +2437,108 @@ mod tests {
     fn test_rate_limit_wait_secs_reset_in_past() {
         // If reset_at is in the past and no retry-after, default to 60
         assert_eq!(rate_limit_wait_secs(Some(1000), None), 60);
+    }
+
+    // --- check_graphql_errors tests ---
+
+    #[test]
+    fn test_check_graphql_errors_no_errors_returns_ok() {
+        let json = serde_json::json!({
+            "data": { "r0": { "pullRequests": { "nodes": [] } } }
+        });
+        assert!(check_graphql_errors(&json, None, None).is_ok());
+    }
+
+    #[test]
+    fn test_check_graphql_errors_empty_errors_array_returns_ok() {
+        let json = serde_json::json!({
+            "data": { "r0": null },
+            "errors": []
+        });
+        assert!(check_graphql_errors(&json, None, None).is_ok());
+    }
+
+    #[test]
+    fn test_check_graphql_errors_rate_limited_always_fails() {
+        let json = serde_json::json!({
+            "data": { "r0": { "pullRequests": { "nodes": [] } } },
+            "errors": [{ "type": "RATE_LIMITED", "message": "rate limited" }]
+        });
+        let err = check_graphql_errors(&json, Some(9999), None).unwrap_err();
+        assert!(matches!(err, GqlError::RateLimit { .. }));
+    }
+
+    #[test]
+    fn test_check_graphql_errors_partial_data_returns_ok() {
+        // Errors + data present → partial success, should return Ok
+        let json = serde_json::json!({
+            "data": {
+                "r0": { "pullRequests": { "nodes": [] } },
+                "r1": null
+            },
+            "errors": [{
+                "type": "NOT_FOUND",
+                "message": "Could not resolve to a Repository with the name 'foo/bar'."
+            }]
+        });
+        assert!(check_graphql_errors(&json, None, None).is_ok());
+    }
+
+    #[test]
+    fn test_check_graphql_errors_no_data_returns_err() {
+        // Errors without data → pure error
+        let json = serde_json::json!({
+            "errors": [{ "message": "Something went wrong" }]
+        });
+        let err = check_graphql_errors(&json, None, None).unwrap_err();
+        match err {
+            GqlError::Other(msg) => assert!(msg.contains("Something went wrong")),
+            _ => panic!("Expected GqlError::Other, got {err:?}"),
+        }
+    }
+
+    #[test]
+    fn test_check_graphql_errors_data_null_returns_err() {
+        // data: null is not a valid object — treat as pure error
+        let json = serde_json::json!({
+            "data": null,
+            "errors": [{ "message": "Bad query" }]
+        });
+        let err = check_graphql_errors(&json, None, None).unwrap_err();
+        assert!(matches!(err, GqlError::Other(_)));
+    }
+
+    // --- github_repo_cooldown tests ---
+
+    #[test]
+    fn test_cooldown_evicts_expired_entries() {
+        let cache = crate::state::GitCacheState::new();
+        // Insert an already-expired entry
+        cache.github_repo_cooldown.insert(
+            "owner/expired".to_string(),
+            Instant::now() - std::time::Duration::from_secs(1),
+        );
+        // Insert a still-valid entry
+        cache.github_repo_cooldown.insert(
+            "owner/active".to_string(),
+            Instant::now() + std::time::Duration::from_secs(3600),
+        );
+        // Evict expired
+        let now = Instant::now();
+        cache.github_repo_cooldown.retain(|_k, expiry| *expiry > now);
+
+        assert!(!cache.github_repo_cooldown.contains_key("owner/expired"));
+        assert!(cache.github_repo_cooldown.contains_key("owner/active"));
+    }
+
+    #[test]
+    fn test_cooldown_cleared_by_clear_all() {
+        let cache = crate::state::GitCacheState::new();
+        cache.github_repo_cooldown.insert(
+            "owner/repo".to_string(),
+            Instant::now() + std::time::Duration::from_secs(3600),
+        );
+        cache.clear_all();
+        assert!(cache.github_repo_cooldown.is_empty());
     }
 }
