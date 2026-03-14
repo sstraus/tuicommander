@@ -1749,7 +1749,7 @@ fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
 
     let mut author = String::new();
     let mut author_time: i64 = 0;
-    let mut is_first_header = true; // first occurrence of a hash needs full header parsing
+    let mut expecting_hash = true; // true when the next non-header line should be a commit hash
 
     for line in output.lines() {
         if let Some(content) = line.strip_prefix('\t') {
@@ -1766,8 +1766,8 @@ fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
                 content: content.to_string(),
             });
 
-            is_first_header = true;
-        } else if is_first_header && line.len() >= 40 && line.as_bytes().iter().take(40).all(|b| b.is_ascii_hexdigit()) {
+            expecting_hash = true;
+        } else if expecting_hash && line.len() >= 40 && line.as_bytes().iter().take(40).all(|b| b.is_ascii_hexdigit()) {
             // Hash line: "<hash> <orig_line> <final_line> [<num_lines>]"
             let parts: Vec<&str> = line.split(' ').collect();
             current_hash = parts[0].to_string();
@@ -1778,12 +1778,12 @@ fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
 
             if commit_cache.contains_key(&current_hash) {
                 // Already cached — skip header lines until content
-                is_first_header = false;
+                expecting_hash = false;
             } else {
                 // Need to parse headers
                 author.clear();
                 author_time = 0;
-                is_first_header = false;
+                expecting_hash = false;
             }
         } else if let Some(rest) = line.strip_prefix("author ") {
             author = rest.to_string();
