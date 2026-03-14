@@ -154,7 +154,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // Continuously-tracked scroll position — immune to display:none zeroing scrollTop.
   // Updated on every xterm scroll event (see openTerminal), so always holds the
   // last valid position even after the terminal is hidden by CSS.
-  let trackedScrollState = { viewportY: 0, wasAtBottom: true };
+  let trackedScrollState = { viewportY: 0, baseY: 0, bufferType: "normal" as "normal" | "alternate", wasAtBottom: true };
 
   /** Fit terminal to container, guarded against undersized containers.
    *  Preserves viewport scroll position across reflows and tab switches.
@@ -235,8 +235,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pty.pause(sessionId).catch(() => {});
       }
 
+      // [DEBUG] Capture scroll state before write to detect if write() causes scroll jump
+      const preWriteY = terminal.buffer.active.viewportY;
+      const preBufferType = terminal.buffer.active.type;
       terminal.write(data, () => {
         pendingWriteBytes -= byteLen;
+        // [DEBUG] Check if write caused scroll jump (ignore alt screen switches)
+        const postBuf = terminal!.buffer.active;
+        if (postBuf.type === preBufferType && preWriteY > 5 && postBuf.viewportY === 0) {
+          appLogger.debug("terminal", `[SCROLL-BUG] write() caused jump! pre=${preWriteY} post=${postBuf.viewportY} baseY=${postBuf.baseY}`);
+        }
 
         // Resume reader once xterm has drained enough
         if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
@@ -907,10 +915,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // position, even after display:none zeros scrollTop in WebKit.
     terminal.onScroll(() => {
       const buf = terminal!.buffer.active;
+      const prev = trackedScrollState;
       trackedScrollState = {
         viewportY: buf.viewportY,
+        baseY: buf.baseY,
+        bufferType: buf.type,
         wasAtBottom: buf.viewportY >= buf.baseY,
       };
+      // [DEBUG] Log scroll jumps to top — ignore alt screen switches
+      if (prev.bufferType === buf.type && prev.viewportY > 5 && buf.viewportY === 0 && !prev.wasAtBottom) {
+        appLogger.debug("terminal", `[SCROLL-BUG] Jump to top detected! prev=${prev.viewportY} baseY=${buf.baseY}`);
+      }
     });
 
     resizeObserver = new ResizeObserver(() => {
