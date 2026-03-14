@@ -17,6 +17,14 @@ use uuid::Uuid;
 
 use super::types::*;
 
+/// Standard 404 response for missing sessions.
+fn session_not_found() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({"error": "Session not found"})),
+    )
+}
+
 pub(super) async fn health() -> Json<HealthResponse> {
     Json(HealthResponse { ok: true })
 }
@@ -54,12 +62,7 @@ pub(super) async fn write_to_session(
 ) -> impl IntoResponse {
     let entry = match state.sessions.get(&session_id) {
         Some(e) => e,
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"error": "Session not found"})),
-            )
-        }
+        None => return session_not_found(),
     };
     let mut session = entry.lock();
     if let Err(e) = session.writer.write_all(body.data.as_bytes()) {
@@ -103,12 +106,7 @@ pub(super) async fn resize_session(
     }
     let entry = match state.sessions.get(&session_id) {
         Some(e) => e,
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"error": "Session not found"})),
-            )
-        }
+        None => return session_not_found(),
     };
     let session = entry.lock();
     if let Err(e) = session.master.resize(PtySize {
@@ -141,12 +139,7 @@ pub(super) async fn get_output(
     if format == "log" {
         let vt_log = match state.vt_log_buffers.get(&session_id) {
             Some(b) => b,
-            None => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({"error": "Session not found"})),
-                )
-            }
+            None => return session_not_found(),
         };
         let buf = vt_log.lock();
         let limit = query.limit.unwrap_or(usize::MAX);
@@ -173,12 +166,7 @@ pub(super) async fn get_output(
     if format == "text" {
         let vt_log = match state.vt_log_buffers.get(&session_id) {
             Some(b) => b,
-            None => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({"error": "Session not found"})),
-                )
-            }
+            None => return session_not_found(),
         };
         let buf = vt_log.lock();
         let limit = query.limit.unwrap_or(usize::MAX);
@@ -205,12 +193,7 @@ pub(super) async fn get_output(
 
     let ring = match state.output_buffers.get(&session_id) {
         Some(r) => r,
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"error": "Session not found"})),
-            )
-        }
+        None => return session_not_found(),
     };
     let limit = query.limit.unwrap_or(8192);
     let (bytes, total_written) = ring.lock().read_last(limit);
@@ -265,10 +248,7 @@ pub(super) async fn close_session(
 
         (StatusCode::OK, Json(serde_json::json!({"ok": true})))
     } else {
-        (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "Session not found"})),
-        )
+        session_not_found()
     }
 }
 
@@ -400,12 +380,7 @@ pub(super) async fn pause_session(
 ) -> impl IntoResponse {
     let entry = match state.sessions.get(&session_id) {
         Some(e) => e,
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"error": "Session not found"})),
-            )
-        }
+        None => return session_not_found(),
     };
     entry.lock().paused.store(true, Ordering::Relaxed);
     state.metrics.pauses_triggered.fetch_add(1, Ordering::Relaxed);
@@ -418,12 +393,7 @@ pub(super) async fn resume_session(
 ) -> impl IntoResponse {
     let entry = match state.sessions.get(&session_id) {
         Some(e) => e,
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"error": "Session not found"})),
-            )
-        }
+        None => return session_not_found(),
     };
     entry.lock().paused.store(false, Ordering::Relaxed);
     (StatusCode::OK, Json(serde_json::json!({"ok": true})))
