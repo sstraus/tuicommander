@@ -562,6 +562,291 @@ fn spawn_silence_timer(
     });
 }
 
+// ---------------------------------------------------------------------------
+// ChunkProcessor: shared output processing logic for desktop & headless readers
+// ---------------------------------------------------------------------------
+
+/// Per-session mutable state for processing PTY output chunks.
+/// Holds dedup state, parser, and session CWD for PlanFile resolution.
+/// Used by both `spawn_reader_thread` (desktop) and `spawn_headless_reader_thread`.
+struct ChunkProcessor {
+    parser: OutputParser,
+    /// Dedup: only emit StatusLine when task_name actually changes
+    last_status_task: Option<String>,
+    /// Dedup: don't re-emit the same question prompt_text
+    last_question_text: Option<String>,
+    /// Session CWD for resolving relative plan-file paths
+    session_cwd: Option<String>,
+}
+
+impl ChunkProcessor {
+    fn new(session_cwd: Option<String>) -> Self {
+        Self {
+            parser: OutputParser::new(),
+            last_status_task: None,
+            last_question_text: None,
+            session_cwd,
+        }
+    }
+
+    /// Resolve a relative plan-file path to absolute using session CWD.
+    /// Returns None if the path is relative and no CWD is available.
+    fn resolve_planfile_path(&self, path: &str) -> Option<String> {
+        if path.starts_with('/') {
+            Some(path.to_string())
+        } else if let Some(ref cwd) = self.session_cwd {
+            let joined = std::path::PathBuf::from(cwd).join(path);
+            Some(normalize_path(&joined).to_string_lossy().into_owned())
+        } else {
+            None
+        }
+    }
+
+    /// Process a chunk of PTY output after kitty-sequence stripping.
+    /// Handles: VT log buffer, ring buffer, WebSocket broadcast, event parsing,
+    /// dedup, resize-grace filtering, PlanFile resolution, event emission,
+    /// silence state, last_output_ms, and shell state transitions.
+    ///
+    /// Returns the data string if non-empty (for callers that need to emit raw output to xterm).
+    /// `app` is Some for desktop mode (emits Tauri IPC), None for headless.
+    fn process_chunk(
+        &mut self,
+        data: &str,
+        silence: &Arc<Mutex<SilenceState>>,
+        session_id: &str,
+        state: &AppState,
+        app: Option<&AppHandle>,
+    ) -> Option<String> {
+        if data.is_empty() {
+            return None;
+        }
+
+        // Feed raw data (post-kitty-strip) into VT100 log buffer.
+        let changed_rows = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
+            vt_log.lock().process(data.as_bytes())
+        } else {
+            Vec::new()
+        };
+
+        // Write clean text to ring buffer for MCP consumers (no ANSI)
+        if let Some(ring) = state.output_buffers.get(session_id) {
+            ring.lock().write(data.as_bytes());
+        }
+
+        // Broadcast to WebSocket clients
+        if let Some(mut clients) = state.ws_clients.get_mut(session_id) {
+            let owned = data.to_owned();
+            clients.retain(|tx| tx.send(owned.clone()).is_ok());
+        }
+
+        // Parse events: OSC 9;4 progress from raw stream, others from clean rows.
+        let in_resize_grace = silence.lock().is_resize_grace();
+        let mut events = Vec::new();
+        if let Some(evt) = crate::output_parser::parse_osc94(data) {
+            events.push(evt);
+        }
+        events.extend(self.parser.parse_clean_lines(&changed_rows));
+
+        // Slash menu detection
+        if state.slash_mode.get(session_id)
+            .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
+            && let Some(vt_log) = state.vt_log_buffers.get(session_id)
+        {
+            let screen = vt_log.lock().screen_rows();
+            if let Some(evt) = crate::output_parser::parse_slash_menu(&screen) {
+                events.push(evt);
+            }
+        }
+
+        let regex_found_question = if in_resize_grace { false } else {
+            events.iter().any(|e| matches!(e, ParsedEvent::Question { .. }))
+        };
+
+        // Emit events with dedup, resize-grace filtering, and PlanFile resolution.
+        for event in &events {
+            if in_resize_grace && matches!(event,
+                ParsedEvent::Question { .. }
+                | ParsedEvent::RateLimit { .. }
+                | ParsedEvent::ApiError { .. }
+            ) {
+                continue;
+            }
+
+            // Dedup status-line: skip if task_name hasn't changed
+            if let ParsedEvent::StatusLine { task_name, .. } = event {
+                if self.last_status_task.as_deref() == Some(task_name.as_str()) {
+                    continue;
+                }
+                self.last_status_task = Some(task_name.clone());
+            }
+
+            // Dedup question: skip if same prompt_text already emitted.
+            if let ParsedEvent::Question { prompt_text, .. } = event {
+                if self.last_question_text.as_deref() == Some(prompt_text.as_str()) {
+                    continue;
+                }
+                self.last_question_text = Some(prompt_text.clone());
+            }
+
+            // Resolve relative plan-file paths to absolute using session CWD.
+            // Skip plan-file events for files that don't exist on disk.
+            let resolved = if let ParsedEvent::PlanFile { path } = event {
+                match self.resolve_planfile_path(path) {
+                    Some(p) if std::path::Path::new(&p).is_file() => {
+                        Some(ParsedEvent::PlanFile { path: p })
+                    }
+                    _ => continue, // File doesn't exist or can't resolve — suppress
+                }
+            } else {
+                None
+            };
+
+            let emit_event = resolved.as_ref().unwrap_or(event);
+
+            // Broadcast to SSE/WebSocket consumers
+            if let Ok(json) = serde_json::to_value(emit_event) {
+                let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
+                    session_id: session_id.to_string(),
+                    parsed: json,
+                });
+            }
+
+            // Tauri IPC for desktop mode
+            if let Some(app) = app {
+                let _ = app.emit(
+                    &format!("pty-parsed-{session_id}"),
+                    emit_event,
+                );
+            }
+        }
+
+        // Update silence state for fallback question detection.
+        let has_status_line = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
+        let last_q_line = extract_question_line(&changed_rows);
+        let chrome_only = !regex_found_question
+            && last_q_line.is_none()
+            && !changed_rows.is_empty()
+            && changed_rows.iter().all(|r| is_chrome_row(&r.text));
+        {
+            let mut sl = silence.lock();
+            sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
+        }
+
+        // Stamp last_output_ms only for real output (not chrome-only ticks).
+        if !chrome_only
+            && let Some(ts) = state.last_output_ms.get(session_id)
+        {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            ts.store(now, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        // Shell state transitions (Rust is the single source of truth).
+        if !chrome_only {
+            if !silence.lock().is_resize_grace()
+                && let Some(atom) = state.shell_states.get(session_id)
+            {
+                let prev = atom.load(std::sync::atomic::Ordering::Acquire);
+                if prev != SHELL_BUSY
+                    && try_shell_transition(state, session_id, prev, SHELL_BUSY)
+                {
+                    emit_shell_state(state, app, session_id, "busy");
+                }
+            }
+        } else if let Some(atom) = state.shell_states.get(session_id)
+            && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
+            && should_transition_idle(state, session_id)
+            && try_shell_transition(state, session_id, SHELL_BUSY, SHELL_IDLE)
+        {
+            emit_shell_state(state, app, session_id, "idle");
+        }
+
+        Some(data.to_owned())
+    }
+}
+
+/// Process kitty keyboard actions (push/pop/query) shared by both reader threads.
+fn process_kitty_actions(
+    kitty_actions: &[KittyAction],
+    session_id: &str,
+    state: &AppState,
+    app: Option<&AppHandle>,
+) {
+    if kitty_actions.is_empty() {
+        return;
+    }
+    let entry = state.kitty_states
+        .entry(session_id.to_string())
+        .or_insert_with(|| Mutex::new(KittyKeyboardState::new()));
+    let mut ks = entry.lock();
+    for action in kitty_actions {
+        match action {
+            KittyAction::Push(flags) => ks.push(*flags),
+            KittyAction::Pop => ks.pop(),
+            KittyAction::Query => {
+                let flags = ks.current_flags();
+                let response = format!("\x1b[?{}u", flags);
+                if let Some(sess) = state.sessions.get(session_id) {
+                    let mut sess = sess.lock();
+                    let _ = sess.writer.write_all(response.as_bytes());
+                    let _ = sess.writer.flush();
+                }
+            }
+        }
+    }
+    let flags = ks.current_flags();
+    drop(ks);
+    if let Some(app) = app {
+        let _ = app.emit(
+            &format!("kitty-keyboard-{session_id}"),
+            flags,
+        );
+    }
+}
+
+/// Flush remaining bytes at EOF and write to ring buffer + WebSocket.
+/// Returns the flushed data (may be empty).
+fn flush_eof(
+    utf8_buf: &mut Utf8ReadBuffer,
+    esc_buf: &mut EscapeAwareBuffer,
+    session_id: &str,
+    state: &AppState,
+) -> String {
+    let utf8_tail = utf8_buf.flush();
+    let esc_remaining = if utf8_tail.is_empty() {
+        esc_buf.flush()
+    } else {
+        let mut flushed = esc_buf.push(&utf8_tail);
+        flushed.push_str(&esc_buf.flush());
+        flushed
+    };
+    if !esc_remaining.is_empty() {
+        if let Some(ring) = state.output_buffers.get(session_id) {
+            ring.lock().write(esc_remaining.as_bytes());
+        }
+        if let Some(mut clients) = state.ws_clients.get_mut(session_id) {
+            clients.retain(|tx| tx.send(esc_remaining.clone()).is_ok());
+        }
+    }
+    esc_remaining
+}
+
+/// Clean up session state from all DashMaps after a reader thread exits.
+fn cleanup_session(session_id: &str, state: &AppState) {
+    if state.sessions.remove(session_id).is_some() {
+        state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+    }
+    state.output_buffers.remove(session_id);
+    state.vt_log_buffers.remove(session_id);
+    state.ws_clients.remove(session_id);
+    state.kitty_states.remove(session_id);
+    state.input_buffers.remove(session_id);
+    state.silence_states.remove(session_id);
+    state.shell_states.remove(session_id);
+}
+
 /// Spawn a reader thread that reads from a PTY, emits Tauri events, and writes to the ring buffer.
 /// Shared by `create_pty`, `create_pty_with_worktree`, and `spawn_agent` to avoid duplication.
 pub(crate) fn spawn_reader_thread(
@@ -591,16 +876,11 @@ pub(crate) fn spawn_reader_thread(
         let mut buf = [0u8; 4096];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
-        let mut parser = OutputParser::new();
-        // Dedup status-line events: only emit when task_name actually changes
-        let mut last_status_task: Option<String> = None;
-        // Dedup question events: don't re-emit the same prompt_text
-        let mut last_question_text: Option<String> = None;
-        // Resolve session CWD once for resolving relative plan-file paths
         let session_cwd: Option<String> = state
             .sessions
             .get(&session_id)
             .and_then(|s| s.lock().cwd.clone());
+        let mut processor = ChunkProcessor::new(session_cwd);
         loop {
             while paused.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -611,213 +891,16 @@ pub(crate) fn spawn_reader_thread(
                     state.metrics.bytes_emitted.fetch_add(n, Ordering::Relaxed);
                     let utf8_data = utf8_buf.push(&buf[..n]);
                     let esc_data = esc_buf.push(&utf8_data);
-                    // Strip kitty keyboard protocol sequences from output
                     let (kitty_clean, kitty_actions) = strip_kitty_sequences(&esc_data);
                     let data = kitty_clean;
-                    // Process kitty actions: push/pop state, respond to queries
-                    if !kitty_actions.is_empty() {
-                        let entry = state.kitty_states
-                            .entry(session_id.clone())
-                            .or_insert_with(|| Mutex::new(KittyKeyboardState::new()));
-                        let mut ks = entry.lock();
-                        for action in &kitty_actions {
-                            match action {
-                                KittyAction::Push(flags) => ks.push(*flags),
-                                KittyAction::Pop => ks.pop(),
-                                KittyAction::Query => {
-                                    // Respond to query by writing CSI ? flags u to PTY
-                                    let flags = ks.current_flags();
-                                    let response = format!("\x1b[?{}u", flags);
-                                    if let Some(sess) = state.sessions.get(&session_id) {
-                                        let mut sess = sess.lock();
-                                        let _ = sess.writer.write_all(response.as_bytes());
-                                        let _ = sess.writer.flush();
-                                    }
-                                }
-                            }
-                        }
-                        let flags = ks.current_flags();
-                        drop(ks);
-                        let _ = app.emit(
-                            &format!("kitty-keyboard-{session_id}"),
-                            flags,
-                        );
-                    }
-                    if !data.is_empty() {
-                        // Feed raw data (post-kitty-strip) into VT100 log buffer.
-                        // Capture changed rows for clean-text parsing (both normal and alternate screen).
-                        let changed_rows = if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
-                            vt_log.lock().process(data.as_bytes())
-                        } else {
-                            Vec::new()
-                        };
-                        // Write clean text to ring buffer for MCP consumers (no ANSI)
-                        if let Some(ring) = state.output_buffers.get(&session_id) {
-                            ring.lock().write(data.as_bytes());
-                        }
-                        // Broadcast to WebSocket clients
-                        if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
-                            let owned = data.clone().into_owned();
-                            clients.retain(|tx| tx.send(owned.clone()).is_ok());
-                        }
-                        // Emit parsed events before raw output.
-                        // Suppress notification-class events during resize grace period:
-                        // the shell redraws visible output after SIGWINCH, which would
-                        // re-trigger Question/RateLimit/ApiError for content already on screen.
-                        let in_resize_grace = silence.lock().is_resize_grace();
-                        // OSC 9;4 progress events stay on the raw stream — they are consumed
-                        // by the vt100 crate and invisible in clean rows.
-                        let mut events = Vec::new();
-                        if let Some(evt) = crate::output_parser::parse_osc94(&data) {
-                            events.push(evt);
-                        }
-                        // All other events come from clean VtLogBuffer rows (no strip_ansi).
-                        events.extend(parser.parse_clean_lines(&changed_rows));
 
-                        // Slash menu detection: only when the session is in slash_mode
-                        // (user typed / in the agent's input). Reads the full screen
-                        // snapshot because arrow navigation only changes 1-2 rows.
-                        if state.slash_mode.get(&session_id)
-                            .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
-                            && let Some(vt_log) = state.vt_log_buffers.get(&session_id)
-                        {
-                            let screen = vt_log.lock().screen_rows();
-                            if let Some(evt) = crate::output_parser::parse_slash_menu(&screen) {
-                                events.push(evt);
-                            }
-                        }
+                    process_kitty_actions(&kitty_actions, &session_id, &state, Some(&app));
 
-                        let regex_found_question = if in_resize_grace { false } else {
-                            events.iter().any(|e| matches!(e, ParsedEvent::Question { .. }))
-                        };
-                        for event in &events {
-                            if in_resize_grace && matches!(event,
-                                ParsedEvent::Question { .. }
-                                | ParsedEvent::RateLimit { .. }
-                                | ParsedEvent::ApiError { .. }
-                            ) {
-                                continue;
-                            }
-                            // Dedup status-line: skip if task_name hasn't changed
-                            if let ParsedEvent::StatusLine { task_name, .. } = event {
-                                if last_status_task.as_deref() == Some(task_name.as_str()) {
-                                    continue;
-                                }
-                                last_status_task = Some(task_name.clone());
-                            }
-                            // Dedup question: skip if same prompt_text already emitted.
-                            // Ink agents re-render the screen on every frame, causing the
-                            // same question row to appear in changed_rows repeatedly.
-                            if let ParsedEvent::Question { prompt_text, .. } = event {
-                                if last_question_text.as_deref() == Some(prompt_text.as_str()) {
-                                    continue;
-                                }
-                                last_question_text = Some(prompt_text.clone());
-                            }
-                            // Resolve relative plan-file paths to absolute using session CWD.
-                            // Canonicalize to remove ".." segments so the frontend security
-                            // check (which rejects paths containing "..") doesn't block valid paths.
-                            // Skip plan-file events for files that don't exist on disk —
-                            // prevents false positives from grep output, help text, or test paths.
-                            let resolved = if let ParsedEvent::PlanFile { path } = event {
-                                let abs_path = if !path.starts_with('/') {
-                                    if let Some(ref cwd) = session_cwd {
-                                        let joined = std::path::PathBuf::from(cwd).join(path);
-                                        Some(normalize_path(&joined).to_string_lossy().into_owned())
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    Some(path.clone())
-                                };
-                                match abs_path {
-                                    Some(p) if std::path::Path::new(&p).is_file() => {
-                                        Some(ParsedEvent::PlanFile { path: p })
-                                    }
-                                    _ => {
-                                        // File doesn't exist — suppress the event
-                                        continue;
-                                    }
-                                }
-                            } else {
-                                None
-                            };
-                            let emit_event = resolved.as_ref().unwrap_or(event);
-                            // Broadcast to SSE/WebSocket consumers
-                            if let Ok(json) = serde_json::to_value(emit_event) {
-                                let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
-                                    session_id: session_id.clone(),
-                                    parsed: json,
-                                });
-                            }
-                            // Tauri IPC for desktop backward compat
-                            let _ = app.emit(
-                                &format!("pty-parsed-{session_id}"),
-                                emit_event,
-                            );
-                        }
-
-                        // Update silence state for fallback question detection.
-                        let has_status_line = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
-                        let last_q_line = extract_question_line(&changed_rows);
-                        // A chunk is "chrome-only" when ALL changed rows contain
-                        // agent UI markers (⏵⏵, ››, ✻, •) and no question was found.
-                        // Mode-line ticks arrive every ~1s and must NOT reset the
-                        // silence timer or questions will never be detected.
-                        let chrome_only = !regex_found_question
-                            && last_q_line.is_none()
-                            && !changed_rows.is_empty()
-                            && changed_rows.iter().all(|r| is_chrome_row(&r.text));
-                        {
-                            let mut sl = silence.lock();
-                            sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
-                        }
-
-                        // Stamp last_output_ms only for real output (not chrome-only ticks).
-                        // This drives both the event-based shellState (reader + timer)
-                        // and the timestamp-based derive_shell_state (HTTP/REST consumers).
-                        if !chrome_only
-                            && let Some(ts) = state.last_output_ms.get(&session_id)
-                        {
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64;
-                            ts.store(now, std::sync::atomic::Ordering::Relaxed);
-                        }
-
-                        // Shell state transitions (Rust is the single source of truth).
-                        if !chrome_only {
-                            // Real output: transition to busy (unless in resize grace).
-                            if !silence.lock().is_resize_grace()
-                                && let Some(atom) = state.shell_states.get(&session_id)
-                            {
-                                let prev = atom.load(std::sync::atomic::Ordering::Acquire);
-                                if prev != SHELL_BUSY
-                                    && try_shell_transition(&state, &session_id, prev, SHELL_BUSY)
-                                {
-                                    emit_shell_state(&state, Some(&app), &session_id, "busy");
-                                }
-                            }
-                        } else if let Some(atom) = state.shell_states.get(&session_id)
-                            && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
-                            && should_transition_idle(&state, &session_id)
-                            && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE)
-                        {
-                            // Chrome-only chunk: transition busy→idle.
-                            emit_shell_state(&state, Some(&app), &session_id, "idle");
-                        }
-
+                    if let Some(processed) = processor.process_chunk(&data, &silence, &session_id, &state, Some(&app)) {
                         // Colorize [intent: ...] tokens yellow before sending to xterm.
-                        // Run on every chunk containing "intent:" — not just when
-                        // parse_clean_lines detected the Intent event — because Claude Code
-                        // re-renders lines with CUU/CUD cursor movements, and re-render chunks
-                        // may contain the token without detection (cursor-split text).
-                        let data: String = if data.contains("[intent:") { colorize_intent(&data) } else { data.into_owned() };
+                        let data: String = if processed.contains("[intent:") { colorize_intent(&processed) } else { processed };
 
-                        // Conceal [[suggest: ...]] tokens so they are invisible in xterm but
-                        // still occupy their original character positions (preserving cursor layout).
-                        // SGR 8 (conceal) hides text without altering width; SGR 28 (reveal) restores.
+                        // Conceal [[suggest: ...]] tokens so they are invisible in xterm.
                         let data = if data.contains("suggest:") { conceal_suggest(&data) } else { data };
 
                         let _ = app.emit(
@@ -838,29 +921,14 @@ pub(crate) fn spawn_reader_thread(
         // Signal timer thread to stop
         running.store(false, Ordering::Relaxed);
 
-        // Ensure shell state is idle on session end (reader thread exit).
-        // CAS from busy→idle; if already idle or null, this is a harmless no-op.
+        // Ensure shell state is idle on session end
         if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
             emit_shell_state(&state, Some(&app), &session_id, "idle");
         }
 
-        // Flush all buffers at EOF
-        let utf8_tail = utf8_buf.flush();
-        let esc_remaining = if utf8_tail.is_empty() {
-            esc_buf.flush()
-        } else {
-            let mut flushed = esc_buf.push(&utf8_tail);
-            flushed.push_str(&esc_buf.flush());
-            flushed
-        };
-        let remaining = esc_remaining;
+        // Flush remaining bytes at EOF
+        let remaining = flush_eof(&mut utf8_buf, &mut esc_buf, &session_id, &state);
         if !remaining.is_empty() {
-            if let Some(ring) = state.output_buffers.get(&session_id) {
-                ring.lock().write(remaining.as_bytes());
-            }
-            if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
-                clients.retain(|tx| tx.send(remaining.clone()).is_ok());
-            }
             let _ = app.emit(
                 &format!("pty-output-{session_id}"),
                 PtyOutput {
@@ -869,34 +937,23 @@ pub(crate) fn spawn_reader_thread(
                 },
             );
         }
-        // Broadcast to SSE/WebSocket consumers
+
+        // Broadcast exit events
         let _ = state.event_bus.send(crate::state::AppEvent::PtyExit {
             session_id: session_id.clone(),
         });
-        // Tauri IPC for desktop backward compat
         let _ = app.emit(
             &format!("pty-exit-{session_id}"),
             serde_json::json!({ "session_id": session_id }),
         );
-        // Notify frontend about session closure (used by remote/MCP-spawned terminals)
         let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
             session_id: session_id.clone(),
         });
         let _ = app.emit("session-closed", serde_json::json!({
             "session_id": session_id,
         }));
-        // Only decrement active_sessions if we're the ones removing the session.
-        // HTTP/MCP close paths may have already removed it and decremented.
-        if state.sessions.remove(&session_id).is_some() {
-            state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
-        }
-        state.output_buffers.remove(&session_id);
-        state.vt_log_buffers.remove(&session_id);
-        state.ws_clients.remove(&session_id);
-        state.kitty_states.remove(&session_id);
-        state.input_buffers.remove(&session_id);
-        state.silence_states.remove(&session_id);
-        state.shell_states.remove(&session_id);
+
+        cleanup_session(&session_id, &state);
     });
 }
 
@@ -927,7 +984,11 @@ pub(crate) fn spawn_headless_reader_thread(
         let mut buf = [0u8; 4096];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
-        let mut parser = OutputParser::new();
+        let session_cwd: Option<String> = state
+            .sessions
+            .get(&session_id)
+            .and_then(|s| s.lock().cwd.clone());
+        let mut processor = ChunkProcessor::new(session_cwd);
         loop {
             while paused.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -938,118 +999,13 @@ pub(crate) fn spawn_headless_reader_thread(
                     state.metrics.bytes_emitted.fetch_add(n, Ordering::Relaxed);
                     let utf8_data = utf8_buf.push(&buf[..n]);
                     let esc_data = esc_buf.push(&utf8_data);
-                    // Strip kitty keyboard protocol sequences
                     let (kitty_clean, kitty_actions) = strip_kitty_sequences(&esc_data);
                     let data = kitty_clean;
-                    if !kitty_actions.is_empty() {
-                        let entry = state.kitty_states
-                            .entry(session_id.clone())
-                            .or_insert_with(|| Mutex::new(KittyKeyboardState::new()));
-                        let mut ks = entry.lock();
-                        for action in &kitty_actions {
-                            match action {
-                                KittyAction::Push(flags) => ks.push(*flags),
-                                KittyAction::Pop => ks.pop(),
-                                KittyAction::Query => {
-                                    let flags = ks.current_flags();
-                                    let response = format!("\x1b[?{}u", flags);
-                                    if let Some(sess) = state.sessions.get(&session_id) {
-                                        let mut sess = sess.lock();
-                                        let _ = sess.writer.write_all(response.as_bytes());
-                                        let _ = sess.writer.flush();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if !data.is_empty() {
-                        // Feed raw data into VT100 log buffer; capture changed rows for parsing.
-                        let changed_rows = if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
-                            vt_log.lock().process(data.as_bytes())
-                        } else {
-                            Vec::new()
-                        };
-                        // Write clean text to ring buffer for MCP consumers (no ANSI)
-                        if let Some(ring) = state.output_buffers.get(&session_id) {
-                            ring.lock().write(data.as_bytes());
-                        }
-                        // Broadcast to WebSocket clients
-                        if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
-                            let owned = data.clone().into_owned();
-                            clients.retain(|tx| tx.send(owned.clone()).is_ok());
-                        }
-                        // Emit structured events via event_bus (no Tauri IPC for headless).
-                        // OSC 9;4 progress stays on raw stream.
-                        let mut events = Vec::new();
-                        if let Some(evt) = crate::output_parser::parse_osc94(&data) {
-                            events.push(evt);
-                        }
-                        events.extend(parser.parse_clean_lines(&changed_rows));
 
-                        // Slash menu detection (same as desktop reader)
-                        if state.slash_mode.get(&session_id)
-                            .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
-                            && let Some(vt_log) = state.vt_log_buffers.get(&session_id)
-                        {
-                            let screen = vt_log.lock().screen_rows();
-                            if let Some(evt) = crate::output_parser::parse_slash_menu(&screen) {
-                                events.push(evt);
-                            }
-                        }
+                    process_kitty_actions(&kitty_actions, &session_id, &state, None);
 
-                        let regex_found_question = events.iter()
-                            .any(|e| matches!(e, ParsedEvent::Question { .. }));
-                        for event in &events {
-                            if let Ok(json) = serde_json::to_value(event) {
-                                let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
-                                    session_id: session_id.clone(),
-                                    parsed: json,
-                                });
-                            }
-                        }
-                        // Update silence state for fallback question detection.
-                        let has_status_line = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
-                        let last_q_line = extract_question_line(&changed_rows);
-                        let chrome_only = !regex_found_question
-                            && last_q_line.is_none()
-                            && !changed_rows.is_empty()
-                            && changed_rows.iter().all(|r| is_chrome_row(&r.text));
-                        {
-                            let mut sl = silence.lock();
-                            sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
-                        }
-
-                        // Stamp last_output_ms only for real output (not chrome-only ticks).
-                        if !chrome_only
-                            && let Some(ts) = state.last_output_ms.get(&session_id)
-                        {
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64;
-                            ts.store(now, std::sync::atomic::Ordering::Relaxed);
-                        }
-
-                        // Shell state transitions (headless: event_bus only, no Tauri IPC).
-                        if !chrome_only {
-                            if !silence.lock().is_resize_grace()
-                                && let Some(atom) = state.shell_states.get(&session_id)
-                            {
-                                let prev = atom.load(std::sync::atomic::Ordering::Acquire);
-                                if prev != SHELL_BUSY
-                                    && try_shell_transition(&state, &session_id, prev, SHELL_BUSY)
-                                {
-                                    emit_shell_state(&state, None, &session_id, "busy");
-                                }
-                            }
-                        } else if let Some(atom) = state.shell_states.get(&session_id)
-                            && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
-                            && should_transition_idle(&state, &session_id)
-                            && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE)
-                        {
-                            emit_shell_state(&state, None, &session_id, "idle");
-                        }
-                    }
+                    // Headless: no xterm output — just process for events and state
+                    processor.process_chunk(&data, &silence, &session_id, &state, None);
                 }
                 Err(e) => {
                     eprintln!("Error: PTY reader error for session {session_id}: {e}");
@@ -1060,28 +1016,14 @@ pub(crate) fn spawn_headless_reader_thread(
         // Signal silence timer thread to stop
         running.store(false, Ordering::Relaxed);
 
-        // Ensure shell state is idle on session end.
+        // Ensure shell state is idle on session end
         if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
             emit_shell_state(&state, None, &session_id, "idle");
         }
 
-        let utf8_tail = utf8_buf.flush();
-        let esc_remaining = if utf8_tail.is_empty() {
-            esc_buf.flush()
-        } else {
-            let mut flushed = esc_buf.push(&utf8_tail);
-            flushed.push_str(&esc_buf.flush());
-            flushed
-        };
-        let remaining = esc_remaining;
-        if !remaining.is_empty() {
-            if let Some(ring) = state.output_buffers.get(&session_id) {
-                ring.lock().write(remaining.as_bytes());
-            }
-            if let Some(mut clients) = state.ws_clients.get_mut(&session_id) {
-                clients.retain(|tx| tx.send(remaining.clone()).is_ok());
-            }
-        }
+        // Flush remaining bytes at EOF
+        flush_eof(&mut utf8_buf, &mut esc_buf, &session_id, &state);
+
         // Broadcast exit so SSE/WebSocket consumers and Tauri frontend can clean up
         let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
             session_id: session_id.clone(),
@@ -1091,16 +1033,8 @@ pub(crate) fn spawn_headless_reader_thread(
                 "session_id": session_id,
             }));
         }
-        if state.sessions.remove(&session_id).is_some() {
-            state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
-        }
-        state.output_buffers.remove(&session_id);
-        state.vt_log_buffers.remove(&session_id);
-        state.ws_clients.remove(&session_id);
-        state.kitty_states.remove(&session_id);
-        state.input_buffers.remove(&session_id);
-        state.silence_states.remove(&session_id);
-        state.shell_states.remove(&session_id);
+
+        cleanup_session(&session_id, &state);
     });
 }
 
@@ -3182,5 +3116,92 @@ mod tests {
         assert!(try_shell_transition(&state, sid, SHELL_IDLE, SHELL_BUSY),
             "should transition idle → busy on real output");
         assert_eq!(state.shell_states.get(sid).unwrap().load(Ordering::Relaxed), SHELL_BUSY);
+    }
+
+    // --- ChunkProcessor tests ---
+
+    #[test]
+    fn test_chunk_processor_new_has_correct_defaults() {
+        let cp = ChunkProcessor::new(Some("/home/user/repo".to_string()));
+        assert_eq!(cp.session_cwd, Some("/home/user/repo".to_string()));
+        assert!(cp.last_status_task.is_none());
+        assert!(cp.last_question_text.is_none());
+    }
+
+    #[test]
+    fn test_chunk_processor_dedup_status_task() {
+        use crate::state::VtLogBuffer;
+        use std::sync::atomic::AtomicU64;
+
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = "test-cp-dedup";
+        let silence = Arc::new(Mutex::new(SilenceState::new()));
+        state.silence_states.insert(sid.to_string(), silence.clone());
+        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(SHELL_NULL));
+        state.vt_log_buffers.insert(sid.to_string(), Mutex::new(VtLogBuffer::new(24, 80, 1000)));
+        state.output_buffers.insert(sid.to_string(), Mutex::new(OutputRingBuffer::new(4096)));
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(0));
+
+        let mut cp = ChunkProcessor::new(None);
+        let mut utf8_buf = Utf8ReadBuffer::new();
+        let mut esc_buf = EscapeAwareBuffer::new();
+
+        // First chunk with status line "* Reading files..."
+        let raw = b"* Reading files...";
+        let utf8_data = utf8_buf.push(raw);
+        let esc_data = esc_buf.push(&utf8_data);
+        let result1 = cp.process_chunk(&esc_data, &silence, sid, &state, None);
+
+        // Count how many PtyParsed events were sent with StatusLine
+        let mut rx = state.event_bus.subscribe();
+        // Second chunk with same status — should be deduped
+        let raw2 = b"\r\n* Reading files...";
+        let utf8_data2 = utf8_buf.push(raw2);
+        let esc_data2 = esc_buf.push(&utf8_data2);
+        let _result2 = cp.process_chunk(&esc_data2, &silence, sid, &state, None);
+
+        // Collect events from the second call
+        let mut status_count = 0;
+        while let Ok(evt) = rx.try_recv() {
+            if let crate::state::AppEvent::PtyParsed { parsed, .. } = evt {
+                if parsed.get("type").and_then(|t| t.as_str()) == Some("StatusLine") {
+                    status_count += 1;
+                }
+            }
+        }
+        assert_eq!(status_count, 0, "duplicate StatusLine with same task_name should be deduped");
+
+        // Verify the result contains data
+        assert!(result1.is_some(), "first chunk should return data");
+    }
+
+    #[test]
+    fn test_chunk_processor_planfile_resolution() {
+        let cp = ChunkProcessor::new(Some("/home/user/repo".to_string()));
+        // Test that resolve_planfile_path resolves relative paths
+        let resolved = cp.resolve_planfile_path("plans/foo.md");
+        assert_eq!(resolved, Some("/home/user/repo/plans/foo.md".to_string()));
+    }
+
+    #[test]
+    fn test_chunk_processor_planfile_resolution_absolute_passthrough() {
+        let cp = ChunkProcessor::new(Some("/home/user/repo".to_string()));
+        let resolved = cp.resolve_planfile_path("/absolute/path/plan.md");
+        assert_eq!(resolved, Some("/absolute/path/plan.md".to_string()));
+    }
+
+    #[test]
+    fn test_chunk_processor_planfile_resolution_no_cwd() {
+        let cp = ChunkProcessor::new(None);
+        // Relative path with no CWD should return None
+        let resolved = cp.resolve_planfile_path("plans/foo.md");
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn test_chunk_processor_planfile_normalizes_dotdot() {
+        let cp = ChunkProcessor::new(Some("/home/user/repo__wt/feat".to_string()));
+        let resolved = cp.resolve_planfile_path("../../repo/plans/foo.md");
+        assert_eq!(resolved, Some("/home/user/repo/plans/foo.md".to_string()));
     }
 }
