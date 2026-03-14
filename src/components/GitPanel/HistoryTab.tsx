@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, For, Show, on } from "solid-js";
+import { Component, createEffect, createSignal, For, Show, on, onCleanup } from "solid-js";
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
@@ -21,7 +21,7 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
   const [hasMore, setHasMore] = createSignal(true);
 
   /** Fetch the initial commit page for the file */
-  async function fetchHistory(repoPath: string, filePath: string) {
+  async function fetchHistory(repoPath: string, filePath: string, isCancelled?: () => boolean) {
     setLoading(true);
     setCommits([]);
     setHasMore(true);
@@ -31,14 +31,16 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
         file: filePath,
         count: PAGE_SIZE,
       });
+      if (isCancelled?.()) return;
       setCommits(result);
       setHasMore(result.length >= PAGE_SIZE);
     } catch (err) {
+      if (isCancelled?.()) return;
       appLogger.debug("git", "Failed to load file history", err);
       setCommits([]);
       setHasMore(false);
     } finally {
-      setLoading(false);
+      if (!isCancelled?.()) setLoading(false);
     }
   }
 
@@ -95,10 +97,13 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
         return `${repoPath ?? ""}:${filePath ?? ""}:${rev}`;
       },
       () => {
+        let cancelled = false;
+        onCleanup(() => { cancelled = true; });
+
         const repoPath = props.repoPath;
         const filePath = props.filePath;
         if (repoPath && filePath) {
-          void fetchHistory(repoPath, filePath);
+          void fetchHistory(repoPath, filePath, () => cancelled);
         } else {
           setCommits([]);
         }

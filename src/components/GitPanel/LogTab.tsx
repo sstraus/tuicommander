@@ -66,7 +66,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
   const PAGE_SIZE = 50;
 
   /** Fetch the initial commit page and graph data */
-  async function fetchCommits(repoPath: string) {
+  async function fetchCommits(repoPath: string, isCancelled?: () => boolean) {
     setLoading(true);
     setCommits([]);
     setGraphNodes([]);
@@ -87,16 +87,18 @@ export const LogTab: Component<LogTabProps> = (props) => {
           return [] as GraphNode[];
         }),
       ]);
+      if (isCancelled?.()) return;
       setCommits(logResult);
       setGraphNodes(graphResult);
       setHasMore(logResult.length >= PAGE_SIZE);
     } catch (err) {
+      if (isCancelled?.()) return;
       appLogger.debug("git", "Failed to load commit log", err);
       setCommits([]);
       setGraphNodes([]);
       setHasMore(false);
     } finally {
-      setLoading(false);
+      if (!isCancelled?.()) setLoading(false);
     }
   }
 
@@ -180,7 +182,9 @@ export const LogTab: Component<LogTabProps> = (props) => {
         return `${repoPath ?? ""}:${rev}`;
       },
       () => {
-        if (props.repoPath) void fetchCommits(props.repoPath);
+        let cancelled = false;
+        onCleanup(() => { cancelled = true; });
+        if (props.repoPath) void fetchCommits(props.repoPath, () => cancelled);
       },
     ),
   );
