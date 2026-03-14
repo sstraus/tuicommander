@@ -173,6 +173,12 @@ pub(crate) fn get_repo_info(state: State<'_, Arc<AppState>>, path: String) -> Re
     info
 }
 
+/// Get the origin remote URL for a repository (returns None if not a git repo or no remote).
+#[tauri::command]
+pub(crate) fn get_remote_url(path: String) -> Option<String> {
+    read_remote_url(Path::new(&path))
+}
+
 /// Core logic for renaming a git branch.
 pub(crate) fn rename_branch_impl(path: &str, old_name: &str, new_name: &str) -> Result<(), String> {
     let repo_path = PathBuf::from(path);
@@ -2673,6 +2679,90 @@ mod tests {
             None,
         );
         assert!(result.is_err());
+    }
+
+    // --- validate_git_hash tests ---
+
+    #[test]
+    fn validate_git_hash_accepts_40_hex_chars() {
+        assert!(validate_git_hash("abc1234567890123456789012345678901234abc").is_ok());
+    }
+
+    #[test]
+    fn validate_git_hash_accepts_short_hash() {
+        assert!(validate_git_hash("abcd").is_ok()); // minimum 4 chars
+    }
+
+    #[test]
+    fn validate_git_hash_accepts_uppercase_hex() {
+        assert!(validate_git_hash("ABCDEF1234567890abcdef1234567890abcdef12").is_ok());
+    }
+
+    #[test]
+    fn validate_git_hash_rejects_empty() {
+        assert!(validate_git_hash("").is_err());
+    }
+
+    #[test]
+    fn validate_git_hash_rejects_too_short() {
+        assert!(validate_git_hash("abc").is_err()); // 3 chars < minimum 4
+    }
+
+    #[test]
+    fn validate_git_hash_rejects_too_long() {
+        assert!(validate_git_hash("a".repeat(41).as_str()).is_err());
+    }
+
+    #[test]
+    fn validate_git_hash_rejects_non_hex() {
+        assert!(validate_git_hash("ghij1234567890123456789012345678901234gh").is_err());
+    }
+
+    #[test]
+    fn validate_git_hash_rejects_injection_attempt() {
+        assert!(validate_git_hash("abcd; rm -rf /").is_err());
+    }
+
+    // --- validate_stash_ref tests ---
+
+    #[test]
+    fn validate_stash_ref_accepts_valid_zero() {
+        assert!(validate_stash_ref("stash@{0}").is_ok());
+    }
+
+    #[test]
+    fn validate_stash_ref_accepts_valid_large_index() {
+        assert!(validate_stash_ref("stash@{42}").is_ok());
+    }
+
+    #[test]
+    fn validate_stash_ref_rejects_empty() {
+        assert!(validate_stash_ref("").is_err());
+    }
+
+    #[test]
+    fn validate_stash_ref_rejects_wrong_prefix() {
+        assert!(validate_stash_ref("refs@{0}").is_err());
+    }
+
+    #[test]
+    fn validate_stash_ref_rejects_missing_brace() {
+        assert!(validate_stash_ref("stash@{0").is_err());
+    }
+
+    #[test]
+    fn validate_stash_ref_rejects_non_numeric_index() {
+        assert!(validate_stash_ref("stash@{abc}").is_err());
+    }
+
+    #[test]
+    fn validate_stash_ref_rejects_negative_index() {
+        assert!(validate_stash_ref("stash@{-1}").is_err());
+    }
+
+    #[test]
+    fn validate_stash_ref_rejects_injection_attempt() {
+        assert!(validate_stash_ref("stash@{0}; echo pwned").is_err());
     }
 
     // --- parse_blame_porcelain tests ---
