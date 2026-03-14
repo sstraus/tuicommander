@@ -34,7 +34,12 @@
       "dangerousDisableAssetCspModification": ["style-src"],
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPCONFIG/**"]
+        "scope": [
+          "$APPCONFIG/**",
+          "$HOME/Library/Application Support/tuicommander/**",
+          "$HOME/.config/tuicommander/**",
+          "$HOME/AppData/Roaming/tuicommander/**"
+        ]
       }
     }
   },
