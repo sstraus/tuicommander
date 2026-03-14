@@ -44,13 +44,6 @@ pub struct AudioCapture {
     stream: Option<cpal::Stream>,
 }
 
-// Safety: cpal::Stream is !Send due to platform audio API raw pointers.
-// AudioCapture is stored in `Mutex<Option<AudioCapture>>` in DictationState.
-// The stream is created on one thread and only dropped (via `stop_stream()` or `Drop`)
-// while holding the mutex lock. We never dereference or use cpal's internal raw
-// pointers directly — all interaction goes through cpal's public API.
-unsafe impl Send for AudioCapture {}
-
 impl AudioCapture {
     /// Start capturing audio from a specific device (or system default if None).
     pub fn start_with_device(device_name: Option<&str>) -> Result<Self, String> {
