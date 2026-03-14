@@ -1,0 +1,8 @@
+/* Shared styles for GitPanel tab modules */
+
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}

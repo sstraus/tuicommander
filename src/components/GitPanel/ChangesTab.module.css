@@ -398,9 +398,6 @@
 
 /* Empty state */
 .empty {
-  padding: 20px;
-  text-align: center;
-  color: var(--fg-muted);
-  font-size: var(--font-sm);
+  composes: empty from "./panel.module.css";
   font-family: var(--font-ui);
 }
