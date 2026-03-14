@@ -2828,6 +2828,83 @@ aaaa234567890123456789012345678901234aaaa 2 2
         assert!(lines.is_empty());
     }
 
+    #[test]
+    fn parse_blame_porcelain_malformed_hash_line_ignored() {
+        // A line that looks nothing like porcelain output should produce no entries
+        let output = "this is not porcelain\nneither is this\n";
+        let lines = parse_blame_porcelain(output);
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn parse_blame_porcelain_content_with_tab_prefix_preserved() {
+        // Content lines start with \t — verify that leading whitespace in the
+        // actual source line is preserved after stripping the initial \t.
+        let output = "\
+abc1234567890123456789012345678901234abcd 1 1 1
+author Carol
+author-mail <carol@example.com>
+author-time 1700000002
+author-tz +0000
+committer Carol
+committer-mail <carol@example.com>
+committer-time 1700000002
+committer-tz +0000
+summary Indented code
+filename test.txt
+\t    indented line
+";
+        let lines = parse_blame_porcelain(output);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].content, "    indented line");
+    }
+
+    #[test]
+    fn parse_blame_porcelain_two_different_commits() {
+        let output = "\
+aaaa234567890123456789012345678901234aaaa 1 1 1
+author Alice
+author-time 1700000000
+committer Alice
+committer-time 1700000000
+summary First
+filename test.txt
+\tLine from Alice
+bbbb234567890123456789012345678901234bbbb 2 2 1
+author Bob
+author-time 1700000001
+committer Bob
+committer-time 1700000001
+summary Second
+filename test.txt
+\tLine from Bob
+";
+        let lines = parse_blame_porcelain(output);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].author, "Alice");
+        assert_eq!(lines[0].hash, "aaaa234567890123456789012345678901234aaaa");
+        assert_eq!(lines[1].author, "Bob");
+        assert_eq!(lines[1].hash, "bbbb234567890123456789012345678901234bbbb");
+    }
+
+    #[test]
+    fn parse_blame_porcelain_empty_content_line() {
+        // An empty source line is represented as just a tab character
+        let output = "\
+abc1234567890123456789012345678901234abcd 1 1 1
+author Dan
+author-time 1700000003
+committer Dan
+committer-time 1700000003
+summary Blank line
+filename test.txt
+\t
+";
+        let lines = parse_blame_porcelain(output);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].content, "");
+    }
+
     // --- get_file_blame integration test ---
 
     #[test]
