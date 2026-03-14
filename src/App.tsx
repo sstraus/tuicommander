@@ -27,6 +27,7 @@ import { PromptDialog } from "./components/PromptDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { PostMergeCleanupDialog, type StepId, type StepStatus, type CleanupStep } from "./components/PostMergeCleanupDialog/PostMergeCleanupDialog";
 import { executeCleanup } from "./hooks/usePostMergeCleanup";
+import { getCompletionSuppression } from "./components/Terminal/completionDecision";
 import { RunCommandDialog } from "./components/RunCommandDialog";
 import { HelpPanel } from "./components/HelpPanel";
 import { CommandPalette } from "./components/CommandPalette";
@@ -387,18 +388,20 @@ const App: Component = () => {
 
     const fireCompletion = () => {
       deferredCompletionTimers.delete(id);
-      // Re-check: terminal may have become active or gone busy during the wait.
-      if (terminalsStore.state.activeId === id) return;
-      if (terminalsStore.state.debouncedBusy[id]) return;
-      // Re-check sub-tasks: count may have updated during deferral.
+      // Re-check: terminal may have been removed during deferral.
       const terminal = terminalsStore.get(id);
-      if (!terminal) return; // Terminal removed during deferral
-      if (terminal.activeSubTasks > 0) {
-        appLogger.debug("terminal", `[Notify] ${id} completion SUPPRESSED — ${terminal.activeSubTasks} active sub-tasks`);
-        return;
-      }
-      if (terminal.awaitingInput) {
-        appLogger.debug("terminal", `[Notify] ${id} completion SUPPRESSED — awaitingInput=${terminal.awaitingInput}`);
+      if (!terminal) return;
+
+      const reason = getCompletionSuppression({
+        isActiveTerminal: terminalsStore.state.activeId === id,
+        isDebouncedBusy: !!terminalsStore.state.debouncedBusy[id],
+        activeSubTasks: terminal.activeSubTasks,
+        awaitingInput: terminal.awaitingInput,
+        durationMs,
+        thresholdMs: BUSY_COMPLETION_THRESHOLD_MS,
+      });
+      if (reason) {
+        appLogger.debug("terminal", `[Notify] ${id} completion SUPPRESSED — ${reason}`);
         return;
       }
       appLogger.info("terminal", `[Notify] ${id} completion — busy for ${Math.round(durationMs / 1000)}s then idle`);
