@@ -117,7 +117,7 @@ impl axum::serve::Listener for NamedPipeListener {
                         {
                             Ok(s) => s,
                             Err(e) => {
-                                eprintln!("MCP HTTP: failed to create next pipe instance: {e}");
+                                tracing::error!(source = "mcp_http", "Failed to create next pipe instance: {e}");
                                 // Sleep briefly then retry — the pipe name might be transiently busy
                                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                                 continue;
@@ -127,7 +127,7 @@ impl axum::serve::Listener for NamedPipeListener {
                     return (connected, PIPE_NAME.to_string());
                 }
                 Err(e) => {
-                    eprintln!("MCP HTTP: named pipe accept error: {e}");
+                    tracing::error!(source = "mcp_http", "Named pipe accept error: {e}");
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
             }
@@ -400,11 +400,11 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         if let Some(parent) = sock.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
         {
-            eprintln!("Warning: failed to create socket parent dir {}: {e}", parent.display());
+            tracing::warn!(source = "mcp_http", path = %parent.display(), "Failed to create socket parent dir: {e}");
         }
         match tokio::net::UnixListener::bind(&sock) {
             Ok(uds) => {
-                eprintln!("MCP HTTP: Unix socket listening on {}", sock.display());
+                tracing::info!(source = "mcp_http", path = %sock.display(), "Unix socket listening");
                 let app = build_router(state.clone(), false, true);
                 // Unix socket connections don't have a SocketAddr, but many route
                 // handlers extract ConnectInfo<SocketAddr> for localhost guards.
@@ -412,12 +412,12 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
                 let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
                 Some(tokio::spawn(async move {
                     if let Err(e) = axum::serve(uds, app.into_make_service()).await {
-                        eprintln!("MCP HTTP: Unix socket server error: {e}");
+                        tracing::error!(source = "mcp_http", "Unix socket server error: {e}");
                     }
                 }))
             }
             Err(e) => {
-                eprintln!("MCP HTTP: failed to bind Unix socket {}: {e}", sock.display());
+                tracing::error!(source = "mcp_http", path = %sock.display(), "Failed to bind Unix socket: {e}");
                 None
             }
         }
@@ -428,17 +428,17 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
     let pipe_handle = {
         match NamedPipeListener::new() {
             Ok(pipe) => {
-                eprintln!("MCP HTTP: Named pipe listening on {PIPE_NAME}");
+                tracing::info!(source = "mcp_http", pipe = PIPE_NAME, "Named pipe listening");
                 let app = build_router(state.clone(), false, true);
                 let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
                 Some(tokio::spawn(async move {
                     if let Err(e) = axum::serve(pipe, app.into_make_service()).await {
-                        eprintln!("MCP HTTP: Named pipe server error: {e}");
+                        tracing::error!(source = "mcp_http", "Named pipe server error: {e}");
                     }
                 }))
             }
             Err(e) => {
-                eprintln!("MCP HTTP: failed to create named pipe {PIPE_NAME}: {e}");
+                tracing::error!(source = "mcp_http", pipe = PIPE_NAME, "Failed to create named pipe: {e}");
                 None
             }
         }
@@ -457,7 +457,7 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
                 let addr = listener.local_addr().unwrap_or_else(|_| {
                     std::net::SocketAddr::from(([0, 0, 0, 0], 0))
                 });
-                eprintln!("MCP HTTP: TCP listening on {addr} (remote access enabled)");
+                tracing::info!(source = "mcp_http", %addr, "TCP listening (remote access enabled)");
 
                 let app = build_router(state.clone(), true, mcp_enabled);
                 Some(tokio::spawn(async move {
@@ -465,12 +465,12 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
                         listener,
                         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
                     ).await {
-                        eprintln!("MCP HTTP: TCP server error: {e}");
+                        tracing::error!(source = "mcp_http", "TCP server error: {e}");
                     }
                 }))
             }
             Err(e) => {
-                eprintln!("MCP HTTP: failed to bind TCP {bind_addr}: {e}");
+                tracing::error!(source = "mcp_http", bind_addr = %bind_addr, "Failed to bind TCP: {e}");
                 None
             }
         }
@@ -561,7 +561,7 @@ mod tests {
             last_prompts: DashMap::new(),
             silence_states: DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
-            log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
+            log_buffer: std::sync::Arc::new(parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY))),
             event_bus: tokio::sync::broadcast::channel(256).0,
             event_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             session_states: dashmap::DashMap::new(),

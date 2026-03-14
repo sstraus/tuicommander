@@ -58,7 +58,7 @@ pub(crate) fn start_watching(
             let events = match events {
                 Ok(e) => e,
                 Err(e) => {
-                    eprintln!("Error: Head watcher error: {e:?}");
+                    tracing::error!(source = "head_watcher", "Head watcher error: {e:?}");
                     return;
                 }
             };

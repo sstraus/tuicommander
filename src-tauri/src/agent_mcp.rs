@@ -223,10 +223,10 @@ fn ensure_agent_mcp_entry(
             return false;
         }
         Some(ref old) => {
-            eprintln!("MCP: {agent_label} — updating path: {old} → {bridge_path}");
+            tracing::info!(source = "mcp", agent = %agent_label, "Updating path: {old} → {bridge_path}");
         }
         None => {
-            eprintln!("MCP: {agent_label} — installing bridge");
+            tracing::info!(source = "mcp", agent = %agent_label, "Installing bridge");
         }
     }
 
@@ -238,7 +238,7 @@ fn ensure_agent_mcp_entry(
     let entry_value = match serde_json::to_value(&entry) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("MCP: {agent_label} — serialize error: {e}");
+            tracing::error!(source = "mcp", agent = %agent_label, "Serialize error: {e}");
             return false;
         }
     };
@@ -253,11 +253,11 @@ fn ensure_agent_mcp_entry(
 
     match write_json_file(config_path, &root) {
         Ok(()) => {
-            eprintln!("MCP: {agent_label} — written to {}", config_path.display());
+            tracing::info!(source = "mcp", agent = %agent_label, path = %config_path.display(), "Config written");
             true
         }
         Err(e) => {
-            eprintln!("MCP: {agent_label} — write error: {e}");
+            tracing::error!(source = "mcp", agent = %agent_label, "Write error: {e}");
             false
         }
     }
@@ -267,7 +267,7 @@ fn ensure_agent_mcp_entry(
 /// Called on every app launch. Installs missing entries and updates stale paths.
 pub(crate) fn ensure_mcp_configs() {
     let bridge_path = detect_bridge_binary();
-    eprintln!("MCP: ensuring bridge configs (bridge: {bridge_path})");
+    tracing::info!(source = "mcp", bridge = %bridge_path, "Ensuring bridge configs");
 
     for agent in SUPPORTED_AGENTS {
         let Some(spec) = get_mcp_config_spec(agent) else { continue };

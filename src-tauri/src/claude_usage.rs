@@ -193,10 +193,10 @@ fn save_cache_to_disk(cache: &SessionStatsCache) {
     match serde_json::to_string(cache) {
         Ok(json) => {
             if let Err(e) = std::fs::write(&path, json) {
-                eprintln!("[claude_usage] Failed to write cache: {e}");
+                tracing::warn!(source = "claude_usage", "Failed to write cache: {e}");
             }
         }
-        Err(e) => eprintln!("[claude_usage] Failed to serialize cache: {e}"),
+        Err(e) => tracing::warn!(source = "claude_usage", "Failed to serialize cache: {e}"),
     }
 }
 
@@ -644,7 +644,7 @@ async fn fetch_usage_from_api(token: &str) -> Result<UsageApiResponse, FetchErro
         })?;
 
     serde_json::from_str(&body).map_err(|e| {
-        eprintln!("[claude_usage] Parse error: {e}\nBody: {body}");
+        tracing::error!(source = "claude_usage", "Parse error: {e}\nBody: {body}");
         FetchError {
             status: 0,
             message: format!("Failed to parse API response: {e}"),
@@ -823,11 +823,12 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
                             Some(secs) => Duration::from_secs(secs),
                             None => RETRY_INITIAL_DELAY * 2u32.pow(attempt),
                         };
-                        eprintln!(
-                            "[claude_usage] 429 rate limited, retry {}/{} after {}s",
-                            attempt + 1,
-                            MAX_429_RETRIES,
-                            delay.as_secs()
+                        tracing::warn!(
+                            source = "claude_usage",
+                            attempt = attempt + 1,
+                            max_retries = MAX_429_RETRIES,
+                            delay_secs = delay.as_secs(),
+                            "429 rate limited, retrying"
                         );
                         tokio::time::sleep(delay).await;
                         continue;
@@ -842,27 +843,24 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
     // Set backoff so next poll doesn't hammer a rate-limited endpoint
     if was_rate_limited {
         *RATE_LIMITED_UNTIL.lock() = Some(Instant::now() + RATE_LIMIT_BACKOFF);
-        eprintln!(
-            "[claude_usage] Rate limited — backing off for {}s",
-            RATE_LIMIT_BACKOFF.as_secs()
-        );
+        tracing::warn!(source = "claude_usage", backoff_secs = RATE_LIMIT_BACKOFF.as_secs(), "Rate limited — backing off");
     }
 
     // Fallback: extract rate limits from /v1/messages response headers (Haiku, ~9 tokens)
     match fetch_usage_from_headers(&token).await {
         Ok(data) => {
-            eprintln!("[claude_usage] Primary API failed, using headers fallback");
+            tracing::info!(source = "claude_usage", "Primary API failed, using headers fallback");
             cache_response(&data);
             return Ok(data);
         }
         Err(e) => {
-            eprintln!("[claude_usage] Headers fallback also failed: {}", e.message);
+            tracing::warn!(source = "claude_usage", "Headers fallback also failed: {}", e.message);
         }
     }
 
     // On error, return stale cache if available
     if let Some(stale) = get_stale_cache() {
-        eprintln!("[claude_usage] Returning stale cache after error: {last_err_msg}");
+        tracing::info!(source = "claude_usage", "Returning stale cache after error: {last_err_msg}");
         return Ok(stale);
     }
 
@@ -1051,7 +1049,7 @@ pub async fn get_claude_session_stats(
                             cache_dirty = true;
                         }
                         Err(e) => {
-                            eprintln!("[claude_usage] Error parsing {}: {e}", path.display());
+                            tracing::warn!(source = "claude_usage", path = %path.display(), "Error parsing: {e}");
                         }
                     }
                 }
@@ -1064,7 +1062,7 @@ pub async fn get_claude_session_stats(
                             cache_dirty = true;
                         }
                         Err(e) => {
-                            eprintln!("[claude_usage] Error reparsing {}: {e}", path.display());
+                            tracing::warn!(source = "claude_usage", path = %path.display(), "Error reparsing: {e}");
                         }
                     }
                 }
@@ -1077,7 +1075,7 @@ pub async fn get_claude_session_stats(
                             cache_dirty = true;
                         }
                         Err(e) => {
-                            eprintln!("[claude_usage] Error parsing new {}: {e}", path.display());
+                            tracing::warn!(source = "claude_usage", path = %path.display(), "Error parsing new file: {e}");
                         }
                     }
                 }

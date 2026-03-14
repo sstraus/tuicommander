@@ -268,7 +268,7 @@ pub fn start_dictation(
                     acc.push_str(&text);
                 }
                 if let Err(e) = app_clone.emit("dictation-partial", &text) {
-                    eprintln!("[dictation] failed to emit partial event: {e}");
+                    tracing::warn!(source = "dictation", "Failed to emit partial event: {e}");
                 }
             }
         })

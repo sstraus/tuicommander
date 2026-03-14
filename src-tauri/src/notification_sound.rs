@@ -217,11 +217,11 @@ pub(crate) fn play(sound: NotificationSound, volume: f32) {
     let volume = volume.clamp(0.0, 1.0);
     std::thread::spawn(move || {
         let Ok((_stream, stream_handle)) = OutputStream::try_default() else {
-            eprintln!("[notification_sound] Failed to open audio output");
+            tracing::warn!(source = "notification_sound", "Failed to open audio output");
             return;
         };
         let Ok(sink) = Sink::try_new(&stream_handle) else {
-            eprintln!("[notification_sound] Failed to create audio sink");
+            tracing::warn!(source = "notification_sound", "Failed to create audio sink");
             return;
         };
 

@@ -230,9 +230,11 @@ async fn plugin_exec_cli_inner(
 
     let duration_ms = start.elapsed().as_millis();
     let exit_ok = result.status.success();
-    eprintln!(
-        "[plugin_exec] plugin={} binary={} arg0={} duration={}ms ok={}",
-        plugin_id, binary, first_arg, duration_ms, exit_ok
+    tracing::debug!(
+        source = "plugin_exec",
+        plugin = %plugin_id, binary = %binary, arg0 = %first_arg,
+        duration_ms = duration_ms, ok = exit_ok,
+        "Plugin exec completed"
     );
 
     if !result.status.success() {

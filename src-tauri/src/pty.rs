@@ -913,7 +913,7 @@ pub(crate) fn spawn_reader_thread(
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error: PTY reader error for session {session_id}: {e}");
+                    tracing::error!(session_id = %session_id, "PTY reader error: {e}");
                     break;
                 }
             }
@@ -1008,7 +1008,7 @@ pub(crate) fn spawn_headless_reader_thread(
                     processor.process_chunk(&data, &silence, &session_id, &state, None);
                 }
                 Err(e) => {
-                    eprintln!("Error: PTY reader error for session {session_id}: {e}");
+                    tracing::error!(session_id = %session_id, "PTY reader error: {e}");
                     break;
                 }
             }
@@ -1214,7 +1214,7 @@ pub(crate) async fn create_pty_with_worktree(
         Err(e) => {
             // Clean up the worktree since PTY creation failed
             if let Err(cleanup_err) = remove_worktree_internal(&worktree) {
-                eprintln!("Warning: Failed to cleanup worktree after PTY failure: {cleanup_err}");
+                tracing::warn!("Failed to cleanup worktree after PTY failure: {cleanup_err}");
             }
             return Err(e);
         }
@@ -1518,7 +1518,7 @@ pub(crate) fn close_pty(
         // Cleanup worktree if requested
         if let Some(worktree) = worktree_to_cleanup
             && let Err(e) = remove_worktree_internal(&worktree) {
-                eprintln!("Warning: Failed to cleanup worktree: {e}");
+                tracing::warn!("Failed to cleanup worktree: {e}");
             }
     }
 

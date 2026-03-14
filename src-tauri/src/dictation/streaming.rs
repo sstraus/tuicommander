@@ -85,7 +85,7 @@ impl StreamingSession {
             match handle.join() {
                 Ok(audio) => audio,
                 Err(e) => {
-                    eprintln!("[dictation] streaming thread panicked: {e:?}");
+                    tracing::error!(source = "dictation", "Streaming thread panicked: {e:?}");
                     Vec::new()
                 }
             }
@@ -219,7 +219,7 @@ fn transcribe_window(
             }
         }
         Err(e) => {
-            eprintln!("[dictation] transcription error: {e}");
+            tracing::error!(source = "dictation", "Transcription error: {e}");
             None
         }
     }

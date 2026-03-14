@@ -177,9 +177,7 @@ impl GitHubCircuitBreaker {
     pub(crate) fn record_rate_limit(&self, wait_secs: u64) {
         let delay = std::time::Duration::from_secs(wait_secs);
         *self.rate_limit_until.write() = Some(Instant::now() + delay);
-        eprintln!(
-            "[github] Rate limited — backing off for {wait_secs}s",
-        );
+        tracing::warn!(source = "github", backoff_secs = wait_secs, "Rate limited — backing off");
     }
 
     /// Record a failed API call. Opens the circuit after threshold failures.
@@ -194,10 +192,7 @@ impl GitHubCircuitBreaker {
             );
             let delay = std::time::Duration::from_millis(delay_ms as u64);
             *self.open_until.write() = Some(Instant::now() + delay);
-            eprintln!(
-                "[github] Circuit breaker open after {count} failures, backing off for {:.1}s",
-                delay.as_secs_f64()
-            );
+            tracing::warn!(source = "github", failures = count, backoff_secs = delay.as_secs_f64(), "Circuit breaker open");
         }
     }
 }
@@ -385,7 +380,7 @@ pub(crate) async fn graphql_with_retry(
             Err(format!("rate-limit: {message}"))
         }
         Err(GqlError::Auth(msg)) => {
-            eprintln!("[github] 401 with current token, trying fallback candidates");
+            tracing::warn!(source = "github", "401 with current token, trying fallback candidates");
             // Try other candidates
             let candidates = resolve_github_token_candidates();
             for candidate in &candidates {
@@ -394,7 +389,7 @@ pub(crate) async fn graphql_with_retry(
                 }
                 match graphql_request(&state.http_client, candidate, query, &variables).await {
                     Ok(response) => {
-                        eprintln!("[github] Token fallback succeeded");
+                        tracing::info!(source = "github", "Token fallback succeeded");
                         *state.github_token.write() = Some(candidate.clone());
                         state.github_circuit_breaker.record_success();
                         return Ok(response);
@@ -814,7 +809,7 @@ pub(crate) async fn get_repo_pr_statuses_impl(
         }
         Err(e) if e.starts_with("rate-limit:") => Err(e),
         Err(e) => {
-            eprintln!("[github] GraphQL PR query failed for {path}: {e}");
+            tracing::warn!(source = "github", %path, "GraphQL PR query failed: {e}");
             Ok(vec![])
         }
     }
@@ -1169,7 +1164,7 @@ pub(crate) async fn get_ci_checks_impl(
     match graphql_with_retry(state, PR_CHECKS_QUERY, variables).await {
         Ok(data) => parse_pr_check_contexts(&data),
         Err(e) => {
-            eprintln!("[github] GraphQL PR checks query failed: {}", e);
+            tracing::warn!(source = "github", "GraphQL PR checks query failed: {e}");
             vec![]
         }
     }

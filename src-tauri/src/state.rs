@@ -727,7 +727,8 @@ pub struct AppState {
     pub(crate) claude_usage_cache: Mutex<crate::claude_usage::SessionStatsCache>,
     /// Centralized application log ring buffer (1000 entries).
     /// Frontend pushes via push_log, reads via get_logs.
-    pub(crate) log_buffer: Mutex<crate::app_logger::LogRingBuffer>,
+    /// Wrapped in Arc so the tracing subscriber layer can share the same buffer.
+    pub(crate) log_buffer: Arc<Mutex<crate::app_logger::LogRingBuffer>>,
     /// Broadcast channel for all backend events (SSE, WebSocket, state accumulator).
     /// Capacity 256 — lagged receivers get `RecvError::Lagged` and should reconnect.
     pub(crate) event_bus: tokio::sync::broadcast::Sender<AppEvent>,
@@ -926,7 +927,7 @@ impl AppState {
                 match rx.recv().await {
                     Ok(event) => Self::apply_event_to_session_state(&state, &event),
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                        eprintln!("[session-state] lagged by {n} events");
+                        tracing::warn!(source = "session_state", lagged = n, "Event bus lagged");
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
@@ -1734,7 +1735,7 @@ pub(crate) mod tests_support {
             last_prompts: dashmap::DashMap::new(),
             silence_states: dashmap::DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
-            log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
+            log_buffer: Arc::new(parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY))),
             event_bus: tokio::sync::broadcast::channel(256).0,
             event_counter: Arc::new(AtomicU64::new(0)),
             session_states: DashMap::new(),
@@ -2096,7 +2097,7 @@ mod tests {
             last_prompts: dashmap::DashMap::new(),
             silence_states: dashmap::DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
-            log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
+            log_buffer: Arc::new(parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY))),
             event_bus: tokio::sync::broadcast::channel(256).0,
             event_counter: Arc::new(AtomicU64::new(0)),
             session_states: DashMap::new(),

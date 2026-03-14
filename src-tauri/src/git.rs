@@ -1118,7 +1118,7 @@ exit /b 1
 "#;
 
     if let Err(e) = fs::write(&script_path, content) {
-        eprintln!("[git] Failed to write askpass script: {e}");
+        tracing::error!(source = "git", "Failed to write askpass script: {e}");
         return None;
     }
 

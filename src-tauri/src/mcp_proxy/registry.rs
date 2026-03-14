@@ -511,10 +511,7 @@ impl UpstreamRegistry {
             if should_connect
                 && let Err(e) = self.connect_upstream(new_server.clone(), Some(self_port)).await
             {
-                eprintln!(
-                    "[mcp-registry] Failed to connect upstream '{}': {e}",
-                    new_server.name
-                );
+                tracing::error!(source = "mcp_registry", name = %new_server.name, "Failed to connect upstream: {e}");
             }
         }
     }
@@ -640,22 +637,22 @@ async fn initialize_entry(
         Ok(tools) => {
             *entry.tools.write() = tools;
             *entry.status.write() = UpstreamStatus::Ready;
-            eprintln!("[mcp-registry] '{name}' initialized (Ready)");
+            tracing::info!(source = "mcp_registry", %name, "Initialized (Ready)");
             "ready"
         }
         Err(e) => {
             let exhausted = entry.cb.record_failure();
             if exhausted {
-                eprintln!("[mcp-registry] '{name}' failed permanently: {e}");
+                tracing::error!(source = "mcp_registry", %name, "Failed permanently: {e}");
                 *entry.status.write() = UpstreamStatus::Failed;
                 "failed"
             } else if entry.cb.is_open() {
-                eprintln!("[mcp-registry] '{name}' initialization failed (circuit open): {e}");
+                tracing::warn!(source = "mcp_registry", %name, "Initialization failed (circuit open): {e}");
                 *entry.status.write() = UpstreamStatus::CircuitOpen;
                 "circuit_open"
             } else {
                 // Below threshold — stay in Connecting, CB not open yet
-                eprintln!("[mcp-registry] '{name}' initialization failed: {e}");
+                tracing::warn!(source = "mcp_registry", %name, "Initialization failed: {e}");
                 "connecting"
             }
         }
@@ -696,7 +693,7 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                 // Recovery: CircuitOpen → Ready
                 if was_circuit_open {
                     *entry.status.write() = UpstreamStatus::Ready;
-                    eprintln!("[mcp-registry] '{name}' recovered (Ready)");
+                    tracing::info!(source = "mcp_registry", %name, "Recovered (Ready)");
                     if let Some(ref sender) = bus {
                         let _ = sender.send(crate::state::AppEvent::UpstreamStatusChanged {
                             name: name.clone(),
@@ -707,10 +704,10 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
             } else {
                 let exhausted = entry.cb.record_failure();
                 let new_status = if exhausted {
-                    eprintln!("[mcp-registry] '{name}' health check failed permanently");
+                    tracing::error!(source = "mcp_registry", %name, "Health check failed permanently");
                     UpstreamStatus::Failed
                 } else {
-                    eprintln!("[mcp-registry] '{name}' health check failed — circuit opening");
+                    tracing::warn!(source = "mcp_registry", %name, "Health check failed — circuit opening");
                     UpstreamStatus::CircuitOpen
                 };
                 *entry.status.write() = new_status.clone();

@@ -221,7 +221,7 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
 
     // Prune worktrees (non-fatal: stale entries are harmless)
     if let Err(e) = git_cmd(&worktree.base_repo).args(["worktree", "prune"]).run() {
-        eprintln!("Warning: git worktree prune failed: {e}");
+        tracing::warn!(source = "worktree", "git worktree prune failed: {e}");
     }
 
     Ok(())
@@ -370,7 +370,7 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, dele
             .args(["branch", "-d", branch_name])
             .run()
         {
-            eprintln!("Warning: git branch -d {branch_name}: {e}");
+            tracing::warn!(source = "worktree", branch = %branch_name, "git branch -d failed: {e}");
         }
 
     Ok(())
@@ -931,7 +931,7 @@ pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str, archive_scri
         .args(["worktree", "remove", "--force", &wt_path_str])
         .run()
     {
-        eprintln!("[worktree] archive: failed to remove worktree link: {e}");
+        tracing::warn!(source = "worktree", "Archive: failed to remove worktree link: {e}");
     }
 
     // Move the directory if it still exists (worktree remove may have deleted it)

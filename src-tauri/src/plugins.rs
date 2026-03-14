@@ -274,7 +274,7 @@ pub fn list_user_plugins() -> Vec<PluginManifest> {
     let entries = match std::fs::read_dir(&dir) {
         Ok(e) => e,
         Err(err) => {
-            eprintln!("[plugins] Failed to read plugins dir: {err}");
+            tracing::warn!(source = "plugins", "Failed to read plugins dir: {err}");
             return Vec::new();
         }
     };
@@ -301,7 +301,7 @@ pub fn list_user_plugins() -> Vec<PluginManifest> {
         let manifest_data = match std::fs::read_to_string(&manifest_path) {
             Ok(d) => d,
             Err(err) => {
-                eprintln!("[plugins] {dir_name}: failed to read manifest.json: {err}");
+                tracing::warn!(source = "plugins", plugin = %dir_name, "Failed to read manifest.json: {err}");
                 continue;
             }
         };
@@ -309,13 +309,13 @@ pub fn list_user_plugins() -> Vec<PluginManifest> {
         let manifest: PluginManifest = match serde_json::from_str(&manifest_data) {
             Ok(m) => m,
             Err(err) => {
-                eprintln!("[plugins] {dir_name}: invalid manifest.json: {err}");
+                tracing::warn!(source = "plugins", plugin = %dir_name, "Invalid manifest.json: {err}");
                 continue;
             }
         };
 
         if let Err(err) = validate_manifest(&manifest, &dir_name) {
-            eprintln!("[plugins] {dir_name}: manifest validation failed: {err}");
+            tracing::warn!(source = "plugins", plugin = %dir_name, "Manifest validation failed: {err}");
             continue;
         }
 

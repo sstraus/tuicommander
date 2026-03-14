@@ -82,7 +82,7 @@ impl AudioCapture {
                             process_audio_chunk(data, sample_rate, channels, &buffer_clone,
                                 &mut mono_buf, &mut resample_buf);
                         },
-                        |err| eprintln!("[dictation] audio stream error: {err}"),
+                        |err| tracing::error!(source = "dictation", "Audio stream error: {err}"),
                         None,
                     )
                     .map_err(|e| format!("Failed to build input stream: {e}"))?
@@ -100,7 +100,7 @@ impl AudioCapture {
                             process_audio_chunk(&float_buf, sample_rate, channels, &buffer_clone,
                                 &mut mono_buf, &mut resample_buf);
                         },
-                        |err| eprintln!("[dictation] audio stream error: {err}"),
+                        |err| tracing::error!(source = "dictation", "Audio stream error: {err}"),
                         None,
                     )
                     .map_err(|e| format!("Failed to build input stream: {e}"))?

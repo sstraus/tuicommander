@@ -411,7 +411,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 return serde_json::json!({"error": format!("Write failed: {}", e)});
             }
             if let Err(e) = session.writer.flush() {
-                eprintln!("Warning: PTY flush failed for session {session_id}: {e}");
+                tracing::warn!(session_id = %session_id, "PTY flush failed: {e}");
             }
             serde_json::json!({"ok": true})
         }
@@ -1173,7 +1173,7 @@ mod tests {
             last_prompts: dashmap::DashMap::new(),
             silence_states: dashmap::DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
-            log_buffer: parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY)),
+            log_buffer: std::sync::Arc::new(parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY))),
             event_bus: tokio::sync::broadcast::channel(256).0,
             event_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             session_states: dashmap::DashMap::new(),

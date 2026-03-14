@@ -4,10 +4,17 @@
 //! circular buffer. The frontend pushes entries via `push_log` and retrieves
 //! them via `get_logs`. This is the Rust source-of-truth for the log store;
 //! the TypeScript `appLogger` store delegates to these commands.
+//!
+//! The `tracing` subscriber is wired to this buffer via [`RingBufferLayer`],
+//! so every `tracing::warn!()` / `tracing::error!()` / etc. automatically
+//! appears in the ErrorLogPanel and the `/logs` HTTP endpoint.
 
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{Manager, State};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::AppState;
 
@@ -165,6 +172,107 @@ impl LogRingBuffer {
     pub(crate) fn len(&self) -> usize {
         self.count
     }
+}
+
+// ---------------------------------------------------------------------------
+// Tracing → ring buffer layer
+// ---------------------------------------------------------------------------
+
+/// A `tracing_subscriber::Layer` that forwards events into the [`LogRingBuffer`].
+///
+/// It extracts the first `source` field from the event's span/fields (falling
+/// back to the event target) and maps the tracing level to the ring buffer's
+/// `level` string (`"error"`, `"warn"`, `"info"`, `"debug"`).
+struct RingBufferLayer {
+    buffer: Arc<Mutex<LogRingBuffer>>,
+}
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for RingBufferLayer {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        // Extract the message and optional `source` field.
+        let mut visitor = LogVisitor::default();
+        event.record(&mut visitor);
+
+        let level = match *event.metadata().level() {
+            tracing::Level::ERROR => "error",
+            tracing::Level::WARN => "warn",
+            tracing::Level::INFO => "info",
+            _ => "debug",
+        };
+
+        let source = visitor
+            .source
+            .unwrap_or_else(|| event.metadata().target().to_string());
+
+        let message = visitor.message.unwrap_or_default();
+        if message.is_empty() {
+            return;
+        }
+
+        let mut buf = self.buffer.lock();
+        buf.push(
+            level.to_string(),
+            source,
+            message,
+            None,
+        );
+    }
+}
+
+/// Visitor that extracts `message` and `source` fields from a tracing event.
+#[derive(Default)]
+struct LogVisitor {
+    message: Option<String>,
+    source: Option<String>,
+}
+
+impl tracing::field::Visit for LogVisitor {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        match field.name() {
+            "message" => self.message = Some(value.to_string()),
+            "source" => self.source = Some(value.to_string()),
+            _ => {}
+        }
+    }
+
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        match field.name() {
+            "message" => self.message = Some(format!("{value:?}")),
+            "source" => self.source = Some(format!("{value:?}")),
+            _ => {}
+        }
+    }
+}
+
+/// Initialise the global `tracing` subscriber.
+///
+/// Sets up two layers:
+/// 1. **fmt** — writes structured logs to stderr (visible in `tauri dev`).
+/// 2. **RingBufferLayer** — forwards events into the shared [`LogRingBuffer`]
+///    so they appear in the ErrorLogPanel and the `/logs` HTTP endpoint.
+///
+/// The default level is `info`; override with `RUST_LOG=debug` etc.
+/// Must be called exactly once, early in `run()`.
+pub(crate) fn init_tracing(buffer: Arc<Mutex<LogRingBuffer>>) {
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_target(true)
+        .with_thread_ids(false)
+        .with_writer(std::io::stderr);
+
+    let ring_layer = RingBufferLayer { buffer };
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt_layer)
+        .with(ring_layer)
+        .init();
 }
 
 // ---------------------------------------------------------------------------

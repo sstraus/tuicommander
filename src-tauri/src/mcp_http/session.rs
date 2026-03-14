@@ -72,7 +72,7 @@ pub(super) async fn write_to_session(
         );
     }
     if let Err(e) = session.writer.flush() {
-        eprintln!("Warning: PTY flush failed for session {session_id}: {e}");
+        tracing::warn!(session_id = %session_id, "PTY flush failed: {e}");
     }
 
     // Feed input through InputLineBuffer FSM to track slash_mode accurately.
@@ -611,7 +611,7 @@ async fn handle_ws_session(
                             }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            eprintln!("[ws] broadcast lagged by {n} events for session {sid_for_events}");
+                            tracing::warn!(session_id = %sid_for_events, lagged = n, "WebSocket broadcast lagged");
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
@@ -629,11 +629,11 @@ async fn handle_ws_session(
                 if let Some(session) = state_clone.sessions.get(&sid) {
                     let mut s = session.lock();
                     if let Err(e) = s.writer.write_all(text.as_bytes()) {
-                        eprintln!("[ws] PTY write failed for session {sid}: {e}");
+                        tracing::error!(session_id = %sid, "PTY write failed: {e}");
                         break;
                     }
                     if let Err(e) = s.writer.flush() {
-                        eprintln!("[ws] PTY flush failed for session {sid}: {e}");
+                        tracing::warn!(session_id = %sid, "PTY flush failed: {e}");
                     }
                 }
             }
@@ -641,11 +641,11 @@ async fn handle_ws_session(
                 if let Some(session) = state_clone.sessions.get(&sid) {
                     let mut s = session.lock();
                     if let Err(e) = s.writer.write_all(&data) {
-                        eprintln!("[ws] PTY write failed for session {sid}: {e}");
+                        tracing::error!(session_id = %sid, "PTY write failed: {e}");
                         break;
                     }
                     if let Err(e) = s.writer.flush() {
-                        eprintln!("[ws] PTY flush failed for session {sid}: {e}");
+                        tracing::warn!(session_id = %sid, "PTY flush failed: {e}");
                     }
                 }
             }
@@ -832,7 +832,7 @@ async fn handle_ws_log_session(
                 if let Some(session) = state.sessions.get(&session_id) {
                     let mut s = session.lock();
                     if let Err(e) = s.writer.write_all(text.as_bytes()) {
-                        eprintln!("[ws/log] PTY write failed for session {session_id}: {e}");
+                        tracing::error!(session_id = %session_id, "PTY write failed: {e}");
                         break;
                     }
                     let _ = s.writer.flush();
@@ -842,7 +842,7 @@ async fn handle_ws_log_session(
                 if let Some(session) = state.sessions.get(&session_id) {
                     let mut s = session.lock();
                     if let Err(e) = s.writer.write_all(&data) {
-                        eprintln!("[ws/log] PTY write failed for session {session_id}: {e}");
+                        tracing::error!(session_id = %session_id, "PTY write failed: {e}");
                         break;
                     }
                     let _ = s.writer.flush();

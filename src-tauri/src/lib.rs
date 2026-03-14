@@ -80,18 +80,18 @@ fn ensure_window_visible(window: &WebviewWindow) {
         });
 
     if size_invalid || !on_screen {
-        eprintln!(
-            "[WindowGuard] Invalid window state ({}x{} at {},{}) — resetting to defaults",
-            size.width, size.height, pos.x, pos.y
+        tracing::warn!(
+            width = size.width, height = size.height, x = pos.x, y = pos.y,
+            "Invalid window state — resetting to defaults"
         );
         if let Err(e) = window.set_size(tauri::PhysicalSize::new(1200u32, 800u32)) {
-            eprintln!("[WindowGuard] Failed to reset size: {e}");
+            tracing::warn!("Failed to reset window size: {e}");
         }
         if let Err(e) = window.set_position(PhysicalPosition::new(100i32, 100i32)) {
-            eprintln!("[WindowGuard] Failed to reset position: {e}");
+            tracing::warn!("Failed to reset window position: {e}");
         }
         if let Err(e) = window.center() {
-            eprintln!("[WindowGuard] Failed to center window: {e}");
+            tracing::warn!("Failed to center window: {e}");
         }
     }
 }
@@ -565,6 +565,14 @@ fn get_relay_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Create the shared log ring buffer and initialise the tracing subscriber.
+    // This must happen before any other code so all log output is captured —
+    // including config loading, migration warnings, etc.
+    let log_buffer = Arc::new(parking_lot::Mutex::new(
+        app_logger::LogRingBuffer::new(app_logger::LOG_RING_CAPACITY),
+    ));
+    app_logger::init_tracing(log_buffer.clone());
+
     // Default worktrees directory: <config_dir>/worktrees
     let worktrees_dir = config::config_dir().join("worktrees");
 
@@ -572,7 +580,7 @@ pub fn run() {
 
     let github_token = crate::github::resolve_github_token();
     if github_token.is_none() {
-        eprintln!("[github] No GitHub token found (checked GH_TOKEN, GITHUB_TOKEN, gh CLI config)");
+        tracing::warn!(source = "github", "No GitHub token found (checked GH_TOKEN, GITHUB_TOKEN, gh CLI config)");
     }
 
     let state = Arc::new(AppState {
@@ -600,7 +608,7 @@ pub fn run() {
         last_prompts: DashMap::new(),
         silence_states: DashMap::new(),
         claude_usage_cache: parking_lot::Mutex::new(claude_usage::load_cache_from_disk()),
-        log_buffer: parking_lot::Mutex::new(app_logger::LogRingBuffer::new(app_logger::LOG_RING_CAPACITY)),
+        log_buffer,
         event_bus: tokio::sync::broadcast::channel(256).0,
         event_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         session_states: dashmap::DashMap::new(),
@@ -671,7 +679,7 @@ pub fn run() {
                     // External URL — open in system browser, block webview navigation
                     if scheme == "http" || scheme == "https" {
                         let url_str = url.to_string();
-                        eprintln!("[NavigationGuard] Opening in browser: {url_str}");
+                        tracing::info!(url = %url_str, "Opening external URL in browser");
                         #[cfg(target_os = "macos")]
                         let _ = std::process::Command::new("open").arg(&url_str).spawn();
                         #[cfg(target_os = "linux")]

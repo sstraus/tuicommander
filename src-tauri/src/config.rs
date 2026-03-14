@@ -51,7 +51,7 @@ pub(crate) fn config_dir() -> PathBuf {
         if source.exists() && source != new_dir
             && let Err(e) = migrate_config_dir(&source, &new_dir)
         {
-            eprintln!("Warning: config migration failed: {e}");
+            tracing::warn!("Config migration failed: {e}");
             return source;
         }
     }
@@ -88,11 +88,7 @@ fn migrate_config_dir(from: &std::path::Path, to: &std::path::Path) -> Result<()
         }
     }
 
-    eprintln!(
-        "Migrated config from {} to {}",
-        from.display(),
-        to.display()
-    );
+    tracing::info!(from = %from.display(), to = %to.display(), "Migrated config directory");
     Ok(())
 }
 
@@ -130,14 +126,14 @@ pub(crate) fn load_json_config<T: DeserializeOwned + Default>(filename: &str) ->
     let content = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Warning: Could not read config {}: {e}", path.display());
+            tracing::warn!(path = %path.display(), "Could not read config: {e}");
             return T::default();
         }
     };
     match serde_json::from_str(&content) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("Error: Corrupt config {}: {e}. Using defaults.", path.display());
+            tracing::error!(path = %path.display(), "Corrupt config: {e}. Using defaults.");
             T::default()
         }
     }
@@ -584,7 +580,7 @@ pub(crate) fn load_repo_local_config_from_path(repo_path: &std::path::Path) -> O
         Ok(contents) => match serde_json::from_str::<RepoLocalConfig>(&contents) {
             Ok(config) => Some(config),
             Err(e) => {
-                eprintln!("Warning: malformed {}: {e}", path.display());
+                tracing::warn!(path = %path.display(), "Malformed config: {e}");
                 None
             }
         },
