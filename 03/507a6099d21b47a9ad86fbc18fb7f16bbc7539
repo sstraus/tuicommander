@@ -1,0 +1,23 @@
+src/components/Terminal/Terminal.tsx
+  0e1e7de81a3faa9d 171-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "03507a6099d21b47a9ad86fbc18fb7f16bbc7539",
+  "prompts": {
+    "0e1e7de81a3faa9d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a86544d2-6015-4478-9018-381c958d1e03",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 2,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}
