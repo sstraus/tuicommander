@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { Component, For, Show, createSignal, createMemo } from "solid-js";
 import { getModifierSymbol, isMacOS } from "../../../platform";
 import { t } from "../../../i18n";
 import { keybindingsStore } from "../../../stores/keybindings";
@@ -138,7 +138,7 @@ export const KeyboardShortcutsTab: Component = () => {
   const [conflict, setConflict] = createSignal<{ action: ActionName; combo: string } | null>(null);
   let inputRef: HTMLInputElement | undefined;
 
-  const filteredSections = () => {
+  const filteredSections = createMemo(() => {
     // Read version for reactivity
     keybindingsStore.version;
     const q = filter().toLowerCase();
@@ -154,7 +154,7 @@ export const KeyboardShortcutsTab: Component = () => {
         ),
       }))
       .filter((section) => section.shortcuts.length > 0);
-  };
+  });
 
   function startEditing(action: ActionName) {
     setConflict(null);
