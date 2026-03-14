@@ -1,0 +1,67 @@
+src-tauri/src/dictation/audio.rs
+  1537c9edddb101a8 85,103
+src-tauri/src/git_cli.rs
+  1537c9edddb101a8 122
+src-tauri/src/worktree.rs
+  1537c9edddb101a8 224,373,934
+src-tauri/src/app_logger.rs
+  1537c9edddb101a8 7-10,12,16-17,178-277
+src-tauri/src/mcp_http/session.rs
+  1537c9edddb101a8 75,614,632,636,644,648,835,845
+src-tauri/src/state.rs
+  1537c9edddb101a8 730-731,930,1738,2100
+src-tauri/src/plugins.rs
+  1537c9edddb101a8 277,304,312,318
+src-tauri/src/notification_sound.rs
+  1537c9edddb101a8 220,224
+src-tauri/src/dictation/streaming.rs
+  1537c9edddb101a8 88,222
+src-tauri/src/head_watcher.rs
+  1537c9edddb101a8 61
+src-tauri/src/pty.rs
+  1537c9edddb101a8 916,1011,1217,1521
+src-tauri/src/git.rs
+  1537c9edddb101a8 1121
+src-tauri/src/mcp_http/mcp_transport.rs
+  1537c9edddb101a8 414,1176
+src-tauri/src/config.rs
+  1537c9edddb101a8 54,91,129,136,583
+src-tauri/src/plugin_exec.rs
+  1537c9edddb101a8 233-237
+src-tauri/src/dictation/commands.rs
+  1537c9edddb101a8 271
+src-tauri/Cargo.toml
+  1537c9edddb101a8 71-72
+src-tauri/src/mcp_http/mod.rs
+  1537c9edddb101a8 120,130,403,407,415,420,431,436,441,460,468,473,564
+src-tauri/src/claude_usage.rs
+  1537c9edddb101a8 196,199,647,826-831,846,852,857,863,1052,1065,1078
+src-tauri/src/agent_mcp.rs
+  1537c9edddb101a8 226,229,241,256,260,270
+src-tauri/src/lib.rs
+  1537c9edddb101a8 83-85,88,91,94,568-575,583,611,682
+src-tauri/src/mcp_proxy/registry.rs
+  1537c9edddb101a8 514,640,646,650,655,696,707,710
+src-tauri/src/github.rs
+  1537c9edddb101a8 180,195,383,392,812,1167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "165474cb64381b6a2dbd3533d244eea5e7321585",
+  "prompts": {
+    "1537c9edddb101a8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f7dcc4c-e940-47df-860e-15040b46009a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 104,
+      "total_deletions": 115,
+      "accepted_lines": 226,
+      "overriden_lines": 0
+    }
+  }
+}
