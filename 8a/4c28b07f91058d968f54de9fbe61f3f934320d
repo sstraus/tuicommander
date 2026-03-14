@@ -1,0 +1,23 @@
+src-tauri/src/git.rs
+  1537c9edddb101a8 1088,1222,1334,1351-1352,1361-1364,1538-1539,1573,1578-1580,1700,1706,1741-1743,1815,1819,1829-1831,2329-2330,2332,2340-2342,2387-2388,2394,2398-2399,2406,2588-2589,2591,2603-2604,2606,2612-2613,2616,2621-2622,2627,2632,2639-2641,2664-2665,2672,2678-2679,2686,2692-2693,2699,2929-2930,2935,2951-2952,2957,2961-2962,2966
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "8a4c28b07f91058d968f54de9fbe61f3f934320d",
+  "prompts": {
+    "1537c9edddb101a8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f7dcc4c-e940-47df-860e-15040b46009a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 610,
+      "total_deletions": 215,
+      "accepted_lines": 473,
+      "overriden_lines": 0
+    }
+  }
+}
