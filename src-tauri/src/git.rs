@@ -2332,6 +2332,14 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[test]
+    fn validate_paths_rejects_absolute_paths() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let result = validate_paths_within_repo(&repo, &["/etc/passwd".to_string()]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("absolute path"));
+    }
+
     // --- Integration tests for stage/unstage/discard ---
 
     /// Helper: create a temp git repo with an initial commit.
