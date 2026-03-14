@@ -1,4 +1,4 @@
-import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup, untrack } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
@@ -99,7 +99,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     void refreshTrigger();
 
     // Preserve selection by path on dir-watcher refreshes (dirRev > 0)
-    const prevSelectedPath = dirRev > 0 ? filteredEntries()[selectedIndex()]?.path : undefined;
+    // untrack: reading filteredEntries inside this effect would create a circular
+    // dependency (effect sets entries → filteredEntries recomputes → effect re-runs)
+    const prevSelectedPath = dirRev > 0 ? untrack(() => filteredEntries()[selectedIndex()]?.path) : undefined;
 
     setLoading(true);
     setError(null);
@@ -147,7 +149,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     });
 
     onCleanup(() => {
-      invoke("stop_dir_watcher", { path: absPath }).catch(() => {});
+      invoke("stop_dir_watcher", { path: absPath }).catch((err) => {
+        appLogger.warn("app", `Failed to stop dir watcher for ${absPath}`, err);
+      });
       unlisten.then((fn) => fn());
     });
   });
