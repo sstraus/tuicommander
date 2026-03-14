@@ -1187,8 +1187,8 @@ mod tests {
         })
     }
 
-    #[test]
-    fn session_create_emits_event_bus_session_created() {
+    #[tokio::test]
+    async fn session_create_emits_event_bus_session_created() {
         let state = test_state();
         let mut rx = state.event_bus.subscribe();
 
@@ -1208,8 +1208,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn session_create_registers_vt_log_and_last_output() {
+    #[tokio::test]
+    async fn session_create_registers_vt_log_and_last_output() {
         let state = test_state();
         let args = serde_json::json!({"action": "create"});
         let result = handle_session(&state, &args);

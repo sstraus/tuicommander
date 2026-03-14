@@ -1631,7 +1631,7 @@ branch refs/heads/feat
             branch: None,
             create_branch: false,
         };
-        let wt = create_worktree_internal(&worktrees_dir, &config, None)
+        let _wt = create_worktree_internal(&worktrees_dir, &config, None)
             .expect("create worktree");
         // Script creates a marker file; archive should still succeed
         let result = archive_worktree(repo.path(), "archive-script-test", Some("touch /tmp/tuic-archive-test-marker"));
