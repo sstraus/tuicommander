@@ -1,4 +1,4 @@
-import { Component, Show, For, createEffect } from "solid-js";
+import { Component, Show, For, createEffect, type JSX } from "solid-js";
 import { githubStore } from "../../stores/github";
 import { appLogger } from "../../stores/appLogger";
 import { CiRing } from "../ui/CiRing";
@@ -35,7 +35,7 @@ export interface PrDetailContentProps {
   repoPath: string;
   branch: string;
   /** Extra content rendered after CI checks (e.g. action buttons) */
-  children?: any;
+  children?: JSX.Element;
 }
 
 /** Shared PR detail body: status pills, labels, merge direction, timestamps, meta, CI, checks, and Open on GitHub link.
