@@ -105,6 +105,16 @@ const SHELL_BUSY: u8 = 1;
 const SHELL_IDLE: u8 = 2;
 
 /// Extract the last `?`-ending line from changed rows for silence-based question detection.
+/// Returns true if a row contains agent UI chrome (mode-line / status-line).
+/// Used to classify chunks as "chrome-only" when ALL changed rows are chrome.
+/// Detects: ⏵ (U+23F5 Claude Code), › (U+203A Claude Code/Codex), ✻ (U+273B timer), • (U+2022 Codex spinner).
+pub(crate) fn is_chrome_row(text: &str) -> bool {
+    text.contains('\u{23F5}')    // ⏵ — Claude Code mode-line prefix
+        || text.contains('\u{203A}') // › — Claude Code / Codex mode-line prefix
+        || text.contains('✻')       // Claude Code timer marker
+        || text.contains('•')       // Codex spinner / status indicator
+}
+
 /// Searches all changed rows (not just the last non-empty one) so a question row
 /// is found even when a mode/status line with a higher row index arrives in the same chunk.
 /// Applies content filters to reject lines that are clearly not questions (code comments,
@@ -750,15 +760,14 @@ pub(crate) fn spawn_reader_thread(
                         // Update silence state for fallback question detection.
                         let has_status_line = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
                         let last_q_line = extract_question_line(&changed_rows);
-                        // A chunk is "chrome-only" when it contains only status-line
-                        // and/or mode-line (ActiveSubTasks) events — no real content.
-                        // These ticks arrive every ~1s and must NOT reset the silence
-                        // timer or questions will never be detected.
+                        // A chunk is "chrome-only" when ALL changed rows contain
+                        // agent UI markers (⏵⏵, ››, ✻, •) and no question was found.
+                        // Mode-line ticks arrive every ~1s and must NOT reset the
+                        // silence timer or questions will never be detected.
                         let chrome_only = !regex_found_question
                             && last_q_line.is_none()
-                            && events.iter().all(|e| matches!(e,
-                                ParsedEvent::StatusLine { .. } | ParsedEvent::ActiveSubtasks { .. }
-                            ));
+                            && !changed_rows.is_empty()
+                            && changed_rows.iter().all(|r| is_chrome_row(&r.text));
                         {
                             let mut sl = silence.lock();
                             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
@@ -1003,9 +1012,8 @@ pub(crate) fn spawn_headless_reader_thread(
                         let last_q_line = extract_question_line(&changed_rows);
                         let chrome_only = !regex_found_question
                             && last_q_line.is_none()
-                            && events.iter().all(|e| matches!(e,
-                                ParsedEvent::StatusLine { .. } | ParsedEvent::ActiveSubtasks { .. }
-                            ));
+                            && !changed_rows.is_empty()
+                            && changed_rows.iter().all(|r| is_chrome_row(&r.text));
                         {
                             let mut sl = silence.lock();
                             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
@@ -2128,6 +2136,65 @@ mod tests {
         // Now we need to wait another 10s — should NOT fire yet
         assert_eq!(s.check_silence(), None,
             "regular chunk should reset silence timer");
+    }
+
+    // --- is_chrome_row / chrome_only classification tests ---
+
+    #[test]
+    fn test_chrome_only_empty_changed_rows_is_not_chrome() {
+        let rows: Vec<ChangedRow> = vec![];
+        let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
+        assert!(!chrome_only, "empty changed_rows should not be chrome");
+    }
+
+    #[test]
+    fn test_chrome_only_plain_text_is_not_chrome() {
+        let rows = make_rows(&["I will edit the file for you."]);
+        let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
+        assert!(!chrome_only, "plain text without chrome markers is not chrome");
+    }
+
+    #[test]
+    fn test_chrome_only_statusline_with_text_rows_is_not_chrome() {
+        let rows = make_rows(&[
+            "\u{23F5}\u{23F5} auto mode",
+            "Here is the code change:",
+            "  fn main() {",
+            "    println!(\"hello\");",
+        ]);
+        let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
+        assert!(!chrome_only, "mode-line + text rows should not be chrome");
+    }
+
+    #[test]
+    fn test_chrome_only_single_statusline_row_is_chrome() {
+        let rows = make_rows(&["\u{23F5}\u{23F5} auto mode"]);
+        let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
+        assert!(chrome_only, "single mode-line row should be chrome");
+    }
+
+    #[test]
+    fn test_chrome_only_wrapped_statusline_is_chrome() {
+        let rows = make_rows(&[
+            "\u{23F5}\u{23F5} bypass permissions on",
+            "\u{273B} Cogitated 3m 47s",
+        ]);
+        let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
+        assert!(chrome_only, "wrapped mode-line rows should all be chrome");
+    }
+
+    #[test]
+    fn test_chrome_only_subtasks_row_is_chrome() {
+        let rows = make_rows(&["\u{203A}\u{203A} bypass permissions on \u{00B7} 1 local agent"]);
+        let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
+        assert!(chrome_only, "subtask mode-line row should be chrome");
+    }
+
+    #[test]
+    fn test_chrome_only_codex_spinner_is_chrome() {
+        let rows = make_rows(&["\u{2022} Boot"]);
+        let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
+        assert!(chrome_only, "Codex spinner row should be chrome");
     }
 
     // --- Staleness counter tests ---
