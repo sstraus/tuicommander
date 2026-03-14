@@ -683,6 +683,72 @@ mod tests {
             "Config save from non-loopback address should be rejected");
     }
 
+    #[tokio::test]
+    async fn test_notification_config_rejects_non_loopback() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        let remote_addr = std::net::SocketAddr::from(([192, 168, 1, 100], 12345));
+        let body = serde_json::json!({"sound_enabled": false, "flash_enabled": false, "defer_secs": 10});
+        let resp = app.oneshot(put_from("/config/notifications", &body, remote_addr)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN,
+            "Notification config save from non-loopback should be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_ui_prefs_rejects_non_loopback() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        let remote_addr = std::net::SocketAddr::from(([10, 0, 0, 1], 9999));
+        let body = serde_json::json!({});
+        let resp = app.oneshot(put_from("/config/ui-prefs", &body, remote_addr)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN,
+            "UI prefs save from non-loopback should be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_repo_settings_rejects_non_loopback() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        let remote_addr = std::net::SocketAddr::from(([172, 16, 0, 5], 4000));
+        let body = serde_json::json!({});
+        let resp = app.oneshot(put_from("/config/repo-settings", &body, remote_addr)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN,
+            "Repo settings save from non-loopback should be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_repositories_rejects_non_loopback() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        let remote_addr = std::net::SocketAddr::from(([192, 168, 1, 50], 8080));
+        let body = serde_json::json!({});
+        let resp = app.oneshot(put_from("/config/repositories", &body, remote_addr)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN,
+            "Repositories save from non-loopback should be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_prompt_library_rejects_non_loopback() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        let remote_addr = std::net::SocketAddr::from(([10, 10, 10, 1], 3000));
+        let body = serde_json::json!({"prompts": []});
+        let resp = app.oneshot(put_from("/config/prompt-library", &body, remote_addr)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN,
+            "Prompt library save from non-loopback should be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_notes_rejects_non_loopback() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        let remote_addr = std::net::SocketAddr::from(([192, 168, 0, 1], 5000));
+        let body = serde_json::json!({});
+        let resp = app.oneshot(put_from("/config/notes", &body, remote_addr)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN,
+            "Notes save from non-loopback should be rejected");
+    }
+
     // --- Path validation tests ---
 
     #[test]

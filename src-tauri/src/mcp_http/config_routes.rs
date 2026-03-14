@@ -8,6 +8,19 @@ use std::sync::Arc;
 
 use super::types::*;
 
+/// Reject requests from non-loopback addresses.
+/// Config mutations are only allowed from localhost to prevent remote tampering.
+fn localhost_only(addr: &SocketAddr) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if addr.ip().is_loopback() {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "Config modification is only allowed from localhost"})),
+        ))
+    }
+}
+
 pub(super) async fn get_config(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let config = state.config.read().clone();
     let mut json = match serde_json::to_value(config) {
@@ -31,13 +44,7 @@ pub(super) async fn put_config(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::AppConfig>,
 ) -> impl IntoResponse {
-    // Only localhost can modify config via HTTP
-    if !addr.ip().is_loopback() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"error": "Config modification is only allowed from localhost"})),
-        );
-    }
+    if let Err(resp) = localhost_only(&addr) { return resp; }
     match crate::config::save_app_config(config.clone()) {
         Ok(()) => {
             let old_disabled = state.config.read().disabled_native_tools.clone();
@@ -58,9 +65,7 @@ pub(super) async fn hash_password_http(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(req): Json<HashPasswordRequest>,
 ) -> impl IntoResponse {
-    if !addr.ip().is_loopback() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Password hashing is only allowed from localhost"})));
-    }
+    if let Err(resp) = localhost_only(&addr) { return resp; }
     match bcrypt::hash(&req.password, 12) {
         Ok(hash) => (StatusCode::OK, Json(serde_json::json!({"hash": hash}))),
         Err(e) => (
@@ -75,8 +80,10 @@ pub(super) async fn get_notification_config() -> impl IntoResponse {
 }
 
 pub(super) async fn put_notification_config(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::NotificationConfig>,
 ) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) { return resp; }
     match crate::config::save_notification_config(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
@@ -88,8 +95,10 @@ pub(super) async fn get_ui_prefs() -> impl IntoResponse {
 }
 
 pub(super) async fn put_ui_prefs(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::UIPrefsConfig>,
 ) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) { return resp; }
     match crate::config::save_ui_prefs(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
@@ -101,8 +110,10 @@ pub(super) async fn get_repo_settings() -> impl IntoResponse {
 }
 
 pub(super) async fn put_repo_settings(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::RepoSettingsMap>,
 ) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) { return resp; }
     match crate::config::save_repo_settings(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
@@ -118,8 +129,10 @@ pub(super) async fn get_repositories() -> impl IntoResponse {
 }
 
 pub(super) async fn put_repositories(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<serde_json::Value>,
 ) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) { return resp; }
     match crate::config::save_repositories(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
@@ -131,8 +144,10 @@ pub(super) async fn get_prompt_library() -> impl IntoResponse {
 }
 
 pub(super) async fn put_prompt_library(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::PromptLibraryConfig>,
 ) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) { return resp; }
     match crate::config::save_prompt_library(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
@@ -149,9 +164,7 @@ pub(super) async fn put_repo_defaults(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::RepoDefaultsConfig>,
 ) -> impl IntoResponse {
-    if !addr.ip().is_loopback() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Config modification is only allowed from localhost"})));
-    }
+    if let Err(resp) = localhost_only(&addr) { return resp; }
     match crate::config::save_repo_defaults(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
@@ -165,8 +178,10 @@ pub(super) async fn get_notes() -> impl IntoResponse {
 }
 
 pub(super) async fn put_notes(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<serde_json::Value>,
 ) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) { return resp; }
     match crate::config::save_notes(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
