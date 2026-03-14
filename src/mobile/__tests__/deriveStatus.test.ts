@@ -44,7 +44,15 @@ describe("deriveStatus", () => {
     expect(deriveStatus(makeSession({ rate_limited: true }))).toBe("rate-limited");
   });
 
-  describe("priority order: rate_limited > error > question > busy > idle", () => {
+  it("returns sub-tasks when active_sub_tasks > 0 and shell is idle", () => {
+    expect(deriveStatus(makeSession({ active_sub_tasks: 2 }))).toBe("sub-tasks");
+  });
+
+  it("returns busy when shell_state is busy even with active_sub_tasks", () => {
+    expect(deriveStatus(makeSession({ shell_state: "busy", active_sub_tasks: 3 }))).toBe("busy");
+  });
+
+  describe("priority order: rate_limited > error > question > busy > sub-tasks > idle", () => {
     it("rate_limited beats error", () => {
       expect(deriveStatus(makeSession({ rate_limited: true, last_error: "err" }))).toBe("rate-limited");
     });
@@ -67,6 +75,18 @@ describe("deriveStatus", () => {
 
     it("question beats busy", () => {
       expect(deriveStatus(makeSession({ awaiting_input: true, shell_state: "busy" }))).toBe("question");
+    });
+
+    it("question beats sub-tasks", () => {
+      expect(deriveStatus(makeSession({ awaiting_input: true, active_sub_tasks: 2 }))).toBe("question");
+    });
+
+    it("error beats sub-tasks", () => {
+      expect(deriveStatus(makeSession({ last_error: "err", active_sub_tasks: 1 }))).toBe("error");
+    });
+
+    it("busy beats sub-tasks", () => {
+      expect(deriveStatus(makeSession({ shell_state: "busy", active_sub_tasks: 1 }))).toBe("busy");
     });
   });
 });

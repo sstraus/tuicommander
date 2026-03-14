@@ -12,5 +12,6 @@ export function deriveStatus(session: SessionInfo): SessionStatus {
   if (s.last_error) return "error";
   if (s.awaiting_input) return "question";
   if (s.shell_state === "busy") return "busy";
+  if (s.active_sub_tasks && s.active_sub_tasks > 0) return "sub-tasks";
   return "idle";
 }
