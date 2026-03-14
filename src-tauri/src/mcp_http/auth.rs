@@ -316,6 +316,84 @@ mod tests {
         assert!(!has_valid_session_cookie(&req, "correct-token"));
     }
 
+    // --- validate_basic_auth tests ---
+
+    fn basic_header(user: &str, pass: &str) -> String {
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"));
+        format!("Basic {encoded}")
+    }
+
+    #[test]
+    fn basic_auth_valid_credentials() {
+        let hash = bcrypt::hash("secret123", 4).unwrap(); // cost=4 for fast tests
+        assert!(matches!(
+            validate_basic_auth(Some(&basic_header("admin", "secret123")), "admin", &hash),
+            AuthResult::Ok
+        ));
+    }
+
+    #[test]
+    fn basic_auth_wrong_password() {
+        let hash = bcrypt::hash("correct", 4).unwrap();
+        assert!(matches!(
+            validate_basic_auth(Some(&basic_header("admin", "wrong")), "admin", &hash),
+            AuthResult::Invalid
+        ));
+    }
+
+    #[test]
+    fn basic_auth_missing_header() {
+        let hash = bcrypt::hash("pass", 4).unwrap();
+        assert!(matches!(
+            validate_basic_auth(None, "admin", &hash),
+            AuthResult::MissingHeader
+        ));
+    }
+
+    #[test]
+    fn basic_auth_empty_config_not_configured() {
+        assert!(matches!(
+            validate_basic_auth(Some(&basic_header("admin", "pass")), "", ""),
+            AuthResult::NotConfigured
+        ));
+    }
+
+    #[test]
+    fn basic_auth_malformed_base64() {
+        assert!(matches!(
+            validate_basic_auth(Some("Basic !!!not-base64!!!"), "admin", "somehash"),
+            AuthResult::Invalid
+        ));
+    }
+
+    #[test]
+    fn basic_auth_wrong_username() {
+        let hash = bcrypt::hash("pass", 4).unwrap();
+        assert!(matches!(
+            validate_basic_auth(Some(&basic_header("hacker", "pass")), "admin", &hash),
+            AuthResult::Invalid
+        ));
+    }
+
+    #[test]
+    fn basic_auth_no_colon_separator() {
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode("nocolon");
+        assert!(matches!(
+            validate_basic_auth(Some(&format!("Basic {encoded}")), "admin", "somehash"),
+            AuthResult::Invalid
+        ));
+    }
+
+    #[test]
+    fn basic_auth_not_basic_scheme() {
+        assert!(matches!(
+            validate_basic_auth(Some("Bearer some-token"), "admin", "somehash"),
+            AuthResult::Invalid
+        ));
+    }
+
     #[test]
     fn valid_url_token_matches() {
         let req = Request::get("/?token=abc&other=1")
