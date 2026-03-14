@@ -104,8 +104,8 @@ export interface CommitGraphProps {
 export const CommitGraph: Component<CommitGraphProps> = (props) => {
   const [canvasRef, setCanvasRef] = createSignal<HTMLCanvasElement | undefined>(undefined);
 
-  // Offscreen canvas holding the full pre-rendered graph
-  let offscreen: OffscreenCanvas | null = null;
+  // Offscreen canvas holding the full pre-rendered graph (signal so Effect 2 re-runs on rebuild)
+  const [offscreen, setOffscreen] = createSignal<OffscreenCanvas | null>(null);
 
   const maxCol = () =>
     props.nodes.length === 0
@@ -126,14 +126,14 @@ export const CommitGraph: Component<CommitGraphProps> = (props) => {
         const fullHeight = Math.min(props.totalHeight || 1, MAX_OFFSCREEN_HEIGHT);
 
         if (w === 0 || fullHeight === 0) {
-          offscreen = null;
+          setOffscreen(null);
           return;
         }
 
-        offscreen = new OffscreenCanvas(w * dpr, fullHeight * dpr);
-        const ctx = offscreen.getContext("2d");
+        const oc = new OffscreenCanvas(w * dpr, fullHeight * dpr);
+        const ctx = oc.getContext("2d");
         if (!ctx) {
-          offscreen = null;
+          setOffscreen(null);
           return;
         }
 
@@ -150,6 +150,8 @@ export const CommitGraph: Component<CommitGraphProps> = (props) => {
         for (const node of nodes) {
           drawDot(ctx, node);
         }
+
+        setOffscreen(oc);
       },
     ),
   );
@@ -157,10 +159,11 @@ export const CommitGraph: Component<CommitGraphProps> = (props) => {
   // --- Effect 2: blit visible slice on scroll — O(1) per frame ---
   createEffect(
     on(
-      () => [props.scrollTop, props.viewportHeight, canvasRef()] as const,
+      () => [props.scrollTop, props.viewportHeight, canvasRef(), offscreen()] as const,
       () => {
         const canvas = canvasRef();
-        if (!canvas || !offscreen) return;
+        const oc = offscreen();
+        if (!canvas || !oc) return;
 
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
@@ -181,16 +184,16 @@ export const CommitGraph: Component<CommitGraphProps> = (props) => {
         const sw = w * dpr;
 
         // Clamp source to offscreen bounds
-        const clampedSh = Math.min(sh, offscreen.height - sy);
+        const clampedSh = Math.min(sh, oc.height - sy);
         if (clampedSh <= 0 || sw <= 0) return;
 
-        ctx.drawImage(offscreen, 0, sy, sw, clampedSh, 0, 0, w, clampedSh / dpr);
+        ctx.drawImage(oc, 0, sy, sw, clampedSh, 0, 0, w, clampedSh / dpr);
       },
     ),
   );
 
   onCleanup(() => {
-    offscreen = null;
+    setOffscreen(null);
   });
 
   return (
