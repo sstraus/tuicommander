@@ -6,17 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Fixed
-- **Shell state derivation** — Moved shellState (busy/idle) from frontend timer-based derivation to Rust-authoritative AtomicU8 CAS transitions. Fixes: mode-line ticks no longer cause false busy/idle oscillation, question notifications fire correctly for silence-based detection, completion notifications no longer fire when terminal is awaiting input, no blue tab flash on resize when idle. Sub-agents now correctly keep the terminal in busy state. Frontend syncs on remount via `get_shell_state` Tauri command
+## [0.9.0] - 2026-03-14
 
 ### Added
-- **Git Panel** — Tabbed side panel (`Cmd+Shift+G`) replacing the Git Operations Panel floating overlay. Five tabs: Changes (staging/unstaging, commit with amend, discard), Log (virtual scroll + Canvas commit graph with lane assignment and Bezier connections), Stashes (apply/pop/drop), History (per-file commit log following renames), Blame (per-line blame with age heatmap). Keyboard navigation: Escape to close, Ctrl/Cmd+1–5 to switch tabs
+- **Git Panel** — Tabbed side panel (`Cmd+Shift+D`) replacing the Git Operations Panel floating overlay and standalone Diff Panel. Three tabs: Changes (staging/unstaging, commit with amend, discard, glob filter, per-file diff counts), Log (virtual scroll + Canvas commit graph with lane assignment and Bezier connections), Stashes (apply/pop/drop). History and Blame are collapsible sub-panels within Changes (not separate tabs). Keyboard navigation: Escape to close, Ctrl/Cmd+1–3 to switch tabs
 - **Canvas-based commit graph** — Visual commit graph in the Log tab rendered on Canvas with lane assignment, 8-color palette, ref badges, and Bezier curve connections between parent/child commits
-- **Ideas panel image paste** — `Ctrl+V` / `Cmd+V` pastes clipboard images into notes. Images saved to disk, displayed as thumbnails, and sent as absolute paths when forwarding to terminal (so AI agents can read them). Supports PNG, JPEG, WebP, GIF up to 10 MB. Image-only notes (no text) are allowed. Cleanup on delete.
-- **Ideas panel in-place edit** — Edit now preserves note identity (no ID change). `Escape` cancels edit mode.
+- **Ideas panel image paste** — `Ctrl+V` / `Cmd+V` pastes clipboard images into notes. Images saved to disk, displayed as thumbnails, and sent as absolute paths when forwarding to terminal (so AI agents can read them). Supports PNG, JPEG, WebP, GIF up to 10 MB. Image-only notes (no text) are allowed. Cleanup on delete
+- **Ideas panel in-place edit** — Edit now preserves note identity (no ID change). `Escape` cancels edit mode
 - **Archive script** — Per-repo lifecycle hook that runs before a worktree is archived or deleted; non-zero exit blocks the operation. Configurable via Settings → Repository → Scripts or `.tuic.json`
 - **Repo-local config (`.tuic.json`)** — Team-shareable configuration file in the repository root. Three-tier precedence: `.tuic.json` > per-repo app settings > global defaults. Covers base branch, scripts, worktree storage, merge strategy, and more
 - **PR Review button** — Review button in the PR Detail Popover spawns a terminal running the agent's "review" run config with interpolated PR variables (`{pr_number}`, `{branch}`, `{base_branch}`, `{repo}`, `{pr_url}`). Shown only when an active agent has a run config named "review"
+
+### Changed
+- **DiffPanel removed** — Standalone Diff Panel replaced by the Git Panel's Changes tab. `Cmd+Shift+D` now opens the Git Panel
+- **Git Operations Panel removed** — Floating overlay replaced entirely by the docked Git Panel
+- **Git Panel: History/Blame as sub-panels** — History and Blame moved from separate tabs to collapsible sub-panels within the Changes tab, reducing tab count from 5 to 3
+- **Updater: beta channel removed** — Only stable and nightly update channels remain
+- **Resume banner UX** — Now accepts Space or Enter to resume agent session; other keys dismiss the banner
+- **Shell state derivation** — Moved shellState (busy/idle) from frontend timer-based derivation to Rust-authoritative AtomicU8 CAS transitions. Frontend syncs on remount via `get_shell_state` Tauri command
+- **tuic-bridge standalone crate** — Extracted from main binary into an independent workspace crate for cleaner builds
+
+### Fixed
+- **Shell state false oscillation** — Mode-line ticks no longer cause false busy/idle transitions; question notifications fire correctly; completion sound suppressed when terminal is awaiting input; no blue tab flash on resize when idle
+- **Split panes visible behind overlay** — Split panes now hide when an overlay tab (Git Panel, Settings, etc.) is active
+- **Scroll position lost on fit** — Terminal scroll position is always restored after `fitAddon.fit()`
+- **Repo watchers not started at runtime** — HEAD and repo watchers now start when adding a repository at runtime (not only on app launch)
+- **Commit graph scope** — Graph follows HEAD only, matching the commit log scope
+- **Plugin CORS** — `plugin://` protocol responses now include CORS headers for cross-origin access
+- **Merged branch false positives** — Branches at the same SHA as main are excluded from the merged list
+- **Intent body double space** — Intent body text trimmed after SGR strip to prevent leading/trailing whitespace
+- **Plan-file notification spam** — Info sound no longer fires repeatedly from repeated plan-file detections
+- **PTY output filtering** — Replaced `chrome_only` heuristic with per-row content check; replaced overly broad `)? ` filter with targeted code-try regex
+- **Font inconsistency** — File list fonts harmonized to `--font-md` (13px) across all panels
+- **Remote PR button overflow** — Button row layout and dismiss UX fixed in remote-only PR popover
+
+### Performance
+- **Branch select** — Three hot paths optimized in `handleBranchSelectInner`
+- **File system** — `list_directory` and `search_files` made async; `search_files` rewritten with `ignore` crate for gitignore-aware walking; removed per-entry `canonicalize` overhead
+- **Incremental compilation** — Enabled for release profile to speed up iterative builds
+- **Git Panel IPC** — Suppresses fetch calls when panel is hidden
 
 ## [0.8.2] - 2026-03-11
 
