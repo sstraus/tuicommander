@@ -71,7 +71,11 @@ export function CommandInput(props: CommandInputProps) {
     textareaEl.style.height = Math.min(textareaEl.scrollHeight, 120) + "px";
   }
 
-  /** On any input change, debounce a full-text sync to PTY. */
+  /** On any input change, debounce a full-text sync to PTY.
+   *  NOTE: We keep the signal in sync for send()/handleBlur() but do NOT
+   *  bind `value={value()}` on the textarea — on mobile, the reactive
+   *  write-back interferes with IME/autocorrect and causes text duplication.
+   */
   function handleInput(e: InputEvent & { currentTarget: HTMLTextAreaElement }) {
     userEditing = true;
     const text = e.currentTarget.value;
@@ -130,7 +134,6 @@ export function CommandInput(props: CommandInputProps) {
         ref={textareaEl}
         class={styles.input}
         placeholder="Type a command..."
-        value={value()}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
