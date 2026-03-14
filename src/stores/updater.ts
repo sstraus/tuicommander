@@ -1,9 +1,24 @@
 import { createStore } from "solid-js/store";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { getVersion } from "@tauri-apps/api/app";
 import { isTauri, rpc } from "../transport";
 import { settingsStore } from "./settings";
 import { appLogger } from "./appLogger";
+
+/** Compare two semver strings. Returns true if remote > current. */
+function isNewerVersion(remote: string, current: string): boolean {
+  const parse = (v: string) => v.replace(/^v/, "").split(".").map(Number);
+  const r = parse(remote);
+  const c = parse(current);
+  for (let i = 0; i < Math.max(r.length, c.length); i++) {
+    const rv = r[i] ?? 0;
+    const cv = c[i] ?? 0;
+    if (rv > cv) return true;
+    if (rv < cv) return false;
+  }
+  return false;
+}
 
 /** Typed result from the Rust `check_update_channel` command. */
 interface UpdateChannelResult {
@@ -67,13 +82,20 @@ function createUpdaterStore() {
             pendingUpdate = null;
             setState({ available: false, version: null, body: null, downloadUrl: null, error: "Update check timed out" });
           } else if (update) {
-            pendingUpdate = update;
-            setState({
-              available: true,
-              version: update.version,
-              body: update.body ?? null,
-              downloadUrl: null,
-            });
+            const currentVersion = await getVersion();
+            if (!isNewerVersion(update.version, currentVersion)) {
+              appLogger.debug("app", `Ignoring update ${update.version} — not newer than ${currentVersion}`);
+              pendingUpdate = null;
+              setState({ available: false, version: null, body: null, downloadUrl: null });
+            } else {
+              pendingUpdate = update;
+              setState({
+                available: true,
+                version: update.version,
+                body: update.body ?? null,
+                downloadUrl: null,
+              });
+            }
           } else {
             pendingUpdate = null;
             setState({ available: false, version: null, body: null, downloadUrl: null });
@@ -88,13 +110,19 @@ function createUpdaterStore() {
           if (result.not_found) {
             appLogger.debug("app", `No ${channel} release found`);
             setState({ noRelease: true });
-          } else if (result.available) {
-            setState({
-              available: true,
-              version: result.version,
-              body: result.notes ?? null,
-              downloadUrl: result.release_page ?? null,
-            });
+          } else if (result.available && result.version) {
+            const currentVersion = await getVersion();
+            if (!isNewerVersion(result.version, currentVersion)) {
+              appLogger.debug("app", `Ignoring ${channel} update ${result.version} — not newer than ${currentVersion}`);
+              setState({ available: false, version: null, body: null, downloadUrl: null });
+            } else {
+              setState({
+                available: true,
+                version: result.version,
+                body: result.notes ?? null,
+                downloadUrl: result.release_page ?? null,
+              });
+            }
           } else {
             setState({ available: false, version: null, body: null, downloadUrl: null });
           }
