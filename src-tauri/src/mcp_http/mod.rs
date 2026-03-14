@@ -749,6 +749,19 @@ mod tests {
             "Notes save from non-loopback should be rejected");
     }
 
+    #[tokio::test]
+    async fn test_read_external_rejects_path_outside_repos() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        // No repos registered in test_state → any path should be rejected
+        let resp = app
+            .oneshot(Request::get("/fs/read-external?path=/etc/passwd").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN,
+            "read-external should reject paths outside registered repos");
+    }
+
     // --- Path validation tests ---
 
     #[test]
