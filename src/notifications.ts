@@ -65,7 +65,7 @@ export class NotificationManager {
       if (this.consecutiveFailures >= 3) {
         const delay = Math.min(300_000, 5_000 * Math.pow(2, this.consecutiveFailures - 3));
         this.backoffUntil = now + delay;
-        appLogger.warn("app", `Notification sound failing, backing off ${Math.round(delay / 1000)}s`, err);
+        appLogger.debug("app", `Notification sound failing, backing off ${Math.round(delay / 1000)}s`, err);
       }
     }
   }

@@ -52,7 +52,7 @@ function ensureSse(): EventSource {
   _sseSource.onerror = () => {
     // EventSource auto-reconnects; just log
     import("./stores/appLogger").then(({ appLogger }) =>
-      appLogger.warn("network", "SSE connection error — will auto-reconnect"),
+      appLogger.debug("network", "SSE connection error — will auto-reconnect"),
     );
   };
 

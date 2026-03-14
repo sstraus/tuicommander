@@ -319,11 +319,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
       unlistenParsed = await listen<ParsedEvent>(`pty-parsed-${targetSessionId}`, (event) => {
         const parsed = event.payload;
 
-        appLogger.debug("terminal", `[ParsedEvent] ${props.id} type="${parsed.type}"`, parsed);
-
         switch (parsed.type) {
           case "progress": {
-            appLogger.debug("terminal", `[ParsedEvent] ${props.id} progress state=${parsed.state} value=${parsed.value} → clearAwaitingInput`);
             terminalsStore.clearAwaitingInput(props.id);
             if (parsed.state === 0) {
               terminalsStore.update(props.id, { progress: null });
@@ -382,14 +379,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
               appLogger.debug("terminal", `[ParsedEvent] ${props.id} question IGNORED (busy=${qTerminal?.shellState === "busy"} subTasks=${qTerminal?.activeSubTasks} low-confidence) prompt="${parsed.prompt_text}"`);
               break;
             }
-            appLogger.debug("terminal", `[ParsedEvent] ${props.id} question prompt="${parsed.prompt_text}" → setAwaitingInput("question")`);
             terminalsStore.setAwaitingInput(props.id, "question", !!parsed.confident);
             break;
           }
           case "usage-limit": {
             const current = terminalsStore.get(props.id)?.usageLimit;
             if (current?.percentage !== parsed.percentage || current?.limitType !== parsed.limit_type) {
-              appLogger.debug("terminal", `[ParsedEvent] ${props.id} usage-limit ${parsed.percentage}% ${parsed.limit_type}`);
               terminalsStore.update(props.id, {
                 usageLimit: { percentage: parsed.percentage, limitType: parsed.limit_type },
               });
@@ -397,7 +392,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           }
           case "plan-file":
-            appLogger.debug("terminal", `[ParsedEvent] ${props.id} plan-file path="${parsed.path}"`);
             // Play info tone at most once per agent cycle (between user-input events)
             if (terminalsStore.state.activeId !== props.id && !planFileNotified) {
               planFileNotified = true;
@@ -407,7 +401,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
             // Also handled by planPlugin via dispatchStructuredEvent below
             break;
           case "user-input":
-            appLogger.debug("terminal", `[ParsedEvent] ${props.id} user-input content="${parsed.content.slice(0, 80)}"`);
             // New user input means a new agent cycle — reset dedup and sub-task count
             planFileNotified = false;
             terminalsStore.update(props.id, { suggestDismissed: false, activeSubTasks: 0 });
@@ -425,7 +418,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           }
           case "intent":
-            appLogger.debug("terminal", `[ParsedEvent] ${props.id} intent text="${parsed.text}" title="${parsed.title ?? ""}"`);
             terminalsStore.setAgentIntent(props.id, parsed.text);
             if (parsed.title && settingsStore.state.intentTabTitle) {
               terminalsStore.update(props.id, { name: parsed.title });
@@ -441,7 +433,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
             }
             break;
           case "shell-state": {
-            appLogger.debug("terminal", `[ShellState] ${props.id} → "${parsed.state}" (from Rust)`);
             terminalsStore.update(props.id, { shellState: parsed.state });
             // Execute pending init command on first idle (migrated from checkIdle)
             if (parsed.state === "idle") {
@@ -527,7 +518,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
       }
       if (!reconnected) {
-        appLogger.warn("terminal", `initSession(${props.id}) — creating FRESH PTY session (no prior sessionId)`);
+        appLogger.debug("terminal", `initSession(${props.id}) — creating FRESH PTY session (no prior sessionId)`);
         const termData = terminalsStore.get(props.id);
         sessionId = await pty.createSession({
           rows: terminal.rows,
@@ -902,7 +893,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       terminalsStore.update(props.id, { cwd });
       if (sessionId) {
         invoke("update_session_cwd", { sessionId, cwd }).catch((err) =>
-          appLogger.warn("terminal", "Failed to persist cwd to Rust session", err),
+          appLogger.debug("terminal", "Failed to persist cwd to Rust session", err),
         );
       }
       props.onCwdChange?.(props.id, cwd);
@@ -992,7 +983,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         } else if (remaining > 0) {
           tryFit(remaining - 1);
         } else {
-          appLogger.warn("terminal", "Container has zero dimensions after retries, proceeding with defaults");
+          appLogger.debug("terminal", "Container has zero dimensions after retries, proceeding with defaults");
           onReady?.();
         }
       });

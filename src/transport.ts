@@ -891,7 +891,7 @@ export async function subscribePty(
   // Re-wire onclose for the live session after successful open
   ws.onclose = (event: CloseEvent) => {
     if (!event.wasClean) {
-      appLogger.warn("network", `WebSocket closed abnormally (code ${event.code}): ${event.reason || "unknown"}`);
+      appLogger.debug("network", `WebSocket closed abnormally (code ${event.code}): ${event.reason || "unknown"}`);
     }
     onExit();
   };
@@ -944,7 +944,7 @@ export async function subscribeEvents(
   }) as EventListener);
 
   es.onerror = () => {
-    appLogger.warn("network", "SSE connection error — will auto-reconnect");
+    appLogger.debug("network", "SSE connection error — will auto-reconnect");
   };
 
   return () => es.close();
