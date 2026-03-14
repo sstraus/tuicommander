@@ -1,5 +1,5 @@
-import { createTabManager, makeBranchKey, type BaseTab } from "./tabManager";
-import { repositoriesStore } from "./repositories";
+import { createTabManager, type BaseTab } from "./tabManager";
+import { currentBranchKey } from "./repositories";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,15 +55,6 @@ export type MdTabData = FileTab | VirtualTab | PluginPanelTab | ClaudeUsageTab |
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
-
-/** Get the branch key for the currently active repo+branch */
-function currentBranchKey(): string | undefined {
-  const repoPath = repositoriesStore.state.activeRepoPath;
-  if (!repoPath) return undefined;
-  const repo = repositoriesStore.state.repositories[repoPath];
-  if (!repo?.activeBranch) return undefined;
-  return makeBranchKey(repoPath, repo.activeBranch);
-}
 
 /** Imperative handles exposed by tab components (e.g. MarkdownTabHandle) */
 const handles = new Map<string, unknown>();

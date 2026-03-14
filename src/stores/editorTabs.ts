@@ -1,5 +1,5 @@
-import { createTabManager, makeBranchKey, type BaseTab } from "./tabManager";
-import { repositoriesStore } from "./repositories";
+import { createTabManager, type BaseTab } from "./tabManager";
+import { currentBranchKey } from "./repositories";
 
 /** Editor tab data */
 export interface EditorTabData extends BaseTab {
@@ -7,15 +7,6 @@ export interface EditorTabData extends BaseTab {
   filePath: string;
   fileName: string; // Display name (basename of filePath)
   isDirty: boolean;
-}
-
-/** Get the branch key for the currently active repo+branch */
-function currentBranchKey(): string | undefined {
-  const repoPath = repositoriesStore.state.activeRepoPath;
-  if (!repoPath) return undefined;
-  const repo = repositoriesStore.state.repositories[repoPath];
-  if (!repo?.activeBranch) return undefined;
-  return makeBranchKey(repoPath, repo.activeBranch);
 }
 
 function createEditorTabsStore() {

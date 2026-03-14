@@ -3,6 +3,7 @@ import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
 import type { SavedTerminal } from "../types";
 import { appLogger } from "./appLogger";
+import { makeBranchKey } from "./tabManager";
 
 const LEGACY_STORAGE_KEY = "tui-commander-repos";
 
@@ -786,3 +787,13 @@ function createRepositoriesStore() {
 }
 
 export const repositoriesStore = createRepositoriesStore();
+
+/** Get the branch key for the currently active repo+branch.
+ *  Shared helper used by tab stores (diff, md, editor) to scope tabs. */
+export function currentBranchKey(): string | undefined {
+  const repoPath = repositoriesStore.state.activeRepoPath;
+  if (!repoPath) return undefined;
+  const repo = repositoriesStore.state.repositories[repoPath];
+  if (!repo?.activeBranch) return undefined;
+  return makeBranchKey(repoPath, repo.activeBranch);
+}
