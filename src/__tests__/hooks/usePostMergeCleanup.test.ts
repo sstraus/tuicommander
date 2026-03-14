@@ -309,7 +309,6 @@ describe("executeCleanup", () => {
       repoPath: "/repo",
       branchName: "feature/login",
       action: "archive",
-      archiveScript: null,
     });
   });
 
@@ -330,7 +329,6 @@ describe("executeCleanup", () => {
       repoPath: "/repo",
       branchName: "feature/login",
       action: "delete",
-      archiveScript: null,
     });
   });
 

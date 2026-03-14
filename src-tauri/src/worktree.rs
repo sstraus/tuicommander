@@ -6,6 +6,31 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
 
+/// Resolve the effective archive_script for a repo from the three-tier config:
+/// per-repo settings → repo-local .tuic.json → global defaults.
+/// Returns None if no script is configured at any level.
+fn resolve_archive_script(repo_path: &str) -> Option<String> {
+    // 1. Per-repo app settings (highest priority)
+    let repo_settings = crate::config::load_repo_settings();
+    if let Some(entry) = repo_settings.repos.get(repo_path) {
+        if let Some(ref script) = entry.archive_script {
+            if !script.is_empty() { return Some(script.clone()); }
+        }
+    }
+    // 2. Repo-local .tuic.json (team-shareable)
+    if let Some(local_config) = crate::config::load_repo_local_config_from_path(Path::new(repo_path)) {
+        if let Some(ref script) = local_config.archive_script {
+            if !script.is_empty() { return Some(script.clone()); }
+        }
+    }
+    // 3. Global repo defaults (lowest priority)
+    let defaults = crate::config::load_repo_defaults();
+    if !defaults.archive_script.is_empty() {
+        return Some(defaults.archive_script);
+    }
+    None
+}
+
 /// Parse `git worktree list --porcelain` output and return the worktree path
 /// for the given branch name, if any.
 fn find_worktree_path_for_branch(stdout: &str, branch_name: &str) -> Option<PathBuf> {
@@ -357,8 +382,9 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, dele
 ///
 /// `delete_branch` defaults to `true` when omitted (preserving existing behavior).
 #[tauri::command]
-pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String, branch_name: String, delete_branch: Option<bool>, archive_script: Option<String>) -> Result<(), String> {
-    remove_worktree_by_branch(&repo_path, &branch_name, delete_branch.unwrap_or(true), archive_script.as_deref())?;
+pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String, branch_name: String, delete_branch: Option<bool>) -> Result<(), String> {
+    let script = resolve_archive_script(&repo_path);
+    remove_worktree_by_branch(&repo_path, &branch_name, delete_branch.unwrap_or(true), script.as_deref())?;
     state.invalidate_repo_caches(&repo_path);
     Ok(())
 }
@@ -779,12 +805,12 @@ pub(crate) fn finalize_merged_worktree(
     repo_path: String,
     branch_name: String,
     action: String,
-    archive_script: Option<String>,
 ) -> Result<MergeArchiveResult, String> {
+    let script = resolve_archive_script(&repo_path);
     let base_repo = std::path::PathBuf::from(&repo_path);
     match action.as_str() {
         "archive" => {
-            let archive_path = archive_worktree(&base_repo, &branch_name, archive_script.as_deref())?;
+            let archive_path = archive_worktree(&base_repo, &branch_name, script.as_deref())?;
             state.invalidate_repo_caches(&repo_path);
             Ok(MergeArchiveResult {
                 merged: true,
@@ -793,7 +819,7 @@ pub(crate) fn finalize_merged_worktree(
             })
         }
         "delete" => {
-            remove_worktree_by_branch(&repo_path, &branch_name, true, archive_script.as_deref())?;
+            remove_worktree_by_branch(&repo_path, &branch_name, true, script.as_deref())?;
             state.invalidate_repo_caches(&repo_path);
             Ok(MergeArchiveResult {
                 merged: true,
@@ -818,8 +844,8 @@ pub(crate) fn merge_and_archive_worktree(
     branch_name: String,
     target_branch: String,
     after_merge: String,
-    archive_script: Option<String>,
 ) -> Result<MergeArchiveResult, String> {
+    let script = resolve_archive_script(&repo_path);
     let base_repo = PathBuf::from(&repo_path);
 
     // 1. Ensure we're on the target branch in the base repo
@@ -841,7 +867,7 @@ pub(crate) fn merge_and_archive_worktree(
     // 3. Handle the worktree based on after_merge setting
     match after_merge.as_str() {
         "archive" => {
-            let archive_path = archive_worktree(&base_repo, &branch_name, archive_script.as_deref())?;
+            let archive_path = archive_worktree(&base_repo, &branch_name, script.as_deref())?;
             state.invalidate_repo_caches(&repo_path);
             Ok(MergeArchiveResult {
                 merged: true,
@@ -850,7 +876,7 @@ pub(crate) fn merge_and_archive_worktree(
             })
         }
         "delete" => {
-            remove_worktree_by_branch(&repo_path, &branch_name, true, archive_script.as_deref())?;
+            remove_worktree_by_branch(&repo_path, &branch_name, true, script.as_deref())?;
             state.invalidate_repo_caches(&repo_path);
             Ok(MergeArchiveResult {
                 merged: true,

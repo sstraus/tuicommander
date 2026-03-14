@@ -13,8 +13,6 @@ export interface CleanupConfig {
   closeTerminalsForBranch: (repoPath: string, branchName: string) => Promise<void>;
   /** When set, the "worktree" step calls finalize_merged_worktree with this action */
   worktreeAction?: "archive" | "delete";
-  /** Archive script to run before archive/delete */
-  archiveScript?: string;
   /** When true, pop the stash after switching branches */
   unstash?: boolean;
 }
@@ -38,7 +36,6 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
             repoPath,
             branchName,
             action: config.worktreeAction,
-            archiveScript: config.archiveScript || null,
           });
           break;
         }
