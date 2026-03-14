@@ -587,7 +587,7 @@ pub fn run() {
         head_watchers: DashMap::new(),
         repo_watchers: DashMap::new(),
         dir_watchers: DashMap::new(),
-        http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
+        http_client: reqwest::Client::new(),
         github_token: parking_lot::RwLock::new(github_token),
         github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
         server_shutdown: parking_lot::Mutex::new(None),
@@ -609,6 +609,7 @@ pub fn run() {
         slash_mode: DashMap::new(),
         last_output_ms: DashMap::new(),
         shell_states: DashMap::new(),
+        loaded_plugins: DashMap::new(),
         relay: crate::state::RelayState::new(),
     });
 
@@ -921,6 +922,8 @@ pub fn run() {
             plugins::install_plugin_from_folder,
             plugins::install_plugin_from_url,
             plugins::uninstall_plugin,
+            plugins::register_loaded_plugin,
+            plugins::unregister_loaded_plugin,
             plugin_fs::plugin_read_file,
             plugin_fs::plugin_list_directory,
             plugin_fs::plugin_read_file_tail,

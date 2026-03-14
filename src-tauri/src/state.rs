@@ -690,11 +690,8 @@ pub struct AppState {
     pub(crate) repo_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
     /// File watchers for directory contents (keyed by absolute dir path)
     pub(crate) dir_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
-    /// Shared HTTP client for GitHub API requests.
-    /// Wrapped in ManuallyDrop because reqwest::blocking::Client owns an internal
-    /// tokio runtime that panics on drop inside another runtime (e.g. #[tokio::test]).
-    /// The client lives for the app's lifetime, so never dropping it is harmless.
-    pub(crate) http_client: std::mem::ManuallyDrop<reqwest::blocking::Client>,
+    /// Shared async HTTP client for GitHub API requests.
+    pub(crate) http_client: reqwest::Client,
     /// GitHub API token — updated on fallback when a 401 triggers candidate rotation
     pub(crate) github_token: parking_lot::RwLock<Option<String>>,
     /// Circuit breaker for GitHub API calls
@@ -755,6 +752,10 @@ pub struct AppState {
     /// The single source of truth for busy/idle — the frontend consumes events,
     /// it does not derive this state from raw PTY output timing.
     pub(crate) shell_states: DashMap<String, std::sync::atomic::AtomicU8>,
+    /// Loaded plugin capabilities: plugin_id → list of capability strings.
+    /// Populated by the frontend via `register_loaded_plugin` on plugin load.
+    /// Used by Rust plugin commands to enforce capability checks server-side.
+    pub loaded_plugins: DashMap<String, Vec<String>>,
     /// Cloud relay client state
     pub(crate) relay: RelayState,
 }
@@ -1720,7 +1721,7 @@ pub(crate) mod tests_support {
             head_watchers: dashmap::DashMap::new(),
             repo_watchers: dashmap::DashMap::new(),
             dir_watchers: dashmap::DashMap::new(),
-            http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
+            http_client: reqwest::Client::new(),
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             server_shutdown: parking_lot::Mutex::new(None),
@@ -1742,6 +1743,7 @@ pub(crate) mod tests_support {
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
+            loaded_plugins: DashMap::new(),
             relay: RelayState::new(),
         }
     }
@@ -2081,7 +2083,7 @@ mod tests {
             head_watchers: dashmap::DashMap::new(),
             repo_watchers: dashmap::DashMap::new(),
             dir_watchers: dashmap::DashMap::new(),
-            http_client: std::mem::ManuallyDrop::new(reqwest::blocking::Client::new()),
+            http_client: reqwest::Client::new(),
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             server_shutdown: parking_lot::Mutex::new(None),
@@ -2103,6 +2105,7 @@ mod tests {
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
+            loaded_plugins: DashMap::new(),
             relay: RelayState::new(),
         }
     }

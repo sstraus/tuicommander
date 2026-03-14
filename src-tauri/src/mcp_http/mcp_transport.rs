@@ -284,10 +284,10 @@ fn require_path(args: &serde_json::Value, action: &str) -> Result<String, serde_
 }
 
 /// Handle an MCP tools/call request, executing against the app state directly (no HTTP round-trip)
-fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value) -> serde_json::Value {
+async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value) -> serde_json::Value {
     match name {
         "session" => handle_session(state, args),
-        "git" => handle_git(state, args),
+        "git" => handle_git(state, args).await,
         "agent" => handle_agent(state, addr, args),
         "config" => handle_config(state, addr, args),
         "workspace" => handle_workspace(state, args),
@@ -521,7 +521,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
     }
 }
 
-fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+async fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
     let action = match require_action(args, "git", GIT_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
@@ -588,7 +588,7 @@ fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Va
                 &path,
                 false,
                 state,
-            );
+            ).await;
             to_json_or_error(statuses)
         }
         other => serde_json::json!({"error": format!(
@@ -1032,13 +1032,7 @@ pub(super) async fn mcp_post(
                     Err(e) => (serde_json::json!({"error": e}), true),
                 }
             } else {
-                let state_clone = state.clone();
-                let result = match tokio::task::spawn_blocking(move || {
-                    handle_mcp_tool_call(&state_clone, addr, &tool_name, &args)
-                }).await {
-                    Ok(r) => r,
-                    Err(e) => serde_json::json!({"error": format!("Task failed: {e}")}),
-                };
+                let result = handle_mcp_tool_call(&state, addr, &tool_name, &args).await;
                 let is_error = result.get("error").is_some();
                 (result, is_error)
             };
@@ -1154,9 +1148,6 @@ mod tests {
     use super::*;
 
     fn test_state() -> Arc<AppState> {
-        let http_client = std::thread::spawn(reqwest::blocking::Client::new)
-            .join()
-            .expect("blocking client construction thread panicked");
         Arc::new(AppState {
             sessions: dashmap::DashMap::new(),
             worktrees_dir: std::env::temp_dir().join("test-worktrees"),
@@ -1169,7 +1160,7 @@ mod tests {
             head_watchers: dashmap::DashMap::new(),
             repo_watchers: dashmap::DashMap::new(),
             dir_watchers: dashmap::DashMap::new(),
-            http_client: std::mem::ManuallyDrop::new(http_client),
+            http_client: reqwest::Client::new(),
             github_token: parking_lot::RwLock::new(None),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             server_shutdown: parking_lot::Mutex::new(None),
@@ -1191,6 +1182,7 @@ mod tests {
             slash_mode: dashmap::DashMap::new(),
             last_output_ms: dashmap::DashMap::new(),
             shell_states: dashmap::DashMap::new(),
+            loaded_plugins: dashmap::DashMap::new(),
             relay: crate::state::RelayState::new(),
         })
     }

@@ -176,7 +176,7 @@ pub(super) async fn merge_pr_via_github_http(
     Json(body): Json<MergePrRequest>,
 ) -> Response {
     if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
-    match crate::github::merge_pr_github_impl(&body.repo_path, body.pr_number, &body.merge_method, &state) {
+    match crate::github::merge_pr_github_impl(&body.repo_path, body.pr_number, &body.merge_method, &state).await {
         Ok(sha) => (StatusCode::OK, Json(serde_json::json!({"sha": sha}))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }
