@@ -481,13 +481,12 @@ fn read_external_file(path: String) -> Result<String, String> {
 #[tauri::command]
 async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
     // Collect config and session count synchronously first (fast, no I/O)
-    let (remote_enabled, active_sessions, mcp_protocol_sessions, session_token) = {
+    let (remote_enabled, active_sessions, mcp_protocol_sessions) = {
         let cfg = state.config.read();
         (
             cfg.remote_access_enabled,
             state.sessions.len(),
             state.mcp_sessions.len(),
-            state.session_token.read().clone(),
         )
     };
 
@@ -531,18 +530,24 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
         "active_sessions": active_sessions,
         "mcp_clients": mcp_protocol_sessions,
         "max_sessions": MAX_CONCURRENT_SESSIONS,
-        "session_token": session_token,
         "reachable": reachable,
     }))
 }
 
 /// Regenerate the session token, invalidating all existing remote sessions.
-/// Returns the new token so the frontend can refresh the QR code.
 #[tauri::command]
-fn regenerate_session_token(state: State<'_, Arc<AppState>>) -> String {
+fn regenerate_session_token(state: State<'_, Arc<AppState>>) {
     let new_token = uuid::Uuid::new_v4().to_string();
-    *state.session_token.write() = new_token.clone();
-    new_token
+    *state.session_token.write() = new_token;
+}
+
+/// Build a QR-code connect URL server-side so the raw session token
+/// never reaches JS (where a malicious plugin could steal it).
+#[tauri::command]
+fn get_connect_url(state: State<'_, Arc<AppState>>, ip: String) -> String {
+    let port = state.config.read().remote_access_port;
+    let token = state.session_token.read().clone();
+    build_connect_url(&ip, port, &token)
 }
 
 /// Get relay client status (enabled, connected, url, session_id).
@@ -833,6 +838,7 @@ pub fn run() {
             get_local_ips,
             updater::check_update_channel,
             get_mcp_status,
+            get_connect_url,
             regenerate_session_token,
             get_relay_status,
             dictation::commands::get_dictation_status,
@@ -968,5 +974,41 @@ pub fn run() {
                 _ => {}
             }
         });
+}
+
+/// Build a connect URL for QR-code authentication.
+/// Brackets IPv6 addresses for valid URL syntax.
+fn build_connect_url(ip: &str, port: u16, token: &str) -> String {
+    let host = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
+    format!("http://{host}:{port}/?token={token}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_connect_url_ipv4() {
+        assert_eq!(
+            build_connect_url("192.168.1.1", 8080, "abc-123"),
+            "http://192.168.1.1:8080/?token=abc-123"
+        );
+    }
+
+    #[test]
+    fn build_connect_url_ipv6() {
+        assert_eq!(
+            build_connect_url("fe80::1", 9443, "tok"),
+            "http://[fe80::1]:9443/?token=tok"
+        );
+    }
+
+    #[test]
+    fn build_connect_url_localhost() {
+        assert_eq!(
+            build_connect_url("127.0.0.1", 3000, "t"),
+            "http://127.0.0.1:3000/?token=t"
+        );
+    }
 }
 

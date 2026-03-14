@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createResource, createMemo, createEffect, onMount, onCleanup } from "solid-js";
+import { Component, For, Show, createSignal, createResource, createEffect, onMount, onCleanup } from "solid-js";
 import { rpc, type UpstreamMcpConfig, type UpstreamMcpServer, type UpstreamTransport } from "../../../transport";
 import { appLogger } from "../../../stores/appLogger";
 import QRCode from "qrcode";
@@ -14,8 +14,6 @@ interface McpStatus {
   /** Connected MCP protocol clients (reaped after 1h idle) */
   mcp_clients: number;
   max_sessions: number;
-  /** UUID token for QR-code auth — only present when server is running */
-  session_token?: string;
   /** null = remote disabled, true = TCP reachable, false = likely firewalled */
   reachable?: boolean | null;
 }
@@ -109,22 +107,23 @@ export const ServicesTab: Component = () => {
 
   const activeIp = () => selectedIp() || localIps()?.[0]?.ip;
 
-  /** URL to embed in QR: token-based auth, never user:pass in URL. */
-  const qrContent = createMemo(() => {
-    const ip = activeIp();
-    const token = status()?.session_token;
-    if (!ip || !token) return null;
-    // Bracket-wrap IPv6 literals for valid URL syntax
-    const host = ip.includes(":") ? `[${ip}]` : ip;
-    return `http://${host}:${raPort()}/?token=${token}`;
-  });
+  // Connect URL fetched from backend (token never reaches JS)
+  const [connectUrl, setConnectUrl] = createSignal<string | null>(null);
+  // Bumped after token regeneration to re-fetch the URL
+  const [qrVersion, setQrVersion] = createSignal(0);
 
+  /** Fetch connect URL from backend so the raw token stays server-side. */
   createEffect(() => {
-    const content = qrContent();
-    if (!content) { setQrDataUrl(null); return; }
-    QRCode.toDataURL(content, { width: 160, margin: 2, color: { dark: "#ffffff", light: "#1e1e1e" } })
+    const ip = activeIp();
+    void qrVersion(); // subscribe — re-run after token regeneration
+    if (!ip) { setConnectUrl(null); setQrDataUrl(null); return; }
+    rpc<string>("get_connect_url", { ip })
+      .then((url) => {
+        setConnectUrl(url);
+        return QRCode.toDataURL(url, { width: 160, margin: 2, color: { dark: "#ffffff", light: "#1e1e1e" } });
+      })
       .then(setQrDataUrl)
-      .catch(() => setQrDataUrl(null));
+      .catch(() => { setConnectUrl(null); setQrDataUrl(null); });
   });
 
   const refreshStatus = async () => {
@@ -201,7 +200,7 @@ export const ServicesTab: Component = () => {
   };
 
   const copyUrl = async () => {
-    const url = qrContent();
+    const url = connectUrl();
     if (!url) return;
     try {
       await navigator.clipboard.writeText(url);
@@ -216,6 +215,7 @@ export const ServicesTab: Component = () => {
     setRegenerating(true);
     try {
       await rpc("regenerate_session_token");
+      setQrVersion((v) => v + 1); // re-fetch QR URL with new token
       await refreshStatus();
     } catch (e) {
       appLogger.error("config", "Failed to regenerate token", e);
@@ -408,7 +408,7 @@ export const ServicesTab: Component = () => {
             </div>
           </div>
 
-          <Show when={status()?.running && qrContent()}>
+          <Show when={status()?.running && connectUrl()}>
             <div class={s.qr}>
               <Show when={qrDataUrl()}>
                 {(url) => <img src={url()} width={120} height={120} alt={t("services.alt.qrCode", "QR code")} title={t("services.title.qrCode", "Scan to connect")} />}
@@ -416,7 +416,7 @@ export const ServicesTab: Component = () => {
               <span class={s.qrLabel}>{t("services.label.scanToConnect", "Scan to connect")}</span>
               {/* Connection URL right under QR code */}
               <div class={s.urlCopyRow} style={{ "margin-top": "8px", "max-width": "200px" }}>
-                <code class={s.urlFull} style={{ "font-size": "10px", "word-break": "break-all" }}>{qrContent()}</code>
+                <code class={s.urlFull} style={{ "font-size": "10px", "word-break": "break-all" }}>{connectUrl()}</code>
                 <button
                   class={s.copyBtn}
                   onClick={copyUrl}

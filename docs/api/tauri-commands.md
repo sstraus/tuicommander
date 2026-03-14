@@ -324,12 +324,13 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `hash_password` | `password` | `String` | Bcrypt hash |
 | `list_markdown_files` | `path` | `Vec<MarkdownFileEntry>` | List .md files in dir |
 | `read_file` | `path, file` | `String` | Read file contents |
-| `get_mcp_status` | -- | `JSON` | MCP server status |
+| `get_mcp_status` | -- | `JSON` | MCP server status (no token — use `get_connect_url` for QR) |
+| `get_connect_url` | `ip` | `String` | Build QR connect URL server-side (token stays in backend) |
 | `check_update_channel` | `channel` | `UpdateCheckResult` | Check beta/nightly channel for updates (hardcoded URLs, SSRF-safe) |
 | `clear_caches` | -- | `()` | Clear in-memory caches |
 | `get_local_ip` | -- | `Option<String>` | Get primary local IP |
 | `get_local_ips` | -- | `Vec<LocalIpEntry>` | List local network interfaces |
-| `regenerate_session_token` | -- | `String` | Regenerate MCP session token |
+| `regenerate_session_token` | -- | `()` | Regenerate MCP session token (invalidates all remote sessions) |
 | `fetch_update_manifest` | `url` | `JSON` | Fetch update manifest via Rust HTTP (bypasses WebView CSP) |
 | `read_external_file` | `path` | `String` | Read file outside repo (standalone file open) |
 | `get_relay_status` | -- | `JSON` | Cloud relay connection status |
