@@ -22,37 +22,44 @@ pub(crate) fn set_config_dir_override(dir: PathBuf) -> impl Drop {
 
 /// Get the config directory using platform-appropriate location.
 ///
-/// - macOS: `~/Library/Application Support/tuicommander/`
-/// - Linux: `~/.config/tuicommander/` (or `$XDG_CONFIG_HOME`)
-/// - Windows: `%APPDATA%/tuicommander/`
+/// - macOS: `~/Library/Application Support/com.tuic.commander/`
+/// - Linux: `~/.config/com.tuic.commander/` (or `$XDG_CONFIG_HOME`)
+/// - Windows: `%APPDATA%/com.tuic.commander/`
 ///
+/// Matches Tauri's `$APPCONFIG` path (derived from the bundle identifier).
 /// Falls back to `~/.tuicommander/` if platform dir is unavailable.
 /// On first call, migrates from legacy locations if the new dir doesn't exist:
-///   1. `~/.tui-commander/` (legacy dotdir)
-///   2. `{platform_config}/tui-commander/` (old platform-dir name)
+///   1. `{platform_config}/tuicommander/` (previous custom name)
+///   2. `{platform_config}/tui-commander/` (older name)
+///   3. `~/.tuicommander/` (legacy dotdir)
 pub(crate) fn config_dir() -> PathBuf {
     #[cfg(test)]
     if let Some(dir) = CONFIG_DIR_OVERRIDE.lock().unwrap().clone() {
         return dir;
     }
     let new_dir = dirs::config_dir()
-        .map(|d| d.join("tuicommander"))
+        .map(|d| d.join("com.tuic.commander"))
         .unwrap_or_else(legacy_dotdir);
 
-    if !new_dir.exists() {
-        // Try migrating from old platform dir (tui-commander) first, then legacy dotdir
-        let old_platform_dir = dirs::config_dir().map(|d| d.join("tui-commander"));
-        let legacy_dot = legacy_dotdir();
+    // Migrate if our config file is missing (the dir may already exist from Tauri's window-state plugin)
+    if !new_dir.join(APP_CONFIG_FILE).exists() {
+        // Try migrating from legacy dirs (newest first): tuicommander, tui-commander, ~/.tuicommander
+        let platform_dir = dirs::config_dir();
+        let candidates = [
+            platform_dir.as_ref().map(|d| d.join("tuicommander")),
+            platform_dir.as_ref().map(|d| d.join("tui-commander")),
+            Some(legacy_dotdir()),
+        ];
 
-        let source = old_platform_dir
-            .filter(|d| d.exists())
-            .unwrap_or(legacy_dot);
+        let source = candidates.into_iter().flatten().find(|d| d.exists());
 
-        if source.exists() && source != new_dir
-            && let Err(e) = migrate_config_dir(&source, &new_dir)
-        {
-            tracing::warn!("Config migration failed: {e}");
-            return source;
+        if let Some(source) = source {
+            if source != new_dir {
+                if let Err(e) = migrate_config_dir(&source, &new_dir) {
+                    tracing::warn!("Config migration failed: {e}");
+                    return source;
+                }
+            }
         }
     }
 
