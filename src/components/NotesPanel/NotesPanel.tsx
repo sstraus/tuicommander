@@ -206,11 +206,11 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
                   <span class={s.text} title={note.text}>{note.usedAt ? "✓ " : ""}{note.text}</span>
                 </Show>
                 <Show when={note.images.length > 0}>
-                  <div class={note.images.length === 1 && !note.text ? s.singleImageWrap : s.thumbnails}>
+                  <div class={s.thumbnails}>
                     <For each={note.images}>
                       {(imgPath) => (
                         <img
-                          class={note.images.length === 1 && !note.text ? s.singleImage : s.thumbnail}
+                          class={s.thumbnail}
                           src={convertFileSrc(imgPath)}
                           alt="Note image"
                           loading="lazy"

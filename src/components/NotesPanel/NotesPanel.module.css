@@ -233,19 +233,6 @@
   border: 1px solid var(--border);
 }
 
-/* Single image — shown expanded when the note has only one image and no text */
-.singleImageWrap {
-  margin-top: 4px;
-}
-
-.singleImage {
-  max-width: 100%;
-  max-height: 300px;
-  border-radius: var(--radius-md);
-  object-fit: contain;
-  border: 1px solid var(--border);
-}
-
 /* Pending thumbnails above textarea (pre-submit preview) */
 .pendingThumbnails {
   display: flex;
