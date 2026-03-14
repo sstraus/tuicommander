@@ -620,8 +620,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
             // Accept: execute the resume command
             blockEscForResumeDismiss = true;
             handleResume();
-          } else if (event.key.length === 1 || event.key === "Escape" || event.key === "Backspace" || event.key === "Delete" || event.key === "Tab") {
-            // Dismiss: any printable key or common editing key clears the banner
+          } else if (event.key.length === 1) {
+            // Dismiss on printable key: clear banner and let the keystroke
+            // pass through to xterm so the typed character is not swallowed.
+            terminalsStore.update(props.id, { pendingResumeCommand: null });
+            return true;
+          } else if (event.key === "Escape" || event.key === "Backspace" || event.key === "Delete" || event.key === "Tab") {
+            // Dismiss on editing/control keys: block the full key cycle
+            // to prevent stray sequences (e.g. \x1b from Escape) reaching xterm.
             blockEscForResumeDismiss = true;
             terminalsStore.update(props.id, { pendingResumeCommand: null });
             terminal?.focus();
