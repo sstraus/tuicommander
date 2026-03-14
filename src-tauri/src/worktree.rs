@@ -18,14 +18,10 @@ fn resolve_archive_script(repo_path: &str) -> Option<String> {
     {
         return Some(script.clone());
     }
-    // 2. Repo-local .tuic.json (team-shareable)
-    if let Some(local_config) = crate::config::load_repo_local_config_from_path(Path::new(repo_path))
-        && let Some(ref script) = local_config.archive_script
-        && !script.is_empty()
-    {
-        return Some(script.clone());
-    }
-    // 3. Global repo defaults (lowest priority)
+    // .tuic.json scripts intentionally skipped — executing repo-committed
+    // scripts without TOFU prompt is unsafe. Re-add when trust-on-first-use
+    // confirmation is implemented.
+    // 2. Global repo defaults (lowest priority)
     let defaults = crate::config::load_repo_defaults();
     if !defaults.archive_script.is_empty() {
         return Some(defaults.archive_script);

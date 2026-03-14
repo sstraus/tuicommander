@@ -555,12 +555,9 @@ pub(crate) struct RepoLocalConfig {
     pub(crate) copy_ignored_files: Option<bool>,
     #[serde(default)]
     pub(crate) copy_untracked_files: Option<bool>,
-    #[serde(default)]
-    pub(crate) setup_script: Option<String>,
-    #[serde(default)]
-    pub(crate) run_script: Option<String>,
-    #[serde(default)]
-    pub(crate) archive_script: Option<String>,
+    // Script fields (setup_script, run_script, archive_script) intentionally
+    // omitted — executing repo-committed scripts without TOFU prompt is unsafe.
+    // Re-add when trust-on-first-use confirmation is implemented.
     #[serde(default)]
     pub(crate) worktree_storage: Option<WorktreeStorage>,
     #[serde(default)]
@@ -1724,7 +1721,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let json = r#"{
             "base_branch": "develop",
-            "setup_script": "npm ci",
             "delete_branch_on_remove": false,
             "pr_merge_strategy": "squash"
         }"#;
@@ -1734,12 +1730,8 @@ mod tests {
         assert!(config.is_some());
         let config = config.unwrap();
         assert_eq!(config.base_branch.as_deref(), Some("develop"));
-        assert_eq!(config.setup_script.as_deref(), Some("npm ci"));
         assert_eq!(config.delete_branch_on_remove, Some(false));
         assert_eq!(config.pr_merge_strategy, Some(MergeStrategy::Squash));
-        // Fields not specified should be None
-        assert!(config.run_script.is_none());
-        assert!(config.archive_script.is_none());
         assert!(config.copy_ignored_files.is_none());
     }
 
@@ -1766,7 +1758,6 @@ mod tests {
         assert!(config.is_some());
         let config = config.unwrap();
         assert!(config.base_branch.is_none());
-        assert!(config.setup_script.is_none());
     }
 
     #[test]

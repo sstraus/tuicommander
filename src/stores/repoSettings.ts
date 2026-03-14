@@ -98,9 +98,7 @@ interface RepoLocalConfig {
   base_branch?: string;
   copy_ignored_files?: boolean;
   copy_untracked_files?: boolean;
-  setup_script?: string;
-  run_script?: string;
-  archive_script?: string;
+  // Script fields intentionally omitted — unsafe without TOFU prompt.
   worktree_storage?: WorktreeStorage;
   delete_branch_on_remove?: boolean;
   auto_archive_merged?: boolean;
