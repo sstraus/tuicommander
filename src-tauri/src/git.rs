@@ -1085,7 +1085,7 @@ pub(crate) struct GitCommandResult {
 /// Ensure the SSH askpass helper script exists in the config directory.
 /// Returns the path to the script. The script shows a native GUI dialog
 /// so SSH can prompt for passphrases without a TTY.
-fn ensure_askpass_script() -> Option<PathBuf> {
+pub(crate) fn ensure_askpass_script() -> Option<PathBuf> {
     let dir = crate::config::config_dir();
     let script_path = dir.join("ssh-askpass");
 
@@ -1219,7 +1219,7 @@ pub(crate) struct WorkingTreeStatus {
 }
 
 /// Parse porcelain v2 output into a `WorkingTreeStatus`.
-fn parse_porcelain_v2(output: &str) -> WorkingTreeStatus {
+pub(crate) fn parse_porcelain_v2(output: &str) -> WorkingTreeStatus {
     let mut branch: Option<String> = None;
     let mut upstream: Option<String> = None;
     let mut ahead: u32 = 0;
@@ -1331,7 +1331,7 @@ fn parse_numstat(output: &str) -> HashMap<String, (u32, u32)> {
 }
 
 /// Enrich status entries with line counts from `git diff --numstat`.
-fn enrich_with_numstat(repo_path: &Path, entries: &mut [StatusEntry], staged: bool) {
+pub(crate) fn enrich_with_numstat(repo_path: &Path, entries: &mut [StatusEntry], staged: bool) {
     let mut args = vec!["diff", "--numstat"];
     if staged {
         args.push("--cached");
@@ -1348,16 +1348,20 @@ fn enrich_with_numstat(repo_path: &Path, entries: &mut [StatusEntry], staged: bo
 
 /// Get full working tree status from porcelain v2 output.
 #[tauri::command]
-pub(crate) fn get_working_tree_status(path: String) -> Result<WorkingTreeStatus, String> {
-    let repo_path = PathBuf::from(&path);
-    let out = git_cmd(&repo_path)
-        .args(["status", "--porcelain=v2", "--branch", "--show-stash"])
-        .run()
-        .map_err(|e| format!("git status failed: {e}"))?;
-    let mut status = parse_porcelain_v2(&out.stdout);
-    enrich_with_numstat(&repo_path, &mut status.staged, true);
-    enrich_with_numstat(&repo_path, &mut status.unstaged, false);
-    Ok(status)
+pub(crate) async fn get_working_tree_status(path: String) -> Result<WorkingTreeStatus, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        let out = git_cmd(&repo_path)
+            .args(["status", "--porcelain=v2", "--branch", "--show-stash"])
+            .run()
+            .map_err(|e| format!("git status failed: {e}"))?;
+        let mut status = parse_porcelain_v2(&out.stdout);
+        enrich_with_numstat(&repo_path, &mut status.staged, true);
+        enrich_with_numstat(&repo_path, &mut status.unstaged, false);
+        Ok(status)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 // --- Stage / unstage / discard ---
@@ -1531,13 +1535,8 @@ fn validate_git_hash(hash: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Get paginated commit log with full metadata.
-#[tauri::command]
-pub(crate) fn get_commit_log(
-    path: String,
-    count: Option<u32>,
-    after: Option<String>,
-) -> Result<Vec<CommitLogEntry>, String> {
+/// Sync implementation of commit log retrieval.
+pub(crate) fn get_commit_log_impl(path: String, count: Option<u32>, after: Option<String>) -> Result<Vec<CommitLogEntry>, String> {
     let repo_path = PathBuf::from(&path);
     let n = count.unwrap_or(COMMIT_LOG_DEFAULT_COUNT).min(COMMIT_LOG_MAX_COUNT);
     let n_str = n.to_string();
@@ -1567,6 +1566,18 @@ pub(crate) fn get_commit_log(
         .collect();
 
     Ok(commits)
+}
+
+/// Get paginated commit log with full metadata.
+#[tauri::command]
+pub(crate) async fn get_commit_log(
+    path: String,
+    count: Option<u32>,
+    after: Option<String>,
+) -> Result<Vec<CommitLogEntry>, String> {
+    tokio::task::spawn_blocking(move || get_commit_log_impl(path, count, after))
+        .await
+        .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// A stash entry.
@@ -1686,46 +1697,50 @@ pub(crate) fn git_stash_show(path: String, stash_ref: String) -> Result<String, 
 
 /// Get commit log for a specific file, following renames.
 #[tauri::command]
-pub(crate) fn get_file_history(
+pub(crate) async fn get_file_history(
     path: String,
     file: String,
     count: Option<u32>,
     after: Option<String>,
 ) -> Result<Vec<CommitLogEntry>, String> {
-    let repo_path = PathBuf::from(&path);
-    validate_paths_within_repo(&repo_path, std::slice::from_ref(&file))?;
-    let n = count.unwrap_or(COMMIT_LOG_DEFAULT_COUNT).min(COMMIT_LOG_MAX_COUNT);
-    let n_str = n.to_string();
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        validate_paths_within_repo(&repo_path, std::slice::from_ref(&file))?;
+        let n = count.unwrap_or(COMMIT_LOG_DEFAULT_COUNT).min(COMMIT_LOG_MAX_COUNT);
+        let n_str = n.to_string();
 
-    let mut args = vec![
-        "log".to_string(),
-        "--follow".to_string(),
-        "--topo-order".to_string(),
-        "-n".to_string(),
-        n_str,
-        format!("--pretty=format:{COMMIT_LOG_FORMAT}"),
-    ];
+        let mut args = vec![
+            "log".to_string(),
+            "--follow".to_string(),
+            "--topo-order".to_string(),
+            "-n".to_string(),
+            n_str,
+            format!("--pretty=format:{COMMIT_LOG_FORMAT}"),
+        ];
 
-    if let Some(ref hash) = after {
-        validate_git_hash(hash)?;
-        args.push(hash.clone());
-    }
+        if let Some(ref hash) = after {
+            validate_git_hash(hash)?;
+            args.push(hash.clone());
+        }
 
-    args.push("--".to_string());
-    args.push(file);
+        args.push("--".to_string());
+        args.push(file);
 
-    let out = git_cmd(&repo_path)
-        .args(&args)
-        .run()
-        .map_err(|e| format!("git log failed: {e}"))?;
+        let out = git_cmd(&repo_path)
+            .args(&args)
+            .run()
+            .map_err(|e| format!("git log failed: {e}"))?;
 
-    let commits = out
-        .stdout
-        .lines()
-        .filter_map(parse_commit_log_line)
-        .collect();
+        let commits = out
+            .stdout
+            .lines()
+            .filter_map(parse_commit_log_line)
+            .collect();
 
-    Ok(commits)
+        Ok(commits)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// A single blame line with commit metadata.
@@ -1797,19 +1812,23 @@ fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
 
 /// Get per-line blame information for a file.
 #[tauri::command]
-pub(crate) fn get_file_blame(
+pub(crate) async fn get_file_blame(
     path: String,
     file: String,
 ) -> Result<Vec<BlameLine>, String> {
-    let repo_path = PathBuf::from(&path);
-    validate_paths_within_repo(&repo_path, std::slice::from_ref(&file))?;
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        validate_paths_within_repo(&repo_path, std::slice::from_ref(&file))?;
 
-    let out = git_cmd(&repo_path)
-        .args(["blame", "--porcelain", &file])
-        .run()
-        .map_err(|e| format!("git blame failed: {e}"))?;
+        let out = git_cmd(&repo_path)
+            .args(["blame", "--porcelain", &file])
+            .run()
+            .map_err(|e| format!("git blame failed: {e}"))?;
 
-    Ok(parse_blame_porcelain(&out.stdout))
+        Ok(parse_blame_porcelain(&out.stdout))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 #[cfg(test)]
@@ -2307,10 +2326,10 @@ mod tests {
 
     // --- Integration tests for get_working_tree_status ---
 
-    #[test]
-    fn get_working_tree_status_on_real_repo() {
+    #[tokio::test]
+    async fn get_working_tree_status_on_real_repo() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let result = get_working_tree_status(repo.to_string_lossy().to_string());
+        let result = get_working_tree_status(repo.to_string_lossy().to_string()).await;
         assert!(result.is_ok(), "should succeed on real repo");
         let status = result.unwrap();
         // We're in a git repo, so branch should be set (unless detached)
@@ -2318,9 +2337,9 @@ mod tests {
         assert!(status.ahead == 0 || status.ahead > 0); // trivially true, but confirms it ran
     }
 
-    #[test]
-    fn get_working_tree_status_nonexistent_path() {
-        let result = get_working_tree_status("/nonexistent/repo/xyz".to_string());
+    #[tokio::test]
+    async fn get_working_tree_status_nonexistent_path() {
+        let result = get_working_tree_status("/nonexistent/repo/xyz".to_string()).await;
         assert!(result.is_err());
     }
 
@@ -2365,26 +2384,26 @@ mod tests {
         (dir, path)
     }
 
-    #[test]
-    fn stage_files_adds_to_index() {
+    #[tokio::test]
+    async fn stage_files_adds_to_index() {
         let (_dir, path) = setup_test_repo_with_commit();
         std::fs::write(path.join("new.txt"), "content").expect("write");
         let result = git_stage_files(path.to_string_lossy().to_string(), vec!["new.txt".to_string()]);
         assert!(result.is_ok());
         // Verify it's staged
-        let status = get_working_tree_status(path.to_string_lossy().to_string()).unwrap();
+        let status = get_working_tree_status(path.to_string_lossy().to_string()).await.unwrap();
         assert!(status.staged.iter().any(|e| e.path == "new.txt"), "new.txt should be staged");
     }
 
-    #[test]
-    fn unstage_files_removes_from_index() {
+    #[tokio::test]
+    async fn unstage_files_removes_from_index() {
         let (_dir, path) = setup_test_repo_with_commit();
         std::fs::write(path.join("staged.txt"), "content").expect("write");
         std::process::Command::new("git").current_dir(&path).args(["add", "staged.txt"]).output().expect("add");
         let result = git_unstage_files(path.to_string_lossy().to_string(), vec!["staged.txt".to_string()]);
         assert!(result.is_ok());
         // Verify it's no longer staged (should be untracked now)
-        let status = get_working_tree_status(path.to_string_lossy().to_string()).unwrap();
+        let status = get_working_tree_status(path.to_string_lossy().to_string()).await.unwrap();
         assert!(!status.staged.iter().any(|e| e.path == "staged.txt"), "staged.txt should not be staged");
         assert!(status.untracked.contains(&"staged.txt".to_string()), "staged.txt should be untracked");
     }
@@ -2566,10 +2585,10 @@ mod tests {
 
     // --- get_commit_log integration tests ---
 
-    #[test]
-    fn get_commit_log_returns_commits_for_real_repo() {
+    #[tokio::test]
+    async fn get_commit_log_returns_commits_for_real_repo() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let result = get_commit_log(repo.to_string_lossy().to_string(), Some(5), None);
+        let result = get_commit_log(repo.to_string_lossy().to_string(), Some(5), None).await;
         let commits = result.expect("should succeed on real repo");
         assert!(!commits.is_empty(), "repo should have commits");
         assert!(commits.len() <= 5, "should respect count limit");
@@ -2581,45 +2600,45 @@ mod tests {
         assert!(!commits[0].subject.is_empty());
     }
 
-    #[test]
-    fn get_commit_log_default_count_is_50() {
+    #[tokio::test]
+    async fn get_commit_log_default_count_is_50() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let result = get_commit_log(repo.to_string_lossy().to_string(), None, None);
+        let result = get_commit_log(repo.to_string_lossy().to_string(), None, None).await;
         let commits = result.expect("should succeed");
         // We know this repo has many commits; default limit is 50
         assert!(commits.len() <= 50);
     }
 
-    #[test]
-    fn get_commit_log_count_clamped_to_500() {
+    #[tokio::test]
+    async fn get_commit_log_count_clamped_to_500() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
         // Requesting 9999 should be clamped to 500
-        let result = get_commit_log(repo.to_string_lossy().to_string(), Some(9999), None);
+        let result = get_commit_log(repo.to_string_lossy().to_string(), Some(9999), None).await;
         let commits = result.expect("should succeed");
         assert!(commits.len() <= 500);
     }
 
-    #[test]
-    fn get_commit_log_pagination_with_after() {
+    #[tokio::test]
+    async fn get_commit_log_pagination_with_after() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
         let repo_str = repo.to_string_lossy().to_string();
 
         // Get first page
-        let page1 = get_commit_log(repo_str.clone(), Some(3), None).expect("page 1");
+        let page1 = get_commit_log(repo_str.clone(), Some(3), None).await.expect("page 1");
         assert!(page1.len() >= 3, "need at least 3 commits for this test");
 
         // Get second page starting from the last commit of page 1
         let last_hash = &page1[2].hash;
-        let page2 = get_commit_log(repo_str, Some(3), Some(last_hash.clone())).expect("page 2");
+        let page2 = get_commit_log(repo_str, Some(3), Some(last_hash.clone())).await.expect("page 2");
         assert!(!page2.is_empty(), "page 2 should have commits");
 
         // First commit of page 2 should be the same as last of page 1 (the `after` hash)
         assert_eq!(page2[0].hash, *last_hash, "pagination should start from the `after` commit");
     }
 
-    #[test]
-    fn get_commit_log_fails_for_nonexistent_repo() {
-        let result = get_commit_log("/nonexistent/repo".to_string(), None, None);
+    #[tokio::test]
+    async fn get_commit_log_fails_for_nonexistent_repo() {
+        let result = get_commit_log("/nonexistent/repo".to_string(), None, None).await;
         assert!(result.is_err());
     }
 
@@ -2642,42 +2661,42 @@ mod tests {
 
     // --- get_file_history integration tests ---
 
-    #[test]
-    fn get_file_history_returns_commits_for_known_file() {
+    #[tokio::test]
+    async fn get_file_history_returns_commits_for_known_file() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
         let result = get_file_history(
             repo.to_string_lossy().to_string(),
             "src-tauri/src/git.rs".to_string(),
             Some(5),
             None,
-        );
+        ).await;
         let commits = result.expect("should succeed for a file in the repo");
         assert!(!commits.is_empty(), "git.rs should have commit history");
         assert!(commits.len() <= 5);
     }
 
-    #[test]
-    fn get_file_history_nonexistent_file_returns_empty() {
+    #[tokio::test]
+    async fn get_file_history_nonexistent_file_returns_empty() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
         let result = get_file_history(
             repo.to_string_lossy().to_string(),
             "nonexistent-file-xyz.txt".to_string(),
             Some(5),
             None,
-        );
+        ).await;
         // git log with a nonexistent file returns empty output, not an error
         let commits = result.expect("should not error");
         assert!(commits.is_empty());
     }
 
-    #[test]
-    fn get_file_history_fails_for_nonexistent_repo() {
+    #[tokio::test]
+    async fn get_file_history_fails_for_nonexistent_repo() {
         let result = get_file_history(
             "/nonexistent/repo".to_string(),
             "file.txt".to_string(),
             None,
             None,
-        );
+        ).await;
         assert!(result.is_err());
     }
 
@@ -2907,13 +2926,13 @@ filename test.txt
 
     // --- get_file_blame integration test ---
 
-    #[test]
-    fn get_file_blame_returns_lines_for_known_file() {
+    #[tokio::test]
+    async fn get_file_blame_returns_lines_for_known_file() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
         let result = get_file_blame(
             repo.to_string_lossy().to_string(),
             "src-tauri/src/git.rs".to_string(),
-        );
+        ).await;
         let lines = result.expect("should succeed for a file in the repo");
         assert!(!lines.is_empty(), "git.rs should have blame lines");
         // Every line should have a 40-char hex hash
@@ -2929,22 +2948,22 @@ filename test.txt
         }
     }
 
-    #[test]
-    fn get_file_blame_fails_for_nonexistent_file() {
+    #[tokio::test]
+    async fn get_file_blame_fails_for_nonexistent_file() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
         let result = get_file_blame(
             repo.to_string_lossy().to_string(),
             "nonexistent-file-xyz.txt".to_string(),
-        );
+        ).await;
         assert!(result.is_err(), "blame on nonexistent file should fail");
     }
 
-    #[test]
-    fn get_file_blame_fails_for_nonexistent_repo() {
+    #[tokio::test]
+    async fn get_file_blame_fails_for_nonexistent_repo() {
         let result = get_file_blame(
             "/nonexistent/repo".to_string(),
             "file.txt".to_string(),
-        );
+        ).await;
         assert!(result.is_err());
     }
 
