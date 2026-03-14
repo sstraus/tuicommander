@@ -97,7 +97,7 @@ export const TIPS: Tip[] = [
   {
     feature: "Voice Dictation",
     description: "Dictate into the active terminal — runs locally with Whisper, no network needed.",
-    shortcut: `${mod}+Shift+D`,
+    shortcut: null,
   },
   {
     feature: "Find in Content",
@@ -116,8 +116,8 @@ export const TIPS: Tip[] = [
   },
   {
     feature: "Git Panel",
-    description: "Stage, commit, browse history, and view blame — all in a tabbed side panel with five tabs.",
-    shortcut: `${mod}+Shift+G`,
+    description: "Stage, commit, browse history, and view blame — all in a tabbed side panel.",
+    shortcut: `${mod}+Shift+D`,
   },
   {
     feature: "Commit Graph",
@@ -126,7 +126,7 @@ export const TIPS: Tip[] = [
   },
   {
     feature: "Blame Heatmap",
-    description: "The Blame tab shows an age heatmap — recent changes are highlighted in green, older changes fade to neutral.",
+    description: "The Blame sub-panel shows an age heatmap — recent changes are highlighted in green, older changes fade to neutral.",
     shortcut: null,
   },
   {
