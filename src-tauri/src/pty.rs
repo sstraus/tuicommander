@@ -481,9 +481,9 @@ fn spawn_silence_timer(
     app: Option<AppHandle>,
 ) {
     let event_bus = state.event_bus.clone();
-    std::thread::spawn(move || {
+    tokio::spawn(async move {
         while running.load(Ordering::Relaxed) {
-            std::thread::sleep(SILENCE_CHECK_INTERVAL);
+            tokio::time::sleep(SILENCE_CHECK_INTERVAL).await;
             if !running.load(Ordering::Relaxed) {
                 break;
             }
