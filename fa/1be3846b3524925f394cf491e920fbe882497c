@@ -1,0 +1,23 @@
+src/mobile/components/CommandInput.tsx
+  09adbbf24c3296f9 1,24-25,76-80,91,121,124,139-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.11",
+  "base_commit_sha": "fa1be3846b3524925f394cf491e920fbe882497c",
+  "prompts": {
+    "09adbbf24c3296f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24c449ad-8e00-498a-b9c9-73dd534f335e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Roberto Serafin <roberto.serafin@lansweeper.com>",
+      "messages": [],
+      "total_additions": 20,
+      "total_deletions": 10,
+      "accepted_lines": 20,
+      "overriden_lines": 0
+    }
+  }
+}
