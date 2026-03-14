@@ -1,4 +1,4 @@
-import { Component, createEffect, createMemo, createSignal, Show } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
@@ -55,15 +55,21 @@ export const BlameTab: Component<BlameTabProps> = (props) => {
     setError(null);
     setHighlightedHash(null);
 
+    let cancelled = false;
+    onCleanup(() => { cancelled = true; });
+
     invoke<BlameLine[]>("get_file_blame", { path: repoPath, file: filePath })
       .then((result) => {
+        if (cancelled) return;
         setLines(result);
       })
       .catch((err) => {
+        if (cancelled) return;
         setError(String(err));
         setLines([]);
       })
       .finally(() => {
+        if (cancelled) return;
         setLoading(false);
       });
   });

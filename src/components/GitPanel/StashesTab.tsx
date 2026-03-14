@@ -1,6 +1,7 @@
 import { Component, createEffect, createSignal, For, Show, on } from "solid-js";
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
+import { appLogger } from "../../stores/appLogger";
 import { ConfirmDialog } from "../ConfirmDialog/ConfirmDialog";
 import { cx } from "../../utils";
 import s from "./StashesTab.module.css";
@@ -45,7 +46,8 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
     try {
       const result = await invoke<StashEntry[]>("get_stash_list", { path: repoPath });
       setStashes(result);
-    } catch {
+    } catch (err) {
+      appLogger.warn("git", "Failed to load stash list", err);
       setStashes([]);
     } finally {
       setLoading(false);
@@ -57,11 +59,12 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
     on(
       () => {
         const repoPath = props.repoPath;
-        if (repoPath) void repositoriesStore.getRevision(repoPath);
-        return repoPath;
+        const rev = repoPath ? repositoriesStore.getRevision(repoPath) : 0;
+        return `${repoPath ?? ""}:${rev}`;
       },
-      (repoPath) => {
-        if (repoPath) fetchStashes(repoPath);
+      () => {
+        const repoPath = props.repoPath;
+        if (repoPath) void fetchStashes(repoPath);
       },
     ),
   );
@@ -73,6 +76,8 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
     try {
       await invoke<void>(command, { path: repoPath, stashRef });
       await fetchStashes(repoPath);
+    } catch (err) {
+      appLogger.error("git", `${command} failed`, err);
     } finally {
       setBusyRef(null);
     }
@@ -124,16 +129,18 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
     }
     setExpandedRef(refName);
 
+    if (!props.repoPath) return;
     // Fetch diff if not cached
     if (!diffs()[refName]) {
       setDiffLoading((prev) => ({ ...prev, [refName]: true }));
       try {
         const diff = await invoke<string>("git_stash_show", {
-          path: props.repoPath!,
+          path: props.repoPath,
           stashRef: refName,
         });
         setDiffs((prev) => ({ ...prev, [refName]: diff }));
-      } catch {
+      } catch (err) {
+        appLogger.warn("git", "Failed to load stash diff", err);
         setDiffs((prev) => ({ ...prev, [refName]: "" }));
       } finally {
         setDiffLoading((prev) => ({ ...prev, [refName]: false }));

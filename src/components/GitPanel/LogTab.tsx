@@ -5,25 +5,9 @@ import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
 import { CommitGraph, graphWidth } from "./CommitGraph";
 import type { GraphNode } from "./CommitGraph";
+import type { CommitLogEntry, ChangedFile } from "./types";
+import { relativeTime } from "../../utils/time";
 import s from "./LogTab.module.css";
-
-/** Mirrors the Rust CommitLogEntry struct from git.rs */
-interface CommitLogEntry {
-  hash: string;
-  parents: string[];
-  refs: string[];
-  author_name: string;
-  author_date: string;
-  subject: string;
-}
-
-/** Mirrors the Rust ChangedFile struct from git.rs */
-interface ChangedFile {
-  path: string;
-  status: string;
-  additions: number;
-  deletions: number;
-}
 
 /** Collapsed row height (2 lines: subject + meta) */
 const ROW_HEIGHT = 48;
@@ -34,25 +18,6 @@ const EXPANDED_OVERHEAD = 12;
 
 export interface LogTabProps {
   repoPath: string | null;
-}
-
-/** Convert an ISO date string to a human-readable relative time. */
-function relativeTime(isoDate: string): string {
-  const then = new Date(isoDate).getTime();
-  if (Number.isNaN(then)) return isoDate;
-  const diff = Date.now() - then;
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  const years = Math.floor(months / 12);
-  return `${years}y ago`;
 }
 
 /** Classify a ref string into branch, tag, or HEAD. */
@@ -170,12 +135,15 @@ export const LogTab: Component<LogTabProps> = (props) => {
     }
     setExpandedHash(hash);
 
+    const repoPath = props.repoPath;
+    if (!repoPath) return;
+
     // Fetch files if not cached
     if (!changedFiles()[hash]) {
       setFilesLoading((prev) => ({ ...prev, [hash]: true }));
       try {
         const files = await invoke<ChangedFile[]>("get_changed_files", {
-          path: props.repoPath,
+          path: repoPath,
           scope: hash,
         });
         setChangedFiles((prev) => ({ ...prev, [hash]: files }));
@@ -206,7 +174,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
         return `${repoPath ?? ""}:${rev}`;
       },
       () => {
-        if (props.repoPath) fetchCommits(props.repoPath);
+        if (props.repoPath) void fetchCommits(props.repoPath);
       },
     ),
   );

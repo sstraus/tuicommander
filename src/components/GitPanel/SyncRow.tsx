@@ -3,24 +3,8 @@ import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { cx } from "../../utils";
+import type { WorkingTreeStatus } from "./types";
 import s from "./SyncRow.module.css";
-
-/** Mirrors the Rust WorkingTreeStatus struct returned by get_working_tree_status */
-export interface WorkingTreeStatus {
-  branch: string | null;
-  upstream: string | null;
-  ahead: number;
-  behind: number;
-  stash_count: number;
-  staged: StatusEntry[];
-  unstaged: StatusEntry[];
-  untracked: string[];
-}
-
-interface StatusEntry {
-  path: string;
-  status: string;
-}
 
 /** Result from run_git_command */
 interface GitCommandResult {

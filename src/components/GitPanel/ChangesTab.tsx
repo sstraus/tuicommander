@@ -5,38 +5,8 @@ import { diffTabsStore, type DiffStatus } from "../../stores/diffTabs";
 import { appLogger } from "../../stores/appLogger";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { cx, globToRegex } from "../../utils";
+import type { CommitLogEntry, WorkingTreeStatus } from "./types";
 import s from "./ChangesTab.module.css";
-
-/** A single entry from the Rust StatusEntry struct */
-interface StatusEntry {
-  path: string;
-  status: string;
-  original_path: string | null;
-  additions: number;
-  deletions: number;
-}
-
-/** Full working tree status from `get_working_tree_status` */
-interface WorkingTreeStatus {
-  branch: string | null;
-  upstream: string | null;
-  ahead: number;
-  behind: number;
-  stash_count: number;
-  staged: StatusEntry[];
-  unstaged: StatusEntry[];
-  untracked: string[];
-}
-
-/** Commit log entry from Rust `get_commit_log` */
-interface CommitLogEntry {
-  hash: string;
-  parents: string[];
-  refs: string[];
-  author_name: string;
-  author_date: string;
-  subject: string;
-}
 
 /** Unified file entry for rendering */
 interface FileEntry {
@@ -154,8 +124,12 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     // Subscribe to revision changes
     void repositoriesStore.getRevision(repoPath);
 
+    let cancelled = false;
+    onCleanup(() => { cancelled = true; });
+
     invoke<WorkingTreeStatus>("get_working_tree_status", { path: repoPath })
       .then((status) => {
+        if (cancelled) return;
         setStaged(status.staged.map((e) => ({
           path: e.path, status: e.status, additions: e.additions ?? 0, deletions: e.deletions ?? 0,
         })));
@@ -170,6 +144,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
         setUnstaged(combined);
       })
       .catch((err) => {
+        if (cancelled) return;
         appLogger.error("git", "Failed to get working tree status", err);
         setStaged([]);
         setUnstaged([]);

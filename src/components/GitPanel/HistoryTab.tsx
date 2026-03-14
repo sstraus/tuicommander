@@ -3,17 +3,8 @@ import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { relativeTime } from "../../utils/time";
+import type { CommitLogEntry } from "./types";
 import s from "./HistoryTab.module.css";
-
-/** Mirrors the Rust CommitLogEntry struct from git.rs */
-interface CommitLogEntry {
-  hash: string;
-  parents: string[];
-  refs: string[];
-  author_name: string;
-  author_date: string;
-  subject: string;
-}
 
 const PAGE_SIZE = 50;
 
@@ -104,7 +95,7 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
         const repoPath = props.repoPath;
         const filePath = props.filePath;
         if (repoPath && filePath) {
-          fetchHistory(repoPath, filePath);
+          void fetchHistory(repoPath, filePath);
         } else {
           setCommits([]);
         }
