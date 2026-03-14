@@ -222,11 +222,27 @@ pub(super) async fn git_panel_context(
     }
 }
 
+/// Allowed git subcommands for the HTTP endpoint.
+/// Only safe, non-destructive operations that the GitPanel needs.
+const ALLOWED_GIT_SUBCOMMANDS: &[&str] = &[
+    "fetch", "pull", "push", "stash", "log", "diff", "show", "branch", "tag",
+    "merge", "rebase", "cherry-pick", "remote", "status", "rev-parse",
+];
+
 pub(super) async fn run_git_command_http(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
     Json(body): Json<RunGitCommandRequest>,
 ) -> Response {
     if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+
+    // Validate subcommand against allowlist
+    let subcommand = body.args.first().map(|s| s.as_str()).unwrap_or("");
+    if !ALLOWED_GIT_SUBCOMMANDS.contains(&subcommand) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error": format!("Git subcommand \"{subcommand}\" is not allowed via HTTP")
+        }))).into_response();
+    }
+
     let path = body.path;
     let args = body.args;
     let state_clone = state.clone();
@@ -266,21 +282,9 @@ pub(super) async fn run_git_command_http(
 
 pub(super) async fn working_tree_status(Query(q): Query<PathQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
-    let path = q.path;
-    match tokio::task::spawn_blocking(move || {
-        let repo_path = std::path::PathBuf::from(&path);
-        let out = crate::git_cli::git_cmd(&repo_path)
-            .args(["status", "--porcelain=v2", "--branch", "--show-stash"])
-            .run()
-            .map_err(|e| format!("git status failed: {e}"))?;
-        let mut status = crate::git::parse_porcelain_v2(&out.stdout);
-        crate::git::enrich_with_numstat(&repo_path, &mut status.staged, true);
-        crate::git::enrich_with_numstat(&repo_path, &mut status.unstaged, false);
-        Ok::<_, String>(status)
-    }).await {
-        Ok(Ok(status)) => Json(status).into_response(),
-        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+    match crate::git::get_working_tree_status(q.path).await {
+        Ok(status) => Json(status).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }
 }
 

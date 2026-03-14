@@ -756,7 +756,7 @@ pub struct AppState {
     /// Loaded plugin capabilities: plugin_id → list of capability strings.
     /// Populated by the frontend via `register_loaded_plugin` on plugin load.
     /// Used by Rust plugin commands to enforce capability checks server-side.
-    pub loaded_plugins: DashMap<String, Vec<String>>,
+    pub(crate) loaded_plugins: DashMap<String, Vec<String>>,
     /// Cloud relay client state
     pub(crate) relay: RelayState,
 }

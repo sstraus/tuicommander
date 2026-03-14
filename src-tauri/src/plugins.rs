@@ -28,7 +28,7 @@ fn check_plugin_capability_inner(
 ) -> Result<(), String> {
     match loaded_plugins.get(plugin_id) {
         Some(caps) => {
-            if caps.contains(&capability.to_string()) {
+            if caps.iter().any(|c| c == capability) {
                 Ok(())
             } else {
                 Err(format!(
@@ -331,13 +331,33 @@ pub fn list_user_plugins() -> Vec<PluginManifest> {
 
 /// Register a plugin's capabilities server-side so Rust commands can enforce them.
 /// Called by the frontend when a plugin is loaded. Overwrites any previous entry.
+///
+/// Security: validates the claimed capabilities against the on-disk manifest.
+/// The frontend cannot self-register arbitrary capabilities.
 #[tauri::command]
 pub fn register_loaded_plugin(
     plugin_id: String,
     capabilities: Vec<String>,
     state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
-) {
+) -> Result<(), String> {
+    // Ground truth is the on-disk manifest, not the frontend-supplied capabilities
+    let manifests = list_user_plugins();
+    let manifest = manifests
+        .iter()
+        .find(|m| m.id == plugin_id)
+        .ok_or_else(|| format!("Plugin \"{plugin_id}\" is not installed"))?;
+
+    // Only allow capabilities that appear in the manifest
+    for cap in &capabilities {
+        if !manifest.capabilities.contains(cap) {
+            return Err(format!(
+                "Plugin \"{plugin_id}\" claims capability \"{cap}\" not declared in manifest"
+            ));
+        }
+    }
+
     state.loaded_plugins.insert(plugin_id, capabilities);
+    Ok(())
 }
 
 /// Unregister a plugin's capabilities when it is unloaded.
