@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onCleanup } from "solid-js";
+import { createEffect, onCleanup } from "solid-js";
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
 import { retryWrite } from "../utils/retryWrite";
@@ -16,12 +16,13 @@ interface CommandInputProps {
 const SYNC_DEBOUNCE_MS = 300;
 
 export function CommandInput(props: CommandInputProps) {
-  const [value, setValue] = createSignal("");
   let textareaEl: HTMLTextAreaElement | undefined;
   // When true, user is actively editing — don't overwrite with PTY input
   let userEditing = false;
   // Debounce timer for textarea→PTY sync
   let syncTimer: ReturnType<typeof setTimeout> | null = null;
+  // Whether a mobile IME composition is in progress
+  let composing = false;
 
   onCleanup(() => { if (syncTimer) clearTimeout(syncTimer); });
 
@@ -41,7 +42,6 @@ export function CommandInput(props: CommandInputProps) {
     const pv = props.prefillValue;
     if (pv && pv.text) {
       userEditing = true;
-      setValue(pv.text);
       if (textareaEl) {
         textareaEl.value = pv.text;
         textareaEl.focus();
@@ -58,7 +58,6 @@ export function CommandInput(props: CommandInputProps) {
     const il = props.ptyInputLine;
     if (userEditing) return;
     const text = il ?? "";
-    setValue(text);
     if (textareaEl) {
       textareaEl.value = text;
       autoResize();
@@ -74,8 +73,12 @@ export function CommandInput(props: CommandInputProps) {
   /** On any input change, debounce a full-text sync to PTY. */
   function handleInput(e: InputEvent & { currentTarget: HTMLTextAreaElement }) {
     userEditing = true;
+    // During IME composition, just resize — don't sync partial composition to PTY
+    if (composing) {
+      autoResize();
+      return;
+    }
     const text = e.currentTarget.value;
-    setValue(text);
     autoResize();
     debouncedSync(text);
   }
@@ -85,11 +88,10 @@ export function CommandInput(props: CommandInputProps) {
     if (syncTimer) clearTimeout(syncTimer);
     // Read directly from the DOM element — on mobile, paste and autocomplete
     // may insert text without firing onInput, so the signal can be stale.
-    const text = (textareaEl?.value ?? value()).trim();
+    const text = (textareaEl?.value ?? "").trim();
     if (!text) return;
 
     userEditing = false;
-    setValue("");
     if (textareaEl) { textareaEl.value = ""; textareaEl.style.height = "auto"; }
     try {
       // Single atomic write: Ctrl-U clears existing PTY input, then text + Enter.
@@ -116,10 +118,10 @@ export function CommandInput(props: CommandInputProps) {
     // Flush pending sync immediately on blur
     if (syncTimer) {
       clearTimeout(syncTimer);
-      syncToPty(value());
+      syncToPty(textareaEl?.value ?? "");
     }
     // Resume PTY sync only if textarea is empty (no draft to preserve)
-    if (!value().trim()) {
+    if (!(textareaEl?.value ?? "").trim()) {
       userEditing = false;
     }
   }
@@ -130,11 +132,19 @@ export function CommandInput(props: CommandInputProps) {
         ref={textareaEl}
         class={styles.input}
         placeholder="Type a command..."
-        value={value()}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
         onBlur={handleBlur}
+        onCompositionStart={() => { composing = true; }}
+        onCompositionEnd={(e) => {
+          composing = false;
+          // Fire a sync now that composition is finalized
+          userEditing = true;
+          const text = (e.currentTarget as HTMLTextAreaElement).value;
+          autoResize();
+          debouncedSync(text);
+        }}
         autocomplete="off"
         autocorrect="off"
         spellcheck={false}
