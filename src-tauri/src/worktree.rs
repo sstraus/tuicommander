@@ -12,16 +12,18 @@ use tauri::State;
 fn resolve_archive_script(repo_path: &str) -> Option<String> {
     // 1. Per-repo app settings (highest priority)
     let repo_settings = crate::config::load_repo_settings();
-    if let Some(entry) = repo_settings.repos.get(repo_path) {
-        if let Some(ref script) = entry.archive_script {
-            if !script.is_empty() { return Some(script.clone()); }
-        }
+    if let Some(entry) = repo_settings.repos.get(repo_path)
+        && let Some(ref script) = entry.archive_script
+        && !script.is_empty()
+    {
+        return Some(script.clone());
     }
     // 2. Repo-local .tuic.json (team-shareable)
-    if let Some(local_config) = crate::config::load_repo_local_config_from_path(Path::new(repo_path)) {
-        if let Some(ref script) = local_config.archive_script {
-            if !script.is_empty() { return Some(script.clone()); }
-        }
+    if let Some(local_config) = crate::config::load_repo_local_config_from_path(Path::new(repo_path))
+        && let Some(ref script) = local_config.archive_script
+        && !script.is_empty()
+    {
+        return Some(script.clone());
     }
     // 3. Global repo defaults (lowest priority)
     let defaults = crate::config::load_repo_defaults();
