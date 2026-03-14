@@ -1,5 +1,5 @@
 mod agent_routes;
-mod auth;
+pub(crate) mod auth;
 mod config_routes;
 mod fs_routes;
 mod git_routes;
@@ -229,6 +229,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/metrics", get(session::get_metrics))
         // Git/GitHub
         .route("/repo/info", get(git_routes::repo_info))
+        .route("/repo/remote-url", get(git_routes::remote_url))
         .route("/repo/diff", get(git_routes::repo_diff))
         .route("/repo/diff-stats", get(git_routes::repo_diff_stats))
         .route("/repo/files", get(git_routes::repo_changed_files))

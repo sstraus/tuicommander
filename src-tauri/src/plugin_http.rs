@@ -37,22 +37,26 @@ fn validate_url(url: &str, allowed_urls: &[String]) -> Result<(), String> {
         scheme => return Err(format!("Scheme \"{scheme}\" is not allowed; use http or https")),
     }
 
-    // Block localhost unless explicitly allowed
+    // Block localhost and private/RFC1918 IPs unless explicitly allowed.
+    // This prevents plugins from reaching LAN hosts via SSRF.
     if let Some(host) = parsed.host_str() {
         let is_localhost = host == "localhost"
             || host == "127.0.0.1"
             || host == "::1"
             || host == "[::1]"
             || host == "0.0.0.0";
-        if is_localhost && !allowed_urls.is_empty() {
-            let localhost_allowed = allowed_urls.iter().any(|pattern| {
-                pattern.contains("localhost")
-                    || pattern.contains("127.0.0.1")
-                    || pattern.contains("::1")
-                    || pattern.contains("0.0.0.0")
-            });
-            if !localhost_allowed {
-                return Err("Localhost URLs require explicit allowedUrls declaration".into());
+
+        // Check if host is a private IP (RFC1918, CGNAT/Tailscale, IPv6 ULA/link-local)
+        let is_private = host.parse::<std::net::IpAddr>()
+            .map(|ip| crate::mcp_http::auth::is_private_ip(&ip))
+            .unwrap_or(false);
+
+        if (is_localhost || is_private) && !allowed_urls.is_empty() {
+            // Only allow if the host is explicitly declared in allowedUrls
+            let host_allowed = allowed_urls.iter().any(|pattern| pattern.contains(host));
+            if !host_allowed {
+                let kind = if is_localhost { "Localhost" } else { "Private network" };
+                return Err(format!("{kind} URLs require explicit allowedUrls declaration"));
             }
         }
     }
@@ -311,5 +315,46 @@ mod tests {
         // Empty allowed_urls = built-in plugin, no restrictions
         let result = validate_url("http://localhost:8080/api", &[]);
         assert!(result.is_ok());
+    }
+
+    // -- Private IP (RFC1918) blocking --
+
+    #[test]
+    fn validate_blocks_rfc1918_10_network() {
+        let allowed = vec!["http://*".to_string()];
+        assert!(validate_url("http://10.0.0.1:8080/api", &allowed).is_err());
+        assert!(validate_url("http://10.255.255.255/", &allowed).is_err());
+    }
+
+    #[test]
+    fn validate_blocks_rfc1918_172_network() {
+        let allowed = vec!["http://*".to_string()];
+        assert!(validate_url("http://172.16.0.1/api", &allowed).is_err());
+        assert!(validate_url("http://172.31.255.255/api", &allowed).is_err());
+    }
+
+    #[test]
+    fn validate_blocks_rfc1918_192_168() {
+        let allowed = vec!["http://*".to_string()];
+        assert!(validate_url("http://192.168.1.1/api", &allowed).is_err());
+        assert!(validate_url("http://192.168.68.100:3000/", &allowed).is_err());
+    }
+
+    #[test]
+    fn validate_blocks_cgnat_tailscale() {
+        let allowed = vec!["http://*".to_string()];
+        assert!(validate_url("http://100.64.0.1/api", &allowed).is_err());
+    }
+
+    #[test]
+    fn validate_allows_private_ip_with_explicit_declaration() {
+        let allowed = vec!["http://192.168.1.100:8080/*".to_string()];
+        assert!(validate_url("http://192.168.1.100:8080/api", &allowed).is_ok());
+    }
+
+    #[test]
+    fn validate_allows_private_ip_for_builtin() {
+        // Empty allowed_urls = built-in plugin, no restrictions
+        assert!(validate_url("http://10.0.0.1/api", &[]).is_ok());
     }
 }

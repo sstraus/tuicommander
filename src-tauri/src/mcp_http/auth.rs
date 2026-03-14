@@ -108,7 +108,7 @@ fn session_cookie_value(token: &str, max_age_secs: u64) -> String {
 /// Check whether an IP address belongs to a private/LAN network.
 /// Covers RFC1918 (10/8, 172.16/12, 192.168/16), CGNAT/Tailscale (100.64/10),
 /// IPv6 ULA (fc00::/7), and IPv6 link-local (fe80::/10).
-pub(super) fn is_private_ip(ip: &IpAddr) -> bool {
+pub(crate) fn is_private_ip(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_private_ipv4(v4),
         IpAddr::V6(v6) => is_private_ipv6(v6),
