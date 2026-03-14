@@ -1,7 +1,7 @@
 import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js";
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
-import { diffTabsStore, type DiffStatus } from "../../stores/diffTabs";
+import { diffTabsStore, isDiffStatus } from "../../stores/diffTabs";
 import { appLogger } from "../../stores/appLogger";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { cx, globToRegex } from "../../utils";
@@ -223,11 +223,11 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   }
 
   function openDiff(file: FileEntry) {
-    if (!props.repoPath) return;
+    if (!props.repoPath || !isDiffStatus(file.status)) return;
     diffTabsStore.add(
       props.repoPath,
       file.path,
-      file.status as DiffStatus,
+      file.status,
       undefined,
       file.status === "?" || undefined,
     );

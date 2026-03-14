@@ -3,6 +3,13 @@ import { currentBranchKey } from "./repositories";
 
 export type DiffStatus = "M" | "A" | "D" | "R" | "?";
 
+const VALID_DIFF_STATUSES = new Set<string>(["M", "A", "D", "R", "?"]);
+
+/** Type guard for DiffStatus values received from backend */
+export function isDiffStatus(value: unknown): value is DiffStatus {
+  return typeof value === "string" && VALID_DIFF_STATUSES.has(value);
+}
+
 /** Diff tab data */
 export interface DiffTabData extends BaseTab {
   repoPath: string;

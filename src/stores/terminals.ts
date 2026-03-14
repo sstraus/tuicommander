@@ -9,6 +9,13 @@ export type AwaitingInputType = "question" | "error" | null;
 /** Shell activity state: null=never had output, busy=producing output, idle=waiting for input */
 export type ShellState = "busy" | "idle" | null;
 
+const VALID_SHELL_STATES = new Set<string>(["busy", "idle"]);
+
+/** Type guard for ShellState values received from backend */
+export function isShellState(value: unknown): value is ShellState {
+  return value === null || (typeof value === "string" && VALID_SHELL_STATES.has(value));
+}
+
 /** Split direction for terminal panes */
 export type SplitDirection = "none" | "vertical" | "horizontal";
 

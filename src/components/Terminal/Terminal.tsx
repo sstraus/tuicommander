@@ -11,7 +11,7 @@ import { browserCreatedSessions } from "../../hooks/useAppInit";
 import { usePty } from "../../hooks/usePty";
 import { settingsStore, FONT_FAMILIES } from "../../stores/settings";
 import { getTerminalTheme } from "../../themes";
-import { terminalsStore, type AwaitingInputType, type ShellState } from "../../stores/terminals";
+import { terminalsStore, type AwaitingInputType, isShellState } from "../../stores/terminals";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { appLogger } from "../../stores/appLogger";
 import { notificationsStore } from "../../stores/notifications";
@@ -151,31 +151,29 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
   let planFileNotified = false; // Play info sound at most once per agent cycle
 
-  // Scroll position saved when terminal is hidden (display:none resets scrollTop in WebKit)
-  let pendingScrollRestore: { viewportY: number; wasAtBottom: boolean } | null = null;
+  // Continuously-tracked scroll position — immune to display:none zeroing scrollTop.
+  // Updated on every xterm scroll event (see openTerminal), so always holds the
+  // last valid position even after the terminal is hidden by CSS.
+  let trackedScrollState = { viewportY: 0, wasAtBottom: true };
 
   /** Fit terminal to container, guarded against undersized containers.
-   *  Preserves viewport scroll position across reflows (e.g. font size zoom).
-   *  Uses saved scroll state when recovering from display:none (tab switch). */
+   *  Preserves viewport scroll position across reflows and tab switches.
+   *  Uses continuously-tracked scroll state (not buffer.viewportY which can
+   *  read as 0 after display:none in WebKit). */
   const doFit = () => {
     if (!containerRef || !fitAddon || !terminal) return;
     if (containerRef.offsetWidth < MIN_FIT_WIDTH || containerRef.offsetHeight < MIN_FIT_HEIGHT) return;
+    // Capture distance from bottom — immune to baseY changes during reflow
     const buf = terminal.buffer.active;
-    // Use saved scroll state if recovering from display:none, otherwise read live
-    const scrollState = pendingScrollRestore ?? {
-      viewportY: buf.viewportY,
-      wasAtBottom: buf.viewportY === buf.baseY,
-    };
-    pendingScrollRestore = null;
+    const linesFromBottom = buf.baseY - trackedScrollState.viewportY;
+    const wasAtBottom = trackedScrollState.wasAtBottom;
     fitAddon.fit();
-    // fit() can reset scroll position to 0 (WebKit/WebGL race).
-    // Always restore explicitly: scroll to bottom if was there, otherwise
-    // clamp to saved position (agent compact/clear may have shrunk buffer).
-    if (scrollState.wasAtBottom) {
+    if (wasAtBottom) {
       terminal.scrollToBottom();
     } else {
-      const maxLine = terminal.buffer.active.baseY;
-      terminal.scrollToLine(Math.min(scrollState.viewportY, maxLine));
+      // Restore relative position from bottom (baseY may have changed after reflow)
+      const newBase = terminal.buffer.active.baseY;
+      terminal.scrollToLine(Math.max(0, newBase - linesFromBottom));
     }
   };
 
@@ -483,7 +481,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
           const current = terminalsStore.get(props.id)?.shellState;
           if (current !== rustState) {
             appLogger.debug("terminal", `[ShellState] ${props.id} sync from Rust: "${current}" → "${rustState}"`);
-            terminalsStore.update(props.id, { shellState: rustState as ShellState });
+            if (isShellState(rustState)) {
+              terminalsStore.update(props.id, { shellState: rustState });
+            }
           }
         }
       }).catch(() => {});
@@ -912,6 +912,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Replay any PTY output buffered while terminal was not yet open
     replayBuffer();
 
+    // Track scroll position continuously so doFit always has a valid last-known
+    // position, even after display:none zeros scrollTop in WebKit.
+    terminal.onScroll(() => {
+      const buf = terminal!.buffer.active;
+      trackedScrollState = {
+        viewportY: buf.viewportY,
+        wasAtBottom: buf.viewportY >= buf.baseY,
+      };
+    });
+
     resizeObserver = new ResizeObserver(() => {
       // Debounce: panels opening/closing can cause multiple rapid layout changes
       // (container oscillates between full-width and panel-reduced width).
@@ -1028,14 +1038,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
       });
 
       onCleanup(() => {
-        // Save scroll position before hiding — display:none resets scrollTop in WebKit
-        if (terminal) {
-          const buf = terminal.buffer.active;
-          pendingScrollRestore = {
-            viewportY: buf.viewportY,
-            wasAtBottom: buf.viewportY === buf.baseY,
-          };
-        }
         if (rafHandle) cancelAnimationFrame(rafHandle);
         resizeObserver?.disconnect();
       });
