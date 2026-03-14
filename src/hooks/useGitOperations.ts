@@ -291,6 +291,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
   };
 
   /** Detect orphaned linked worktrees and act based on the orphanCleanup setting. */
+  let orphanDialogOpen = false;
   const handleOrphanCleanup = async (repoPath: string) => {
     const orphanCleanup = repoSettingsStore.getEffective(repoPath)?.orphanCleanup ?? "ask";
     if (orphanCleanup === "off") return;
@@ -317,7 +318,14 @@ export function useGitOperations(deps: GitOperationsDeps) {
     }
 
     // orphanCleanup === "ask"
-    const confirmed = await deps.dialogs.confirmOrphanCleanup?.(orphanPaths);
+    if (orphanDialogOpen) return; // Prevent duplicate dialogs from concurrent refreshes
+    orphanDialogOpen = true;
+    let confirmed: boolean;
+    try {
+      confirmed = (await deps.dialogs.confirmOrphanCleanup?.(orphanPaths)) ?? false;
+    } finally {
+      orphanDialogOpen = false;
+    }
     if (!confirmed) return;
 
     for (const wtPath of orphanPaths) {
