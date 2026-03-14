@@ -607,13 +607,24 @@ export const Terminal: Component<TerminalProps> = (props) => {
         return false;
       }
 
-      // Escape dismisses resume banner — block the full key cycle to prevent
-      // a stray \x1b keypress from eating the next typed character
-      if (event.key === "Escape" && (terminalsStore.get(props.id)?.pendingResumeCommand || blockEscForResumeDismiss)) {
-        if (event.type === "keydown") {
-          blockEscForResumeDismiss = true;
-          terminalsStore.update(props.id, { pendingResumeCommand: null });
-          terminal?.focus();
+      // Resume banner keyboard handling: Space/Enter accept (resume),
+      // Escape or any other key dismisses without resuming.
+      // Block the full key cycle to prevent stray keypresses reaching xterm.
+      if (terminalsStore.get(props.id)?.pendingResumeCommand || blockEscForResumeDismiss) {
+        if (event.type === "keydown" && !blockEscForResumeDismiss) {
+          if (event.key === " " || event.key === "Enter") {
+            // Accept: execute the resume command
+            blockEscForResumeDismiss = true;
+            handleResume();
+          } else if (event.key.length === 1 || event.key === "Escape" || event.key === "Backspace" || event.key === "Delete" || event.key === "Tab") {
+            // Dismiss: any printable key or common editing key clears the banner
+            blockEscForResumeDismiss = true;
+            terminalsStore.update(props.id, { pendingResumeCommand: null });
+            terminal?.focus();
+          } else {
+            // Modifier-only keys (Shift, Ctrl, Alt, Meta) — ignore, don't dismiss
+            return false;
+          }
         } else if (event.type === "keyup") {
           blockEscForResumeDismiss = false;
         }
