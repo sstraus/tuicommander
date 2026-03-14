@@ -23,7 +23,7 @@ Research date: 2026-02-22
 | Cmd+N | Toggle ideas panel |
 | Cmd+R | Run saved command |
 | Cmd+\ | Split vertically |
-| Cmd+Shift+G | Git operations panel |
+| Cmd+Shift+D | Git Panel |
 | Cmd+Shift+L | Lazygit split pane |
 | Cmd+Shift+T | Reopen closed tab |
 | Cmd+Shift+R | Edit saved command |
@@ -218,7 +218,7 @@ These are reserved by Windows itself and **must never be used**:
 | Cmd+N | Ctrl+N | Ideas panel | VS Code/browsers new file/window |
 | Cmd+R | Ctrl+R | Run command | VS Code open recent, browsers reload |
 | Cmd+\\ | Ctrl+\\ | Split | VS Code split editor (same semantics) |
-| Cmd+Shift+G | Ctrl+Shift+G | Git ops panel | VS Code source control (similar!) |
+| Cmd+Shift+D | Ctrl+Shift+D | Git Panel | VS Code debug (conflicts!) |
 | Cmd+Shift+L | Ctrl+Shift+L | Lazygit split | VS Code select all occurrences |
 | Cmd+Shift+T | Ctrl+Shift+T | Reopen tab | Same semantics everywhere (good) |
 | Alt+arrows | Alt+arrows | Navigate panes | Windows Terminal pane nav (same!) |
@@ -257,7 +257,7 @@ These are reserved by Windows itself and **must never be used**:
 | **Cmd+N** (ideas) | Ghostty/Kitty (new window), VS Code/Zed (new file) |
 | **Cmd+R** (run command) | Ghostty (clear), Kitty (resize), VS Code (open recent), Zed (toggle right dock) |
 | **Cmd+\\** (split) | iTerm2 (find cursor), Warp (Warp Drive), Zed (split right) |
-| **Cmd+Shift+G** (git ops) | Warp/VS Code (find previous) |
+| **Cmd+Shift+D** (Git Panel) | VS Code (debug), Warp (n/a) |
 | **Cmd+Shift+L** (lazygit split) | VS Code/Zed (select all occurrences), Cursor (AI chat w/ selection) |
 | **Cmd+Shift+T** (reopen tab) | VS Code/Warp/Zed (reopen closed tab) -- GOOD, same semantics! |
 

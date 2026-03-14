@@ -127,4 +127,4 @@ When a repo is active, the bottom of the sidebar shows quick action buttons:
 - **Fetch** — `git fetch`
 - **Stash** — `git stash`
 
-For more git operations (merge, checkout, conflict resolution), use the Git Operations Panel (`Cmd+Shift+G`).
+For more git operations (staging, commit, push, pull, stash, blame, history), use the Git Panel (`Cmd+Shift+D`).

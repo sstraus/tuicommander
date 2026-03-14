@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.8.0 | **Last verified:** 2026-03-11
+**Version:** 0.9.0 | **Last verified:** 2026-03-14
 
 ---
 
@@ -14,7 +14,7 @@
 - Each tab runs an independent pseudo-terminal with the user's shell
 - Terminals are never unmounted — hidden tabs stay alive with full scroll history
 - Session persistence across app restarts (lazy restore on branch click)
-- Agent session restore shows a clickable banner ("Agent session was active — click to resume") instead of auto-injecting the resume command; banner is dismissible
+- Agent session restore shows a clickable banner ("Agent session was active — click to resume") instead of auto-injecting the resume command; Space/Enter resumes, other keys dismiss
 - Foreground process detection (macOS: `libproc`, Windows: `CreateToolhelp32Snapshot`)
 - PTY environment: `TERM=xterm-256color`, `COLORTERM=truecolor`, `LANG=en_US.UTF-8`
 - Pause/resume PTY output (`pause_pty` / `resume_pty` Tauri commands) — suspends reader thread without killing the session
@@ -175,11 +175,8 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Min-width constraints prevent panels from collapsing (Markdown: 300px, File Browser: 200px)
 - Toggle buttons in status bar with hotkey hints visible during quick switcher
 
-### 3.2 Diff Panel (`Cmd+Shift+D`)
-- Scope selector dropdown: Working tree (default) or any of the last 5 commits
-- File list with change indicators
-- Click a file to open a dedicated inline diff tab in the main tab area
-- Auto-refreshes via repo watcher (`.git/` file change detection)
+### 3.2 ~~Diff Panel~~ (Removed in 0.9.0)
+Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens the Git Panel
 
 ### 3.3 Markdown Panel (`Cmd+M`)
 - Renders `.md` and `.mdx` files with syntax-highlighted code blocks
@@ -234,8 +231,8 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Shows app info and links (About, GitHub, docs)
 - Keyboard shortcuts are now in Settings > Keyboard Shortcuts tab (auto-generated from `actionRegistry.ts`)
 
-### 3.8 Git Panel (`Cmd+Shift+G`)
-Tabbed side panel with five tabs: Changes, Log, Stashes, History, Blame. Replaces the former Git Operations Panel floating overlay.
+### 3.8 Git Panel (`Cmd+Shift+D`)
+Tabbed side panel with three tabs: Changes, Log, Stashes. Replaces the former Git Operations Panel floating overlay and the standalone Diff Panel.
 
 **Changes tab:**
 - Porcelain v2 working tree status via `get_working_tree_status` (branch, upstream, ahead/behind, stash count, staged/unstaged/untracked files)
@@ -245,12 +242,16 @@ Tabbed side panel with five tabs: Changes, Log, Stashes, History, Blame. Replace
 - Inline commit form with message input and Amend toggle
 - Click a file row to open its diff in the diff panel
 - Status icons per file: Modified, Added, Deleted, Renamed, Untracked
+- Per-file diff counts (additions/deletions) shown inline
+- Glob filter to narrow the file list
 - Path-traversal validation on all stage/unstage/discard operations
+- **History sub-panel** (collapsible): per-file commit history via `get_file_history` (follows renames), paginated with virtual scroll
+- **Blame sub-panel** (collapsible): per-line blame via `get_file_blame` (porcelain format), age heatmap (green=recent, fading to neutral), commit metadata per line
 
 **Log tab:**
 - Paginated commit log via `get_commit_log` (default 50, max 500)
 - Virtual scroll via `@tanstack/solid-virtual` for large histories
-- Canvas-based commit graph via `get_commit_graph`: lane assignment, Bezier curve connections, 8-color palette, ref badges (branch, tag, HEAD)
+- Canvas-based commit graph via `get_commit_graph`: lane assignment, Bezier curve connections, 8-color palette, ref badges (branch, tag, HEAD). Graph follows HEAD only
 - Click a commit row to expand and see its changed files (via `get_changed_files`)
 - Relative timestamps (e.g., "3h ago")
 
@@ -258,18 +259,9 @@ Tabbed side panel with five tabs: Changes, Log, Stashes, History, Blame. Replace
 - List all stash entries via `get_stash_list`
 - Per-stash actions: Apply, Pop, Drop (via `run_git_command`)
 
-**History tab:**
-- Per-file commit history via `get_file_history` (follows renames)
-- Paginated, same virtual scroll pattern as Log tab
-
-**Blame tab:**
-- Per-line blame via `get_file_blame` (porcelain format)
-- Age heatmap: recent changes highlighted in green, older changes fade toward neutral
-- Commit metadata per line: author, timestamp, hash
-
 **Keyboard navigation:**
 - `Escape` to close the panel
-- `Ctrl/Cmd+1–5` to switch between tabs
+- `Ctrl/Cmd+1–3` to switch between tabs
 - Auto-refreshes via repo revision subscription
 
 ### 3.9 Quick Branch Switch (`Cmd+B`)
@@ -386,7 +378,7 @@ Tabbed side panel with five tabs: Changes, Log, Stashes, History, Blame. Replace
 - Ideas (lightbulb icon) — `Cmd+N`
 - File Browser (folder icon) — `Cmd+E`
 - Markdown (MD icon) — `Cmd+M`
-- Diff (diff icon) — `Cmd+Shift+D`
+- Git (diff icon) — `Cmd+Shift+D` (opens Git Panel)
 - Mic button (when dictation enabled): hold to record, release to transcribe
 
 ---
@@ -567,9 +559,10 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Binary detection via `resolve_cli()`
 
 ### 7.6 Diff
-- Working tree diff and per-commit diff (last 5 commits)
-- Per-file diff in dedicated tab
-- Diff stats: additions/deletions per branch
+- Working tree diff and per-commit diff via Git Panel Changes tab
+- Per-file diff counts (additions/deletions) shown inline in Changes tab
+- Click a file row to view its diff
+- Standalone DiffPanel removed in v0.9.0 (see section 3.2)
 
 ---
 
@@ -872,7 +865,7 @@ All data persisted to platform config directory via Rust:
 | Shortcut | Action |
 |----------|--------|
 | `Cmd+[` | Toggle sidebar |
-| `Cmd+Shift+D` | Toggle diff panel |
+| `Cmd+Shift+D` | Toggle Git Panel |
 | `Cmd+M` | Toggle markdown panel |
 | `Cmd+N` | Toggle Ideas panel |
 | `Cmd+E` | Toggle file browser |
@@ -890,7 +883,7 @@ All data persisted to platform config directory via Rust:
 |----------|--------|
 | `Cmd+B` | Quick branch switch (fuzzy search) |
 | `Cmd+G` | Open lazygit in terminal |
-| `Cmd+Shift+G` | Git operations panel |
+| `Cmd+Shift+D` | Git Panel |
 | `Cmd+Shift+L` | Lazygit in split pane |
 
 ### File Browser (when focused)

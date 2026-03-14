@@ -15,8 +15,7 @@ App.tsx (central orchestrator)
 │   ├── TabBar/               # Terminal tabs with drag-to-reorder
 │   ├── Terminal/             # xterm.js wrapper (never unmounted)
 │   ├── TerminalArea/         # Terminal + split pane layout
-│   ├── DiffPanel/            # Git diff viewer
-│   │   └── DiffViewer        # Syntax-highlighted diff renderer
+│   ├── GitPanel/             # Git panel (Changes, Log, Stashes)
 │   ├── DiffTab/              # Individual file diff tab
 │   ├── MarkdownPanel/        # Markdown file browser
 │   │   └── MarkdownRenderer  # Markdown to HTML (DOMPurify)
@@ -39,7 +38,7 @@ App.tsx (central orchestrator)
 │   ├── tabs/RepoScriptsTab   # Per-repo scripts
 │   └── tabs/RepoWorktreeTab  # Per-repo worktree options
 ├── HelpPanel/                # Keyboard shortcuts documentation
-├── GitOperationsPanel/       # Quick git operations
+├── GitPanel/                 # Git panel (Changes, Log, Stashes)
 ├── TaskQueuePanel/           # Agent task queue
 ├── PromptOverlay/            # Agent prompt interception
 ├── PromptDrawer/             # Prompt library management
@@ -212,7 +211,7 @@ Native SolidJS component (not a plugin) showing Claude API usage data. Displayed
 | Panel | Toggle Shortcut | Store |
 |-------|-----------------|-------|
 | Sidebar | `Cmd+B` | `uiStore.toggleSidebar()` |
-| Diff Panel | `Cmd+Shift+D` | `uiStore.toggleDiffPanel()` |
+| Git Panel | `Cmd+Shift+D` | `uiStore.toggleGitPanel()` |
 | Markdown Panel | `Cmd+M` | `uiStore.toggleMarkdownPanel()` |
 | Notes/Ideas Panel | `Cmd+N` | `uiStore.toggleNotesPanel()` |
 | File Browser | `Cmd+E` | `uiStore.toggleFileBrowserPanel()` |
@@ -220,7 +219,7 @@ Native SolidJS component (not a plugin) showing Claude API usage data. Displayed
 | Settings | `Cmd+,` | Local state in App.tsx |
 | Help | `Cmd+?` | Local state in App.tsx |
 | Prompt Library | `Cmd+K` | `promptLibraryStore.toggleDrawer()` |
-| Git Operations | `Cmd+G` | Local state in App.tsx |
+| Lazygit | `Cmd+G` | Opens lazygit in terminal |
 | Task Queue | — | Local state in App.tsx |
 | Command Palette | `Cmd+P` | `commandPaletteStore.toggle()` |
 | Activity Dashboard | — | `activityDashboardStore.toggle()` |

@@ -41,11 +41,11 @@ When lazygit runs, TUICommander explicitly sets the tab name to "lazygit" to avo
 |----------|--------|
 | `Cmd+G` | Open lazygit in active terminal |
 | `Cmd+Shift+L` | Open lazygit in a split pane |
-| `Cmd+Shift+G` | Open the Git Operations panel (TUICommander's built-in git UI) |
+| `Cmd+Shift+D` | Open the Git Panel (TUICommander's built-in git UI) |
 
-## Git Operations Panel vs Lazygit
+## Git Panel vs Lazygit
 
-TUICommander also has a built-in **Git Operations Panel** (`Cmd+Shift+G`) for common git actions (pull, push, fetch, stash, merge, checkout, conflict resolution). Use whichever fits your workflow:
+TUICommander also has a built-in **Git Panel** (`Cmd+Shift+D`) for common git actions (staging, commit, push, pull, fetch, stash, blame, history). Use whichever fits your workflow:
 
-- **Git Operations Panel** — Quick buttons for common operations, no context switch
+- **Git Panel** — Docked side panel with Changes, Log, and Stashes tabs plus History/Blame sub-panels
 - **Lazygit** — Full interactive git TUI with staging hunks, interactive rebase, etc.

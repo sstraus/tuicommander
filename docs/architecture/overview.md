@@ -69,10 +69,9 @@ src/
 │   ├── Toolbar/          # Window drag region, repo/branch display
 │   ├── StatusBar/        # Status messages, zoom, dictation
 │   ├── SettingsPanel/    # Tabbed settings (General, Agents, Services, etc.)
-│   ├── DiffPanel/        # Git diff viewer with file tree
+│   ├── GitPanel/         # Git panel (Changes, Log, Stashes)
 │   ├── MarkdownPanel/    # Markdown file browser and renderer
 │   ├── HelpPanel/        # Keyboard shortcuts documentation
-│   ├── GitOperationsPanel/ # Quick git operations (commit, push, pull)
 │   ├── TaskQueuePanel/   # Agent task queue visualization
 │   ├── PromptOverlay/    # Agent prompt interception UI
 │   ├── PromptDrawer/     # Prompt library management

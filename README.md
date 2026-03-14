@@ -156,7 +156,7 @@ Queue operations, track progress, cancel running tasks. The task queue manages b
 
 - Auto-create worktrees per branch with configurable base branch and setup scripts
 - Lazygit: inline (`Cmd+G`), split pane (`Cmd+Shift+L`), or floating window
-- Git Operations Panel (`Cmd+Shift+G`): pull, push, fetch, stash, merge, checkout, conflict resolution
+- Git Panel (`Cmd+Shift+D`): staging, commit, log with commit graph, stashes, history, blame
 - Repository groups: named, colored, collapsible, drag-and-drop reordering
 - Park repos: temporarily hide repos you're not using
 - Quick branch switcher: hold `Cmd+Ctrl`, press `1-9` to switch instantly
