@@ -149,7 +149,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   let activityFlagged = false; // Avoids redundant activity store updates per data chunk
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
-  let lastPlanFilePath = ""; // Deduplicate repeated plan-file notifications
+  let planFileNotified = false; // Play info sound at most once per agent cycle
 
   // Scroll position saved when terminal is hidden (display:none resets scrollTop in WebKit)
   let pendingScrollRestore: { viewportY: number; wasAtBottom: boolean } | null = null;
@@ -400,9 +400,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
           case "plan-file":
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} plan-file path="${parsed.path}"`);
-            // Play info tone once per plan file (deduplicate repeated matches)
-            if (terminalsStore.state.activeId !== props.id && parsed.path !== lastPlanFilePath) {
-              lastPlanFilePath = parsed.path;
+            // Play info tone at most once per agent cycle (between user-input events)
+            if (terminalsStore.state.activeId !== props.id && !planFileNotified) {
+              planFileNotified = true;
               appLogger.info("terminal", `[Notify] ${props.id} info — plan-file path="${parsed.path}" (background tab)`);
               notificationsStore.playInfo();
             }
@@ -411,7 +411,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           case "user-input":
             appLogger.debug("terminal", `[ParsedEvent] ${props.id} user-input content="${parsed.content.slice(0, 80)}"`);
             // New user input means a new agent cycle — reset dedup and sub-task count
-            lastPlanFilePath = "";
+            planFileNotified = false;
             terminalsStore.update(props.id, { suggestDismissed: false, activeSubTasks: 0 });
             // Refresh last relevant prompt from Rust (word-count filtering happens backend-side)
             invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
