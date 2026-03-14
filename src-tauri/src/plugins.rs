@@ -212,9 +212,17 @@ fn resolve_plugin_path(uri_path: &str) -> Option<PathBuf> {
 pub fn register_plugin_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder.register_uri_scheme_protocol("plugin", |_ctx, request| {
         let uri = request.uri();
+        // On macOS/Linux: plugin://my-plugin/main.js → host="my-plugin", path="/main.js"
+        // On Windows: http://plugin.localhost/my-plugin/main.js → host="plugin.localhost", path="/my-plugin/main.js"
+        let host = uri.host().unwrap_or("");
         let path = uri.path();
+        let combined = if host.is_empty() || host.ends_with(".localhost") {
+            path.to_string()
+        } else {
+            format!("/{host}{path}")
+        };
 
-        let Some(file_path) = resolve_plugin_path(path) else {
+        let Some(file_path) = resolve_plugin_path(&combined) else {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .header("Content-Type", "text/plain")
