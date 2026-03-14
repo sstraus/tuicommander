@@ -86,8 +86,10 @@ fn validate_within_home(raw: &str) -> Result<PathBuf, String> {
 #[tauri::command]
 pub async fn plugin_read_file(
     path: String,
-    _plugin_id: String,
+    plugin_id: String,
+    state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
 ) -> Result<String, String> {
+    crate::plugins::check_plugin_capability(&state, &plugin_id, "fs:read")?;
     let canonical = validate_within_home(&path)?;
 
     // Check file size before reading
@@ -344,7 +346,17 @@ const MAX_WRITE_SIZE: usize = 10 * 1024 * 1024;
 pub async fn plugin_write_file(
     path: String,
     content: String,
-    _plugin_id: String,
+    plugin_id: String,
+    state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
+) -> Result<(), String> {
+    crate::plugins::check_plugin_capability(&state, &plugin_id, "fs:write")?;
+    plugin_write_file_inner(path, content).await
+}
+
+/// Core write logic, separated from the Tauri command wrapper for testability.
+async fn plugin_write_file_inner(
+    path: String,
+    content: String,
 ) -> Result<(), String> {
     if content.len() > MAX_WRITE_SIZE {
         return Err(format!(
@@ -595,10 +607,9 @@ mod tests {
         let test_file = tmp.path().join("write-new.txt");
 
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(plugin_write_file(
+        let result = rt.block_on(plugin_write_file_inner(
             test_file.to_string_lossy().to_string(),
             "hello write".to_string(),
-            "test".to_string(),
         ));
         let content = std::fs::read_to_string(&test_file).unwrap_or_default();
 
@@ -614,10 +625,9 @@ mod tests {
         let _ = std::fs::write(&test_file, "old content");
 
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(plugin_write_file(
+        let result = rt.block_on(plugin_write_file_inner(
             test_file.to_string_lossy().to_string(),
             "new content".to_string(),
-            "test".to_string(),
         ));
         let content = std::fs::read_to_string(&test_file).unwrap_or_default();
 
@@ -628,10 +638,9 @@ mod tests {
     #[test]
     fn write_file_rejects_relative_path() {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(plugin_write_file(
+        let result = rt.block_on(plugin_write_file_inner(
             "relative/file.txt".to_string(),
             "content".to_string(),
-            "test".to_string(),
         ));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("absolute"));
@@ -643,10 +652,9 @@ mod tests {
         let home = dirs::home_dir().unwrap();
         if !Path::new("/tmp").starts_with(&home) {
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let result = rt.block_on(plugin_write_file(
+            let result = rt.block_on(plugin_write_file_inner(
                 "/tmp/.tuic-test-write-outside.txt".to_string(),
                 "content".to_string(),
-                "test".to_string(),
             ));
             assert!(result.is_err());
             assert!(result.unwrap_err().contains("home directory"));
@@ -661,10 +669,9 @@ mod tests {
         let _ = std::fs::create_dir_all(&test_dir);
 
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(plugin_write_file(
+        let result = rt.block_on(plugin_write_file_inner(
             test_dir.to_string_lossy().to_string(),
             "content".to_string(),
-            "test".to_string(),
         ));
 
         assert!(result.is_err());

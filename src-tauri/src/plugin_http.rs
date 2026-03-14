@@ -112,8 +112,10 @@ pub async fn plugin_http_fetch(
     headers: Option<HashMap<String, String>>,
     body: Option<String>,
     allowed_urls: Vec<String>,
-    _plugin_id: String,
+    plugin_id: String,
+    state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
 ) -> Result<HttpResponse, String> {
+    crate::plugins::check_plugin_capability(&state, &plugin_id, "net:http")?;
     validate_url(&url, &allowed_urls)?;
 
     let method_str = method.as_deref().unwrap_or("GET");

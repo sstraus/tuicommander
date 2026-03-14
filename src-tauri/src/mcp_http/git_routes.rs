@@ -186,6 +186,16 @@ pub(super) async fn get_local_ips_http(
     Json(crate::get_local_ips_impl(&state))
 }
 
+pub(super) async fn remote_url(Query(q): Query<PathQuery>) -> Response {
+    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    let path = q.path;
+    match tokio::task::spawn_blocking(move || crate::git::get_remote_url(path)).await {
+        Ok(Some(url)) => Json(serde_json::json!({"url": url})).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "No remote URL found"}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+    }
+}
+
 pub(super) async fn list_user_plugins_http() -> impl axum::response::IntoResponse {
     Json(serde_json::json!(crate::plugins::list_user_plugins()))
 }

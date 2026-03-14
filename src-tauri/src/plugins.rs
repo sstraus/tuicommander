@@ -15,6 +15,43 @@ use std::path::{Component, Path, PathBuf};
 use tauri::http::{Response, StatusCode};
 use tauri::{AppHandle, Emitter};
 
+// ---------------------------------------------------------------------------
+// Capability enforcement
+// ---------------------------------------------------------------------------
+
+/// Check that a plugin has a required capability, using the provided map.
+/// This is the testable core — does not depend on AppState.
+fn check_plugin_capability_inner(
+    loaded_plugins: &dashmap::DashMap<String, Vec<String>>,
+    plugin_id: &str,
+    capability: &str,
+) -> Result<(), String> {
+    match loaded_plugins.get(plugin_id) {
+        Some(caps) => {
+            if caps.contains(&capability.to_string()) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Plugin \"{plugin_id}\" requires capability \"{capability}\" but did not declare it"
+                ))
+            }
+        }
+        None => Err(format!(
+            "Plugin \"{plugin_id}\" is not registered — cannot verify capabilities"
+        )),
+    }
+}
+
+/// Check that a loaded plugin has the required capability.
+/// Reads the loaded_plugins map from AppState.
+pub(crate) fn check_plugin_capability(
+    state: &crate::AppState,
+    plugin_id: &str,
+    capability: &str,
+) -> Result<(), String> {
+    check_plugin_capability_inner(&state.loaded_plugins, plugin_id, capability)
+}
+
 /// Root directory for user plugins: `{config_dir}/plugins/`
 fn plugins_dir() -> PathBuf {
     config::config_dir().join("plugins")
@@ -278,6 +315,30 @@ pub fn list_user_plugins() -> Vec<PluginManifest> {
     }
 
     manifests
+}
+
+// ---------------------------------------------------------------------------
+// Plugin capability registration (called by frontend on plugin load)
+// ---------------------------------------------------------------------------
+
+/// Register a plugin's capabilities server-side so Rust commands can enforce them.
+/// Called by the frontend when a plugin is loaded. Overwrites any previous entry.
+#[tauri::command]
+pub fn register_loaded_plugin(
+    plugin_id: String,
+    capabilities: Vec<String>,
+    state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
+) {
+    state.loaded_plugins.insert(plugin_id, capabilities);
+}
+
+/// Unregister a plugin's capabilities when it is unloaded.
+#[tauri::command]
+pub fn unregister_loaded_plugin(
+    plugin_id: String,
+    state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
+) {
+    state.loaded_plugins.remove(&plugin_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -1008,5 +1069,41 @@ mod tests {
         let result = find_manifest_in_zip(&archive);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
+    }
+
+    // -- Capability enforcement --
+
+    #[test]
+    fn check_capability_passes_with_valid_capability() {
+        let plugins = dashmap::DashMap::new();
+        plugins.insert(
+            "test-plugin".to_string(),
+            vec!["fs:read".to_string(), "net:http".to_string()],
+        );
+        assert!(check_plugin_capability_inner(&plugins, "test-plugin", "fs:read").is_ok());
+        assert!(check_plugin_capability_inner(&plugins, "test-plugin", "net:http").is_ok());
+    }
+
+    #[test]
+    fn check_capability_rejects_missing_capability() {
+        let plugins = dashmap::DashMap::new();
+        plugins.insert(
+            "test-plugin".to_string(),
+            vec!["fs:read".to_string()],
+        );
+        let result = check_plugin_capability_inner(&plugins, "test-plugin", "exec:cli");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("test-plugin"), "Error should mention plugin ID");
+        assert!(err.contains("exec:cli"), "Error should mention missing capability");
+    }
+
+    #[test]
+    fn check_capability_rejects_unknown_plugin() {
+        let plugins = dashmap::DashMap::new();
+        let result = check_plugin_capability_inner(&plugins, "nonexistent", "fs:read");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("nonexistent"), "Error should mention unknown plugin ID");
     }
 }
