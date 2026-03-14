@@ -90,6 +90,28 @@ function createUIStore() {
     }).catch((err) => appLogger.debug("store", "Failed to save UI prefs", err));
   }
 
+  /** Keys of the mutually exclusive right-side panels */
+  type ExclusivePanel = "markdownPanelVisible" | "fileBrowserPanelVisible" | "planPanelVisible" | "gitPanelVisible";
+  const exclusivePanels: ExclusivePanel[] = [
+    "markdownPanelVisible",
+    "fileBrowserPanelVisible",
+    "planPanelVisible",
+    "gitPanelVisible",
+  ];
+
+  /** Open one exclusive panel and close the others, or close all if `key` is already open (toggle). */
+  function setExclusivePanel(key: ExclusivePanel, visible: boolean): void {
+    batch(() => {
+      setState(key, visible);
+      if (visible) {
+        for (const k of exclusivePanels) {
+          if (k !== key) setState(k, false);
+        }
+      }
+    });
+    saveUIPrefs();
+  }
+
   const actions = {
     /** Load UI prefs from Rust backend; migrate from localStorage on first run */
     async hydrate(): Promise<void> {
@@ -167,28 +189,11 @@ function createUIStore() {
 
     // Panel toggles — mutually exclusive
     toggleMarkdownPanel(): void {
-      const next = !state.markdownPanelVisible;
-      batch(() => {
-        setState("markdownPanelVisible", next);
-        if (next) {
-          setState("fileBrowserPanelVisible", false);
-          setState("planPanelVisible", false);
-          setState("gitPanelVisible", false);
-        }
-      });
-      saveUIPrefs();
+      setExclusivePanel("markdownPanelVisible", !state.markdownPanelVisible);
     },
 
     setMarkdownPanelVisible(visible: boolean): void {
-      batch(() => {
-        setState("markdownPanelVisible", visible);
-        if (visible) {
-          setState("fileBrowserPanelVisible", false);
-          setState("planPanelVisible", false);
-          setState("gitPanelVisible", false);
-        }
-      });
-      saveUIPrefs();
+      setExclusivePanel("markdownPanelVisible", visible);
     },
 
     toggleNotesPanel(): void {
@@ -202,84 +207,27 @@ function createUIStore() {
     },
 
     toggleFileBrowserPanel(): void {
-      const next = !state.fileBrowserPanelVisible;
-      batch(() => {
-        setState("fileBrowserPanelVisible", next);
-        if (next) {
-
-          setState("markdownPanelVisible", false);
-          setState("planPanelVisible", false);
-          setState("gitPanelVisible", false);
-        }
-      });
-      saveUIPrefs();
+      setExclusivePanel("fileBrowserPanelVisible", !state.fileBrowserPanelVisible);
     },
 
     setFileBrowserPanelVisible(visible: boolean): void {
-      batch(() => {
-        setState("fileBrowserPanelVisible", visible);
-        if (visible) {
-
-          setState("markdownPanelVisible", false);
-          setState("planPanelVisible", false);
-          setState("gitPanelVisible", false);
-        }
-      });
-      saveUIPrefs();
+      setExclusivePanel("fileBrowserPanelVisible", visible);
     },
 
     togglePlanPanel(): void {
-      const next = !state.planPanelVisible;
-      batch(() => {
-        setState("planPanelVisible", next);
-        if (next) {
-
-          setState("markdownPanelVisible", false);
-          setState("fileBrowserPanelVisible", false);
-          setState("gitPanelVisible", false);
-        }
-      });
-      saveUIPrefs();
+      setExclusivePanel("planPanelVisible", !state.planPanelVisible);
     },
 
     setPlanPanelVisible(visible: boolean): void {
-      batch(() => {
-        setState("planPanelVisible", visible);
-        if (visible) {
-
-          setState("markdownPanelVisible", false);
-          setState("fileBrowserPanelVisible", false);
-          setState("gitPanelVisible", false);
-        }
-      });
-      saveUIPrefs();
+      setExclusivePanel("planPanelVisible", visible);
     },
 
     toggleGitPanel(): void {
-      const next = !state.gitPanelVisible;
-      batch(() => {
-        setState("gitPanelVisible", next);
-        if (next) {
-
-          setState("markdownPanelVisible", false);
-          setState("fileBrowserPanelVisible", false);
-          setState("planPanelVisible", false);
-        }
-      });
-      saveUIPrefs();
+      setExclusivePanel("gitPanelVisible", !state.gitPanelVisible);
     },
 
     setGitPanelVisible(visible: boolean): void {
-      batch(() => {
-        setState("gitPanelVisible", visible);
-        if (visible) {
-
-          setState("markdownPanelVisible", false);
-          setState("fileBrowserPanelVisible", false);
-          setState("planPanelVisible", false);
-        }
-      });
-      saveUIPrefs();
+      setExclusivePanel("gitPanelVisible", visible);
     },
 
     // Dropdown management
