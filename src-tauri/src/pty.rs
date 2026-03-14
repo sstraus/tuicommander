@@ -130,7 +130,17 @@ fn is_plausible_question(line: &str) -> bool {
         return false;
     }
     // Code syntax markers — real questions don't contain these
-    if line.contains("->") || line.contains("=>") || line.contains("::") || line.contains(")?") {
+    if line.contains("->") || line.contains("=>") || line.contains("::") {
+        return false;
+    }
+    // Code try-syntax: word_or_> followed by (...)? — e.g. foo()?, bar(x)?, Vec<T>()?
+    // But NOT human option parentheticals like (y/n)?, (yes/no)? where `(` is
+    // preceded by whitespace or start-of-line, not a word character.
+    lazy_static::lazy_static! {
+        static ref CODE_TRY_RE: regex::Regex =
+            regex::Regex::new(r"[\w>]\([^)]*\)\?").unwrap();
+    }
+    if CODE_TRY_RE.is_match(line) {
         return false;
     }
     true
@@ -2558,6 +2568,40 @@ mod tests {
     fn test_extract_question_line_rejects_asterisk_comment() {
         let rows = make_rows(&["* What is this?"]);
         assert_eq!(extract_question_line(&rows), None);
+    }
+
+    #[test]
+    fn test_extract_question_line_accepts_parenthetical_options() {
+        let rows = make_rows(&["Continue (yes/no)?"]);
+        assert_eq!(extract_question_line(&rows), Some("Continue (yes/no)?".to_string()));
+    }
+
+    #[test]
+    fn test_extract_question_line_accepts_yn_parens() {
+        let rows = make_rows(&["Procedo (s/n)?"]);
+        assert_eq!(extract_question_line(&rows), Some("Procedo (s/n)?".to_string()));
+    }
+
+    #[test]
+    fn test_extract_question_line_accepts_option_prompt() {
+        let rows = make_rows(&["Apply changes (y)?"]);
+        assert_eq!(extract_question_line(&rows), Some("Apply changes (y)?".to_string()));
+    }
+
+    #[test]
+    fn test_extract_question_line_rejects_rust_try() {
+        assert_eq!(extract_question_line(&make_rows(&["foo.bar()?"])), None);
+    }
+
+    #[test]
+    fn test_extract_question_line_rejects_generic_try() {
+        // Also caught by `::` filter
+        assert_eq!(extract_question_line(&make_rows(&["Vec::new()?"])), None);
+    }
+
+    #[test]
+    fn test_extract_question_line_rejects_method_chain_try() {
+        assert_eq!(extract_question_line(&make_rows(&["iter().map(|x| x)?"])), None);
     }
 
     // --- Resize grace period tests ---
