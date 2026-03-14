@@ -48,6 +48,7 @@ interface FileEntry {
 
 export interface ChangesTabProps {
   repoPath: string | null;
+  onFileSelect?: (path: string) => void;
 }
 
 // SVG icons as inline components (monochrome, fill="currentColor")
@@ -405,7 +406,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
         class={cx(s.fileEntry, focusedIndex() === flatIndex && s.fileFocused)}
         title={file.path}
         data-focused={focusedIndex() === flatIndex ? "" : undefined}
-        onClick={() => setFocusedIndex(flatIndex)}
+        onClick={() => { setFocusedIndex(flatIndex); props.onFileSelect?.(file.path); }}
       >
         <span class={cx(s.statusBadge, statusClass(file.status))}>{file.status}</span>
         <span class={s.filePath}>

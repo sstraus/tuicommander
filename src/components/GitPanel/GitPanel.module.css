@@ -53,6 +53,73 @@
   border-bottom-color: var(--accent);
 }
 
+/* Tab content area — fills remaining space above sub-panels */
+.tabContent {
+  flex: 1;
+  min-height: 200px;
+  overflow: hidden;
+}
+
+/* Sub-panels (History, Blame) — collapsible sections at bottom.
+   Shares vertical space with tabContent via flex; shrinks if needed. */
+.subPanels {
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.subPanelHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  color: var(--fg-muted);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s ease;
+}
+
+.subPanelHeader:hover {
+  background: var(--bg-highlight);
+}
+
+.subChevron {
+  font-size: var(--font-xs);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.subChevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.subPanelLabel {
+  color: var(--fg-secondary);
+}
+
+.subPanelFile {
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.subPanelBody {
+  max-height: 250px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .placeholder {
   padding: 20px;
   text-align: center;

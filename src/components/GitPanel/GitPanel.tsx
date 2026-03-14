@@ -1,4 +1,4 @@
-import { Component, createSignal, Match, Switch } from "solid-js";
+import { Component, createSignal, Match, Show, Switch } from "solid-js";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { cx } from "../../utils";
 import { ChangesTab } from "./ChangesTab";
@@ -9,14 +9,12 @@ import { BlameTab } from "./BlameTab";
 import p from "../shared/panel.module.css";
 import s from "./GitPanel.module.css";
 
-type GitTab = "changes" | "log" | "stashes" | "history" | "blame";
+type GitTab = "changes" | "log" | "stashes";
 
 const TABS: { id: GitTab; label: string }[] = [
   { id: "changes", label: "Changes" },
   { id: "log", label: "Log" },
   { id: "stashes", label: "Stashes" },
-  { id: "history", label: "History" },
-  { id: "blame", label: "Blame" },
 ];
 
 export interface GitPanelProps {
@@ -27,20 +25,19 @@ export interface GitPanelProps {
 
 export const GitPanel: Component<GitPanelProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<GitTab>("changes");
-  const [historyFile, _setHistoryFile] = createSignal<string | null>(null);
-  const [blameFile, _setBlameFile] = createSignal<string | null>(null);
+  const [selectedFile, setSelectedFile] = createSignal<string | null>(null);
+  const [historyExpanded, setHistoryExpanded] = createSignal(false);
+  const [blameExpanded, setBlameExpanded] = createSignal(false);
 
   function handlePanelKeyDown(e: KeyboardEvent) {
-    // Escape closes the panel
     if (e.key === "Escape") {
       e.preventDefault();
       props.onClose();
       return;
     }
 
-    // Ctrl+1-5 (or Cmd+1-5) switches tabs within the panel
     const mod = e.metaKey || e.ctrlKey;
-    if (mod && e.key >= "1" && e.key <= "5") {
+    if (mod && e.key >= "1" && e.key <= String(TABS.length)) {
       const idx = parseInt(e.key) - 1;
       if (idx < TABS.length) {
         e.preventDefault();
@@ -48,6 +45,12 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
         setActiveTab(TABS[idx].id);
       }
     }
+  }
+
+  /** Split path into basename for compact display */
+  function basename(path: string): string {
+    const i = path.lastIndexOf("/");
+    return i === -1 ? path : path.slice(i + 1);
   }
 
   return (
@@ -73,10 +76,14 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
           &times;
         </button>
       </div>
-      <div class={p.content}>
+      {/* Main tab content */}
+      <div class={s.tabContent}>
         <Switch>
           <Match when={activeTab() === "changes"}>
-            <ChangesTab repoPath={props.visible ? props.repoPath : null} />
+            <ChangesTab
+              repoPath={props.visible ? props.repoPath : null}
+              onFileSelect={setSelectedFile}
+            />
           </Match>
           <Match when={activeTab() === "log"}>
             <LogTab repoPath={props.visible ? props.repoPath : null} />
@@ -84,14 +91,49 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
           <Match when={activeTab() === "stashes"}>
             <StashesTab repoPath={props.visible ? props.repoPath : null} />
           </Match>
-          <Match when={activeTab() === "history"}>
-            <HistoryTab repoPath={props.visible ? props.repoPath : null} filePath={historyFile()} />
-          </Match>
-          <Match when={activeTab() === "blame"}>
-            <BlameTab repoPath={props.visible ? props.repoPath : null} filePath={blameFile()} />
-          </Match>
         </Switch>
       </div>
+      {/* Sub-panels: History & Blame — only visible in Changes tab */}
+      <Show when={activeTab() === "changes"}>
+      <div class={s.subPanels}>
+        <div
+          class={s.subPanelHeader}
+          onClick={() => setHistoryExpanded((v) => !v)}
+        >
+          <span class={cx(s.subChevron, !historyExpanded() && s.subChevronCollapsed)}>&#x25BC;</span>
+          <span class={s.subPanelLabel}>History</span>
+          <Show when={selectedFile()}>
+            <span class={s.subPanelFile}>{basename(selectedFile()!)}</span>
+          </Show>
+        </div>
+        <Show when={historyExpanded()}>
+          <div class={s.subPanelBody}>
+            <HistoryTab
+              repoPath={props.visible ? props.repoPath : null}
+              filePath={selectedFile()}
+            />
+          </div>
+        </Show>
+        <div
+          class={s.subPanelHeader}
+          onClick={() => setBlameExpanded((v) => !v)}
+        >
+          <span class={cx(s.subChevron, !blameExpanded() && s.subChevronCollapsed)}>&#x25BC;</span>
+          <span class={s.subPanelLabel}>Blame</span>
+          <Show when={selectedFile()}>
+            <span class={s.subPanelFile}>{basename(selectedFile()!)}</span>
+          </Show>
+        </div>
+        <Show when={blameExpanded()}>
+          <div class={s.subPanelBody}>
+            <BlameTab
+              repoPath={props.visible ? props.repoPath : null}
+              filePath={selectedFile()}
+            />
+          </div>
+        </Show>
+      </div>
+      </Show>
     </div>
   );
 };
