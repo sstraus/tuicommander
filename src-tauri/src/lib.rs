@@ -228,6 +228,10 @@ fn enumerate_unix_ips(ipv6_enabled: bool) -> Vec<LocalIpEntry> {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     let mut result = Vec::new();
+    // SAFETY: `getifaddrs` writes a valid linked list to `ifap` on success (return 0).
+    // Each node's `ifa_addr` is checked for null before dereferencing. Pointer casts
+    // to `sockaddr_in`/`sockaddr_in6` are valid only after verifying `sa_family`.
+    // `freeifaddrs` is called unconditionally after traversal to free the list.
     unsafe {
         let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
         if libc::getifaddrs(&mut ifap) != 0 {

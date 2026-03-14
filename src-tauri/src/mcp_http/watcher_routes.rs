@@ -68,6 +68,9 @@ pub(super) async fn start_dir_watcher_http(
     State(state): State<Arc<AppState>>,
     Query(q): Query<PathQuery>,
 ) -> impl IntoResponse {
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let app_handle = state.app_handle.read().clone();
     match crate::dir_watcher::start_watching(&q.path, app_handle.as_ref(), &state) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
@@ -80,6 +83,9 @@ pub(super) async fn stop_dir_watcher_http(
     State(state): State<Arc<AppState>>,
     Query(q): Query<PathQuery>,
 ) -> impl IntoResponse {
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     crate::dir_watcher::stop_watching(&q.path, &state);
     (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
 }

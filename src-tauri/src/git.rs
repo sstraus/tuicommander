@@ -258,12 +258,13 @@ pub(crate) fn get_recent_commits(path: String, count: Option<u32>) -> Result<Vec
 
 /// Build the base git diff args for the given scope.
 /// A commit hash compares `<hash>..HEAD`; empty/None compares working tree.
-fn diff_base_args(scope: &Option<String>) -> Vec<String> {
+fn diff_base_args(scope: &Option<String>) -> Result<Vec<String>, String> {
     match scope.as_deref() {
         Some(hash) if !hash.is_empty() => {
-            vec!["diff".into(), format!("{hash}^"), hash.into()]
+            validate_git_hash(hash)?;
+            Ok(vec!["diff".into(), format!("{hash}^"), hash.into()])
         }
-        _ => vec!["diff".into()],
+        _ => Ok(vec!["diff".into()]),
     }
 }
 
@@ -272,7 +273,7 @@ fn diff_base_args(scope: &Option<String>) -> Vec<String> {
 pub(crate) fn get_git_diff(path: String, scope: Option<String>) -> Result<String, String> {
     let repo_path = PathBuf::from(&path);
 
-    let mut args = diff_base_args(&scope);
+    let mut args = diff_base_args(&scope)?;
     args.push("--color=never".into());
 
     let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
@@ -289,7 +290,11 @@ pub(crate) fn get_git_diff(path: String, scope: Option<String>) -> Result<String
 pub(crate) fn get_diff_stats(path: String, scope: Option<String>) -> DiffStats {
     let repo_path = PathBuf::from(&path);
 
-    let mut args = diff_base_args(&scope);
+    let args = match diff_base_args(&scope) {
+        Ok(a) => a,
+        Err(_) => return DiffStats { additions: 0, deletions: 0 },
+    };
+    let mut args = args;
     args.push("--shortstat".into());
 
     let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
@@ -322,7 +327,7 @@ pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<V
     let repo_path = PathBuf::from(&path);
 
     // Get file status (M, A, D, R)
-    let mut status_args = diff_base_args(&scope);
+    let mut status_args = diff_base_args(&scope)?;
     status_args.push("--name-status".into());
 
     let status_args_str: Vec<&str> = status_args.iter().map(|s| s.as_str()).collect();
@@ -332,7 +337,7 @@ pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<V
         .map_err(|e| format!("git diff --name-status failed: {e}"))?;
 
     // Get per-file stats (additions/deletions)
-    let mut stats_args = diff_base_args(&scope);
+    let mut stats_args = diff_base_args(&scope)?;
     stats_args.push("--numstat".into());
 
     let stats_args_str: Vec<&str> = stats_args.iter().map(|s| s.as_str()).collect();
@@ -471,7 +476,7 @@ pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>, u
         }
     }
 
-    let mut args = diff_base_args(&scope);
+    let mut args = diff_base_args(&scope)?;
     args.push("--color=never".into());
     args.push("--".into());
     args.push(file.clone());
@@ -1371,30 +1376,28 @@ fn validate_paths_within_repo(repo_path: &Path, files: &[String]) -> Result<(), 
                 }
             }
             Err(_) => {
-                // File doesn't exist on disk — check for obvious traversal
-                if file.contains("..") {
-                    // Normalize manually: join with repo and check components
-                    let mut components = Vec::new();
-                    for component in full.components() {
-                        match component {
-                            std::path::Component::ParentDir => {
-                                if components.is_empty() {
-                                    return Err(format!("Access denied: path '{}' is outside repository", file));
-                                }
-                                components.pop();
+                // File doesn't exist on disk — normalize manually and verify prefix.
+                // Always check, not only when ".." is present, to catch all traversal vectors.
+                let mut components = Vec::new();
+                for component in full.components() {
+                    match component {
+                        std::path::Component::ParentDir => {
+                            if components.is_empty() {
+                                return Err(format!("Access denied: path '{}' is outside repository", file));
                             }
-                            std::path::Component::Normal(c) => components.push(c.to_os_string()),
-                            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
-                                components.clear();
-                                components.push(component.as_os_str().to_os_string());
-                            }
-                            std::path::Component::CurDir => {}
+                            components.pop();
                         }
+                        std::path::Component::Normal(c) => components.push(c.to_os_string()),
+                        std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                            components.clear();
+                            components.push(component.as_os_str().to_os_string());
+                        }
+                        std::path::Component::CurDir => {}
                     }
-                    let normalized: PathBuf = components.iter().collect();
-                    if !normalized.starts_with(&canonical_repo) {
-                        return Err(format!("Access denied: path '{}' is outside repository", file));
-                    }
+                }
+                let normalized: PathBuf = components.iter().collect();
+                if !normalized.starts_with(&canonical_repo) {
+                    return Err(format!("Access denied: path '{}' is outside repository", file));
                 }
             }
         }

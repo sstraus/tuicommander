@@ -206,9 +206,13 @@ function createRepoSettingsStore() {
         baseBranch: settings.baseBranch ?? local?.base_branch ?? defaults.baseBranch,
         copyIgnoredFiles: settings.copyIgnoredFiles ?? local?.copy_ignored_files ?? defaults.copyIgnoredFiles,
         copyUntrackedFiles: settings.copyUntrackedFiles ?? local?.copy_untracked_files ?? defaults.copyUntrackedFiles,
-        setupScript: settings.setupScript ?? local?.setup_script ?? defaults.setupScript,
-        runScript: settings.runScript ?? local?.run_script ?? defaults.runScript,
-        archiveScript: settings.archiveScript ?? local?.archive_script ?? defaults.archiveScript,
+        // SECURITY: .tuic.json scripts are NOT merged here — a malicious repo could
+        // inject arbitrary shell commands via committed .tuic.json. Scripts must come
+        // from per-repo user settings or global defaults only. A future trust-on-first-use
+        // (TOFU) prompt will re-enable .tuic.json script inheritance.
+        setupScript: settings.setupScript ?? defaults.setupScript,
+        runScript: settings.runScript ?? defaults.runScript,
+        archiveScript: settings.archiveScript ?? defaults.archiveScript,
         terminalMetaHotkeys: settings.terminalMetaHotkeys ?? true,
         worktreeStorage: settings.worktreeStorage ?? local?.worktree_storage ?? defaults.worktreeStorage,
         promptOnCreate: settings.promptOnCreate ?? defaults.promptOnCreate,
