@@ -23,6 +23,9 @@ Rust-side per-session state:
 | `SilenceState.last_output_at` | `pty.rs` | Timestamp of last **real** output (not mode-line ticks) |
 | `SilenceState.last_status_line_at` | `pty.rs` | Timestamp of last spinner/status-line |
 | `SilenceState.pending_question_line` | `pty.rs` | Candidate `?`-ending line for silence detection |
+| `SilenceState.output_chunks_after_question` | `pty.rs` | Staleness counter: real-output chunks since last `?` candidate |
+| `SilenceState.question_already_emitted` | `pty.rs` | Prevents re-emission of the same question |
+| `SilenceState.suppress_echo_until` | `pty.rs` | Deadline to ignore PTY echo of user-typed `?` lines |
 | `active_sub_tasks` | `AppState.session_states` | Sub-agent count per session |
 | `shell_states` | `AppState.shell_states` | `DashMap<String, AtomicU8>`: 0=null, 1=busy, 2=idle. Transitions use `compare_exchange` to prevent duplicate events when reader thread and silence timer race. |
 | `last_output_ms` | `AppState.last_output_ms` | Epoch ms of last **real** output (not chrome-only). Stamped only when `!chrome_only`. |
@@ -94,9 +97,10 @@ PTY chunk arrives in reader thread
     │ Compute chrome_only:        │
     │  = no regex question found  │
     │  AND no ?-ending line       │
-    │  AND all events are         │
-    │    StatusLine or            │
-    │    ActiveSubtasks           │
+    │  AND changed_rows non-empty │
+    │  AND ALL changed rows pass  │
+    │    is_chrome_row() (contain │
+    │    ⏵/›/✻/• markers)        │
     └─────────┬───────────────────┘
               │
          chrome_only?
@@ -237,14 +241,15 @@ debouncedBusy:       │         │            │
 |---------|--------------------|-----------------|-----|
 | StatusLine parsed event | **Yes** | **Yes** | Agent is working again (showing a task) |
 | Progress parsed event | **Yes** | **Yes** | Agent is making progress |
-| UserInput parsed event | **Yes** | **Yes** | User responded to the prompt |
+| User keystroke (`terminal.onData`) | **Yes** | **Yes** | User typed something — prompt answered |
+| shellState idle → busy | **Yes** | No | Agent resumed real output (reliable post-refactor since mode-line ticks no longer cause idle→busy) |
 | Process exit | **Yes** | **Yes** | Session over |
 
 ### What does NOT clear awaitingInput
 
 | Event | Why it doesn't clear |
 |-------|---------------------|
-| shellState idle → busy | **Not a reliable signal.** Mode-line ticks cause false idle→busy transitions that would destroy valid question state. Replaced by the explicit triggers above. |
+| shellState idle → busy | Clears `"question"` but **not** `"error"`. API errors are persistent and need explicit agent activity (status-line) or process exit to clear. |
 | Mode-line tick | Chrome-only output, not agent activity |
 | activeSubTasks change | Sub-agent count changing doesn't mean the main question was answered |
 
