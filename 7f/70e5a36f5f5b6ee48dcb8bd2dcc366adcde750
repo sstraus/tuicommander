@@ -1,0 +1,27 @@
+src/components/Terminal/completionDecision.ts
+  1537c9edddb101a8 1-38
+src/__tests__/components/Terminal-completionDecision.test.ts
+  1537c9edddb101a8 1-126
+src/App.tsx
+  1537c9edddb101a8 30,391,394-404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "7f70e5a36f5f5b6ee48dcb8bd2dcc366adcde750",
+  "prompts": {
+    "1537c9edddb101a8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f7dcc4c-e940-47df-860e-15040b46009a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 364,
+      "total_deletions": 60,
+      "accepted_lines": 361,
+      "overriden_lines": 0
+    }
+  }
+}
