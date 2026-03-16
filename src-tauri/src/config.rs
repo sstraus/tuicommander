@@ -53,13 +53,12 @@ pub(crate) fn config_dir() -> PathBuf {
 
         let source = candidates.into_iter().flatten().find(|d| d.exists());
 
-        if let Some(source) = source {
-            if source != new_dir {
-                if let Err(e) = migrate_config_dir(&source, &new_dir) {
-                    tracing::warn!("Config migration failed: {e}");
-                    return source;
-                }
-            }
+        if let Some(source) = source
+            && source != new_dir
+            && let Err(e) = migrate_config_dir(&source, &new_dir)
+        {
+            tracing::warn!("Config migration failed: {e}");
+            return source;
         }
     }
 

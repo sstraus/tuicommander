@@ -1635,8 +1635,10 @@ branch refs/heads/feat
         };
         let _wt = create_worktree_internal(&worktrees_dir, &config, None)
             .expect("create worktree");
-        // Script creates a marker file; archive should still succeed
-        let result = archive_worktree(repo.path(), "archive-script-test", Some("touch /tmp/tuic-archive-test-marker"));
+        // Script creates a marker file inside the worktree dir; archive should still succeed
+        let marker = worktrees_dir.join("archive-marker.txt");
+        let script = format!("touch {}", marker.display());
+        let result = archive_worktree(repo.path(), "archive-script-test", Some(&script));
         assert!(result.is_ok(), "archive with script should succeed: {:?}", result);
     }
 
