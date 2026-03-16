@@ -1,0 +1,33 @@
+src/components/TerminalArea.tsx
+  9a8f3c337eef2a1f 246
+src/components/PanelOrchestrator.tsx
+  9a8f3c337eef2a1f 12
+src/components/FileBrowserPanel/FileBrowserPanel.tsx
+  9a8f3c337eef2a1f 24
+src/components/CodeEditorPanel/CodeEditorTab.tsx
+  9a8f3c337eef2a1f 3,26,53-55,86-97
+src/App.tsx
+  9a8f3c337eef2a1f 1249-1250,1253
+src/stores/editorTabs.ts
+  9a8f3c337eef2a1f 10,29,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "eb4bbb68bf579243698ab59e463af266ae71624b",
+  "prompts": {
+    "9a8f3c337eef2a1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a744606-e725-498f-a516-9d30a4214da0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 26,
+      "overriden_lines": 0
+    }
+  }
+}
