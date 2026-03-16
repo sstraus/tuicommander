@@ -1,7 +1,11 @@
 import { createSignal, onCleanup } from "solid-js";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { mdTabsStore } from "../stores/mdTabs";
 import { editorTabsStore } from "../stores/editorTabs";
 import { repositoriesStore } from "../stores/repositories";
+import { terminalsStore } from "../stores/terminals";
+import { appLogger } from "../stores/appLogger";
+import { rpc } from "../transport";
 
 /** Markdown extensions (case-insensitive) */
 const MD_EXTENSIONS = new Set([".md", ".mdx"]);
@@ -32,77 +36,55 @@ function resolveRepoPaths(absolutePath: string): [repoPath: string, filePath: st
 }
 
 /**
- * Hook for handling external file drag & drop onto a container element.
- * Returns isDragging signal and a ref callback to attach to the drop zone.
+ * Hook for handling external file drag & drop via Tauri's native API.
+ * Returns isDragging signal for overlay UI.
  */
 export function useFileDrop() {
   const [isDragging, setIsDragging] = createSignal(false);
-  let dragCounter = 0;
-  let containerEl: HTMLElement | null = null;
 
-  const handleDragOver = (e: DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = "copy";
-    }
-  };
+  const setup = getCurrentWebview().onDragDropEvent((event) => {
+    const { type } = event.payload;
 
-  const handleDragEnter = (e: DragEvent) => {
-    e.preventDefault();
-    dragCounter++;
-    if (dragCounter === 1) {
+    if (type === "enter" || type === "over") {
       setIsDragging(true);
-    }
-  };
-
-  const handleDragLeave = (e: DragEvent) => {
-    e.preventDefault();
-    dragCounter--;
-    if (dragCounter === 0) {
+    } else if (type === "leave") {
       setIsDragging(false);
-    }
-  };
+    } else if (type === "drop") {
+      setIsDragging(false);
 
-  const handleDrop = (e: DragEvent) => {
-    e.preventDefault();
-    dragCounter = 0;
-    setIsDragging(false);
+      const paths = event.payload.paths;
+      if (!paths?.length) return;
 
-    const files = e.dataTransfer?.files;
-    if (!files?.length) return;
-
-    const paths = Array.from(files)
-      .map((f) => (f as unknown as { path?: string }).path)
-      .filter((p): p is string => Boolean(p));
-
-    for (const absolutePath of paths) {
-      const [repoPath, filePath] = resolveRepoPaths(absolutePath);
-      const type = classifyDroppedFile(absolutePath);
-
-      if (type === "markdown") {
-        mdTabsStore.add(repoPath, filePath);
-      } else {
-        editorTabsStore.add(repoPath, filePath);
+      // If the active terminal has a PTY session, write paths there
+      // so running processes (Claude Code, etc.) can reference them.
+      const active = terminalsStore.getActive();
+      if (active?.sessionId && terminalsStore.state.activeId) {
+        const joined = paths.join(" ");
+        rpc("write_pty", { sessionId: active.sessionId, data: joined }).catch((err) => {
+          appLogger.error("terminal", "Failed to write dropped file paths", err);
+        });
+        return;
       }
-    }
-  };
 
-  const attachTo = (el: HTMLElement) => {
-    containerEl = el;
-    el.addEventListener("dragover", handleDragOver);
-    el.addEventListener("dragenter", handleDragEnter);
-    el.addEventListener("dragleave", handleDragLeave);
-    el.addEventListener("drop", handleDrop);
-  };
+      // No active PTY — open files in the appropriate tab
+      for (const absolutePath of paths) {
+        const [repoPath, filePath] = resolveRepoPaths(absolutePath);
+        const fileType = classifyDroppedFile(absolutePath);
 
-  onCleanup(() => {
-    if (containerEl) {
-      containerEl.removeEventListener("dragover", handleDragOver);
-      containerEl.removeEventListener("dragenter", handleDragEnter);
-      containerEl.removeEventListener("dragleave", handleDragLeave);
-      containerEl.removeEventListener("drop", handleDrop);
+        if (fileType === "markdown") {
+          mdTabsStore.add(repoPath, filePath);
+        } else {
+          editorTabsStore.add(repoPath, filePath);
+        }
+      }
+
+      appLogger.info("app", `Opened ${paths.length} file(s) via drag & drop`);
     }
   });
 
-  return { isDragging, attachTo };
+  onCleanup(() => {
+    setup.then((unlisten) => unlisten());
+  });
+
+  return { isDragging };
 }

@@ -86,6 +86,16 @@ if (!import.meta.env.DEV) {
   });
 }
 
+// Prevent the webview from navigating to dropped files (causes white screen).
+// Tauri's native drag-drop (dragDropEnabled: true) handles file drops — these
+// handlers are a safety net for non-file drops (text, URLs) and edge cases.
+document.addEventListener("dragover", (e) => {
+  e.preventDefault();
+});
+document.addEventListener("drop", (e) => {
+  e.preventDefault();
+});
+
 // Intercept external link clicks and open them in the system browser.
 // Without this, Tauri shows a scary "WARNING: This link could potentially be
 // dangerous" navigation confirmation dialog.

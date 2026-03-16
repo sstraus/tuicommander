@@ -38,7 +38,7 @@ export interface TerminalAreaProps {
 }
 
 export const TerminalArea: Component<TerminalAreaProps> = (props) => {
-  const { isDragging, attachTo } = useFileDrop();
+  const { isDragging } = useFileDrop();
 
   // When a non-terminal tab becomes active, release focus from xterm's textarea.
   // On macOS WKWebView, wheel events follow focus rather than cursor position,
@@ -58,7 +58,6 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
     <div id="terminal-container">
       <div
         id="terminal-panes"
-        ref={(el) => attachTo(el)}
         classList={{
           "split-vertical": terminalsStore.state.layout.direction === "vertical",
           "split-horizontal": terminalsStore.state.layout.direction === "horizontal",

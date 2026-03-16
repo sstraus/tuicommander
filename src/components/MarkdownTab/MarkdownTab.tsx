@@ -71,7 +71,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const readFileContent = async (repoPath: string | undefined, filePath: string): Promise<string> => {
     return repoPath
       ? await repo.readFile(repoPath, filePath)
-      : await invoke<string>("plugin_read_file", { path: filePath, pluginId: "_system" });
+      : await invoke<string>("read_external_file", { path: filePath });
   };
 
   createEffect(() => {
