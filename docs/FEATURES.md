@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.9.0 | **Last verified:** 2026-03-14
+**Version:** 0.9.0 | **Last verified:** 2026-03-16
 
 ---
 
@@ -100,11 +100,13 @@
 - Enables correct handling of `Shift+Enter` (multi-line input), `Ctrl+Backspace`, and modifier key combinations in agents that request the protocol (e.g. Claude Code)
 
 ### 1.13 File Drag & Drop
-- Drag files from Finder/Explorer onto the terminal area to open them
-- `.md`/`.mdx` files open in Markdown viewer, all other files open in Code Editor (read-only for external files)
-- Multiple files can be dropped at once (last file becomes the active tab)
+- Drag files from Finder/Explorer onto the terminal area or any panel
+- Uses Tauri's native `onDragDropEvent` API (not HTML5 File API — Tauri webviews do not expose file paths via HTML5)
+- **Active PTY session:** dropped file paths are forwarded directly to the terminal as text (enables Claude Code image drops and similar workflows)
+- **No active PTY session:** `.md`/`.mdx` files open in Markdown viewer, all other files open in Code Editor
+- Multiple files can be dropped at once
 - Visual overlay with dashed border appears during drag hover
-- Files inside the active repo open with relative paths; files outside open as standalone tabs
+- Global `dragover`/`drop` `preventDefault` prevents the Tauri webview from treating drops as browser navigation (which would replace the UI with a white screen)
 - macOS file association: `.md`/`.mdx` files registered with TUICommander — double-click in Finder opens them directly
 
 ---
@@ -833,6 +835,7 @@ All data persisted to platform config directory via Rust:
 - Used by Claude Code, Cursor, and other tools via MCP protocol
 - `tuic-bridge` ships as a Tauri sidecar; auto-installs MCP configs on first launch for Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini
 - Local connections use Unix domain socket (`<config_dir>/mcp.sock`) on macOS/Linux or named pipe (`\\.\pipe\tuicommander-mcp`) on Windows; TCP port reserved for remote access only
+- Unix socket lifecycle is crash-safe: RAII guard removes the socket file on `Drop`; bind retries 3× (×100 ms) removing any stale file before each attempt; liveness check uses a real `connect()` probe so a dead socket from a crashed run never blocks MCP tool loading
 
 ### 14.7 macOS Dock Badge
 - Badge count for attention-requiring notifications (questions, errors)
