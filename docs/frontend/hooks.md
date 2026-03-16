@@ -269,6 +269,27 @@ Lazygit integration (inline pane or floating window).
 
 ---
 
+## useFileDrop
+
+**File:** `src/hooks/useFileDrop.ts`
+
+Handles external file drag & drop using Tauri's native `onDragDropEvent` API (not the HTML5 File API, which provides no paths in Tauri webviews).
+
+### Signals
+
+| Signal | Type | Description |
+|--------|------|-------------|
+| `isDragging()` | `boolean` | `true` while files are being dragged over the window |
+
+### Behaviour
+
+1. **Active PTY session** — dropped file paths are written to the terminal as space-separated quoted strings (enables Claude Code image drops)
+2. **No active PTY** — `.md`/`.mdx` files open in the Markdown viewer; all other files open in the Code Editor
+
+A global `dragover`/`drop` `preventDefault` on `document` prevents the Tauri webview from treating drops as browser navigation (which would replace the UI with a white screen).
+
+---
+
 ## useKeyboardRedirect
 
 **File:** `src/hooks/useKeyboardRedirect.ts`

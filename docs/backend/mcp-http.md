@@ -31,6 +31,18 @@ On startup, the server:
 5. Spawns MCP session reaper (evicts stale sessions after 1h TTL)
 6. Spawns upstream health checker for proxied MCP servers
 
+## Unix Socket Lifecycle (macOS/Linux)
+
+The socket at `<config_dir>/mcp.sock` is managed with three safety layers to survive crashes and rapid restarts:
+
+| Layer | Mechanism | Purpose |
+|-------|-----------|---------|
+| **RAII guard** | `SocketGuard(PathBuf)` struct with `impl Drop { remove_file }` | Removes socket when the server task is dropped, even on panic or kill |
+| **Retry bind** | 3 attempts × 100 ms, each removes stale file before trying | A crashed previous run leaves a dead socket file that blocks `bind(2)` — retrying clears it |
+| **Real liveness check** | `UnixStream::connect()` in `get_mcp_status` | `file.exists()` returns `true` for stale sockets; only a real connect reveals whether the server is alive |
+
+**Why this matters for AI tool integrations:** The `tuic-bridge` sidecar connects via the Unix socket to expose TUICommander tools to Claude Code. If the socket is stale (app crashed, Tauri force-quit), the bridge cannot connect and returns `tools: []`, silently disabling all MCP tools in the agent session. The retry bind ensures the socket is always valid on restart; the real liveness check ensures the UI accurately reports the server state.
+
 ## REST API Endpoints
 
 ### Session Management
