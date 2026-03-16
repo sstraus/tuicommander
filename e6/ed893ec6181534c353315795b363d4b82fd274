@@ -1,0 +1,39 @@
+src/keybindingDefaults.ts
+  9a8f3c337eef2a1f 45,100
+docs/api/tauri-commands.md
+  9a8f3c337eef2a1f 256
+SPEC.md
+  9a8f3c337eef2a1f 286
+src/data/tips.ts
+  9a8f3c337eef2a1f 48-51
+to-test.md
+  9a8f3c337eef2a1f 313-326
+docs/api/http-api.md
+  9a8f3c337eef2a1f 589
+src/actions/actionRegistry.ts
+  9a8f3c337eef2a1f 49
+docs/FEATURES.md
+  9a8f3c337eef2a1f 201-209,907
+CHANGELOG.md
+  9a8f3c337eef2a1f 9-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "e6ed893ec6181534c353315795b363d4b82fd274",
+  "prompts": {
+    "9a8f3c337eef2a1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a744606-e725-498f-a516-9d30a4214da0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 38,
+      "total_deletions": 1,
+      "accepted_lines": 38,
+      "overriden_lines": 0
+    }
+  }
+}
