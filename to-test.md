@@ -310,6 +310,20 @@ Features to test when TUICommander is more usable.
 - [ ] Suspect: race between `localBranchNames()` update and GitHub poll — if branch names briefly match, PR is excluded from remote-only filter
 - [ ] To diagnose: check `githubStore.state.repos[path]` in console when badge is missing
 
+## File Browser Content Search (807-e295)
+- [ ] `Cmd+Shift+F` opens file browser panel with content search mode active
+- [ ] `C` button in search bar toggles between filename search and content search
+- [ ] Results stream in progressively, grouped by file with match count
+- [ ] Each result row shows file path, line number, and highlighted match context
+- [ ] Click a result opens the file in code editor at the matched line
+- [ ] Case-sensitive toggle works (uppercase vs lowercase match)
+- [ ] Regex toggle works (e.g. `foo.*bar`)
+- [ ] Whole-word toggle works (e.g. `foo` does not match `foobar`)
+- [ ] Binary files are silently skipped (no error, not shown in results)
+- [ ] Files larger than 1 MB are silently skipped
+- [ ] Starting a new search cancels any in-progress search
+- [ ] Empty query shows no results (no crash)
+
 ## PWA / Mobile Output View
 - [ ] Normal text wraps on narrow screens (no horizontal scroll)
 - [ ] Box-drawing table output preserves alignment (│ ┌ ─ etc.)

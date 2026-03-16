@@ -45,6 +45,11 @@ export const TIPS: Tip[] = [
     shortcut: `${mod}+E`,
   },
   {
+    feature: "File Content Search",
+    description: "Press C in the file browser search bar to switch to content search — searches inside files with regex, case-sensitive, and whole-word options.",
+    shortcut: `${mod}+Shift+F`,
+  },
+  {
     feature: "Prompt Library",
     description: "Reusable prompt templates — paste them into any agent session.",
     shortcut: `${mod}+L`,

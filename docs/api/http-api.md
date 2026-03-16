@@ -586,6 +586,7 @@ Returns dynamic server instructions for the MCP bridge binary as `{"instructions
 ```
 GET  /fs/list?repoPath=/path/to/repo&subdir=src
 GET  /fs/search?repoPath=/path/to/repo&query=main&limit=50
+GET  /fs/search-content?repoPath=/path/to/repo&query=foo&caseSensitive=false&useRegex=false&wholeWord=false&limit=200
 GET  /fs/read?repoPath=/path/to/repo&file=src/main.rs
 GET  /fs/read-external?path=/absolute/path/to/file
 POST /fs/write         { "repoPath": "...", "file": "...", "content": "..." }

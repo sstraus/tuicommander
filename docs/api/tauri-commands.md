@@ -253,6 +253,7 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `copy_path` | `src, dest` | `()` | Copy file or directory |
 | `add_to_gitignore` | `path, pattern` | `()` | Add pattern to .gitignore |
 | `search_files` | `path, query` | `Vec<SearchResult>` | Search files by name in directory |
+| `search_content` | `repoPath, query, caseSensitive?, useRegex?, wholeWord?, limit?` | `()` | Full-text content search; streams results progressively via `content-search-batch` events. Binary files and files >1 MB are skipped. Supports cancellation. |
 
 ## Plugin Management (`plugins.rs`)
 

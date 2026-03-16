@@ -46,6 +46,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "toggle-notes": { label: "Toggle ideas panel", category: "Panels" },
   "toggle-help": { label: "Toggle help panel", category: "Panels" },
   "toggle-file-browser": { label: "Toggle file browser", category: "Panels" },
+  "toggle-file-browser-content-search": { label: "Search file contents", category: "File Browser" },
   "toggle-plan": { label: "Toggle plan panel", category: "Panels" },
 
   "open-lazygit": { label: "Open lazygit", category: "Git" },

@@ -283,7 +283,7 @@ All stores persist to localStorage:
 - [x] Repo watcher for automatic panel refresh on `.git/` changes
 - [x] Git Panel (3 tabs: Changes with History/Blame sub-panels, Log with canvas commit graph, Stashes) — replaces Git Operations Panel and DiffPanel
 - [x] Context menu submenus and "New Group..." via PromptDialog
-- [x] File Browser panel (`Cmd+E`)
+- [x] File Browser panel (`Cmd+E`) with content search (`Cmd+Shift+F`, case/regex/whole-word, streaming results)
 - [x] CodeMirror code editor
 - [x] Find in terminal (`Cmd+F`)
 - [x] Configurable keybindings system

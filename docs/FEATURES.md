@@ -198,6 +198,15 @@ Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens t
 - Sort dropdown: Name (alphabetical, directories first) or Date (newest first, directories first)
 - Click file to open in code editor tab
 
+#### 3.4.1 Content Search (`Cmd+Shift+F`)
+- Full-text search across file contents — toggle from filename search via the `C` button in the search bar
+- Options: case-sensitive, regex, whole-word
+- Results stream progressively and are grouped by file with match count per file
+- Each result row shows file path, line number, and highlighted match context
+- Click a result to open the file in the code editor at the matched line
+- Binary files and files larger than 1 MB are automatically skipped
+- Backed by `search_content` Tauri command; results delivered via `content-search-batch` events
+
 ### 3.5 Code Editor (CodeMirror 6)
 - Opens in main tab area when clicking a file in file browser
 - Syntax highlighting auto-detected from extension (disabled for files > 500 KB)
@@ -895,6 +904,7 @@ All data persisted to platform config directory via Rust:
 | `Cmd+C` | Copy file |
 | `Cmd+X` | Cut file |
 | `Cmd+V` | Paste file |
+| `Cmd+Shift+F` | Open file browser and activate content search |
 
 ### Code Editor (when focused)
 | Shortcut | Action |
