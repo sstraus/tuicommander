@@ -370,7 +370,7 @@ describe("useGitOperations", () => {
       await gitOps.handleRemoveBranch("/repo", "feature");
 
       expect(mockDialogs.confirmRemoveWorktree).toHaveBeenCalledWith("feature");
-      expect(mockRepo.removeWorktree).toHaveBeenCalledWith("/repo", "feature", true, undefined);
+      expect(mockRepo.removeWorktree).toHaveBeenCalledWith("/repo", "feature", true);
       expect(repositoriesStore.get("/repo")?.branches["feature"]).toBeUndefined();
     });
 
@@ -383,7 +383,7 @@ describe("useGitOperations", () => {
 
       await gitOps.handleRemoveBranch("/repo", "feature");
 
-      expect(mockRepo.removeWorktree).toHaveBeenCalledWith("/repo", "feature", false, undefined);
+      expect(mockRepo.removeWorktree).toHaveBeenCalledWith("/repo", "feature", false);
     });
 
     it("rejects removal of non-worktree branch", async () => {
@@ -617,7 +617,7 @@ describe("useGitOperations", () => {
 
       expect(mockRepo.mergePrViaGithub).toHaveBeenCalledWith("/repo", 99, "squash");
       expect(mockRepo.mergeAndArchiveWorktree).not.toHaveBeenCalled();
-      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/x", "archive", undefined);
+      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/x", "archive");
     });
 
     it("falls back to local git merge when GitHub API fails", async () => {
@@ -627,7 +627,7 @@ describe("useGitOperations", () => {
       await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "archive");
 
       expect(mockRepo.mergePrViaGithub).toHaveBeenCalled();
-      expect(mockRepo.mergeAndArchiveWorktree).toHaveBeenCalledWith("/repo", "feature/x", "main", "archive", undefined);
+      expect(mockRepo.mergeAndArchiveWorktree).toHaveBeenCalledWith("/repo", "feature/x", "main", "archive");
     });
 
     it("sets mergePendingCtx when afterMerge=ask with GitHub PR merge", async () => {
@@ -924,7 +924,7 @@ describe("useGitOperations", () => {
 
       await gitOps.refreshAllBranchStats();
 
-      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "merged-branch", "archive", undefined);
+      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "merged-branch", "archive");
       expect(archiveCalledBeforeDiffStats).toBe(true);
     });
   });
@@ -1342,7 +1342,7 @@ describe("useGitOperations", () => {
       const ids = terminalsStore.getIds();
       terminalsStore.update(ids[ids.length - 1], { sessionId: "sess-run" });
 
-      await vi.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(500);
 
       expect(mockPty.write).toHaveBeenCalledWith("sess-run", "npm test\n");
       vi.useRealTimers();
@@ -1805,7 +1805,7 @@ describe("useGitOperations", () => {
 
       await gitOps.refreshAllBranchStats();
 
-      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/x", "archive", undefined);
+      expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/x", "archive");
       expect(mockSetStatusInfo).toHaveBeenCalledWith("Auto-archived 1 merged worktree(s)");
     });
 
@@ -1849,7 +1849,7 @@ describe("useGitOperations", () => {
       const ids = terminalsStore.getIds();
       terminalsStore.update(ids[ids.length - 1], { sessionId: "sess-fail" });
 
-      await vi.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(500);
 
       expect(errSpy).toHaveBeenCalledWith("[terminal]", "Failed to send run command", expect.any(Error));
       errSpy.mockRestore();

@@ -337,6 +337,7 @@ pub async fn search_files(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn search_content(
     app: tauri::AppHandle,
     state: tauri::State<'_, ContentSearchCancel>,

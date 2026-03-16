@@ -242,9 +242,11 @@ describe("repoSettingsStore", () => {
 
         const effective = store.getEffective("/repo");
         expect(effective).toBeDefined();
-        // .tuic.json overrides global default
+        // .tuic.json overrides global default for non-script fields
         expect(effective!.baseBranch).toBe("develop");
-        expect(effective!.setupScript).toBe("make setup");
+        // SECURITY: script fields from .tuic.json are intentionally NOT merged
+        // (a malicious repo could inject shell commands via committed .tuic.json)
+        expect(effective!.setupScript).toBe(""); // from global default, NOT .tuic.json
         // Global default still applies for fields not in .tuic.json
         expect(effective!.runScript).toBe(""); // from global default
         dispose();
@@ -268,8 +270,8 @@ describe("repoSettingsStore", () => {
         expect(effective).toBeDefined();
         // per-repo overrides .tuic.json
         expect(effective!.baseBranch).toBe("main");
-        // .tuic.json still wins over global for non-overridden fields
-        expect(effective!.setupScript).toBe("make setup");
+        // SECURITY: script fields from .tuic.json are NOT merged — falls back to global default
+        expect(effective!.setupScript).toBe(""); // from global default, NOT .tuic.json
         dispose();
       });
     });

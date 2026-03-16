@@ -89,7 +89,7 @@ describe("useAutoFetch", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
       path: "/repo1",
-      args: ["fetch", "--all"],
+      args: ["-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=15", "fetch", "--all"],
     });
   });
 
@@ -134,7 +134,7 @@ describe("useAutoFetch", () => {
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
     expect(mockInvoke).toHaveBeenCalledWith("run_git_command", {
       path: "/repo1",
-      args: ["fetch", "--all"],
+      args: ["-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=15", "fetch", "--all"],
     });
   });
 

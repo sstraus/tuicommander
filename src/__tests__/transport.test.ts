@@ -415,7 +415,7 @@ describe("transport", () => {
       const origWs = globalThis.WebSocket;
       globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
 
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
       const onExit = vi.fn();
 
       const subscribePromise = subscribePty("sess-1", vi.fn(), onExit);
@@ -424,10 +424,10 @@ describe("transport", () => {
 
       // Abnormal close
       wsInstance!.onclose!({ wasClean: false, code: 1006, reason: "" });
-      expect(warnSpy).toHaveBeenCalledWith("[network]", expect.stringContaining("abnormally"), "");
+      expect(debugSpy).toHaveBeenCalledWith("[network]", expect.stringContaining("abnormally"), expect.anything());
       expect(onExit).toHaveBeenCalled();
 
-      warnSpy.mockRestore();
+      debugSpy.mockRestore();
       globalThis.WebSocket = origWs;
     });
   });

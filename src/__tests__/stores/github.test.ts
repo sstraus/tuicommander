@@ -586,13 +586,11 @@ describe("githubStore", () => {
       });
     });
 
-    it("falls back to per-repo calls when batch fails", async () => {
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    it("skips per-repo fallback and applies backoff when batch fails", async () => {
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       mockInvoke.mockImplementation((cmd: string) => {
         if (cmd === "check_github_circuit") return Promise.resolve(true);
         if (cmd === "get_all_pr_statuses") return Promise.reject(new Error("batch failed"));
-        if (cmd === "get_repo_pr_statuses") return Promise.reject(new Error("network error"));
         return Promise.resolve(null);
       });
 
@@ -600,15 +598,14 @@ describe("githubStore", () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
-        // Fallback per-repo call should have been made (includeMerged=true on startup poll)
-        expect(mockInvoke).toHaveBeenCalledWith("get_repo_pr_statuses", { path: "/repo1", includeMerged: true });
-        // Per-repo failure should be logged as error
-        expect(consoleSpy).toHaveBeenCalledWith(
+        // Batch error triggers early return with backoff — no per-repo fallback
+        expect(mockInvoke).not.toHaveBeenCalledWith("get_repo_pr_statuses", expect.anything());
+        // Backoff warning should be logged
+        expect(warnSpy).toHaveBeenCalledWith(
           "[github]",
-          expect.stringContaining("Failed to poll PR statuses"),
-          expect.any(Error),
+          expect.stringContaining("Batch PR poll failed"),
+          expect.anything(),
         );
-        consoleSpy.mockRestore();
         warnSpy.mockRestore();
         store.stopPolling();
         dispose();
@@ -734,34 +731,36 @@ describe("githubStore", () => {
       });
     });
 
-    it("continues polling at base interval even when errors occur", async () => {
-      // Errors are caught inside pollAll() — they do NOT trigger backoff.
-      mockInvoke.mockRejectedValue(new Error("network error"));
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    it("applies exponential backoff when batch errors occur", async () => {
+      // Batch errors trigger backoff: 30s, 60s, 120s, ...
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "check_github_circuit") return Promise.resolve(true);
+        if (cmd === "get_all_pr_statuses") return Promise.reject(new Error("network error"));
+        return Promise.resolve(null);
+      });
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-      // BASE = 30s — should stay at this interval regardless of errors
       await createRoot(async (dispose) => {
         store.startPolling();
 
-        // Count calls to polling commands (batch attempt + fallback + remote status)
-        const pollCmds = ["get_all_pr_statuses", "get_repo_pr_statuses", "get_github_status"];
-        const pollCallCount = () =>
-          mockInvoke.mock.calls.filter((c: unknown[]) => pollCmds.includes(c[0] as string)).length;
+        const batchCallCount = () =>
+          mockInvoke.mock.calls.filter((c: unknown[]) => c[0] === "get_all_pr_statuses").length;
 
         await vi.advanceTimersByTimeAsync(0);
-        const after0 = pollCallCount();
+        const after0 = batchCallCount(); // 1st poll (immediate)
 
+        // 1st failure → backoff = 30s (BASE_INTERVAL * 2^0)
         await vi.advanceTimersByTimeAsync(30_000);
-        const after30 = pollCallCount();
+        const after30 = batchCallCount(); // 2nd poll at t=30s
 
+        // 2nd failure → backoff = 60s (BASE_INTERVAL * 2^1)
+        // At t=60s the 3rd poll hasn't fired yet (next at t=90s)
         await vi.advanceTimersByTimeAsync(30_000);
-        const after60 = pollCallCount();
+        const after60 = batchCallCount();
 
-        // Each poll interval adds the same number of calls (constant interval = no backoff).
-        expect(after30 - after0).toBe(after60 - after30);
+        // Backoff means fewer polls in the second 30s window
+        expect(after30 - after0).toBeGreaterThan(after60 - after30);
 
-        consoleSpy.mockRestore();
         warnSpy.mockRestore();
         store.stopPolling();
         dispose();

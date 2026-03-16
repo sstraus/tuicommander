@@ -14,6 +14,10 @@ vi.mock("@tauri-apps/plugin-process", () => ({
   relaunch: mockRelaunch,
 }));
 
+vi.mock("@tauri-apps/api/app", () => ({
+  getVersion: vi.fn().mockResolvedValue("0.0.1"),
+}));
+
 vi.mock("../../transport", () => ({
   isTauri: () => true,
   rpc: mockRpc,
@@ -38,6 +42,7 @@ describe("updaterStore", () => {
 
     vi.doMock("@tauri-apps/plugin-updater", () => ({ check: mockCheck }));
     vi.doMock("@tauri-apps/plugin-process", () => ({ relaunch: mockRelaunch }));
+    vi.doMock("@tauri-apps/api/app", () => ({ getVersion: vi.fn().mockResolvedValue("0.0.1") }));
     vi.doMock("../../transport", () => ({ isTauri: () => true, rpc: mockRpc }));
     vi.doMock("../../stores/settings", () => ({
       settingsStore: { state: mockSettingsState },

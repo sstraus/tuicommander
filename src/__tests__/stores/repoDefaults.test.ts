@@ -142,6 +142,7 @@ describe("repoDefaultsStore", () => {
             copy_untracked_files: false,
             setup_script: "",
             run_script: "",
+            archive_script: "",
             worktree_storage: "sibling",
             prompt_on_create: true,
             delete_branch_on_remove: true,
