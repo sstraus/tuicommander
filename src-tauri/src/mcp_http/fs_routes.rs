@@ -22,6 +22,21 @@ pub(super) async fn search_files_http(Query(q): Query<FsSearchQuery>) -> Respons
     }
 }
 
+pub(super) async fn search_content_http(Query(q): Query<FsSearchContentQuery>) -> Response {
+    if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
+    match crate::fs::search_content_impl(
+        q.repo_path,
+        q.query,
+        q.case_sensitive.unwrap_or(false),
+        q.use_regex.unwrap_or(false),
+        q.whole_word.unwrap_or(false),
+        q.limit,
+    ) {
+        Ok(result) => (StatusCode::OK, Json(serde_json::json!(result))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+    }
+}
+
 pub(super) async fn fs_read_file_http(Query(q): Query<FsFileQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
     match crate::fs::fs_read_file(q.repo_path, q.file) {

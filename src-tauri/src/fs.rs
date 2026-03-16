@@ -1,5 +1,8 @@
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::Emitter;
 
 /// A directory entry returned by `list_directory`.
 #[derive(Debug, Clone, Serialize)]
@@ -41,6 +44,19 @@ pub struct ContentSearchResult {
     /// `true` when the global match limit was reached.
     pub truncated: bool,
 }
+
+/// Streamed batch payload emitted via the `content-search-batch` event.
+#[derive(Debug, Clone, Serialize)]
+pub struct ContentSearchBatch {
+    pub matches: Vec<ContentMatch>,
+    pub is_final: bool,
+    pub files_searched: u32,
+    pub files_skipped: u32,
+    pub truncated: bool,
+}
+
+/// Managed state for cancelling in-flight content searches.
+pub struct ContentSearchCancel(pub Mutex<Option<Arc<AtomicBool>>>);
 
 /// Validate that a resolved path is within the repo root.
 /// Returns the canonical repo path and the canonical target path.
@@ -318,6 +334,80 @@ pub async fn search_files(
     limit: Option<usize>,
 ) -> Result<Vec<DirEntry>, String> {
     search_files_impl(repo_path, query, limit)
+}
+
+#[tauri::command]
+pub async fn search_content(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ContentSearchCancel>,
+    repo_path: String,
+    query: String,
+    case_sensitive: Option<bool>,
+    use_regex: Option<bool>,
+    whole_word: Option<bool>,
+    limit: Option<usize>,
+) -> Result<(), String> {
+    // Cancel any previous search
+    let cancel_token = Arc::new(AtomicBool::new(false));
+    {
+        let mut prev = state.0.lock().map_err(|e| e.to_string())?;
+        if let Some(old) = prev.take() {
+            old.store(true, Ordering::Relaxed);
+        }
+        *prev = Some(cancel_token.clone());
+    }
+
+    let case_sensitive = case_sensitive.unwrap_or(false);
+    let use_regex = use_regex.unwrap_or(false);
+    let whole_word = whole_word.unwrap_or(false);
+
+    // Run search in blocking thread
+    tauri::async_runtime::spawn_blocking(move || {
+        match search_content_impl(repo_path, query, case_sensitive, use_regex, whole_word, limit) {
+            Ok(result) => {
+                // Check cancellation
+                if cancel_token.load(Ordering::Relaxed) { return; }
+
+                // Emit results in batches of 50
+                let batch_size = 50;
+                let total_matches = result.matches.len();
+                let mut sent = 0;
+
+                for chunk in result.matches.chunks(batch_size) {
+                    if cancel_token.load(Ordering::Relaxed) { return; }
+
+                    sent += chunk.len();
+                    let is_final = sent >= total_matches;
+
+                    let batch = ContentSearchBatch {
+                        matches: chunk.to_vec(),
+                        is_final,
+                        files_searched: result.files_searched,
+                        files_skipped: result.files_skipped,
+                        truncated: result.truncated,
+                    };
+                    let _ = app.emit("content-search-batch", &batch);
+                }
+
+                // If no matches at all, still emit a final empty batch
+                if total_matches == 0 {
+                    let batch = ContentSearchBatch {
+                        matches: Vec::new(),
+                        is_final: true,
+                        files_searched: result.files_searched,
+                        files_skipped: result.files_skipped,
+                        truncated: result.truncated,
+                    };
+                    let _ = app.emit("content-search-batch", &batch);
+                }
+            }
+            Err(e) => {
+                let _ = app.emit("content-search-error", &e);
+            }
+        }
+    });
+
+    Ok(())
 }
 
 pub(crate) fn search_files_impl(

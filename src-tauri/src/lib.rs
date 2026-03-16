@@ -698,6 +698,7 @@ pub fn run() {
                 .build(),
         )
         .manage(state)
+        .manage(crate::fs::ContentSearchCancel(std::sync::Mutex::new(None)))
         .manage(dictation::DictationState::new())
         .manage(sleep_prevention::SleepBlocker::new())
         .plugin(tauri_plugin_deep_link::init());
@@ -905,6 +906,7 @@ pub fn run() {
             fs::resolve_terminal_path,
             fs::list_directory,
             fs::search_files,
+            fs::search_content,
             fs::fs_read_file,
             fs::write_file,
             fs::create_directory,

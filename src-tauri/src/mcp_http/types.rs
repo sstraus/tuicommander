@@ -191,6 +191,20 @@ pub(super) struct FsSearchQuery {
 }
 
 #[derive(Deserialize)]
+pub(super) struct FsSearchContentQuery {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    pub query: String,
+    #[serde(rename = "caseSensitive")]
+    pub case_sensitive: Option<bool>,
+    #[serde(rename = "useRegex")]
+    pub use_regex: Option<bool>,
+    #[serde(rename = "wholeWord")]
+    pub whole_word: Option<bool>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
 pub(super) struct FsExternalFileQuery {
     pub path: String,
 }
