@@ -1,0 +1,39 @@
+src-tauri/src/worktree.rs
+  95a5af8cba08c14a 963-968,996-1001
+src-tauri/src/plugin_exec.rs
+  95a5af8cba08c14a 216
+src-tauri/src/github.rs
+  95a5af8cba08c14a 17-20
+src-tauri/src/mcp_proxy/stdio_client.rs
+  95a5af8cba08c14a 101-110,146-168
+src-tauri/src/agent.rs
+  95a5af8cba08c14a 340-343,450-453,484-487,496-499
+src-tauri/src/git_cli.rs
+  95a5af8cba08c14a 146
+CHANGELOG.md
+  95a5af8cba08c14a 9-11
+src-tauri/src/lib.rs
+  95a5af8cba08c14a 688-693
+src-tauri/src/cli.rs
+  95a5af8cba08c14a 107-119,127-130,191-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "52716e27092cc4a63f22aae7d0765193392c995f",
+  "prompts": {
+    "95a5af8cba08c14a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6d72c3d7-447a-44d3-ab0c-8025b5d04ba3",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 103,
+      "total_deletions": 28,
+      "accepted_lines": 100,
+      "overriden_lines": 0
+    }
+  }
+}
