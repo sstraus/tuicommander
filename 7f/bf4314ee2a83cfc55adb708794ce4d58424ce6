@@ -1,0 +1,27 @@
+src-tauri/src/worktree.rs
+  95a5af8cba08c14a 1638-1641
+src-tauri/src/config.rs
+  95a5af8cba08c14a 57-58,61
+src-tauri/src/mcp_http/mcp_transport.rs
+  95a5af8cba08c14a 1198-1203,1222-1228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "7fbf4314ee2a83cfc55adb708794ce4d58424ce6",
+  "prompts": {
+    "95a5af8cba08c14a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6d72c3d7-447a-44d3-ab0c-8025b5d04ba3",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 23,
+      "total_deletions": 9,
+      "accepted_lines": 20,
+      "overriden_lines": 0
+    }
+  }
+}
