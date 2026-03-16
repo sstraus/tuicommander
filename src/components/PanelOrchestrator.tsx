@@ -9,7 +9,7 @@ import { terminalsStore } from "../stores/terminals";
 
 export interface PanelOrchestratorProps {
   repoPath: string | null;
-  onFileOpen: (repoPath: string, filePath: string) => void;
+  onFileOpen: (repoPath: string, filePath: string, line?: number) => void;
 }
 
 export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {

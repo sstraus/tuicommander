@@ -243,6 +243,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                     id={id}
                     repoPath={editTab.repoPath}
                     filePath={editTab.filePath}
+                    initialLine={editTab.initialLine}
                     onClose={() => props.onCloseTab(id)}
                   />
                 )}

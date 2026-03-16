@@ -1246,11 +1246,11 @@ const App: Component = () => {
           {/* Side panels (right panes inside #terminal-container) */}
           <PanelOrchestrator
             repoPath={gitOps.currentRepoPath() || null}
-            onFileOpen={(repoPath, filePath) => {
-              if (filePath.endsWith(".md") || filePath.endsWith(".mdx")) {
+            onFileOpen={(repoPath, filePath, line) => {
+              if ((filePath.endsWith(".md") || filePath.endsWith(".mdx")) && line === undefined) {
                 mdTabsStore.add(repoPath, filePath);
               } else {
-                const tabId = editorTabsStore.add(repoPath, filePath);
+                const tabId = editorTabsStore.add(repoPath, filePath, line);
                 terminalLifecycle.handleTerminalSelect(tabId);
               }
             }}

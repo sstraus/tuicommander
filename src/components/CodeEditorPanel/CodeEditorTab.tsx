@@ -1,6 +1,6 @@
 import { Component, Show, createEffect, createSignal, on, onCleanup } from "solid-js";
 import { createCodeMirror, createEditorControlledValue, createEditorReadonly } from "solid-codemirror";
-import { lineNumbers, drawSelection, highlightActiveLine, highlightActiveLineGutter, keymap } from "@codemirror/view";
+import { EditorView, lineNumbers, drawSelection, highlightActiveLine, highlightActiveLineGutter, keymap } from "@codemirror/view";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, indentOnInput } from "@codemirror/language";
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
@@ -23,6 +23,7 @@ export interface CodeEditorTabProps {
   id: string;
   repoPath: string;
   filePath: string;
+  initialLine?: number; // Line to scroll to on first mount (1-based)
   onClose?: () => void;
 }
 
@@ -48,6 +49,9 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
   /** True when the file path is absolute (outside the repository) */
   const isExternal = () => props.filePath.startsWith("/");
+
+  /** Guard: scroll to initialLine only once on first file load */
+  let didScrollToInitialLine = false;
 
   /** Read file content — uses the right command depending on internal vs external */
   const readContent = async (): Promise<string> => {
@@ -79,6 +83,18 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
           setCode(content);
           setSavedContent(content);
           setDirty(false);
+
+          // Scroll to initialLine on the very first load only
+          if (props.initialLine !== undefined && !didScrollToInitialLine) {
+            didScrollToInitialLine = true;
+            const targetLine = props.initialLine;
+            requestAnimationFrame(() => {
+              const view = editorView();
+              if (!view) return;
+              const line = view.state.doc.line(Math.max(1, Math.min(targetLine, view.state.doc.lines)));
+              view.dispatch({ effects: EditorView.scrollIntoView(line.from, { y: "center" }) });
+            });
+          }
         } catch (err) {
           setError(String(err));
           currentCode = "";

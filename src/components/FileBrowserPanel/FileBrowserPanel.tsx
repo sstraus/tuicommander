@@ -21,7 +21,7 @@ export interface FileBrowserPanelProps {
   visible: boolean;
   repoPath: string | null;
   onClose: () => void;
-  onFileOpen: (repoPath: string, filePath: string) => void;
+  onFileOpen: (repoPath: string, filePath: string, line?: number) => void;
 }
 
 /** Format file size for display */
