@@ -14,10 +14,10 @@ use crate::state::{AppState, GIT_CACHE_TTL, GITHUB_CACHE_TTL};
 /// This works even when env vars are empty/unset, because gh reads from the
 /// system keychain on macOS or credential store on other platforms.
 fn token_from_gh_cli() -> Option<String> {
-    let output = Command::new(crate::agent::resolve_cli("gh"))
-        .args(["auth", "token"])
-        .output()
-        .ok()?;
+    let mut cmd = Command::new(crate::agent::resolve_cli("gh"));
+    cmd.args(["auth", "token"]);
+    crate::cli::apply_no_window(&mut cmd);
+    let output = cmd.output().ok()?;
     if !output.status.success() {
         return None;
     }

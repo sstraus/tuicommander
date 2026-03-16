@@ -960,11 +960,12 @@ fn run_script_in_dir(script: &str, cwd: &Path) -> Result<(), String> {
         ("sh", "-c")
     };
 
-    let output = std::process::Command::new(shell)
-        .arg(flag)
-        .arg(script)
-        .current_dir(cwd)
-        .output()
+    // TODO: add a timeout — a hung script with CREATE_NO_WINDOW has no visible
+    // window, so users can't see or interrupt it (issue #7 follow-up).
+    let mut cmd = std::process::Command::new(shell);
+    cmd.arg(flag).arg(script).current_dir(cwd);
+    crate::cli::apply_no_window(&mut cmd);
+    let output = cmd.output()
         .map_err(|e| format!("Failed to execute script: {e}"))?;
 
     let exit_code = output.status.code().unwrap_or(-1);
@@ -992,11 +993,12 @@ pub(crate) fn run_setup_script(script: String, cwd: String) -> Result<serde_json
         ("sh", "-c")
     };
 
-    let output = std::process::Command::new(shell)
-        .arg(flag)
-        .arg(&script)
-        .current_dir(cwd_path)
-        .output()
+    // TODO: add a timeout — a hung script with CREATE_NO_WINDOW has no visible
+    // window, so users can't see or interrupt it (issue #7 follow-up).
+    let mut cmd = std::process::Command::new(shell);
+    cmd.arg(flag).arg(&script).current_dir(cwd_path);
+    crate::cli::apply_no_window(&mut cmd);
+    let output = cmd.output()
         .map_err(|e| format!("Failed to execute script: {e}"))?;
 
     Ok(serde_json::json!({

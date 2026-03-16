@@ -98,8 +98,16 @@ impl StdioMcpClient {
         let mut cmd = std::process::Command::new(&self.config.command);
         cmd.args(&self.config.args)
             .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::inherit());
+            .stdout(std::process::Stdio::piped());
+
+        // On Windows, CREATE_NO_WINDOW suppresses the console so Stdio::inherit()
+        // for stderr would go to a null handle. Pipe it and log instead.
+        #[cfg(target_os = "windows")]
+        cmd.stderr(std::process::Stdio::piped());
+        #[cfg(not(target_os = "windows"))]
+        cmd.stderr(std::process::Stdio::inherit());
+
+        crate::cli::apply_no_window(&mut cmd);
 
         cmd.env_clear();
 
@@ -134,6 +142,29 @@ impl StdioMcpClient {
             .stdin
             .take()
             .ok_or_else(|| format!("Upstream '{}': failed to get stdin", self.config.name))?;
+
+        // On Windows, forward the piped stderr to tracing so MCP server errors
+        // aren't silently lost (CREATE_NO_WINDOW means no console to inherit).
+        #[cfg(target_os = "windows")]
+        if let Some(stderr) = child.stderr.take() {
+            let upstream_name = self.config.name.clone();
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines() {
+                    match line {
+                        Ok(l) if !l.is_empty() => {
+                            tracing::warn!(
+                                source = "mcp_proxy",
+                                upstream = %upstream_name,
+                                "stderr: {l}"
+                            );
+                        }
+                        Err(_) => break,
+                        _ => {}
+                    }
+                }
+            });
+        }
 
         self.stdout_reader = Some(BufReader::new(stdout));
         self.stdin = Some(stdin);

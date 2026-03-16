@@ -213,6 +213,7 @@ async fn plugin_exec_cli_inner(
     // Capture stdout and stderr
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
+    crate::cli::apply_no_window(&mut cmd);
 
     // Audit log: record invocation before execution
     let start = Instant::now();

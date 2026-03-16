@@ -337,7 +337,10 @@ pub(crate) fn detect_agent_binary(binary: String) -> AgentBinaryDetection {
 
     // Use platform-appropriate PATH lookup (which on Unix, where on Windows)
     let checker = if cfg!(target_os = "windows") { "where" } else { "which" };
-    if let Ok(output) = Command::new(checker).arg(&binary).output()
+    let mut checker_cmd = Command::new(checker);
+    checker_cmd.arg(&binary);
+    crate::cli::apply_no_window(&mut checker_cmd);
+    if let Ok(output) = checker_cmd.output()
         && output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             // `where` on Windows may return multiple lines; take the first
@@ -444,7 +447,10 @@ fn detect_binary_path_only(binary: &str) -> AgentBinaryDetection {
     } else {
         "which"
     };
-    if let Ok(output) = Command::new(checker).arg(binary).output()
+    let mut checker_cmd = Command::new(checker);
+    checker_cmd.arg(binary);
+    crate::cli::apply_no_window(&mut checker_cmd);
+    if let Ok(output) = checker_cmd.output()
         && output.status.success()
     {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -475,7 +481,10 @@ fn detect_binary_path_only(binary: &str) -> AgentBinaryDetection {
 /// Get version of a binary (try --version or -v)
 fn get_binary_version(path: &str) -> Option<String> {
     // Try --version first
-    if let Ok(output) = Command::new(path).arg("--version").output()
+    let mut cmd = Command::new(path);
+    cmd.arg("--version");
+    crate::cli::apply_no_window(&mut cmd);
+    if let Ok(output) = cmd.output()
         && output.status.success() {
             let version = String::from_utf8_lossy(&output.stdout);
             let first_line = version.lines().next().unwrap_or("").trim();
@@ -484,7 +493,10 @@ fn get_binary_version(path: &str) -> Option<String> {
             }
         }
     // Try -v
-    if let Ok(output) = Command::new(path).arg("-v").output()
+    let mut cmd = Command::new(path);
+    cmd.arg("-v");
+    crate::cli::apply_no_window(&mut cmd);
+    if let Ok(output) = cmd.output()
         && output.status.success() {
             let version = String::from_utf8_lossy(&output.stdout);
             let first_line = version.lines().next().unwrap_or("").trim();

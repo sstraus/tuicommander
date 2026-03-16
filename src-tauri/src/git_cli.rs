@@ -142,8 +142,8 @@ impl GitCmd {
 pub(crate) fn git_cmd(cwd: &Path) -> GitCmd {
     let mut cmd = Command::new(resolve_cli("git"));
     cmd.current_dir(cwd);
-    // Prevent git from prompting for credentials in a GUI/TTY context.
     cmd.env("GIT_TERMINAL_PROMPT", "0");
+    crate::cli::apply_no_window(&mut cmd);
     GitCmd { cmd }
 }
 

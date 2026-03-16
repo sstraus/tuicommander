@@ -685,7 +685,12 @@ pub fn run() {
                         #[cfg(target_os = "linux")]
                         let _ = std::process::Command::new("xdg-open").arg(&url_str).spawn();
                         #[cfg(target_os = "windows")]
-                        let _ = std::process::Command::new("cmd").args(["/c", "start", &url_str]).spawn();
+                        {
+                            let mut cmd = std::process::Command::new("cmd");
+                            cmd.args(["/c", "start", &url_str]);
+                            cli::apply_no_window(&mut cmd);
+                            let _ = cmd.spawn();
+                        }
                         return false;
                     }
                     true

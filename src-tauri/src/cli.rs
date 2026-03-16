@@ -104,6 +104,19 @@ fn resolve_cli_uncached(name: &str) -> String {
     name.to_string()
 }
 
+/// Apply `CREATE_NO_WINDOW` on Windows to suppress console window flash.
+///
+/// No-op on other platforms. Use for background `.output()` and piped
+/// `.spawn()` calls — never for interactive processes that need a visible window.
+pub(crate) fn apply_no_window(_cmd: &mut std::process::Command) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        _cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+}
+
 /// Check if a CLI tool exists on PATH or in well-known directories.
 pub(crate) fn has_cli(name: &str) -> bool {
     let checker = if cfg!(target_os = "windows") {
@@ -111,9 +124,10 @@ pub(crate) fn has_cli(name: &str) -> bool {
     } else {
         "which"
     };
-    if std::process::Command::new(checker)
-        .arg(name)
-        .output()
+    let mut cmd = std::process::Command::new(checker);
+    cmd.arg(name);
+    apply_no_window(&mut cmd);
+    if cmd.output()
         .map(|o| o.status.success())
         .unwrap_or(false)
     {
@@ -171,6 +185,13 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_apply_no_window_does_not_panic() {
+        let mut cmd = std::process::Command::new("echo");
+        apply_no_window(&mut cmd);
+        // Must not panic on any platform; on non-Windows it's a no-op
     }
 
     #[test]

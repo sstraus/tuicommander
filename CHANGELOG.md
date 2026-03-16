@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Windows: CMD window flash** — Background process spawns (git, agent detection, plugin execution, `where` lookups) no longer flash visible console windows on Windows. Applied `CREATE_NO_WINDOW` flag to all background `Command::new` callsites. Interactive spawns (IDE/terminal launches) unaffected. MCP stdio server stderr now forwarded to tracing on Windows instead of being silently dropped ([#7](https://github.com/sstraus/tuicommander/issues/7))
+
 ## [0.9.0] - 2026-03-14
 
 ### Added
