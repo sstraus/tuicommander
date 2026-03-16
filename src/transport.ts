@@ -589,6 +589,13 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
       body: { repoPath: args.repoPath, pattern: args.pattern },
     }),
   },
+  search_content: {
+    map: (args, p) => {
+      let path = `/fs/search-content?repoPath=${p("repoPath")}&query=${p("query")}&caseSensitive=${p("caseSensitive")}&useRegex=${p("useRegex")}&wholeWord=${p("wholeWord")}`;
+      if (args.limit != null) path += `&limit=${encodeURIComponent(String(args.limit))}`;
+      return { method: "GET", path };
+    },
+  },
 
   // --- Notes ---
   load_notes: { map: () => ({ method: "GET", path: "/config/notes" }) },

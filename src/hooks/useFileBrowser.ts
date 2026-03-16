@@ -1,5 +1,12 @@
-import { invoke } from "../invoke";
-import type { DirEntry } from "../types/fs";
+import { invoke, listen } from "../invoke";
+import type { DirEntry, ContentSearchBatch } from "../types/fs";
+
+export interface ContentSearchOptions {
+  caseSensitive?: boolean;
+  useRegex?: boolean;
+  wholeWord?: boolean;
+  limit?: number;
+}
 
 /** Hook wrapping Rust fs commands for the file browser */
 export function useFileBrowser() {
@@ -39,6 +46,28 @@ export function useFileBrowser() {
     await invoke("add_to_gitignore", { repoPath, pattern });
   }
 
+  /** Start a streaming content search. Results arrive via content-search-batch events. */
+  async function searchContent(repoPath: string, query: string, opts?: ContentSearchOptions): Promise<void> {
+    await invoke("search_content", {
+      repoPath,
+      query,
+      caseSensitive: opts?.caseSensitive ?? false,
+      useRegex: opts?.useRegex ?? false,
+      wholeWord: opts?.wholeWord ?? false,
+      limit: opts?.limit,
+    });
+  }
+
+  /** Subscribe to content search result batches. Returns unlisten function. */
+  function onContentSearchBatch(handler: (batch: ContentSearchBatch) => void): Promise<() => void> {
+    return listen<ContentSearchBatch>("content-search-batch", (event) => handler(event.payload));
+  }
+
+  /** Subscribe to content search errors. Returns unlisten function. */
+  function onContentSearchError(handler: (error: string) => void): Promise<() => void> {
+    return listen<string>("content-search-error", (event) => handler(event.payload));
+  }
+
   return {
     listDirectory,
     searchFiles,
@@ -49,5 +78,8 @@ export function useFileBrowser() {
     renamePath,
     copyPath,
     addToGitignore,
+    searchContent,
+    onContentSearchBatch,
+    onContentSearchError,
   };
 }

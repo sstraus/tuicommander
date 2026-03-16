@@ -201,6 +201,21 @@ describe("transport", () => {
       expect(result.method).toBe("GET");
       expect(result.path).toBe("/repo/ci?path=%2Fmy%2Frepo&pr_number=42");
     });
+
+    it("maps search_content to GET /fs/search-content", () => {
+      const result = mapCommandToHttp("search_content", {
+        repoPath: "/my/repo",
+        query: "hello",
+        caseSensitive: true,
+        useRegex: false,
+        wholeWord: false,
+      });
+      expect(result.method).toBe("GET");
+      expect(result.path).toContain("/fs/search-content");
+      expect(result.path).toContain("repoPath=%2Fmy%2Frepo");
+      expect(result.path).toContain("query=hello");
+      expect(result.path).toContain("caseSensitive=true");
+    });
   });
 
   describe("rpc()", () => {

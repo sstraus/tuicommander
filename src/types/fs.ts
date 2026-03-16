@@ -12,3 +12,21 @@ export interface DirEntry {
   /** Whether the file is listed in .gitignore */
   is_ignored: boolean;
 }
+
+/** A single content match from full-text search */
+export interface ContentMatch {
+  path: string;
+  line_number: number;
+  line_text: string;
+  match_start: number;
+  match_end: number;
+}
+
+/** A batch of content search results, emitted progressively via events */
+export interface ContentSearchBatch {
+  matches: ContentMatch[];
+  is_final: boolean;
+  files_searched: number;
+  files_skipped: number;
+  truncated: boolean;
+}
