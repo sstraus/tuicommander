@@ -1,0 +1,39 @@
+src/__tests__/stores/updater.test.ts
+  49fc2b54cf6fad60 17-20,45
+src/__tests__/stores/repoDefaults.test.ts
+  49fc2b54cf6fad60 145
+src/__tests__/stores/repoSettings.test.ts
+  49fc2b54cf6fad60 245,247-249,273-274
+src/__tests__/hooks/useGitOperations.test.ts
+  49fc2b54cf6fad60 1345,1852
+src/__tests__/transport.test.ts
+  49fc2b54cf6fad60 418,427,430
+src/__tests__/stores/github.test.ts
+  49fc2b54cf6fad60 589,601-604,606-607,734-739,746-747,750,752,754,756-757,759,761-762
+src/__tests__/hooks/useAutoFetch.test.ts
+  49fc2b54cf6fad60 92,137
+src-tauri/src/fs.rs
+  49fc2b54cf6fad60 340
+src/__tests__/components/SettingsPanel/GeneralTab.test.tsx
+  49fc2b54cf6fad60 73,96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "ad72ff6bb1a548b0f5b306439a703e24c6d4a9bf",
+  "prompts": {
+    "49fc2b54cf6fad60": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "34775ba3-3bd9-4ee0-b1b3-ed409142c47d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 52,
+      "total_deletions": 42,
+      "accepted_lines": 45,
+      "overriden_lines": 0
+    }
+  }
+}
