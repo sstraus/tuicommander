@@ -17,6 +17,31 @@ pub struct DirEntry {
     pub is_ignored: bool,
 }
 
+/// A single line match returned by `search_content`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ContentMatch {
+    /// Path relative to repo root, always using `/` as separator.
+    pub path: String,
+    pub line_number: u32,
+    /// Full line content (without trailing newline).
+    pub line_text: String,
+    /// Byte offset of match start within `line_text`.
+    pub match_start: u32,
+    /// Byte offset of match end (exclusive) within `line_text`.
+    pub match_end: u32,
+}
+
+/// Aggregated result of a full-text content search.
+#[derive(Debug, Clone, Serialize)]
+pub struct ContentSearchResult {
+    pub matches: Vec<ContentMatch>,
+    pub files_searched: u32,
+    /// Binary files and files exceeding the size limit.
+    pub files_skipped: u32,
+    /// `true` when the global match limit was reached.
+    pub truncated: bool,
+}
+
 /// Validate that a resolved path is within the repo root.
 /// Returns the canonical repo path and the canonical target path.
 fn validate_path(repo_path: &str, relative: &str) -> Result<(PathBuf, PathBuf), String> {
@@ -381,6 +406,163 @@ pub(crate) fn search_files_impl(
     results.sort_by(|a, b| a.path.to_lowercase().cmp(&b.path.to_lowercase()));
 
     Ok(results)
+}
+
+/// Search file contents in a repository for a text or regex pattern.
+/// Respects .gitignore via the `ignore` crate. Skips binary files and files > 1 MB.
+/// Returns up to `limit` matches (default 1000).
+pub(crate) fn search_content_impl(
+    repo_path: String,
+    query: String,
+    case_sensitive: bool,
+    use_regex: bool,
+    whole_word: bool,
+    limit: Option<usize>,
+) -> Result<ContentSearchResult, String> {
+    use grep_matcher::Matcher;
+    use grep_searcher::{BinaryDetection, SearcherBuilder, sinks::UTF8};
+
+    if query.is_empty() {
+        return Ok(ContentSearchResult {
+            matches: Vec::new(),
+            files_searched: 0,
+            files_skipped: 0,
+            truncated: false,
+        });
+    }
+
+    let repo = PathBuf::from(&repo_path);
+    let canonical_repo = repo
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
+
+    let max_matches = limit.unwrap_or(1000);
+    const MAX_FILE_SIZE: u64 = 1_048_576; // 1 MB
+
+    // Build the regex matcher
+    let pattern = if use_regex {
+        query.clone()
+    } else {
+        regex::escape(&query)
+    };
+
+    let matcher = grep_regex::RegexMatcherBuilder::new()
+        .case_insensitive(!case_sensitive)
+        .word(whole_word)
+        .build(&pattern)
+        .map_err(|e| format!("Invalid search pattern: {e}"))?;
+
+    let mut searcher = SearcherBuilder::new()
+        .binary_detection(BinaryDetection::quit(0))
+        .heap_limit(Some(8_000_000))
+        .build();
+
+    let mut all_matches: Vec<ContentMatch> = Vec::new();
+    let mut files_searched: u32 = 0;
+    let mut files_skipped: u32 = 0;
+    let mut truncated = false;
+
+    let walker = ignore::WalkBuilder::new(&canonical_repo)
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .build();
+
+    'walk: for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let is_file = entry.file_type().is_some_and(|ft| ft.is_file());
+        if !is_file {
+            continue;
+        }
+
+        // Skip files that are too large
+        let file_size = match entry.metadata() {
+            Ok(m) => m.len(),
+            Err(_) => continue,
+        };
+        if file_size > MAX_FILE_SIZE {
+            files_skipped += 1;
+            continue;
+        }
+
+        let relative = match entry.path().strip_prefix(&canonical_repo) {
+            Ok(p) => p.to_string_lossy().replace('\\', "/"),
+            Err(_) => continue,
+        };
+
+        // Pre-scan the first 8 KB for binary detection (null byte = binary)
+        let is_binary = {
+            use std::io::Read;
+            let mut buf = [0u8; 8192];
+            match std::fs::File::open(entry.path()).and_then(|mut f| f.read(&mut buf)) {
+                Ok(n) => buf[..n].contains(&0u8),
+                Err(_) => true, // unreadable → treat as skip
+            }
+        };
+        if is_binary {
+            files_skipped += 1;
+            continue;
+        }
+
+        files_searched += 1;
+
+        let matches_before = all_matches.len();
+
+        let _search_result = searcher.search_path(
+            &matcher,
+            entry.path(),
+            UTF8(|line_number, line| {
+                if all_matches.len() >= max_matches {
+                    truncated = true;
+                    // Returning false stops the search for this file
+                    return Ok(false);
+                }
+
+                // Find match offsets within the line (strip trailing newline for display)
+                let line_trimmed = line.trim_end_matches('\n').trim_end_matches('\r');
+
+                let mut match_start: u32 = 0;
+                let mut match_end: u32 = 0;
+                if let Ok(Some(m)) = matcher.find(line.as_bytes()) {
+                    match_start = m.start() as u32;
+                    match_end = m.end() as u32;
+                }
+
+                all_matches.push(ContentMatch {
+                    path: relative.clone(),
+                    line_number: line_number as u32,
+                    line_text: line_trimmed.to_string(),
+                    match_start,
+                    match_end,
+                });
+                Ok(true)
+            }),
+        );
+
+        // If the searcher encountered an error (e.g. non-UTF-8 that slipped past binary check),
+        // roll back any partial matches for this file and count it as skipped
+        if _search_result.is_err() {
+            all_matches.truncate(matches_before);
+            files_searched -= 1;
+            files_skipped += 1;
+        }
+
+        if truncated {
+            break 'walk;
+        }
+    }
+
+    Ok(ContentSearchResult {
+        matches: all_matches,
+        files_searched,
+        files_skipped,
+        truncated,
+    })
 }
 
 /// Build a case-insensitive regex from a user search query.
@@ -934,6 +1116,190 @@ mod tests {
             "Should respect limit of 5, got {}",
             results.len()
         );
+    }
+
+    // --- search_content tests ---
+
+    #[test]
+    fn test_search_content_basic() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // src/lib.rs already contains "pub fn hello() {}"
+        let result = search_content_impl(repo_path, "hello".to_string(), true, false, false, None).unwrap();
+        assert!(result.matches.iter().any(|m| m.path == "src/lib.rs"), "Expected match in src/lib.rs");
+        assert!(result.files_searched > 0);
+    }
+
+    #[test]
+    fn test_search_content_case_insensitive() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        let result = search_content_impl(repo_path, "HELLO".to_string(), false, false, false, None).unwrap();
+        assert!(result.matches.iter().any(|m| m.path == "src/lib.rs"), "HELLO should match hello case-insensitively");
+    }
+
+    #[test]
+    fn test_search_content_case_sensitive() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        let result = search_content_impl(repo_path, "HELLO".to_string(), true, false, false, None).unwrap();
+        assert!(result.matches.is_empty(), "HELLO should NOT match hello when case_sensitive=true");
+    }
+
+    #[test]
+    fn test_search_content_regex() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // src/lib.rs has "pub fn hello()" and main.rs has "fn main()"
+        let result = search_content_impl(repo_path, r"fn\s+\w+".to_string(), true, true, false, None).unwrap();
+        assert!(!result.matches.is_empty(), "Regex fn\\s+\\w+ should match function definitions");
+    }
+
+    #[test]
+    fn test_search_content_whole_word() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // Create a file with both "test" and "testing"
+        fs::write(dir.path().join("words.txt"), "this is a test\nbut not testing\n").unwrap();
+
+        let result = search_content_impl(
+            dir.path().to_string_lossy().to_string(),
+            "test".to_string(),
+            true,
+            false,
+            true,
+            None,
+        ).unwrap();
+
+        let matches: Vec<&ContentMatch> = result.matches.iter().filter(|m| m.path == "words.txt").collect();
+        // "test" (whole word) should match the first line but not "testing"
+        assert!(matches.iter().any(|m| m.line_text.contains("this is a test")), "Should match line with standalone 'test'");
+        assert!(!matches.iter().any(|m| m.line_text.trim() == "but not testing"), "Should NOT match 'testing' with whole_word=true");
+    }
+
+    #[test]
+    fn test_search_content_skips_binary() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // Write a file with null bytes (binary detection)
+        let mut content = b"hello world\0binary data".to_vec();
+        content.extend_from_slice(b"\0\0\0");
+        fs::write(dir.path().join("binary.bin"), &content).unwrap();
+
+        let result = search_content_impl(repo_path, "hello".to_string(), true, false, false, None).unwrap();
+        assert!(
+            result.matches.iter().all(|m| m.path != "binary.bin"),
+            "Binary file should be skipped"
+        );
+        assert!(result.files_skipped > 0, "files_skipped should be incremented for binary file");
+    }
+
+    #[test]
+    fn test_search_content_skips_large_file() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // Write a file > 1MB
+        let large_content = vec![b'a'; 1_048_577];
+        fs::write(dir.path().join("large.txt"), &large_content).unwrap();
+
+        let result = search_content_impl(repo_path, "a".to_string(), true, false, false, None).unwrap();
+        assert!(
+            result.matches.iter().all(|m| m.path != "large.txt"),
+            "Large file should be skipped"
+        );
+        assert!(result.files_skipped > 0, "files_skipped should be incremented for large file");
+    }
+
+    #[test]
+    fn test_search_content_respects_gitignore() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // Create an ignored directory with a file containing a unique string
+        fs::create_dir(dir.path().join("ignored_dir")).unwrap();
+        fs::write(dir.path().join("ignored_dir/secret.txt"), "supersecretstring").unwrap();
+        fs::write(dir.path().join(".gitignore"), "ignored_dir/\n").unwrap();
+
+        let result = search_content_impl(repo_path, "supersecretstring".to_string(), true, false, false, None).unwrap();
+        assert!(
+            result.matches.is_empty(),
+            "Should not search inside gitignored directory"
+        );
+    }
+
+    #[test]
+    fn test_search_content_match_offsets() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        fs::write(dir.path().join("offsets.txt"), "hello world\n").unwrap();
+
+        let result = search_content_impl(repo_path, "world".to_string(), true, false, false, None).unwrap();
+        let m = result.matches.iter().find(|m| m.path == "offsets.txt").expect("Should find match in offsets.txt");
+
+        assert_eq!(m.line_number, 1);
+        let line = &m.line_text;
+        let start = m.match_start as usize;
+        let end = m.match_end as usize;
+        assert_eq!(&line[start..end], "world", "Offsets should point to 'world' in the line");
+    }
+
+    #[test]
+    fn test_search_content_limit() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // Create multiple files each with the search term
+        for i in 0..5 {
+            fs::write(dir.path().join(format!("match{i}.txt")), format!("target line {i}\ntarget line again {i}\n")).unwrap();
+        }
+
+        let result = search_content_impl(repo_path, "target".to_string(), true, false, false, Some(2)).unwrap();
+        assert_eq!(result.matches.len(), 2, "Should return exactly 2 matches when limit=2");
+        assert!(result.truncated, "truncated should be true when limit is hit");
+    }
+
+    #[test]
+    fn test_search_content_empty_query() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        let result = search_content_impl(repo_path, String::new(), true, false, false, None).unwrap();
+        assert!(result.matches.is_empty(), "Empty query should return no matches");
+    }
+
+    #[test]
+    fn test_search_content_no_matches() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        let result = search_content_impl(repo_path, "xyzzy_no_such_string_9999".to_string(), true, false, false, None).unwrap();
+        assert_eq!(result.matches.len(), 0, "Should return 0 matches for non-existent string");
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    fn test_search_content_non_utf8_skip() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // Write a file with invalid UTF-8 bytes (not null — won't trigger binary detection, but invalid UTF-8)
+        // grep-searcher's UTF8 sink will skip or error gracefully on non-UTF-8 content
+        let mut content = b"valid start\n".to_vec();
+        content.extend_from_slice(&[0xFF, 0xFE, 0xFD]); // invalid UTF-8
+        content.extend_from_slice(b"\nvalid end\n");
+        fs::write(dir.path().join("nonutf8.txt"), &content).unwrap();
+
+        // Should not panic or return an error
+        let result = search_content_impl(repo_path, "valid".to_string(), true, false, false, None);
+        assert!(result.is_ok(), "Non-UTF-8 file should be handled gracefully, not panic");
     }
 
     // --- strip_line_col_suffix tests ---

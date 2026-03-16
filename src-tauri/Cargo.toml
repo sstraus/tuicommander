@@ -59,6 +59,9 @@ tauri-plugin-deep-link = "2"
 zip = "8"
 glob = "0.3"
 ignore = "0.4"
+grep-searcher = "0.1"
+grep-regex = "0.1"
+grep-matcher = "0.1"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 url = "2"
 chrono = { version = "0.4", features = ["serde"] }
