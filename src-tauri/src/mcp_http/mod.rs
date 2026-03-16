@@ -396,29 +396,61 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
     #[cfg(unix)]
     let socket_handle = {
         let sock = socket_path();
-        // Remove stale socket from a previous run
-        let _ = std::fs::remove_file(&sock);
+
         if let Some(parent) = sock.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
         {
             tracing::warn!(source = "mcp_http", path = %parent.display(), "Failed to create socket parent dir: {e}");
         }
-        match tokio::net::UnixListener::bind(&sock) {
+
+        // RAII guard: removes the socket file on drop, ensuring cleanup even
+        // if the process is killed between bind and the graceful-shutdown path.
+        struct SocketGuard(std::path::PathBuf);
+        impl Drop for SocketGuard {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+
+        // Retry bind up to 3 times — each attempt removes any stale socket
+        // first, so a crashed previous instance doesn't permanently block us.
+        let mut uds_result = Err(std::io::Error::other("not attempted"));
+        for attempt in 0..3u8 {
+            let _ = std::fs::remove_file(&sock);
+            match tokio::net::UnixListener::bind(&sock) {
+                Ok(uds) => {
+                    uds_result = Ok(uds);
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!(source = "mcp_http", attempt, path = %sock.display(), "Unix socket bind failed: {e}");
+                    if attempt < 2 {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    } else {
+                        uds_result = Err(e);
+                    }
+                }
+            }
+        }
+
+        match uds_result {
             Ok(uds) => {
                 tracing::info!(source = "mcp_http", path = %sock.display(), "Unix socket listening");
+                let _guard = SocketGuard(sock);
                 let app = build_router(state.clone(), false, true);
                 // Unix socket connections don't have a SocketAddr, but many route
                 // handlers extract ConnectInfo<SocketAddr> for localhost guards.
                 // Inject a synthetic localhost ConnectInfo so those extractors work.
                 let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
                 Some(tokio::spawn(async move {
+                    let _guard = _guard; // move guard into task so it lives as long as the server
                     if let Err(e) = axum::serve(uds, app.into_make_service()).await {
                         tracing::error!(source = "mcp_http", "Unix socket server error: {e}");
                     }
                 }))
             }
             Err(e) => {
-                tracing::error!(source = "mcp_http", path = %sock.display(), "Failed to bind Unix socket: {e}");
+                tracing::error!(source = "mcp_http", path = %sock.display(), "Failed to bind Unix socket after retries: {e}");
                 None
             }
         }

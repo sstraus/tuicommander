@@ -476,12 +476,13 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
         )
     };
 
-    // Check if the Unix socket is alive (local MCP always on)
+    // Check if the Unix socket is alive with a real connect attempt.
+    // file.exists() is unreliable — a stale socket from a crashed run passes
+    // the file check but refuses connections.
     #[cfg(unix)]
-    let socket_exists = mcp_http::socket_path().exists();
+    let running = tokio::net::UnixStream::connect(mcp_http::socket_path()).await.is_ok();
     #[cfg(not(unix))]
-    let socket_exists = false;
-    let running = socket_exists;
+    let running = false;
 
     // TCP reachability self-test for remote access
     let remote_port = state.config.read().remote_access_port;

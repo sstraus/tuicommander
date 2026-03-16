@@ -189,11 +189,11 @@ pub(super) async fn put_notes(
 }
 
 pub(super) async fn get_mcp_status_http(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    // Real connect attempt — file.exists() is unreliable for stale sockets.
     #[cfg(unix)]
-    let socket_exists = super::socket_path().exists();
+    let running = tokio::net::UnixStream::connect(super::socket_path()).await.is_ok();
     #[cfg(not(unix))]
-    let socket_exists = false;
-    let running = socket_exists;
+    let running = false;
     Json(serde_json::json!({
         "enabled": true,
         "running": running,
