@@ -12,7 +12,8 @@ import { PromptDialog } from "../PromptDialog";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
-import type { DirEntry } from "../../types/fs";
+import type { DirEntry, ContentMatch } from "../../types/fs";
+import type { ContentSearchOptions } from "../../hooks/useFileBrowser";
 import p from "../shared/panel.module.css";
 import g from "../shared/git-status.module.css";
 import s from "./FileBrowserPanel.module.css";
@@ -42,6 +43,40 @@ const getStatusClass = (status: string): string => {
   }
 };
 
+/** SVG icons for content search toggle buttons (same as SearchBar) */
+const CaseSensitiveIcon = () => (
+  <svg viewBox="0 0 16 16" fill="currentColor">
+    <path d="M8.854 11.702h-1l-.816-2.159H3.772l-.768 2.16H2L5.09 4h.76l3.004 7.702zm-2.27-3.074L5.452 5.549a1.635 1.635 0 01-.066-.252h-.02a1.674 1.674 0 01-.07.256L4.17 8.628h2.415zM13.995 11.7v-.73c-.37.47-.955.792-1.705.792-1.2 0-2.088-.797-2.088-1.836 0-1.092.855-1.792 2.156-1.867l1.636-.09v-.362c0-.788-.49-1.257-1.328-1.257-.678 0-1.174.31-1.399.778h-.91c.153-.95 1.085-1.635 2.333-1.635 1.39 0 2.227.79 2.227 2.04V11.7h-.922z"/>
+  </svg>
+);
+
+const WholeWordIcon = () => (
+  <svg viewBox="0 0 16 16" fill="currentColor">
+    <path d="M2 6h1v7H2V6zm5.38 4.534h-.022c-.248.371-.7.596-1.205.596C5.344 11.13 4.7 10.48 4.7 9.6c0-.925.604-1.46 1.703-1.522l1-.052V7.72c0-.547-.336-.87-.918-.87-.514 0-.836.22-1.002.563H4.59c.156-.734.808-1.253 1.866-1.253 1.117 0 1.825.6 1.825 1.548v3.023h-.9v-.197zM5.604 9.6c0 .37.283.64.674.64.548 0 .96-.373.96-.836v-.45l-.864.046c-.57.034-.77.256-.77.6zM10.552 6.26c.467 0 .824.186 1.078.54V4h.904v8.73h-.9v-.65c-.258.456-.66.72-1.158.72C9.546 12.8 8.8 11.88 8.8 10.52c0-1.37.74-2.26 1.752-2.26zm.18.816c-.647 0-1.038.56-1.038 1.44s.39 1.46 1.048 1.46c.647 0 1.043-.57 1.043-1.45s-.396-1.45-1.053-1.45z"/>
+    <path d="M1 13h14v1H1z"/>
+  </svg>
+);
+
+const RegexIcon = () => (
+  <svg viewBox="0 0 16 16" fill="currentColor">
+    <path d="M10.012 2h.976v3.113l2.56-1.557.486.885L11.47 6l2.564 1.559-.486.885-2.56-1.557V10h-.976V6.887l-2.56 1.557-.486-.885L9.53 6 6.966 4.441l.486-.885 2.56 1.557V2zM2 10h4v4H2v-4z"/>
+  </svg>
+);
+
+/** Filename mode icon — simple "F" in a doc shape */
+const FilenameModeIcon = () => (
+  <svg viewBox="0 0 16 16" fill="currentColor">
+    <path d="M4 2h5l3 3v9H4V2zm1 1v10h6V6H9V3H5zm1.5 4h3v1h-3V7zm0 2h3v1h-3V9z"/>
+  </svg>
+);
+
+/** Content mode icon — magnifier with lines */
+const ContentModeIcon = () => (
+  <svg viewBox="0 0 16 16" fill="currentColor">
+    <path d="M11.5 7a4.5 4.5 0 1 0-1.77 3.56l3.35 3.36.71-.71-3.36-3.35A4.48 4.48 0 0 0 11.5 7zM7 10.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zM5 6h4v1H5V6zm0 2h4v1H5V8z"/>
+  </svg>
+);
+
 export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   const [entries, setEntries] = createSignal<DirEntry[]>([]);
   const [loading, setLoading] = createSignal(false);
@@ -63,6 +98,20 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
   // File clipboard state for copy/cut/paste
   const [clipboard, setClipboard] = createSignal<{ entry: DirEntry; mode: "copy" | "cut" } | null>(null);
+
+  // Search mode: "filename" (default) or "content" (full-text grep)
+  type SearchMode = "filename" | "content";
+  const [searchMode, setSearchMode] = createSignal<SearchMode>("filename");
+  const [contentSearching, setContentSearching] = createSignal(false);
+  const [contentMatches, setContentMatches] = createSignal<ContentMatch[]>([]);
+  const [contentStats, setContentStats] = createSignal<{
+    filesSearched: number;
+    filesSkipped: number;
+    truncated: boolean;
+  }>({ filesSearched: 0, filesSkipped: 0, truncated: false });
+  const [caseSensitive, setCaseSensitive] = createSignal(false);
+  const [useRegex, setUseRegex] = createSignal(false);
+  const [wholeWord, setWholeWord] = createSignal(false);
 
   // Sort mode: "name" (default, dirs first + alpha) or "date" (dirs first + newest first)
   type SortMode = "name" | "date";
@@ -160,8 +209,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   const [searchResults, setSearchResults] = createSignal<DirEntry[]>([]);
   const [searching, setSearching] = createSignal(false);
 
-  // Debounced recursive search — fires when searchQuery changes
+  // Debounced recursive filename search — only fires in filename mode
   createEffect(() => {
+    if (searchMode() !== "filename") return;
     const q = searchQuery().trim();
     const repoPath = props.repoPath;
 
@@ -186,6 +236,102 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     }, 200);
 
     onCleanup(() => clearTimeout(timer));
+  });
+
+  // Content search — fires when in content mode and query changes
+  createEffect(() => {
+    if (searchMode() !== "content") return;
+    const q = searchQuery().trim();
+    const repoPath = props.repoPath;
+
+    if (!q || q.length < 3 || !repoPath) {
+      setContentMatches([]);
+      setContentSearching(false);
+      setContentStats({ filesSearched: 0, filesSkipped: 0, truncated: false });
+      return;
+    }
+
+    // Track current search options as reactive deps
+    const opts: ContentSearchOptions = {
+      caseSensitive: caseSensitive(),
+      useRegex: useRegex(),
+      wholeWord: wholeWord(),
+    };
+
+    setContentSearching(true);
+    setContentMatches([]);
+    setContentStats({ filesSearched: 0, filesSkipped: 0, truncated: false });
+
+    let cancelled = false;
+    let unlistenBatch: (() => void) | null = null;
+    let unlistenError: (() => void) | null = null;
+
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+
+      // Set up batch listener before starting the search
+      try {
+        const batchPromise = fb.onContentSearchBatch((batch) => {
+          if (cancelled) return;
+          setContentMatches((prev) => [...prev, ...batch.matches]);
+          setContentStats({
+            filesSearched: batch.files_searched,
+            filesSkipped: batch.files_skipped,
+            truncated: batch.truncated,
+          });
+          if (batch.is_final) {
+            setContentSearching(false);
+          }
+        });
+        const errorPromise = fb.onContentSearchError((err) => {
+          if (cancelled) return;
+          appLogger.error("app", "Content search error", err);
+          setContentSearching(false);
+        });
+
+        const [batchUn, errorUn] = await Promise.all([batchPromise, errorPromise]);
+        unlistenBatch = batchUn;
+        unlistenError = errorUn;
+
+        if (cancelled) {
+          unlistenBatch();
+          unlistenError();
+          return;
+        }
+
+        await fb.searchContent(repoPath, q, opts);
+      } catch (err) {
+        if (!cancelled) {
+          appLogger.error("app", "Content search failed", err);
+          setContentSearching(false);
+        }
+      }
+    }, 500);
+
+    onCleanup(() => {
+      cancelled = true;
+      clearTimeout(timer);
+      unlistenBatch?.();
+      unlistenError?.();
+    });
+  });
+
+  /** Content matches grouped by file path */
+  const contentMatchGroups = createMemo(() => {
+    const matches = contentMatches();
+    if (matches.length === 0) return [];
+    const groups: { path: string; matches: ContentMatch[] }[] = [];
+    const map = new Map<string, ContentMatch[]>();
+    for (const m of matches) {
+      let arr = map.get(m.path);
+      if (!arr) {
+        arr = [];
+        map.set(m.path, arr);
+        groups.push({ path: m.path, matches: arr });
+      }
+      arr.push(m);
+    }
+    return groups;
   });
 
   /** Visible entries: search results when query active, directory listing otherwise, sorted */
@@ -469,20 +615,72 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         </button>
       </div>
 
-      {/* Search filter */}
-      <div class={p.search}>
+      {/* Search filter with F/C mode toggle */}
+      <div class={s.searchBar}>
+        <button
+          class={cx(s.modeToggle, searchMode() === "content" && s.modeToggleActive)}
+          onClick={() => {
+            const next = searchMode() === "filename" ? "content" : "filename";
+            setSearchMode(next);
+            // Clear results from the other mode
+            if (next === "content") {
+              setSearchResults([]);
+            } else {
+              setContentMatches([]);
+              setContentSearching(false);
+              setContentStats({ filesSearched: 0, filesSkipped: 0, truncated: false });
+            }
+            setSelectedIndex(0);
+          }}
+          title={searchMode() === "filename" ? "Switch to content search" : "Switch to filename search"}
+        >
+          <Show when={searchMode() === "filename"} fallback={<ContentModeIcon />}>
+            <FilenameModeIcon />
+          </Show>
+        </button>
         <input
           type="text"
           class={p.searchInput}
-          placeholder={t("fileBrowser.search", "Search files… (*, ** wildcards)")}
+          placeholder={searchMode() === "filename"
+            ? t("fileBrowser.search", "Search files\u2026 (*, ** wildcards)")
+            : t("fileBrowser.searchContent", "Search in file contents\u2026")}
           value={searchQuery()}
           onInput={(e) => {
             setSearchQuery(e.currentTarget.value);
             setSelectedIndex(0);
           }}
         />
+        <Show when={searchMode() === "content"}>
+          <button
+            class={cx(s.toggleBtn, caseSensitive() && s.toggleActive)}
+            onClick={() => setCaseSensitive((v) => !v)}
+            title="Match Case"
+          >
+            <CaseSensitiveIcon />
+          </button>
+          <button
+            class={cx(s.toggleBtn, useRegex() && s.toggleActive)}
+            onClick={() => setUseRegex((v) => !v)}
+            title="Use Regular Expression"
+          >
+            <RegexIcon />
+          </button>
+          <button
+            class={cx(s.toggleBtn, wholeWord() && s.toggleActive)}
+            onClick={() => setWholeWord((v) => !v)}
+            title="Match Whole Word"
+          >
+            <WholeWordIcon />
+          </button>
+        </Show>
         <Show when={searchQuery()}>
-          <button class={p.searchClear} onClick={() => { setSearchQuery(""); setSelectedIndex(0); }}>&times;</button>
+          <button class={p.searchClear} onClick={() => {
+            setSearchQuery("");
+            setSelectedIndex(0);
+            setContentMatches([]);
+            setContentSearching(false);
+            setContentStats({ filesSearched: 0, filesSkipped: 0, truncated: false });
+          }}>&times;</button>
         </Show>
       </div>
 
@@ -529,68 +727,131 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         </div>
       </div>
 
+      {/* Content search status bar */}
+      <Show when={searchMode() === "content" && searchQuery().trim().length >= 3}>
+        <div class={cx(s.searchStatus, contentStats().truncated && s.searchStatusTruncated, contentSearching() && s.searchStatusSearching)}>
+          <Show when={contentSearching()} fallback={
+            contentMatches().length > 0
+              ? `${contentMatches().length} match${contentMatches().length !== 1 ? "es" : ""} in ${contentMatchGroups().length} file${contentMatchGroups().length !== 1 ? "s" : ""}${contentStats().truncated ? " (results limited)" : ""}${contentStats().filesSkipped > 0 ? ` \u00B7 ${contentStats().filesSkipped} skipped` : ""}`
+              : "No matches"
+          }>
+            {"Searching\u2026"}
+          </Show>
+        </div>
+      </Show>
+
       <div class={p.content}>
-        <Show when={loading() || searching()}>
-          <div class={s.empty}>{searching() ? t("fileBrowser.searching", "Searching…") : t("fileBrowser.loading", "Loading...")}</div>
+        <Show when={loading() || (searching() && searchMode() === "filename")}>
+          <div class={s.empty}>{searching() ? t("fileBrowser.searching", "Searching\u2026") : t("fileBrowser.loading", "Loading...")}</div>
         </Show>
 
         <Show when={error()}>
           <div class={cx(s.empty, s.error)}>{t("fileBrowser.error", "Error:")} {error()}</div>
         </Show>
 
-        <Show when={!loading() && !searching() && !error() && filteredEntries().length === 0}>
-          <div class={s.empty}>
-            {!props.repoPath
-              ? t("fileBrowser.noRepo", "No repository selected")
-              : searchQuery()
-              ? t("fileBrowser.noMatches", "No matches")
-              : t("fileBrowser.emptyDir", "Empty directory")}
-          </div>
+        {/* Content search results */}
+        <Show when={searchMode() === "content" && searchQuery().trim().length >= 3}>
+          <Show when={!contentSearching() && contentMatches().length === 0}>
+            <div class={s.empty}>{t("fileBrowser.noMatches", "No matches")}</div>
+          </Show>
+          <For each={contentMatchGroups()}>
+            {(group) => (
+              <div class={s.contentGroup}>
+                <div
+                  class={s.contentGroupHeader}
+                  onClick={() => {
+                    if (props.repoPath && group.matches.length > 0) {
+                      props.onFileOpen(props.repoPath, group.path, group.matches[0].line_number);
+                    }
+                  }}
+                >
+                  <span>{group.path}</span>
+                  <span class={s.contentGroupCount}>
+                    {group.matches.length} match{group.matches.length !== 1 ? "es" : ""}
+                  </span>
+                </div>
+                <For each={group.matches}>
+                  {(match) => (
+                    <div
+                      class={s.contentMatch}
+                      onClick={() => {
+                        if (props.repoPath) {
+                          props.onFileOpen(props.repoPath, match.path, match.line_number);
+                        }
+                      }}
+                    >
+                      <span class={s.contentMatchLine}>{match.line_number}</span>
+                      <span class={s.contentMatchText}>
+                        {match.match_start > 0 ? match.line_text.slice(0, match.match_start) : ""}
+                        <span class={s.contentMatchHighlight}>
+                          {match.line_text.slice(match.match_start, match.match_end)}
+                        </span>
+                        {match.match_end < match.line_text.length ? match.line_text.slice(match.match_end) : ""}
+                      </span>
+                    </div>
+                  )}
+                </For>
+              </div>
+            )}
+          </For>
         </Show>
 
-        <Show when={!loading() && !searching() && !error() && filteredEntries().length > 0}>
-          {/* Go up entry when in a subdirectory and not searching */}
-          <Show when={!searchQuery().trim() && currentSubdir() !== "." && currentSubdir() !== ""}>
-            <div class={cx(s.entry, s.entryParent)} onClick={navigateUp}>
-              <span class={s.entryIcon}>
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M8 2L2 8l6 6V10h6V6H8V2z" />
-                </svg>
-              </span>
-              <span class={s.entryName}>..</span>
+        {/* Filename mode: directory listing or filename search results */}
+        <Show when={searchMode() === "filename"}>
+          <Show when={!loading() && !searching() && !error() && filteredEntries().length === 0}>
+            <div class={s.empty}>
+              {!props.repoPath
+                ? t("fileBrowser.noRepo", "No repository selected")
+                : searchQuery()
+                ? t("fileBrowser.noMatches", "No matches")
+                : t("fileBrowser.emptyDir", "Empty directory")}
             </div>
           </Show>
 
-          <For each={filteredEntries()}>
-            {(entry, index) => {
-              const isSearch = !!searchQuery().trim();
-              return (
-                <div
-                  class={cx(
-                    s.entry,
-                    entry.is_dir && s.entryDir,
-                    selectedIndex() === index() && s.entrySelected,
-                    entry.is_ignored && s.entryIgnored,
-                    clipboard()?.mode === "cut" && clipboard()?.entry.path === entry.path && s.entryCut,
-                  )}
-                  onClick={() => {
-                    setSelectedIndex(index());
-                    handleEntryClick(entry);
-                  }}
-                  onContextMenu={(e) => handleContextMenu(e, entry)}
-                >
-                  <span class={s.entryIcon}>{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
-                  <span class={s.entryName} title={entry.path}>{isSearch ? entry.path : entry.name}</span>
-                  <Show when={entry.git_status}>
-                    <span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />
-                  </Show>
-                  <Show when={!entry.is_dir && entry.size > 0}>
-                    <span class={s.entrySize}>{formatSize(entry.size)}</span>
-                  </Show>
-                </div>
-              );
-            }}
-          </For>
+          <Show when={!loading() && !searching() && !error() && filteredEntries().length > 0}>
+            {/* Go up entry when in a subdirectory and not searching */}
+            <Show when={!searchQuery().trim() && currentSubdir() !== "." && currentSubdir() !== ""}>
+              <div class={cx(s.entry, s.entryParent)} onClick={navigateUp}>
+                <span class={s.entryIcon}>
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 2L2 8l6 6V10h6V6H8V2z" />
+                  </svg>
+                </span>
+                <span class={s.entryName}>..</span>
+              </div>
+            </Show>
+
+            <For each={filteredEntries()}>
+              {(entry, index) => {
+                const isSearch = !!searchQuery().trim();
+                return (
+                  <div
+                    class={cx(
+                      s.entry,
+                      entry.is_dir && s.entryDir,
+                      selectedIndex() === index() && s.entrySelected,
+                      entry.is_ignored && s.entryIgnored,
+                      clipboard()?.mode === "cut" && clipboard()?.entry.path === entry.path && s.entryCut,
+                    )}
+                    onClick={() => {
+                      setSelectedIndex(index());
+                      handleEntryClick(entry);
+                    }}
+                    onContextMenu={(e) => handleContextMenu(e, entry)}
+                  >
+                    <span class={s.entryIcon}>{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
+                    <span class={s.entryName} title={entry.path}>{isSearch ? entry.path : entry.name}</span>
+                    <Show when={entry.git_status}>
+                      <span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />
+                    </Show>
+                    <Show when={!entry.is_dir && entry.size > 0}>
+                      <span class={s.entrySize}>{formatSize(entry.size)}</span>
+                    </Show>
+                  </div>
+                );
+              }}
+            </For>
+          </Show>
         </Show>
       </div>
 
