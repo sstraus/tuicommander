@@ -197,6 +197,11 @@
   flex-shrink: 0;
 }
 
+.modeToggle svg {
+  width: 14px;
+  height: 14px;
+}
+
 .modeToggle:hover {
   background: var(--bg-highlight);
   color: var(--fg-primary);
