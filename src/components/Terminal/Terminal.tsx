@@ -163,9 +163,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const doFit = () => {
     if (!containerRef || !fitAddon || !terminal) return;
     if (containerRef.offsetWidth < MIN_FIT_WIDTH || containerRef.offsetHeight < MIN_FIT_HEIGHT) return;
-    // Capture distance from bottom — immune to baseY changes during reflow
-    const buf = terminal.buffer.active;
-    const linesFromBottom = buf.baseY - trackedScrollState.viewportY;
+    // Use BOTH values from trackedScrollState for consistency.
+    // buf.baseY can diverge from tracked baseY when data arrives while user
+    // is scrolled up (onScroll doesn't fire for baseY-only increases).
+    // Mixing fresh baseY with stale viewportY inflates linesFromBottom,
+    // causing scrollToLine(0) jumps when reflow shrinks newBase.
+    const linesFromBottom = trackedScrollState.baseY - trackedScrollState.viewportY;
     const wasAtBottom = trackedScrollState.wasAtBottom;
     fitAddon.fit();
     if (wasAtBottom) {
@@ -235,16 +238,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pty.pause(sessionId).catch(() => {});
       }
 
-      // [DEBUG] Capture scroll state before write to detect if write() causes scroll jump
-      const preWriteY = terminal.buffer.active.viewportY;
-      const preBufferType = terminal.buffer.active.type;
       terminal.write(data, () => {
         pendingWriteBytes -= byteLen;
-        // [DEBUG] Check if write caused scroll jump (ignore alt screen switches)
-        const postBuf = terminal!.buffer.active;
-        if (postBuf.type === preBufferType && preWriteY > 5 && postBuf.viewportY === 0) {
-          appLogger.debug("terminal", `[SCROLL-BUG] write() caused jump! pre=${preWriteY} post=${postBuf.viewportY} baseY=${postBuf.baseY}`);
-        }
 
         // Resume reader once xterm has drained enough
         if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
@@ -915,17 +910,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // position, even after display:none zeros scrollTop in WebKit.
     terminal.onScroll(() => {
       const buf = terminal!.buffer.active;
-      const prev = trackedScrollState;
       trackedScrollState = {
         viewportY: buf.viewportY,
         baseY: buf.baseY,
         bufferType: buf.type,
         wasAtBottom: buf.viewportY >= buf.baseY,
       };
-      // [DEBUG] Log scroll jumps to top — ignore alt screen switches
-      if (prev.bufferType === buf.type && prev.viewportY > 5 && buf.viewportY === 0 && !prev.wasAtBottom) {
-        appLogger.debug("terminal", `[SCROLL-BUG] Jump to top detected! prev=${prev.viewportY} baseY=${buf.baseY}`);
-      }
     });
 
     resizeObserver = new ResizeObserver(() => {
@@ -1161,24 +1151,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
         ref={containerRef}
         class={s.content}
         style={{ width: "100%", height: "100%" }}
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = "copy"; }}
-        onDrop={async (e) => {
-          e.preventDefault();
-          const sid = sessionId;
-          if (!sid) return;
-          const files = e.dataTransfer?.files;
-          if (!files?.length) return;
-          // Write each dropped file path into the PTY so the running process
-          // (e.g. Claude Code) can reference them directly.
-          const paths = Array.from(files).map((f) => (f as any).path as string).filter(Boolean);
-          if (paths.length) {
-            try {
-              await pty.write(sid, paths.join(" "));
-            } catch (err) {
-              appLogger.error("terminal", "Failed to write dropped file paths", err);
-            }
-          }
-        }}
       />
     </div>
   );
