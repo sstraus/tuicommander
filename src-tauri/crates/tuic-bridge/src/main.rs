@@ -19,7 +19,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(unix)]
 fn config_dir() -> std::path::PathBuf {
     dirs::config_dir()
-        .map(|d| d.join("tuicommander"))
+        .map(|d| d.join("com.tuic.commander"))
         .unwrap_or_else(|| {
             dirs::home_dir()
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
