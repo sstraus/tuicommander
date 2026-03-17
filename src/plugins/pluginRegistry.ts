@@ -326,12 +326,15 @@ function createPluginRegistry() {
         mdTabsStore.add("", absolutePath);
       },
 
-      async playNotificationSound(sound?: string): Promise<void> {
+      async playNotificationSound(sound?: "question" | "error" | "completion" | "warning" | "info"): Promise<void> {
         requireCapability(pluginId, capabilities, "ui:sound");
         const validSounds = ["question", "error", "completion", "warning", "info"] as const;
         const resolved = validSounds.includes(sound as typeof validSounds[number])
           ? (sound as typeof validSounds[number])
           : "info";
+        if (sound !== undefined && resolved === "info" && sound !== "info") {
+          appLogger.warn("plugin", `[${pluginId}] playNotificationSound: unknown sound "${sound}", defaulting to "info"`);
+        }
         await notificationsStore.play(resolved);
       },
 

@@ -406,7 +406,7 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         // Bind the socket. Remove any stale file first (left by a crashed previous run).
         // NOTE: No SocketGuard here — cleanup on server restart would race with the new
         // instance's bind. Explicit removal happens in the shutdown sequence below (line ~567).
-        fn bind_unix_socket(sock: &std::path::Path) -> Result<tokio::net::UnixListener, std::io::Error> {
+        async fn bind_unix_socket(sock: &std::path::Path) -> Result<tokio::net::UnixListener, std::io::Error> {
             for attempt in 0..3u8 {
                 let _ = std::fs::remove_file(sock);
                 match tokio::net::UnixListener::bind(sock) {
@@ -414,7 +414,7 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
                     Err(e) => {
                         tracing::warn!(source = "mcp_http", attempt, path = %sock.display(), "Unix socket bind failed: {e}");
                         if attempt < 2 {
-                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                         } else {
                             return Err(e);
                         }
@@ -424,7 +424,7 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
             unreachable!()
         }
 
-        match bind_unix_socket(&sock) {
+        match bind_unix_socket(&sock).await {
             Err(e) => {
                 tracing::error!(source = "mcp_http", path = %sock.display(), "Failed to bind Unix socket after retries: {e}");
                 None
@@ -439,7 +439,7 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
                     async move {
                         let mut uds = initial_uds;
                         loop {
-                            let app = build_router(state.clone(), false, true);
+                            let app = build_router(state.clone(), false, mcp_enabled);
                             let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
                             if let Err(e) = axum::serve(uds, app.into_make_service()).await {
                                 tracing::error!(source = "mcp_http", "Unix socket server error: {e}");
@@ -450,13 +450,13 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
                             // Unexpected exit — rebind and restart.
                             tracing::warn!(source = "mcp_http", path = %sock.display(), "Unix socket server stopped unexpectedly, restarting…");
                             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                            match bind_unix_socket(&sock) {
+                            match bind_unix_socket(&sock).await {
                                 Ok(new_uds) => {
                                     tracing::info!(source = "mcp_http", path = %sock.display(), "Unix socket rebound successfully");
                                     uds = new_uds;
                                 }
-                                Err(_) => {
-                                    tracing::error!(source = "mcp_http", path = %sock.display(), "Unix socket rebind failed permanently — MCP bridge will be unavailable");
+                                Err(e) => {
+                                    tracing::error!(source = "mcp_http", path = %sock.display(), "Unix socket rebind failed permanently ({e}) — MCP bridge will be unavailable");
                                     break;
                                 }
                             }
@@ -2083,9 +2083,9 @@ mod tests {
         let _ = std::fs::remove_dir(&tmp_dir);
     }
 
-    /// Verify that aborting the first server task does NOT remove the socket file
-    /// rebound by a second instance — the race condition fixed by removing SocketGuard
-    /// from the serve task.
+    /// Regression test: aborting the first server task must NOT remove the socket file
+    /// already rebound by the second instance. The fix is removing SocketGuard from the
+    /// serve task — abort no longer triggers any on-drop cleanup of the socket file.
     #[cfg(unix)]
     #[tokio::test]
     async fn test_unix_socket_rebind_no_race() {

@@ -305,24 +305,26 @@ function buildSettingsHtml() {
     };
   }
 
+  const TUIC_ORIGIN = "https://tauri.localhost";
+
   $("#btn-save").addEventListener("click", () => {
     const cfg = gatherConfig();
-    window.parent.postMessage({ type: "tg-save", config: cfg }, "*");
+    window.parent.postMessage({ type: "tg-save", config: cfg }, TUIC_ORIGIN);
     showStatus("ok", "Saved!");
   });
 
   $("#btn-detect").addEventListener("click", () => {
     showStatus("info", "Checking for messages...");
-    window.parent.postMessage({ type: "tg-detect", botToken: $("#token").value.trim() }, "*");
+    window.parent.postMessage({ type: "tg-detect", botToken: $("#token").value.trim() }, TUIC_ORIGIN);
   });
 
   $("#btn-test").addEventListener("click", () => {
     showStatus("info", "Sending test message...");
-    window.parent.postMessage({ type: "tg-test" }, "*");
+    window.parent.postMessage({ type: "tg-test" }, TUIC_ORIGIN);
   });
 
   $("#btn-reset").addEventListener("click", () => {
-    window.parent.postMessage({ type: "tg-reset" }, "*");
+    window.parent.postMessage({ type: "tg-reset" }, TUIC_ORIGIN);
     showStatus("info", "Reset to defaults. Reopening...");
   });
 
@@ -370,7 +372,16 @@ export default {
       if (!data || typeof data.type !== "string") return;
 
       if (data.type === "tg-save") {
-        config = { ...defaultConfig(), ...data.config };
+        const incoming = data.config;
+        if (!incoming || typeof incoming !== "object") return;
+        config = {
+          ...defaultConfig(),
+          botToken: typeof incoming.botToken === "string" ? incoming.botToken.trim() : "",
+          chatId: typeof incoming.chatId === "string" ? incoming.chatId.trim() : "",
+          events: (incoming.events && typeof incoming.events === "object")
+            ? { ...defaultConfig().events, ...incoming.events }
+            : defaultConfig().events,
+        };
         await saveConfig();
         updateTicker();
         host.updateItem(`${PLUGIN_ID}:settings`, {
@@ -502,7 +513,7 @@ export default {
         notify(
           "ci-failure",
           `<b>${escapeHtml(repoLabel())}</b>\nCI failure: <code>${escapeHtml(step)}</code>`
-        ).catch(() => {});
+        ).catch((err) => hostRef.log("error", "Failed to send CI failure notification", String(err)));
       },
     });
 
