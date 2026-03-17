@@ -152,19 +152,36 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     // dependency (effect sets entries → filteredEntries recomputes → effect re-runs)
     const prevSelectedPath = dirRev > 0 ? untrack(() => filteredEntries()[selectedIndex()]?.path) : undefined;
 
-    setLoading(true);
+    // Only show loading spinner on initial load — suppress it on auto-refreshes to
+    // avoid visible flicker when the directory content hasn't actually changed.
+    const isInitialLoad = untrack(() => entries().length === 0);
+    if (isInitialLoad) setLoading(true);
     setError(null);
 
     (async () => {
       try {
         const result = await fb.listDirectory(repoPath, subdir);
-        setEntries(result);
-        // Restore selection by path after auto-refresh, reset on initial load
-        if (prevSelectedPath) {
-          const idx = result.findIndex((e) => e.path === prevSelectedPath);
-          setSelectedIndex(idx >= 0 ? idx : 0);
-        } else {
-          setSelectedIndex(0);
+        // Skip re-render when entries are identical: same count and every entry
+        // matches on the fields that drive visible state (path, git badge, mtime,
+        // ignored flag). New object instances from Rust would otherwise cause a
+        // full DOM repaint even when nothing changed.
+        const current = untrack(() => entries());
+        const changed =
+          current.length !== result.length ||
+          result.some((e, i) => {
+            const c = current[i];
+            return e.path !== c.path || e.git_status !== c.git_status ||
+              e.modified_at !== c.modified_at || e.is_ignored !== c.is_ignored;
+          });
+        if (changed) {
+          setEntries(result);
+          // Restore selection by path after auto-refresh, reset on initial load
+          if (prevSelectedPath) {
+            const idx = result.findIndex((e) => e.path === prevSelectedPath);
+            setSelectedIndex(idx >= 0 ? idx : 0);
+          } else {
+            setSelectedIndex(0);
+          }
         }
       } catch (err) {
         setError(String(err));
