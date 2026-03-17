@@ -242,6 +242,11 @@ pub(crate) struct SilenceState {
     /// Used to detect stale candidates: if the agent continued producing significant
     /// output after the `?` line, it was not a real question.
     output_chunks_after_question: u32,
+    /// The text of the last question emitted (by silence timer or check_silence).
+    /// Used to prevent re-emission of the same question when scrolling causes the
+    /// `?` line to reappear in changed_rows at a different row position.
+    /// Cleared on user input (new conversation cycle).
+    last_emitted_text: Option<String>,
 }
 
 impl SilenceState {
@@ -254,6 +259,7 @@ impl SilenceState {
             suppress_echo_until: None,
             last_status_line_at: None,
             output_chunks_after_question: 0,
+            last_emitted_text: None,
         }
     }
 
@@ -307,12 +313,13 @@ impl SilenceState {
             if in_echo_window {
                 // Ignore — this is the PTY echo of user input.
             } else if self.question_already_emitted
-                && self.pending_question_line.as_deref() == Some(&line)
+                && (self.pending_question_line.as_deref() == Some(&line)
+                    || self.last_emitted_text.as_deref() == Some(&line))
             {
-                // Terminal repaint re-delivered the same `?` line we already
-                // emitted. Don't reset — otherwise the timer will re-fire
-                // after the next silence window (e.g. user switches to the tab,
-                // xterm redraws, and the same question re-appears as ChangedRow).
+                // Same `?` text as already emitted (either still pending, or
+                // previously emitted and reappearing because new output scrolled
+                // it to a different row). Don't reset — otherwise the silence
+                // timer will re-fire for every scroll of the same question.
             } else {
                 // New candidate for silence-based detection.
                 self.pending_question_line = Some(line);
@@ -339,6 +346,7 @@ impl SilenceState {
     pub(crate) fn suppress_user_input(&mut self) {
         self.pending_question_line = None;
         self.question_already_emitted = true;
+        self.last_emitted_text = None;
         self.suppress_echo_until = Some(std::time::Instant::now() + ECHO_SUPPRESS_WINDOW);
     }
 
@@ -372,6 +380,7 @@ impl SilenceState {
             && self.last_output_at.elapsed() >= SILENCE_QUESTION_THRESHOLD
         {
             self.question_already_emitted = true;
+            self.last_emitted_text = Some(line.clone());
             return Some(line.clone());
         }
         None
@@ -393,8 +402,11 @@ impl SilenceState {
     }
 
     /// Mark that a question has been emitted (prevents re-emission).
-    pub(crate) fn mark_emitted(&mut self) {
+    /// Stores the emitted text so that scroll-induced reappearances of the same
+    /// `?` line in changed_rows are recognized as duplicates, not new questions.
+    pub(crate) fn mark_emitted(&mut self, text: &str) {
         self.question_already_emitted = true;
+        self.last_emitted_text = Some(text.to_string());
     }
 }
 
@@ -541,7 +553,7 @@ fn spawn_silence_timer(
             };
 
             // Emit question event.
-            silence.lock().mark_emitted();
+            silence.lock().mark_emitted(&prompt_text);
             let parsed = ParsedEvent::Question {
                 prompt_text: prompt_text.clone(),
                 confident: false,
@@ -2266,25 +2278,83 @@ mod tests {
     }
 
     #[test]
-    fn test_silence_state_stale_clears_pending_so_same_question_can_refire() {
+    fn test_silence_state_stale_same_question_scroll_does_not_refire() {
         let mut s = SilenceState::new();
-        // Question fires
+        let past = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        // Question fires via chunk-based detection (Strategy 2)
         s.on_chunk(false, Some("Continue?".to_string()), false, false);
-        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        s.last_output_at = past;
         assert!(s.check_silence().is_some());
 
         // Agent resumes: 15 non-`?` chunks (above STALE_QUESTION_CHUNKS)
         for _ in 0..15 {
             s.on_chunk(false, None, false, false);
         }
-        // Pending should be cleared after staleness so repaint guard doesn't block
-        // the same question text from firing again later.
+        assert!(s.pending_question_line.is_none(), "pending should be cleared by staleness");
 
-        // Same question arrives again — must be treated as NEW, not repaint
+        // Same "Continue?" reappears in changed_rows because new output scrolled it
+        // to a different row. This is NOT a new question — must not re-fire.
         s.on_chunk(false, Some("Continue?".to_string()), false, false);
-        s.last_output_at = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        assert!(s.question_already_emitted,
+            "scroll of previously emitted question must not reset emitted flag");
+        s.last_output_at = past;
+        assert!(s.check_silence().is_none(),
+            "same question text from scroll must not re-fire");
+    }
+
+    #[test]
+    fn test_silence_state_stale_same_question_refires_after_user_input() {
+        let mut s = SilenceState::new();
+        let past = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+        // Question fires
+        s.on_chunk(false, Some("Continue?".to_string()), false, false);
+        s.last_output_at = past;
+        assert!(s.check_silence().is_some());
+
+        // Agent resumes: 15 non-`?` chunks
+        for _ in 0..15 {
+            s.on_chunk(false, None, false, false);
+        }
+
+        // User provides input → new conversation cycle
+        s.suppress_user_input();
+        // Expire the echo suppression window so the next `?` line is not ignored
+        s.suppress_echo_until = Some(std::time::Instant::now() - std::time::Duration::from_millis(1));
+
+        // Same question arrives again — now it IS a new question (user answered)
+        s.on_chunk(false, Some("Continue?".to_string()), false, false);
+        s.last_output_at = past;
         assert_eq!(s.check_silence(), Some("Continue?".to_string()),
-            "same question text after stale output must fire as new question");
+            "same question text after user input must fire as new question");
+    }
+
+    #[test]
+    fn test_silence_state_screen_emitted_question_scroll_does_not_refire() {
+        let mut s = SilenceState::new();
+        let past = std::time::Instant::now() - SILENCE_QUESTION_THRESHOLD - std::time::Duration::from_millis(100);
+
+        // Question arrives in a chunk
+        s.on_chunk(false, Some("Continue?".to_string()), false, false);
+
+        // 15 non-? chunks → pending cleared by staleness
+        for _ in 0..15 {
+            s.on_chunk(false, None, false, false);
+        }
+        assert!(s.pending_question_line.is_none());
+
+        // Silence timer (Strategy 1) finds "Continue?" on screen and emits.
+        s.last_output_at = past;
+        s.mark_emitted("Continue?");
+
+        // New output causes scroll → same "Continue?" appears in changed_rows
+        s.on_chunk(false, Some("Continue?".to_string()), false, false);
+
+        // Must NOT reset question_already_emitted — it's a scroll artifact
+        assert!(s.question_already_emitted,
+            "scroll of screen-emitted question must not reset emitted flag");
+        s.last_output_at = past;
+        assert!(!s.is_silent(),
+            "same question after screen emission must not allow re-detection");
     }
 
     #[test]
