@@ -65,6 +65,22 @@ let config = defaultConfig();
 let lastSent = {};  // eventType -> timestamp
 let sentCount = 0;
 
+function mergeEvents(raw) {
+  const base = defaultConfig().events;
+  if (!raw || typeof raw !== "object") return base;
+  const merged = { ...base };
+  for (const key of Object.keys(base)) {
+    const entry = raw[key];
+    if (entry && typeof entry === "object") {
+      merged[key] = {
+        enabled: typeof entry.enabled === "boolean" ? entry.enabled : base[key].enabled,
+        silent: typeof entry.silent === "boolean" ? entry.silent : base[key].silent,
+      };
+    }
+  }
+  return merged;
+}
+
 async function loadConfig() {
   try {
     const raw = await hostRef.invoke("read_plugin_data", {
@@ -74,10 +90,12 @@ async function loadConfig() {
     const saved = JSON.parse(raw);
     config = {
       ...defaultConfig(),
-      ...saved,
-      events: { ...defaultConfig().events, ...(saved.events || {}) },
+      botToken: typeof saved.botToken === "string" ? saved.botToken : "",
+      chatId: typeof saved.chatId === "string" ? saved.chatId : "",
+      events: mergeEvents(saved.events),
     };
-  } catch {
+  } catch (err) {
+    hostRef.log("warn", "Failed to load config, using defaults", String(err));
     config = defaultConfig();
   }
 }
@@ -128,10 +146,11 @@ async function sendTelegram(text, silent) {
   }
 }
 
-async function autoDetectChatId() {
-  if (!config.botToken || config.botToken.length < 10) return null;
+async function autoDetectChatId(tokenOverride) {
+  const token = tokenOverride ?? config.botToken;
+  if (!token || token.length < 10) return null;
 
-  const url = `${TELEGRAM_API}/bot${config.botToken}/getUpdates?limit=5`;
+  const url = `${TELEGRAM_API}/bot${token}/getUpdates?limit=5`;
   try {
     const resp = await hostRef.httpFetch(url, { method: "GET" });
     if (resp.status !== 200) return null;
@@ -144,7 +163,8 @@ async function autoDetectChatId() {
       }
     }
     return null;
-  } catch {
+  } catch (err) {
+    hostRef.log("warn", "autoDetectChatId failed", String(err));
     return null;
   }
 }
@@ -305,30 +325,36 @@ function buildSettingsHtml() {
     };
   }
 
-  const TUIC_ORIGIN = "https://tauri.localhost";
-
+  // iframe→parent: use "*" because the parent origin varies by platform
+  // (macOS: https://tauri.localhost, Windows: tauri://localhost, Linux: http://tauri.localhost).
+  // The parent validates event.source === iframeRef.contentWindow for security.
   $("#btn-save").addEventListener("click", () => {
     const cfg = gatherConfig();
-    window.parent.postMessage({ type: "tg-save", config: cfg }, TUIC_ORIGIN);
-    showStatus("ok", "Saved!");
+    window.parent.postMessage({ type: "tg-save", config: cfg }, "*");
+    showStatus("info", "Saving...");
   });
 
   $("#btn-detect").addEventListener("click", () => {
     showStatus("info", "Checking for messages...");
-    window.parent.postMessage({ type: "tg-detect", botToken: $("#token").value.trim() }, TUIC_ORIGIN);
+    window.parent.postMessage({ type: "tg-detect", botToken: $("#token").value.trim() }, "*");
   });
 
   $("#btn-test").addEventListener("click", () => {
     showStatus("info", "Sending test message...");
-    window.parent.postMessage({ type: "tg-test" }, TUIC_ORIGIN);
+    window.parent.postMessage({ type: "tg-test" }, "*");
   });
 
   $("#btn-reset").addEventListener("click", () => {
-    window.parent.postMessage({ type: "tg-reset" }, TUIC_ORIGIN);
+    window.parent.postMessage({ type: "tg-reset" }, "*");
     showStatus("info", "Reset to defaults. Reopening...");
   });
 
+  // Known Tauri webview origins by platform
+  const TRUSTED_ORIGINS = ["https://tauri.localhost", "tauri://localhost", "http://tauri.localhost"];
+
   window.addEventListener("message", (e) => {
+    // Only accept messages from the parent Tauri webview
+    if (!TRUSTED_ORIGINS.includes(e.origin) && e.origin !== "null") return;
     if (e.data && e.data.type === "tg-result") {
       showStatus(e.data.ok ? "ok" : "err", e.data.message);
       if (e.data.chatId) {
@@ -378,24 +404,27 @@ export default {
           ...defaultConfig(),
           botToken: typeof incoming.botToken === "string" ? incoming.botToken.trim() : "",
           chatId: typeof incoming.chatId === "string" ? incoming.chatId.trim() : "",
-          events: (incoming.events && typeof incoming.events === "object")
-            ? { ...defaultConfig().events, ...incoming.events }
-            : defaultConfig().events,
+          events: mergeEvents(incoming.events),
         };
-        await saveConfig();
+        try {
+          await saveConfig();
+        } catch (err) {
+          host.log("error", "Failed to persist config", String(err));
+          panelHandle.send({ type: "tg-result", ok: false, message: "Save failed: " + String(err) });
+          return;
+        }
         updateTicker();
         host.updateItem(`${PLUGIN_ID}:settings`, {
           subtitle: isConfigured() ? "Configured" : "Click to set up",
           iconColor: isConfigured() ? "#89b4fa" : "var(--fg-muted)",
         });
+        panelHandle.send({ type: "tg-result", ok: true, message: "Configuration saved" });
         host.log("info", "Configuration saved");
       }
 
       if (data.type === "tg-detect") {
-        const origToken = config.botToken;
-        config.botToken = data.botToken || config.botToken;
-        const chatId = await autoDetectChatId();
-        config.botToken = origToken;
+        const token = (typeof data.botToken === "string" && data.botToken.trim()) || config.botToken;
+        const chatId = await autoDetectChatId(token);
         if (chatId) {
           panelHandle.send({
             type: "tg-result", ok: true,
@@ -424,7 +453,11 @@ export default {
 
       if (data.type === "tg-reset") {
         config = defaultConfig();
-        await saveConfig();
+        try {
+          await saveConfig();
+        } catch (err) {
+          host.log("error", "Failed to persist reset config", String(err));
+        }
         updateTicker();
         setTimeout(openSettings, 200);
       }
@@ -513,7 +546,9 @@ export default {
         notify(
           "ci-failure",
           `<b>${escapeHtml(repoLabel())}</b>\nCI failure: <code>${escapeHtml(step)}</code>`
-        ).catch((err) => hostRef.log("error", "Failed to send CI failure notification", String(err)));
+        ).catch((err) => {
+          if (hostRef) hostRef.log("error", "Failed to send CI failure notification", String(err));
+        });
       },
     });
 
