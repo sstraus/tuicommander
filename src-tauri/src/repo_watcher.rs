@@ -1,6 +1,7 @@
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -70,6 +71,15 @@ pub(crate) fn start_watching(
     let handle = app_handle.cloned();
     let event_bus = state.event_bus.clone();
 
+    // Track whether .git/worktrees/ is being watched so the callback can
+    // dynamically add the watch when the directory first appears (e.g. when
+    // an external tool like Claude Code creates a git worktree).
+    let worktrees_dir_for_check = git_dir.join("worktrees");
+    let worktrees_watched = Arc::new(AtomicBool::new(worktrees_dir_for_check.is_dir()));
+    let worktrees_watched_cb = Arc::clone(&worktrees_watched);
+    let git_dir_cb = git_dir.clone();
+    let state_cb = Arc::clone(state);
+
     let mut debouncer = new_debouncer(
         Duration::from_millis(DEBOUNCE_MS),
         move |events: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
@@ -90,6 +100,22 @@ pub(crate) fn start_watching(
 
             if !dominated {
                 return;
+            }
+
+            // Dynamically watch .git/worktrees/ when it first appears.
+            // At startup the directory may not exist yet; external tools (e.g. Claude Code)
+            // create it later via `git worktree add`. The non-recursive watch on .git/
+            // detects the new `worktrees/` entry, and here we add a dedicated watch so
+            // subsequent add/remove operations inside it are also detected.
+            if !worktrees_watched_cb.load(Ordering::Relaxed) {
+                let wt_dir = git_dir_cb.join("worktrees");
+                if wt_dir.is_dir() {
+                    if let Some(mut debouncer_ref) = state_cb.repo_watchers.get_mut(&repo_path_owned) {
+                        if debouncer_ref.watcher().watch(wt_dir.as_path(), RecursiveMode::NonRecursive).is_ok() {
+                            worktrees_watched_cb.store(true, Ordering::Relaxed);
+                        }
+                    }
+                }
             }
 
             // Broadcast to SSE/WebSocket consumers
