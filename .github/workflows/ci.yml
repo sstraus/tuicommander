@@ -116,6 +116,10 @@ jobs:
         run: |
           target=$(rustc --print host-tuple)
           touch "src-tauri/binaries/tuic-bridge-${target}"
+          # Windows needs .exe extension for sidecar resolution
+          if [[ "$target" == *windows* ]]; then
+            touch "src-tauri/binaries/tuic-bridge-${target}.exe"
+          fi
 
       - name: Clippy
         working-directory: src-tauri
