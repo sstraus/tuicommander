@@ -1,0 +1,31 @@
+src/plugins/types.ts
+  821eac0dc5abf4f8 442,444
+src/plugins/pluginRegistry.ts
+  821eac0dc5abf4f8 329,335-337
+examples/plugins/telegram-notifier/main.js
+  821eac0dc5abf4f8 308-309,312,318,323,327,375-383,516
+src-tauri/src/mcp_http/mod.rs
+  821eac0dc5abf4f8 409,417,427,442,453,458-459,2086-2088
+.gitignore
+  821eac0dc5abf4f8 27-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "c49e23822e7f0c8f8a5a6fab68073080deedd8f5",
+  "prompts": {
+    "821eac0dc5abf4f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "41d28792-9b29-426d-9bc8-544cb6dce69d",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 36,
+      "total_deletions": 22,
+      "accepted_lines": 35,
+      "overriden_lines": 0
+    }
+  }
+}
