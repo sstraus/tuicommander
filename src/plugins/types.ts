@@ -437,8 +437,11 @@ export interface PluginHost {
   /** Open a local markdown file in the markdown panel. Requires "ui:markdown" capability. Path must be absolute. */
   openMarkdownFile(absolutePath: string): void;
 
-  /** Play the notification sound. Requires "ui:sound" capability. */
-  playNotificationSound(): Promise<void>;
+  /**
+   * Play a notification sound. Requires "ui:sound" capability.
+   * @param sound - Sound type: "question" | "error" | "completion" | "warning" | "info". Defaults to "info".
+   */
+  playNotificationSound(sound?: string): Promise<void>;
 
   // -- Tier 3b: Filesystem operations (capability-gated) --
 

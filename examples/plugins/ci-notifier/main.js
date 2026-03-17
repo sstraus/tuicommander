@@ -46,9 +46,12 @@ export default {
       },
     });
 
-    // Watch for CI failure patterns like "FAILED: step-name"
+    // Watch for CI pipeline failure patterns (not generic "error:" lines).
+    // Matches: "FAILED: step-name", "Build FAILED", "Pipeline FAILURE",
+    //          "FAILED  tests/foo.test.ts" (Jest/Vitest)
+    // Does NOT match: compiler errors, log lines with "error:", stack traces.
     host.registerOutputWatcher({
-      pattern: /(?:FAILED|FAILURE|ERROR):\s*(.+)/i,
+      pattern: /(?:^|\s)(?:Build |Pipeline |Step |Job |Task )?FAIL(?:ED|URE)\b[:\s]+(.+)/,
       onMatch(match, sessionId) {
         const step = match[1].trim();
         const idx = failures.length;
@@ -71,8 +74,8 @@ export default {
           contentUri: `ci:detail?idx=${idx}`,
         });
 
-        // Play notification sound (async, fire and forget)
-        host.playNotificationSound().catch(() => {});
+        // Play error notification sound (async, fire and forget)
+        host.playNotificationSound("error").catch(() => {});
       },
     });
   },

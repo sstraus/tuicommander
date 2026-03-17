@@ -186,7 +186,7 @@ host.getGitDiff(repoPath, scope?)       // unified diff string (scope: "staged" 
 | `await host.writePty(sessionId: string, data: string): Promise<void>` | `pty:write` |
 | `host.openMarkdownPanel(title: string, contentUri: string): void` | `ui:markdown` |
 | `host.openMarkdownFile(absolutePath: string): void` | `ui:markdown` |
-| `await host.playNotificationSound(): Promise<void>` | `ui:sound` |
+| `await host.playNotificationSound(sound?: "question" \| "error" \| "completion" \| "warning" \| "info"): Promise<void>` | `ui:sound` |
 | `host.openPanel({ id, title, html, onMessage? }): PanelHandle` | `ui:panel` |
 | `host.setTicker({ id, text, label?, icon?, priority?, ttlMs?, onClick? }): void` | `ui:ticker` |
 | `host.clearTicker(id: string): void` | `ui:ticker` |
