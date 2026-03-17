@@ -5,6 +5,9 @@
   overflow: auto;
   font-family: var(--font-mono);
   font-size: var(--font-xs);
+  /* Override global user-select:none so diff text can be highlighted & copied */
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .header {
