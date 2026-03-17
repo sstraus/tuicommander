@@ -74,31 +74,12 @@ fn legacy_dotdir() -> PathBuf {
 
 /// Copy all files from legacy config dir to new platform dir.
 fn migrate_config_dir(from: &std::path::Path, to: &std::path::Path) -> Result<(), String> {
-    std::fs::create_dir_all(to)
-        .map_err(|e| format!("Failed to create new config dir: {e}"))?;
-
-    for entry in std::fs::read_dir(from)
-        .map_err(|e| format!("Failed to read legacy config dir: {e}"))?
-    {
-        let entry = entry.map_err(|e| format!("Failed to read dir entry: {e}"))?;
-        let dest = to.join(entry.file_name());
-        let file_type = entry.file_type()
-            .map_err(|e| format!("Failed to get file type: {e}"))?;
-
-        if file_type.is_file() {
-            std::fs::copy(entry.path(), &dest)
-                .map_err(|e| format!("Failed to copy {}: {e}", entry.path().display()))?;
-        } else if file_type.is_dir() {
-            // Recursively copy subdirectories (models/, worktrees/)
-            copy_dir_recursive(&entry.path(), &dest)?;
-        }
-    }
-
+    copy_dir_recursive(from, to)?;
     tracing::info!(from = %from.display(), to = %to.display(), "Migrated config directory");
     Ok(())
 }
 
-/// Recursively copy a directory.
+/// Recursively copy a directory, preserving symlinks.
 fn copy_dir_recursive(from: &std::path::Path, to: &std::path::Path) -> Result<(), String> {
     std::fs::create_dir_all(to)
         .map_err(|e| format!("Failed to create dir {}: {e}", to.display()))?;
@@ -111,12 +92,35 @@ fn copy_dir_recursive(from: &std::path::Path, to: &std::path::Path) -> Result<()
         let file_type = entry.file_type()
             .map_err(|e| format!("File type error: {e}"))?;
 
-        if file_type.is_file() {
+        if file_type.is_symlink() {
+            recreate_symlink(&entry.path(), &dest)?;
+        } else if file_type.is_file() {
             std::fs::copy(entry.path(), &dest)
                 .map_err(|e| format!("Copy error: {e}"))?;
         } else if file_type.is_dir() {
             copy_dir_recursive(&entry.path(), &dest)?;
         }
+    }
+    Ok(())
+}
+
+/// Recreate a symlink at `dest` pointing to the same target as `source`.
+fn recreate_symlink(source: &std::path::Path, dest: &std::path::Path) -> Result<(), String> {
+    let target = std::fs::read_link(source)
+        .map_err(|e| format!("Failed to read symlink {}: {e}", source.display()))?;
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&target, dest)
+        .map_err(|e| format!("Failed to create symlink {}: {e}", dest.display()))?;
+    #[cfg(windows)]
+    {
+        // Windows requires different calls for file vs directory symlinks
+        let is_dir = std::fs::metadata(&target).map(|m| m.is_dir()).unwrap_or(false);
+        if is_dir {
+            std::os::windows::fs::symlink_dir(&target, dest)
+        } else {
+            std::os::windows::fs::symlink_file(&target, dest)
+        }
+        .map_err(|e| format!("Failed to create symlink {}: {e}", dest.display()))?;
     }
     Ok(())
 }
@@ -1805,6 +1809,43 @@ mod tests {
             result.ends_with("note-images"),
             "Should end with note-images, got: {result}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_dir_recursive_preserves_symlinks() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+
+        // Create a real file and a symlink to it
+        let real_file = src.path().join("real.txt");
+        fs::write(&real_file, "hello").unwrap();
+        let link_path = src.path().join("link.txt");
+        std::os::unix::fs::symlink(&real_file, &link_path).unwrap();
+
+        // Create a real subdir and a symlink to it
+        let sub = src.path().join("subdir");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("inner.txt"), "world").unwrap();
+        let dir_link = src.path().join("dir-link");
+        std::os::unix::fs::symlink(&sub, &dir_link).unwrap();
+
+        let dest = dst.path().join("out");
+        copy_dir_recursive(src.path(), &dest).unwrap();
+
+        // Verify the file symlink was recreated (not copied as a regular file)
+        let dest_link = dest.join("link.txt");
+        assert!(dest_link.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_link(&dest_link).unwrap(), real_file);
+
+        // Verify the dir symlink was recreated
+        let dest_dir_link = dest.join("dir-link");
+        assert!(dest_dir_link.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_link(&dest_dir_link).unwrap(), sub);
+
+        // Verify the real file was copied normally
+        assert!(!dest.join("real.txt").symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_to_string(dest.join("real.txt")).unwrap(), "hello");
     }
 
 }
