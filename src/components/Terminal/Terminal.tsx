@@ -238,6 +238,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pty.pause(sessionId).catch(() => {});
       }
 
+      // Capture scroll state BEFORE write. xterm may jump the viewport when
+      // processing escape sequences (cursor moves, screen clears) that agents
+      // like Claude Code emit during TUI redraws. We restore position in the
+      // callback if the user was scrolled up and the viewport jumped upward.
+      const buf = terminal.buffer.active;
+      const viewportYBefore = buf.viewportY;
+      const wasAtBottomBefore = buf.viewportY >= buf.baseY;
+
       terminal.write(data, () => {
         pendingWriteBytes -= byteLen;
 
@@ -245,6 +253,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
         if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
           isPaused = false;
           pty.resume(sessionId).catch(() => {});
+        }
+
+        // Guard: restore scroll position if user was scrolled up and xterm
+        // jumped the viewport upward (e.g. due to cursor-positioning escapes).
+        // Only fix upward jumps — downward movement is expected behavior.
+        if (!wasAtBottomBefore && terminal) {
+          const afterBuf = terminal.buffer.active;
+          if (afterBuf.viewportY < viewportYBefore) {
+            terminal.scrollToLine(viewportYBefore);
+          }
         }
       });
     } else {
