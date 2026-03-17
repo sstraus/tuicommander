@@ -403,55 +403,66 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
             tracing::warn!(source = "mcp_http", path = %parent.display(), "Failed to create socket parent dir: {e}");
         }
 
-        // RAII guard: removes the socket file on drop, ensuring cleanup even
-        // if the process is killed between bind and the graceful-shutdown path.
-        struct SocketGuard(std::path::PathBuf);
-        impl Drop for SocketGuard {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_file(&self.0);
-            }
-        }
-
-        // Retry bind up to 3 times — each attempt removes any stale socket
-        // first, so a crashed previous instance doesn't permanently block us.
-        let mut uds_result = Err(std::io::Error::other("not attempted"));
-        for attempt in 0..3u8 {
-            let _ = std::fs::remove_file(&sock);
-            match tokio::net::UnixListener::bind(&sock) {
-                Ok(uds) => {
-                    uds_result = Ok(uds);
-                    break;
-                }
-                Err(e) => {
-                    tracing::warn!(source = "mcp_http", attempt, path = %sock.display(), "Unix socket bind failed: {e}");
-                    if attempt < 2 {
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    } else {
-                        uds_result = Err(e);
+        // Bind the socket. Remove any stale file first (left by a crashed previous run).
+        // NOTE: No SocketGuard here — cleanup on server restart would race with the new
+        // instance's bind. Explicit removal happens in the shutdown sequence below (line ~567).
+        fn bind_unix_socket(sock: &std::path::Path) -> Result<tokio::net::UnixListener, std::io::Error> {
+            for attempt in 0..3u8 {
+                let _ = std::fs::remove_file(sock);
+                match tokio::net::UnixListener::bind(sock) {
+                    Ok(uds) => return Ok(uds),
+                    Err(e) => {
+                        tracing::warn!(source = "mcp_http", attempt, path = %sock.display(), "Unix socket bind failed: {e}");
+                        if attempt < 2 {
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        } else {
+                            return Err(e);
+                        }
                     }
                 }
             }
+            unreachable!()
         }
 
-        match uds_result {
-            Ok(uds) => {
-                tracing::info!(source = "mcp_http", path = %sock.display(), "Unix socket listening");
-                let _guard = SocketGuard(sock);
-                let app = build_router(state.clone(), false, true);
-                // Unix socket connections don't have a SocketAddr, but many route
-                // handlers extract ConnectInfo<SocketAddr> for localhost guards.
-                // Inject a synthetic localhost ConnectInfo so those extractors work.
-                let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
-                Some(tokio::spawn(async move {
-                    let _guard = _guard; // move guard into task so it lives as long as the server
-                    if let Err(e) = axum::serve(uds, app.into_make_service()).await {
-                        tracing::error!(source = "mcp_http", "Unix socket server error: {e}");
-                    }
-                }))
-            }
+        match bind_unix_socket(&sock) {
             Err(e) => {
                 tracing::error!(source = "mcp_http", path = %sock.display(), "Failed to bind Unix socket after retries: {e}");
                 None
+            }
+            Ok(initial_uds) => {
+                tracing::info!(source = "mcp_http", path = %sock.display(), "Unix socket listening");
+                // Watchdog task: if axum::serve() returns (crash or abort), log it.
+                // On graceful shutdown h.abort() is called — the task exits cleanly,
+                // and the explicit remove_file below handles cleanup.
+                Some(tokio::spawn({
+                    let state = state.clone();
+                    async move {
+                        let mut uds = initial_uds;
+                        loop {
+                            let app = build_router(state.clone(), false, true);
+                            let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
+                            if let Err(e) = axum::serve(uds, app.into_make_service()).await {
+                                tracing::error!(source = "mcp_http", "Unix socket server error: {e}");
+                            } else {
+                                // Clean exit (abort signal) — stop the watchdog.
+                                break;
+                            }
+                            // Unexpected exit — rebind and restart.
+                            tracing::warn!(source = "mcp_http", path = %sock.display(), "Unix socket server stopped unexpectedly, restarting…");
+                            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                            match bind_unix_socket(&sock) {
+                                Ok(new_uds) => {
+                                    tracing::info!(source = "mcp_http", path = %sock.display(), "Unix socket rebound successfully");
+                                    uds = new_uds;
+                                }
+                                Err(_) => {
+                                    tracing::error!(source = "mcp_http", path = %sock.display(), "Unix socket rebind failed permanently — MCP bridge will be unavailable");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }))
             }
         }
     };
@@ -2068,6 +2079,58 @@ mod tests {
         assert!(response.contains("\"ok\":true"), "expected JSON health body, got: {response}");
 
         server.abort();
+        let _ = std::fs::remove_file(&sock_path);
+        let _ = std::fs::remove_dir(&tmp_dir);
+    }
+
+    /// Verify that aborting the first server task does NOT remove the socket file
+    /// rebound by a second instance — the race condition fixed by removing SocketGuard
+    /// from the serve task.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_unix_socket_rebind_no_race() {
+        let tmp_dir = std::path::PathBuf::from("/tmp")
+            .join(format!("tuic-race-{}", &uuid::Uuid::new_v4().to_string()[..8]));
+        match std::fs::create_dir_all(&tmp_dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!("Skipping test: cannot create dir in sandbox");
+                return;
+            }
+            Err(e) => panic!("create_dir_all: {e}"),
+        }
+        let sock_path = tmp_dir.join("s");
+
+        // First instance: bind and spawn server
+        let _ = std::fs::remove_file(&sock_path);
+        let uds1 = tokio::net::UnixListener::bind(&sock_path).unwrap();
+        let state = test_state();
+        let app1 = build_router(state.clone(), false, true)
+            .layer(axum::middleware::from_fn(inject_localhost_connect_info));
+        let server1 = tokio::spawn(async move {
+            let _ = axum::serve(uds1, app1.into_make_service()).await;
+        });
+
+        // Abort first instance (simulates server restart)
+        server1.abort();
+        let _ = server1.await; // wait for abort to complete
+
+        // Second instance: rebind (as done in bind_unix_socket)
+        let _ = std::fs::remove_file(&sock_path);
+        let uds2 = tokio::net::UnixListener::bind(&sock_path).unwrap();
+        let app2 = build_router(state.clone(), false, true)
+            .layer(axum::middleware::from_fn(inject_localhost_connect_info));
+        let server2 = tokio::spawn(async move {
+            let _ = axum::serve(uds2, app2.into_make_service()).await;
+        });
+
+        // Give tokio a moment to run any lingering drop callbacks
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Socket file must still exist — the first instance's abort must not have removed it
+        assert!(sock_path.exists(), "socket file removed by first instance abort — race condition present");
+
+        server2.abort();
         let _ = std::fs::remove_file(&sock_path);
         let _ = std::fs::remove_dir(&tmp_dir);
     }
