@@ -6,7 +6,8 @@ import { mdTabsStore } from "../../stores/mdTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { settingsStore } from "../../stores/settings";
 import { makeBranchKey } from "../../stores/tabManager";
-import { getModifierSymbol } from "../../platform";
+import { getModifierSymbol, shortenHomePath } from "../../platform";
+import { appLogger } from "../../stores/appLogger";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -78,6 +79,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
       const idx = ids.indexOf(id);
       const isPinned = tab?.pinned ?? false;
       return [
+        { label: t("tabBar.copyPath", "Copy Path"), action: () => { if (tab?.filePath) navigator.clipboard.writeText(shortenHomePath(tab.filePath)).catch((err) => appLogger.error("app", "Failed to copy path", err)); } },
         { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => diffTabsStore.setPinned(id, !isPinned) },
         { label: "", separator: true, action: () => {} },
         { label: t("tabBar.closeTab", "Close Tab"), action: () => { diffTabsStore.remove(id); props.onTabClose(id); } },
@@ -91,7 +93,9 @@ export const TabBar: Component<TabBarProps> = (props) => {
       const ids = visibleMdIds();
       const idx = ids.indexOf(id);
       const isPinned = tab?.pinned ?? false;
+      const hasPath = tab?.type === "file" && tab.filePath;
       return [
+        ...(hasPath ? [{ label: t("tabBar.copyPath", "Copy Path"), action: () => { navigator.clipboard.writeText(shortenHomePath(tab.filePath)).catch((err) => appLogger.error("app", "Failed to copy path", err)); } }] : []),
         { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => mdTabsStore.setPinned(id, !isPinned) },
         { label: "", separator: true, action: () => {} },
         { label: t("tabBar.closeTab", "Close Tab"), action: () => { mdTabsStore.remove(id); props.onTabClose(id); } },
@@ -106,6 +110,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
       const idx = ids.indexOf(id);
       const isPinned = tab?.pinned ?? false;
       return [
+        { label: t("tabBar.copyPath", "Copy Path"), action: () => { if (tab?.filePath) navigator.clipboard.writeText(shortenHomePath(tab.filePath)).catch((err) => appLogger.error("app", "Failed to copy path", err)); } },
         { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => editorTabsStore.setPinned(id, !isPinned) },
         { label: "", separator: true, action: () => {} },
         { label: t("tabBar.closeTab", "Close Tab"), action: () => { editorTabsStore.remove(id); props.onTabClose(id); } },
