@@ -553,7 +553,64 @@ panel.close();
 </script>
 ```
 
-**CSS Theme Injection:** CSS custom properties from the app's `:root` (e.g. `--bg-primary`, `--fg-primary`, `--border`, `--accent`, `--error`, `--warning`) are automatically injected into the iframe. Use `var(--bg-primary)` in your CSS to match the app theme.
+**CSS Base Stylesheet + Theme Injection:** Every plugin panel iframe receives two automatic CSS injections:
+
+1. **Base stylesheet** (`pluginBaseStyles.ts`) — a complete design foundation with reset, typography, buttons, inputs, cards, tables, badges, toasts, scrollbars, and empty states. All values use CSS custom properties from the app theme. Plugins get a polished, consistent look **without writing any CSS**.
+
+2. **Theme variables** — all CSS custom properties from the app's `:root` are injected (e.g. `--bg-primary`, `--fg-primary`, `--border`, `--accent`, `--error`, `--warning`, `--success`, `--text-on-accent`). These match the user's active theme.
+
+**Design strategy:** Write minimal plugin-specific CSS that overrides the base. The base provides:
+
+| Base class | Description |
+|------------|-------------|
+| `body` | Themed background, font, color |
+| `button`, `.btn` | Default button with hover/active states |
+| `button.primary`, `.btn-primary` | Accent-colored button |
+| `button.danger`, `.btn-danger` | Error-colored button |
+| `input`, `textarea`, `select` | Themed form controls with focus ring |
+| `.card` | Bordered container with hover elevation |
+| `table`, `th`, `td` | Styled table with hover rows |
+| `.badge` | Inline label (combine with `.badge-p1`, `.badge-error`, `.badge-success`, `.badge-accent`, `.badge-warning`, `.badge-muted`) |
+| `label`, `.hint` | Form labels and help text |
+| `.filter-bar` | Flex row for search/filter UI |
+| `.empty-state` | Centered placeholder with `.hint` |
+| `.toast`, `.toast.error`, `.toast.success` | Fixed-position notification (add `.show` to display) |
+| `h1`–`h4` | Themed headings |
+| `code`, `a`, `hr`, `small` | Themed inline elements |
+| `::-webkit-scrollbar` | Styled scrollbar matching the app |
+
+**Example — minimal plugin CSS:**
+
+```html
+<style>
+  /* Only what's specific to this plugin */
+  body { padding: 16px; }
+  .my-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+</style>
+```
+
+All standard elements (buttons, inputs, tables) will look correct automatically.
+
+**Available CSS variables** (from the app's active theme):
+
+| Variable | Usage |
+|----------|-------|
+| `--bg-primary` | Main canvas |
+| `--bg-secondary` | Sidebar-level surfaces |
+| `--bg-tertiary` | Inputs, elevated surfaces |
+| `--bg-highlight` | Hover states |
+| `--fg-primary` | Primary text |
+| `--fg-secondary` | Labels, secondary text |
+| `--fg-muted` | Tertiary text |
+| `--accent` | Links, primary actions |
+| `--accent-hover` | Hover on accent |
+| `--success` | Positive states |
+| `--warning` | Caution states |
+| `--error` | Error states |
+| `--border` | All borders |
+| `--text-on-accent` | Text on colored backgrounds |
+| `--text-on-error` | Text on error backgrounds |
+| `--text-on-success` | Text on success backgrounds |
 
 **Security:** The iframe uses `sandbox="allow-scripts"` without `allow-same-origin`, blocking access to Tauri IPC and the parent page DOM. The `close-panel` message type is handled as a system message; all other messages are routed to the `onMessage` callback.
 

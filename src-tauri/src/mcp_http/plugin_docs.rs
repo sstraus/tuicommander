@@ -102,6 +102,15 @@ export default {
 Icons: monochrome inline SVG, `fill="currentColor"`, `viewBox="0 0 16 16"`. Never emoji.
 Content URIs: `scheme:path?key=value` (e.g. `plan:file?path=%2Frepo%2Fplans%2Ffoo.md`)
 
+## Panel CSS Design Strategy
+
+Every `ui:panel` iframe gets two automatic injections: (1) a **base stylesheet** with reset, themed typography, buttons (`.primary`, `.danger`), inputs, `.card`, tables, `.badge` variants (`.badge-p1`/`.badge-error`/`.badge-success`/`.badge-accent`/`.badge-muted`), `.filter-bar`, `.empty-state`, `.toast` (`.error`/`.success` + `.show`), and scrollbars; (2) all **CSS theme variables** (`--bg-primary`, `--bg-secondary`, `--bg-tertiary`, `--bg-highlight`, `--fg-primary`, `--fg-secondary`, `--fg-muted`, `--accent`, `--accent-hover`, `--success`, `--warning`, `--error`, `--border`, `--text-on-accent`, `--text-on-error`, `--text-on-success`).
+
+**Write minimal CSS** — only plugin-specific layout. Standard elements are styled automatically. Example:
+```html
+<style>body { padding: 16px; } .my-grid { display: grid; gap: 8px; }</style>
+```
+
 ## PluginHost API
 
 All Tier 1-2 methods are always available. Tier 3-4 require capabilities in manifest.json; calling without capability throws `PluginCapabilityError`.
@@ -189,7 +198,7 @@ host.getGitDiff(repoPath, scope?)       // unified diff string (scope: "staged" 
 
 TerminalActionContext (passed to action/disabled at right-click time): `{ sessionId: string | null, repoPath: string | null }`. Actions appear in terminal right-click "Actions" submenu. Submenu hidden when no actions registered. Stale handlers (after plugin unload) are no-ops.
 
-PanelHandle: `{ tabId, update(html), close(), send(data) }` — HTML rendered in sandboxed iframe with automatic CSS theme variable injection. Use `onMessage` callback in options to receive messages from iframe, `send()` to post messages back.
+PanelHandle: `{ tabId, update(html), close(), send(data) }` — HTML rendered in sandboxed iframe with automatic base stylesheet + CSS theme variable injection. Write minimal plugin-specific CSS only (see Panel CSS Design Strategy above). Use `onMessage` callback to receive messages from iframe, `send()` to post messages back.
 HttpResponse: `{ status: number, headers: Record<string, string>, body: string }` — non-2xx is NOT an error.
 
 **setTicker notes:** Shared ticker area rotates messages from all plugins. Priority tiers: <10 = popover only, 10-99 = auto-rotate (5s), >=100 = urgent pin. `label` is shown as source prefix (e.g. "Usage · 5h: 42%"). Counter badge (1/3 ▸) shown when multiple tickers active. Click badge to cycle, right-click for popover. Legacy aliases: `postTickerMessage`/`removeTickerMessage`.

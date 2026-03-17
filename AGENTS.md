@@ -18,16 +18,17 @@ Every code change that affects user-visible behavior, APIs, or configuration MUS
 ### Sync Matrix by Area
 
 #### Plugin System
-When modifying PluginHost API, capabilities, manifest schema, or Tauri commands used by plugins:
+When modifying PluginHost API, capabilities, manifest schema, Tauri commands used by plugins, plugin panel rendering (base CSS, theme injection, iframe behavior), or plugin infrastructure (loader, registry, discovery):
 
 | File | What to update |
 |------|----------------|
 | `src/plugins/types.ts` | PluginHost interface, PluginCapability union, snapshot types |
 | `src/plugins/pluginRegistry.ts` | Implementation in `buildHost()` |
+| `src/components/PluginPanel/pluginBaseStyles.ts` | Base CSS classes available to all plugin panels |
 | `src-tauri/src/plugins.rs` | `KNOWN_CAPABILITIES` list (new capabilities) |
 | `src-tauri/src/lib.rs` | Register new Tauri commands in `invoke_handler` |
-| `docs/plugins.md` | Plugin developer guide (API reference, capabilities table, examples) |
-| `src-tauri/src/mcp_http/plugin_docs.rs` | AI-optimized plugin reference (`PLUGIN_DOCS` const) |
+| `docs/plugins.md` | Plugin developer guide (API reference, capabilities table, **Panel CSS Design Strategy** section, examples) |
+| `src-tauri/src/mcp_http/plugin_docs.rs` | AI-optimized plugin reference (`PLUGIN_DOCS` const — **must stay in sync with `docs/plugins.md`**) |
 | `docs/api/tauri-commands.md` | Tauri commands reference table |
 | `docs/api/http-api.md` | HTTP API reference (if new HTTP endpoints) |
 | `docs/backend/mcp-http.md` | MCP/HTTP server docs (if new routes) |

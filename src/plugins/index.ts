@@ -26,7 +26,7 @@ export async function initPlugins(): Promise<void> {
     const enabled = !isPluginDisabled(plugin.id);
     pluginStore.registerPlugin(plugin.id, { builtIn: true, enabled });
     if (enabled) {
-      pluginRegistry.register(plugin);
+      await pluginRegistry.register(plugin);
     }
   }
 
