@@ -1,0 +1,23 @@
+src-tauri/crates/tuic-bridge/src/main.rs
+  ba1c7165631be7b1 22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "5812d9b20f63c17d1c4283df86a640922f184b45",
+  "prompts": {
+    "ba1c7165631be7b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "769f159b-c007-45d6-9acd-0609c010e621",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}
