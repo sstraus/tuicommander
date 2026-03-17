@@ -26,33 +26,25 @@ fn to_json_or_error<T: serde::Serialize>(value: T) -> serde_json::Value {
 /// Tells the connecting agent what tools are available, which repos are managed,
 /// and what sessions are currently active so it can orient itself.
 fn build_mcp_instructions(state: &Arc<AppState>) -> String {
+    let ver = env!("CARGO_PKG_VERSION");
     let mut out = String::with_capacity(2048);
 
-    out.push_str("# TUICommander MCP Server\n\n");
-    out.push_str("You are connected to TUICommander, a terminal session orchestrator. ");
-    out.push_str("You can manage PTY terminals, query git repos, spawn AI agents, and read/write app config.\n\n");
+    // Header — version greeting is the primary "MCP is alive" signal
+    out.push_str(&format!("# TUICommander v{ver}\n\n"));
+    out.push_str(&format!(
+        "When you start a conversation, mention that TUICommander v{ver} is connected.\n\n"
+    ));
 
-    // Tools overview
-    out.push_str("## Tools\n\n");
-    out.push_str("All tools use an `action` parameter to select the operation.\n\n");
-    out.push_str("| Tool | Actions |\n|---|---|\n");
-    out.push_str("| `session` | list, create, input, output, resize, close, pause, resume |\n");
-    out.push_str("| `git` | info, diff, files, branches, github, prs |\n");
-    out.push_str("| `agent` | detect, spawn, stats, metrics |\n");
-    out.push_str("| `config` | get, save |\n");
-    out.push_str("| `workspace` | list, active |\n");
-    out.push_str("| `notify` | toast, confirm |\n");
-    out.push_str("| `plugin_dev_guide` | *(no action — returns plugin authoring reference)* |\n\n");
+    // Workflow — only non-obvious guidance (tool schemas already describe actions)
+    out.push_str("## Workflow\n\n");
+    out.push_str("1. `session action=list` → discover active sessions\n");
+    out.push_str("2. `session action=output` → read terminal, `action=input` → type\n");
+    out.push_str("3. Git tools require absolute `path`\n\n");
 
-    out.push_str("**Workflow:** Call `session action=list` first to discover active sessions. ");
-    out.push_str("Use `session action=output` to read terminal content and `session action=input` to type. ");
-    out.push_str("For git queries, pass the repo `path` (absolute).\n\n");
-
-    // Managed repositories
+    // Managed repositories (dynamic)
     let repo_settings = crate::config::load_repo_settings();
     if !repo_settings.repos.is_empty() {
-        out.push_str("## Managed Repositories\n\n");
-        out.push_str("| Name | Path |\n|---|---|\n");
+        out.push_str("## Repos\n\n");
         let mut repos: Vec<_> = repo_settings.repos.iter().collect();
         repos.sort_by_key(|(path, _)| path.to_string());
         for (path, entry) in &repos {
@@ -61,12 +53,12 @@ fn build_mcp_instructions(state: &Arc<AppState>) -> String {
             } else {
                 &entry.display_name
             };
-            out.push_str(&format!("| {} | `{}` |\n", name, path));
+            out.push_str(&format!("- **{name}** `{path}`\n"));
         }
         out.push('\n');
     }
 
-    // Active PTY sessions
+    // Active PTY sessions (dynamic)
     let sessions: Vec<_> = state.sessions.iter().map(|entry| {
         let id = entry.key().clone();
         let session = entry.value().lock();
@@ -74,30 +66,22 @@ fn build_mcp_instructions(state: &Arc<AppState>) -> String {
     }).collect();
 
     if !sessions.is_empty() {
-        out.push_str("## Active Sessions\n\n");
-        out.push_str("| Session ID | CWD | Branch |\n|---|---|---|\n");
+        out.push_str("## Sessions\n\n");
         for (id, cwd, branch) in &sessions {
-            out.push_str(&format!("| `{}` | {} | {} |\n",
-                &id[..8.min(id.len())],
-                cwd.as_deref().unwrap_or("—"),
-                branch.as_deref().unwrap_or("—"),
-            ));
+            let short_id = &id[..8.min(id.len())];
+            let cwd = cwd.as_deref().unwrap_or("—");
+            let branch = branch.as_deref().unwrap_or("—");
+            out.push_str(&format!("- `{short_id}` {cwd} ({branch})\n"));
         }
         out.push('\n');
     }
 
-    // Intent declaration protocol
-    out.push_str("## Intent Declaration\n");
-    out.push_str("At the start of each distinct work phase, emit on its own line:\n");
-    out.push_str("[[intent: <action, present tense, <60 chars>(<tab title, max 3 words>)]]\n");
-    out.push_str("Examples: `Reading auth module for token flow(Reading auth)` · `Writing parser unit tests(Writing tests)` · `Debugging login redirect(Debugging redirect)`\n");
+    // Protocols — compact format
+    out.push_str("## Protocols\n\n");
+    out.push_str("**Intent:** At each work phase start, emit: `[[intent: <action, <60 chars>(<tab title, max 3 words>)]]`\n");
 
-    // Suggest follow-ups protocol (conditional on config)
     if state.config.read().suggest_followups {
-        out.push_str("\n## Suggest Follow-ups\n");
-        out.push_str("After completing a task, optionally suggest 2-4 follow-up actions on a single line:\n");
-        out.push_str("[[suggest: Run tests | Review diff | Deploy]]\n");
-        out.push_str("Keep suggestions short (2-5 words each), actionable, and relevant to the completed work.\n");
+        out.push_str("**Follow-ups:** After tasks, emit: `[[suggest: Action1 | Action2 | Action3]]` (2-4 items, 2-5 words each)\n");
     }
 
     out
