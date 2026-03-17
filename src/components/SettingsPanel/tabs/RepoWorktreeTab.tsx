@@ -1,10 +1,9 @@
 import { Component, For, Show } from "solid-js";
 import type { RepoSettings } from "../../../stores/repoSettings";
 import type { RepoDefaults, WorktreeStorage, OrphanCleanup, MergeStrategy, WorktreeAfterMerge, AutoDeleteOnPrClose } from "../../../stores/repoDefaults";
-import { PRESET_COLORS } from "./AppearanceTab";
+import { ColorSwatchPicker } from "../../shared/ColorSwatchPicker";
 import { isMacOS } from "../../../platform";
 import { t } from "../../../i18n";
-import { cx } from "../../../utils";
 import s from "../Settings.module.css";
 
 export interface RepoTabProps {
@@ -52,43 +51,10 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
 
       <div class={s.group}>
         <label>{t("repoWorktree.label.sidebarColor", "Sidebar Color")}</label>
-        <div class={s.groupColorPicker}>
-          <For each={PRESET_COLORS}>
-            {(preset) => (
-              <button
-                class={cx(s.colorSwatch, props.settings.color === preset.hex && s.active)}
-                style={{ background: preset.hex }}
-                onClick={() => props.onUpdate("color", preset.hex)}
-                title={preset.name}
-              />
-            )}
-          </For>
-          <label
-            class={cx(s.colorSwatch, s.colorSwatchCustom, props.settings.color && !PRESET_COLORS.some((p) => p.hex === props.settings.color) && s.active)}
-            style={{
-              background: props.settings.color && !PRESET_COLORS.some((p) => p.hex === props.settings.color)
-                ? props.settings.color
-                : "var(--bg-tertiary)",
-            }}
-            title={t("repoWorktree.btn.customColor", "Custom color")}
-          >
-            <input
-              type="color"
-              value={props.settings.color || "#999999"}
-              onInput={(e) => props.onUpdate("color", e.currentTarget.value)}
-            />
-            <Show when={!props.settings.color || PRESET_COLORS.some((p) => p.hex === props.settings.color)}>
-              <span class={s.colorSwatchLabel}>⋯</span>
-            </Show>
-          </label>
-          <button
-            class={cx(s.colorSwatch, s.colorSwatchClear, !props.settings.color && s.active)}
-            onClick={() => props.onUpdate("color", "")}
-            title={t("repoWorktree.btn.defaultColor", "Use default color")}
-          >
-            ×
-          </button>
-        </div>
+        <ColorSwatchPicker
+          color={props.settings.color ?? ""}
+          onChange={(c) => props.onUpdate("color", c)}
+        />
         <p class={s.hint}>{t("repoWorktree.hint.sidebarColor", "Color-code this repo in the sidebar")}</p>
       </div>
 

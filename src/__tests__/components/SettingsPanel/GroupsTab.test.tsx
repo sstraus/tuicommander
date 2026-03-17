@@ -111,8 +111,8 @@ describe("AppearanceTab — Repository Groups", () => {
     );
     const { container } = render(() => <AppearanceTab />);
     const swatches = container.querySelectorAll(".colorSwatch");
-    // 8 presets + 1 clear option
-    expect(swatches.length).toBeGreaterThanOrEqual(5);
+    // 8 presets + 1 custom + 1 clear
+    expect(swatches.length).toBe(10);
   });
 
   it("clicking color swatch calls setGroupColor", () => {
