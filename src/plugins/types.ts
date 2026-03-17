@@ -439,9 +439,9 @@ export interface PluginHost {
 
   /**
    * Play a notification sound. Requires "ui:sound" capability.
-   * @param sound - Sound type: "question" | "error" | "completion" | "warning" | "info". Defaults to "info".
+   * @param sound - Sound type. Defaults to "info".
    */
-  playNotificationSound(sound?: string): Promise<void>;
+  playNotificationSound(sound?: "question" | "error" | "completion" | "warning" | "info"): Promise<void>;
 
   // -- Tier 3b: Filesystem operations (capability-gated) --
 
