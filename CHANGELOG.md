@@ -6,8 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-03-16
+
 ### Added
 - **File browser content search** (`Cmd+Shift+F`) — full-text search across file contents with case-sensitive, regex, and whole-word options. Results stream progressively and are grouped by file. Click any result to open the file at the matched line. Binary files and files >1 MB are automatically skipped
+- **Color picker for group colors** — Visual color picker dialog with 8 preset swatches, native browser color input, and clear button. Shared `ColorSwatchPicker` component used in sidebar and settings tabs ([#9](https://github.com/sstraus/tuicommander/pull/9), thanks @antoniovizuete)
 
 ### Fixed
 - **File drag & drop** — Drag & drop now works correctly in Tauri. Replaced broken HTML5 `File.path` (undefined in Tauri webviews — Electron-only API) with `getCurrentWebview().onDragDropEvent()` which provides real absolute paths. When a terminal has an active PTY session, dropped files are forwarded as paths to the terminal (enabling Claude Code image drops). Otherwise, `.md`/`.mdx` files open in the Markdown viewer and all others in the Code Editor. A global `dragover`/`drop` `preventDefault` prevents the browser-navigation white screen when dropping onto non-terminal panels
@@ -16,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **File browser: content search mode toggle icon** — The `C`/`F` mode toggle button in the file browser search bar was invisible due to a missing CSS size rule on the SVG. Fixed with explicit `width: 14px; height: 14px` on `.modeToggle svg`
 - **`.tuic.json` scripts exclusion (security)** — Scripts (`setup`, `run`, `archive`) are never merged from the repo-local `.tuic.json` file. Only worktree and workflow settings are team-overridable; scripts must be configured locally per-developer to prevent arbitrary code execution via a checked-in config file
 - **Windows: CMD window flash** — Background process spawns (git, agent detection, plugin execution, `where` lookups) no longer flash visible console windows on Windows. Applied `CREATE_NO_WINDOW` flag to all background `Command::new` callsites. Interactive spawns (IDE/terminal launches) unaffected. MCP stdio server stderr now forwarded to tracing on Windows instead of being silently dropped ([#7](https://github.com/sstraus/tuicommander/issues/7))
+- **CI: Windows clippy** — Sidecar stub now creates `.exe` variant on Windows, fixing Tauri build.rs resource resolution
+- **Tests: 34 broken test expectations** aligned with current implementation (mock mismatches, timing, security-excluded `.tuic.json` scripts)
 
 ## [0.9.0] - 2026-03-14
 
