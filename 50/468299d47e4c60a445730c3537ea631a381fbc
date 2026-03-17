@@ -1,0 +1,44 @@
+src/plugins/types.ts
+  821eac0dc5abf4f8 240-243,446,448
+examples/plugins/telegram-notifier/main.js
+  821eac0dc5abf4f8 68-83,93-95,97-98,149-151,153,166-167,328-330,333-334,339,344,348,352-353,356-357,407,409,411-415,421,426-427,456,458-460,549-551
+src-tauri/src/mcp_http/mod.rs
+  821eac0dc5abf4f8 409,411-412,418-419,425,477
+src/components/PluginPanel/PluginPanel.tsx
+  821eac0dc5abf4f8 95-97
+src/plugins/pluginRegistry.ts
+  821eac0dc5abf4f8 19,28,331,333-334,336,457,471
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "50468299d47e4c60a445730c3537ea631a381fbc",
+  "prompts": {
+    "0870b4cd709ce498": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a27da300-5e49-4187-a0a9-2cf8cd2cadb7",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 0,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    },
+    "821eac0dc5abf4f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "41d28792-9b29-426d-9bc8-544cb6dce69d",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 83,
+      "total_deletions": 39,
+      "accepted_lines": 81,
+      "overriden_lines": 0
+    }
+  }
+}
