@@ -237,6 +237,10 @@ export type PluginCapability =
   | "git:read"
   | "ui:context-menu";
 
+/** Valid sound names for playNotificationSound — single source of truth */
+export const NOTIFICATION_SOUNDS = ["question", "error", "completion", "warning", "info"] as const;
+export type NotificationSound = typeof NOTIFICATION_SOUNDS[number];
+
 /** Error thrown when a plugin calls a method without the required capability */
 export class PluginCapabilityError extends Error {
   constructor(pluginId: string, capability: PluginCapability) {
@@ -439,9 +443,9 @@ export interface PluginHost {
 
   /**
    * Play a notification sound. Requires "ui:sound" capability.
-   * @param sound - Sound type. Defaults to "info".
+   * @param sound - One of NOTIFICATION_SOUNDS ("question" | "error" | "completion" | "warning" | "info"). Defaults to "info".
    */
-  playNotificationSound(sound?: "question" | "error" | "completion" | "warning" | "info"): Promise<void>;
+  playNotificationSound(sound?: NotificationSound): Promise<void>;
 
   // -- Tier 3b: Filesystem operations (capability-gated) --
 

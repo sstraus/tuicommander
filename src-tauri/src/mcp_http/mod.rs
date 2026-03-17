@@ -406,22 +406,23 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         // Bind the socket. Remove any stale file first (left by a crashed previous run).
         // NOTE: No SocketGuard here — cleanup on server restart would race with the new
         // instance's bind. Explicit removal happens in the shutdown sequence below (line ~567).
+        const MAX_BIND_ATTEMPTS: u8 = 3;
         async fn bind_unix_socket(sock: &std::path::Path) -> Result<tokio::net::UnixListener, std::io::Error> {
-            for attempt in 0..3u8 {
+            let mut last_err = std::io::Error::other("no bind attempts");
+            for attempt in 0..MAX_BIND_ATTEMPTS {
                 let _ = std::fs::remove_file(sock);
                 match tokio::net::UnixListener::bind(sock) {
                     Ok(uds) => return Ok(uds),
                     Err(e) => {
                         tracing::warn!(source = "mcp_http", attempt, path = %sock.display(), "Unix socket bind failed: {e}");
-                        if attempt < 2 {
+                        last_err = e;
+                        if attempt + 1 < MAX_BIND_ATTEMPTS {
                             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                        } else {
-                            return Err(e);
                         }
                     }
                 }
             }
-            unreachable!()
+            Err(last_err)
         }
 
         match bind_unix_socket(&sock).await {
@@ -473,7 +474,7 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         match NamedPipeListener::new() {
             Ok(pipe) => {
                 tracing::info!(source = "mcp_http", pipe = PIPE_NAME, "Named pipe listening");
-                let app = build_router(state.clone(), false, true);
+                let app = build_router(state.clone(), false, mcp_enabled);
                 let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
                 Some(tokio::spawn(async move {
                     if let Err(e) = axum::serve(pipe, app.into_make_service()).await {

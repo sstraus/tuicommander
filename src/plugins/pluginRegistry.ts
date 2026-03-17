@@ -16,6 +16,7 @@ import { LineBuffer } from "../utils/lineBuffer";
 import { stripAnsi } from "../utils/stripAnsi";
 import {
   INVOKE_WHITELIST,
+  NOTIFICATION_SOUNDS,
   PluginCapabilityError,
 } from "./types";
 import type {
@@ -24,6 +25,7 @@ import type {
   HttpFetchOptions,
   HttpResponse,
   MarkdownProvider,
+  NotificationSound,
   OpenPanelOptions,
   OutputWatcher,
   PanelHandle,
@@ -326,13 +328,12 @@ function createPluginRegistry() {
         mdTabsStore.add("", absolutePath);
       },
 
-      async playNotificationSound(sound?: "question" | "error" | "completion" | "warning" | "info"): Promise<void> {
+      async playNotificationSound(sound?: NotificationSound): Promise<void> {
         requireCapability(pluginId, capabilities, "ui:sound");
-        const validSounds = ["question", "error", "completion", "warning", "info"] as const;
-        const resolved = validSounds.includes(sound as typeof validSounds[number])
-          ? (sound as typeof validSounds[number])
+        const resolved: NotificationSound = NOTIFICATION_SOUNDS.includes(sound as NotificationSound)
+          ? (sound as NotificationSound)
           : "info";
-        if (sound !== undefined && resolved === "info" && sound !== "info") {
+        if (sound !== undefined && resolved === "info") {
           appLogger.warn("plugin", `[${pluginId}] playNotificationSound: unknown sound "${sound}", defaulting to "info"`);
         }
         await notificationsStore.play(resolved);
@@ -453,7 +454,7 @@ function createPluginRegistry() {
         if (capabilities !== null) {
           const consentKey = `credential-consent-${serviceName}`;
           const existing = await invoke<string | null>("read_plugin_data", {
-            pluginId,
+            plugin_id: pluginId,
             path: consentKey,
           });
           if (!existing) {
@@ -467,7 +468,7 @@ function createPluginRegistry() {
               throw new Error(`User denied credential access for "${serviceName}"`);
             }
             await invoke("write_plugin_data", {
-              pluginId,
+              plugin_id: pluginId,
               path: consentKey,
               content: "allowed",
             });

@@ -92,6 +92,9 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
     const tabId = props.tab.id;
     pluginRegistry.registerPanelSendChannel(tabId, (data: unknown) => {
       if (iframeRef?.contentWindow) {
+        // srcdoc iframes have an opaque ("null") origin — use "*" but rely on
+        // event.source === iframeRef.contentWindow check in handleMessage above
+        // to ensure only our iframe receives the message.
         iframeRef.contentWindow.postMessage(data, "*");
       }
     });
