@@ -24,8 +24,11 @@ coverage
 *.njsproj
 *.sln
 *.sw?
+# mdkb:index
 plans
+# mdkb:index
 stories
+# mdkb:index
 reviews
 ideas
 .claude
