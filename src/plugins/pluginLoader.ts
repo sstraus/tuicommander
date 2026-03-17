@@ -156,7 +156,7 @@ export async function setPluginEnabled(id: string, enabled: boolean): Promise<vo
   if (enabled) {
     if (builtIn) {
       // Re-register built-in plugin
-      pluginRegistry.register(builtIn);
+      await pluginRegistry.register(builtIn);
       pluginStore.updatePlugin(id, { loaded: true, error: null });
     } else {
       // Load external plugin from disk
@@ -224,7 +224,7 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
   }
 
   const plugin = (mod as { default: TuiPlugin }).default;
-  pluginRegistry.register(plugin, manifest.capabilities, manifest.allowedUrls, manifest.agentTypes);
+  await pluginRegistry.register(plugin, manifest.capabilities, manifest.allowedUrls, manifest.agentTypes);
   loadedPluginIds.add(manifest.id);
   logger.info(`Loaded v${manifest.version}`);
   appLogger.info("plugin", `Loaded plugin "${manifest.id}" v${manifest.version}`);

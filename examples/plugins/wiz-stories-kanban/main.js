@@ -1,12 +1,12 @@
 /**
  * Stories Kanban Plugin — Kanban board for file-stories
  *
- * Renders stories as draggable cards across 6 status columns.
- * Drag-and-drop triggers file rename + frontmatter update via
- * the plugin panel message bridge (onMessage/send).
+ * Renders stories as cards across status columns with drag-and-drop.
+ * Drop triggers frontmatter + filename update. Changes accumulate in
+ * a pending log; "Apply to Claude" sends them to the active PTY.
  *
  * Capabilities: fs:read, fs:list, fs:watch, fs:write, fs:rename,
- *               ui:panel, ui:markdown
+ *               ui:panel, ui:markdown, pty:write
  */
 
 const PLUGIN_ID = "wiz-stories-kanban";
@@ -33,17 +33,16 @@ let panelHandle = null;
 let watchDisposable = null;
 let storiesDir = null;
 let stories = [];
+let pendingChanges = []; // { storyId, title, oldStatus, newStatus }
 
 // ── Filename parsing ────────────────────────────────────────────────────
 
 /**
  * Parse a story filename into its components.
  * Format: {seq}-{hash}-{status}-{priority}-{title-slug}.md
- * Example: 391-ff66-in_progress-P3-show-prs-for-remote-only-branches.md
  */
 function parseFilename(filename) {
-  // seq-hash-status-priority-rest.md
-  const m = filename.match(/^(\d+)-([a-f0-9]+)-([\w]+)-(P[1-3])-(.+)\.md$/);
+  const m = filename.match(/^(\d+)-([a-f0-9]+)-([\w]+)-(P[0-3])-(.+)\.md$/);
   if (!m) return null;
   return {
     seq: parseInt(m[1], 10),
@@ -56,7 +55,6 @@ function parseFilename(filename) {
 
 /**
  * Parse YAML frontmatter from story content.
- * Uses simple regex — the YAML structure is well-known.
  */
 function parseFrontmatter(content) {
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
@@ -88,9 +86,6 @@ function parseFrontmatter(content) {
   };
 }
 
-/**
- * Check if a story has at least one work log entry (### heading under ## Work Log).
- */
 function hasWorkLog(content) {
   const wlMatch = content.match(/## Work Log\n([\s\S]*)/);
   if (!wlMatch) return false;
@@ -109,7 +104,6 @@ async function loadStories() {
     return [];
   }
 
-  // Load files in batches of 20
   const BATCH_SIZE = 20;
   const results = [];
 
@@ -150,7 +144,7 @@ async function loadStories() {
 
 // ── HTML rendering ──────────────────────────────────────────────────────
 
-function escapeHtml(str) {
+function esc(str) {
   return String(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -159,33 +153,54 @@ function escapeHtml(str) {
 }
 
 function renderCard(story) {
-  const priClass = story.priority.toLowerCase();
   const worklogBadge = story.hasWorkLog
     ? `<span class="worklog-badge" title="Has work log">&#10003;</span>`
     : "";
+  const depBadge = story.dependencies.length > 0
+    ? `<span class="dep-badge" title="Has dependencies">&#128279;</span>`
+    : "";
 
-  return `<div class="card" draggable="true"
-    data-story-id="${escapeHtml(story.id)}"
-    data-filename="${escapeHtml(story.filename)}"
-    data-status="${escapeHtml(story.status)}">
+  return `<div class="card"
+    data-story-id="${esc(story.id)}"
+    data-filename="${esc(story.filename)}"
+    data-status="${esc(story.status)}"
+    data-title="${esc(story.title)}">
     <div class="card-header">
-      <span class="card-id">${escapeHtml(story.id.split("-")[0])}</span>
-      <span class="card-pri ${priClass}">${escapeHtml(story.priority)}</span>
-      ${worklogBadge}
+      <span class="card-id">${esc(story.id)}</span>
+      ${worklogBadge}${depBadge}
     </div>
-    <div class="card-title">${escapeHtml(story.title)}</div>
+    <div class="card-title">${esc(story.title)}</div>
+  </div>`;
+}
+
+function renderPendingChanges() {
+  if (pendingChanges.length === 0) return "";
+
+  const items = pendingChanges.map((c, i) =>
+    `<div class="change-item">
+      <span class="change-desc">${esc(c.storyId)}: ${esc(STATUS_LABELS[c.oldStatus])} \u2192 ${esc(STATUS_LABELS[c.newStatus])}</span>
+      <button class="change-undo" data-idx="${i}" title="Undo">\u2715</button>
+    </div>`
+  ).join("");
+
+  return `<div class="pending-bar">
+    <div class="pending-header">
+      <span class="pending-count">${pendingChanges.length} pending change${pendingChanges.length > 1 ? "s" : ""}</span>
+      <div class="pending-actions">
+        <button class="primary" id="btn-apply">Apply to Claude</button>
+        <button id="btn-discard">Discard all</button>
+      </div>
+    </div>
+    <div class="pending-list">${items}</div>
   </div>`;
 }
 
 function renderBoard(storyList, filters) {
-  const { search, priorities } = filters;
+  const { search } = filters;
   const searchLower = (search || "").toLowerCase();
 
   const filtered = storyList.filter((s) => {
     if (searchLower && !s.title.toLowerCase().includes(searchLower) && !s.id.toLowerCase().includes(searchLower)) {
-      return false;
-    }
-    if (priorities.length > 0 && !priorities.includes(s.priority)) {
       return false;
     }
     return true;
@@ -210,24 +225,12 @@ function renderBoard(storyList, filters) {
     </div>`;
   }).join("");
 
-  // Priority filter buttons
-  const priButtons = ["P1", "P2", "P3"]
-    .map((p) => {
-      const active = priorities.includes(p) ? " active" : "";
-      return `<button class="pri-btn ${p.toLowerCase()}${active}" data-priority="${p}">${p}</button>`;
-    })
-    .join("");
-
   return `<!DOCTYPE html>
 <html>
 <head>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* Plugin-specific — base styles inherited from TUICommander */
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 13px;
-    color: var(--fg-primary, #cdd6f4);
-    background: var(--bg-primary, #1e1e2e);
     overflow: hidden;
     height: 100vh;
     display: flex;
@@ -235,42 +238,10 @@ function renderBoard(storyList, filters) {
   }
 
   /* ── Filter bar ── */
-  .filter-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border-primary, #45475a);
-    flex-shrink: 0;
-  }
   .search-input {
     flex: 1;
     max-width: 260px;
-    padding: 4px 8px;
-    background: var(--bg-tertiary, #313244);
-    border: 1px solid var(--border-primary, #45475a);
-    border-radius: 4px;
-    color: var(--fg-primary, #cdd6f4);
-    font-size: 12px;
-    outline: none;
   }
-  .search-input:focus { border-color: var(--accent-primary, #89b4fa); }
-  .search-input::placeholder { color: var(--fg-muted, #6c7086); }
-  .pri-btn {
-    padding: 2px 8px;
-    border: 1px solid var(--border-primary, #45475a);
-    border-radius: 3px;
-    background: transparent;
-    color: var(--fg-secondary, #a6adc8);
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .pri-btn:hover { background: var(--bg-tertiary, #313244); }
-  .pri-btn.active.p1 { background: var(--error, #f38ba8); color: var(--bg-primary, #1e1e2e); border-color: var(--error, #f38ba8); }
-  .pri-btn.active.p2 { background: var(--warning, #f9e2af); color: var(--bg-primary, #1e1e2e); border-color: var(--warning, #f9e2af); }
-  .pri-btn.active.p3 { background: var(--fg-muted, #6c7086); color: var(--bg-primary, #1e1e2e); border-color: var(--fg-muted, #6c7086); }
 
   /* ── Board ── */
   .board {
@@ -282,10 +253,10 @@ function renderBoard(storyList, filters) {
   }
   .column {
     flex: 1;
-    min-width: 160px;
+    min-width: 140px;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--border-primary, #45475a);
+    border-right: 1px solid var(--border, #3e3e42);
   }
   .column:last-child { border-right: none; }
   .col-header {
@@ -297,18 +268,18 @@ function renderBoard(storyList, filters) {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: var(--fg-secondary, #a6adc8);
-    border-top: 3px solid var(--border-primary, #45475a);
+    color: var(--fg-secondary, #a0a0a0);
+    border-top: 3px solid var(--border, #3e3e42);
     flex-shrink: 0;
   }
-  .col-header.pending { border-top-color: var(--fg-muted, #6c7086); }
-  .col-header.ready { border-top-color: var(--accent-primary, #89b4fa); }
-  .col-header.in_progress { border-top-color: var(--warning, #f9e2af); }
-  .col-header.blocked { border-top-color: var(--error, #f38ba8); }
-  .col-header.complete { border-top-color: var(--success, #a6e3a1); }
-  .col-header.wontfix { border-top-color: var(--fg-muted, #6c7086); }
+  .col-header.pending { border-top-color: var(--fg-muted, #9aa1a9); }
+  .col-header.ready { border-top-color: var(--accent, #59a8dd); }
+  .col-header.in_progress { border-top-color: var(--warning, #dcdcaa); }
+  .col-header.blocked { border-top-color: var(--error, #f48771); }
+  .col-header.complete { border-top-color: var(--success, #4ec9b0); }
+  .col-header.wontfix { border-top-color: var(--fg-muted, #9aa1a9); }
   .col-count {
-    background: var(--bg-tertiary, #313244);
+    background: var(--bg-tertiary, #2d2d30);
     padding: 0 6px;
     border-radius: 8px;
     font-size: 10px;
@@ -323,82 +294,98 @@ function renderBoard(storyList, filters) {
 
   /* ── Cards ── */
   .card {
-    background: var(--bg-secondary, #181825);
-    border: 1px solid var(--border-primary, #45475a);
-    border-radius: 4px;
-    padding: 8px;
     margin-bottom: 4px;
     cursor: grab;
-    transition: transform 0.1s, box-shadow 0.1s;
+    touch-action: none;
+    user-select: none;
   }
-  .card:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  .card.dragging { opacity: 0.4; }
+  .drag-ghost {
+    position: fixed;
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.85;
+    transform: rotate(2deg);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    max-width: 200px;
   }
-  .card.dragging { opacity: 0.6; }
   .card-header {
     display: flex;
     align-items: center;
     gap: 4px;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
   }
   .card-id {
     font-size: 10px;
     font-weight: 600;
-    color: var(--fg-muted, #6c7086);
-    font-family: monospace;
-  }
-  .card-pri {
-    font-size: 9px;
-    font-weight: 700;
-    padding: 0 4px;
-    border-radius: 2px;
-    line-height: 1.5;
-  }
-  .card-pri.p1 { background: var(--error, #f38ba8); color: var(--bg-primary, #1e1e2e); }
-  .card-pri.p2 { background: var(--warning, #f9e2af); color: var(--bg-primary, #1e1e2e); }
-  .card-pri.p3 { background: var(--fg-muted, #6c7086); color: var(--bg-primary, #1e1e2e); }
-  .worklog-badge {
-    font-size: 10px;
-    color: var(--success, #a6e3a1);
-    margin-left: auto;
+    color: var(--fg-muted, #9aa1a9);
+    font-family: "JetBrains Mono", monospace;
   }
   .card-title {
     font-size: 12px;
     line-height: 1.35;
-    color: var(--fg-primary, #cdd6f4);
   }
+  .worklog-badge { font-size: 10px; color: var(--success, #4ec9b0); margin-left: auto; }
+  .dep-badge { font-size: 10px; color: var(--fg-muted, #9aa1a9); }
 
   /* ── Drop target ── */
   .column.drop-target .col-body {
-    background: var(--bg-highlight, rgba(137,180,250,0.08));
+    background: color-mix(in srgb, var(--accent, #59a8dd) 8%, transparent);
   }
 
-  /* ── Empty states ── */
+  /* ── Empty column ── */
   .empty-col {
     padding: 16px 8px;
     text-align: center;
     font-size: 11px;
-    color: var(--fg-muted, #6c7086);
+    color: var(--fg-muted, #9aa1a9);
     font-style: italic;
   }
-  .no-stories {
+
+  /* ── Pending changes bar ── */
+  .pending-bar {
+    border-top: 2px solid var(--warning, #dcdcaa);
+    background: var(--bg-secondary, #252526);
+    padding: 8px 12px;
+    flex-shrink: 0;
+  }
+  .pending-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: var(--fg-muted, #6c7086);
-    font-size: 14px;
+    justify-content: space-between;
+    margin-bottom: 4px;
   }
+  .pending-count {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--warning, #dcdcaa);
+  }
+  .pending-actions { display: flex; gap: 6px; }
+  .pending-list { max-height: 80px; overflow-y: auto; }
+  .change-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 0;
+    font-size: 11px;
+    color: var(--fg-secondary, #a0a0a0);
+  }
+  .change-undo {
+    padding: 0 4px;
+    font-size: 10px;
+    background: transparent;
+    border: none;
+    color: var(--fg-muted, #9aa1a9);
+    cursor: pointer;
+  }
+  .change-undo:hover { color: var(--error, #f48771); }
 
-  /* ── Error toast ── */
-  .error-toast {
+  /* ── Toast ── */
+  .toast {
     position: fixed;
     bottom: 12px;
     left: 50%;
     transform: translateX(-50%);
-    background: var(--error, #f38ba8);
-    color: var(--bg-primary, #1e1e2e);
     padding: 6px 14px;
     border-radius: 4px;
     font-size: 12px;
@@ -406,123 +393,158 @@ function renderBoard(storyList, filters) {
     opacity: 0;
     transition: opacity 0.2s;
     pointer-events: none;
+    z-index: 100;
   }
-  .error-toast.show { opacity: 1; }
+  .toast.show { opacity: 1; }
+  .toast.error { background: var(--error, #f48771); color: var(--text-on-error, #000); }
+  .toast.success { background: var(--success, #4ec9b0); color: var(--text-on-success, #000); }
 </style>
 </head>
 <body>
   <div class="filter-bar">
-    <input type="text" class="search-input" placeholder="Search stories..." value="${escapeHtml(search || "")}">
-    ${priButtons}
+    <input type="search" class="search-input" placeholder="Search stories..." value="${esc(search || "")}">
   </div>
   <div class="board">
     ${columns}
   </div>
-  <div class="error-toast" id="error-toast"></div>
+  ${renderPendingChanges()}
+  <div class="toast" id="toast"></div>
 
 <script>
-  // ── State ──
-  let currentSearch = "${escapeHtml(search || "")}";
-  let currentPriorities = ${JSON.stringify(priorities)};
-
-  // ── Filter handlers ──
+  // ── Filter ──
   const searchInput = document.querySelector(".search-input");
   searchInput.addEventListener("input", () => {
-    currentSearch = searchInput.value;
-    window.parent.postMessage({ type: "filter-change", search: currentSearch, priorities: currentPriorities }, "*");
+    window.parent.postMessage({ type: "filter-change", search: searchInput.value }, "*");
   });
 
-  document.querySelectorAll(".pri-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const p = btn.dataset.priority;
-      const idx = currentPriorities.indexOf(p);
-      if (idx >= 0) {
-        currentPriorities.splice(idx, 1);
-        btn.classList.remove("active");
-      } else {
-        currentPriorities.push(p);
-        btn.classList.add("active");
-      }
-      window.parent.postMessage({ type: "filter-change", search: currentSearch, priorities: [...currentPriorities] }, "*");
-    });
-  });
+  // ── Pointer-based Drag and Drop ──
+  // HTML5 DnD doesn't work in sandboxed iframes (no allow-same-origin).
+  // Pointer events on document level with movement threshold to distinguish clicks from drags.
+  const DRAG_THRESHOLD = 5;
+  let drag = null;
 
-  // ── Card click → open story ──
-  document.querySelectorAll(".card").forEach((card) => {
-    card.addEventListener("click", (e) => {
-      if (card.classList.contains("dragging")) return;
-      const filename = card.dataset.filename;
-      window.parent.postMessage({ type: "open-story", filename }, "*");
-    });
-  });
+  function getColumnAt(x, y) {
+    for (const col of document.querySelectorAll(".column")) {
+      const r = col.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return col;
+    }
+    return null;
+  }
 
-  // ── Drag and Drop ──
-  let dragData = null;
+  function cleanupDrag() {
+    if (!drag) return;
+    if (drag.ghost) drag.ghost.remove();
+    if (drag.card) drag.card.classList.remove("dragging");
+    document.querySelectorAll(".column.drop-target").forEach((c) => c.classList.remove("drop-target"));
+    drag = null;
+  }
 
   document.querySelectorAll(".card").forEach((card) => {
-    card.addEventListener("dragstart", (e) => {
-      dragData = {
-        storyId: card.dataset.storyId,
-        filename: card.dataset.filename,
-        status: card.dataset.status,
+    card.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      drag = {
+        card,
+        ghost: null,
+        data: {
+          storyId: card.dataset.storyId,
+          filename: card.dataset.filename,
+          status: card.dataset.status,
+          title: card.dataset.title,
+        },
+        startX: e.clientX,
+        startY: e.clientY,
+        started: false,
       };
-      card.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", card.dataset.storyId);
-    });
-
-    card.addEventListener("dragend", () => {
-      card.classList.remove("dragging");
-      document.querySelectorAll(".column.drop-target").forEach((col) => col.classList.remove("drop-target"));
-      dragData = null;
     });
   });
 
-  document.querySelectorAll(".column").forEach((col) => {
-    col.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
+  document.addEventListener("mousemove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+
+    if (!drag.started) {
+      if (Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
+      drag.started = true;
+      drag.card.classList.add("dragging");
+      const ghost = drag.card.cloneNode(true);
+      ghost.classList.add("drag-ghost");
+      ghost.classList.remove("dragging");
+      ghost.style.width = drag.card.getBoundingClientRect().width + "px";
+      document.body.appendChild(ghost);
+      drag.ghost = ghost;
+    }
+
+    drag.ghost.style.left = (e.clientX - 20) + "px";
+    drag.ghost.style.top = (e.clientY - 10) + "px";
+
+    document.querySelectorAll(".column.drop-target").forEach((c) => c.classList.remove("drop-target"));
+    const col = getColumnAt(e.clientX, e.clientY);
+    if (col && col.dataset.status !== drag.data.status) {
       col.classList.add("drop-target");
-    });
+    }
+  });
 
-    col.addEventListener("dragleave", (e) => {
-      if (!col.contains(e.relatedTarget)) {
-        col.classList.remove("drop-target");
-      }
-    });
+  document.addEventListener("mouseup", (e) => {
+    if (!drag) return;
 
-    col.addEventListener("drop", (e) => {
-      e.preventDefault();
-      col.classList.remove("drop-target");
-      if (!dragData) return;
+    if (!drag.started) {
+      const filename = drag.data.filename;
+      cleanupDrag();
+      window.parent.postMessage({ type: "open-story", filename }, "*");
+      return;
+    }
 
+    const col = getColumnAt(e.clientX, e.clientY);
+    if (col) {
       const newStatus = col.dataset.status;
-      if (newStatus === dragData.status) return;
+      if (newStatus !== drag.data.status) {
+        window.parent.postMessage({
+          type: "status-change",
+          storyId: drag.data.storyId,
+          filename: drag.data.filename,
+          oldStatus: drag.data.status,
+          newStatus,
+          title: drag.data.title,
+        }, "*");
+      }
+    }
+    cleanupDrag();
+  });
 
-      window.parent.postMessage({
-        type: "status-change",
-        storyId: dragData.storyId,
-        filename: dragData.filename,
-        oldStatus: dragData.status,
-        newStatus,
-      }, "*");
+  // ── Pending changes actions ──
+  const applyBtn = document.getElementById("btn-apply");
+  if (applyBtn) {
+    applyBtn.addEventListener("click", () => {
+      window.parent.postMessage({ type: "apply-to-claude" }, "*");
+    });
+  }
+
+  const discardBtn = document.getElementById("btn-discard");
+  if (discardBtn) {
+    discardBtn.addEventListener("click", () => {
+      window.parent.postMessage({ type: "discard-changes" }, "*");
+    });
+  }
+
+  document.querySelectorAll(".change-undo").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      window.parent.postMessage({ type: "undo-change", idx: parseInt(btn.dataset.idx, 10) }, "*");
     });
   });
 
   // ── Messages from host ──
   window.addEventListener("message", (e) => {
     if (!e.data || !e.data.type) return;
-    if (e.data.type === "error") {
-      showError(e.data.message);
+    if (e.data.type === "toast") {
+      const toast = document.getElementById("toast");
+      toast.textContent = e.data.message;
+      toast.className = "toast " + (e.data.level || "error") + " show";
+      setTimeout(() => toast.classList.remove("show"), 3000);
     }
   });
-
-  function showError(msg) {
-    const toast = document.getElementById("error-toast");
-    toast.textContent = msg;
-    toast.classList.add("show");
-    setTimeout(() => toast.classList.remove("show"), 3000);
-  }
 </script>
 </body>
 </html>`;
@@ -531,24 +553,9 @@ function renderBoard(storyList, filters) {
 function renderNoStoriesDir() {
   return `<!DOCTYPE html>
 <html>
-<head>
-<style>
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    color: var(--fg-muted, #6c7086);
-    background: var(--bg-primary, #1e1e2e);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    margin: 0;
-  }
-  .message { text-align: center; font-size: 14px; }
-  .hint { font-size: 12px; margin-top: 8px; opacity: 0.7; }
-</style>
-</head>
+<head></head>
 <body>
-  <div class="message">
+  <div class="empty-state">
     No stories directory found
     <div class="hint">Create a <code>stories/</code> directory in your repository to get started.</div>
   </div>
@@ -558,9 +565,6 @@ function renderNoStoriesDir() {
 
 // ── Status change logic ─────────────────────────────────────────────────
 
-/**
- * Update story frontmatter: set new status and updated timestamp.
- */
 function updateFrontmatter(content, newStatus) {
   const now = new Date().toISOString();
   let updated = content.replace(
@@ -574,11 +578,7 @@ function updateFrontmatter(content, newStatus) {
   return updated;
 }
 
-/**
- * Build new filename from old filename and new status.
- */
 function buildNewFilename(oldFilename, newStatus) {
-  // seq-hash-oldStatus-priority-slug.md
   return oldFilename.replace(
     /^(\d+-[a-f0-9]+-)[\w]+(-.+)$/,
     `$1${newStatus}$2`,
@@ -586,15 +586,16 @@ function buildNewFilename(oldFilename, newStatus) {
 }
 
 async function handleStatusChange(data) {
-  const { filename, newStatus, storyId } = data;
+  const { filename, newStatus, storyId, oldStatus, title } = data;
 
-  // Work log gate: block complete/wontfix without worklog
+  // Work log gate
   if (newStatus === "complete" || newStatus === "wontfix") {
     const story = stories.find((s) => s.id === storyId);
     if (story && !story.hasWorkLog) {
       if (panelHandle) {
         panelHandle.send({
-          type: "error",
+          type: "toast",
+          level: "error",
           message: `Cannot move to ${STATUS_LABELS[newStatus]}: add a work log entry first.`,
         });
       }
@@ -609,22 +610,63 @@ async function handleStatusChange(data) {
     const newFilename = buildNewFilename(filename, newStatus);
     const newPath = `${storiesDir}/${newFilename}`;
 
-    // Write updated content to old path, then rename
     await hostRef.writeFile(filePath, updatedContent);
-    await hostRef.renamePath(filePath, newPath);
+    if (newFilename !== filename) {
+      await hostRef.renamePath(filePath, newPath);
+    }
+
+    // Track the change for "Apply to Claude"
+    pendingChanges.push({ storyId, title: title || storyId, oldStatus, newStatus });
 
     hostRef.log("info", `Moved ${storyId} to ${newStatus}`, { filename, newFilename });
   } catch (err) {
     hostRef.log("error", `Failed to change status for ${storyId}`, String(err));
     if (panelHandle) {
-      panelHandle.send({ type: "error", message: `Failed to update: ${err}` });
+      panelHandle.send({ type: "toast", level: "error", message: `Failed to update: ${err}` });
+    }
+  }
+}
+
+async function applyToClaude() {
+  if (pendingChanges.length === 0) return;
+
+  const sessionId = hostRef.getActiveTerminalSessionId();
+  if (!sessionId) {
+    if (panelHandle) {
+      panelHandle.send({ type: "toast", level: "error", message: "No active terminal session" });
+    }
+    return;
+  }
+
+  const lines = pendingChanges.map((c) =>
+    `- ${c.storyId} "${c.title}": ${STATUS_LABELS[c.oldStatus]} → ${STATUS_LABELS[c.newStatus]}`
+  );
+
+  const message = [
+    "The following story status changes were made via the Kanban board:",
+    ...lines,
+    "",
+    "Please acknowledge these changes and take appropriate action.",
+  ].join("\n");
+
+  try {
+    await hostRef.writePty(sessionId, message + "\n");
+    pendingChanges = [];
+    if (panelHandle) {
+      panelHandle.send({ type: "toast", level: "success", message: "Sent to terminal" });
+    }
+    await refreshBoard();
+  } catch (err) {
+    hostRef.log("error", "Failed to write to PTY", String(err));
+    if (panelHandle) {
+      panelHandle.send({ type: "toast", level: "error", message: `Failed to send: ${err}` });
     }
   }
 }
 
 // ── Panel management ────────────────────────────────────────────────────
 
-let filters = { search: "", priorities: [] };
+let filters = { search: "" };
 
 async function openKanban() {
   const repo = hostRef.getActiveRepo();
@@ -644,7 +686,6 @@ async function openKanban() {
     onMessage: handlePanelMessage,
   });
 
-  // Start watching for file changes
   await startWatching();
 }
 
@@ -681,11 +722,25 @@ function handlePanelMessage(data) {
   }
 
   if (data.type === "filter-change") {
-    filters = {
-      search: data.search || "",
-      priorities: data.priorities || [],
-    };
+    filters = { search: data.search || "" };
     refreshBoard();
+  }
+
+  if (data.type === "apply-to-claude") {
+    applyToClaude();
+  }
+
+  if (data.type === "discard-changes") {
+    pendingChanges = [];
+    refreshBoard();
+  }
+
+  if (data.type === "undo-change") {
+    const idx = data.idx;
+    if (idx >= 0 && idx < pendingChanges.length) {
+      pendingChanges.splice(idx, 1);
+      refreshBoard();
+    }
   }
 }
 
@@ -711,7 +766,7 @@ async function startWatching() {
       { recursive: false, debounceMs: 300 },
     );
   } catch {
-    // stories/ may not exist yet — that's fine
+    // stories/ may not exist yet
   }
 }
 
@@ -749,12 +804,11 @@ export default {
       onClick: openKanban,
     });
 
-    // Re-initialize when repo changes
     host.onStateChange((event) => {
       if (event.type === "branch-changed") {
         stopWatching();
+        pendingChanges = [];
         if (panelHandle) {
-          // Reload with new repo context
           openKanban();
         }
       }
@@ -769,6 +823,7 @@ export default {
     hostRef = null;
     stories = [];
     storiesDir = null;
-    filters = { search: "", priorities: [] };
+    pendingChanges = [];
+    filters = { search: "" };
   },
 };

@@ -60,6 +60,7 @@ function defaultConfig() {
 // ── Plugin state ───────────────────────────────────────────────────────────
 
 let hostRef = null;
+let panelHandle = null;
 let config = defaultConfig();
 let lastSent = {};  // eventType -> timestamp
 let sentCount = 0;
@@ -210,71 +211,14 @@ function buildSettingsHtml() {
 <html>
 <head>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 13px;
-    color: #cdd6f4;
-    background: #1e1e2e;
-    padding: 16px;
-  }
-  h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: #cdd6f4; }
-  h3 { font-size: 13px; font-weight: 600; margin: 16px 0 8px; color: #a6adc8; }
+  /* Plugin-specific overrides — base styles inherited from TUICommander */
+  body { padding: 16px; }
   .field { margin-bottom: 10px; }
-  label { display: block; font-size: 12px; color: #a6adc8; margin-bottom: 3px; }
-  input[type="text"], input[type="password"] {
+  input[type="password"], input[type="text"] {
     width: 100%;
-    padding: 6px 8px;
-    background: #313244;
-    border: 1px solid #45475a;
-    border-radius: 4px;
-    color: #cdd6f4;
-    font-size: 13px;
-    font-family: monospace;
+    font-family: "JetBrains Mono", "Fira Code", monospace;
   }
-  input[type="text"]:focus, input[type="password"]:focus {
-    outline: none;
-    border-color: #89b4fa;
-  }
-  button {
-    padding: 6px 14px;
-    background: #89b4fa;
-    color: #1e1e2e;
-    border: none;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    margin-right: 6px;
-    margin-top: 6px;
-  }
-  button:hover { background: #74c7ec; }
-  button.secondary {
-    background: #45475a;
-    color: #cdd6f4;
-  }
-  button.secondary:hover { background: #585b70; }
-  button.danger {
-    background: #f38ba8;
-    color: #1e1e2e;
-  }
-  button.danger:hover { background: #eba0ac; }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 6px;
-  }
-  th {
-    text-align: left;
-    padding: 6px 10px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #a6adc8;
-    border-bottom: 1px solid #45475a;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  tr:hover td { background: #313244; }
+  .btn-row { margin-top: 6px; display: flex; gap: 6px; }
   .status {
     margin-top: 12px;
     padding: 8px 10px;
@@ -282,10 +226,10 @@ function buildSettingsHtml() {
     font-size: 12px;
     display: none;
   }
-  .status.ok { display: block; background: #1e3a2f; color: #a6e3a1; border: 1px solid #2d5a3f; }
-  .status.err { display: block; background: #3a1e2f; color: #f38ba8; border: 1px solid #5a2d3f; }
-  .status.info { display: block; background: #1e2e3a; color: #89b4fa; border: 1px solid #2d3f5a; }
-  .hint { font-size: 11px; color: #6c7086; margin-top: 3px; }
+  .status.ok { display: block; background: color-mix(in srgb, var(--success) 15%, var(--bg-primary)); color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--bg-primary)); }
+  .status.err { display: block; background: color-mix(in srgb, var(--error) 15%, var(--bg-primary)); color: var(--error); border: 1px solid color-mix(in srgb, var(--error) 30%, var(--bg-primary)); }
+  .status.info { display: block; background: color-mix(in srgb, var(--accent) 15%, var(--bg-primary)); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--bg-primary)); }
+  table { margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -303,10 +247,10 @@ function buildSettingsHtml() {
     <div class="hint">Send any message to your bot, then click "Auto-detect"</div>
   </div>
 
-  <div>
-    <button id="btn-detect">Auto-detect Chat ID</button>
-    <button id="btn-test" class="secondary">Send Test</button>
-    <button id="btn-save">Save</button>
+  <div class="btn-row">
+    <button id="btn-detect" class="primary">Auto-detect Chat ID</button>
+    <button id="btn-test">Send Test</button>
+    <button id="btn-save" class="primary">Save</button>
   </div>
 
   <div id="status" class="status"></div>
@@ -329,7 +273,8 @@ function buildSettingsHtml() {
     <strong>Silent</strong> = deliver without sound/vibration on the phone
   </div>
 
-  <div style="margin-top:16px; border-top:1px solid #45475a; padding-top:12px">
+  <hr>
+  <div>
     <button id="btn-reset" class="danger">Reset to Defaults</button>
   </div>
 
@@ -420,13 +365,66 @@ export default {
     });
 
     // ── Settings panel ──
-    let panelHandle = null;
+
+    async function handlePanelMessage(data) {
+      if (!data || typeof data.type !== "string") return;
+
+      if (data.type === "tg-save") {
+        config = { ...defaultConfig(), ...data.config };
+        await saveConfig();
+        updateTicker();
+        host.updateItem(`${PLUGIN_ID}:settings`, {
+          subtitle: isConfigured() ? "Configured" : "Click to set up",
+          iconColor: isConfigured() ? "#89b4fa" : "var(--fg-muted)",
+        });
+        host.log("info", "Configuration saved");
+      }
+
+      if (data.type === "tg-detect") {
+        const origToken = config.botToken;
+        config.botToken = data.botToken || config.botToken;
+        const chatId = await autoDetectChatId();
+        config.botToken = origToken;
+        if (chatId) {
+          panelHandle.send({
+            type: "tg-result", ok: true,
+            message: `Chat ID detected: ${chatId}`,
+            chatId,
+          });
+        } else {
+          panelHandle.send({
+            type: "tg-result", ok: false,
+            message: "No messages found. Send a message to your bot first.",
+          });
+        }
+      }
+
+      if (data.type === "tg-test") {
+        const ok = await sendTelegram(
+          `<b>TUICommander</b>\nTest notification from <b>${escapeHtml(repoLabel())}</b>`,
+          false
+        );
+        panelHandle.send({
+          type: "tg-result",
+          ok,
+          message: ok ? "Test message sent!" : "Failed to send. Check bot token and chat ID.",
+        });
+      }
+
+      if (data.type === "tg-reset") {
+        config = defaultConfig();
+        await saveConfig();
+        updateTicker();
+        setTimeout(openSettings, 200);
+      }
+    }
 
     function openSettings() {
       panelHandle = host.openPanel({
         id: "telegram-settings",
         title: "Telegram Notifier",
         html: buildSettingsHtml(),
+        onMessage: handlePanelMessage,
       });
     }
 
@@ -442,72 +440,6 @@ export default {
       dismissible: false,
       onClick: openSettings,
     });
-
-    // Handle messages from the settings panel iframe
-    const onMessage = async (e) => {
-      if (!e.data || typeof e.data.type !== "string") return;
-
-      if (e.data.type === "tg-save") {
-        config = { ...defaultConfig(), ...e.data.config };
-        await saveConfig();
-        updateTicker();
-        host.updateItem(`${PLUGIN_ID}:settings`, {
-          subtitle: isConfigured() ? "Configured" : "Click to set up",
-          iconColor: isConfigured() ? "#89b4fa" : "var(--fg-muted)",
-        });
-        host.log("info", "Configuration saved");
-      }
-
-      if (e.data.type === "tg-detect") {
-        const origToken = config.botToken;
-        config.botToken = e.data.botToken || config.botToken;
-        const chatId = await autoDetectChatId();
-        config.botToken = origToken;
-        if (chatId) {
-          broadcastToIframe({
-            type: "tg-result", ok: true,
-            message: `Chat ID detected: ${chatId}`,
-            chatId,
-          });
-        } else {
-          broadcastToIframe({
-            type: "tg-result", ok: false,
-            message: "No messages found. Send a message to your bot first.",
-          });
-        }
-      }
-
-      if (e.data.type === "tg-test") {
-        const ok = await sendTelegram(
-          `<b>TUICommander</b>\nTest notification from <b>${escapeHtml(repoLabel())}</b>`,
-          false
-        );
-        broadcastToIframe({
-          type: "tg-result",
-          ok,
-          message: ok ? "Test message sent!" : "Failed to send. Check bot token and chat ID.",
-        });
-      }
-
-      if (e.data.type === "tg-reset") {
-        config = defaultConfig();
-        await saveConfig();
-        updateTicker();
-        setTimeout(openSettings, 200);
-      }
-    };
-
-    window.addEventListener("message", onMessage);
-    host._tgCleanup = () => window.removeEventListener("message", onMessage);
-
-    function broadcastToIframe(msg) {
-      const iframes = document.querySelectorAll("iframe");
-      for (const iframe of iframes) {
-        try {
-          iframe.contentWindow.postMessage(msg, "*");
-        } catch { /* sandboxed iframe may reject */ }
-      }
-    }
 
     // ── Structured event: question ──
     host.registerStructuredEventHandler("question", async (payload) => {
@@ -589,10 +521,7 @@ export default {
   },
 
   onunload() {
-    if (hostRef && hostRef._tgCleanup) {
-      hostRef._tgCleanup();
-      delete hostRef._tgCleanup;
-    }
+    panelHandle = null;
     hostRef = null;
     config = defaultConfig();
     lastSent = {};

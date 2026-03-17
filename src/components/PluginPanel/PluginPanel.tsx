@@ -1,6 +1,7 @@
 import { Component, createEffect, onCleanup, onMount } from "solid-js";
 import type { PluginPanelTab } from "../../stores/mdTabs";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
+import { PLUGIN_BASE_CSS } from "./pluginBaseStyles";
 
 export interface PluginPanelProps {
   tab: PluginPanelTab;
@@ -34,15 +35,16 @@ function extractThemeVars(): string {
   return vars.length > 0 ? `<style>:root{${vars.join(";")}}</style>` : "";
 }
 
-/** Inject theme CSS variables into HTML before </head> (or prepend if no </head>) */
+/** Inject theme CSS variables and base stylesheet into HTML before </head> (or prepend if no </head>) */
 function injectThemeVars(html: string): string {
   const themeStyle = extractThemeVars();
-  if (!themeStyle) return html;
+  const baseStyle = `<style id="tuic-base">${PLUGIN_BASE_CSS}</style>`;
+  const injection = baseStyle + themeStyle;
   const headClose = html.indexOf("</head>");
   if (headClose >= 0) {
-    return html.slice(0, headClose) + themeStyle + html.slice(headClose);
+    return html.slice(0, headClose) + injection + html.slice(headClose);
   }
-  return themeStyle + html;
+  return injection + html;
 }
 
 /**
@@ -51,6 +53,11 @@ function injectThemeVars(html: string): string {
  * Security: `sandbox="allow-scripts"` without `allow-same-origin` ensures
  * the iframe cannot access Tauri IPC, the parent window, or same-origin
  * resources. Communication happens via postMessage bridge only.
+ *
+ * CSP: The parent's CSP includes 'unsafe-inline' in script-src to allow
+ * inline scripts in srcdoc iframes (inherited CSP). This is safe because
+ * the main app has no user-injected HTML content (desktop app), and plugin
+ * code is further isolated by the sandbox attribute.
  *
  * Message bridge: Non-system messages from the iframe are routed to the
  * plugin's onMessage callback via pluginRegistry.handlePanelMessage().

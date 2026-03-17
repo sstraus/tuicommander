@@ -32,7 +32,7 @@ export default {
         confirmCount++;
         // Send "y" followed by Enter
         host.writePty(sessionId, "y\n").catch((err) => {
-          console.error("[auto-confirm] writePty failed:", err);
+          host.log("error", "writePty failed", String(err));
         });
 
         host.addItem({

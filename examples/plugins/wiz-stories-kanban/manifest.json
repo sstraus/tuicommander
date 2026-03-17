@@ -1,8 +1,8 @@
 {
   "id": "wiz-stories-kanban",
   "name": "Stories Kanban",
-  "version": "1.0.0",
-  "minAppVersion": "0.4.0",
+  "version": "2.0.0",
+  "minAppVersion": "0.5.0",
   "main": "main.js",
   "description": "Kanban board for file-stories with drag-and-drop status changes.",
   "author": "TUICommander",
@@ -13,6 +13,7 @@
     "fs:write",
     "fs:rename",
     "ui:panel",
-    "ui:markdown"
+    "ui:markdown",
+    "pty:write"
   ]
 }

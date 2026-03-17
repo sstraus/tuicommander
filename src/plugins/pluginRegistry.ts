@@ -527,7 +527,7 @@ function createPluginRegistry() {
    * @param agentTypes - Optional list of agent types this plugin targets.
    *   Empty or omit for universal plugins.
    */
-  function register(plugin: TuiPlugin, capabilities?: string[], allowedUrls?: string[], agentTypes?: string[]): void {
+  async function register(plugin: TuiPlugin, capabilities?: string[], allowedUrls?: string[], agentTypes?: string[]): Promise<void> {
     // Replace existing registration for same id
     if (plugins.has(plugin.id)) {
       unregister(plugin.id);
@@ -539,6 +539,23 @@ function createPluginRegistry() {
 
     const pluginLogger = pluginStore.getLogger(plugin.id);
 
+    // Register capabilities on the Rust side before calling onload,
+    // so Rust-gated commands (exec:cli, fs:read, etc.) work immediately.
+    if (capabilities) {
+      try {
+        await invoke("register_loaded_plugin", {
+          pluginId: plugin.id,
+          capabilities: [...capabilities],
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        appLogger.error("plugin", `Plugin "${plugin.id}" Rust registration failed: ${msg}`, err);
+        pluginLogger.error(`Rust registration failed: ${msg}`, err);
+        pluginStore.updatePlugin(plugin.id, { loaded: false, error: msg });
+        return;
+      }
+    }
+
     try {
       plugin.onload(host);
     } catch (err) {
@@ -546,6 +563,9 @@ function createPluginRegistry() {
       appLogger.error("plugin", `Plugin "${plugin.id}" onload failed: ${msg}`, err);
       pluginLogger.error(`onload failed: ${msg}`, err);
       pluginStore.updatePlugin(plugin.id, { loaded: false, error: msg });
+      if (capabilities) {
+        invoke("unregister_loaded_plugin", { pluginId: plugin.id }).catch(() => {});
+      }
       for (const d of disposables) {
         try { d.dispose(); } catch { /* cleanup best-effort */ }
       }
@@ -580,6 +600,7 @@ function createPluginRegistry() {
     }
     entry.disposable.dispose();
     statusBarTicker.removeAllForPlugin(id);
+    invoke("unregister_loaded_plugin", { pluginId: id }).catch(() => {});
     pluginStore.updatePlugin(id, { loaded: false });
   }
 

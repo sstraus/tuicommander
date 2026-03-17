@@ -181,6 +181,9 @@ function createActivityStore() {
     if (repoPath !== undefined) {
       candidates = candidates.filter((i) => !i.repoPath || i.repoPath === repoPath);
     }
+    // Exclude non-dismissible items — these are static plugin launchers
+    // (e.g. "Open Kanban board", "View repository overview") not real notifications.
+    candidates = candidates.filter((i) => i.dismissible);
     if (candidates.length === 0) return null;
     return candidates.reduce((latest, item) =>
       item.createdAt >= latest.createdAt ? item : latest,
