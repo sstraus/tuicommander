@@ -241,7 +241,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       // Capture scroll state BEFORE write. xterm may jump the viewport when
       // processing escape sequences (cursor moves, screen clears) that agents
       // like Claude Code emit during TUI redraws. We restore position in the
-      // callback if the user was scrolled up and the viewport jumped upward.
+      // callback if the user was scrolled up and the viewport moved at all.
       const buf = terminal.buffer.active;
       const viewportYBefore = buf.viewportY;
       const wasAtBottomBefore = buf.viewportY >= buf.baseY;
@@ -256,12 +256,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
 
         // Guard: restore scroll position if user was scrolled up and xterm
-        // jumped the viewport upward (e.g. due to cursor-positioning escapes).
-        // Only fix upward jumps — downward movement is expected behavior.
+        // moved the viewport (up OR down). Cursor-positioning escapes from
+        // agent TUI redraws can jump the viewport to the bottom, which also
+        // corrupts trackedScrollState.wasAtBottom for subsequent doFit calls.
         if (!wasAtBottomBefore && terminal) {
           const afterBuf = terminal.buffer.active;
-          if (afterBuf.viewportY < viewportYBefore) {
-            terminal.scrollToLine(viewportYBefore);
+          if (afterBuf.viewportY !== viewportYBefore) {
+            terminal.scrollToLine(Math.min(viewportYBefore, afterBuf.baseY));
           }
         }
       });
