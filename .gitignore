@@ -24,9 +24,9 @@ coverage
 *.njsproj
 *.sln
 *.sw?
-plans
-stories
-reviews
+plans # mdkb:index
+stories # mdkb:index
+reviews # mdkb:index
 ideas
 .claude
 .aider*

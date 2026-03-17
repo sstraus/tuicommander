@@ -377,12 +377,19 @@ Opens a local markdown file in the markdown panel. **Requires `"ui:markdown"` ca
 host.openMarkdownFile("/Users/me/.config/tuicommander/plugins/my-plugin/README.md");
 ```
 
-#### host.playNotificationSound() -> Promise<void>
+#### host.playNotificationSound(sound?) -> Promise<void>
 
-Plays the notification sound. **Requires `"ui:sound"` capability.**
+Plays a notification sound. **Requires `"ui:sound"` capability.**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `sound` | `string` | `"info"` | One of: `"question"`, `"error"`, `"completion"`, `"warning"`, `"info"` |
 
 ```typescript
-await host.playNotificationSound();
+await host.playNotificationSound("error");      // CI failure, build error
+await host.playNotificationSound("question");    // input prompt, awaiting user
+await host.playNotificationSound("completion");  // task finished
+await host.playNotificationSound();              // defaults to "info"
 ```
 
 ### Tier 3b: Filesystem Operations (capability-gated)
@@ -795,7 +802,7 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 |------------|---------|------|
 | `pty:write` | `host.writePty()` | Can send arbitrary input to terminals |
 | `ui:markdown` | `host.openMarkdownPanel()`, `host.openMarkdownFile()` | Can open panels and files in the UI |
-| `ui:sound` | `host.playNotificationSound()` | Can play sounds |
+| `ui:sound` | `host.playNotificationSound(sound?)` | Can play sounds (question, error, completion, warning, info) |
 | `ui:panel` | `host.openPanel()` | Can render arbitrary HTML in sandboxed iframe |
 | `ui:ticker` | `host.setTicker()`, `host.clearTicker()` | Can post messages to the shared status bar ticker |
 | `credentials:read` | `host.readCredential()` | Can read system credentials (consent dialog shown) |

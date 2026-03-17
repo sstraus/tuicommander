@@ -326,9 +326,13 @@ function createPluginRegistry() {
         mdTabsStore.add("", absolutePath);
       },
 
-      async playNotificationSound(): Promise<void> {
+      async playNotificationSound(sound?: string): Promise<void> {
         requireCapability(pluginId, capabilities, "ui:sound");
-        await notificationsStore.testSound("question");
+        const validSounds = ["question", "error", "completion", "warning", "info"] as const;
+        const resolved = validSounds.includes(sound as typeof validSounds[number])
+          ? (sound as typeof validSounds[number])
+          : "info";
+        await notificationsStore.play(resolved);
       },
 
       // -- Tier 3b: Filesystem operations --

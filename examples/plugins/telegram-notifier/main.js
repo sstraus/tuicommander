@@ -494,8 +494,9 @@ export default {
     });
 
     // ── Output watcher: CI failure ──
+    // Matches actual CI pipeline failures, not generic "error:" lines.
     host.registerOutputWatcher({
-      pattern: /(?:FAILED|FAILURE|ERROR):\s*(.+)/i,
+      pattern: /(?:^|\s)(?:Build |Pipeline |Step |Job |Task )?FAIL(?:ED|URE)\b[:\s]+(.+)/,
       onMatch(match) {
         const step = match[1].trim();
         notify(
