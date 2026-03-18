@@ -1,11 +1,11 @@
-/// Monitors the Fn/Globe key on macOS via NSEvent local event monitor.
-///
-/// Uses `addLocalMonitorForEventsMatchingMask:handler:` to observe `flagsChanged`
-/// events within the app process. Only fires when the window is focused.
-/// No accessibility permissions required.
+//! Monitors the Fn/Globe key on macOS via NSEvent local event monitor.
+//!
+//! Uses `addLocalMonitorForEventsMatchingMask:handler:` to observe `flagsChanged`
+//! events within the app process. Only fires when the window is focused.
+//! No accessibility permissions required.
 
 /// Install the Fn key local event monitor. Emits "fn-key-down" and "fn-key-up"
-/// Tauri events when the Fn/Globe modifier flag toggles.
+/// Tauri events (scoped to the main window) when the Fn/Globe modifier flag toggles.
 ///
 /// Must be called from the main thread (Tauri setup runs on main thread).
 #[cfg(target_os = "macos")]
@@ -19,16 +19,19 @@ pub fn install(app_handle: tauri::AppHandle) {
     let fn_was_down = AtomicBool::new(false);
 
     let block = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
-        // SAFETY: event is a valid NSEvent pointer provided by AppKit.
+        // SAFETY: event is a valid NSEvent pointer provided by AppKit for the
+        // duration of the block invocation.
         let event_ref = unsafe { event.as_ref() };
         let flags = event_ref.modifierFlags();
         let fn_down = flags.contains(NSEventModifierFlags::Function);
         let was_down = fn_was_down.swap(fn_down, Ordering::Relaxed);
 
+        // Scope events to main window only — prevents plugin iframes from
+        // observing dictation timing.
         if fn_down && !was_down {
-            let _ = app_handle.emit("fn-key-down", ());
+            let _ = app_handle.emit_to(tauri::EventTarget::labeled("main"), "fn-key-down", ());
         } else if !fn_down && was_down {
-            let _ = app_handle.emit("fn-key-up", ());
+            let _ = app_handle.emit_to(tauri::EventTarget::labeled("main"), "fn-key-up", ());
         }
 
         // Return the event unchanged to let it propagate normally.

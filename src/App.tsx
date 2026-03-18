@@ -1127,21 +1127,24 @@ const App: Component = () => {
     });
     if (!handler) return;
 
-    const cleanups: (() => void)[] = [];
+    let cleanupListeners: () => void;
 
     if (hotkey === "Fn") {
       // Fn/Globe key: native monitor emits Tauri events (macOS only)
+      let cancelled = false;
+      let unDown: (() => void) | undefined;
+      let unUp: (() => void) | undefined;
       if (isTauri()) {
-        let unDown: (() => void) | undefined;
-        let unUp: (() => void) | undefined;
         listen("fn-key-down", () => {
           handler.handleEvent({ eventType: "KeyPress", key: "Fn" });
-        }).then((fn) => { unDown = fn; });
+        }).then((fn) => { cancelled ? fn() : (unDown = fn); })
+          .catch((err) => appLogger.error("dictation", "Failed to listen for fn-key-down", err));
         listen("fn-key-up", () => {
           handler.handleEvent({ eventType: "KeyRelease", key: "Fn" });
-        }).then((fn) => { unUp = fn; });
-        cleanups.push(() => { unDown?.(); unUp?.(); });
+        }).then((fn) => { cancelled ? fn() : (unUp = fn); })
+          .catch((err) => appLogger.error("dictation", "Failed to listen for fn-key-up", err));
       }
+      cleanupListeners = () => { cancelled = true; unDown?.(); unUp?.(); };
     } else {
       // Regular keys: DOM events. event.code naming matches our format.
       const hasModifiers = hotkey.includes("+");
@@ -1156,15 +1159,15 @@ const App: Component = () => {
       };
       window.addEventListener("keydown", onKeyDown);
       window.addEventListener("keyup", onKeyUp);
-      cleanups.push(() => {
+      cleanupListeners = () => {
         window.removeEventListener("keydown", onKeyDown);
         window.removeEventListener("keyup", onKeyUp);
-      });
+      };
     }
 
     onCleanup(() => {
       handler.cleanup();
-      cleanups.forEach((fn) => fn());
+      cleanupListeners();
     });
   });
 

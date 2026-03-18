@@ -39,10 +39,12 @@ export const KeyComboCapture: Component<KeyComboCaptureProps> = (props) => {
   };
 
   let unlistenFn: (() => void) | undefined;
+  let fnCancelled = false;
 
   const startCapture = () => {
     setCapturing(true);
     props.onCapturingChange?.(true);
+    fnCancelled = false;
 
     // Listen for Fn/Globe key via native macOS monitor (not in DOM)
     if (isTauri()) {
@@ -51,18 +53,20 @@ export const KeyComboCapture: Component<KeyComboCaptureProps> = (props) => {
           props.onChange("Fn");
           stopCapture();
         }
-      }).then((fn) => { unlistenFn = fn; });
+      }).then((fn) => { fnCancelled ? fn() : (unlistenFn = fn); })
+        .catch(() => { /* Fn key not available on this platform */ });
     }
   };
 
   const stopCapture = () => {
     setCapturing(false);
     props.onCapturingChange?.(false);
+    fnCancelled = true;
     unlistenFn?.();
     unlistenFn = undefined;
   };
 
-  onCleanup(() => { unlistenFn?.(); });
+  onCleanup(() => { fnCancelled = true; unlistenFn?.(); });
 
   const handleKeyDown = (e: KeyboardEvent) => {
     e.preventDefault();
