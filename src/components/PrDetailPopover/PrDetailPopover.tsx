@@ -114,7 +114,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     const branch = repo?.branches[branchName];
     if (branch) {
       for (const termId of branch.terminals) {
-        await invoke("close_pty", { id: termId });
+        await invoke("close_pty", { sessionId: termId, cleanupWorktree: false });
       }
     }
   };

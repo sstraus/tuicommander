@@ -315,7 +315,7 @@ function createPluginRegistry() {
 
       async writePty(sessionId: string, data: string): Promise<void> {
         requireCapability(pluginId, capabilities, "pty:write");
-        await invoke("write_pty", { id: sessionId, data });
+        await invoke("write_pty", { sessionId, data });
       },
 
       openMarkdownPanel(title: string, contentUri: string): void {
@@ -468,7 +468,7 @@ function createPluginRegistry() {
               throw new Error(`User denied credential access for "${serviceName}"`);
             }
             await invoke("write_plugin_data", {
-              plugin_id: pluginId,
+              pluginId,
               path: consentKey,
               content: "allowed",
             });
