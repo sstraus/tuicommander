@@ -1,0 +1,29 @@
+src/FloatingTerminal.tsx
+  91808622f08cc8e1 6,91-93
+src/themes.ts
+  91808622f08cc8e1 2,584-598
+src/__tests__/themes.test.ts
+  91808622f08cc8e1 1,9,129-164
+src/App.tsx
+  91808622f08cc8e1 87,339-341
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "eaca1ed2d6056bd5bdbf45ff4fbe57e5f8e9d2aa",
+  "prompts": {
+    "91808622f08cc8e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5e67803-a100-4fc7-a616-13eff8f61271",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 62,
+      "overriden_lines": 0
+    }
+  }
+}
