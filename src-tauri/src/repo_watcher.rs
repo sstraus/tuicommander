@@ -109,12 +109,11 @@ pub(crate) fn start_watching(
             // subsequent add/remove operations inside it are also detected.
             if !worktrees_watched_cb.load(Ordering::Relaxed) {
                 let wt_dir = git_dir_cb.join("worktrees");
-                if wt_dir.is_dir() {
-                    if let Some(mut debouncer_ref) = state_cb.repo_watchers.get_mut(&repo_path_owned) {
-                        if debouncer_ref.watcher().watch(wt_dir.as_path(), RecursiveMode::NonRecursive).is_ok() {
-                            worktrees_watched_cb.store(true, Ordering::Relaxed);
-                        }
-                    }
+                if wt_dir.is_dir()
+                    && let Some(mut debouncer_ref) = state_cb.repo_watchers.get_mut(&repo_path_owned)
+                    && debouncer_ref.watcher().watch(wt_dir.as_path(), RecursiveMode::NonRecursive).is_ok()
+                {
+                    worktrees_watched_cb.store(true, Ordering::Relaxed);
                 }
             }
 

@@ -335,7 +335,7 @@ mod tests {
         // Collect all samples and verify they're in [-1, 1] (before volume scaling)
         for sample in tone {
             assert!(
-                sample >= -1.0 && sample <= 1.0,
+                (-1.0..=1.0).contains(&sample),
                 "Triangle sample out of range: {sample}"
             );
         }
@@ -346,7 +346,7 @@ mod tests {
         let tone = EnvelopedTone::new(440.0, Duration::from_millis(50), 1.0, Waveform::Sine);
         for sample in tone {
             assert!(
-                sample >= -1.0 && sample <= 1.0,
+                (-1.0..=1.0).contains(&sample),
                 "Sine sample out of range: {sample}"
             );
         }
