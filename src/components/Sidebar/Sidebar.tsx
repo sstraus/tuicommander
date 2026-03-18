@@ -57,14 +57,23 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
   // PR detail popover state
   const [prDetailTarget, setPrDetailTarget] = createSignal<{ repoPath: string; branch: string } | null>(null);
+  // Tracks whether the popover was opened by a manual badge click (vs auto-show)
+  const [prDetailIsManual, setPrDetailIsManual] = createSignal(false);
 
   // Parked repos popover state
   const [parkedPopoverVisible, setParkedPopoverVisible] = createSignal(false);
   const parkedCount = createMemo(() => repositoriesStore.getParkedRepos().length);
 
+  // Reset manual flag whenever target is cleared (prevents orphaned flag)
+  createEffect(() => {
+    if (!prDetailTarget()) setPrDetailIsManual(false);
+  });
+
   // Auto-show PR popover when active branch has PR data
   createEffect(() => {
     if (!settingsStore.state.autoShowPrPopover) return;
+    // Don't override manually-triggered popovers (e.g. badge click on non-active repo)
+    if (prDetailIsManual()) return;
     const active = repositoriesStore.getActive();
     if (!active?.activeBranch) {
       setPrDetailTarget(null);
@@ -189,7 +198,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         onAddTerminal={(branch) => props.onAddTerminal(repo.path, branch)}
         onRemoveBranch={(branch) => props.onRemoveBranch(repo.path, branch)}
         onRenameBranch={(branch) => props.onRenameBranch(repo.path, branch)}
-        onShowPrDetail={(branch) => setPrDetailTarget({ repoPath: repo.path, branch })}
+        onShowPrDetail={(branch) => { setPrDetailIsManual(true); setPrDetailTarget({ repoPath: repo.path, branch }); }}
         buildAgentMenuItems={props.buildAgentMenuItems ? (branch) => props.buildAgentMenuItems!(repo.path, branch) : undefined}
         onAddWorktree={() => props.onAddWorktree(repo.path)}
         onCreateWorktreeFromBranch={props.onCreateWorktreeFromBranch ? (branch) => props.onCreateWorktreeFromBranch!(repo.path, branch) : undefined}
@@ -412,7 +421,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           <PrDetailPopover
             repoPath={target().repoPath}
             branch={target().branch}
-            onClose={() => setPrDetailTarget(null)}
+            onClose={() => { setPrDetailTarget(null); setPrDetailIsManual(false); }}
             onReview={props.onReviewPr}
           />
         )}

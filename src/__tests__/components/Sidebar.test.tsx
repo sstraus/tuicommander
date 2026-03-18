@@ -88,6 +88,13 @@ vi.mock("../../stores/userActivity", () => ({
   },
 }));
 
+// Mock PrDetailPopover to avoid cascading store dependencies
+vi.mock("../../components/PrDetailPopover/PrDetailPopover", () => ({
+  PrDetailPopover: (props: { repoPath: string; branch: string; onClose: () => void }) => (
+    <div data-testid="pr-detail-popover" data-branch={props.branch} data-repo={props.repoPath} />
+  ),
+}));
+
 import { Sidebar } from "../../components/Sidebar/Sidebar";
 import { _resetMergedActivityAccum } from "../../components/Sidebar/RepoSection";
 import { repositoriesStore } from "../../stores/repositories";
@@ -1510,6 +1517,122 @@ describe("Sidebar", () => {
       uiStore.setSidebarWidth(100);
       render(() => <Sidebar {...defaultProps()} />);
       expect(document.documentElement.style.getPropertyValue("--sidebar-width")).toBe("200px");
+    });
+  });
+
+  describe("PrDetailPopover auto-show vs manual click", () => {
+    it("PR badge click on non-active repo opens PrDetailPopover without auto-show closing it", async () => {
+      // Two repos: /repo1 is active (no PR), /repo2 has a branch with a conflicting PR
+      setRepos({
+        "/repo1": makeRepo({ path: "/repo1" }),
+        "/repo2": makeRepo({
+          path: "/repo2",
+          displayName: "Repo Two",
+          initials: "RT",
+          branches: {
+            main: { name: "main", isMain: true, worktreePath: null, terminals: [], additions: 0, deletions: 0 },
+            feature: { name: "feature", isMain: false, worktreePath: "/repo2-wt", terminals: [], additions: 4, deletions: 0 },
+          },
+        }),
+      }, "/repo1");
+
+      mockGetActive.mockReturnValue({ path: "/repo1", activeBranch: "main" });
+
+      // PR data only for /repo2/feature
+      mockGetPrStatus.mockImplementation((...args: unknown[]) => {
+        if (args[0] === "/repo2" && args[1] === "feature") {
+          return { state: "OPEN", number: 99, title: "Feature PR", url: "https://example.com", mergeable: "CONFLICTING" };
+        }
+        return null;
+      });
+
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+
+      // The Conflicts badge should render for /repo2/feature
+      const badge = container.querySelector("[title='PR #99']");
+      expect(badge).not.toBeNull();
+
+      // Click the badge's parent span (which has the onClick handler)
+      await fireEvent.click(badge!.parentElement!);
+
+      // PrDetailPopover should be rendered and not immediately closed by auto-show effect
+      const popover = container.querySelector("[data-testid='pr-detail-popover']");
+      expect(popover).not.toBeNull();
+      expect(popover!.getAttribute("data-branch")).toBe("feature");
+      expect(popover!.getAttribute("data-repo")).toBe("/repo2");
+    });
+
+    it("auto-shows PrDetailPopover when active branch has an open PR", () => {
+      mockGetActive.mockReturnValue({ path: "/repo1", activeBranch: "main" });
+      mockGetPrStatus.mockImplementation((...args: unknown[]) => {
+        if (args[0] === "/repo1" && args[1] === "main") {
+          return { state: "OPEN", number: 7, title: "Auto PR", url: "https://example.com" };
+        }
+        return null;
+      });
+      setRepos({ "/repo1": makeRepo() });
+
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const popover = container.querySelector("[data-testid='pr-detail-popover']");
+      expect(popover).not.toBeNull();
+      expect(popover!.getAttribute("data-branch")).toBe("main");
+      expect(popover!.getAttribute("data-repo")).toBe("/repo1");
+    });
+
+    it("manual popover stays open during branch switch (closed only via explicit close)", async () => {
+      // Two repos: /repo1 active with a PR, /repo2 has PR on feature
+      setRepos({
+        "/repo1": makeRepo({ path: "/repo1" }),
+        "/repo2": makeRepo({
+          path: "/repo2",
+          displayName: "Repo Two",
+          initials: "RT",
+          branches: {
+            main: { name: "main", isMain: true, worktreePath: null, terminals: [], additions: 0, deletions: 0 },
+            feature: { name: "feature", isMain: false, worktreePath: "/repo2-wt", terminals: [], additions: 4, deletions: 0 },
+          },
+        }),
+      }, "/repo1");
+
+      mockGetActive.mockReturnValue({ path: "/repo1", activeBranch: "main" });
+      mockGetPrStatus.mockImplementation((...args: unknown[]) => {
+        if (args[0] === "/repo2" && args[1] === "feature") {
+          return { state: "OPEN", number: 99, title: "Feature PR", url: "https://example.com", mergeable: "CONFLICTING" };
+        }
+        return null;
+      });
+
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+
+      // Click badge on /repo2/feature (manual open)
+      const badge = container.querySelector("[title='PR #99']");
+      expect(badge).not.toBeNull();
+      await fireEvent.click(badge!.parentElement!);
+
+      // Manual popover should be open
+      let popover = container.querySelector("[data-testid='pr-detail-popover']");
+      expect(popover).not.toBeNull();
+      expect(popover!.getAttribute("data-repo")).toBe("/repo2");
+
+      // Simulate branch switch on the active repo — manual popover must survive
+      mockGetActive.mockReturnValue({ path: "/repo1", activeBranch: "develop" });
+      setRepos({
+        "/repo1": makeRepo({ path: "/repo1", activeBranch: "develop" }),
+        "/repo2": makeRepo({
+          path: "/repo2",
+          displayName: "Repo Two",
+          initials: "RT",
+          branches: {
+            main: { name: "main", isMain: true, worktreePath: null, terminals: [], additions: 0, deletions: 0 },
+            feature: { name: "feature", isMain: false, worktreePath: "/repo2-wt", terminals: [], additions: 4, deletions: 0 },
+          },
+        }),
+      }, "/repo1");
+
+      // Manual popover should STILL be open after branch switch
+      popover = container.querySelector("[data-testid='pr-detail-popover']");
+      expect(popover).not.toBeNull();
+      expect(popover!.getAttribute("data-repo")).toBe("/repo2");
     });
   });
 });
