@@ -150,6 +150,22 @@ export const AppearanceTab: Component = () => {
         <p class={s.hint}>{t("appearance.hint.defaultFontSize", "Default font size for new terminals")}</p>
       </div>
 
+      <div class={s.group}>
+        <label>{t("appearance.label.fontWeight", "Font Weight")}</label>
+        <div class={s.slider}>
+          <input
+            type="range"
+            min="100"
+            max="900"
+            step="100"
+            value={settingsStore.state.fontWeight}
+            onInput={(e) => settingsStore.setFontWeight(parseInt(e.currentTarget.value))}
+          />
+          <span>{settingsStore.state.fontWeight}</span>
+        </div>
+        <p class={s.hint}>{t("appearance.hint.fontWeight", "Terminal font weight (200 = ExtraLight, 400 = Regular, 700 = Bold)")}</p>
+      </div>
+
       <h3>{t("appearance.heading.tabs", "Tabs")}</h3>
 
       <div class={s.group}>

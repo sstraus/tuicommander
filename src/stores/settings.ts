@@ -14,6 +14,7 @@ interface RustAppConfig {
   shell: string | null;
   font_family: string;
   font_size: number;
+  font_weight: number;
   theme: string;
   mcp_server_enabled: boolean;
   ide: string;
@@ -38,6 +39,7 @@ const DEFAULTS = {
   ide: "vscode" as const,
   font: "JetBrains Mono" as const,
   fontSize: 13,
+  fontWeight: 400,
 };
 
 /** IDE options */
@@ -213,6 +215,7 @@ export type UpdateChannel = "stable" | "nightly";
 interface SettingsStoreState {
   ide: IdeType;
   font: FontType;
+  fontWeight: number;
   defaultFontSize: number;
   shell: string | null;
   theme: string;
@@ -235,6 +238,7 @@ function createSettingsStore() {
   const [state, setState] = createStore<SettingsStoreState>({
     ide: DEFAULTS.ide,
     font: DEFAULTS.font,
+    fontWeight: DEFAULTS.fontWeight,
     defaultFontSize: DEFAULTS.fontSize,
     shell: null,
     theme: "commander",
@@ -271,6 +275,7 @@ function createSettingsStore() {
 
         const config = await invoke<RustAppConfig>("load_config");
         setState("font", validateFont(config.font_family));
+        setState("fontWeight", config.font_weight || DEFAULTS.fontWeight);
         setState("ide", validateIde(config.ide));
         setState("defaultFontSize", config.default_font_size || DEFAULTS.fontSize);
         setState("shell", config.shell || null);
@@ -319,6 +324,21 @@ function createSettingsStore() {
       } catch (err) {
         appLogger.error("config", "Failed to persist font to config", err);
         setState("font", prevFont);
+      }
+    },
+
+    /** Set terminal font weight and persist to Rust config */
+    async setFontWeight(weight: number): Promise<void> {
+      const clamped = Math.max(100, Math.min(900, Math.round(weight / 100) * 100));
+      const prev = state.fontWeight;
+      setState("fontWeight", clamped);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.font_weight = clamped;
+        await invoke("save_config", { config });
+      } catch (err) {
+        appLogger.error("config", "Failed to persist fontWeight", err);
+        setState("fontWeight", prev);
       }
     },
 

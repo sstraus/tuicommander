@@ -262,6 +262,9 @@ pub(crate) struct AppConfig {
     pub(crate) shell: Option<String>,
     pub(crate) font_family: String,
     pub(crate) font_size: u16,
+    /// Terminal font weight (100–900, e.g. 200 = ExtraLight, 400 = Regular)
+    #[serde(default = "default_font_weight")]
+    pub(crate) font_weight: u16,
     pub(crate) theme: String,
     /// Enable MCP HTTP API on localhost for external tool integration
     #[serde(default)]
@@ -375,6 +378,10 @@ fn default_font_size() -> u16 {
     13
 }
 
+fn default_font_weight() -> u16 {
+    400
+}
+
 fn default_max_tab_name_length() -> u32 {
     25
 }
@@ -389,6 +396,7 @@ impl Default for AppConfig {
             shell: None,
             font_family: "JetBrains Mono".to_string(),
             font_size: 14,
+            font_weight: default_font_weight(),
             theme: "vscode-dark".to_string(),
             mcp_server_enabled: true,
             mcp_port: default_mcp_port(),
@@ -1071,6 +1079,7 @@ mod tests {
             shell: Some("/bin/zsh".to_string()),
             font_family: "Fira Code".to_string(),
             font_size: 16,
+            font_weight: 200,
             theme: "dark".to_string(),
             mcp_server_enabled: true,
             mcp_port: 4000,
