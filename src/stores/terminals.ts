@@ -377,9 +377,9 @@ function createTerminalsStore() {
       // Reject if at max panes
       if (panes.length >= MAX_SPLIT_PANES) return null;
 
-      const sourceId = panes[0];
+      const sourceId = panes[state.layout.activePaneIndex] ?? panes[0];
       const source = state.terminals[sourceId];
-      const cwd = source?.cwd || null;
+      const cwd = source?.cwd ?? null;
 
       const newId = actions.add({
         sessionId: null,
