@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Slimmer MCP server instructions** — Removed redundant tool table from MCP instructions (tool schemas already describe actions), switched from markdown tables to compact lists
 
 ### Fixed
+- **File operations in worktrees** — Markdown viewer, file browser, code editor, and git panels now correctly resolve file paths against the worktree directory instead of the main repo root. Previously, opening a markdown file or browsing files while on a linked worktree branch would fail with "file not found" or show files from the wrong branch
 - **MCP bridge socket path** — tuic-bridge was looking for the Unix socket in `tuicommander/` instead of `com.tuic.commander/`, preventing MCP connections from Claude Code and other agents
 - **Text selection in diff panels** — DiffTab and PrDiffTab now allow text highlighting and copying via `user-select: text`
 - **Submodule entries in working tree status** — Submodules no longer appear as regular files in the Changes tab
