@@ -1277,9 +1277,11 @@ fn status_char_to_code(c: char) -> Option<&'static str> {
 /// Parse an ordinary (type 1) porcelain v2 entry.
 fn parse_ordinary_entry(rest: &str, staged: &mut Vec<StatusEntry>, unstaged: &mut Vec<StatusEntry>) {
     // Fields are space-separated: XY sub mH mI mW hH hI path
-    // We need XY (index 0) and path (index 7)
+    // We need XY (index 0), sub (index 1), and path (index 7)
     let fields: Vec<&str> = rest.splitn(8, ' ').collect();
     if fields.len() < 8 { return; }
+    // Skip submodule entries (sub field starts with 'S')
+    if fields[1].starts_with('S') { return; }
     let xy = fields[0];
     let path = fields[7].to_string();
     let mut chars = xy.chars();
@@ -2322,6 +2324,16 @@ mod tests {
         assert_eq!(status.staged.len(), 2); // M. and A.
         assert_eq!(status.unstaged.len(), 1); // .M
         assert_eq!(status.untracked, vec!["untracked.txt"]);
+    }
+
+    #[test]
+    fn parse_porcelain_v2_skips_submodules() {
+        // Submodule entry: sub field starts with 'S' (e.g. S..U, SC.., SM.U)
+        let output = "1 .M S..U 160000 160000 160000 abc123 abc123 plugins\n\
+                       1 .M N... 100644 100644 100644 def456 def456 src/main.rs";
+        let status = parse_porcelain_v2(output);
+        assert_eq!(status.unstaged.len(), 1, "submodule should be skipped");
+        assert_eq!(status.unstaged[0].path, "src/main.rs");
     }
 
     // --- Integration tests for get_working_tree_status ---
