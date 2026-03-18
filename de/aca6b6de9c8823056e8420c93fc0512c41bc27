@@ -1,0 +1,27 @@
+src-tauri/crates/tuic-bridge/Cargo.toml
+  6e79cf5e89df4b5b 3
+Makefile
+  6e79cf5e89df4b5b 137,139
+src/hooks/usePostMergeCleanup.ts
+  6e79cf5e89df4b5b 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "deaca6b6de9c8823056e8420c93fc0512c41bc27",
+  "prompts": {
+    "6e79cf5e89df4b5b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ac07b14b-3229-47c9-a7de-00b8f7829574",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 4,
+      "total_deletions": 2,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    }
+  }
+}
