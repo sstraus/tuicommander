@@ -11,7 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Copy Path in viewer tab context menus** — Right-click on diff, markdown (file type), and editor tabs to copy the file path to clipboard
 - **Click-to-diff in Git Panel** — Changes tab: clicking a file row opens its diff directly. Log tab: clicking a file in an expanded commit opens its diff at that commit hash
 
+### Changed
+- **Slimmer MCP server instructions** — Removed redundant tool table from MCP instructions (tool schemas already describe actions), switched from markdown tables to compact lists
+
 ### Fixed
+- **MCP bridge socket path** — tuic-bridge was looking for the Unix socket in `tuicommander/` instead of `com.tuic.commander/`, preventing MCP connections from Claude Code and other agents
 - **Text selection in diff panels** — DiffTab and PrDiffTab now allow text highlighting and copying via `user-select: text`
 - **Submodule entries in working tree status** — Submodules no longer appear as regular files in the Changes tab
 - **SearchBar placeholder encoding** — Fixed literal `\u2026` showing instead of ellipsis character in "Find…" placeholder
