@@ -1,8 +1,8 @@
 /**
- * Hotkey format utilities and matching logic for tauri-plugin-user-input events.
+ * Hotkey format utilities and matching logic for DOM keyboard events.
  *
  * UI format uses "Cmd" (e.g. "Cmd+Shift+D", "F5")
- * user-input plugin uses Key enum strings (e.g. "KeyD", "F5", "Space", "MetaLeft")
+ * DOM event.code uses KeyboardEvent.code strings (e.g. "KeyD", "F5", "Space", "MetaLeft")
  */
 
 import { getModifierSymbol, isMacOS } from "../platform";
@@ -47,9 +47,9 @@ export function comboToDisplay(combo: string): string {
   return displayParts.join("");
 }
 
-// --- tauri-plugin-user-input key matching ---
+// --- DOM event.code key matching ---
 
-/** Map from UI hotkey key name to user-input plugin Key string */
+/** Map from UI hotkey key name to DOM KeyboardEvent.code string */
 const UI_KEY_TO_PLUGIN: Record<string, string> = {
   Space: "Space", Tab: "Tab", Enter: "Enter", Escape: "Escape",
   Backspace: "Backspace", Delete: "Delete", Insert: "Insert",
@@ -62,7 +62,7 @@ const UI_KEY_TO_PLUGIN: Record<string, string> = {
 // F1–F24
 for (let i = 1; i <= 24; i++) UI_KEY_TO_PLUGIN[`F${i}`] = `F${i}`;
 
-/** Convert a single non-modifier key from UI format to plugin Key string */
+/** Convert a single non-modifier key from UI format to DOM event.code string */
 function uiKeyToPluginKey(uiKey: string): string {
   if (UI_KEY_TO_PLUGIN[uiKey]) return UI_KEY_TO_PLUGIN[uiKey];
   // Single letter → "KeyA"
@@ -79,13 +79,13 @@ function uiKeyToPluginKey(uiKey: string): string {
   return uiKey; // fallback: pass through as-is
 }
 
-/** Modifier key names from the user-input plugin */
+/** Modifier key names from DOM event.code */
 const PLUGIN_MODIFIER_KEYS = new Set([
   "MetaLeft", "MetaRight", "ShiftLeft", "ShiftRight",
   "ControlLeft", "ControlRight", "AltLeft", "AltRight",
 ]);
 
-/** Check whether a user-input plugin key is a modifier */
+/** Check whether a DOM event.code key is a modifier */
 export function isPluginModifierKey(key: string): boolean {
   return PLUGIN_MODIFIER_KEYS.has(key);
 }
@@ -117,7 +117,7 @@ export function parseHotkey(hotkey: string): ParsedHotkey | null {
   return { key: uiKeyToPluginKey(key), needCmd, needShift, needAlt, needCtrl };
 }
 
-/** Tracked modifier state from user-input plugin events */
+/** Tracked modifier state from DOM keyboard events */
 export interface ModifierState {
   cmd: boolean;
   shift: boolean;
@@ -125,7 +125,7 @@ export interface ModifierState {
   ctrl: boolean;
 }
 
-/** Update modifier state from a plugin key event */
+/** Update modifier state from a DOM key event */
 export function updateModifierState(state: ModifierState, key: string, pressed: boolean): void {
   switch (key) {
     case "MetaLeft": case "MetaRight": state.cmd = pressed; break;

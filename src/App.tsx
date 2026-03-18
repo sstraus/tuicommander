@@ -86,12 +86,6 @@ import { startAutoFetch } from "./hooks/useAutoFetch";
 import { useAutoDeleteBranch } from "./hooks/useAutoDeleteBranch";
 import { applyAppTheme, applyFontFamily } from "./themes";
 import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
-import {
-  startListening as startInputListening,
-  stopListening as stopInputListening,
-  setEventTypes as setInputEventTypes,
-  EventTypeEnum,
-} from "tauri-plugin-user-input-api";
 import { applyPlatformClass, getModifierSymbol, isQuickSwitcherActive, isQuickSwitcherRelease } from "./platform";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -1117,12 +1111,11 @@ const App: Component = () => {
     onCleanup(() => unlisten?.());
   });
 
-  // Push-to-talk hotkey handler via tauri-plugin-user-input.
-  // Listens for all keyboard events globally, implements long-press detection:
+  // Push-to-talk hotkey handler via DOM keyboard events.
+  // Listens for keydown/keyup on the window, implements long-press detection:
   // short press passes through as normal input, long press triggers dictation.
   // Pauses while capturingHotkey is true so the settings UI can capture a new key.
   createEffect(() => {
-    if (!isTauri()) return;
     const hotkey = dictationStore.state.hotkey;
     const capturing = dictationStore.state.capturingHotkey;
     const longPressMs = dictationStore.state.longPressMs;
@@ -1134,29 +1127,21 @@ const App: Component = () => {
     });
     if (!handler) return;
 
-    let listening = false;
-
-    const setup = async () => {
-      try {
-        await setInputEventTypes([EventTypeEnum.KeyPress, EventTypeEnum.KeyRelease]);
-        await startInputListening(handler.handleEvent);
-        listening = true;
-      } catch (err) {
-        appLogger.error("dictation", "Failed to start input listener for push-to-talk", err);
-      }
+    // DOM event.code uses the same naming as the plugin: KeyD, Space, MetaLeft, etc.
+    const onKeyDown = (e: KeyboardEvent) => {
+      handler.handleEvent({ eventType: "KeyPress", key: e.code });
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      handler.handleEvent({ eventType: "KeyRelease", key: e.code });
     };
 
-    setup().catch((err) =>
-      appLogger.error("app", "Failed to start push-to-talk listener", err),
-    );
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
 
     onCleanup(() => {
       handler.cleanup();
-      if (listening) {
-        stopInputListening().catch((err) =>
-          appLogger.warn("dictation", "Failed to stop input listener", err),
-        );
-      }
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
     });
   });
 

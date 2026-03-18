@@ -684,7 +684,6 @@ pub fn run() {
                 })
                 .build(),
         )
-        .plugin(tauri_plugin_user_input::init())
         .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_window_state::Builder::new()
@@ -716,9 +715,6 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            // Allow user-input plugin to receive keyboard events even when
-            // the Tauri window has focus (required for push-to-talk hotkey).
-            app.set_device_event_filter(tauri::DeviceEventFilter::Always);
 
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;

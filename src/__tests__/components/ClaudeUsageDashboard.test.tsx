@@ -27,13 +27,6 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("tauri-plugin-user-input-api", () => ({
-  startListening: vi.fn().mockResolvedValue(undefined),
-  stopListening: vi.fn().mockResolvedValue(undefined),
-  setEventTypes: vi.fn().mockResolvedValue(undefined),
-  isListening: vi.fn().mockResolvedValue(false),
-  EventTypeEnum: { KeyPress: "KeyPress", KeyRelease: "KeyRelease" },
-}));
 
 import { invoke } from "@tauri-apps/api/core";
 import { ClaudeUsageDashboard } from "../../components/ClaudeUsageDashboard";

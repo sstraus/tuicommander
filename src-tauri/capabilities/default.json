@@ -12,7 +12,6 @@
     "core:window:allow-start-dragging",
     "core:window:allow-destroy",
     "window-state:default",
-    "user-input:default",
     "updater:default",
     "process:allow-restart",
     "deep-link:default"

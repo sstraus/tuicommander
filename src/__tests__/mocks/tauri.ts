@@ -32,18 +32,4 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("tauri-plugin-user-input-api", () => ({
-  startListening: vi.fn().mockResolvedValue(undefined),
-  stopListening: vi.fn().mockResolvedValue(undefined),
-  setEventTypes: vi.fn().mockResolvedValue(undefined),
-  isListening: vi.fn().mockResolvedValue(false),
-  EventTypeEnum: {
-    KeyPress: "KeyPress",
-    KeyRelease: "KeyRelease",
-    ButtonPress: "ButtonPress",
-    ButtonRelease: "ButtonRelease",
-    MouseMove: "MouseMove",
-    MouseDragged: "MouseDragged",
-    Wheel: "Wheel",
-  },
-}));
+

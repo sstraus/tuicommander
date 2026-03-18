@@ -1,5 +1,5 @@
 /**
- * Long-press hotkey detection using tauri-plugin-user-input.
+ * Long-press hotkey detection using DOM keyboard events.
  *
  * Listens for global keyboard events and distinguishes short presses
  * (which pass through as normal input) from long presses (which trigger
@@ -9,7 +9,7 @@
 import { parseHotkey, isPluginModifierKey, updateModifierState, modifiersMatch } from "../utils";
 import type { ModifierState, ParsedHotkey } from "../utils";
 
-/** Minimal event shape matching tauri-plugin-user-input InputEvent */
+/** Minimal event shape matching DOM keyboard events (KeyPress/KeyRelease from event.code) */
 export interface KeyEvent {
   eventType: string;
   key?: string;
