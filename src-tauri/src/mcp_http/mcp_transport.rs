@@ -25,21 +25,30 @@ fn to_json_or_error<T: serde::Serialize>(value: T) -> serde_json::Value {
 /// Build server instructions for the MCP initialize response.
 /// Tells the connecting agent what tools are available, which repos are managed,
 /// and what sessions are currently active so it can orient itself.
-fn build_mcp_instructions(state: &Arc<AppState>) -> String {
+fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> String {
     let ver = env!("CARGO_PKG_VERSION");
     let mut out = String::with_capacity(2048);
 
-    // Header — version greeting is the primary "MCP is alive" signal
+    // Header — identity + capabilities (drives MCP Tool Search routing)
     out.push_str(&format!("# TUICommander v{ver}\n\n"));
+    out.push_str("Terminal session orchestrator. Manage PTY terminals, query git repos, spawn AI agents, and configure the app.\n\n");
     out.push_str(&format!(
         "When you start a conversation, mention that TUICommander v{ver} is connected.\n\n"
     ));
 
-    // Workflow — only non-obvious guidance (tool schemas already describe actions)
+    // Workflow — explicit create step so agents know to spawn sessions
     out.push_str("## Workflow\n\n");
     out.push_str("1. `session action=list` → discover active sessions\n");
-    out.push_str("2. `session action=output` → read terminal, `action=input` → type\n");
-    out.push_str("3. Git tools require absolute `path`\n\n");
+    out.push_str("2. `session action=create` with `cwd` → spawn new terminal (auto-appears in TUI)\n");
+    out.push_str("3. `session action=output` → read terminal, `action=input` → type\n");
+    out.push_str("4. `agent action=spawn` with `prompt` + `cwd` → launch AI agent in new PTY\n");
+    out.push_str("5. Git tools require absolute `path`\n\n");
+    // Claude Code-specific: guide teammate spawning through TUICommander PTY.
+    // The bridge binary (`tuic-bridge`) is exclusively used by Claude Code.
+    let is_claude_code = client_name.map_or(false, |n| n.contains("claude") || n.contains("tuic-bridge"));
+    if is_claude_code {
+        out.push_str("**Teammates:** When spawning teammates for parallel work, create a worktree + PTY for each via `mcp__tuicommander__session action=create` so they appear in the UI and their output is tracked.\n\n");
+    }
 
     // Managed repositories (dynamic)
     let repo_settings = crate::config::load_repo_settings();
@@ -945,7 +954,8 @@ pub(super) async fn mcp_post(
         "initialize" => {
             let session_id = Uuid::new_v4().to_string();
             state.mcp_sessions.insert(session_id.clone(), std::time::Instant::now());
-            let instructions = build_mcp_instructions(&state);
+            let client_name = body["params"]["clientInfo"]["name"].as_str();
+            let instructions = build_mcp_instructions(&state, client_name);
 
             let response = serde_json::json!({
                 "jsonrpc": "2.0",
@@ -1099,7 +1109,7 @@ pub(super) async fn mcp_get(
 pub(super) async fn mcp_instructions_http(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    Json(serde_json::json!({"instructions": build_mcp_instructions(&state)}))
+    Json(serde_json::json!({"instructions": build_mcp_instructions(&state, None)}))
 }
 
 /// DELETE /mcp — End an MCP session
