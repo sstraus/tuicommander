@@ -1,5 +1,5 @@
 import { Component, For, Show, batch, createSignal, createEffect, onCleanup, onMount } from "solid-js";
-import { terminalsStore } from "../../stores/terminals";
+import { terminalsStore, MAX_SPLIT_PANES } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
@@ -51,15 +51,14 @@ export const TabBar: Component<TabBarProps> = (props) => {
   // Context menu for overflow tabs (right-click on scroll arrows)
   const overflowMenu = createContextMenu();
   const layout = () => terminalsStore.state.layout;
-  const isSplitActive = () => layout().direction !== "none";
   const isUnifiedMode = () => settingsStore.state.splitTabMode === "unified" && layout().direction !== "none";
   const mod = getModifierSymbol();
 
   const getNewTabMenuItems = (): ContextMenuItem[] => [
     { label: t("tabBar.newTab", "New Tab"), shortcut: `${mod}T`, action: () => props.onNewTab() },
     { label: "", separator: true, action: () => {} },
-    { label: t("tabBar.splitVertical", "Split Vertically"), shortcut: `${mod}\\`, action: () => props.onSplitVertical?.(), disabled: isSplitActive() },
-    { label: t("tabBar.splitHorizontal", "Split Horizontally"), shortcut: `${mod}Alt+\\`, action: () => props.onSplitHorizontal?.(), disabled: isSplitActive() },
+    { label: t("tabBar.splitVertical", "Split Vertically"), shortcut: `${mod}\\`, action: () => props.onSplitVertical?.(), disabled: layout().direction === "horizontal" || layout().panes.length >= MAX_SPLIT_PANES },
+    { label: t("tabBar.splitHorizontal", "Split Horizontally"), shortcut: `${mod}Alt+\\`, action: () => props.onSplitHorizontal?.(), disabled: layout().direction === "vertical" || layout().panes.length >= MAX_SPLIT_PANES },
   ];
 
   const openNewTabMenu = (e: MouseEvent) => {
@@ -391,32 +390,34 @@ export const TabBar: Component<TabBarProps> = (props) => {
           const isRemote = () => terminal()?.isRemote;
           const isEditing = () => editingId() === id;
 
-          // Unified split tab mode: hide second pane's tab, show combined name on first
-          const isSecondSplitPane = () => isUnifiedMode() && layout().panes[1] === id;
+          // Unified split tab mode: hide non-primary pane tabs, show combined name on first
+          const isNonPrimaryPane = () => isUnifiedMode() && layout().panes.indexOf(id) > 0;
           const isFirstSplitPane = () => isUnifiedMode() && layout().panes[0] === id;
           const unifiedName = () => {
             if (!isFirstSplitPane()) return terminal()?.name;
-            const secondId = layout().panes[1];
-            const second = secondId ? terminalsStore.get(secondId) : undefined;
-            return `${terminal()?.name} | ${second?.name ?? ""}`;
+            const paneNames = layout().panes.map(pid => terminalsStore.get(pid)?.name ?? "");
+            return paneNames.join(" | ");
           };
 
-          // In unified mode, hide the second split pane's tab
+          // In unified mode, highlight the first tab when any pane is active
           const isActiveInUnified = () => isFirstSplitPane() && layout().panes.includes(terminalsStore.state.activeId || "");
 
-          // Close this tab, and in unified mode also close the paired pane
+          // Close this tab, and in unified mode close ALL pane terminals
           const handleCloseTab = (e: Event) => {
             e.preventDefault();
             e.stopPropagation();
             if (isFirstSplitPane()) {
-              const secondId = layout().panes[1];
-              if (secondId) props.onTabClose(secondId);
+              // Close non-primary panes first (in reverse order)
+              const panes = layout().panes;
+              for (let i = panes.length - 1; i > 0; i--) {
+                props.onTabClose(panes[i]);
+              }
             }
             props.onTabClose(id);
           };
 
           return (
-            <Show when={terminal() && !isSecondSplitPane()}>
+            <Show when={terminal() && !isNonPrimaryPane()}>
               <div
                 class={cx(
                   s.tab,

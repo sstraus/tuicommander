@@ -721,7 +721,7 @@ describe("TabBar", () => {
   });
 
   describe("new tab menu", () => {
-    it("disables split options when already in split mode", () => {
+    it("disables opposite-direction split when already split", () => {
       const id1 = addTerminal({ name: "T1" });
       const id2 = addTerminal({ name: "T2" });
       terminalsStore.setLayout({
@@ -741,14 +741,14 @@ describe("TabBar", () => {
       fireEvent.contextMenu(btn);
       const menus = container.querySelectorAll(".menu");
       const menu = menus[menus.length - 1];
-      const items = menu.querySelectorAll(".item");
-      // Items: New Tab, Split Vertically, Split Horizontally
-      // The split items (last two non-separator) should be disabled
-      const splitItems = Array.from(items).filter(i => i.textContent?.includes("Split"));
-      expect(splitItems.length).toBe(2);
-      splitItems.forEach(item => {
-        expect(item.classList.contains("disabled")).toBe(true);
-      });
+      const items = Array.from(menu.querySelectorAll(".item"));
+      // With vertical split: "Split Vertically" should be enabled, "Split Horizontally" disabled
+      const splitV = items.find(i => i.textContent?.includes("Split Vertically"));
+      const splitH = items.find(i => i.textContent?.includes("Split Horizontally"));
+      expect(splitV).toBeDefined();
+      expect(splitH).toBeDefined();
+      expect(splitV!.classList.contains("disabled")).toBe(false);
+      expect(splitH!.classList.contains("disabled")).toBe(true);
 
       // Reset layout for other tests
       terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
@@ -777,7 +777,7 @@ describe("TabBar", () => {
   });
 
   describe("unified split tab mode", () => {
-    it("hides second pane tab in unified mode", () => {
+    it("hides non-primary pane tabs in unified mode (2 panes)", () => {
       const id1 = addTerminal({ name: "T1" });
       const id2 = addTerminal({ name: "T2" });
       terminalsStore.setLayout({
@@ -786,30 +786,52 @@ describe("TabBar", () => {
         ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
-      // Set unified mode (synchronous part of setSplitTabMode)
       settingsStore.setSplitTabMode("unified");
 
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
       const tabs = container.querySelectorAll(".tab");
-      // Only one tab should be visible (unified)
       expect(tabs.length).toBe(1);
-      // Should show combined name
       expect(tabs[0].querySelector(".tabName")!.textContent).toContain("T1 | T2");
 
-      // Reset
       settingsStore.setSplitTabMode("separate");
       terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
     });
 
-    it("close button on unified tab closes both terminals", () => {
+    it("hides non-primary pane tabs in unified mode (3 panes)", () => {
       const id1 = addTerminal({ name: "T1" });
       const id2 = addTerminal({ name: "T2" });
+      const id3 = addTerminal({ name: "T3" });
+      const r = 1 / 3;
       terminalsStore.setLayout({
         direction: "vertical",
-        panes: [id1, id2],
-        ratios: [0.5, 0.5],
+        panes: [id1, id2, id3],
+        ratios: [r, r, r],
+        activePaneIndex: 0,
+      });
+      settingsStore.setSplitTabMode("unified");
+
+      const { container } = render(() => (
+        <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
+      ));
+      const tabs = container.querySelectorAll(".tab");
+      expect(tabs.length).toBe(1);
+      expect(tabs[0].querySelector(".tabName")!.textContent).toContain("T1 | T2 | T3");
+
+      settingsStore.setSplitTabMode("separate");
+      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
+    });
+
+    it("close button on unified tab closes all pane terminals", () => {
+      const id1 = addTerminal({ name: "T1" });
+      const id2 = addTerminal({ name: "T2" });
+      const id3 = addTerminal({ name: "T3" });
+      const r = 1 / 3;
+      terminalsStore.setLayout({
+        direction: "vertical",
+        panes: [id1, id2, id3],
+        ratios: [r, r, r],
         activePaneIndex: 0,
       });
       settingsStore.setSplitTabMode("unified");
@@ -820,17 +842,16 @@ describe("TabBar", () => {
       ));
       const closeBtn = container.querySelector(".tabClose")!;
       fireEvent.click(closeBtn);
-      // Should close both terminals
+      // Should close all 3 terminals
+      expect(handleClose).toHaveBeenCalledWith(id3);
       expect(handleClose).toHaveBeenCalledWith(id2);
       expect(handleClose).toHaveBeenCalledWith(id1);
 
-      // Reset
       settingsStore.setSplitTabMode("separate");
       terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
     });
 
-    it("unified close leaves clean layout state after both terminals closed", () => {
-      // Setup: create 2 terminals, set vertical split layout, set unified mode
+    it("unified close leaves clean layout state after all terminals closed", () => {
       const id1 = addTerminal({ name: "T1" });
       const id2 = addTerminal({ name: "T2" });
       terminalsStore.setLayout({
@@ -841,30 +862,24 @@ describe("TabBar", () => {
       });
       settingsStore.setSplitTabMode("unified");
 
-      // Use a real close handler that removes terminals and collapses layout
       const handleClose = (id: string) => {
         terminalsStore.remove(id);
-        // Check if this was a split pane and collapse
         const layout = terminalsStore.state.layout;
         const splitIndex = layout.direction !== "none" ? layout.panes.indexOf(id) : -1;
-        if (splitIndex !== -1 && layout.panes.length === 2) {
-          terminalsStore.closeSplitPane(splitIndex === 0 ? 0 : 1);
+        if (splitIndex !== -1 && layout.panes.length > 1) {
+          terminalsStore.closeSplitPane(splitIndex);
         }
       };
 
-      // Render with the real handler
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={handleClose} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
 
-      // Click close on the unified tab
       const closeBtn = container.querySelector(".tabClose")!;
       fireEvent.click(closeBtn);
 
-      // Verify layout is clean
       expect(terminalsStore.state.layout.direction).toBe("none");
 
-      // Cleanup
       settingsStore.setSplitTabMode("separate");
       terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
     });
