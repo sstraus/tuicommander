@@ -727,7 +727,7 @@ describe("TabBar", () => {
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
 
@@ -751,7 +751,7 @@ describe("TabBar", () => {
       });
 
       // Reset layout for other tests
-      terminalsStore.setLayout({ direction: "none", panes: [], ratio: 0.5, activePaneIndex: 0 });
+      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
     });
 
     it("calls onSplitVertical when Split Vertically is clicked", () => {
@@ -783,7 +783,7 @@ describe("TabBar", () => {
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
       // Set unified mode (synchronous part of setSplitTabMode)
@@ -800,7 +800,7 @@ describe("TabBar", () => {
 
       // Reset
       settingsStore.setSplitTabMode("separate");
-      terminalsStore.setLayout({ direction: "none", panes: [], ratio: 0.5, activePaneIndex: 0 });
+      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
     });
 
     it("close button on unified tab closes both terminals", () => {
@@ -809,7 +809,7 @@ describe("TabBar", () => {
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
       settingsStore.setSplitTabMode("unified");
@@ -826,7 +826,7 @@ describe("TabBar", () => {
 
       // Reset
       settingsStore.setSplitTabMode("separate");
-      terminalsStore.setLayout({ direction: "none", panes: [], ratio: 0.5, activePaneIndex: 0 });
+      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
     });
 
     it("unified close leaves clean layout state after both terminals closed", () => {
@@ -836,7 +836,7 @@ describe("TabBar", () => {
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
       settingsStore.setSplitTabMode("unified");
@@ -866,7 +866,7 @@ describe("TabBar", () => {
 
       // Cleanup
       settingsStore.setSplitTabMode("separate");
-      terminalsStore.setLayout({ direction: "none", panes: [], ratio: 0.5, activePaneIndex: 0 });
+      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
     });
   });
 

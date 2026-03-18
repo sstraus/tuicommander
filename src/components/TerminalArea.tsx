@@ -82,7 +82,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
               return layout.direction !== "none" && layout.panes[layout.activePaneIndex] === id;
             };
             const paneIndex = () => terminalsStore.state.layout.panes.indexOf(id);
-            const splitRatio = () => terminalsStore.state.layout.ratio;
+            const paneRatio = () => terminalsStore.state.layout.ratios[paneIndex()] ?? 0;
 
             const isDetached = () => terminalsStore.isDetached(id);
 
@@ -102,10 +102,8 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                   detached: isDetached(),
                 }}
                 style={isDetached() ? { display: "none" } : isSplitPane() ? {
-                  flex: paneIndex() === 0
-                    ? `${splitRatio() * 100} 1 0%`
-                    : `${(1 - splitRatio()) * 100} 1 0%`,
-                  order: paneIndex() === 0 ? 0 : 2,
+                  flex: `${paneRatio() * 100} 1 0%`,
+                  order: paneIndex() * 2,
                 } : undefined}
               >
                 <Terminal
@@ -148,7 +146,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                   const ratio = isVertical
                     ? (e.clientX - rect.left) / rect.width
                     : (e.clientY - rect.top) / rect.height;
-                  terminalsStore.setSplitRatio(ratio);
+                  terminalsStore.setHandleRatio(0, ratio);
                 });
               };
 

@@ -7,7 +7,7 @@ function resetStores() {
   for (const id of terminalsStore.getIds()) {
     terminalsStore.remove(id);
   }
-  terminalsStore.setLayout({ direction: "none", panes: [], ratio: 0.5, activePaneIndex: 0 });
+  terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
 }
 
 function createMockHandlers(): ShortcutHandlers {
@@ -268,7 +268,7 @@ describe("useKeyboardShortcuts", () => {
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
       terminalsStore.setActive(id1);
@@ -301,7 +301,7 @@ describe("useKeyboardShortcuts", () => {
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
 
@@ -317,7 +317,7 @@ describe("useKeyboardShortcuts", () => {
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 1,
       });
 
@@ -333,7 +333,7 @@ describe("useKeyboardShortcuts", () => {
       terminalsStore.setLayout({
         direction: "horizontal",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
 

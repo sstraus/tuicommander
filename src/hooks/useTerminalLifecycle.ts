@@ -127,10 +127,11 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     const layout = terminalsStore.state.layout;
     const splitIndex = layout.direction !== "none" ? layout.panes.indexOf(id) : -1;
     let survivorId: string | null = null;
-    if (splitIndex !== -1 && layout.panes.length === 2) {
-      survivorId = layout.panes[splitIndex === 0 ? 1 : 0];
-      const paneIndex: 0 | 1 = splitIndex === 0 ? 0 : 1;
-      terminalsStore.closeSplitPane(paneIndex);
+    if (splitIndex !== -1 && layout.panes.length > 1) {
+      terminalsStore.closeSplitPane(splitIndex);
+      // After closing, the survivor is the new active pane (or first pane if collapsed)
+      const newLayout = terminalsStore.state.layout;
+      survivorId = newLayout.panes[Math.min(splitIndex, newLayout.panes.length - 1)] ?? newLayout.panes[0] ?? null;
     }
 
     const activeRepo = repositoriesStore.getActive();
