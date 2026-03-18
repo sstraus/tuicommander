@@ -10,15 +10,15 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MicPermission {
     /// Never asked — system will prompt on first microphone access.
-    #[cfg_attr(not(target_os = "macos"), expect(dead_code))]
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     NotDetermined,
     /// User granted access.
     Authorized,
     /// User denied access — must re-enable via System Settings.
-    #[cfg_attr(not(target_os = "macos"), expect(dead_code))]
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Denied,
     /// Restricted by MDM or parental controls.
-    #[cfg_attr(not(target_os = "macos"), expect(dead_code))]
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Restricted,
 }
 
