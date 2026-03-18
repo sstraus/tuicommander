@@ -1,4 +1,5 @@
 import type { ITheme } from "@xterm/xterm";
+import { FONT_FAMILIES, type FontType } from "./stores/settings";
 import { appLogger } from "./stores/appLogger";
 
 /** Available terminal color themes */
@@ -578,6 +579,21 @@ export function getAppTheme(key: string): IAppTheme {
 /** Convert camelCase property name to a CSS custom property (e.g. bgPrimary -> --bg-primary) */
 function camelToKebab(str: string): string {
   return `--${str.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}`;
+}
+
+/** Apply the selected monospace font to the entire UI via --font-mono CSS variable.
+ *  Uses `* { !important }` because WKWebView doesn't propagate CSS custom property
+ *  changes from :root to elements using var() — only a universal selector override works. */
+export function applyFontFamily(font: FontType): void {
+  const family = FONT_FAMILIES[font] || FONT_FAMILIES["JetBrains Mono"];
+  const id = "tuic-font-override";
+  let tag = document.getElementById(id) as HTMLStyleElement | null;
+  if (!tag) {
+    tag = document.createElement("style");
+    tag.id = id;
+    document.head.appendChild(tag);
+  }
+  tag.textContent = `* { --font-mono: ${family} !important; }`;
 }
 
 /** Apply an app theme by setting CSS custom properties on the document root */

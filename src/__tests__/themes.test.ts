@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import {
   TERMINAL_THEMES,
   THEME_NAMES,
@@ -6,6 +6,7 @@ import {
   APP_THEMES,
   getAppTheme,
   applyAppTheme,
+  applyFontFamily,
   contrastRatio,
 } from "../themes";
 
@@ -122,6 +123,42 @@ describe("themes", () => {
       applyAppTheme("nord");
       const style = document.documentElement.style;
       expect(style.getPropertyValue("--bg-primary")).toBe("#2e3440");
+    });
+  });
+
+  describe("applyFontFamily()", () => {
+    afterEach(() => {
+      document.getElementById("tuic-font-override")?.remove();
+    });
+
+    it("injects a style tag with !important override for --font-mono", () => {
+      applyFontFamily("Fira Code");
+      const tag = document.getElementById("tuic-font-override");
+      expect(tag).not.toBeNull();
+      expect(tag!.textContent).toContain("Fira Code");
+      expect(tag!.textContent).toContain("monospace");
+      expect(tag!.textContent).toContain("!important");
+    });
+
+    it("updates --font-mono when font changes", () => {
+      applyFontFamily("JetBrains Mono");
+      const tag = document.getElementById("tuic-font-override")!;
+      expect(tag.textContent).toContain("JetBrains Mono");
+
+      applyFontFamily("Hack");
+      expect(tag.textContent).toContain("Hack");
+    });
+
+    it("reuses the same style tag across calls", () => {
+      applyFontFamily("Fira Code");
+      applyFontFamily("Hack");
+      expect(document.querySelectorAll("#tuic-font-override").length).toBe(1);
+    });
+
+    it("falls back to JetBrains Mono for unknown font", () => {
+      applyFontFamily("Comic Sans" as any);
+      const tag = document.getElementById("tuic-font-override")!;
+      expect(tag.textContent).toContain("JetBrains Mono");
     });
   });
 

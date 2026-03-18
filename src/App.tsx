@@ -84,7 +84,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { initApp } from "./hooks/useAppInit";
 import { startAutoFetch } from "./hooks/useAutoFetch";
 import { useAutoDeleteBranch } from "./hooks/useAutoDeleteBranch";
-import { applyAppTheme } from "./themes";
+import { applyAppTheme, applyFontFamily } from "./themes";
 import { hotkeyToTauriShortcut, isValidHotkey } from "./utils";
 import {
   register as registerShortcut,
@@ -335,6 +335,9 @@ const App: Component = () => {
 
   // Apply the active theme to the entire app chrome (sidebar, tabs, toolbar, etc.)
   createEffect(() => applyAppTheme(settingsStore.state.theme));
+
+  // Sync --font-mono CSS variable when font selection changes
+  createEffect(() => applyFontFamily(settingsStore.state.font));
 
   // Enforce mutual exclusivity between tab stores.
   // When a non-terminal tab becomes active (e.g. from mdTabsStore.add()),

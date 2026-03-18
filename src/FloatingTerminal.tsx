@@ -3,7 +3,7 @@ import { Terminal } from "./components/Terminal";
 import { settingsStore } from "./stores/settings";
 import { appLogger } from "./stores/appLogger";
 import { terminalsStore } from "./stores/terminals";
-import { applyAppTheme } from "./themes";
+import { applyAppTheme, applyFontFamily } from "./themes";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emitTo } from "@tauri-apps/api/event";
 import { isMacOS } from "./platform";
@@ -87,6 +87,9 @@ export const FloatingTerminal: Component = () => {
 
   // Apply theme to the floating window
   createEffect(() => applyAppTheme(settingsStore.state.theme));
+
+  // Sync --font-mono CSS variable when font selection changes
+  createEffect(() => applyFontFamily(settingsStore.state.font));
 
   // Keyboard shortcuts: zoom (Cmd/Ctrl +/-/0) and close (Cmd/Ctrl+W)
   onMount(() => {
