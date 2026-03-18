@@ -11,7 +11,8 @@ interface CommandInputProps {
   /** Current PTY input line text (synced from terminal prompt via WebSocket). */
   ptyInputLine?: string | null;
   /** Detected agent type (e.g. "claude-code", "aider"). When set, live sync
-   *  to PTY is disabled because agent line editors don't support Ctrl-U. */
+   *  to PTY is disabled — Ink-based agents in raw mode don't process Ctrl-U
+   *  when bundled with text in the same PTY write. */
   agentType?: string | null;
 }
 
@@ -28,7 +29,11 @@ export function CommandInput(props: CommandInputProps) {
 
   onCleanup(() => { if (syncTimer) clearTimeout(syncTimer); });
 
-  /** Send the full textarea content to PTY (Ctrl-U + text). */
+  /** Send the full textarea content to PTY (Ctrl-U + text).
+   *  Works in cooked-mode shells (bash/zsh) where Ctrl-U is handled by the
+   *  kernel line discipline before the app sees it. Does NOT work in raw-mode
+   *  apps (Ink/Claude Code) where Ctrl-U bundled with text in a single write
+   *  is not recognized as a control character. */
   function syncToPty(text: string) {
     rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text }).catch(() => {});
   }
@@ -81,9 +86,9 @@ export function CommandInput(props: CommandInputProps) {
    *  bind `value={value()}` on the textarea — on mobile, the reactive
    *  write-back interferes with IME/autocorrect and causes text duplication.
    *
-   *  Live sync is disabled for agent sessions because their custom line editors
-   *  (e.g. Claude Code's inquirer prompt) don't support Ctrl-U, causing the
-   *  full textarea content to be appended on each sync instead of replacing.
+   *  Live sync is disabled for agent sessions — raw-mode apps (Ink/Claude Code)
+   *  don't process Ctrl-U when bundled with text in a single PTY write, causing
+   *  progressive input duplication instead of line replacement.
    */
   function handleInput(e: InputEvent & { currentTarget: HTMLTextAreaElement }) {
     userEditing = true;
