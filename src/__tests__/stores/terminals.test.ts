@@ -627,17 +627,39 @@ describe("terminalsStore", () => {
         });
       });
 
-      it("collapses to none when last-to-1 pane removed", () => {
+      it("decrements activePaneIndex when a pane before the active one is closed", () => {
         createRoot((dispose) => {
+          // 4 panes [A,B,C,D], activePaneIndex: 2 (C), close pane 0 (A)
+          // Result: [B,C,D], activePaneIndex should be 1 (still pointing at C)
+          const idA = store.add({ sessionId: null, fontSize: 14, name: "A", cwd: null, awaitingInput: null });
+          const idB = store.add({ sessionId: null, fontSize: 14, name: "B", cwd: null, awaitingInput: null });
+          const idC = store.add({ sessionId: null, fontSize: 14, name: "C", cwd: null, awaitingInput: null });
+          const idD = store.add({ sessionId: null, fontSize: 14, name: "D", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "vertical", panes: [idA, idB, idC, idD], ratios: [0.25, 0.25, 0.25, 0.25], activePaneIndex: 2 });
+
+          store.closeSplitPane(0);
+
+          expect(store.state.layout.panes).toEqual([idB, idC, idD]);
+          expect(store.state.layout.activePaneIndex).toBe(1); // still points at C
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
+          dispose();
+        });
+      });
+
+      it("closes last pane of 3, activePaneIndex decrements", () => {
+        createRoot((dispose) => {
+          // 3 panes, activePaneIndex: 2, close index 2
+          // Result: 2 panes, activePaneIndex should be 1
           const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
           const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-          store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 1 });
+          const id3 = store.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "vertical", panes: [id1, id2, id3], ratios: [0.4, 0.3, 0.3], activePaneIndex: 2 });
 
-          store.closeSplitPane(1);
+          store.closeSplitPane(2);
 
-          expect(store.state.layout.direction).toBe("none");
-          expect(store.state.layout.panes).toEqual([id1]);
-          expect(store.state.layout.ratios).toEqual([]);
+          expect(store.state.layout.panes).toEqual([id1, id2]);
+          expect(store.state.layout.activePaneIndex).toBe(1);
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
           dispose();
         });
       });

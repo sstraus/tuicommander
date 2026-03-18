@@ -430,8 +430,14 @@ function createTerminalsStore() {
         ? remainingRatios.map(r => r / remainingSum)
         : remainingRatios.map(() => 1 / newPanes.length);
 
-      // Clamp activePaneIndex
-      const newActive = Math.min(state.layout.activePaneIndex, newPanes.length - 1);
+      // Adjust activePaneIndex based on which pane was removed
+      let newActive = state.layout.activePaneIndex;
+      if (index < newActive) {
+        newActive -= 1;  // pane before active was removed, shift left
+      } else if (index === newActive) {
+        newActive = Math.min(newActive, newPanes.length - 1);  // active pane removed, clamp
+      }
+      // If index > newActive, no adjustment needed
 
       setState("layout", {
         direction: state.layout.direction,
