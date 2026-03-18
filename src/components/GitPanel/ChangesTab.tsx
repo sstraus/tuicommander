@@ -381,7 +381,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
         class={cx(s.fileEntry, focusedIndex() === flatIndex && s.fileFocused)}
         title={file.path}
         data-focused={focusedIndex() === flatIndex ? "" : undefined}
-        onClick={() => { setFocusedIndex(flatIndex); props.onFileSelect?.(file.path); }}
+        onClick={() => { setFocusedIndex(flatIndex); openDiff(file); props.onFileSelect?.(file.path); }}
       >
         <span class={cx(s.statusBadge, statusClass(file.status))}>{file.status}</span>
         <span class={s.filePath}>

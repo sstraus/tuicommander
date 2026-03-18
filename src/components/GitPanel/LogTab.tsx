@@ -4,6 +4,7 @@ import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
 import { appLogger } from "../../stores/appLogger";
+import { diffTabsStore, isDiffStatus } from "../../stores/diffTabs";
 import { CommitGraph, graphWidth } from "./CommitGraph";
 import type { GraphNode } from "./CommitGraph";
 import type { CommitLogEntry, ChangedFile } from "./types";
@@ -329,7 +330,15 @@ export const LogTab: Component<LogTabProps> = (props) => {
                         <Show when={!isFilesLoading()} fallback={<div class={s.filesLoading}>Loading files...</div>}>
                           <For each={files() ?? []}>
                             {(file) => (
-                              <div class={s.changedFile}>
+                              <div
+                                class={cx(s.changedFile, isDiffStatus(file.status) && s.changedFileClickable)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (props.repoPath && isDiffStatus(file.status)) {
+                                    diffTabsStore.add(props.repoPath, file.path, file.status, commit()!.hash);
+                                  }
+                                }}
+                              >
                                 <span class={cx(s.fileStatus, FILE_STATUS_CLASS[file.status] ?? s.statusOther)}>
                                   {file.status}
                                 </span>
