@@ -27,12 +27,6 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@tauri-apps/plugin-global-shortcut", () => ({
-  register: vi.fn().mockResolvedValue(undefined),
-  unregister: vi.fn().mockResolvedValue(undefined),
-  isRegistered: vi.fn().mockResolvedValue(false),
-}));
-
 vi.mock("tauri-plugin-user-input-api", () => ({
   startListening: vi.fn().mockResolvedValue(undefined),
   stopListening: vi.fn().mockResolvedValue(undefined),

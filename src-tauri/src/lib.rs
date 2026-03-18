@@ -684,7 +684,6 @@ pub fn run() {
                 })
                 .build(),
         )
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_user_input::init())
         .plugin(tauri_plugin_process::init())
         .plugin(
