@@ -1,13 +1,16 @@
 /* PR Diff Tab — multi-file diff viewer with collapsible sections */
+.container,
+.container * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .container {
   width: 100%;
   height: 100%;
   overflow: auto;
   font-family: var(--font-mono);
   font-size: var(--font-xs);
-  /* Override global user-select:none so diff text can be highlighted & copied */
-  -webkit-user-select: text;
-  user-select: text;
 }
 
 .header {
