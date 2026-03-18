@@ -3,7 +3,7 @@ members = [".", "crates/tuic-bridge"]
 
 [package]
 name = "tuicommander"
-version = "0.9.1"
+version = "0.9.2"
 description = "TUICommander - Native platform for AI coding agents"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"

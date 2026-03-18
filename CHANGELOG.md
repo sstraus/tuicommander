@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-03-18
+
 ### Added
 - **Dictation long-press hotkey** — Replaced tauri-plugin-global-shortcut with tauri-plugin-user-input for push-to-talk activation. Now supports 140+ keys (vs the limited set before) and long-press detection: short press passes through as normal input, holding the key beyond a configurable threshold (default 400ms) starts dictation. Key repeat is automatically filtered. Threshold is adjustable in Settings > Dictation (200–1000ms)
 - **Cmd+F search in diff panels** — DiffTab now supports `Cmd+F` text search via SearchBar + DomSearchEngine, matching the markdown viewer search experience
