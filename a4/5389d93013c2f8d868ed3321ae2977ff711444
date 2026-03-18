@@ -1,0 +1,25 @@
+src/__tests__/themes.test.ts
+  91808622f08cc8e1 130-131,134,136-139,144-145,148,151-152,154,159-160
+src/themes.ts
+  91808622f08cc8e1 585-587,590-597
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "a45389d93013c2f8d868ed3321ae2977ff711444",
+  "prompts": {
+    "91808622f08cc8e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5e67803-a100-4fc7-a616-13eff8f61271",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 35,
+      "total_deletions": 18,
+      "accepted_lines": 29,
+      "overriden_lines": 0
+    }
+  }
+}
