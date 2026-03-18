@@ -12,6 +12,23 @@ const tsx = readFileSync(
   "utf-8",
 );
 
+describe("CommandInput agent live-sync guard", () => {
+  it("handleInput skips debouncedSync when agentType prop is set", () => {
+    // Agent sessions must NOT live-sync to PTY (Ctrl-U doesn't work in custom line editors).
+    // Verify the guard: debouncedSync is only called when agentType is falsy.
+    expect(tsx).toContain("if (!props.agentType)");
+    // The debouncedSync call must be inside the guard, not unconditional
+    const handleInputBlock = tsx.match(/function handleInput[\s\S]*?^  \}/m);
+    expect(handleInputBlock, "handleInput function not found").toBeTruthy();
+    expect(handleInputBlock![0]).toContain("if (!props.agentType)");
+    expect(handleInputBlock![0]).toContain("debouncedSync(text)");
+  });
+
+  it("agentType prop is declared in CommandInputProps", () => {
+    expect(tsx).toContain("agentType?: string | null");
+  });
+});
+
 describe("CommandInput iOS auto-zoom prevention", () => {
   it("input font-size is >= 16px to prevent iOS auto-zoom", () => {
     // iOS Safari zooms when the focused input has font-size < 16px.

@@ -10,6 +10,9 @@ interface CommandInputProps {
   prefillValue?: { text: string; seq: number };
   /** Current PTY input line text (synced from terminal prompt via WebSocket). */
   ptyInputLine?: string | null;
+  /** Detected agent type (e.g. "claude-code", "aider"). When set, live sync
+   *  to PTY is disabled because agent line editors don't support Ctrl-U. */
+  agentType?: string | null;
 }
 
 // Debounce delay before syncing textarea content to PTY
@@ -47,9 +50,11 @@ export function CommandInput(props: CommandInputProps) {
         textareaEl.focus();
         autoResize();
       }
-      // Immediate sync (no debounce) — user selected from menu
-      if (syncTimer) clearTimeout(syncTimer);
-      syncToPty(pv.text);
+      // Immediate sync (no debounce) — only for shell sessions where Ctrl-U works
+      if (!props.agentType) {
+        if (syncTimer) clearTimeout(syncTimer);
+        syncToPty(pv.text);
+      }
     }
   });
 
@@ -75,13 +80,19 @@ export function CommandInput(props: CommandInputProps) {
    *  NOTE: We keep the signal in sync for send()/handleBlur() but do NOT
    *  bind `value={value()}` on the textarea — on mobile, the reactive
    *  write-back interferes with IME/autocorrect and causes text duplication.
+   *
+   *  Live sync is disabled for agent sessions because their custom line editors
+   *  (e.g. Claude Code's inquirer prompt) don't support Ctrl-U, causing the
+   *  full textarea content to be appended on each sync instead of replacing.
    */
   function handleInput(e: InputEvent & { currentTarget: HTMLTextAreaElement }) {
     userEditing = true;
     const text = e.currentTarget.value;
     setValue(text);
     autoResize();
-    debouncedSync(text);
+    if (!props.agentType) {
+      debouncedSync(text);
+    }
   }
 
   async function send() {
@@ -117,10 +128,12 @@ export function CommandInput(props: CommandInputProps) {
   }
 
   function handleBlur() {
-    // Flush pending sync immediately on blur
+    // Flush pending sync immediately on blur (shell sessions only)
     if (syncTimer) {
       clearTimeout(syncTimer);
-      syncToPty(value());
+      if (!props.agentType) {
+        syncToPty(value());
+      }
     }
     // Resume PTY sync only if textarea is empty (no draft to preserve)
     if (!value().trim()) {

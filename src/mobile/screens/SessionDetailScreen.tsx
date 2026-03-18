@@ -232,7 +232,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
         awaitingInput={sessionState()?.awaiting_input}
         onCommandWidgetOpen={() => setCommandWidgetOpen(true)}
       />
-      <CommandInput sessionId={props.session.session_id} prefillValue={inputPrefill()} ptyInputLine={ptyInputLine()} />
+      <CommandInput sessionId={props.session.session_id} prefillValue={inputPrefill()} ptyInputLine={ptyInputLine()} agentType={sessionState()?.agent_type as string | null | undefined} />
       <Show when={showSlashMenu()}>
         <SlashMenuOverlay
           sessionId={props.session.session_id}
