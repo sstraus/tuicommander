@@ -559,7 +559,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     terminal = new XTerm({
       fontSize: settingsStore.state.defaultFontSize,
       fontFamily: getFontFamily(),
-      fontWeight: "normal",
+      fontWeight: String(settingsStore.state.fontWeight) as any,
       fontWeightBold: "bold",
       lineHeight: 1.2,
       theme: currentTheme(),
@@ -1054,9 +1054,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // cannot trigger @font-face loading on their own.
   createEffect(() => {
     const font = settingsStore.state.font;
+    const weight = settingsStore.state.fontWeight;
     void settingsStore.state.theme;
     if (!terminal) return;
     terminal.options.theme = currentTheme();
+    terminal.options.fontWeight = String(weight) as any;
     preloadFont(font).then(() => {
       terminal!.options.fontFamily = getFontFamily();
       doFit();

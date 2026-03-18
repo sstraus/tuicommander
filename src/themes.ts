@@ -256,6 +256,29 @@ export const TERMINAL_THEMES: Record<string, ITheme> = {
     brightCyan: "#68c8d4",
     brightWhite: "#eeeceb",
   },
+  "delicate-one": {
+    background: "#1f1f1f",
+    foreground: "#b9bcba",
+    cursor: "#f83e19",
+    cursorAccent: "#171717",
+    selectionBackground: "#2a2d32",
+    black: "#3a3d43",
+    red: "#be3f48",
+    green: "#879a3b",
+    yellow: "#c5a635",
+    blue: "#4f76a1",
+    magenta: "#855c8d",
+    cyan: "#578fa4",
+    white: "#b9bcba",
+    brightBlack: "#888987",
+    brightRed: "#fb001f",
+    brightGreen: "#0f722f",
+    brightYellow: "#c47033",
+    brightBlue: "#186de3",
+    brightMagenta: "#fb0067",
+    brightCyan: "#2e706d",
+    brightWhite: "#fdffb9",
+  },
 };
 
 /** Display names for theme selector */
@@ -271,6 +294,7 @@ export const THEME_NAMES: Record<string, string> = {
   "solarized-dark": "Solarized Dark",
   "nord": "Nord",
   "darksun": "Dark Sun",
+  "delicate-one": "Delicate One",
 };
 
 /** Get a theme by key, falling back to vscode-dark */
@@ -524,6 +548,24 @@ export const APP_THEMES: Record<string, IAppTheme> = {
     error: "#e06c75",
     textOnAccent: "#000000",
     textOnError: "#000000",
+    textOnSuccess: "#000000",
+  },
+  "delicate-one": {
+    bgPrimary: "#1f1f1f",
+    bgSecondary: "#252628",
+    bgTertiary: "#2a2d32",
+    bgHighlight: "#3a3d43",
+    fgPrimary: "#b9bcba",
+    fgSecondary: "#888987",
+    fgMuted: "#5a5b5a",
+    accent: "#4f76a1",
+    accentHover: "#5d8ab5",
+    border: "#2e3035",
+    success: "#879a3b",
+    warning: "#c5a635",
+    error: "#be3f48",
+    textOnAccent: "#ffffff",
+    textOnError: "#ffffff",
     textOnSuccess: "#000000",
   },
 };
