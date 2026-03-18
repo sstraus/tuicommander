@@ -424,13 +424,18 @@ export function useGitOperations(deps: GitOperationsDeps) {
       allStoreIds: terminalsStore.getIds(),
     });
 
-    // Save the current active terminal for the branch we're leaving
+    // Save state for the branch we're leaving
     if (prevRepo?.activeBranch) {
       const currentActiveId = terminalsStore.state.activeId;
-      if (currentActiveId) {
-        if (prevBranch?.terminals.includes(currentActiveId)) {
-          repositoriesStore.setBranch(prevRepo.path, prevRepo.activeBranch, { lastActiveTerminal: currentActiveId });
-        }
+      if (currentActiveId && prevBranch?.terminals.includes(currentActiveId)) {
+        repositoriesStore.setBranch(prevRepo.path, prevRepo.activeBranch, { lastActiveTerminal: currentActiveId });
+      }
+      // Persist split layout on the departing branch
+      const layout = terminalsStore.state.layout;
+      if (layout.direction !== "none" && layout.panes.length > 1) {
+        repositoriesStore.setBranch(prevRepo.path, prevRepo.activeBranch, { layout: { ...layout } });
+      } else {
+        repositoriesStore.setBranch(prevRepo.path, prevRepo.activeBranch, { layout: undefined });
       }
     }
 
@@ -478,6 +483,13 @@ export function useGitOperations(deps: GitOperationsDeps) {
     }
 
     if (validTerminals.length > 0) {
+      // Restore split layout if the branch had one
+      const branchLayout = branch?.layout;
+      if (branchLayout && branchLayout.direction !== "none" && branchLayout.panes.length > 1) {
+        terminalsStore.setLayout(branchLayout);
+      } else {
+        terminalsStore.setLayout({ direction: "none", panes: validTerminals.slice(0, 1), ratios: [], activePaneIndex: 0 });
+      }
       // Restore the last active terminal for this branch, or fall back to first
       const remembered = branch?.lastActiveTerminal;
       if (remembered && validTerminals.includes(remembered)) {
@@ -504,6 +516,21 @@ export function useGitOperations(deps: GitOperationsDeps) {
       // Clear savedTerminals for this branch (consume-once)
       repositoriesStore.setBranch(repoPath, branchName, { savedTerminals: [] });
       if (restoredIds.length > 0) terminalsStore.setActive(restoredIds[0].id);
+
+      // Restore split layout — remap saved pane IDs to newly created terminal IDs
+      const saved = branch?.layout;
+      if (saved && saved.direction !== "none" && restoredIds.length > 1) {
+        const paneIds = restoredIds.map((r) => r.id);
+        const ratios = saved.ratios.length === paneIds.length
+          ? saved.ratios
+          : paneIds.map(() => 1 / paneIds.length);
+        terminalsStore.setLayout({
+          direction: saved.direction,
+          panes: paneIds,
+          ratios,
+          activePaneIndex: 0,
+        });
+      }
 
       // Second pass: verify resume commands in parallel (non-blocking)
       const agentTerminals = restoredIds.filter((r) => r.terminal.agentType);

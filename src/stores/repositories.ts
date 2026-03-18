@@ -2,6 +2,7 @@ import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
 import type { SavedTerminal } from "../types";
+import type { TabLayout } from "./terminals";
 import { appLogger } from "./appLogger";
 import { makeBranchKey } from "./tabManager";
 
@@ -22,6 +23,8 @@ export interface BranchState {
   lastCommitTs: number | null; // Unix timestamp of last commit on this branch
   runCommand?: string; // Saved run command for this branch
   savedTerminals?: SavedTerminal[]; // Persisted terminal metadata for session restore
+  /** Split layout — persisted per-branch, restored on branch switch */
+  layout?: TabLayout;
 }
 
 /** Repository with branches */
