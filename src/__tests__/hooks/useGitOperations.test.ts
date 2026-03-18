@@ -841,6 +841,34 @@ describe("useGitOperations", () => {
       expect(repositoriesStore.get("/repo")?.branches["main"]?.lastCommitTs).toBeNull();
     });
 
+    it("closes terminals and removes branch when worktree was deleted externally", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "worktree-agent-abc", { worktreePath: "/repo/.worktrees/agent-abc" });
+      repositoriesStore.setActiveBranch("/repo", "main");
+
+      // Add a live terminal on the worktree branch
+      const tid = terminalsStore.add({ sessionId: "wt-sess", fontSize: 14, name: "WT", cwd: "/repo/.worktrees/agent-abc", awaitingInput: null });
+      repositoriesStore.addTerminalToBranch("/repo", "worktree-agent-abc", tid);
+
+      // Backend reports worktree is gone (only main remains)
+      mockRepo.getRepoStructure.mockResolvedValue({
+        worktree_paths: { main: "/repo" },
+        merged_branches: [],
+      });
+      mockRepo.getRepoDiffStats.mockResolvedValue({
+        diff_stats: { "/repo": { additions: 0, deletions: 0 } },
+        last_commit_ts: {},
+      });
+
+      await gitOps.refreshAllBranchStats();
+
+      // Terminal should have been closed
+      expect(mockCloseTerminal).toHaveBeenCalledWith(tid, true);
+      // Branch should have been removed from the store
+      expect(repositoriesStore.get("/repo")?.branches["worktree-agent-abc"]).toBeUndefined();
+    });
+
   });
 
   describe("refreshAllBranchStats — progressive loading", () => {

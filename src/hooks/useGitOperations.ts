@@ -190,6 +190,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       // (which caused the sidebar to flash/jump during refresh).
       const storeIds = new Set(terminalsStore.getIds());
       const toRemove: string[] = [];
+      const terminalsToClose: string[] = [];
 
       // If activeBranch is no longer a worktree, find its replacement:
       // the worktree branch that occupies the same path (HEAD moved).
@@ -215,13 +216,27 @@ export function useGitOperations(deps: GitOperationsDeps) {
             toRemove.push(branchName);
             continue;
           }
-          // Never remove a branch that still has live terminals in the store
+          // Branch has live terminals — only keep it if the worktree path
+          // is the main repo checkout (HEAD switched away). If the worktree
+          // directory was deleted externally, close the orphaned terminals
+          // so the stale branch can be cleaned up.
           const branchState = currentRepo.branches[branchName];
           const hasLiveTerminals = branchState?.terminals.some(id => storeIds.has(id));
           if (hasLiveTerminals) {
-            appLogger.info("terminal", `refreshAllBranchStats: keeping "${branchName}" — has live terminals`, {
-              terminals: branchState.terminals,
-            });
+            const isLinkedWorktree = branchState.worktreePath && branchState.worktreePath !== repoPath;
+            if (isLinkedWorktree) {
+              // Linked worktree was removed externally — close its terminals
+              appLogger.info("terminal", `refreshAllBranchStats: closing terminals for deleted worktree "${branchName}"`, {
+                terminals: branchState.terminals,
+                worktreePath: branchState.worktreePath,
+              });
+              terminalsToClose.push(...branchState.terminals.filter(id => storeIds.has(id)));
+              toRemove.push(branchName);
+            } else {
+              appLogger.info("terminal", `refreshAllBranchStats: keeping "${branchName}" — has live terminals`, {
+                terminals: branchState.terminals,
+              });
+            }
             continue;
           }
           toRemove.push(branchName);
@@ -234,6 +249,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
           worktreePathKeys: Object.keys(worktreePaths),
           existingBranches: Object.keys(currentRepo.branches),
         });
+      }
+
+      // Close terminals for deleted worktrees before mutating store state
+      for (const termId of terminalsToClose) {
+        await deps.closeTerminal(termId, true);
       }
 
       batch(() => {
