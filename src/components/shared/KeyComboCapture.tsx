@@ -1,6 +1,8 @@
-import { Component, Show, createSignal } from "solid-js";
+import { Component, Show, createSignal, onCleanup } from "solid-js";
 import { keybindingsStore } from "../../stores/keybindings";
 import { normalizeCombo } from "../../keybindingDefaults";
+import { isTauri } from "../../transport";
+import { listen } from "../../invoke";
 import s from "./KeyComboCapture.module.css";
 
 /** Bare modifier keys — ignored when pressed alone */
@@ -36,15 +38,31 @@ export const KeyComboCapture: Component<KeyComboCaptureProps> = (props) => {
     return exclude.includes(action) ? null : action;
   };
 
+  let unlistenFn: (() => void) | undefined;
+
   const startCapture = () => {
     setCapturing(true);
     props.onCapturingChange?.(true);
+
+    // Listen for Fn/Globe key via native macOS monitor (not in DOM)
+    if (isTauri()) {
+      listen("fn-key-down", () => {
+        if (capturing()) {
+          props.onChange("Fn");
+          stopCapture();
+        }
+      }).then((fn) => { unlistenFn = fn; });
+    }
   };
 
   const stopCapture = () => {
     setCapturing(false);
     props.onCapturingChange?.(false);
+    unlistenFn?.();
+    unlistenFn = undefined;
   };
+
+  onCleanup(() => { unlistenFn?.(); });
 
   const handleKeyDown = (e: KeyboardEvent) => {
     e.preventDefault();
