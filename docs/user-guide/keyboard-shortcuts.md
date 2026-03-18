@@ -42,7 +42,7 @@ See the action table below for all available action names.
 | `Cmd+R` | Run saved command |
 | `Cmd+Shift+R` | Edit and run command |
 | `Cmd+L` | Clear terminal |
-| `Cmd+F` | Find in terminal |
+| `Cmd+F` | Find in terminal / diff tab |
 | `Cmd+G` / `Enter` | Find next match (when search is open) |
 | `Cmd+Shift+G` / `Shift+Enter` | Find previous match (when search is open) |
 | `Escape` | Close search overlay |
@@ -160,6 +160,7 @@ Hold to record, release to transcribe and inject text into active terminal.
 | Close Tab | `Cmd+W` |
 | Close Other Tabs | — |
 | Close Tabs to the Right | — |
+| Copy Path | — (diff/editor/markdown file tabs) |
 | Rename Tab | (double-click tab name) |
 | Detach to Window | — |
 

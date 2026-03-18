@@ -30,7 +30,7 @@
 - Tab type colors: red gradient=diff, blue gradient=editor, teal gradient=markdown, purple gradient=panel, amber gradient=remote PTY session
 - Remote PTY sessions (created via HTTP/MCP) show "PTY:" prefix and amber styling
 - Progress bar (OSC 9;4)
-- Context menu (right-click): Close Tab, Close Other Tabs, Close Tabs to the Right, Detach to Window
+- Context menu (right-click): Close Tab, Close Other Tabs, Close Tabs to the Right, Detach to Window, Copy Path (on diff/editor/markdown file tabs)
 - Detach to Window: right-click a tab to open it in a floating OS window
   - PTY session stays alive in Rust — floating window reconnects to the same session
   - Closing the floating window automatically returns the tab to the main window
@@ -69,9 +69,10 @@
 - Recognized extensions: rs, ts, tsx, js, jsx, py, go, java, kt, swift, c, cpp, cs, rb, php, lua, zig, css, scss, html, vue, svelte, json, yaml, toml, sql, graphql, tf, sh, dockerfile, and more
 
 ### 1.8 Find in Content
-- `Cmd+F` opens search overlay — context-aware: routes to terminal or markdown tab based on active view
+- `Cmd+F` opens search overlay — context-aware: routes to terminal, markdown tab, or diff tab based on active view
 - **Terminal:** incremental search via `@xterm/addon-search` with highlight decorations
 - **Markdown viewer:** DOM-based search with cross-element matching (finds text spanning inline tags)
+- **Diff viewer:** DOM-based search via SearchBar + DomSearchEngine (same engine as markdown viewer)
 - Yellow highlight for matches, orange for active match
 - Navigate matches: `Enter` / `Cmd+G` (next), `Shift+Enter` / `Cmd+Shift+G` (previous)
 - Toggle options: case sensitive, whole word, regex
@@ -264,6 +265,7 @@ Tabbed side panel with three tabs: Changes, Log, Stashes. Replaces the former Gi
 - Virtual scroll via `@tanstack/solid-virtual` for large histories
 - Canvas-based commit graph via `get_commit_graph`: lane assignment, Bezier curve connections, 8-color palette, ref badges (branch, tag, HEAD). Graph follows HEAD only
 - Click a commit row to expand and see its changed files (via `get_changed_files`)
+- Click a file in an expanded commit to open its diff at that commit hash
 - Relative timestamps (e.g., "3h ago")
 
 **Stashes tab:**
@@ -573,6 +575,9 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Working tree diff and per-commit diff via Git Panel Changes tab
 - Per-file diff counts (additions/deletions) shown inline in Changes tab
 - Click a file row to view its diff
+- Text selection and copy enabled in diff panels (`user-select: text`)
+- `Cmd+F` search in diff tabs via SearchBar + DomSearchEngine
+- Submodule entries are filtered from working tree status (not shown as regular files)
 - Standalone DiffPanel removed in v0.9.0 (see section 3.2)
 
 ---
