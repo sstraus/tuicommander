@@ -24,6 +24,8 @@ interface MdFileEntry {
 export interface MarkdownPanelProps {
   visible: boolean;
   repoPath: string | null;
+  /** Effective filesystem root (worktree path when on a linked worktree, otherwise same as repoPath) */
+  fsRoot?: string | null;
   onClose: () => void;
 }
 
@@ -58,9 +60,10 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
   createEffect(() => {
     const visible = props.visible;
     const repoPath = props.repoPath;
+    const fsRoot = props.fsRoot || repoPath;
     void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 
-    if (!visible || !repoPath) {
+    if (!visible || !fsRoot) {
       setFiles([]);
       return;
     }
@@ -70,7 +73,7 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 
     (async () => {
       try {
-        const mdFiles = await repo.listMarkdownFiles(repoPath);
+        const mdFiles = await repo.listMarkdownFiles(fsRoot);
         setFiles(mdFiles);
       } catch (err) {
         setError(String(err));
@@ -83,7 +86,8 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 
   const handleFileClick = (filePath: string) => {
     if (!props.repoPath) return;
-    mdTabsStore.add(props.repoPath, filePath);
+    const fsRoot = props.fsRoot || props.repoPath;
+    mdTabsStore.add(props.repoPath, filePath, fsRoot || undefined);
   };
 
   /** Group files by directory for tree view, sorted by dir name */
@@ -111,10 +115,11 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
   const getContextMenuItems = (): ContextMenuItem[] => {
     const entry = contextEntry();
     if (!entry || !props.repoPath) return [];
+    const root = props.fsRoot || props.repoPath;
     return [{
       label: t("markdownPanel.copyPath", "Copy Path"),
       action: () => {
-        navigator.clipboard.writeText(shortenHomePath(`${props.repoPath}/${entry.path}`)).catch((err) =>
+        navigator.clipboard.writeText(shortenHomePath(`${root}/${entry.path}`)).catch((err) =>
           appLogger.error("app", "Failed to copy path", err),
         );
       },

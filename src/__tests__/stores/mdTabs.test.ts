@@ -46,6 +46,50 @@ describe("mdTabsStore", () => {
         dispose();
       });
     });
+
+    it("stores fsRoot when provided (worktree path)", () => {
+      createRoot((dispose) => {
+        const id = store.add("/repo", "README.md", "/repo/.worktrees/feature");
+        const tab = store.get(id);
+        expect(tab?.type).toBe("file");
+        if (tab?.type === "file") {
+          expect(tab.repoPath).toBe("/repo");
+          expect(tab.fsRoot).toBe("/repo/.worktrees/feature");
+        }
+        dispose();
+      });
+    });
+
+    it("defaults fsRoot to repoPath when not provided", () => {
+      createRoot((dispose) => {
+        const id = store.add("/repo", "README.md");
+        const tab = store.get(id);
+        if (tab?.type === "file") {
+          expect(tab.fsRoot).toBe("/repo");
+        }
+        dispose();
+      });
+    });
+
+    it("deduplicates by fsRoot + filePath (same repo, different worktrees)", () => {
+      createRoot((dispose) => {
+        const id1 = store.add("/repo", "README.md", "/repo/.worktrees/feat-a");
+        const id2 = store.add("/repo", "README.md", "/repo/.worktrees/feat-b");
+        expect(id1).not.toBe(id2);
+        expect(store.getCount()).toBe(2);
+        dispose();
+      });
+    });
+
+    it("deduplicates same worktree + filePath", () => {
+      createRoot((dispose) => {
+        const id1 = store.add("/repo", "README.md", "/repo/.worktrees/feat-a");
+        const id2 = store.add("/repo", "README.md", "/repo/.worktrees/feat-a");
+        expect(id2).toBe(id1);
+        expect(store.getCount()).toBe(1);
+        dispose();
+      });
+    });
   });
 
   // -------------------------------------------------------------------------

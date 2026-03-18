@@ -663,17 +663,18 @@ const App: Component = () => {
   const handleOpenFilePath = (absolutePath: string, _line?: number, _col?: number) => {
     const repoPath = repositoriesStore.state.activeRepoPath;
     if (!repoPath) return;
+    const fsRoot = gitOps.activeWorktreePath() || repoPath;
 
-    // Convert to relative path when inside the repo, keep absolute otherwise
-    const repoPrefix = repoPath.endsWith("/") ? repoPath : repoPath + "/";
-    const filePath = absolutePath.startsWith(repoPrefix)
-      ? absolutePath.slice(repoPrefix.length)
+    // Convert to relative path when inside the effective root (worktree or repo), keep absolute otherwise
+    const rootPrefix = fsRoot.endsWith("/") ? fsRoot : fsRoot + "/";
+    const filePath = absolutePath.startsWith(rootPrefix)
+      ? absolutePath.slice(rootPrefix.length)
       : absolutePath;
 
     if (filePath.endsWith(".md") || filePath.endsWith(".mdx")) {
-      mdTabsStore.add(repoPath, filePath);
+      mdTabsStore.add(repoPath, filePath, fsRoot);
     } else {
-      const tabId = editorTabsStore.add(repoPath, filePath);
+      const tabId = editorTabsStore.add(fsRoot, filePath);
       terminalLifecycle.handleTerminalSelect(tabId);
     }
   };
@@ -684,16 +685,18 @@ const App: Component = () => {
     listen<string[]>("file-open", (event) => {
       for (const absolutePath of event.payload) {
         const repoPath = repositoriesStore.state.activeRepoPath ?? "";
-        const repoPrefix = repoPath ? (repoPath.endsWith("/") ? repoPath : repoPath + "/") : "";
-        const filePath = repoPrefix && absolutePath.startsWith(repoPrefix)
-          ? absolutePath.slice(repoPrefix.length)
+        const fsRoot = gitOps.activeWorktreePath() || repoPath;
+        const rootPrefix = fsRoot ? (fsRoot.endsWith("/") ? fsRoot : fsRoot + "/") : "";
+        const filePath = rootPrefix && absolutePath.startsWith(rootPrefix)
+          ? absolutePath.slice(rootPrefix.length)
           : absolutePath;
         const effectiveRepo = filePath === absolutePath ? "" : repoPath;
+        const effectiveRoot = filePath === absolutePath ? "" : fsRoot;
 
         if (absolutePath.endsWith(".md") || absolutePath.endsWith(".mdx")) {
-          mdTabsStore.add(effectiveRepo, filePath);
+          mdTabsStore.add(effectiveRepo, filePath, effectiveRoot || undefined);
         } else {
-          editorTabsStore.add(effectiveRepo, filePath);
+          editorTabsStore.add(effectiveRoot || effectiveRepo, filePath);
         }
       }
     }).then((fn) => { unlisten = fn; }).catch((err) => appLogger.error("app", "Failed to listen for file-open events", err));
@@ -1265,9 +1268,10 @@ const App: Component = () => {
           {/* Side panels (right panes inside #terminal-container) */}
           <PanelOrchestrator
             repoPath={gitOps.currentRepoPath() || null}
+            fsRoot={gitOps.activeWorktreePath() || null}
             onFileOpen={(repoPath, filePath, line) => {
               if ((filePath.endsWith(".md") || filePath.endsWith(".mdx")) && line === undefined) {
-                mdTabsStore.add(repoPath, filePath);
+                mdTabsStore.add(repoPath, filePath, gitOps.activeWorktreePath());
               } else {
                 const tabId = editorTabsStore.add(repoPath, filePath, line);
                 terminalLifecycle.handleTerminalSelect(tabId);

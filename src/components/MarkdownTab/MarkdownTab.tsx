@@ -6,7 +6,7 @@ import { useRepository } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { invoke } from "../../invoke";
-import { mdTabsStore, type MdTabData } from "../../stores/mdTabs";
+import { mdTabsStore, type MdTabData, type FileTab } from "../../stores/mdTabs";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
 import { DomSearchEngine } from "../shared/DomSearchEngine";
 import type { SearchOptions } from "../shared/DomSearchEngine";
@@ -67,10 +67,10 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     if (mdTabsStore.state.activeId === props.tab.id) focusWrapper();
   });
 
-  /** Read file content for the current tab */
-  const readFileContent = async (repoPath: string | undefined, filePath: string): Promise<string> => {
-    return repoPath
-      ? await repo.readFile(repoPath, filePath)
+  /** Read file content for the current tab, using fsRoot (worktree-aware) when available */
+  const readFileContent = async (fsRoot: string | undefined, filePath: string): Promise<string> => {
+    return fsRoot
+      ? await repo.readFile(fsRoot, filePath)
       : await invoke<string>("read_external_file", { path: filePath });
   };
 
@@ -78,7 +78,8 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     const tab = props.tab;
 
     if (tab.type === "file") {
-      const { repoPath, filePath } = tab;
+      const { repoPath, filePath, fsRoot } = tab as FileTab;
+      // Track revisions by repo path (keyed by the repo root, not the worktree)
       void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 
       if (!filePath) {
@@ -91,7 +92,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 
       (async () => {
         try {
-          const fileContent = await readFileContent(repoPath, filePath);
+          const fileContent = await readFileContent(fsRoot || repoPath, filePath);
           setContent(fileContent);
         } catch (err) {
           setError(String(err));
@@ -141,13 +142,14 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   createEffect(() => {
     const tab = props.tab;
     if (tab.type !== "file" || !tab.filePath) return;
-    const { repoPath, filePath } = tab;
+    const { filePath, fsRoot, repoPath } = tab as FileTab;
+    const root = fsRoot || repoPath;
 
     const timer = setInterval(async () => {
       if (document.visibilityState === "hidden") return;
       if (mdTabsStore.state.activeId !== props.tab.id) return;
       try {
-        const diskContent = await readFileContent(repoPath, filePath);
+        const diskContent = await readFileContent(root, filePath);
         if (diskContent !== content()) setContent(diskContent);
       } catch {
         // File may have been deleted — ignore
@@ -205,17 +207,19 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const handleMdLink = (href: string) => {
     const tab = props.tab;
     if (tab.type !== "file") return;
-    const currentDir = tab.filePath.includes("/")
-      ? tab.filePath.slice(0, tab.filePath.lastIndexOf("/"))
+    const ft = tab as FileTab;
+    const currentDir = ft.filePath.includes("/")
+      ? ft.filePath.slice(0, ft.filePath.lastIndexOf("/"))
       : "";
     const resolved = currentDir ? `${currentDir}/${href}` : href;
-    mdTabsStore.add(tab.repoPath, resolved);
+    mdTabsStore.add(ft.repoPath, resolved, ft.fsRoot);
   };
 
   const handleEdit = () => {
     const tab = props.tab;
     if (tab.type === "file") {
-      editorTabsStore.add(tab.repoPath, tab.filePath);
+      const ft = tab as FileTab;
+      editorTabsStore.add(ft.fsRoot || ft.repoPath, ft.filePath);
     }
   };
 
@@ -227,20 +231,24 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const baseDir = () => {
     const tab = props.tab;
     if (tab.type !== "file") return undefined;
-    if (!tab.repoPath && tab.filePath.startsWith("/")) {
-      const lastSlash = tab.filePath.lastIndexOf("/");
-      return lastSlash > 0 ? tab.filePath.slice(0, lastSlash) : "/";
+    const ft = tab as FileTab;
+    const root = ft.fsRoot || ft.repoPath;
+    if (!root && ft.filePath.startsWith("/")) {
+      const lastSlash = ft.filePath.lastIndexOf("/");
+      return lastSlash > 0 ? ft.filePath.slice(0, lastSlash) : "/";
     }
-    const dir = tab.filePath.includes("/")
-      ? tab.filePath.slice(0, tab.filePath.lastIndexOf("/"))
+    const dir = ft.filePath.includes("/")
+      ? ft.filePath.slice(0, ft.filePath.lastIndexOf("/"))
       : "";
-    return dir ? `${tab.repoPath}/${dir}` : tab.repoPath;
+    return dir ? `${root}/${dir}` : root;
   };
 
   const fullPath = () => {
     const tab = props.tab;
     if (tab.type !== "file") return null;
-    return tab.repoPath ? `${tab.repoPath}/${tab.filePath}` : tab.filePath;
+    const ft = tab as FileTab;
+    const root = ft.fsRoot || ft.repoPath;
+    return root ? `${root}/${ft.filePath}` : ft.filePath;
   };
 
   const handleCopyPath = () => {

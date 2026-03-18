@@ -9,6 +9,8 @@ import { terminalsStore } from "../stores/terminals";
 
 export interface PanelOrchestratorProps {
   repoPath: string | null;
+  /** Effective filesystem root (worktree path when on a linked worktree) */
+  fsRoot?: string | null;
   onFileOpen: (repoPath: string, filePath: string, line?: number) => void;
 }
 
@@ -25,6 +27,7 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
       <MarkdownPanel
         visible={uiStore.state.markdownPanelVisible}
         repoPath={props.repoPath}
+        fsRoot={props.fsRoot}
         onClose={() => uiStore.toggleMarkdownPanel()}
       />
 
