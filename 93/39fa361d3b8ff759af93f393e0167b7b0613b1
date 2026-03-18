@@ -1,0 +1,25 @@
+src/components/WorktreeManager/WorktreeManager.module.css
+  91808622f08cc8e1 330
+src/components/StatusBar/StatusBar.module.css
+  91808622f08cc8e1 80,97,144,350
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "9339fa361d3b8ff759af93f393e0167b7b0613b1",
+  "prompts": {
+    "91808622f08cc8e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5e67803-a100-4fc7-a616-13eff8f61271",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 5,
+      "total_deletions": 5,
+      "accepted_lines": 64,
+      "overriden_lines": 0
+    }
+  }
+}
