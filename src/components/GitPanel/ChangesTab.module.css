@@ -144,7 +144,7 @@
   border-radius: var(--radius-md);
   color: var(--fg-primary);
   font-size: var(--font-sm);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   padding: 4px 24px 4px 8px;
   box-sizing: border-box;
   transition: border-color 0.15s ease;
@@ -255,7 +255,7 @@
   cursor: pointer;
   transition: background 0.1s ease;
   font-size: var(--font-md);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
 }
 
 .fileEntry:hover {
@@ -282,7 +282,7 @@
   border-radius: var(--radius-sm);
   font-size: var(--font-2xs);
   font-weight: 700;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   flex-shrink: 0;
 }
 
@@ -334,7 +334,7 @@
   gap: 4px;
   flex-shrink: 0;
   font-size: var(--font-2xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   transition: opacity 0.15s ease;
 }
 

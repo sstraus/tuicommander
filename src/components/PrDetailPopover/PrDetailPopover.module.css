@@ -106,7 +106,7 @@
 }
 
 .branchName {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   background: rgba(255, 255, 255, 0.06);
   padding: 1px 6px;
   border-radius: var(--radius-md);
@@ -252,13 +252,13 @@
 .additions {
   color: var(--success);
   font-weight: 600;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
 }
 
 .deletions {
   color: var(--error);
   font-weight: 600;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
 }
 
 /* CI summary */

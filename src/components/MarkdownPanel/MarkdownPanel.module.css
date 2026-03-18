@@ -50,7 +50,7 @@
   cursor: pointer;
   border-radius: var(--radius-md);
   font-size: var(--font-md);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   transition: background 0.15s;
 }
 

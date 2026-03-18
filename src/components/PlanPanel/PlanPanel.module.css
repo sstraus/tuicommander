@@ -80,7 +80,7 @@
 .badge {
   display: inline-block;
   font-size: var(--font-2xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   padding: 1px 6px;
   border-radius: 3px;
   line-height: 1.4;

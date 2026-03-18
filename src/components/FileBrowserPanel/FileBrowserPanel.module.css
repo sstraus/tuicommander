@@ -43,7 +43,7 @@
   flex: 1;
   min-width: 0;
   font-size: var(--font-sm);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-muted);
   overflow-x: auto;
   white-space: nowrap;
@@ -116,7 +116,7 @@
   padding: 4px 12px;
   cursor: pointer;
   font-size: var(--font-md);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   transition: background 0.1s;
 }
 
@@ -165,7 +165,7 @@
 .entrySize {
   flex-shrink: 0;
   font-size: var(--font-xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-muted);
 }
 
@@ -190,7 +190,7 @@
   border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: var(--font-xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-weight: 600;
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
@@ -266,7 +266,7 @@
   padding: 4px 12px;
   cursor: pointer;
   font-size: var(--font-sm);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-secondary);
   background: var(--bg-tertiary);
   transition: background 0.1s;
@@ -327,7 +327,7 @@
 .searchStatus {
   padding: 4px 12px;
   font-size: var(--font-xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-muted);
   border-bottom: 1px solid var(--border);
 }

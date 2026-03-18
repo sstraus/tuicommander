@@ -428,7 +428,7 @@
   background: var(--bg-tertiary);
   color: var(--fg-muted);
   border-radius: var(--radius-md);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-2xs);
   font-weight: 600;
   z-index: 10;
@@ -449,6 +449,6 @@
 .progressLabel {
   font-size: var(--font-2xs);
   color: var(--accent);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   margin-left: 4px;
 }

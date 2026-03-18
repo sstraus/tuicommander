@@ -79,7 +79,7 @@
   flex: 1;
   font-size: var(--font-base);
   color: var(--fg-primary);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
 }
 
 .badge {
@@ -133,6 +133,6 @@
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-xs);
 }

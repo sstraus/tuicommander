@@ -172,7 +172,7 @@
   margin: 4px 0 0;
   font-size: var(--font-sm);
   color: var(--fg-muted);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
 }
 
 /* ── Footer ── */
@@ -324,7 +324,7 @@
   text-align: right;
   font-size: var(--font-base);
   color: var(--fg-secondary);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
 }
 
 .toggle {

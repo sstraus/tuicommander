@@ -432,7 +432,7 @@
   border-radius: 0;
   cursor: pointer;
   font-size: var(--font-xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   white-space: nowrap;
   max-width: 180px;
   -webkit-app-region: no-drag;

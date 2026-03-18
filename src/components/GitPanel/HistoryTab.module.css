@@ -15,7 +15,7 @@
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
   font-size: var(--font-md);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-primary);
   min-width: 0;
 }

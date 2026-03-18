@@ -96,7 +96,7 @@
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-secondary);
   white-space: nowrap;
 }
@@ -123,6 +123,6 @@
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-xs);
 }

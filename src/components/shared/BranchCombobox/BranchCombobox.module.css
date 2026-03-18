@@ -23,7 +23,7 @@
   background: transparent;
   border: none;
   color: var(--fg-primary);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-sm);
   padding: 0 6px;
   outline: none;
@@ -76,7 +76,7 @@
   padding: 4px 8px;
   cursor: pointer;
   color: var(--fg-primary);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-sm);
   white-space: nowrap;
   overflow: hidden;

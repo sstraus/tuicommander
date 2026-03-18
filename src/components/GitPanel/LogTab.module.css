@@ -127,7 +127,7 @@
   gap: 6px;
   padding: 2px 4px;
   font-size: var(--font-xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-secondary);
   border-radius: var(--radius-sm);
 }

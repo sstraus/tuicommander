@@ -60,7 +60,7 @@
 
 .shortcut {
   display: inline-block;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-sm);
   color: var(--fg-primary);
   background: var(--bg-tertiary);

@@ -75,7 +75,7 @@
 
 .filterPill {
   font-size: var(--font-xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-secondary);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
@@ -184,7 +184,7 @@
   border-bottom: 1px solid var(--border);
   background: var(--bg-tertiary);
   font-size: var(--font-2xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -233,7 +233,7 @@
 
 .branch {
   font-size: var(--font-md);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-weight: 500;
   color: var(--fg-primary);
   white-space: nowrap;
@@ -243,7 +243,7 @@
 
 .worktreePath {
   font-size: var(--font-2xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -259,7 +259,7 @@
 
 .repo {
   font-size: var(--font-xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -268,7 +268,7 @@
 
 .stats {
   font-size: var(--font-xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   white-space: nowrap;
   min-width: 70px;
   text-align: right;
@@ -297,7 +297,7 @@
 
 .prBadge {
   font-size: var(--font-2xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-weight: 600;
   padding: 1px 6px;
   border-radius: var(--radius-pill);
@@ -359,7 +359,7 @@
 
 .orphanBadge {
   font-size: var(--font-2xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-weight: 600;
   color: var(--warning);
   background: rgba(255, 200, 50, 0.15);
@@ -385,7 +385,7 @@
 
 .timestamp {
   font-size: var(--font-xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-muted);
   text-align: right;
   white-space: nowrap;

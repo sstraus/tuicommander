@@ -11,7 +11,7 @@
 
 .filename {
   flex: 1;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-secondary);
   overflow: hidden;
   text-overflow: ellipsis;

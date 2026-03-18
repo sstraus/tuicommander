@@ -10,7 +10,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   color: var(--fg-primary);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-base);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
@@ -27,7 +27,7 @@
   border: 2px solid var(--accent);
   border-radius: var(--radius-md);
   color: var(--fg-primary);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-base);
   outline: none;
   width: 200px;
