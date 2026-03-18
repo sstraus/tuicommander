@@ -1111,9 +1111,9 @@ const App: Component = () => {
     onCleanup(() => unlisten?.());
   });
 
-  // Push-to-talk hotkey handler via DOM keyboard events.
-  // Listens for keydown/keyup on the window, implements long-press detection:
-  // short press passes through as normal input, long press triggers dictation.
+  // Push-to-talk hotkey handler.
+  // For Fn/Globe key: listens for Tauri events from the native macOS monitor.
+  // For other keys: uses DOM keydown/keyup events.
   // Pauses while capturingHotkey is true so the settings UI can capture a new key.
   createEffect(() => {
     const hotkey = dictationStore.state.hotkey;
@@ -1127,27 +1127,44 @@ const App: Component = () => {
     });
     if (!handler) return;
 
-    // DOM event.code uses the same naming: KeyD, Space, MetaLeft, etc.
-    // For combos with modifiers, block all events. For single keys (e.g. Space),
-    // let the first keydown through and only suppress repeats.
-    const hasModifiers = hotkey.includes("+");
-    const onKeyDown = (e: KeyboardEvent) => {
-      const consumed = handler.handleEvent({ eventType: "KeyPress", key: e.code });
-      if (consumed && (hasModifiers || e.repeat)) {
-        e.preventDefault();
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      handler.handleEvent({ eventType: "KeyRelease", key: e.code });
-    };
+    const cleanups: (() => void)[] = [];
 
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
+    if (hotkey === "Fn") {
+      // Fn/Globe key: native monitor emits Tauri events (macOS only)
+      if (isTauri()) {
+        let unDown: (() => void) | undefined;
+        let unUp: (() => void) | undefined;
+        listen("fn-key-down", () => {
+          handler.handleEvent({ eventType: "KeyPress", key: "Fn" });
+        }).then((fn) => { unDown = fn; });
+        listen("fn-key-up", () => {
+          handler.handleEvent({ eventType: "KeyRelease", key: "Fn" });
+        }).then((fn) => { unUp = fn; });
+        cleanups.push(() => { unDown?.(); unUp?.(); });
+      }
+    } else {
+      // Regular keys: DOM events. event.code naming matches our format.
+      const hasModifiers = hotkey.includes("+");
+      const onKeyDown = (e: KeyboardEvent) => {
+        const consumed = handler.handleEvent({ eventType: "KeyPress", key: e.code });
+        if (consumed && (hasModifiers || e.repeat)) {
+          e.preventDefault();
+        }
+      };
+      const onKeyUp = (e: KeyboardEvent) => {
+        handler.handleEvent({ eventType: "KeyRelease", key: e.code });
+      };
+      window.addEventListener("keydown", onKeyDown);
+      window.addEventListener("keyup", onKeyUp);
+      cleanups.push(() => {
+        window.removeEventListener("keydown", onKeyDown);
+        window.removeEventListener("keyup", onKeyUp);
+      });
+    }
 
     onCleanup(() => {
       handler.cleanup();
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
+      cleanups.forEach((fn) => fn());
     });
   });
 

@@ -58,6 +58,7 @@ const UI_KEY_TO_PLUGIN: Record<string, string> = {
   ArrowLeft: "ArrowLeft", ArrowRight: "ArrowRight",
   CapsLock: "CapsLock", NumLock: "NumLock", ScrollLock: "ScrollLock",
   PrintScreen: "PrintScreen", Pause: "Pause",
+  Fn: "Fn",
 };
 // F1–F24
 for (let i = 1; i <= 24; i++) UI_KEY_TO_PLUGIN[`F${i}`] = `F${i}`;

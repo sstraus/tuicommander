@@ -729,6 +729,9 @@ pub fn run() {
             let app_state: &Arc<AppState> = app.state::<Arc<AppState>>().inner();
             *app_state.app_handle.write() = Some(app.handle().clone());
 
+            // Install Fn/Globe key monitor for push-to-talk dictation
+            dictation::fn_key_monitor::install(app.handle().clone());
+
             // Start plugin directory watcher for hot-reload
             plugins::start_plugin_watcher(app.handle());
 

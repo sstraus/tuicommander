@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod commands;
 pub mod corrections;
+pub mod fn_key_monitor;
 pub mod model;
 pub mod permission;
 pub mod streaming;
