@@ -21,6 +21,8 @@ import s from "./FileBrowserPanel.module.css";
 export interface FileBrowserPanelProps {
   visible: boolean;
   repoPath: string | null;
+  /** Effective filesystem root (worktree path when on a linked worktree) */
+  fsRoot?: string | null;
   onClose: () => void;
   onFileOpen: (repoPath: string, filePath: string, line?: number) => void;
 }
@@ -86,6 +88,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   const [refreshTrigger, setRefreshTrigger] = createSignal(0);
   const [searchQuery, setSearchQuery] = createSignal("");
   const fb = useFileBrowser();
+  /** Effective filesystem root — worktree path when on a linked worktree */
+  const root = () => props.fsRoot || props.repoPath;
   const contextMenu = createContextMenu();
 
   // Rename dialog state
@@ -126,22 +130,22 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
   // Load entries when visible, repo changes, subdir changes, or repo content changes
   createEffect(() => {
-    if (!props.visible || !props.repoPath) {
+    if (!props.visible || !root()) {
       setEntries([]);
       return;
     }
 
-    const repoPath = props.repoPath;
+    const fsRoot = root()!;
 
-    // Reset subdir when repo changes (merged from separate effect to avoid double fetch)
-    if (repoPath !== lastRepoPath) {
-      lastRepoPath = repoPath;
+    // Reset subdir when root changes (merged from separate effect to avoid double fetch)
+    if (fsRoot !== lastRepoPath) {
+      lastRepoPath = fsRoot;
       setCurrentSubdir(".");
     }
 
     const subdir = currentSubdir();
     // Subscribe to repo revision for auto-refresh on git changes
-    void repositoriesStore.getRevision(repoPath);
+    void (props.repoPath ? repositoriesStore.getRevision(props.repoPath) : 0);
     // Subscribe to dir watcher revision for auto-refresh on filesystem changes
     const dirRev = dirRevision();
     // Also subscribe to manual refresh trigger
@@ -160,7 +164,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
     (async () => {
       try {
-        const result = await fb.listDirectory(repoPath, subdir);
+        const result = await fb.listDirectory(fsRoot, subdir);
         // Skip re-render when entries are identical: same count and every entry
         // matches on the fields that drive visible state (path, git badge, mtime,
         // ignored flag). New object instances from Rust would otherwise cause a
@@ -194,14 +198,14 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
   // Directory watcher lifecycle: start/stop watcher as directory or visibility changes
   createEffect(() => {
-    if (!props.visible || !props.repoPath) return;
+    if (!props.visible || !root()) return;
 
-    const repoPath = props.repoPath;
+    const fsRoot = root()!;
     const subdir = currentSubdir();
     // Don't watch during search (search is recursive, watcher is not)
     if (searchQuery().trim()) return;
 
-    const absPath = subdir === "." || subdir === "" ? repoPath : `${repoPath}/${subdir}`;
+    const absPath = subdir === "." || subdir === "" ? fsRoot : `${fsRoot}/${subdir}`;
 
     invoke("start_dir_watcher", { path: absPath }).catch((err) => {
       appLogger.warn("app", `Dir watcher failed for ${absPath}: ${err}`);
@@ -230,9 +234,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   createEffect(() => {
     if (searchMode() !== "filename") return;
     const q = searchQuery().trim();
-    const repoPath = props.repoPath;
+    const fsRoot = root();
 
-    if (!q || !repoPath) {
+    if (!q || !fsRoot) {
       setSearchResults([]);
       setSearching(false);
       return;
@@ -241,7 +245,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const results = await fb.searchFiles(repoPath, q);
+        const results = await fb.searchFiles(fsRoot, q);
         setSearchResults(results);
         setSelectedIndex(0);
       } catch (err) {
@@ -259,9 +263,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   createEffect(() => {
     if (searchMode() !== "content") return;
     const q = searchQuery().trim();
-    const repoPath = props.repoPath;
+    const fsRoot = root();
 
-    if (!q || q.length < 3 || !repoPath) {
+    if (!q || q.length < 3 || !fsRoot) {
       setContentMatches([]);
       setContentSearching(false);
       setContentStats({ filesSearched: 0, filesSkipped: 0, truncated: false });
@@ -316,7 +320,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
           return;
         }
 
-        await fb.searchContent(repoPath, q, opts);
+        await fb.searchContent(fsRoot, q, opts);
       } catch (err) {
         if (!cancelled) {
           appLogger.error("app", "Content search failed", err);
@@ -378,8 +382,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   const handleEntryClick = (entry: DirEntry) => {
     if (entry.is_dir) {
       navigateInto(entry);
-    } else if (props.repoPath) {
-      props.onFileOpen(props.repoPath, entry.path);
+    } else if (root()) {
+      props.onFileOpen(root()!, entry.path);
     }
   };
 
@@ -412,10 +416,10 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
   const confirmDelete = async () => {
     const entry = deleteTarget();
-    if (!entry || !props.repoPath) return;
+    if (!entry || !root()) return;
     setDeleteDialogVisible(false);
     try {
-      await fb.deletePath(props.repoPath, entry.path);
+      await fb.deletePath(root()!, entry.path);
       refresh();
     } catch (err) {
       appLogger.error("app", "Failed to delete", err);
@@ -423,10 +427,10 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   };
 
   const handleAddToGitignore = async (entry: DirEntry) => {
-    if (!props.repoPath) return;
+    if (!root()) return;
     const pattern = entry.is_dir ? `${entry.path}/` : entry.path;
     try {
-      await fb.addToGitignore(props.repoPath, pattern);
+      await fb.addToGitignore(root()!, pattern);
       refresh();
     } catch (err) {
       appLogger.error("git", "Failed to add to .gitignore", err);
@@ -443,7 +447,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
   const handlePaste = async () => {
     const clip = clipboard();
-    if (!clip || !props.repoPath) return;
+    if (!clip || !root()) return;
     const destDir = currentSubdir() === "." ? "" : `${currentSubdir()}/`;
     const destPath = `${destDir}${clip.entry.name}`;
 
@@ -452,10 +456,10 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
     try {
       if (clip.mode === "copy") {
-        await fb.copyPath(props.repoPath, clip.entry.path, destPath);
+        await fb.copyPath(root()!, clip.entry.path, destPath);
       } else {
         // Cut = rename (move)
-        await fb.renamePath(props.repoPath, clip.entry.path, destPath);
+        await fb.renamePath(root()!, clip.entry.path, destPath);
         setClipboard(null);
       }
       refresh();
@@ -466,11 +470,11 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
   const handleRenameConfirm = async (newName: string) => {
     const entry = renameTarget();
-    if (!entry || !props.repoPath) return;
+    if (!entry || !root()) return;
     // Build new path: same parent directory, new name
     const newPath = replaceBasename(entry.path, newName);
     try {
-      await fb.renamePath(props.repoPath, entry.path, newPath);
+      await fb.renamePath(root()!, entry.path, newPath);
       refresh();
     } catch (err) {
       appLogger.error("app", "Failed to rename", err);
@@ -478,9 +482,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   };
 
   const handleCopyPath = (entry: DirEntry) => {
-    const repoPath = props.repoPath;
-    if (!repoPath) return;
-    const fullPath = `${repoPath}/${entry.path}`;
+    const fsRoot = root();
+    if (!fsRoot) return;
+    const fullPath = `${fsRoot}/${entry.path}`;
     navigator.clipboard.writeText(shortenHomePath(fullPath)).catch((err) =>
       appLogger.error("app", "Failed to copy path", err),
     );
@@ -777,8 +781,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
                 <div
                   class={s.contentGroupHeader}
                   onClick={() => {
-                    if (props.repoPath && group.matches.length > 0) {
-                      props.onFileOpen(props.repoPath, group.path, group.matches[0].line_number);
+                    if (root() && group.matches.length > 0) {
+                      props.onFileOpen(root()!, group.path, group.matches[0].line_number);
                     }
                   }}
                 >
@@ -792,8 +796,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
                     <div
                       class={s.contentMatch}
                       onClick={() => {
-                        if (props.repoPath) {
-                          props.onFileOpen(props.repoPath, match.path, match.line_number);
+                        if (root()) {
+                          props.onFileOpen(root()!, match.path, match.line_number);
                         }
                       }}
                     >
@@ -817,7 +821,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         <Show when={searchMode() === "filename"}>
           <Show when={!loading() && !searching() && !error() && filteredEntries().length === 0}>
             <div class={s.empty}>
-              {!props.repoPath
+              {!root()
                 ? t("fileBrowser.noRepo", "No repository selected")
                 : searchQuery()
                 ? t("fileBrowser.noMatches", "No matches")

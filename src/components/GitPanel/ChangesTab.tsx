@@ -18,6 +18,8 @@ interface FileEntry {
 
 export interface ChangesTabProps {
   repoPath: string | null;
+  /** Repo key for store operations (bumpRevision). Falls back to repoPath. */
+  storeRepoPath?: string | null;
   onFileSelect?: (path: string) => void;
 }
 
@@ -81,6 +83,8 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   const [confirmDiscardAll, setConfirmDiscardAll] = createSignal(false);
   const [focusedIndex, setFocusedIndex] = createSignal(-1);
   const [filterQuery, setFilterQuery] = createSignal("");
+  /** Repo key for store operations (revision tracking). May differ from repoPath in worktrees. */
+  const storeKey = () => props.storeRepoPath || props.repoPath;
 
   /** Filtered staged files (glob wildcard support) */
   const filteredStaged = createMemo(() => {
@@ -122,7 +126,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     }
 
     // Subscribe to revision changes
-    void repositoriesStore.getRevision(repoPath);
+    void repositoriesStore.getRevision(storeKey() || repoPath);
 
     let cancelled = false;
     onCleanup(() => { cancelled = true; });
@@ -157,7 +161,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     if (!props.repoPath) return;
     try {
       await invoke("git_stage_files", { path: props.repoPath, files: [filePath] });
-      repositoriesStore.bumpRevision(props.repoPath);
+      repositoriesStore.bumpRevision(storeKey()!);
     } catch (err) {
       appLogger.error("git", `Failed to stage ${filePath}`, err);
     }
@@ -167,7 +171,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     if (!props.repoPath) return;
     try {
       await invoke("git_unstage_files", { path: props.repoPath, files: [filePath] });
-      repositoriesStore.bumpRevision(props.repoPath);
+      repositoriesStore.bumpRevision(storeKey()!);
     } catch (err) {
       appLogger.error("git", `Failed to unstage ${filePath}`, err);
     }
@@ -177,7 +181,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     if (!props.repoPath) return;
     try {
       await invoke("git_discard_files", { path: props.repoPath, files: [filePath] });
-      repositoriesStore.bumpRevision(props.repoPath);
+      repositoriesStore.bumpRevision(storeKey()!);
     } catch (err) {
       appLogger.error("git", `Failed to discard ${filePath}`, err);
     }
@@ -189,7 +193,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     if (files.length === 0) return;
     try {
       await invoke("git_stage_files", { path: props.repoPath, files });
-      repositoriesStore.bumpRevision(props.repoPath);
+      repositoriesStore.bumpRevision(storeKey()!);
     } catch (err) {
       appLogger.error("git", "Failed to stage all files", err);
     }
@@ -201,7 +205,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     if (files.length === 0) return;
     try {
       await invoke("git_unstage_files", { path: props.repoPath, files });
-      repositoriesStore.bumpRevision(props.repoPath);
+      repositoriesStore.bumpRevision(storeKey()!);
     } catch (err) {
       appLogger.error("git", "Failed to unstage all files", err);
     }
@@ -216,7 +220,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     if (files.length === 0) return;
     try {
       await invoke("git_discard_files", { path: props.repoPath, files });
-      repositoriesStore.bumpRevision(props.repoPath);
+      repositoriesStore.bumpRevision(storeKey()!);
     } catch (err) {
       appLogger.error("git", "Failed to discard all files", err);
     }
@@ -252,7 +256,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
       setCommitMsg("");
       setIsAmend(false);
       savedDraftMsg = "";
-      repositoriesStore.bumpRevision(repoPath);
+      repositoriesStore.bumpRevision(storeKey() || repoPath);
       setCommitSuccess(true);
       if (successTimeout) clearTimeout(successTimeout);
       successTimeout = setTimeout(() => setCommitSuccess(false), 3000);

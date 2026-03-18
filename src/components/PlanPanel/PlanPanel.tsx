@@ -9,6 +9,8 @@ import s from "./PlanPanel.module.css";
 export interface PlanPanelProps {
   visible: boolean;
   repoPath: string | null;
+  /** Effective filesystem root (worktree path when on a linked worktree) */
+  fsRoot?: string | null;
   onClose: () => void;
 }
 

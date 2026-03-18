@@ -20,6 +20,7 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
       <FileBrowserPanel
         visible={uiStore.state.fileBrowserPanelVisible}
         repoPath={props.repoPath}
+        fsRoot={props.fsRoot}
         onClose={() => uiStore.toggleFileBrowserPanel()}
         onFileOpen={props.onFileOpen}
       />
@@ -47,12 +48,14 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
       <PlanPanel
         visible={uiStore.state.planPanelVisible}
         repoPath={props.repoPath}
+        fsRoot={props.fsRoot}
         onClose={() => uiStore.togglePlanPanel()}
       />
 
       <GitPanel
         visible={uiStore.state.gitPanelVisible}
         repoPath={props.repoPath}
+        fsRoot={props.fsRoot}
         onClose={() => uiStore.toggleGitPanel()}
       />
     </>

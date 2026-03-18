@@ -20,6 +20,8 @@ const TABS: { id: GitTab; label: string }[] = [
 export interface GitPanelProps {
   visible: boolean;
   repoPath: string | null;
+  /** Effective filesystem root (worktree path when on a linked worktree) */
+  fsRoot?: string | null;
   onClose: () => void;
 }
 
@@ -28,6 +30,7 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
   const [selectedFile, setSelectedFile] = createSignal<string | null>(null);
   const [historyExpanded, setHistoryExpanded] = createSignal(false);
   const [blameExpanded, setBlameExpanded] = createSignal(false);
+  const gitPath = () => (props.fsRoot || props.repoPath) as string | null;
 
   function handlePanelKeyDown(e: KeyboardEvent) {
     if (e.key === "Escape") {
@@ -81,15 +84,16 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
         <Switch>
           <Match when={activeTab() === "changes"}>
             <ChangesTab
-              repoPath={props.visible ? props.repoPath : null}
+              repoPath={props.visible ? gitPath() : null}
+              storeRepoPath={props.visible ? props.repoPath : null}
               onFileSelect={setSelectedFile}
             />
           </Match>
           <Match when={activeTab() === "log"}>
-            <LogTab repoPath={props.visible ? props.repoPath : null} />
+            <LogTab repoPath={props.visible ? gitPath() : null} />
           </Match>
           <Match when={activeTab() === "stashes"}>
-            <StashesTab repoPath={props.visible ? props.repoPath : null} />
+            <StashesTab repoPath={props.visible ? gitPath() : null} />
           </Match>
         </Switch>
       </div>
@@ -109,7 +113,7 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
         <Show when={historyExpanded()}>
           <div class={s.subPanelBody}>
             <HistoryTab
-              repoPath={props.visible ? props.repoPath : null}
+              repoPath={props.visible ? gitPath() : null}
               filePath={selectedFile()}
             />
           </div>
@@ -127,7 +131,7 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
         <Show when={blameExpanded()}>
           <div class={s.subPanelBody}>
             <BlameTab
-              repoPath={props.visible ? props.repoPath : null}
+              repoPath={props.visible ? gitPath() : null}
               filePath={selectedFile()}
             />
           </div>
