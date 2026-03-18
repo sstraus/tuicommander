@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Cmd+F search in diff panels** — DiffTab now supports `Cmd+F` text search via SearchBar + DomSearchEngine, matching the markdown viewer search experience
+- **Copy Path in viewer tab context menus** — Right-click on diff, markdown (file type), and editor tabs to copy the file path to clipboard
+- **Click-to-diff in Git Panel** — Changes tab: clicking a file row opens its diff directly. Log tab: clicking a file in an expanded commit opens its diff at that commit hash
+
+### Fixed
+- **Text selection in diff panels** — DiffTab and PrDiffTab now allow text highlighting and copying via `user-select: text`
+- **Submodule entries in working tree status** — Submodules no longer appear as regular files in the Changes tab
+- **SearchBar placeholder encoding** — Fixed literal `\u2026` showing instead of ellipsis character in "Find…" placeholder
+- **SearchBar counter text wrapping** — "No results" text no longer wraps to a second line
+
 ## [0.9.1] - 2026-03-16
 
 ### Added
