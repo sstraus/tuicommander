@@ -85,15 +85,13 @@ import { initApp } from "./hooks/useAppInit";
 import { startAutoFetch } from "./hooks/useAutoFetch";
 import { useAutoDeleteBranch } from "./hooks/useAutoDeleteBranch";
 import { applyAppTheme, applyFontFamily } from "./themes";
-import { parseHotkey, isPluginModifierKey, updateModifierState, modifiersMatch } from "./utils";
-import type { ModifierState } from "./utils";
+import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
 import {
   startListening as startInputListening,
   stopListening as stopInputListening,
   setEventTypes as setInputEventTypes,
   EventTypeEnum,
 } from "tauri-plugin-user-input-api";
-import type { InputEvent } from "tauri-plugin-user-input-api";
 import { applyPlatformClass, getModifierSymbol, isQuickSwitcherActive, isQuickSwitcherRelease } from "./platform";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -1130,67 +1128,18 @@ const App: Component = () => {
     const longPressMs = dictationStore.state.longPressMs;
     if (!dictationStore.state.enabled || !hotkey || capturing) return;
 
-    const parsed = parseHotkey(hotkey);
-    if (!parsed) return;
+    const handler = createLongPressHandlerFromHotkey(hotkey, longPressMs, {
+      onStart: () => dictation.handleDictationStart(),
+      onStop: () => dictation.handleDictationStop(),
+    });
+    if (!handler) return;
 
     let listening = false;
-    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
-    let hotkeyDown = false; // tracks whether the primary key is currently held
-    let dictationStarted = false; // true once long-press threshold fires
-    const mods: ModifierState = { cmd: false, shift: false, alt: false, ctrl: false };
-
-    const handleEvent = (event: InputEvent) => {
-      const key = event.key;
-      if (!key) return;
-
-      const isPress = event.eventType === EventTypeEnum.KeyPress;
-      const isRelease = event.eventType === EventTypeEnum.KeyRelease;
-      if (!isPress && !isRelease) return;
-
-      // Track modifier state
-      if (isPluginModifierKey(key)) {
-        updateModifierState(mods, key, isPress);
-        return;
-      }
-
-      // Only act on the configured hotkey's primary key
-      if (key !== parsed.key) return;
-
-      if (isPress) {
-        // Ignore key repeat (KeyPress without prior KeyRelease)
-        if (hotkeyDown) return;
-
-        // Check modifier requirements
-        if (!modifiersMatch(parsed, mods)) return;
-
-        hotkeyDown = true;
-        dictationStarted = false;
-
-        // Start long-press timer
-        longPressTimer = setTimeout(() => {
-          longPressTimer = null;
-          dictationStarted = true;
-          dictation.handleDictationStart();
-        }, longPressMs);
-      } else if (isRelease && hotkeyDown) {
-        hotkeyDown = false;
-
-        if (longPressTimer !== null) {
-          // Released before threshold — short press, let it pass through
-          clearTimeout(longPressTimer);
-          longPressTimer = null;
-        } else if (dictationStarted) {
-          // Released after dictation started — stop recording
-          dictationStarted = false;
-          dictation.handleDictationStop();
-        }
-      }
-    };
 
     const setup = async () => {
       try {
         await setInputEventTypes([EventTypeEnum.KeyPress, EventTypeEnum.KeyRelease]);
-        await startInputListening(handleEvent);
+        await startInputListening(handler.handleEvent);
         listening = true;
       } catch (err) {
         appLogger.error("dictation", "Failed to start input listener for push-to-talk", err);
@@ -1202,7 +1151,7 @@ const App: Component = () => {
     );
 
     onCleanup(() => {
-      if (longPressTimer !== null) clearTimeout(longPressTimer);
+      handler.cleanup();
       if (listening) {
         stopInputListening().catch((err) =>
           appLogger.warn("dictation", "Failed to stop input listener", err),
