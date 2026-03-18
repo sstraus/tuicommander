@@ -255,15 +255,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
           pty.resume(sessionId).catch(() => {});
         }
 
-        // Skip scroll interventions on alternate screen — agents (Claude Code,
-        // Ink) control the entire viewport, there's no meaningful scrollback.
-        if (!terminal || terminal.buffer.active.type === "alternate") return;
-
         // Guard: restore scroll position if user was scrolled up and xterm
         // moved the viewport (up OR down). Cursor-positioning escapes from
         // agent TUI redraws can jump the viewport to the bottom, which also
         // corrupts trackedScrollState.wasAtBottom for subsequent doFit calls.
-        if (!wasAtBottomBefore) {
+        if (!wasAtBottomBefore && terminal) {
           const afterBuf = terminal.buffer.active;
           if (afterBuf.viewportY !== viewportYBefore) {
             terminal.scrollToLine(Math.min(viewportYBefore, afterBuf.baseY));
@@ -274,7 +270,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // compaction clears scrollback). onScroll does NOT fire for baseY
         // decreases, leaving trackedScrollState stale — which makes doFit()
         // compute a bogus linesFromBottom and jump to line 0.
-        if (trackedScrollState.baseY > terminal.buffer.active.baseY) {
+        if (terminal && trackedScrollState.baseY > terminal.buffer.active.baseY) {
           const buf = terminal.buffer.active;
           trackedScrollState = {
             viewportY: Math.min(trackedScrollState.viewportY, buf.baseY),
@@ -563,7 +559,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         sessionId = await pty.createSession({
           rows: terminal.rows,
           cols: terminal.cols,
-          shell: null,
+          shell: settingsStore.state.shell ?? null,
           cwd: props.cwd || null,
           tuic_session: termData?.tuicSession ?? null,
         });
