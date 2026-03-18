@@ -1,0 +1,27 @@
+src/components/PrDetailPopover/PrDetailPopover.tsx
+  6e79cf5e89df4b5b 117
+src/plugins/pluginRegistry.ts
+  6e79cf5e89df4b5b 318
+src/components/Sidebar/RepoSection.tsx
+  6e79cf5e89df4b5b 404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "72797503eddacf7fd2e475e735cc900d42d7a150",
+  "prompts": {
+    "6e79cf5e89df4b5b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ac07b14b-3229-47c9-a7de-00b8f7829574",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 4,
+      "total_deletions": 4,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  }
+}
