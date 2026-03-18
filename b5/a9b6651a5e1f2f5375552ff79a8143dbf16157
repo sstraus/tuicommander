@@ -1,0 +1,29 @@
+src-tauri/src/repo_watcher.rs
+  ba1c7165631be7b1 113-114,116
+src-tauri/src/git.rs
+  ba1c7165631be7b1 2337,2562,2574
+src-tauri/src/pty.rs
+  ba1c7165631be7b1 2916,2985,2999,3134-3137,3238,3240
+src-tauri/src/notification_sound.rs
+  ba1c7165631be7b1 338,349
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "b5a9b6651a5e1f2f5375552ff79a8143dbf16157",
+  "prompts": {
+    "ba1c7165631be7b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "769f159b-c007-45d6-9acd-0609c010e621",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 22,
+      "total_deletions": 23,
+      "accepted_lines": 17,
+      "overriden_lines": 0
+    }
+  }
+}
