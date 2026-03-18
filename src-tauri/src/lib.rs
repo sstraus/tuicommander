@@ -729,6 +729,12 @@ pub fn run() {
             let app_state: &Arc<AppState> = app.state::<Arc<AppState>>().inner();
             *app_state.app_handle.write() = Some(app.handle().clone());
 
+            // Allow note-images directory in asset protocol scope so <img src="asset://..."> works
+            let images_dir = config::config_dir().join(config::NOTE_IMAGES_DIR);
+            if let Err(e) = app.asset_protocol_scope().allow_directory(&images_dir, true) {
+                tracing::warn!("Failed to add note-images to asset scope: {e}");
+            }
+
             // Start plugin directory watcher for hot-reload
             plugins::start_plugin_watcher(app.handle());
 

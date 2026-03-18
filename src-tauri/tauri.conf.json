@@ -34,7 +34,7 @@
       "dangerousDisableAssetCspModification": ["style-src"],
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPCONFIG/**"]
+        "scope": ["$APPDATA/**", "$APPDATA/**/*"]
       }
     }
   },

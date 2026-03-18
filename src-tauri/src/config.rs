@@ -953,7 +953,7 @@ pub(crate) fn save_agents_config(config: AgentsConfig) -> Result<(), String> {
 // Note images — save/delete/get for Ideas panel image attachments
 // ---------------------------------------------------------------------------
 
-const NOTE_IMAGES_DIR: &str = "note-images";
+pub(crate) const NOTE_IMAGES_DIR: &str = "note-images";
 
 /// Maximum decoded image size: 10 MB
 const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024;
