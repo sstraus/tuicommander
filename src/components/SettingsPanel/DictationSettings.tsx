@@ -194,7 +194,26 @@ export const DictationSettings: Component = () => {
           />
         </div>
         <p class={s.hint}>
-          {t("dictation.hotkeyHint", "Press to start/stop recording. Works globally.")}
+          {t("dictation.hotkeyHint", "Hold the hotkey to start recording, release to stop. Short presses pass through as normal input.")}
+        </p>
+      </div>
+
+      {/* Long-press threshold */}
+      <div class={s.group}>
+        <label>{t("dictation.longPressLabel", "Long-press threshold")}</label>
+        <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+          <input
+            type="range"
+            min={200}
+            max={1000}
+            step={50}
+            value={dictationStore.state.longPressMs}
+            onInput={(e) => dictationStore.setLongPressMs(Number(e.currentTarget.value))}
+          />
+          <span style={{ "min-width": "50px", "text-align": "right" }}>{dictationStore.state.longPressMs}ms</span>
+        </div>
+        <p class={s.hint}>
+          {t("dictation.longPressHint", "How long to hold the key before dictation starts. Lower = faster activation, higher = fewer accidental triggers.")}
         </p>
       </div>
 

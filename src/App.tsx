@@ -85,12 +85,15 @@ import { initApp } from "./hooks/useAppInit";
 import { startAutoFetch } from "./hooks/useAutoFetch";
 import { useAutoDeleteBranch } from "./hooks/useAutoDeleteBranch";
 import { applyAppTheme, applyFontFamily } from "./themes";
-import { hotkeyToTauriShortcut, isValidHotkey } from "./utils";
+import { parseHotkey, isPluginModifierKey, updateModifierState, modifiersMatch } from "./utils";
+import type { ModifierState } from "./utils";
 import {
-  register as registerShortcut,
-  unregister as unregisterShortcut,
-  isRegistered as isShortcutRegistered,
-} from "@tauri-apps/plugin-global-shortcut";
+  startListening as startInputListening,
+  stopListening as stopInputListening,
+  setEventTypes as setInputEventTypes,
+  EventTypeEnum,
+} from "tauri-plugin-user-input-api";
+import type { InputEvent } from "tauri-plugin-user-input-api";
 import { applyPlatformClass, getModifierSymbol, isQuickSwitcherActive, isQuickSwitcherRelease } from "./platform";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -1116,45 +1119,93 @@ const App: Component = () => {
     onCleanup(() => unlisten?.());
   });
 
-  // Push-to-talk hotkey handler via OS-level global shortcut
-  // Uses tauri-plugin-global-shortcut so the hotkey works even without window focus.
-  // Unregisters while capturingHotkey is true so the browser can capture the keypress.
+  // Push-to-talk hotkey handler via tauri-plugin-user-input.
+  // Listens for all keyboard events globally, implements long-press detection:
+  // short press passes through as normal input, long press triggers dictation.
+  // Pauses while capturingHotkey is true so the settings UI can capture a new key.
   createEffect(() => {
     if (!isTauri()) return;
     const hotkey = dictationStore.state.hotkey;
     const capturing = dictationStore.state.capturingHotkey;
+    const longPressMs = dictationStore.state.longPressMs;
     if (!dictationStore.state.enabled || !hotkey || capturing) return;
-    if (!isValidHotkey(hotkey)) return;
 
-    const shortcut = hotkeyToTauriShortcut(hotkey);
-    let registered = false;
+    const parsed = parseHotkey(hotkey);
+    if (!parsed) return;
+
+    let listening = false;
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    let hotkeyDown = false; // tracks whether the primary key is currently held
+    let dictationStarted = false; // true once long-press threshold fires
+    const mods: ModifierState = { cmd: false, shift: false, alt: false, ctrl: false };
+
+    const handleEvent = (event: InputEvent) => {
+      const key = event.key;
+      if (!key) return;
+
+      const isPress = event.eventType === EventTypeEnum.KeyPress;
+      const isRelease = event.eventType === EventTypeEnum.KeyRelease;
+      if (!isPress && !isRelease) return;
+
+      // Track modifier state
+      if (isPluginModifierKey(key)) {
+        updateModifierState(mods, key, isPress);
+        return;
+      }
+
+      // Only act on the configured hotkey's primary key
+      if (key !== parsed.key) return;
+
+      if (isPress) {
+        // Ignore key repeat (KeyPress without prior KeyRelease)
+        if (hotkeyDown) return;
+
+        // Check modifier requirements
+        if (!modifiersMatch(parsed, mods)) return;
+
+        hotkeyDown = true;
+        dictationStarted = false;
+
+        // Start long-press timer
+        longPressTimer = setTimeout(() => {
+          longPressTimer = null;
+          dictationStarted = true;
+          dictation.handleDictationStart();
+        }, longPressMs);
+      } else if (isRelease && hotkeyDown) {
+        hotkeyDown = false;
+
+        if (longPressTimer !== null) {
+          // Released before threshold — short press, let it pass through
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        } else if (dictationStarted) {
+          // Released after dictation started — stop recording
+          dictationStarted = false;
+          dictation.handleDictationStop();
+        }
+      }
+    };
 
     const setup = async () => {
       try {
-        if (await isShortcutRegistered(shortcut)) {
-          await unregisterShortcut(shortcut);
-        }
-        await registerShortcut(shortcut, (event) => {
-          if (event.state === "Pressed") {
-            dictation.handleDictationStart();
-          } else if (event.state === "Released") {
-            dictation.handleDictationStop();
-          }
-        });
-        registered = true;
+        await setInputEventTypes([EventTypeEnum.KeyPress, EventTypeEnum.KeyRelease]);
+        await startInputListening(handleEvent);
+        listening = true;
       } catch (err) {
-        appLogger.error("dictation", "Failed to register push-to-talk shortcut", err);
+        appLogger.error("dictation", "Failed to start input listener for push-to-talk", err);
       }
     };
 
     setup().catch((err) =>
-      appLogger.error("app", "Failed to register push-to-talk shortcut", err),
+      appLogger.error("app", "Failed to start push-to-talk listener", err),
     );
 
     onCleanup(() => {
-      if (registered) {
-        unregisterShortcut(shortcut).catch((err) =>
-          appLogger.warn("dictation", "Failed to unregister push-to-talk shortcut", err),
+      if (longPressTimer !== null) clearTimeout(longPressTimer);
+      if (listening) {
+        stopInputListening().catch((err) =>
+          appLogger.warn("dictation", "Failed to stop input listener", err),
         );
       }
     });

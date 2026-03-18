@@ -37,3 +37,19 @@ vi.mock("@tauri-apps/plugin-global-shortcut", () => ({
   unregister: vi.fn().mockResolvedValue(undefined),
   isRegistered: vi.fn().mockResolvedValue(false),
 }));
+
+vi.mock("tauri-plugin-user-input-api", () => ({
+  startListening: vi.fn().mockResolvedValue(undefined),
+  stopListening: vi.fn().mockResolvedValue(undefined),
+  setEventTypes: vi.fn().mockResolvedValue(undefined),
+  isListening: vi.fn().mockResolvedValue(false),
+  EventTypeEnum: {
+    KeyPress: "KeyPress",
+    KeyRelease: "KeyRelease",
+    ButtonPress: "ButtonPress",
+    ButtonRelease: "ButtonRelease",
+    MouseMove: "MouseMove",
+    MouseDragged: "MouseDragged",
+    Wheel: "Wheel",
+  },
+}));

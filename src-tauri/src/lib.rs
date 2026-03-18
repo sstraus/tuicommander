@@ -685,6 +685,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_user_input::init())
         .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_window_state::Builder::new()
@@ -716,6 +717,10 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            // Allow user-input plugin to receive keyboard events even when
+            // the Tauri window has focus (required for push-to-talk hotkey).
+            app.set_device_event_filter(tauri::DeviceEventFilter::Always);
+
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
 
@@ -728,12 +733,6 @@ pub fn run() {
             // Store AppHandle so HTTP handlers can emit Tauri events
             let app_state: &Arc<AppState> = app.state::<Arc<AppState>>().inner();
             *app_state.app_handle.write() = Some(app.handle().clone());
-
-            // Allow note-images directory in asset protocol scope so <img src="asset://..."> works
-            let images_dir = config::config_dir().join(config::NOTE_IMAGES_DIR);
-            if let Err(e) = app.asset_protocol_scope().allow_directory(&images_dir, true) {
-                tracing::warn!("Failed to add note-images to asset scope: {e}");
-            }
 
             // Start plugin directory watcher for hot-reload
             plugins::start_plugin_watcher(app.handle());

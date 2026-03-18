@@ -440,10 +440,18 @@ pub struct DictationConfig {
     /// Selected audio input device name. None or empty = system default.
     #[serde(default)]
     pub device: Option<String>,
+    /// Long-press threshold in milliseconds for push-to-talk activation.
+    /// A short press (below this duration) passes through as normal input.
+    #[serde(default = "default_long_press_ms")]
+    pub long_press_ms: u32,
 }
 
 fn default_model() -> String {
     "large-v3-turbo".to_string()
+}
+
+fn default_long_press_ms() -> u32 {
+    400
 }
 
 impl Default for DictationConfig {
@@ -454,6 +462,7 @@ impl Default for DictationConfig {
             language: "auto".to_string(),
             model: default_model(),
             device: None,
+            long_press_ms: default_long_press_ms(),
         }
     }
 }

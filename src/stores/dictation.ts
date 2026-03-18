@@ -9,6 +9,7 @@ interface DictationConfig {
   language: string;
   model: string;
   device: string | null;
+  long_press_ms: number;
 }
 
 /** Model info from Rust backend */
@@ -86,6 +87,7 @@ interface DictationStoreState {
   downloadPercent: number;
   corrections: Record<string, string>;
   devices: AudioDevice[];
+  longPressMs: number;
   capturingHotkey: boolean;
   partialText: string;
 }
@@ -108,6 +110,7 @@ function createDictationStore() {
     downloadPercent: 0,
     corrections: {},
     devices: [],
+    longPressMs: 400,
     capturingHotkey: false,
     partialText: "",
   });
@@ -133,6 +136,7 @@ function createDictationStore() {
           language: config.language,
           selectedModel: config.model ?? "large-v3-turbo",
           selectedDevice: config.device ?? null,
+          longPressMs: config.long_press_ms ?? 400,
         });
       } catch (err) {
         appLogger.error("dictation", "Failed to get dictation config", err);
@@ -147,6 +151,7 @@ function createDictationStore() {
         language: partial.language ?? state.language,
         model: partial.model ?? state.selectedModel,
         device: partial.device !== undefined ? partial.device : state.selectedDevice,
+        long_press_ms: partial.long_press_ms ?? state.longPressMs,
       };
       try {
         await invoke("set_dictation_config", { config });
@@ -157,6 +162,7 @@ function createDictationStore() {
         if (partial.language !== undefined) storeUpdate.language = partial.language;
         if (partial.model !== undefined) storeUpdate.selectedModel = partial.model;
         if (partial.device !== undefined) storeUpdate.selectedDevice = partial.device;
+        if (partial.long_press_ms !== undefined) storeUpdate.longPressMs = partial.long_press_ms;
         setState(storeUpdate);
       } catch (err) {
         appLogger.error("dictation", "Failed to save dictation config", err);
@@ -173,6 +179,10 @@ function createDictationStore() {
 
     setCapturingHotkey(value: boolean): void {
       setState("capturingHotkey", value);
+    },
+
+    setLongPressMs(value: number): void {
+      actions.saveConfig({ long_press_ms: value });
     },
 
     setLanguage(value: string): void {
