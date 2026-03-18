@@ -392,7 +392,9 @@ function createTerminalsStore() {
       const newPanes = [...panes, newId];
       const n = newPanes.length;
       const equalRatio = 1 / n;
-      const ratios = newPanes.map(() => equalRatio);
+      const ratios = newPanes.map((_, i) =>
+        i === n - 1 ? 1 - equalRatio * (n - 1) : equalRatio
+      );
 
       setState("layout", {
         direction,
@@ -429,6 +431,11 @@ function createTerminalsStore() {
       const newRatios = remainingSum > 0
         ? remainingRatios.map(r => r / remainingSum)
         : remainingRatios.map(() => 1 / newPanes.length);
+      // Normalize last element to guarantee sum === 1.0
+      const sum = newRatios.reduce((a, b) => a + b, 0);
+      if (sum > 0 && Math.abs(sum - 1) > Number.EPSILON) {
+        newRatios[newRatios.length - 1] += 1 - sum;
+      }
 
       // Adjust activePaneIndex based on which pane was removed
       let newActive = state.layout.activePaneIndex;

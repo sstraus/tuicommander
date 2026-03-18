@@ -516,6 +516,7 @@ describe("terminalsStore", () => {
           expect(store.state.layout.ratios[0]).toBeCloseTo(r);
           expect(store.state.layout.ratios[1]).toBeCloseTo(r);
           expect(store.state.layout.ratios[2]).toBeCloseTo(r);
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
           dispose();
         });
       });
@@ -621,6 +622,7 @@ describe("terminalsStore", () => {
           expect(store.state.layout.panes).toEqual([id1, id3]);
           expect(store.state.layout.ratios[0]).toBeCloseTo(0.5);
           expect(store.state.layout.ratios[1]).toBeCloseTo(0.5);
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
           // activePaneIndex should be clamped
           expect(store.state.layout.activePaneIndex).toBe(1);
           dispose();
@@ -688,6 +690,7 @@ describe("terminalsStore", () => {
           store.setHandleRatio(0, 0.7);
           expect(store.state.layout.ratios[0]).toBeCloseTo(0.7);
           expect(store.state.layout.ratios[1]).toBeCloseTo(0.3);
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
           dispose();
         });
       });
@@ -701,6 +704,7 @@ describe("terminalsStore", () => {
           // Try to push boundary to 0.99 — should be clamped so second pane >= MIN_PANE_FRACTION
           store.setHandleRatio(0, 0.99);
           expect(store.state.layout.ratios[1]).toBeGreaterThanOrEqual(0.05);
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
           dispose();
         });
       });
