@@ -182,6 +182,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
               >
                 {diffTab && (
                   <DiffTab
+                    tabId={id}
                     repoPath={diffTab.repoPath}
                     filePath={diffTab.filePath}
                     scope={diffTab.scope}

@@ -871,6 +871,12 @@ const App: Component = () => {
     togglePlanPanel: uiStore.togglePlanPanel,
     findInTerminal: () => {
       // Context-aware: open search in whichever tab type is active
+      const diffActiveId = diffTabsStore.state.activeId;
+      if (diffActiveId) {
+        const handle = diffTabsStore.getHandle<{ openSearch: () => void }>(diffActiveId);
+        handle?.openSearch();
+        return;
+      }
       const mdActiveId = mdTabsStore.state.activeId;
       if (mdActiveId) {
         const handle = mdTabsStore.getHandle<{ openSearch: () => void }>(mdActiveId);

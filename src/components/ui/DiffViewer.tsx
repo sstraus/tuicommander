@@ -3,6 +3,8 @@ import { Component, createMemo, For, Show } from "solid-js";
 export interface DiffViewerProps {
   diff: string;
   emptyMessage?: string;
+  /** Callback to expose the content DOM element for search */
+  contentRef?: (el: HTMLElement) => void;
 }
 
 type LineType = "header" | "hunk" | "addition" | "deletion" | "context";
@@ -78,7 +80,7 @@ export const DiffViewer: Component<DiffViewerProps> = (props) => {
   const isEmpty = createMemo(() => props.diff.trim() === "");
 
   return (
-    <div id="diff-content">
+    <div id="diff-content" ref={(el) => props.contentRef?.(el)}>
       <Show
         when={!isEmpty()}
         fallback={
