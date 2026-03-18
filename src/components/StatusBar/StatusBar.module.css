@@ -77,7 +77,7 @@
 
 .cwd {
   color: var(--fg-secondary);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-sm);
   cursor: pointer;
   padding: 1px 6px;
@@ -94,7 +94,7 @@
 }
 
 .agentBadge {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-sm);
   font-weight: 500;
   padding: 1px 6px;
@@ -141,7 +141,7 @@
 }
 
 .tickerMessage {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-sm);
   padding: 1px 6px;
   border-radius: var(--radius-sm);
@@ -347,7 +347,7 @@
 }
 
 .updateBadge {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-sm);
   font-weight: 500;
   padding: 1px 6px;

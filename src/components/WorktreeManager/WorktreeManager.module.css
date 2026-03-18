@@ -327,7 +327,7 @@
 
 .actionBtn {
   font-size: var(--font-xs);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--fg-muted);
   background: none;
   border: 1px solid transparent;
