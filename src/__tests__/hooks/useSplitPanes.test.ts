@@ -139,5 +139,66 @@ describe("useSplitPanes", () => {
       expect(terminalsStore.state.activeId).not.toBe(id);
       expect(terminalsStore.state.layout.panes.length).toBe(2);
     });
+
+    it("adds 3rd pane when same direction already active", () => {
+      const id = terminalsStore.add({
+        sessionId: null,
+        fontSize: 14,
+        name: "T1",
+        cwd: null,
+        awaitingInput: null,
+      });
+      terminalsStore.setActive(id);
+
+      splitPanes.handleSplit("vertical");
+      expect(terminalsStore.state.layout.panes.length).toBe(2);
+
+      splitPanes.handleSplit("vertical");
+      expect(terminalsStore.state.layout.panes.length).toBe(3);
+      expect(terminalsStore.state.layout.direction).toBe("vertical");
+    });
+
+    it("opposite direction is no-op when already split", () => {
+      const id = terminalsStore.add({
+        sessionId: null,
+        fontSize: 14,
+        name: "T1",
+        cwd: null,
+        awaitingInput: null,
+      });
+      terminalsStore.setActive(id);
+
+      splitPanes.handleSplit("vertical");
+      expect(terminalsStore.state.layout.panes.length).toBe(2);
+
+      splitPanes.handleSplit("horizontal");
+      // Should still be 2 panes, direction unchanged
+      expect(terminalsStore.state.layout.panes.length).toBe(2);
+      expect(terminalsStore.state.layout.direction).toBe("vertical");
+    });
+  });
+
+  describe("resetLayout", () => {
+    it("collapses all panes to single pane", () => {
+      const id = terminalsStore.add({
+        sessionId: null,
+        fontSize: 14,
+        name: "T1",
+        cwd: null,
+        awaitingInput: null,
+      });
+      terminalsStore.setActive(id);
+
+      splitPanes.handleSplit("vertical");
+      splitPanes.handleSplit("vertical");
+      expect(terminalsStore.state.layout.panes.length).toBe(3);
+
+      splitPanes.resetLayout();
+
+      expect(terminalsStore.state.layout.direction).toBe("none");
+      expect(terminalsStore.state.layout.panes.length).toBe(1);
+      expect(terminalsStore.state.layout.panes[0]).toBe(id);
+      expect(terminalsStore.state.layout.activePaneIndex).toBe(0);
+    });
   });
 });
