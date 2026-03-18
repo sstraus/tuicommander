@@ -1,4 +1,10 @@
 /* PR Diff Tab — multi-file diff viewer with collapsible sections */
+.container,
+.container * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .container {
   width: 100%;
   height: 100%;

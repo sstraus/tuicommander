@@ -7,7 +7,7 @@ function resetStores() {
   for (const id of terminalsStore.getIds()) {
     terminalsStore.remove(id);
   }
-  terminalsStore.setLayout({ direction: "none", panes: [], ratio: 0.5, activePaneIndex: 0 });
+  terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
 }
 
 function createMockHandlers(): ShortcutHandlers {
@@ -262,13 +262,13 @@ describe("useKeyboardShortcuts", () => {
   });
 
   describe("Cmd+W in split mode", () => {
-    it("closes active pane and collapses split", () => {
+    it("closes active pane in 2-pane split", () => {
       const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
       const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
       terminalsStore.setActive(id1);
@@ -276,6 +276,24 @@ describe("useKeyboardShortcuts", () => {
       fireKeydown("w", { metaKey: true });
 
       expect(handlers.closeTerminal).toHaveBeenCalledWith(id1, true);
+    });
+
+    it("closes active pane in 3-pane split", () => {
+      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id3 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+      const r = 1 / 3;
+      terminalsStore.setLayout({
+        direction: "vertical",
+        panes: [id1, id2, id3],
+        ratios: [r, r, r],
+        activePaneIndex: 1,
+      });
+      terminalsStore.setActive(id2);
+
+      fireKeydown("w", { metaKey: true });
+
+      expect(handlers.closeTerminal).toHaveBeenCalledWith(id2, true);
     });
 
     it("closes non-split active terminal", () => {
@@ -301,7 +319,7 @@ describe("useKeyboardShortcuts", () => {
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
 
@@ -317,7 +335,7 @@ describe("useKeyboardShortcuts", () => {
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 1,
       });
 
@@ -333,13 +351,59 @@ describe("useKeyboardShortcuts", () => {
       terminalsStore.setLayout({
         direction: "horizontal",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
 
       fireKeydown("ArrowDown", { altKey: true });
 
       expect(terminalsStore.state.layout.activePaneIndex).toBe(1);
+    });
+
+    it("Alt+ArrowRight with 3 panes: 0 -> 1 -> 2 -> 2 (clamp)", () => {
+      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id3 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+      const r = 1 / 3;
+      terminalsStore.setLayout({
+        direction: "vertical",
+        panes: [id1, id2, id3],
+        ratios: [r, r, r],
+        activePaneIndex: 0,
+      });
+
+      fireKeydown("ArrowRight", { altKey: true });
+      expect(terminalsStore.state.layout.activePaneIndex).toBe(1);
+
+      fireKeydown("ArrowRight", { altKey: true });
+      expect(terminalsStore.state.layout.activePaneIndex).toBe(2);
+
+      // At last pane, should clamp
+      fireKeydown("ArrowRight", { altKey: true });
+      expect(terminalsStore.state.layout.activePaneIndex).toBe(2);
+    });
+
+    it("Alt+ArrowLeft with 3 panes: 2 -> 1 -> 0 -> 0 (clamp)", () => {
+      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id3 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+      const r = 1 / 3;
+      terminalsStore.setLayout({
+        direction: "vertical",
+        panes: [id1, id2, id3],
+        ratios: [r, r, r],
+        activePaneIndex: 2,
+      });
+
+      fireKeydown("ArrowLeft", { altKey: true });
+      expect(terminalsStore.state.layout.activePaneIndex).toBe(1);
+
+      fireKeydown("ArrowLeft", { altKey: true });
+      expect(terminalsStore.state.layout.activePaneIndex).toBe(0);
+
+      // At first pane, should clamp
+      fireKeydown("ArrowLeft", { altKey: true });
+      expect(terminalsStore.state.layout.activePaneIndex).toBe(0);
     });
 
     it("ignores Alt+Arrow when not in split mode", () => {

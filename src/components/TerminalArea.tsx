@@ -82,7 +82,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
               return layout.direction !== "none" && layout.panes[layout.activePaneIndex] === id;
             };
             const paneIndex = () => terminalsStore.state.layout.panes.indexOf(id);
-            const splitRatio = () => terminalsStore.state.layout.ratio;
+            const paneRatio = () => terminalsStore.state.layout.ratios[paneIndex()] ?? 0;
 
             const isDetached = () => terminalsStore.isDetached(id);
 
@@ -102,10 +102,8 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                   detached: isDetached(),
                 }}
                 style={isDetached() ? { display: "none" } : isSplitPane() ? {
-                  flex: paneIndex() === 0
-                    ? `${splitRatio() * 100} 1 0%`
-                    : `${(1 - splitRatio()) * 100} 1 0%`,
-                  order: paneIndex() === 0 ? 0 : 2,
+                  flex: `${paneRatio() * 100} 1 0%`,
+                  order: paneIndex() * 2,
                 } : undefined}
               >
                 <Terminal
@@ -122,53 +120,56 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
           }}
         </For>
 
-        {/* Resize handle between split panes */}
-        <Show when={terminalsStore.state.layout.direction !== "none"}>
-          <div
-            class="split-resize-handle"
-            classList={{
-              vertical: terminalsStore.state.layout.direction === "vertical",
-              horizontal: terminalsStore.state.layout.direction === "horizontal",
-            }}
-            style={{ order: 1 }}
-            onMouseDown={(startEvent) => {
-              startEvent.preventDefault();
-              const container = document.getElementById("terminal-panes");
-              if (!container) return;
+        {/* Resize handles between split panes — one handle per adjacent pair */}
+        <For each={Array.from({ length: Math.max(0, terminalsStore.state.layout.panes.length - 1) }, (_, i) => i)}>
+          {(handleIndex) => (
+            <div
+              class="split-resize-handle"
+              classList={{
+                vertical: terminalsStore.state.layout.direction === "vertical",
+                horizontal: terminalsStore.state.layout.direction === "horizontal",
+              }}
+              style={{ order: handleIndex * 2 + 1 }}
+              onMouseDown={(startEvent) => {
+                startEvent.preventDefault();
+                const container = document.getElementById("terminal-panes");
+                if (!container) return;
 
-              const isVertical = terminalsStore.state.layout.direction === "vertical";
-              const rect = container.getBoundingClientRect();
+                const isVertical = terminalsStore.state.layout.direction === "vertical";
+                const rect = container.getBoundingClientRect();
+                const capturedIndex = handleIndex;
 
-              let rafPending = false;
-              const onMouseMove = (e: MouseEvent) => {
-                if (rafPending) return;
-                rafPending = true;
-                requestAnimationFrame(() => {
-                  rafPending = false;
-                  const ratio = isVertical
-                    ? (e.clientX - rect.left) / rect.width
-                    : (e.clientY - rect.top) / rect.height;
-                  terminalsStore.setSplitRatio(ratio);
-                });
-              };
+                let rafPending = false;
+                const onMouseMove = (e: MouseEvent) => {
+                  if (rafPending) return;
+                  rafPending = true;
+                  requestAnimationFrame(() => {
+                    rafPending = false;
+                    const fraction = isVertical
+                      ? (e.clientX - rect.left) / rect.width
+                      : (e.clientY - rect.top) / rect.height;
+                    terminalsStore.setHandleRatio(capturedIndex, fraction);
+                  });
+                };
 
-              const onMouseUp = () => {
-                document.removeEventListener("mousemove", onMouseMove);
-                document.removeEventListener("mouseup", onMouseUp);
-                document.body.style.cursor = "";
-                document.body.style.userSelect = "";
-                for (const paneId of terminalsStore.state.layout.panes) {
-                  terminalsStore.get(paneId)?.ref?.fit();
-                }
-              };
+                const onMouseUp = () => {
+                  document.removeEventListener("mousemove", onMouseMove);
+                  document.removeEventListener("mouseup", onMouseUp);
+                  document.body.style.cursor = "";
+                  document.body.style.userSelect = "";
+                  for (const paneId of terminalsStore.state.layout.panes) {
+                    terminalsStore.get(paneId)?.ref?.fit();
+                  }
+                };
 
-              document.body.style.cursor = isVertical ? "col-resize" : "row-resize";
-              document.body.style.userSelect = "none";
-              document.addEventListener("mousemove", onMouseMove);
-              document.addEventListener("mouseup", onMouseUp);
-            }}
-          />
-        </Show>
+                document.body.style.cursor = isVertical ? "col-resize" : "row-resize";
+                document.body.style.userSelect = "none";
+                document.addEventListener("mousemove", onMouseMove);
+                document.addEventListener("mouseup", onMouseUp);
+              }}
+            />
+          )}
+        </For>
 
         {/* Diff tabs */}
         <For each={diffTabsStore.getIds()}>

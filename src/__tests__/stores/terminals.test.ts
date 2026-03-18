@@ -457,7 +457,7 @@ describe("terminalsStore", () => {
         createRoot((dispose) => {
           expect(store.state.layout.direction).toBe("none");
           expect(store.state.layout.panes).toEqual([]);
-          expect(store.state.layout.ratio).toBe(0.5);
+          expect(store.state.layout.ratios).toEqual([]);
           expect(store.state.layout.activePaneIndex).toBe(0);
           dispose();
         });
@@ -469,7 +469,7 @@ describe("terminalsStore", () => {
         createRoot((dispose) => {
           const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: "/tmp", awaitingInput: null });
           store.setActive(id1);
-          store.setLayout({ direction: "none", panes: [id1], ratio: 0.5, activePaneIndex: 0 });
+          store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
           const newId = store.splitPane("vertical");
 
@@ -478,6 +478,7 @@ describe("terminalsStore", () => {
           expect(store.state.layout.panes).toHaveLength(2);
           expect(store.state.layout.panes[0]).toBe(id1);
           expect(store.state.layout.panes[1]).toBe(newId);
+          expect(store.state.layout.ratios).toEqual([0.5, 0.5]);
           expect(store.state.layout.activePaneIndex).toBe(1);
           dispose();
         });
@@ -486,26 +487,69 @@ describe("terminalsStore", () => {
       it("splits a single pane horizontally", () => {
         createRoot((dispose) => {
           const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          store.setLayout({ direction: "none", panes: [id1], ratio: 0.5, activePaneIndex: 0 });
+          store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
           const newId = store.splitPane("horizontal");
 
           expect(store.state.layout.direction).toBe("horizontal");
           expect(store.state.layout.panes).toHaveLength(2);
           expect(store.state.layout.panes[1]).toBe(newId);
+          expect(store.state.layout.ratios).toEqual([0.5, 0.5]);
           dispose();
         });
       });
 
-      it("returns null if already split", () => {
+      it("adds 3rd pane when same direction active", () => {
         createRoot((dispose) => {
           const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-          store.setLayout({ direction: "vertical", panes: [id1, id2], ratio: 0.5, activePaneIndex: 0 });
+          store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
-          const result = store.splitPane("vertical");
+          const id2 = store.splitPane("vertical");
+          expect(id2).not.toBeNull();
 
+          const id3 = store.splitPane("vertical");
+          expect(id3).not.toBeNull();
+          expect(store.state.layout.panes).toHaveLength(3);
+          expect(store.state.layout.direction).toBe("vertical");
+
+          const r = 1 / 3;
+          expect(store.state.layout.ratios[0]).toBeCloseTo(r);
+          expect(store.state.layout.ratios[1]).toBeCloseTo(r);
+          expect(store.state.layout.ratios[2]).toBeCloseTo(r);
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
+          dispose();
+        });
+      });
+
+      it("returns null when opposite direction requested", () => {
+        createRoot((dispose) => {
+          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
+          store.splitPane("vertical");
+
+          const result = store.splitPane("horizontal");
           expect(result).toBeNull();
+          expect(store.state.layout.panes).toHaveLength(2);
+          dispose();
+        });
+      });
+
+      it("returns null at MAX_SPLIT_PANES (6)", () => {
+        createRoot((dispose) => {
+          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
+
+          // Split up to max (6 panes = 1 original + 5 splits)
+          for (let i = 1; i < 6; i++) {
+            const r = store.splitPane("vertical");
+            expect(r).not.toBeNull();
+          }
+          expect(store.state.layout.panes).toHaveLength(6);
+
+          // One more should be rejected
+          const result = store.splitPane("vertical");
+          expect(result).toBeNull();
+          expect(store.state.layout.panes).toHaveLength(6);
           dispose();
         });
       });
@@ -521,7 +565,7 @@ describe("terminalsStore", () => {
       it("inherits cwd from the source pane", () => {
         createRoot((dispose) => {
           const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: "/projects/foo", awaitingInput: null });
-          store.setLayout({ direction: "none", panes: [id1], ratio: 0.5, activePaneIndex: 0 });
+          store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
           const newId = store.splitPane("vertical");
 
@@ -537,12 +581,13 @@ describe("terminalsStore", () => {
         createRoot((dispose) => {
           const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
           const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-          store.setLayout({ direction: "vertical", panes: [id1, id2], ratio: 0.5, activePaneIndex: 1 });
+          store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 1 });
 
           store.closeSplitPane(1);
 
           expect(store.state.layout.direction).toBe("none");
           expect(store.state.layout.panes).toEqual([id1]);
+          expect(store.state.layout.ratios).toEqual([]);
           expect(store.state.layout.activePaneIndex).toBe(0);
           dispose();
         });
@@ -552,13 +597,71 @@ describe("terminalsStore", () => {
         createRoot((dispose) => {
           const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
           const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-          store.setLayout({ direction: "horizontal", panes: [id1, id2], ratio: 0.5, activePaneIndex: 0 });
+          store.setLayout({ direction: "horizontal", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
 
           store.closeSplitPane(0);
 
           expect(store.state.layout.direction).toBe("none");
           expect(store.state.layout.panes).toEqual([id2]);
+          expect(store.state.layout.ratios).toEqual([]);
           expect(store.state.layout.activePaneIndex).toBe(0);
+          dispose();
+        });
+      });
+
+      it("closes middle pane of 3, redistributes ratios proportionally", () => {
+        createRoot((dispose) => {
+          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          const id3 = store.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "vertical", panes: [id1, id2, id3], ratios: [0.4, 0.2, 0.4], activePaneIndex: 1 });
+
+          store.closeSplitPane(1);
+
+          expect(store.state.layout.direction).toBe("vertical");
+          expect(store.state.layout.panes).toEqual([id1, id3]);
+          expect(store.state.layout.ratios[0]).toBeCloseTo(0.5);
+          expect(store.state.layout.ratios[1]).toBeCloseTo(0.5);
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
+          // activePaneIndex should be clamped
+          expect(store.state.layout.activePaneIndex).toBe(1);
+          dispose();
+        });
+      });
+
+      it("decrements activePaneIndex when a pane before the active one is closed", () => {
+        createRoot((dispose) => {
+          // 4 panes [A,B,C,D], activePaneIndex: 2 (C), close pane 0 (A)
+          // Result: [B,C,D], activePaneIndex should be 1 (still pointing at C)
+          const idA = store.add({ sessionId: null, fontSize: 14, name: "A", cwd: null, awaitingInput: null });
+          const idB = store.add({ sessionId: null, fontSize: 14, name: "B", cwd: null, awaitingInput: null });
+          const idC = store.add({ sessionId: null, fontSize: 14, name: "C", cwd: null, awaitingInput: null });
+          const idD = store.add({ sessionId: null, fontSize: 14, name: "D", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "vertical", panes: [idA, idB, idC, idD], ratios: [0.25, 0.25, 0.25, 0.25], activePaneIndex: 2 });
+
+          store.closeSplitPane(0);
+
+          expect(store.state.layout.panes).toEqual([idB, idC, idD]);
+          expect(store.state.layout.activePaneIndex).toBe(1); // still points at C
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
+          dispose();
+        });
+      });
+
+      it("closes last pane of 3, activePaneIndex decrements", () => {
+        createRoot((dispose) => {
+          // 3 panes, activePaneIndex: 2, close index 2
+          // Result: 2 panes, activePaneIndex should be 1
+          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          const id3 = store.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "vertical", panes: [id1, id2, id3], ratios: [0.4, 0.3, 0.3], activePaneIndex: 2 });
+
+          store.closeSplitPane(2);
+
+          expect(store.state.layout.panes).toEqual([id1, id2]);
+          expect(store.state.layout.activePaneIndex).toBe(1);
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
           dispose();
         });
       });
@@ -566,7 +669,7 @@ describe("terminalsStore", () => {
       it("does nothing if not split", () => {
         createRoot((dispose) => {
           const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          store.setLayout({ direction: "none", panes: [id1], ratio: 0.5, activePaneIndex: 0 });
+          store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
           store.closeSplitPane(1);
 
@@ -577,27 +680,31 @@ describe("terminalsStore", () => {
       });
     });
 
-    describe("setSplitRatio()", () => {
-      it("sets the split ratio", () => {
+    describe("setHandleRatio()", () => {
+      it("adjusts boundary between two adjacent panes", () => {
         createRoot((dispose) => {
-          store.setSplitRatio(0.7);
-          expect(store.state.layout.ratio).toBe(0.7);
+          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
+
+          store.setHandleRatio(0, 0.7);
+          expect(store.state.layout.ratios[0]).toBeCloseTo(0.7);
+          expect(store.state.layout.ratios[1]).toBeCloseTo(0.3);
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
           dispose();
         });
       });
 
-      it("clamps ratio to minimum 0.2", () => {
+      it("enforces minimum pane fraction", () => {
         createRoot((dispose) => {
-          store.setSplitRatio(0.1);
-          expect(store.state.layout.ratio).toBe(0.2);
-          dispose();
-        });
-      });
+          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
 
-      it("clamps ratio to maximum 0.8", () => {
-        createRoot((dispose) => {
-          store.setSplitRatio(0.95);
-          expect(store.state.layout.ratio).toBe(0.8);
+          // Try to push boundary to 0.99 — should be clamped so second pane >= MIN_PANE_FRACTION
+          store.setHandleRatio(0, 0.99);
+          expect(store.state.layout.ratios[1]).toBeGreaterThanOrEqual(0.05);
+          expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
           dispose();
         });
       });
@@ -606,6 +713,10 @@ describe("terminalsStore", () => {
     describe("setActivePaneIndex()", () => {
       it("sets the active pane index", () => {
         createRoot((dispose) => {
+          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
+
           store.setActivePaneIndex(1);
           expect(store.state.layout.activePaneIndex).toBe(1);
           dispose();
@@ -614,9 +725,30 @@ describe("terminalsStore", () => {
 
       it("sets back to 0", () => {
         createRoot((dispose) => {
+          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
+
           store.setActivePaneIndex(1);
           store.setActivePaneIndex(0);
           expect(store.state.layout.activePaneIndex).toBe(0);
+          dispose();
+        });
+      });
+
+      it("accepts any valid index", () => {
+        createRoot((dispose) => {
+          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          const id3 = store.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+          store.setLayout({ direction: "vertical", panes: [id1, id2, id3], ratios: [1/3, 1/3, 1/3], activePaneIndex: 0 });
+
+          store.setActivePaneIndex(2);
+          expect(store.state.layout.activePaneIndex).toBe(2);
+
+          // Clamps to valid range
+          store.setActivePaneIndex(10);
+          expect(store.state.layout.activePaneIndex).toBe(2);
           dispose();
         });
       });
@@ -631,13 +763,13 @@ describe("terminalsStore", () => {
           store.setLayout({
             direction: "vertical",
             panes: [id1, id2],
-            ratio: 0.6,
+            ratios: [0.6, 0.4],
             activePaneIndex: 1,
           });
 
           expect(store.state.layout.direction).toBe("vertical");
           expect(store.state.layout.panes).toEqual([id1, id2]);
-          expect(store.state.layout.ratio).toBe(0.6);
+          expect(store.state.layout.ratios).toEqual([0.6, 0.4]);
           expect(store.state.layout.activePaneIndex).toBe(1);
           dispose();
         });

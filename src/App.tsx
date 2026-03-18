@@ -44,7 +44,7 @@ import { errorLogStore } from "./stores/errorLog";
 import { appLogger } from "./stores/appLogger";
 import { getActionEntries } from "./actions/actionRegistry";
 import { promptLibraryStore } from "./stores/promptLibrary";
-import { terminalsStore } from "./stores/terminals";
+import { terminalsStore, MAX_SPLIT_PANES } from "./stores/terminals";
 import { repositoriesStore } from "./stores/repositories";
 import { pluginStore } from "./stores/pluginStore";
 import { mdTabsStore } from "./stores/mdTabs";
@@ -578,7 +578,16 @@ const App: Component = () => {
   };
 
   // Context menu items
-  const isSplit = () => terminalsStore.state.layout.direction !== "none" && terminalsStore.state.layout.panes.length === 2;
+  /** Disable vertical split when horizontal is active or at max panes */
+  const splitVerticalDisabled = () => {
+    const layout = terminalsStore.state.layout;
+    return (layout.direction === "horizontal") || (layout.panes.length >= MAX_SPLIT_PANES);
+  };
+  /** Disable horizontal split when vertical is active or at max panes */
+  const splitHorizontalDisabled = () => {
+    const layout = terminalsStore.state.layout;
+    return (layout.direction === "vertical") || (layout.panes.length >= MAX_SPLIT_PANES);
+  };
 
   /** Check if the active terminal has a running agent (disables agent submenu) */
   const activeTerminalBusy = (): boolean => {
@@ -597,10 +606,10 @@ const App: Component = () => {
     }] : []),
     { label: "Copy", shortcut: `${getModifierSymbol()}C`, action: terminalLifecycle.copyFromTerminal, separator: agentDetection.getAvailable().length > 0 },
     { label: "Paste", shortcut: `${getModifierSymbol()}V`, action: terminalLifecycle.pasteToTerminal },
-    { label: "Split Right", shortcut: `${getModifierSymbol()}\\`, action: () => splitPanes.handleSplit("vertical"), disabled: isSplit() },
-    { label: "Split Left", action: () => splitPanes.handleSplit("vertical"), disabled: isSplit() },
-    { label: "Split Down", shortcut: `${getModifierSymbol()}${"\u2325"}\\`, action: () => splitPanes.handleSplit("horizontal"), disabled: isSplit() },
-    { label: "Split Up", action: () => splitPanes.handleSplit("horizontal"), disabled: isSplit(), separator: true },
+    { label: "Split Right", shortcut: `${getModifierSymbol()}\\`, action: () => splitPanes.handleSplit("vertical"), disabled: splitVerticalDisabled() },
+    { label: "Split Left", action: () => splitPanes.handleSplit("vertical"), disabled: splitVerticalDisabled() },
+    { label: "Split Down", shortcut: `${getModifierSymbol()}${"\u2325"}\\`, action: () => splitPanes.handleSplit("horizontal"), disabled: splitHorizontalDisabled() },
+    { label: "Split Up", action: () => splitPanes.handleSplit("horizontal"), disabled: splitHorizontalDisabled(), separator: true },
     { label: "Clear", shortcut: `${getModifierSymbol()}L`, action: terminalLifecycle.clearTerminal },
     {
       label: "Reset Terminal",
@@ -1032,12 +1041,13 @@ const App: Component = () => {
         case "new-tab": terminalLifecycle.createNewTerminal(); break;
         case "close-tab": {
           const layout = terminalsStore.state.layout;
-          if (layout.direction !== "none" && layout.panes.length === 2) {
+          if (layout.direction !== "none" && layout.panes.length > 1) {
             const closingIndex = layout.activePaneIndex;
             const closingId = layout.panes[closingIndex];
             terminalsStore.closeSplitPane(closingIndex);
             if (closingId) terminalLifecycle.closeTerminal(closingId, true);
-            const survivorId = terminalsStore.state.layout.panes[0];
+            const newLayout = terminalsStore.state.layout;
+            const survivorId = newLayout.panes[Math.min(closingIndex, newLayout.panes.length - 1)] ?? newLayout.panes[0];
             if (survivorId) {
               terminalsStore.setActive(survivorId);
               requestAnimationFrame(() => terminalsStore.get(survivorId)?.ref?.focus());

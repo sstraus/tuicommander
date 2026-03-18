@@ -181,14 +181,3 @@ export interface OrchestratorStats {
   available_slots: number;
 }
 
-/** Split pane direction */
-export type SplitDirection = "horizontal" | "vertical";
-
-/** Split tree node for managing terminal layout */
-export interface SplitNode {
-  type: "terminal" | "split";
-  direction?: SplitDirection;
-  children?: [SplitNode, SplitNode];
-  terminalId?: string;
-  size?: number; // percentage (0-100)
-}

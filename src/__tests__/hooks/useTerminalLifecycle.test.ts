@@ -24,7 +24,7 @@ function resetStores() {
   for (const path of repositoriesStore.getPaths()) {
     repositoriesStore.remove(path);
   }
-  terminalsStore.setLayout({ direction: "none", panes: [], ratio: 0.5, activePaneIndex: 0 });
+  terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
 }
 
 /** Flush pending requestAnimationFrame callbacks (used by closeTerminal to defer focus) */
@@ -756,7 +756,7 @@ describe("useTerminalLifecycle", () => {
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
       terminalsStore.setActive(id1);
@@ -777,7 +777,7 @@ describe("useTerminalLifecycle", () => {
       terminalsStore.setLayout({
         direction: "horizontal",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 1,
       });
       terminalsStore.setActive(id2);
@@ -806,7 +806,7 @@ describe("useTerminalLifecycle", () => {
       terminalsStore.setLayout({
         direction: "vertical",
         panes: [id1, id2],
-        ratio: 0.5,
+        ratios: [0.5, 0.5],
         activePaneIndex: 0,
       });
       terminalsStore.setActive(id3);
@@ -822,7 +822,7 @@ describe("useTerminalLifecycle", () => {
       terminalsStore.setLayout({
         direction: "none",
         panes: [],
-        ratio: 0.5,
+        ratios: [],
         activePaneIndex: 0,
       });
 
@@ -838,7 +838,7 @@ describe("useTerminalLifecycle", () => {
       terminalsStore.setLayout({
         direction: "none",
         panes: [id1],
-        ratio: 0.5,
+        ratios: [],
         activePaneIndex: 0,
       });
 

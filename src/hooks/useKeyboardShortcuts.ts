@@ -98,7 +98,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "new-terminal": handlers.createNewTerminal(); return true;
     case "close-terminal": {
       const layout = terminalsStore.state.layout;
-      if (layout.direction !== "none" && layout.panes.length === 2) {
+      if (layout.direction !== "none" && layout.panes.length > 1) {
         const closingId = layout.panes[layout.activePaneIndex];
         if (closingId) handlers.closeTerminal(closingId, true);
       } else {
@@ -190,13 +190,16 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
     // Navigate between split panes (Alt+Arrow) — layout-dependent, not configurable
     if (e.altKey && !(e.metaKey || e.ctrlKey) && !e.shiftKey) {
       const layout = terminalsStore.state.layout;
-      if (layout.direction !== "none" && layout.panes.length === 2) {
-        const isNavKey =
-          (layout.direction === "vertical" && (e.key === "ArrowLeft" || e.key === "ArrowRight")) ||
-          (layout.direction === "horizontal" && (e.key === "ArrowUp" || e.key === "ArrowDown"));
-        if (isNavKey) {
+      if (layout.direction !== "none" && layout.panes.length > 1) {
+        let delta = 0;
+        if (layout.direction === "vertical" && e.key === "ArrowRight") delta = 1;
+        else if (layout.direction === "vertical" && e.key === "ArrowLeft") delta = -1;
+        else if (layout.direction === "horizontal" && e.key === "ArrowDown") delta = 1;
+        else if (layout.direction === "horizontal" && e.key === "ArrowUp") delta = -1;
+
+        if (delta !== 0) {
           e.preventDefault();
-          const newIndex: 0 | 1 = layout.activePaneIndex === 0 ? 1 : 0;
+          const newIndex = Math.max(0, Math.min(layout.activePaneIndex + delta, layout.panes.length - 1));
           terminalsStore.setActivePaneIndex(newIndex);
           const targetId = layout.panes[newIndex];
           if (targetId) {

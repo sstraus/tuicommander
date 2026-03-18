@@ -19,12 +19,18 @@ export function isShellState(value: unknown): value is ShellState {
 /** Split direction for terminal panes */
 export type SplitDirection = "none" | "vertical" | "horizontal";
 
-/** Layout state for a tab — supports single pane or a 2-pane split */
+/** Maximum number of panes in a split layout */
+export const MAX_SPLIT_PANES = 6;
+
+/** Minimum fraction a pane can occupy (prevents invisible panes during drag) */
+export const MIN_PANE_FRACTION = 0.05;
+
+/** Layout state for a tab — supports single pane or N-way split */
 export interface TabLayout {
   direction: SplitDirection;
-  panes: string[]; // 0, 1, or 2 terminal IDs
-  ratio: number; // 0.0–1.0, first pane gets this fraction (default 0.5)
-  activePaneIndex: 0 | 1;
+  panes: string[]; // 0..N terminal IDs
+  ratios: number[]; // N fractions summing to 1.0 (length === panes.length when split, [] when none)
+  activePaneIndex: number; // 0..N-1
 }
 
 /** Terminal pane data (without DOM references for serialization) */
@@ -79,7 +85,7 @@ export interface TerminalState extends TerminalData {
 export const DEFAULT_LAYOUT: TabLayout = {
   direction: "none",
   panes: [],
-  ratio: 0.5,
+  ratios: [],
   activePaneIndex: 0,
 };
 
@@ -363,12 +369,17 @@ function createTerminalsStore() {
     /** Split the current pane in a given direction, returns new terminal ID or null */
     splitPane(direction: "vertical" | "horizontal"): string | null {
       const { panes } = state.layout;
-      // Can't split if already split or no panes
-      if (state.layout.direction !== "none" || panes.length === 0) return null;
+      if (panes.length === 0) return null;
 
-      const sourceId = panes[0];
+      // Reject opposite direction when already split
+      if (state.layout.direction !== "none" && state.layout.direction !== direction) return null;
+
+      // Reject if at max panes
+      if (panes.length >= MAX_SPLIT_PANES) return null;
+
+      const sourceId = panes[state.layout.activePaneIndex] ?? panes[0];
       const source = state.terminals[sourceId];
-      const cwd = source?.cwd || null;
+      const cwd = source?.cwd ?? null;
 
       const newId = actions.add({
         sessionId: null,
@@ -378,42 +389,95 @@ function createTerminalsStore() {
         awaitingInput: null,
       });
 
+      const newPanes = [...panes, newId];
+      const n = newPanes.length;
+      const equalRatio = 1 / n;
+      const ratios = newPanes.map((_, i) =>
+        i === n - 1 ? 1 - equalRatio * (n - 1) : equalRatio
+      );
+
       setState("layout", {
         direction,
-        panes: [sourceId, newId],
-        ratio: 0.5,
-        activePaneIndex: 1,
+        panes: newPanes,
+        ratios,
+        activePaneIndex: n - 1,
       });
 
       return newId;
     },
 
-    /** Close a split pane by index, collapsing to single pane */
-    closeSplitPane(index: 0 | 1): void {
+    /** Close a split pane by index. Collapses to "none" when only 1 pane remains. */
+    closeSplitPane(index: number): void {
       if (state.layout.direction === "none") return;
-      const { panes } = state.layout;
-      if (panes.length < 2) return;
+      const { panes, ratios } = state.layout;
+      if (index < 0 || index >= panes.length) return;
 
-      const survivorIndex = index === 0 ? 1 : 0;
-      const survivor = panes[survivorIndex];
+      const newPanes = panes.filter((_, i) => i !== index);
+
+      if (newPanes.length <= 1) {
+        // Collapse to single pane
+        setState("layout", {
+          direction: "none",
+          panes: newPanes,
+          ratios: [],
+          activePaneIndex: 0,
+        });
+        return;
+      }
+
+      // Redistribute ratios proportionally among remaining panes
+      const remainingRatios = ratios.filter((_, i) => i !== index);
+      const remainingSum = remainingRatios.reduce((a, b) => a + b, 0);
+      const newRatios = remainingSum > 0
+        ? remainingRatios.map(r => r / remainingSum)
+        : remainingRatios.map(() => 1 / newPanes.length);
+      // Normalize last element to guarantee sum === 1.0
+      const sum = newRatios.reduce((a, b) => a + b, 0);
+      if (sum > 0 && Math.abs(sum - 1) > Number.EPSILON) {
+        newRatios[newRatios.length - 1] += 1 - sum;
+      }
+
+      // Adjust activePaneIndex based on which pane was removed
+      let newActive = state.layout.activePaneIndex;
+      if (index < newActive) {
+        newActive -= 1;  // pane before active was removed, shift left
+      } else if (index === newActive) {
+        newActive = Math.min(newActive, newPanes.length - 1);  // active pane removed, clamp
+      }
+      // If index > newActive, no adjustment needed
 
       setState("layout", {
-        direction: "none",
-        panes: [survivor],
-        ratio: 0.5,
-        activePaneIndex: 0,
+        direction: state.layout.direction,
+        panes: newPanes,
+        ratios: newRatios,
+        activePaneIndex: newActive,
       });
     },
 
-    /** Set the split ratio (clamped to 0.2–0.8) */
-    setSplitRatio(ratio: number): void {
-      const clamped = Math.min(0.8, Math.max(0.2, ratio));
-      setState("layout", "ratio", clamped);
+    /** Adjust the boundary between pane[handleIndex] and pane[handleIndex+1].
+     *  newBoundary is the cumulative fraction at the handle position (0..1). */
+    setHandleRatio(handleIndex: number, newBoundary: number): void {
+      const { ratios } = state.layout;
+      if (handleIndex < 0 || handleIndex >= ratios.length - 1) return;
+
+      // Compute cumulative sum up to handleIndex (the left edge of pane[handleIndex])
+      let leftEdge = 0;
+      for (let i = 0; i < handleIndex; i++) leftEdge += ratios[i];
+      const rightEdge = leftEdge + ratios[handleIndex] + ratios[handleIndex + 1];
+
+      // Clamp boundary so each pane gets at least MIN_PANE_FRACTION
+      const clampedBoundary = Math.max(leftEdge + MIN_PANE_FRACTION, Math.min(rightEdge - MIN_PANE_FRACTION, newBoundary));
+
+      const newRatios = [...ratios];
+      newRatios[handleIndex] = clampedBoundary - leftEdge;
+      newRatios[handleIndex + 1] = rightEdge - clampedBoundary;
+      setState("layout", "ratios", newRatios);
     },
 
-    /** Set the active pane index (0 or 1) */
-    setActivePaneIndex(index: 0 | 1): void {
-      setState("layout", "activePaneIndex", index);
+    /** Set the active pane index (clamped to valid range) */
+    setActivePaneIndex(index: number): void {
+      const maxIndex = Math.max(0, state.layout.panes.length - 1);
+      setState("layout", "activePaneIndex", Math.max(0, Math.min(index, maxIndex)));
     },
 
     /** Mark a tab as detached to a floating window */

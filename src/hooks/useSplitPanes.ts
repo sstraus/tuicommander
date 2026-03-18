@@ -13,7 +13,7 @@ export function useSplitPanes() {
       terminalsStore.setLayout({
         direction: "none",
         panes: [activeId],
-        ratio: 0.5,
+        ratios: [],
         activePaneIndex: 0,
       });
     }
@@ -36,7 +36,7 @@ export function useSplitPanes() {
     terminalsStore.setLayout({
       direction: "none",
       panes: terminalsStore.state.layout.panes.slice(0, 1),
-      ratio: 0.5,
+      ratios: [],
       activePaneIndex: 0,
     });
   };

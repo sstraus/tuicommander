@@ -6,7 +6,7 @@ function resetStore() {
   for (const id of terminalsStore.getIds()) {
     terminalsStore.remove(id);
   }
-  terminalsStore.setLayout({ direction: "none", panes: [], ratio: 0.5, activePaneIndex: 0 });
+  terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
 }
 
 describe("terminals store — detach/reattach", () => {
