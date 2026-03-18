@@ -35,29 +35,33 @@ export function createLongPressHandler(
   let dictationStarted = false;
   const mods: ModifierState = { cmd: false, shift: false, alt: false, ctrl: false };
 
-  const handleEvent = (event: KeyEvent) => {
+  /**
+   * Feed a key event into the state machine.
+   * Returns true if the event was consumed (caller should preventDefault).
+   */
+  const handleEvent = (event: KeyEvent): boolean => {
     const key = event.key;
-    if (!key) return;
+    if (!key) return false;
 
     const isPress = event.eventType === "KeyPress";
     const isRelease = event.eventType === "KeyRelease";
-    if (!isPress && !isRelease) return;
+    if (!isPress && !isRelease) return false;
 
     // Track modifier state
     if (isPluginModifierKey(key)) {
       updateModifierState(mods, key, isPress);
-      return;
+      return false;
     }
 
     // Only act on the configured hotkey's primary key
-    if (key !== parsed.key) return;
+    if (key !== parsed.key) return false;
 
     if (isPress) {
-      // Ignore key repeat (KeyPress without prior KeyRelease)
-      if (hotkeyDown) return;
+      // Suppress key repeat while hotkey is held (waiting for timer or dictating)
+      if (hotkeyDown) return true;
 
       // Check modifier requirements
-      if (!modifiersMatch(parsed, mods)) return;
+      if (!modifiersMatch(parsed, mods)) return false;
 
       hotkeyDown = true;
       dictationStarted = false;
@@ -68,6 +72,7 @@ export function createLongPressHandler(
         dictationStarted = true;
         callbacks.onStart();
       }, longPressMs);
+      return true;
     } else if (isRelease && hotkeyDown) {
       hotkeyDown = false;
 
@@ -80,7 +85,9 @@ export function createLongPressHandler(
         dictationStarted = false;
         callbacks.onStop();
       }
+      return true;
     }
+    return false;
   };
 
   const cleanup = () => {

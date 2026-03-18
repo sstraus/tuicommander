@@ -1127,9 +1127,15 @@ const App: Component = () => {
     });
     if (!handler) return;
 
-    // DOM event.code uses the same naming as the plugin: KeyD, Space, MetaLeft, etc.
+    // DOM event.code uses the same naming: KeyD, Space, MetaLeft, etc.
+    // For combos with modifiers, block all events. For single keys (e.g. Space),
+    // let the first keydown through and only suppress repeats.
+    const hasModifiers = hotkey.includes("+");
     const onKeyDown = (e: KeyboardEvent) => {
-      handler.handleEvent({ eventType: "KeyPress", key: e.code });
+      const consumed = handler.handleEvent({ eventType: "KeyPress", key: e.code });
+      if (consumed && (hasModifiers || e.repeat)) {
+        e.preventDefault();
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       handler.handleEvent({ eventType: "KeyRelease", key: e.code });

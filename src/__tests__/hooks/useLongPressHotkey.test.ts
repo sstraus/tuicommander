@@ -219,6 +219,28 @@ describe("createLongPressHandler", () => {
     });
   });
 
+  describe("consumed return value", () => {
+    it("returns true for hotkey press and repeat, false for unrelated keys", () => {
+      const h = makeHandler("F5");
+      expect(h.handleEvent(press("KeyA"))).toBe(false);
+      expect(h.handleEvent(press("F5"))).toBe(true);
+      // Repeat while held
+      expect(h.handleEvent(press("F5"))).toBe(true);
+      expect(h.handleEvent(release("F5"))).toBe(true);
+    });
+
+    it("returns false when modifier requirements not met", () => {
+      const h = makeHandler("Cmd+D");
+      // Press D without Meta — not consumed
+      expect(h.handleEvent(press("KeyD"))).toBe(false);
+    });
+
+    it("returns false for modifier key tracking", () => {
+      const h = makeHandler("Cmd+D");
+      expect(h.handleEvent(press("MetaLeft"))).toBe(false);
+    });
+  });
+
   describe("events with missing key", () => {
     it("ignores events without key field", () => {
       const h = makeHandler("F5");
