@@ -134,7 +134,9 @@ bump:
 	sed -i '' 's/^version = "'"$$CUR"'"/version = "$(V)"/' src-tauri/Cargo.toml; \
 	sed -i '' 's/"version": "'"$$CUR"'"/"version": "$(V)"/' src-tauri/tauri.conf.json; \
 	sed -i '' 's/"version": "'"$$CUR"'"/"version": "$(V)"/' package.json; \
+	sed -i '' '0,/^version = /{s/^version = ".*"/version = "$(V)"/;}' src-tauri/crates/tuic-bridge/Cargo.toml; \
 	echo "  src-tauri/Cargo.toml  → $(V)"; \
+	echo "  src-tauri/crates/tuic-bridge/Cargo.toml → $(V)"; \
 	echo "  src-tauri/tauri.conf.json → $(V)"; \
 	echo "  package.json          → $(V)"; \
 	sed -i '' 's/^\*\*Version:\*\* '"$$CUR"'/**Version:** $(V)/' SPEC.md; \

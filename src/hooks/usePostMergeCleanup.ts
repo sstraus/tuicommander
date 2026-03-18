@@ -43,7 +43,7 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
         case "switch": {
           await invoke("switch_branch", {
             repoPath,
-            branch: baseBranch,
+            branchName: baseBranch,
             force: false,
             stash: true,
           });
