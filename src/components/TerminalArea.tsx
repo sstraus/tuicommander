@@ -120,53 +120,56 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
           }}
         </For>
 
-        {/* Resize handle between split panes */}
-        <Show when={terminalsStore.state.layout.direction !== "none"}>
-          <div
-            class="split-resize-handle"
-            classList={{
-              vertical: terminalsStore.state.layout.direction === "vertical",
-              horizontal: terminalsStore.state.layout.direction === "horizontal",
-            }}
-            style={{ order: 1 }}
-            onMouseDown={(startEvent) => {
-              startEvent.preventDefault();
-              const container = document.getElementById("terminal-panes");
-              if (!container) return;
+        {/* Resize handles between split panes — one handle per adjacent pair */}
+        <For each={Array.from({ length: Math.max(0, terminalsStore.state.layout.panes.length - 1) }, (_, i) => i)}>
+          {(handleIndex) => (
+            <div
+              class="split-resize-handle"
+              classList={{
+                vertical: terminalsStore.state.layout.direction === "vertical",
+                horizontal: terminalsStore.state.layout.direction === "horizontal",
+              }}
+              style={{ order: handleIndex * 2 + 1 }}
+              onMouseDown={(startEvent) => {
+                startEvent.preventDefault();
+                const container = document.getElementById("terminal-panes");
+                if (!container) return;
 
-              const isVertical = terminalsStore.state.layout.direction === "vertical";
-              const rect = container.getBoundingClientRect();
+                const isVertical = terminalsStore.state.layout.direction === "vertical";
+                const rect = container.getBoundingClientRect();
+                const capturedIndex = handleIndex;
 
-              let rafPending = false;
-              const onMouseMove = (e: MouseEvent) => {
-                if (rafPending) return;
-                rafPending = true;
-                requestAnimationFrame(() => {
-                  rafPending = false;
-                  const ratio = isVertical
-                    ? (e.clientX - rect.left) / rect.width
-                    : (e.clientY - rect.top) / rect.height;
-                  terminalsStore.setHandleRatio(0, ratio);
-                });
-              };
+                let rafPending = false;
+                const onMouseMove = (e: MouseEvent) => {
+                  if (rafPending) return;
+                  rafPending = true;
+                  requestAnimationFrame(() => {
+                    rafPending = false;
+                    const fraction = isVertical
+                      ? (e.clientX - rect.left) / rect.width
+                      : (e.clientY - rect.top) / rect.height;
+                    terminalsStore.setHandleRatio(capturedIndex, fraction);
+                  });
+                };
 
-              const onMouseUp = () => {
-                document.removeEventListener("mousemove", onMouseMove);
-                document.removeEventListener("mouseup", onMouseUp);
-                document.body.style.cursor = "";
-                document.body.style.userSelect = "";
-                for (const paneId of terminalsStore.state.layout.panes) {
-                  terminalsStore.get(paneId)?.ref?.fit();
-                }
-              };
+                const onMouseUp = () => {
+                  document.removeEventListener("mousemove", onMouseMove);
+                  document.removeEventListener("mouseup", onMouseUp);
+                  document.body.style.cursor = "";
+                  document.body.style.userSelect = "";
+                  for (const paneId of terminalsStore.state.layout.panes) {
+                    terminalsStore.get(paneId)?.ref?.fit();
+                  }
+                };
 
-              document.body.style.cursor = isVertical ? "col-resize" : "row-resize";
-              document.body.style.userSelect = "none";
-              document.addEventListener("mousemove", onMouseMove);
-              document.addEventListener("mouseup", onMouseUp);
-            }}
-          />
-        </Show>
+                document.body.style.cursor = isVertical ? "col-resize" : "row-resize";
+                document.body.style.userSelect = "none";
+                document.addEventListener("mousemove", onMouseMove);
+                document.addEventListener("mouseup", onMouseUp);
+              }}
+            />
+          )}
+        </For>
 
         {/* Diff tabs */}
         <For each={diffTabsStore.getIds()}>
