@@ -407,10 +407,11 @@ export const TabBar: Component<TabBarProps> = (props) => {
             e.preventDefault();
             e.stopPropagation();
             if (isFirstSplitPane()) {
-              // Close non-primary panes first (in reverse order)
-              const panes = layout().panes;
-              for (let i = panes.length - 1; i > 0; i--) {
-                props.onTabClose(panes[i]);
+              // Snapshot pane IDs before any mutation — layout() is reactive
+              // and subsequent onTabClose calls may see mutated state
+              const paneIds = [...layout().panes];
+              for (let i = paneIds.length - 1; i > 0; i--) {
+                props.onTabClose(paneIds[i]);
               }
             }
             props.onTabClose(id);
