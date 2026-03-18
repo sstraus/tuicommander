@@ -136,7 +136,7 @@ export const SearchBar: Component<SearchBarProps> = (props) => {
           ref={inputRef}
           class={s.input}
           type="text"
-          placeholder="Find\u2026"
+          placeholder="Find…"
           value={searchTerm()}
           onInput={(e) => handleInput(e.currentTarget.value)}
           onKeyDown={handleKeyDown}
