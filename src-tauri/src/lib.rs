@@ -776,6 +776,7 @@ pub fn run() {
             pty::can_spawn_session,
             pty::list_active_sessions,
             pty::update_session_cwd,
+            pty::set_session_name,
             pty::get_session_foreground_process,
             load_config,
             save_config,

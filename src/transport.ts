@@ -132,6 +132,13 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
       body: { data: args.data },
     }),
   },
+  set_session_name: {
+    map: (args) => ({
+      method: "PUT",
+      path: `/sessions/${args.sessionId}/name`,
+      body: { name: args.name },
+    }),
+  },
   resize_pty: {
     map: (args) => ({
       method: "POST",

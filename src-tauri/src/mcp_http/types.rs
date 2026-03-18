@@ -13,6 +13,8 @@ pub(super) struct SessionInfo {
     pub cwd: Option<String>,
     pub worktree_path: Option<String>,
     pub worktree_branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     // Session state (from accumulator) — present when broadcast channel is active
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<crate::state::SessionState>,
@@ -29,6 +31,11 @@ pub(super) struct CreateSessionRequest {
 #[derive(Deserialize)]
 pub(super) struct WriteRequest {
     pub data: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct SetNameRequest {
+    pub name: Option<String>,
 }
 
 #[derive(Deserialize)]

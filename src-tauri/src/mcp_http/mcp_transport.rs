@@ -338,7 +338,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             };
             let paused = Arc::new(AtomicBool::new(false));
             state.sessions.insert(session_id.clone(), Mutex::new(PtySession {
-                writer, master: pair.master, _child: child, paused: paused.clone(), worktree: None, cwd: cwd.clone(),
+                writer, master: pair.master, _child: child, paused: paused.clone(), worktree: None, cwd: cwd.clone(), display_name: None,
             }));
             state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
             state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
@@ -677,7 +677,7 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
             let paused = Arc::new(AtomicBool::new(false));
             state.sessions.insert(session_id.clone(), Mutex::new(PtySession {
                 writer, master: pair.master, _child: child, paused: paused.clone(), worktree: None,
-                cwd: args["cwd"].as_str().map(|s| s.to_string()),
+                cwd: args["cwd"].as_str().map(|s| s.to_string()), display_name: None,
             }));
             state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
             state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);

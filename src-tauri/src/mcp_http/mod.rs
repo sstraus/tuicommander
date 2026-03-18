@@ -18,7 +18,7 @@ use crate::AppState;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{header, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{extract::{Path as AxumPath, State}, Json, Router};
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
@@ -212,6 +212,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Session lifecycle
         .route("/sessions", get(session::list_sessions).post(session::create_session))
         .route("/sessions/{id}/write", post(session::write_to_session))
+        .route("/sessions/{id}/name", put(session::set_session_name))
         .route("/sessions/{id}/resize", post(session::resize_session))
         .route("/sessions/{id}/output", get(session::get_output))
         .route("/sessions/{id}/pause", post(session::pause_session))

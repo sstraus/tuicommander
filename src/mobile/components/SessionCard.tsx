@@ -57,7 +57,7 @@ export function SessionCard(props: SessionCardProps) {
       <div class={styles.body}>
         <div class={styles.topRow}>
           <span class={styles.name}>
-            {agentType() ?? "Terminal"}
+            {props.session.display_name || agentType() || "Terminal"}
           </span>
           <StatusBadge status={status()} />
         </div>

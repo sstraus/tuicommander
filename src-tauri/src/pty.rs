@@ -1137,6 +1137,7 @@ pub(crate) async fn create_pty(
             paused: paused.clone(),
             worktree: None,
             cwd: config.cwd,
+            display_name: None,
         }),
     );
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
@@ -1246,6 +1247,7 @@ pub(crate) async fn create_pty_with_worktree(
             paused: paused.clone(),
             worktree: Some(worktree),
             cwd: worktree_cwd,
+            display_name: None,
         }),
     );
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
@@ -1791,6 +1793,21 @@ pub(crate) fn update_session_cwd(
         .get(&session_id)
         .ok_or_else(|| format!("Session not found: {session_id}"))?;
     entry.lock().cwd = Some(cwd);
+    Ok(())
+}
+
+/// Set the display name of a PTY session (syncs tab title to backend for PWA visibility).
+#[tauri::command]
+pub(crate) fn set_session_name(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    name: Option<String>,
+) -> Result<(), String> {
+    let entry = state
+        .sessions
+        .get(&session_id)
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    entry.lock().display_name = name;
     Ok(())
 }
 

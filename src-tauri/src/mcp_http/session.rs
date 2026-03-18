@@ -48,6 +48,7 @@ pub(super) async fn list_sessions(State(state): State<Arc<AppState>>) -> Json<Ve
                     .worktree
                     .as_ref()
                     .and_then(|w| w.branch.clone()),
+                display_name: session.display_name.clone(),
                 state: session_state,
             }
         })
@@ -93,6 +94,19 @@ pub(super) async fn write_to_session(
         .or_insert_with(|| std::sync::atomic::AtomicBool::new(false))
         .store(in_slash, std::sync::atomic::Ordering::Relaxed);
 
+    (StatusCode::OK, Json(serde_json::json!({"ok": true})))
+}
+
+pub(super) async fn set_session_name(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    Json(body): Json<SetNameRequest>,
+) -> impl IntoResponse {
+    let entry = match state.sessions.get(&session_id) {
+        Some(e) => e,
+        None => return session_not_found(),
+    };
+    entry.lock().display_name = body.name;
     (StatusCode::OK, Json(serde_json::json!({"ok": true})))
 }
 
@@ -307,6 +321,7 @@ fn spawn_pty_session(
             paused: paused.clone(),
             worktree,
             cwd: cwd.clone(),
+            display_name: None,
         }),
     );
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);

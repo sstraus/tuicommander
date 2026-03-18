@@ -2,6 +2,7 @@ import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type { AgentType } from "../agents";
 import { appLogger } from "./appLogger";
+import { rpc } from "../transport";
 
 /** Type of input being awaited */
 export type AwaitingInputType = "question" | "error" | null;
@@ -231,6 +232,13 @@ function createTerminalsStore() {
         }
         setState("terminals", id, data);
       });
+      // Sync display name to backend so PWA session list can show it
+      if ("name" in data) {
+        const sessionId = state.terminals[id]?.sessionId;
+        if (sessionId) {
+          rpc("set_session_name", { sessionId, name: data.name ?? null }).catch(() => {});
+        }
+      }
     },
 
     /** Update session ID */

@@ -642,6 +642,8 @@ pub struct PtySession {
     pub(crate) paused: Arc<AtomicBool>,
     pub worktree: Option<WorktreeInfo>,
     pub cwd: Option<String>,
+    /// Display name set by the desktop UI (tab rename, agent launch, intent title).
+    pub display_name: Option<String>,
 }
 
 /// Configuration for agent orchestration
