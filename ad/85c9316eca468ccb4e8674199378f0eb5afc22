@@ -1,0 +1,23 @@
+CHANGELOG.md
+  ba1c7165631be7b1 14-16,18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "ad85c9316eca468ccb4e8674199378f0eb5afc22",
+  "prompts": {
+    "ba1c7165631be7b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "769f159b-c007-45d6-9acd-0609c010e621",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 4,
+      "total_deletions": 0,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    }
+  }
+}
