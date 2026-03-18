@@ -1,0 +1,67 @@
+src/components/WorktreeManager/WorktreeManager.module.css
+  91808622f08cc8e1 78,187,236,246,262,271,300,362,388
+src/components/shared/KeyComboCapture.module.css
+  91808622f08cc8e1 13,30
+src/components/Toolbar/Toolbar.module.css
+  91808622f08cc8e1 435
+src/components/FileBrowserPanel/FileBrowserPanel.module.css
+  91808622f08cc8e1 46,119,168,193,269,330
+src/components/GitPanel/ChangesTab.module.css
+  91808622f08cc8e1 147,258,285,337
+src/components/GitPanel/GitPanel.module.css
+  91808622f08cc8e1 108
+src/components/MarkdownPanel/MarkdownPanel.module.css
+  91808622f08cc8e1 53
+src/components/BranchSwitcher/BranchSwitcher.module.css
+  91808622f08cc8e1 82,136
+src/components/GitPanel/HistoryTab.module.css
+  91808622f08cc8e1 18
+src/components/TabBar/TabBar.module.css
+  91808622f08cc8e1 431,452
+src/components/CreateWorktreeDialog/CreateWorktreeDialog.module.css
+  91808622f08cc8e1 61,103,137,174
+src/components/Sidebar/Sidebar.module.css
+  91808622f08cc8e1 432,457,474,592
+src/components/shared/panel.module.css
+  91808622f08cc8e1 145,176,185
+src/components/CommandPalette/CommandPalette.module.css
+  91808622f08cc8e1 99,126
+src/components/GitPanel/LogTab.module.css
+  91808622f08cc8e1 130
+src/components/shared/editor-header.module.css
+  91808622f08cc8e1 14
+src/components/TipOfTheDay/TipOfTheDay.module.css
+  91808622f08cc8e1 63
+src/components/SettingsPanel/Settings.module.css
+  91808622f08cc8e1 175,327
+src/components/PrDetailPopover/PrDetailPopover.module.css
+  91808622f08cc8e1 109,255,261
+src/components/PlanPanel/PlanPanel.module.css
+  91808622f08cc8e1 83
+src/components/GitPanel/SyncRow.module.css
+  91808622f08cc8e1 18,118
+src/components/ClaudeUsageDashboard/ClaudeUsageDashboard.module.css
+  91808622f08cc8e1 149
+src/components/shared/BranchCombobox/BranchCombobox.module.css
+  91808622f08cc8e1 26,79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "d14c4fd31140dfa048cd3ce9508508eb583e2071",
+  "prompts": {
+    "91808622f08cc8e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5e67803-a100-4fc7-a616-13eff8f61271",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 121,
+      "total_deletions": 62,
+      "accepted_lines": 118,
+      "overriden_lines": 0
+    }
+  }
+}
