@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Submodule entries in working tree status** — Submodules no longer appear as regular files in the Changes tab
 - **SearchBar placeholder encoding** — Fixed literal `\u2026` showing instead of ellipsis character in "Find…" placeholder
 - **SearchBar counter text wrapping** — "No results" text no longer wraps to a second line
+- **PR badge click on non-active repo** — Clicking a PR status badge (e.g. "Conflicts") on a branch belonging to a non-active repo now correctly opens the PR detail popover instead of silently doing nothing
 
 ## [0.9.1] - 2026-03-16
 
