@@ -2334,7 +2334,7 @@ mod tests {
         let status = result.unwrap();
         // We're in a git repo, so branch should be set (unless detached)
         // At minimum, the parse should not panic
-        assert!(status.ahead == 0 || status.ahead > 0); // trivially true, but confirms it ran
+        let _ = status.ahead; // confirms the field was populated without panic
     }
 
     #[tokio::test]
@@ -2559,7 +2559,7 @@ mod tests {
 
     #[test]
     fn parse_commit_log_line_basic() {
-        let line = "abc123\0def456 ghi789\0HEAD -> main, tag: v1.0\0Alice\02024-01-15T10:30:00+01:00\0Initial commit";
+        let line = "abc123\x00def456 ghi789\x00HEAD -> main, tag: v1.0\x00Alice\x002024-01-15T10:30:00+01:00\x00Initial commit";
         let entry = parse_commit_log_line(line).expect("should parse");
         assert_eq!(entry.hash, "abc123");
         assert_eq!(entry.parents, vec!["def456", "ghi789"]);
@@ -2571,7 +2571,7 @@ mod tests {
 
     #[test]
     fn parse_commit_log_line_no_parents_no_refs() {
-        let line = "abc123\0\0\0Bob\02024-01-15T10:30:00Z\0Root commit";
+        let line = "abc123\x00\x00\x00Bob\x002024-01-15T10:30:00Z\x00Root commit";
         let entry = parse_commit_log_line(line).expect("should parse");
         assert!(entry.parents.is_empty());
         assert!(entry.refs.is_empty());

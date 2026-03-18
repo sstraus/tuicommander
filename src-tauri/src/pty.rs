@@ -2913,7 +2913,7 @@ mod tests {
         parser.process(b"\x1b[1E");  // CNL: go down 1 line, col 0
         parser.process(b"line1");
         let screen = parser.screen();
-        let row0: String = screen.rows(0, 80).nth(0).unwrap().trim_end().to_string();
+        let row0: String = screen.rows(0, 80).next().unwrap().trim_end().to_string();
         let row1: String = screen.rows(0, 80).nth(1).unwrap().trim_end().to_string();
         assert_eq!(row0, "line0", "row0 should be unchanged; got {:?}", row0);
         assert_eq!(row1, "line1", "CNL should move cursor down; got {:?}", row1);
@@ -2982,7 +2982,7 @@ mod tests {
         // \x1b[1\x1b[2K — the first CSI is aborted by the second ESC
         parser.process(b"\x1b[1\x1b[2KHello");
         let screen = parser.screen();
-        let row: String = screen.rows(0, 80).nth(0).unwrap().trim_end().to_string();
+        let row: String = screen.rows(0, 80).next().unwrap().trim_end().to_string();
         eprintln!("aborted CSI row: {:?}", row);
         assert!(!row.starts_with('1'),
             "aborted CSI parameter '1' should not appear in cell text: {:?}", row);
@@ -2996,7 +2996,7 @@ mod tests {
         // \x1b[?1234z — fictional private sequence with unknown final byte 'z'
         parser.process(b"\x1b[?1234zVisible text");
         let screen = parser.screen();
-        let row: String = screen.rows(0, 80).nth(0).unwrap().trim_end().to_string();
+        let row: String = screen.rows(0, 80).next().unwrap().trim_end().to_string();
         eprintln!("unknown private CSI row: {:?}", row);
         assert_eq!(row, "Visible text",
             "unknown private CSI should not leak; got: {:?}", row);
@@ -3131,9 +3131,10 @@ mod tests {
         let sid = "test-session";
         state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
 
-        let mut ss = crate::state::SessionState::default();
-        ss.active_sub_tasks = 2;
-        state.session_states.insert(sid.to_string(), ss);
+        state.session_states.insert(sid.to_string(), crate::state::SessionState {
+            active_sub_tasks: 2,
+            ..Default::default()
+        });
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -3233,10 +3234,10 @@ mod tests {
         // Collect events from the second call
         let mut status_count = 0;
         while let Ok(evt) = rx.try_recv() {
-            if let crate::state::AppEvent::PtyParsed { parsed, .. } = evt {
-                if parsed.get("type").and_then(|t| t.as_str()) == Some("StatusLine") {
-                    status_count += 1;
-                }
+            if let crate::state::AppEvent::PtyParsed { parsed, .. } = evt
+                && parsed.get("type").and_then(|t| t.as_str()) == Some("StatusLine")
+            {
+                status_count += 1;
             }
         }
         assert_eq!(status_count, 0, "duplicate StatusLine with same task_name should be deduped");

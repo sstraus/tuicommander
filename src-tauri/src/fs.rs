@@ -1253,6 +1253,8 @@ mod tests {
     #[test]
     fn test_search_content_whole_word() {
         let dir = setup_test_repo();
+
+
         // Create a file with both "test" and "testing"
         fs::write(dir.path().join("words.txt"), "this is a test\nbut not testing\n").unwrap();
 
