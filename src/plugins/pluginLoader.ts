@@ -156,7 +156,7 @@ export async function setPluginEnabled(id: string, enabled: boolean): Promise<vo
   if (enabled) {
     if (builtIn) {
       // Re-register built-in plugin
-      await pluginRegistry.register(builtIn);
+      pluginRegistry.register(builtIn);
       pluginStore.updatePlugin(id, { loaded: true, error: null });
     } else {
       // Load external plugin from disk
@@ -180,6 +180,7 @@ export async function setPluginEnabled(id: string, enabled: boolean): Promise<vo
     } else if (loadedPluginIds.has(id)) {
       pluginRegistry.unregister(id);
       loadedPluginIds.delete(id);
+      invoke("unregister_loaded_plugin", { pluginId: id }).catch(() => {});
     }
   }
 }
@@ -224,8 +225,20 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
   }
 
   const plugin = (mod as { default: TuiPlugin }).default;
-  await pluginRegistry.register(plugin, manifest.capabilities, manifest.allowedUrls, manifest.agentTypes);
+  pluginRegistry.register(plugin, manifest.capabilities, manifest.allowedUrls, manifest.agentTypes);
   loadedPluginIds.add(manifest.id);
+
+  // Register capabilities server-side so Rust commands can enforce them
+  try {
+    await invoke("register_loaded_plugin", {
+      pluginId: manifest.id,
+      capabilities: manifest.capabilities,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`Failed to register capabilities server-side: ${msg}`);
+  }
+
   logger.info(`Loaded v${manifest.version}`);
   appLogger.info("plugin", `Loaded plugin "${manifest.id}" v${manifest.version}`);
 }
@@ -249,6 +262,7 @@ async function handlePluginChanged(event: { payload: string[] }): Promise<void> 
     if (loadedPluginIds.has(pluginId)) {
       pluginRegistry.unregister(pluginId);
       loadedPluginIds.delete(pluginId);
+      invoke("unregister_loaded_plugin", { pluginId }).catch(() => {});
     }
 
     // Re-discover this specific plugin's manifest
