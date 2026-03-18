@@ -199,14 +199,13 @@
   overflow: hidden;
 }
 
-/* Active pane indicator — subtle accent border */
+/* Active pane indicator — inset shadow avoids layout shift and bleed */
 .terminal-pane.split-pane-active {
-  border-left: 2px solid var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 #terminal-panes.split-horizontal .terminal-pane.split-pane-active {
-  border-left: none;
-  border-top: 2px solid var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
 }
 
 /* Panel resize handle (right-side panels) */
