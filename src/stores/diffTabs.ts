@@ -22,6 +22,7 @@ export interface DiffTabData extends BaseTab {
 
 function createDiffTabsStore() {
   const base = createTabManager<DiffTabData>();
+  const handles = new Map<string, unknown>();
 
   return {
     state: base.state,
@@ -48,6 +49,21 @@ function createDiffTabsStore() {
       const id = base._nextId("diff");
       const fileName = filePath.split("/").pop() || filePath;
       return base._addTab({ id, repoPath, filePath, fileName, status, scope, untracked, branchKey: currentBranchKey() });
+    },
+
+    /** Register an imperative handle for a tab (e.g. openSearch) */
+    setHandle(tabId: string, handle: unknown): void {
+      handles.set(tabId, handle);
+    },
+
+    /** Remove the imperative handle when a tab component unmounts */
+    clearHandle(tabId: string): void {
+      handles.delete(tabId);
+    },
+
+    /** Retrieve the imperative handle for a tab */
+    getHandle<T = unknown>(tabId: string): T | undefined {
+      return handles.get(tabId) as T | undefined;
     },
 
     /** Clear all diff tabs for a repository */
