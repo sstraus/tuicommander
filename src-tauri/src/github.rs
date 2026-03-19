@@ -981,11 +981,14 @@ pub(crate) async fn get_all_pr_statuses_impl(
                     && let Some((owner, name)) = alias_repo_names.get(alias.as_str())
                 {
                     let cooldown_key = format!("{owner}/{name}");
+                    let was_known = state.git_cache.github_repo_cooldown.contains_key(&cooldown_key);
                     let expiry = Instant::now() + std::time::Duration::from_secs(3600);
                     state.git_cache.github_repo_cooldown.insert(cooldown_key, expiry);
-                    let msg = format!("Repository {owner}/{name} not found on GitHub — cooldown 1h");
-                    let mut buf = state.log_buffer.lock();
-                    buf.push("warn".into(), "github".into(), msg, None);
+                    if !was_known {
+                        let msg = format!("Repository {owner}/{name} not found on GitHub — cooldown 1h");
+                        let mut buf = state.log_buffer.lock();
+                        buf.push("warn".into(), "github".into(), msg, None);
+                    }
                 }
                 continue;
             }
