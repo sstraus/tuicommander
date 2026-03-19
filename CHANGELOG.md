@@ -6,12 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-03-18
+
 ### Added
 - **Dictation instant mode** — Long-press threshold slider now starts at 0 (was 200ms). When set to 0, any keypress activates dictation immediately without short-press pass-through. UI shows "Instant" label
 
 ### Fixed
+- **Terminal scroll jump on long sessions** — After long idle periods, the terminal viewport would jump to line 0 on any resize event. Root cause: `trackedScrollState.baseY` drifted from reality because xterm's `onScroll` doesn't fire when `baseY` grows while the user is scrolled up. Now updated on every write callback
+- **Worktree orphan cleanup** — When a linked worktree was deleted externally, its terminals remained live in the store, preventing the stale branch from being removed from the sidebar. Now closes orphaned terminals automatically
+- **MCP server instructions for agent teams** — Restored server identity ("terminal session orchestrator") and explicit `session action=create` / `agent action=spawn` workflow steps that were removed in the v0.9.2 slim-down. Added Claude Code-specific hint for teammate PTY creation (conditional on clientInfo)
 - **Post-merge cleanup branch switch** — `switch_branch` invoke used wrong parameter name (`branch` instead of `branchName`), causing the post-merge cleanup step to fail silently
-- **Tauri invoke parameter mismatches** — Fixed 4 broken `invoke()` calls: `close_pty` used `id` instead of `sessionId` (RepoSection, PrDetailPopover), `write_pty` used `id` instead of `sessionId` (pluginRegistry), `write_plugin_data` used `plugin_id` instead of `pluginId`
+- **Tauri invoke parameter mismatches** — Fixed 5 broken `invoke()` calls: `close_pty` used `id` instead of `sessionId` (RepoSection, PrDetailPopover), `write_pty` used `id` instead of `sessionId` (pluginRegistry), `write_plugin_data` and `read_plugin_data` used `plugin_id` instead of `pluginId`
+- **Close PTY error resilience** — Terminal close loops in worktree cleanup, PrDetailPopover, and RepoSection now catch errors from already-dead PTY sessions instead of aborting the entire cleanup
 - **Bridge version not bumped** — `make bump` now includes `src-tauri/crates/tuic-bridge/Cargo.toml`
 
 ## [0.9.2] - 2026-03-18
