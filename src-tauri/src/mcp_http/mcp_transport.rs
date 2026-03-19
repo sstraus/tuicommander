@@ -44,6 +44,8 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     out.push_str("- `agent action=spawn` → launch AI agent in new PTY\n");
     out.push_str("- `github action=prs` → all open PRs with CI rollup (single GraphQL batch)\n");
     out.push_str("- `worktree action=create` → create isolated worktree, optional `spawn_session`\n");
+    out.push_str("- `knowledge action=setup` → auto-provision mdkb knowledge base for all repos\n");
+    out.push_str("- `knowledge action=search` → cross-repo hybrid search (docs, code, symbols)\n");
     out.push_str("- **Git operations:** use native `git` CLI — no MCP wrapper needed\n\n");
     // Claude Code-specific: guide teammate spawning through TUICommander PTY.
     // The bridge binary (`tuic-bridge`) is exclusively used by Claude Code.
@@ -1171,6 +1173,7 @@ async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> se
             let mut created = Vec::new();
             let mut skipped = Vec::new();
             let mut errors = Vec::new();
+            let mut new_servers = Vec::new();
 
             for path in &paths {
                 let name = mdkb_upstream_name(path);
@@ -1192,11 +1195,24 @@ async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> se
                     timeout_secs: 60,
                     tool_filter: None,
                 };
-                match registry.connect_upstream(server, Some(self_port)).await {
-                    Ok(()) => created.push(name),
+                match registry.connect_upstream(server.clone(), Some(self_port)).await {
+                    Ok(()) => {
+                        created.push(name);
+                        new_servers.push(server);
+                    }
                     Err(e) => errors.push(serde_json::json!({"name": name, "error": e})),
                 }
             }
+
+            // Persist newly created servers to config file
+            if !new_servers.is_empty() {
+                let mut config = crate::mcp_upstream_config::load_mcp_upstreams();
+                config.servers.extend(new_servers);
+                if let Err(e) = crate::config::save_json_config("mcp-upstreams.json", &config) {
+                    tracing::warn!(source = "knowledge", "Failed to persist mdkb upstreams: {e}");
+                }
+            }
+
             serde_json::json!({"created": created, "skipped": skipped, "errors": errors})
         }
 
