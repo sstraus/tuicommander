@@ -114,7 +114,7 @@ fn native_tool_definitions() -> serde_json::Value {
     let defs = serde_json::json!([
         {
             "name": "session",
-            "description": "Manage PTY terminal sessions.\n\nActions (pass as 'action' parameter):\n- list: Returns [{session_id, cwd, worktree_path, worktree_branch}] for all active sessions. Call first to discover IDs.\n- create: Creates a new PTY session. Returns {session_id}. Optional: rows, cols, shell, cwd.\n- input: Sends text and/or a special key to a session. Requires session_id, plus input and/or special_key.\n- output: Returns {data, total_written} from session ring buffer. Requires session_id. Optional: limit.\n- resize: Resizes PTY dimensions. Requires session_id, rows, cols.\n- close: Terminates a session. Requires session_id.\n- pause: Pauses output buffering. Requires session_id.\n- resume: Resumes output buffering. Requires session_id.",
+            "description": "Manage PTY terminal sessions.\n\nActions (pass as 'action' parameter):\n- list: Returns [{session_id, cwd, worktree_path, worktree_branch}] for all active sessions. Call first to discover IDs.\n- create: Creates a new PTY session. Returns {session_id}. Optional: rows, cols, shell, cwd.\n- input: Sends text and/or a special key to a session. Requires session_id, plus input and/or special_key.\n- output: Returns {data, total_written, exited, exit_code} from session ring buffer. Requires session_id. Optional: limit. exited=true when process has terminated; exit_code is the process return code (null if still running).\n- resize: Resizes PTY dimensions. Requires session_id, rows, cols.\n- close: Terminates a session. Requires session_id.\n- pause: Pauses output buffering. Requires session_id.\n- resume: Resumes output buffering. Requires session_id.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: list, create, input, output, resize, close, pause, resume" },
                 "session_id": { "type": "string", "description": "Session ID (required for input, output, resize, close, pause, resume)" },
@@ -414,6 +414,19 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 Err(e) => return e,
             };
             let limit = args["limit"].as_u64().unwrap_or(8192) as usize;
+
+            // Probe child exit status (non-blocking).
+            // If session was already removed from the DashMap but buffers survive, treat as exited.
+            let (exited, exit_code) = match state.sessions.get(session_id) {
+                Some(entry) => {
+                    match entry.lock()._child.try_wait() {
+                        Ok(Some(status)) => (true, status.exit_code() as i64),
+                        _ => (false, 0),
+                    }
+                }
+                None => (true, 0), // session removed but buffers remain
+            };
+
             // Default: serve clean rows from VtLogBuffer (no strip_ansi needed).
             // Pass format="raw" to get the raw ring buffer content with ANSI.
             if args["format"].as_str() != Some("raw") {
@@ -432,7 +445,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 let mut all_lines: Vec<String> = log_lines.iter().map(|ll| ll.text()).collect();
                 all_lines.extend(screen);
                 let data = all_lines.join("\n");
-                return serde_json::json!({"data": data, "data_length": data.len(), "total_written": total});
+                return serde_json::json!({"data": data, "data_length": data.len(), "total_written": total, "exited": exited, "exit_code": if exited { serde_json::Value::from(exit_code) } else { serde_json::Value::Null }});
             }
             let ring = match state.output_buffers.get(session_id) {
                 Some(r) => r,
@@ -440,7 +453,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             };
             let (bytes, total_written) = ring.lock().read_last(limit);
             let data = String::from_utf8_lossy(&bytes).to_string();
-            serde_json::json!({"data": data, "data_length": data.len(), "total_written": total_written})
+            serde_json::json!({"data": data, "data_length": data.len(), "total_written": total_written, "exited": exited, "exit_code": if exited { serde_json::Value::from(exit_code) } else { serde_json::Value::Null }})
         }
         "resize" => {
             let session_id = match require_session_id(args, "resize") {
