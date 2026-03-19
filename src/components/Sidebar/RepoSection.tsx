@@ -401,7 +401,11 @@ export const RemoteOnlyPrPopover: Component<{
     const branch = repo?.branches[branchName];
     if (branch) {
       for (const termId of branch.terminals) {
-        await invoke("close_pty", { sessionId: termId, cleanupWorktree: false });
+        try {
+          await invoke("close_pty", { sessionId: termId, cleanupWorktree: false });
+        } catch (err) {
+          appLogger.warn("git", `close_pty failed for terminal ${termId}`, err);
+        }
       }
     }
   };

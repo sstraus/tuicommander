@@ -454,7 +454,7 @@ function createPluginRegistry() {
         if (capabilities !== null) {
           const consentKey = `credential-consent-${serviceName}`;
           const existing = await invoke<string | null>("read_plugin_data", {
-            plugin_id: pluginId,
+            pluginId,
             path: consentKey,
           });
           if (!existing) {

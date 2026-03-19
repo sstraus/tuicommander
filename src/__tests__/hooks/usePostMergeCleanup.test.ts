@@ -104,7 +104,7 @@ describe("executeCleanup", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("switch_branch", {
       repoPath: "/repo",
-      branch: "main",
+      branchName: "main",
       force: false,
       stash: true,
     });

@@ -251,9 +251,15 @@ export function useGitOperations(deps: GitOperationsDeps) {
         });
       }
 
-      // Close terminals for deleted worktrees before mutating store state
+      // Close terminals for deleted worktrees before mutating store state.
+      // Best-effort: a PTY may already be dead; log and continue so the
+      // branch removal in the batch below is not blocked.
       for (const termId of terminalsToClose) {
-        await deps.closeTerminal(termId, true);
+        try {
+          await deps.closeTerminal(termId, true);
+        } catch (err) {
+          appLogger.warn("terminal", `refreshAllBranchStats: failed to close terminal ${termId}`, err);
+        }
       }
 
       batch(() => {

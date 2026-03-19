@@ -45,7 +45,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     out.push_str("5. Git tools require absolute `path`\n\n");
     // Claude Code-specific: guide teammate spawning through TUICommander PTY.
     // The bridge binary (`tuic-bridge`) is exclusively used by Claude Code.
-    let is_claude_code = client_name.map_or(false, |n| n.contains("claude") || n.contains("tuic-bridge"));
+    let is_claude_code = client_name.is_some_and(|n| n.contains("claude") || n.contains("tuic-bridge"));
     if is_claude_code {
         out.push_str("**Teammates:** When spawning teammates for parallel work, create a worktree + PTY for each via `mcp__tuicommander__session action=create` so they appear in the UI and their output is tracked.\n\n");
     }
