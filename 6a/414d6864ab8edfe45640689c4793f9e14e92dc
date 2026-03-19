@@ -1,0 +1,23 @@
+src-tauri/src/mcp_http/mcp_transport.rs
+  cb9d4f0e6f21d4e4 32,34-37,39,41-49,51-62,64,66-73,79,96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "6a414d6864ab8edfe45640689c4793f9e14e92dc",
+  "prompts": {
+    "cb9d4f0e6f21d4e4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78c3a656-8e24-472b-b31d-6faac82b34ec",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 38,
+      "overriden_lines": 0
+    }
+  }
+}
