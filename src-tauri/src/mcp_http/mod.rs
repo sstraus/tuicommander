@@ -1037,7 +1037,7 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 9);
 
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session"));
@@ -1047,6 +1047,7 @@ mod tests {
         assert!(names.contains(&"config"));
         assert!(names.contains(&"workspace"));
         assert!(names.contains(&"notify"));
+        assert!(names.contains(&"knowledge"));
         assert!(names.contains(&"plugin_dev_guide"));
     }
 
@@ -1054,7 +1055,7 @@ mod tests {
     fn test_mcp_tool_definitions_count() {
         let tools = mcp_transport::test_mcp_tool_definitions();
         let arr = tools.as_array().unwrap();
-        assert_eq!(arr.len(), 8);
+        assert_eq!(arr.len(), 9);
     }
 
     #[test]
@@ -1875,8 +1876,8 @@ mod tests {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        // No upstream → exactly 8 native tools
-        assert_eq!(tools.len(), 8);
+        // No upstream → exactly 9 native tools
+        assert_eq!(tools.len(), 9);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session"));
         assert!(names.contains(&"github"));

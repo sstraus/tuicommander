@@ -582,6 +582,7 @@ mod tests {
             command: "npx".to_string(),
             args: vec![],
             env: std::collections::HashMap::new(),
+            cwd: None,
         };
         let client = HttpMcpClient::from_config("test".to_string(), &transport, 30);
         assert!(client.is_none());

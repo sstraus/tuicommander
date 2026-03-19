@@ -22,6 +22,7 @@ pub(crate) struct StdioConfig {
     pub(crate) command: String,
     pub(crate) args: Vec<String>,
     pub(crate) env: std::collections::HashMap<String, String>,
+    pub(crate) cwd: Option<String>,
 }
 
 /// Client for a single upstream MCP server over stdio (spawned process).
@@ -58,12 +59,13 @@ impl StdioMcpClient {
         transport: &crate::mcp_upstream_config::UpstreamTransport,
     ) -> Option<Self> {
         match transport {
-            crate::mcp_upstream_config::UpstreamTransport::Stdio { command, args, env } => {
+            crate::mcp_upstream_config::UpstreamTransport::Stdio { command, args, env, cwd } => {
                 Some(Self::new(StdioConfig {
                     name,
                     command: command.clone(),
                     args: args.clone(),
                     env: env.clone(),
+                    cwd: cwd.clone(),
                 }))
             }
             crate::mcp_upstream_config::UpstreamTransport::Http { .. } => None,
@@ -125,6 +127,11 @@ impl StdioMcpClient {
         // Apply user-configured env overrides on top of the safe set
         for (k, v) in &self.config.env {
             cmd.env(k, v);
+        }
+
+        // Set working directory if configured (e.g. mdkb uses cwd as project root)
+        if let Some(ref cwd) = self.config.cwd {
+            cmd.current_dir(cwd);
         }
 
         let mut child = cmd.spawn().map_err(|e| {
@@ -394,6 +401,7 @@ mod tests {
             command: "sh".to_string(),
             args: vec![tmp.to_str().unwrap().to_string()],
             env: HashMap::new(),
+            cwd: None,
         }
     }
 
@@ -459,6 +467,7 @@ done
             command: "echo".to_string(),
             args: vec![],
             env: HashMap::new(),
+            cwd: None,
         };
         let mut client = StdioMcpClient::new(config);
         assert!(!client.is_alive());
@@ -493,6 +502,7 @@ exit 0
             command: "this_command_does_not_exist_xyz_12345".to_string(),
             args: vec![],
             env: HashMap::new(),
+            cwd: None,
         };
         let mut client = StdioMcpClient::new(config);
         let result = client.spawn_and_initialize();
@@ -507,6 +517,7 @@ exit 0
             command: "this_command_does_not_exist_xyz_12345".to_string(),
             args: vec![],
             env: HashMap::new(),
+            cwd: None,
         };
         let mut client = StdioMcpClient::new(config);
 
@@ -571,6 +582,7 @@ done
             command: "sh".to_string(),
             args: vec![tmp.to_str().unwrap().to_string()],
             env,
+            cwd: None,
         };
 
         let mut client = StdioMcpClient::new(config);
@@ -585,6 +597,7 @@ done
             command: "npx".to_string(),
             args: vec![],
             env: HashMap::new(),
+            cwd: None,
         };
         let client = StdioMcpClient::from_upstream_config("test".to_string(), &transport);
         assert!(client.is_some());

@@ -430,10 +430,11 @@ impl UpstreamRegistry {
                     "type": "http",
                     "url": url,
                 }),
-                UpstreamTransport::Stdio { command, args, .. } => serde_json::json!({
+                UpstreamTransport::Stdio { command, args, cwd, .. } => serde_json::json!({
                     "type": "stdio",
                     "command": command,
                     "args": args,
+                    "cwd": cwd,
                 }),
             };
             let tools_read = e.tools.read();

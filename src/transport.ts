@@ -14,7 +14,7 @@ import type { LogLine } from "./mobile/utils/logLine";
 
 export type UpstreamTransport =
   | { type: "http"; url: string }
-  | { type: "stdio"; command: string; args?: string[]; env?: Record<string, string> };
+  | { type: "stdio"; command: string; args?: string[]; env?: Record<string, string>; cwd?: string };
 
 export type FilterMode = "allow" | "deny";
 

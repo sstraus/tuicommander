@@ -52,6 +52,9 @@ pub(crate) enum UpstreamTransport {
         args: Vec<String>,
         #[serde(default)]
         env: HashMap<String, String>,
+        /// Working directory for the spawned process.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cwd: Option<String>,
     },
 }
 
@@ -174,6 +177,35 @@ pub(crate) fn is_self_referential(url: &str, self_port: u16) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Boot-time auto-connect
+// ---------------------------------------------------------------------------
+
+/// Connect all saved upstream MCP servers on app startup.
+/// Skips validation errors (logs them) and connects each enabled server.
+pub(crate) async fn auto_connect_saved_upstreams(state: &crate::state::AppState) {
+    let config: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
+    if config.servers.is_empty() {
+        return;
+    }
+
+    let self_port = state.config.read().remote_access_port;
+    let errors = validate_upstream_config(&config, self_port);
+    if !errors.is_empty() {
+        for e in &errors {
+            tracing::warn!(source = "mcp_upstream", "Boot-time config error: {e}");
+        }
+    }
+
+    let registry = &state.mcp_upstream_registry;
+    for server in config.servers {
+        if let Err(e) = registry.connect_upstream(server.clone(), Some(self_port)).await {
+            tracing::warn!(source = "mcp_upstream", name = %server.name, "Boot-time connect failed: {e}");
+        }
+    }
+    tracing::info!(source = "mcp_upstream", "Boot-time upstream auto-connect complete");
+}
+
+// ---------------------------------------------------------------------------
 // Persistence (Tauri commands)
 // ---------------------------------------------------------------------------
 
@@ -280,6 +312,7 @@ mod tests {
                 command: command.to_string(),
                 args: vec!["-y".to_string(), "@modelcontextprotocol/server-filesystem".to_string()],
                 env: HashMap::new(),
+                cwd: None,
             },
             enabled: true,
             timeout_secs: 30,
