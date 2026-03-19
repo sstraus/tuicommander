@@ -561,17 +561,28 @@ async fn handle_ws_session(
     // Subscribe to broadcast channel for parsed events (filtered by session_id)
     let mut event_rx = state.event_bus.subscribe();
 
-    // Send existing ring buffer content as initial catch-up
+    // Send existing ring buffer content as initial catch-up.
+    // If the client provides ?offset=N, only send bytes written after that offset (delta).
+    // Data is sent in chunks (64 KB) so the client can render progressively.
+    const CATCHUP_CHUNK_SIZE: usize = 64 * 1024;
     if let Some(ring) = state.output_buffers.get(&session_id) {
-        let (data, _) = ring.lock().read_last(OUTPUT_RING_BUFFER_CAPACITY);
+        let (data, total) = if let Some(off) = initial_offset {
+            ring.lock().read_since(off as u64)
+        } else {
+            ring.lock().read_last(OUTPUT_RING_BUFFER_CAPACITY)
+        };
         if !data.is_empty() {
-            let text = String::from_utf8_lossy(&data).into_owned();
-            if !text.is_empty() {
-                let frame = serde_json::json!({"type": "output", "data": text});
-                let _ = futures_util::SinkExt::send(
-                    &mut ws_sender,
-                    Message::Text(frame.to_string().into()),
-                ).await;
+            for chunk in data.chunks(CATCHUP_CHUNK_SIZE) {
+                let text = String::from_utf8_lossy(chunk);
+                if !text.is_empty() {
+                    let frame = serde_json::json!({"type": "output", "data": text, "total_written": total});
+                    if futures_util::SinkExt::send(
+                        &mut ws_sender,
+                        Message::Text(frame.to_string().into()),
+                    ).await.is_err() {
+                        return; // Client disconnected during catch-up
+                    }
+                }
             }
         }
     }
