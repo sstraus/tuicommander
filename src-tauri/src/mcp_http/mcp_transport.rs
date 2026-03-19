@@ -29,30 +29,54 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     let ver = env!("CARGO_PKG_VERSION");
     let mut out = String::with_capacity(2048);
 
-    // Header — identity + capabilities (drives MCP Tool Search routing)
+    // ── Identity ──────────────────────────────────────────────────────
     out.push_str(&format!("# TUICommander v{ver}\n\n"));
-    out.push_str("Terminal session orchestrator. Manage PTY terminals, query git repos, spawn AI agents, and configure the app.\n\n");
-    out.push_str(&format!(
-        "When you start a conversation, mention that TUICommander v{ver} is connected.\n\n"
-    ));
+    out.push_str("You are connected to TUICommander, a terminal session orchestrator for AI coding agents.\n\n");
 
-    // Workflow — guide agents to use the right tools
+    // ── Mandatory behaviors ─────────────────────────────────────────
+    out.push_str("## Rules (MUST follow)\n\n");
+    out.push_str(&format!(
+        "1. **Greeting:** Your FIRST message in every conversation MUST state: \"TUICommander v{ver} is connected.\"\n"
+    ));
+    out.push_str(
+        "2. **Intent declaration:** At EACH work phase start, emit on its own line: `[[intent: <action, <60 chars>(<tab title, max 3 words>)]]`\n"
+    );
+    if state.config.read().suggest_followups {
+        out.push_str(
+            "3. **Follow-ups:** After completing a task, emit: `[[suggest: Action1 | Action2 | Action3]]` (2-4 items, 2-5 words each)\n"
+        );
+    }
+    out.push('\n');
+
+    // ── Tools ────────────────────────────────────────────────────────
+    out.push_str("## Tools\n\n");
+    out.push_str("| Tool | Actions | Use for |\n|---|---|---|\n");
+    out.push_str("| `session` | list, create, input, output, resize, close, pause, resume | PTY terminals |\n");
+    out.push_str("| `github` | prs, status | Open PRs with CI rollup, cross-repo status |\n");
+    out.push_str("| `worktree` | list, create, remove | Git worktree lifecycle |\n");
+    out.push_str("| `agent` | detect, spawn, stats, metrics | AI agent management |\n");
+    out.push_str("| `workspace` | list, active | Repos, branches, groups |\n");
+    out.push_str("| `config` | get, save | App configuration |\n");
+    out.push_str("| `notify` | toast, confirm | User notifications |\n");
+    out.push_str("| `plugin_dev_guide` | *(none)* | Plugin authoring reference |\n\n");
+    out.push_str("**Git operations:** Use native `git` CLI — no MCP wrapper needed.\n\n");
+
+    // ── Workflow ─────────────────────────────────────────────────────
     out.push_str("## Workflow\n\n");
-    out.push_str("- `workspace action=list` → discover all repos, branches, ahead/behind\n");
-    out.push_str("- `session action=create` with `cwd` → spawn new terminal (auto-appears in TUI)\n");
-    out.push_str("- `session action=output` → read terminal (`exited`/`exit_code` tell you when done)\n");
-    out.push_str("- `agent action=spawn` → launch AI agent in new PTY\n");
-    out.push_str("- `github action=prs` → all open PRs with CI rollup (single GraphQL batch)\n");
-    out.push_str("- `worktree action=create` → create isolated worktree, optional `spawn_session`\n");
-    out.push_str("- **Git operations:** use native `git` CLI — no MCP wrapper needed\n\n");
-    // Claude Code-specific: guide teammate spawning through TUICommander PTY.
-    // The bridge binary (`tuic-bridge`) is exclusively used by Claude Code.
+    out.push_str("1. `workspace action=list` → discover all repos, branches, ahead/behind\n");
+    out.push_str("2. `session action=create` with `cwd` → spawn terminal (auto-appears in TUI)\n");
+    out.push_str("3. `session action=output` → read terminal (`exited`/`exit_code` tell you when done)\n");
+    out.push_str("4. `agent action=spawn` → launch AI agent in new PTY\n");
+    out.push_str("5. `github action=prs` → all open PRs with CI rollup (single GraphQL batch)\n");
+    out.push_str("6. `worktree action=create` → isolated worktree, optional `spawn_session`\n\n");
+
+    // Claude Code-specific teammate guidance
     let is_claude_code = client_name.is_some_and(|n| n.contains("claude") || n.contains("tuic-bridge"));
     if is_claude_code {
         out.push_str("**Teammates:** When spawning teammates for parallel work, use `worktree action=create` with `spawn_session=true` — creates an isolated worktree + PTY visible in the UI.\n\n");
     }
 
-    // Managed repositories (dynamic)
+    // ── Dynamic: repos ──────────────────────────────────────────────
     let repo_settings = crate::config::load_repo_settings();
     if !repo_settings.repos.is_empty() {
         out.push_str("## Repos\n\n");
@@ -69,7 +93,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
         out.push('\n');
     }
 
-    // Active PTY sessions (dynamic)
+    // ── Dynamic: sessions ───────────────────────────────────────────
     let sessions: Vec<_> = state.sessions.iter().map(|entry| {
         let id = entry.key().clone();
         let session = entry.value().lock();
@@ -85,14 +109,6 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
             out.push_str(&format!("- `{short_id}` {cwd} ({branch})\n"));
         }
         out.push('\n');
-    }
-
-    // Protocols — compact format
-    out.push_str("## Protocols\n\n");
-    out.push_str("**Intent:** At each work phase start, emit: `[[intent: <action, <60 chars>(<tab title, max 3 words>)]]`\n");
-
-    if state.config.read().suggest_followups {
-        out.push_str("**Follow-ups:** After tasks, emit: `[[suggest: Action1 | Action2 | Action3]]` (2-4 items, 2-5 words each)\n");
     }
 
     out
