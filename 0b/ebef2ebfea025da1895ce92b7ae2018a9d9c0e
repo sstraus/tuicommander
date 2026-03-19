@@ -1,0 +1,37 @@
+src-tauri/src/mcp_http/mcp_transport.rs
+  8aa47af8153f528b 114,197-209,318,323,1103-1286
+src-tauri/src/mcp_http/mod.rs
+  8aa47af8153f528b 1040,1050,1058,1879-1880
+src-tauri/src/mcp_proxy/stdio_client.rs
+  8aa47af8153f528b 25,62,68,132-136,404,470,505,520,585,600
+src/transport.ts
+  8aa47af8153f528b 17
+src-tauri/src/mcp_proxy/registry.rs
+  8aa47af8153f528b 433,437
+src-tauri/src/lib.rs
+  8aa47af8153f528b 621,628-631
+src-tauri/src/mcp_proxy/http_client.rs
+  8aa47af8153f528b 585
+src-tauri/src/mcp_upstream_config.rs
+  8aa47af8153f528b 55-57,180-207,315
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "0bebef2ebfea025da1895ce92b7ae2018a9d9c0e",
+  "prompts": {
+    "8aa47af8153f528b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "193b109b-2e7b-433f-85b0-8e428f8740a6",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 263,
+      "total_deletions": 8,
+      "accepted_lines": 263,
+      "overriden_lines": 0
+    }
+  }
+}
