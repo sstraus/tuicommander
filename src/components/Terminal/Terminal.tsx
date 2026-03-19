@@ -269,13 +269,24 @@ export const Terminal: Component<TerminalProps> = (props) => {
         if (!wasAtBottomBefore && terminal) {
           const afterBuf = terminal.buffer.active;
           if (afterBuf.viewportY !== viewportYBefore) {
-            const restoreTo = Math.min(viewportYBefore, afterBuf.baseY);
-            appLogger.debug("terminal", "write-restore", {
-              viewportYBefore, afterViewportY: afterBuf.viewportY,
-              afterBaseY: afterBuf.baseY, restoreTo,
-              trackedBaseY: trackedScrollState.baseY,
-            });
-            terminal.scrollToLine(restoreTo);
+            // If the buffer contracted below our previous position (e.g. agent
+            // cleared/compacted the session), the old viewport line no longer
+            // exists — skip restore and let xterm settle naturally.
+            if (afterBuf.baseY >= viewportYBefore) {
+              const restoreTo = Math.min(viewportYBefore, afterBuf.baseY);
+              appLogger.debug("terminal", "write-restore", {
+                viewportYBefore, afterViewportY: afterBuf.viewportY,
+                afterBaseY: afterBuf.baseY, restoreTo,
+                trackedBaseY: trackedScrollState.baseY,
+              });
+              terminal.scrollToLine(restoreTo);
+            } else {
+              appLogger.debug("terminal", "write-restore-skip", {
+                viewportYBefore, afterViewportY: afterBuf.viewportY,
+                afterBaseY: afterBuf.baseY,
+                reason: "buffer contracted below previous viewport position",
+              });
+            }
           }
         }
 
