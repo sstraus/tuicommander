@@ -36,18 +36,20 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
         "When you start a conversation, mention that TUICommander v{ver} is connected.\n\n"
     ));
 
-    // Workflow — explicit create step so agents know to spawn sessions
+    // Workflow — guide agents to use the right tools
     out.push_str("## Workflow\n\n");
-    out.push_str("1. `session action=list` → discover active sessions\n");
-    out.push_str("2. `session action=create` with `cwd` → spawn new terminal (auto-appears in TUI)\n");
-    out.push_str("3. `session action=output` → read terminal, `action=input` → type\n");
-    out.push_str("4. `agent action=spawn` with `prompt` + `cwd` → launch AI agent in new PTY\n");
-    out.push_str("5. Git tools require absolute `path`\n\n");
+    out.push_str("- `workspace action=list` → discover all repos, branches, ahead/behind\n");
+    out.push_str("- `session action=create` with `cwd` → spawn new terminal (auto-appears in TUI)\n");
+    out.push_str("- `session action=output` → read terminal (`exited`/`exit_code` tell you when done)\n");
+    out.push_str("- `agent action=spawn` → launch AI agent in new PTY\n");
+    out.push_str("- `github action=prs` → all open PRs with CI rollup (single GraphQL batch)\n");
+    out.push_str("- `worktree action=create` → create isolated worktree, optional `spawn_session`\n");
+    out.push_str("- **Git operations:** use native `git` CLI — no MCP wrapper needed\n\n");
     // Claude Code-specific: guide teammate spawning through TUICommander PTY.
     // The bridge binary (`tuic-bridge`) is exclusively used by Claude Code.
     let is_claude_code = client_name.is_some_and(|n| n.contains("claude") || n.contains("tuic-bridge"));
     if is_claude_code {
-        out.push_str("**Teammates:** When spawning teammates for parallel work, create a worktree + PTY for each via `mcp__tuicommander__session action=create` so they appear in the UI and their output is tracked.\n\n");
+        out.push_str("**Teammates:** When spawning teammates for parallel work, use `worktree action=create` with `spawn_session=true` — creates an isolated worktree + PTY visible in the UI.\n\n");
     }
 
     // Managed repositories (dynamic)

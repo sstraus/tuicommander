@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **MCP tool rationalization** — Removed `git` tool (thin CLI wrappers CC does natively). Replaced with `github` tool (`prs` for batched PR+CI, `status` for cross-repo aggregate) and `worktree` tool (`list`, `create` with optional `spawn_session`, `remove`). Tool count 7→8, action count 24→21
+- **Session output now includes exit status** — `session action=output` returns `exited` (bool) and `exit_code` (number|null) so agents know when a teammate has finished
+- **Workspace list includes ahead/behind** — `workspace action=list` now returns `ahead`/`behind` counts for repos with remotes, eliminating follow-up calls
+
 ## [0.9.3] - 2026-03-18
 
 ### Added
