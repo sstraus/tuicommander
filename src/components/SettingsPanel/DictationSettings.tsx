@@ -204,16 +204,16 @@ export const DictationSettings: Component = () => {
         <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
           <input
             type="range"
-            min={200}
+            min={0}
             max={1000}
             step={50}
             value={dictationStore.state.longPressMs}
             onInput={(e) => dictationStore.setLongPressMs(Number(e.currentTarget.value))}
           />
-          <span style={{ "min-width": "50px", "text-align": "right" }}>{dictationStore.state.longPressMs}ms</span>
+          <span style={{ "min-width": "50px", "text-align": "right" }}>{dictationStore.state.longPressMs === 0 ? "Instant" : `${dictationStore.state.longPressMs}ms`}</span>
         </div>
         <p class={s.hint}>
-          {t("dictation.longPressHint", "How long to hold the key before dictation starts. Lower = faster activation, higher = fewer accidental triggers.")}
+          {t("dictation.longPressHint", "How long to hold the key before dictation starts. 0 = instant (no short-press pass-through), higher = fewer accidental triggers.")}
         </p>
       </div>
 

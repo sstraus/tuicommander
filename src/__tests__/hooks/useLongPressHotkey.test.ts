@@ -166,6 +166,34 @@ describe("createLongPressHandler", () => {
     });
   });
 
+  describe("instant mode (threshold = 0)", () => {
+    it("triggers onStart immediately on keydown without timer", () => {
+      const h = makeHandler("F5", 0);
+      h.handleEvent(press("F5"));
+
+      expect(onStart).toHaveBeenCalledOnce();
+      expect(onStop).not.toHaveBeenCalled();
+    });
+
+    it("triggers onStop on key release", () => {
+      const h = makeHandler("F5", 0);
+      h.handleEvent(press("F5"));
+      h.handleEvent(release("F5"));
+
+      expect(onStart).toHaveBeenCalledOnce();
+      expect(onStop).toHaveBeenCalledOnce();
+    });
+
+    it("suppresses key repeat", () => {
+      const h = makeHandler("F5", 0);
+      h.handleEvent(press("F5"));
+      h.handleEvent(press("F5")); // repeat
+      h.handleEvent(press("F5")); // repeat
+
+      expect(onStart).toHaveBeenCalledOnce();
+    });
+  });
+
   describe("unrelated keys", () => {
     it("ignores keys that do not match hotkey", () => {
       const h = makeHandler("F5");

@@ -66,12 +66,18 @@ export function createLongPressHandler(
       hotkeyDown = true;
       dictationStarted = false;
 
-      // Start long-press timer
-      longPressTimer = setTimeout(() => {
-        longPressTimer = null;
+      if (longPressMs === 0) {
+        // Instant mode — no long-press distinction, activate immediately
         dictationStarted = true;
         callbacks.onStart();
-      }, longPressMs);
+      } else {
+        // Start long-press timer
+        longPressTimer = setTimeout(() => {
+          longPressTimer = null;
+          dictationStarted = true;
+          callbacks.onStart();
+        }, longPressMs);
+      }
       return true;
     } else if (isRelease && hotkeyDown) {
       hotkeyDown = false;
