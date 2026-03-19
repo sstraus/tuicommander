@@ -1,0 +1,27 @@
+src/hooks/useLongPressHotkey.ts
+  6e79cf5e89df4b5b 69-70,73,77-80
+src/components/SettingsPanel/DictationSettings.tsx
+  6e79cf5e89df4b5b 207,213,216
+src/__tests__/hooks/useLongPressHotkey.test.ts
+  6e79cf5e89df4b5b 169-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "2b4c239ab7f123621b303b0b70c7bcd7958ee306",
+  "prompts": {
+    "6e79cf5e89df4b5b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ac07b14b-3229-47c9-a7de-00b8f7829574",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 41,
+      "total_deletions": 7,
+      "accepted_lines": 38,
+      "overriden_lines": 0
+    }
+  }
+}
