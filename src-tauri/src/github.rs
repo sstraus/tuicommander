@@ -443,10 +443,10 @@ pub(crate) async fn graphql_with_retry(
 /// Git remote + branch status (no PR/CI — those come from githubStore via batch query)
 #[derive(Clone, Serialize)]
 pub(crate) struct GitHubStatus {
-    has_remote: bool,
-    current_branch: String,
-    ahead: i32,
-    behind: i32,
+    pub(crate) has_remote: bool,
+    pub(crate) current_branch: String,
+    pub(crate) ahead: i32,
+    pub(crate) behind: i32,
 }
 
 /// Summary of CI check states for a PR

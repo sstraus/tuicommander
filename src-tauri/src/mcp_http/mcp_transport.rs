@@ -839,6 +839,14 @@ fn handle_workspace(_state: &Arc<AppState>, args: &serde_json::Value) -> serde_j
                     "status": info.status,
                     "is_git_repo": info.is_git_repo,
                 });
+                // Include ahead/behind for git repos with remotes
+                if info.is_git_repo {
+                    let gh = crate::github::get_github_status_impl(path);
+                    if gh.has_remote {
+                        entry["ahead"] = serde_json::json!(gh.ahead);
+                        entry["behind"] = serde_json::json!(gh.behind);
+                    }
+                }
                 if let Some(group_name) = repo_group.get(path) {
                     entry["group"] = serde_json::json!(group_name);
                 }
