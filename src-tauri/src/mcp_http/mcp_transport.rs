@@ -103,8 +103,9 @@ fn validate_mcp_repo_path(path: &str) -> Result<(), serde_json::Value> {
 }
 
 const SESSION_ACTIONS: &str = "list, create, input, output, resize, close, pause, resume";
-const GIT_ACTIONS: &str = "info, diff, files, branches, github, prs";
 const AGENT_ACTIONS: &str = "detect, spawn, stats, metrics";
+const GITHUB_ACTIONS: &str = "prs, status";
+const WORKTREE_ACTIONS: &str = "list, create, remove";
 const CONFIG_ACTIONS: &str = "get, save";
 const WORKSPACE_ACTIONS: &str = "list, active";
 const NOTIFY_ACTIONS: &str = "toast, confirm";
@@ -129,12 +130,23 @@ fn native_tool_definitions() -> serde_json::Value {
             }, "required": ["action"] }
         },
         {
-            "name": "git",
-            "description": "Query git repository state and GitHub integration.\n\nActions (pass as 'action' parameter):\n- info: Returns {name, branch, status, remote_url, is_dirty, ahead, behind}. Requires path.\n- diff: Returns {diff} with unified diff of unstaged changes. Requires path.\n- files: Returns [{path, status, insertions, deletions}] for changed files. Requires path.\n- branches: Returns [{name, is_current, is_remote}] branch list. Requires path.\n- github: Returns GitHub integration data (remote, PR, CI, ahead/behind). Requires path.\n- prs: Returns all open PR statuses with CI rollup. Requires path.",
+            "name": "github",
+            "description": "Query GitHub integration: PR statuses, CI rollup, merge readiness.\n\nActions (pass as 'action' parameter):\n- prs: Returns all open PRs with CI rollup, merge readiness labels, review state. Requires path. Single GraphQL batch — replaces N individual `gh pr` calls.\n- status: Returns cross-repo aggregate: for each workspace repo, returns {path, branch, ahead, behind, open_prs, failing_ci}.",
             "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: info, diff, files, branches, github, prs" },
-                "path": { "type": "string", "description": "Absolute path to git repository (required for all actions)" }
+                "action": { "type": "string", "description": "One of: prs, status" },
+                "path": { "type": "string", "description": "Absolute path to git repository (required for prs action)" }
             }, "required": ["action"] }
+        },
+        {
+            "name": "worktree",
+            "description": "Manage git worktrees for parallel work.\n\nActions (pass as 'action' parameter):\n- list: Returns [{branch, path}] for all worktrees of a repo. Requires path.\n- create: Creates a new worktree with optional branch. Requires path. Optional: branch, base_ref, spawn_session (auto-creates PTY). Returns {worktree_path, branch}.\n- remove: Removes a worktree by branch name. Requires path, branch.",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: list, create, remove" },
+                "path": { "type": "string", "description": "Absolute path to base git repository" },
+                "branch": { "type": "string", "description": "Branch name (action=create optional, action=remove required)" },
+                "base_ref": { "type": "string", "description": "Base ref to branch from, default HEAD (action=create)" },
+                "spawn_session": { "type": "boolean", "description": "Auto-create a PTY session in the worktree (action=create, default false)" }
+            }, "required": ["action", "path"] }
         },
         {
             "name": "agent",
@@ -280,7 +292,8 @@ fn require_path(args: &serde_json::Value, action: &str) -> Result<String, serde_
 async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value) -> serde_json::Value {
     match name {
         "session" => handle_session(state, args),
-        "git" => handle_git(state, args).await,
+        "github" => handle_github(state, args).await,
+        "worktree" => handle_worktree(state, args),
         "agent" => handle_agent(state, addr, args),
         "config" => handle_config(state, addr, args),
         "workspace" => handle_workspace(state, args),
@@ -289,7 +302,7 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
         }
         _ => serde_json::json!({"error": format!(
-            "Unknown tool '{}'. Available: session, git, agent, config, workspace, notify, plugin_dev_guide", name
+            "Unknown tool '{}'. Available: session, github, worktree, agent, config, workspace, notify, plugin_dev_guide", name
         )}),
     }
 }
@@ -527,63 +540,12 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
     }
 }
 
-async fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
-    let action = match require_action(args, "git", GIT_ACTIONS) {
+async fn handle_github(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "github", GITHUB_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
     match action {
-        "info" => {
-            let path = match require_path(args, "info") {
-                Ok(p) => p,
-                Err(e) => return e,
-            };
-            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
-            let info = crate::git::get_repo_info_impl(&path);
-            to_json_or_error(info)
-        }
-        "diff" => {
-            let path = match require_path(args, "diff") {
-                Ok(p) => p,
-                Err(e) => return e,
-            };
-            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
-            match crate::git::get_git_diff(path, None) {
-                Ok(diff) => serde_json::json!({"diff": diff}),
-                Err(e) => serde_json::json!({"error": e}),
-            }
-        }
-        "files" => {
-            let path = match require_path(args, "files") {
-                Ok(p) => p,
-                Err(e) => return e,
-            };
-            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
-            match crate::git::get_changed_files(path, None) {
-                Ok(files) => to_json_or_error(files),
-                Err(e) => serde_json::json!({"error": e}),
-            }
-        }
-        "branches" => {
-            let path = match require_path(args, "branches") {
-                Ok(p) => p,
-                Err(e) => return e,
-            };
-            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
-            match crate::git::get_git_branches(path) {
-                Ok(branches) => to_json_or_error(branches),
-                Err(e) => serde_json::json!({"error": e}),
-            }
-        }
-        "github" => {
-            let path = match require_path(args, "github") {
-                Ok(p) => p,
-                Err(e) => return e,
-            };
-            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
-            let status = crate::github::get_github_status_impl(&path);
-            to_json_or_error(status)
-        }
         "prs" => {
             let path = match require_path(args, "prs") {
                 Ok(p) => p,
@@ -597,8 +559,173 @@ async fn handle_git(state: &Arc<AppState>, args: &serde_json::Value) -> serde_js
             ).await;
             to_json_or_error(statuses)
         }
+        "status" => {
+            // Cross-repo aggregate: for each workspace repo, return branch/ahead/behind/open PRs
+            let repo_data = crate::config::load_repositories();
+            let repo_order = repo_data.get("repoOrder")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let mut results: Vec<serde_json::Value> = Vec::new();
+            for path_val in &repo_order {
+                let Some(path) = path_val.as_str() else { continue };
+                let info = crate::git::get_repo_info_impl(path);
+                if !info.is_git_repo { continue; }
+                let gh = crate::github::get_github_status_impl(path);
+                let prs = crate::github::get_repo_pr_statuses_impl(path, false, state).await;
+                let (open_prs, failing_ci) = match &prs {
+                    Ok(v) => (v.len(), v.iter().filter(|p| p.checks.failed > 0).count()),
+                    Err(_) => (0, 0),
+                };
+                results.push(serde_json::json!({
+                    "path": path,
+                    "branch": info.branch,
+                    "status": info.status,
+                    "ahead": gh.ahead,
+                    "behind": gh.behind,
+                    "open_prs": open_prs,
+                    "failing_ci": failing_ci,
+                }));
+            }
+            serde_json::json!(results)
+        }
         other => serde_json::json!({"error": format!(
-            "Unknown action '{}' for tool 'git'. Available: {}", other, GIT_ACTIONS
+            "Unknown action '{}' for tool 'github'. Available: {}", other, GITHUB_ACTIONS
+        )}),
+    }
+}
+
+/// Create a PTY session in the given directory, returning the session ID.
+/// Reuses the same setup as `session action=create` but with fixed defaults.
+fn create_session_in_dir(state: &Arc<AppState>, cwd: &str) -> Result<String, String> {
+    let shell = resolve_shell(None);
+    let session_id = Uuid::new_v4().to_string();
+    let pty_system = native_pty_system();
+    let pair = pty_system.openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+        .map_err(|e| format!("Failed to open PTY: {e}"))?;
+    let mut cmd = build_shell_command(&shell);
+    cmd.cwd(cwd);
+    let child = pair.slave.spawn_command(cmd)
+        .map_err(|e| format!("Failed to spawn shell: {e}"))?;
+    let writer = pair.master.take_writer()
+        .map_err(|e| format!("Failed to get PTY writer: {e}"))?;
+    let reader = pair.master.try_clone_reader()
+        .map_err(|e| format!("Failed to get PTY reader: {e}"))?;
+    let paused = Arc::new(AtomicBool::new(false));
+    state.sessions.insert(session_id.clone(), Mutex::new(PtySession {
+        writer, master: pair.master, _child: child, paused: paused.clone(),
+        worktree: None, cwd: Some(cwd.to_string()), display_name: None,
+    }));
+    state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
+    state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
+    state.output_buffers.insert(session_id.clone(), Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)));
+    state.vt_log_buffers.insert(session_id.clone(), Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)));
+    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
+    let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
+        session_id: session_id.clone(), cwd: Some(cwd.to_string()),
+    });
+    let app_handle = state.app_handle.read().clone();
+    if let Some(ref app) = app_handle {
+        spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state.clone());
+    } else {
+        spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
+    }
+    if let Some(app) = app_handle {
+        let _ = app.emit("session-created", serde_json::json!({
+            "session_id": session_id, "cwd": cwd,
+        }));
+    }
+    Ok(session_id)
+}
+
+fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "worktree", WORKTREE_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "list" => {
+            let path = match require_path(args, "list") {
+                Ok(p) => p,
+                Err(e) => return e,
+            };
+            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
+            match crate::worktree::get_worktree_paths(path) {
+                Ok(wts) => to_json_or_error(wts),
+                Err(e) => serde_json::json!({"error": e}),
+            }
+        }
+        "create" => {
+            let path = match require_path(args, "create") {
+                Ok(p) => p,
+                Err(e) => return e,
+            };
+            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
+            let branch = args["branch"].as_str().map(|s| s.to_string());
+            let base_ref = args["base_ref"].as_str();
+
+            // Generate a branch name if not specified
+            let branch_name = branch.unwrap_or_else(|| {
+                let existing: Vec<String> = crate::worktree::get_worktree_paths(path.clone())
+                    .unwrap_or_default()
+                    .keys()
+                    .cloned()
+                    .collect();
+                crate::worktree::generate_worktree_name(&existing)
+            });
+
+            let config = crate::worktree::WorktreeConfig {
+                task_name: branch_name.clone(),
+                base_repo: path.clone(),
+                branch: Some(branch_name),
+                create_branch: true,
+            };
+
+            let worktrees_dir = crate::worktree::resolve_worktree_dir_for_repo(
+                std::path::Path::new(&path),
+                &state.worktrees_dir,
+            );
+            match crate::worktree::create_worktree_internal(&worktrees_dir, &config, base_ref) {
+                Ok(wt) => {
+                    state.invalidate_repo_caches(&path);
+                    let wt_path = wt.path.to_string_lossy().to_string();
+                    let mut response = serde_json::json!({
+                        "worktree_path": wt_path,
+                        "branch": wt.branch,
+                    });
+                    // Optionally spawn a PTY session in the new worktree
+                    if args["spawn_session"].as_bool().unwrap_or(false) {
+                        match create_session_in_dir(state, &wt_path) {
+                            Ok(sid) => { response["session_id"] = serde_json::json!(sid); }
+                            Err(e) => { response["session_error"] = serde_json::json!(e); }
+                        }
+                    }
+                    response
+                }
+                Err(e) => serde_json::json!({"error": e}),
+            }
+        }
+        "remove" => {
+            let path = match require_path(args, "remove") {
+                Ok(p) => p,
+                Err(e) => return e,
+            };
+            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
+            let branch = match args["branch"].as_str() {
+                Some(b) => b.to_string(),
+                None => return serde_json::json!({"error": "Action 'remove' requires 'branch' parameter"}),
+            };
+            let archive = crate::worktree::resolve_archive_script(&path);
+            match crate::worktree::remove_worktree_by_branch(&path, &branch, true, archive.as_deref()) {
+                Ok(()) => {
+                    state.invalidate_repo_caches(&path);
+                    serde_json::json!({"ok": true})
+                }
+                Err(e) => serde_json::json!({"error": e}),
+            }
+        }
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'worktree'. Available: {}", other, WORKTREE_ACTIONS
         )}),
     }
 }

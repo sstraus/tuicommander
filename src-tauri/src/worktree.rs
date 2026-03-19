@@ -9,7 +9,7 @@ use tauri::State;
 /// Resolve the effective archive_script for a repo from the three-tier config:
 /// per-repo settings → repo-local .tuic.json → global defaults.
 /// Returns None if no script is configured at any level.
-fn resolve_archive_script(repo_path: &str) -> Option<String> {
+pub(crate) fn resolve_archive_script(repo_path: &str) -> Option<String> {
     // 1. Per-repo app settings (highest priority)
     let repo_settings = crate::config::load_repo_settings();
     if let Some(entry) = repo_settings.repos.get(repo_path)

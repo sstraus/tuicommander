@@ -1037,11 +1037,12 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 8);
 
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session"));
-        assert!(names.contains(&"git"));
+        assert!(names.contains(&"github"));
+        assert!(names.contains(&"worktree"));
         assert!(names.contains(&"agent"));
         assert!(names.contains(&"config"));
         assert!(names.contains(&"workspace"));
@@ -1053,7 +1054,7 @@ mod tests {
     fn test_mcp_tool_definitions_count() {
         let tools = mcp_transport::test_mcp_tool_definitions();
         let arr = tools.as_array().unwrap();
-        assert_eq!(arr.len(), 7);
+        assert_eq!(arr.len(), 8);
     }
 
     #[test]
@@ -1342,55 +1343,27 @@ mod tests {
     // --- Git meta-command tests ---
 
     #[tokio::test]
-    async fn test_git_info_missing_path() {
+    async fn test_github_prs_missing_path() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "info"})).await;
+        let result = call_mcp_tool(&state, "github", serde_json::json!({"action": "prs"})).await;
         assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
     }
 
     #[tokio::test]
-    async fn test_git_info_nonexistent_path() {
+    async fn test_worktree_list_missing_path() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "git", serde_json::json!({
-            "action": "info",
-            "path": "/nonexistent/repo/path"
+        let result = call_mcp_tool(&state, "worktree", serde_json::json!({"action": "list"})).await;
+        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
+    }
+
+    #[tokio::test]
+    async fn test_worktree_remove_missing_branch() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "worktree", serde_json::json!({
+            "action": "remove",
+            "path": "/tmp/test-repo"
         })).await;
-        assert!(result.is_object(), "Expected a JSON object for nonexistent repo path");
-    }
-
-    #[tokio::test]
-    async fn test_git_diff_missing_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "diff"})).await;
-        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
-    }
-
-    #[tokio::test]
-    async fn test_git_files_missing_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "files"})).await;
-        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
-    }
-
-    #[tokio::test]
-    async fn test_git_github_missing_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "github"})).await;
-        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
-    }
-
-    #[tokio::test]
-    async fn test_git_prs_missing_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "prs"})).await;
-        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
-    }
-
-    #[tokio::test]
-    async fn test_git_branches_missing_path() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "branches"})).await;
-        assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
+        assert!(result["error"].as_str().unwrap().contains("requires 'branch'"));
     }
 
     // --- Action routing error tests ---
@@ -1412,17 +1385,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_git_missing_action() {
+    async fn test_github_missing_action() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "git", serde_json::json!({})).await;
+        let result = call_mcp_tool(&state, "github", serde_json::json!({})).await;
         assert!(result["error"].as_str().unwrap().contains("Missing 'action'"));
     }
 
     #[tokio::test]
-    async fn test_git_unknown_action() {
+    async fn test_github_unknown_action() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "git", serde_json::json!({"action": "commit"})).await;
+        let result = call_mcp_tool(&state, "github", serde_json::json!({"action": "commit"})).await;
         assert!(result["error"].as_str().unwrap().contains("Unknown action 'commit'"));
+    }
+
+    #[tokio::test]
+    async fn test_worktree_missing_action() {
+        let state = test_state();
+        let result = call_mcp_tool(&state, "worktree", serde_json::json!({})).await;
+        assert!(result["error"].as_str().unwrap().contains("Missing 'action'"));
     }
 
     #[tokio::test]
@@ -1430,7 +1410,7 @@ mod tests {
         let state = test_state();
         let result = call_mcp_tool(&state, "nonexistent_tool", serde_json::json!({})).await;
         assert!(result["error"].as_str().unwrap().contains("Unknown tool"));
-        assert!(result["error"].as_str().unwrap().contains("session, git, agent, config"));
+        assert!(result["error"].as_str().unwrap().contains("session, github, worktree, agent"));
     }
 
     // --- isError flag tests ---
@@ -1895,11 +1875,12 @@ mod tests {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        // No upstream → exactly 7 native tools
-        assert_eq!(tools.len(), 7);
+        // No upstream → exactly 8 native tools
+        assert_eq!(tools.len(), 8);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session"));
-        assert!(names.contains(&"git"));
+        assert!(names.contains(&"github"));
+        assert!(names.contains(&"worktree"));
         assert!(names.contains(&"agent"));
         assert!(names.contains(&"config"));
         assert!(names.contains(&"plugin_dev_guide"));
