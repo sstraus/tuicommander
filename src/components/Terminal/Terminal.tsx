@@ -266,17 +266,18 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
         }
 
-        // Clamp trackedScrollState when buffer contracts (e.g. agent session
-        // compaction clears scrollback). onScroll does NOT fire for baseY
-        // decreases, leaving trackedScrollState stale — which makes doFit()
-        // compute a bogus linesFromBottom and jump to line 0.
-        if (terminal && trackedScrollState.baseY > terminal.buffer.active.baseY) {
-          const buf = terminal.buffer.active;
+        // Keep trackedScrollState fresh after every write. onScroll only fires
+        // when viewportY changes, NOT when baseY grows (user scrolled up) or
+        // shrinks (buffer contraction). Without this, trackedScrollState.baseY
+        // drifts from reality and doFit() computes a bogus linesFromBottom,
+        // causing the viewport to jump to line 0 on the next resize.
+        if (terminal) {
+          const freshBuf = terminal.buffer.active;
           trackedScrollState = {
-            viewportY: Math.min(trackedScrollState.viewportY, buf.baseY),
-            baseY: buf.baseY,
-            bufferType: buf.type,
-            wasAtBottom: buf.viewportY >= buf.baseY,
+            viewportY: freshBuf.viewportY,
+            baseY: freshBuf.baseY,
+            bufferType: freshBuf.type,
+            wasAtBottom: freshBuf.viewportY >= freshBuf.baseY,
           };
         }
       });
