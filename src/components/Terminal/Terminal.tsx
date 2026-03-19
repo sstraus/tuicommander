@@ -178,7 +178,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       // Restore relative position from bottom (baseY may have changed after reflow)
       const newBase = terminal.buffer.active.baseY;
       const target = Math.max(0, newBase - linesFromBottom);
-      appLogger.debug("scroll", "doFit-restore", {
+      appLogger.debug("terminal", "doFit-restore", {
         trackedViewportY: trackedScrollState.viewportY,
         trackedBaseY: trackedScrollState.baseY,
         preBaseY, newBase, linesFromBottom, target,
@@ -270,7 +270,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           const afterBuf = terminal.buffer.active;
           if (afterBuf.viewportY !== viewportYBefore) {
             const restoreTo = Math.min(viewportYBefore, afterBuf.baseY);
-            appLogger.debug("scroll", "write-restore", {
+            appLogger.debug("terminal", "write-restore", {
               viewportYBefore, afterViewportY: afterBuf.viewportY,
               afterBaseY: afterBuf.baseY, restoreTo,
               trackedBaseY: trackedScrollState.baseY,
