@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Dictation instant mode** — Long-press threshold slider now starts at 0 (was 200ms). When set to 0, any keypress activates dictation immediately without short-press pass-through. UI shows "Instant" label
+
+### Fixed
+- **Post-merge cleanup branch switch** — `switch_branch` invoke used wrong parameter name (`branch` instead of `branchName`), causing the post-merge cleanup step to fail silently
+- **Tauri invoke parameter mismatches** — Fixed 4 broken `invoke()` calls: `close_pty` used `id` instead of `sessionId` (RepoSection, PrDetailPopover), `write_pty` used `id` instead of `sessionId` (pluginRegistry), `write_plugin_data` used `plugin_id` instead of `pluginId`
+- **Bridge version not bumped** — `make bump` now includes `src-tauri/crates/tuic-bridge/Cargo.toml`
+
 ## [0.9.2] - 2026-03-18
 
 ### Added
