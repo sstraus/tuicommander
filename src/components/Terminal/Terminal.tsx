@@ -170,13 +170,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // causing scrollToLine(0) jumps when reflow shrinks newBase.
     const linesFromBottom = trackedScrollState.baseY - trackedScrollState.viewportY;
     const wasAtBottom = trackedScrollState.wasAtBottom;
+    const preBaseY = terminal.buffer.active.baseY;
     fitAddon.fit();
     if (wasAtBottom) {
       terminal.scrollToBottom();
     } else {
       // Restore relative position from bottom (baseY may have changed after reflow)
       const newBase = terminal.buffer.active.baseY;
-      terminal.scrollToLine(Math.max(0, newBase - linesFromBottom));
+      const target = Math.max(0, newBase - linesFromBottom);
+      appLogger.debug("scroll", "doFit-restore", {
+        trackedViewportY: trackedScrollState.viewportY,
+        trackedBaseY: trackedScrollState.baseY,
+        preBaseY, newBase, linesFromBottom, target,
+      });
+      terminal.scrollToLine(target);
     }
   };
 
@@ -262,7 +269,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
         if (!wasAtBottomBefore && terminal) {
           const afterBuf = terminal.buffer.active;
           if (afterBuf.viewportY !== viewportYBefore) {
-            terminal.scrollToLine(Math.min(viewportYBefore, afterBuf.baseY));
+            const restoreTo = Math.min(viewportYBefore, afterBuf.baseY);
+            appLogger.debug("scroll", "write-restore", {
+              viewportYBefore, afterViewportY: afterBuf.viewportY,
+              afterBaseY: afterBuf.baseY, restoreTo,
+              trackedBaseY: trackedScrollState.baseY,
+            });
+            terminal.scrollToLine(restoreTo);
           }
         }
 
