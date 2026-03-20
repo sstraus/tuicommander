@@ -179,12 +179,21 @@ export const Terminal: Component<TerminalProps> = (props) => {
     } else {
       // Restore relative position from bottom (baseY may have changed after reflow)
       const newBase = terminal.buffer.active.baseY;
-      const target = Math.max(0, newBase - linesFromBottom);
-      appLogger.debug("terminal", "doFit-restore", {
+      const rawTarget = newBase - linesFromBottom;
+      const target = Math.max(0, rawTarget);
+      appLogger.warn("terminal", "doFit-restore", {
         trackedViewportY: trackedScrollState.viewportY,
         trackedBaseY: trackedScrollState.baseY,
-        preBaseY, newBase, linesFromBottom, target,
+        preBaseY, newBase, linesFromBottom, rawTarget, target,
       });
+      if (rawTarget < 0) {
+        appLogger.warn("terminal", "doFit-restore-clamped-to-zero", {
+          reason: "linesFromBottom exceeds newBase after reflow",
+          linesFromBottom, newBase, trackedBaseY: trackedScrollState.baseY,
+          trackedViewportY: trackedScrollState.viewportY,
+          preBaseY,
+        });
+      }
       terminal.scrollToLine(target);
     }
   };
@@ -254,6 +263,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       const buf = terminal.buffer.active;
       const viewportYBefore = buf.viewportY;
       const wasAtBottomBefore = buf.viewportY >= buf.baseY;
+      const bufferTypeBefore = buf.type;
 
       terminal.write(data, () => {
         pendingWriteBytes -= byteLen;
@@ -264,26 +274,43 @@ export const Terminal: Component<TerminalProps> = (props) => {
           pty.resume(sessionId).catch(() => {});
         }
 
+        if (!terminal) return;
+        const afterBuf = terminal.buffer.active;
+
+        // When the buffer type changed (normal↔alternate), skip scroll
+        // restoration AND state tracking. The alternate buffer is a separate
+        // viewport — its position (always 0,0) is irrelevant to the normal
+        // buffer's scroll state. Updating trackedScrollState here would set
+        // wasAtBottom=true (0>=0), causing the next doFit() to scrollToBottom()
+        // and jump the user away from their scroll position in the normal buffer.
+        if (afterBuf.type !== bufferTypeBefore) {
+          appLogger.warn("terminal", "write-buffer-type-changed", {
+            from: bufferTypeBefore, to: afterBuf.type,
+            viewportYBefore, trackedViewportY: trackedScrollState.viewportY,
+            trackedBaseY: trackedScrollState.baseY,
+          });
+          return;
+        }
+
         // Guard: restore scroll position if user was scrolled up and xterm
         // moved the viewport (up OR down). Cursor-positioning escapes from
         // agent TUI redraws can jump the viewport to the bottom, which also
         // corrupts trackedScrollState.wasAtBottom for subsequent doFit calls.
-        if (!wasAtBottomBefore && terminal) {
-          const afterBuf = terminal.buffer.active;
+        if (!wasAtBottomBefore) {
           if (afterBuf.viewportY !== viewportYBefore) {
             // If the buffer contracted below our previous position (e.g. agent
             // cleared/compacted the session), the old viewport line no longer
             // exists — skip restore and let xterm settle naturally.
             if (afterBuf.baseY >= viewportYBefore) {
               const restoreTo = Math.min(viewportYBefore, afterBuf.baseY);
-              appLogger.debug("terminal", "write-restore", {
+              appLogger.warn("terminal", "write-restore", {
                 viewportYBefore, afterViewportY: afterBuf.viewportY,
                 afterBaseY: afterBuf.baseY, restoreTo,
                 trackedBaseY: trackedScrollState.baseY,
               });
               terminal.scrollToLine(restoreTo);
             } else {
-              appLogger.debug("terminal", "write-restore-skip", {
+              appLogger.warn("terminal", "write-restore-skip", {
                 viewportYBefore, afterViewportY: afterBuf.viewportY,
                 afterBaseY: afterBuf.baseY,
                 reason: "buffer contracted below previous viewport position",
@@ -297,15 +324,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // shrinks (buffer contraction). Without this, trackedScrollState.baseY
         // drifts from reality and doFit() computes a bogus linesFromBottom,
         // causing the viewport to jump to line 0 on the next resize.
-        if (terminal) {
-          const freshBuf = terminal.buffer.active;
-          trackedScrollState = {
-            viewportY: freshBuf.viewportY,
-            baseY: freshBuf.baseY,
-            bufferType: freshBuf.type,
-            wasAtBottom: freshBuf.viewportY >= freshBuf.baseY,
-          };
-        }
+        trackedScrollState = {
+          viewportY: afterBuf.viewportY,
+          baseY: afterBuf.baseY,
+          bufferType: afterBuf.type,
+          wasAtBottom: afterBuf.viewportY >= afterBuf.baseY,
+        };
       });
     } else {
       // Buffer output until terminal.open() is called
@@ -983,6 +1007,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // position, even after display:none zeros scrollTop in WebKit.
     terminal.onScroll(() => {
       const buf = terminal!.buffer.active;
+      // Only track normal buffer scroll state. Alternate buffer (used by TUI
+      // apps like Claude Code for redraws) always has baseY=0/viewportY=0.
+      // Recording those values would set wasAtBottom=true and cause doFit()
+      // to scrollToBottom() on the next resize, losing the user's position.
+      if (buf.type !== "normal") return;
       trackedScrollState = {
         viewportY: buf.viewportY,
         baseY: buf.baseY,

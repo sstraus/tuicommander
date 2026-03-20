@@ -899,8 +899,11 @@ pub fn colorize_intent(raw: &str) -> String {
         static ref INTENT_REPLACE_RE: regex::Regex = {
             // Any CSI sequence that may appear between structural elements
             let c = r"(?:\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e])*";
+            // Use [ \t] (horizontal whitespace) instead of \s to avoid matching
+            // \r or \n — Ink emits \r\x1b[1B (CR + cursor-down) between lines,
+            // and \s*{C} would consume that sequence, eating the line break.
             regex::Regex::new(&format!(
-                r"(?:\[\[?|\x{{27E6}}){C}intent:\s*(.+?)(?:\s*\([^)]*\))?\s*{C}(?:\]?\]|\x{{27E7}})",
+                r"(?:\[\[?|\x{{27E6}}){C}intent:[ \t]*(.+?)(?:[ \t]*\([^)\r\n]*\))?[ \t]*{C}(?:\]?\]|\x{{27E7}})",
                 C = c
             )).unwrap()
         };
@@ -2899,6 +2902,31 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             "should have exactly one space after 'intent:'; got: {:?}", colored);
         assert!(!colored.contains("intent:  "),
             "must NOT have double space; got: {:?}", colored);
+    }
+
+    #[test]
+    fn test_colorize_intent_preserves_cr_cursor_down_after_brackets() {
+        // Ink may emit \r\x1b[1B (CR + cursor-down) between the closing ]]
+        // and the next content line. The old \s* in the regex would consume
+        // the \r, and {C} would consume \x1b[1B, eating the line break.
+        let raw = "[[intent: configure wiz setup(Wiz Setup)]]\r\x1b[1BBoss, ecco";
+        let colored = colorize_intent(raw);
+        assert!(colored.contains("\r\x1b[1B"),
+            "CR + cursor-down after ]] must survive; got: {:?}", colored);
+        assert!(colored.contains("Boss, ecco"),
+            "next line text must survive; got: {:?}", colored);
+    }
+
+    #[test]
+    fn test_colorize_intent_does_not_eat_cr_between_title_and_brackets() {
+        // If Ink wraps the token so ]] lands on the next line (\r\x1b[1B]),
+        // the regex must NOT consume the line break to reach ]].
+        let raw = "[[intent: configure wiz setup(Wiz Setup)\r\x1b[1B]]\r\x1b[1BBoss";
+        let colored = colorize_intent(raw);
+        // The \r\x1b[1B between ) and ]] must survive — the regex should
+        // either fail to match or match without consuming the line break.
+        assert!(colored.contains("\r\x1b[1B"),
+            "line break must not be eaten; got: {:?}", colored);
     }
 
     // --- parse_clean_lines tests ---

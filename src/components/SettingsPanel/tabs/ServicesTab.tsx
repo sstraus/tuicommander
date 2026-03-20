@@ -661,14 +661,19 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
     }
   });
 
-  async function saveUpstreams(servers: UpstreamMcpServer[]) {
+  async function saveUpstreams(servers: UpstreamMcpServer[]): Promise<boolean> {
     setSaving(true);
     setError("");
     try {
+      appLogger.info("mcp", "saveUpstreams: calling RPC", { serverCount: servers.length, names: servers.map(s => s.name) });
       await rpc("save_mcp_upstreams", { config: { servers } });
+      appLogger.info("mcp", "saveUpstreams: RPC succeeded");
       setUpstreams(servers);
+      return true;
     } catch (e) {
+      appLogger.error("mcp", "saveUpstreams: RPC failed", { error: String(e) });
       setError(String(e));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -676,7 +681,11 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
 
   async function addUpstream() {
     const f = form();
-    if (!f.name.trim()) { setError("Name is required"); return; }
+    const name = f.name.trim();
+    if (!name) { setError("Name is required"); return; }
+    if (!/^[a-z0-9_-]+$/.test(name)) { setError("Name must be lowercase letters, digits, hyphens, or underscores only"); return; }
+    if (f.transportType === "http" && !f.url.trim()) { setError("URL is required for HTTP transport"); return; }
+    if (f.transportType === "stdio" && !f.command.trim()) { setError("Command is required for stdio transport"); return; }
 
     const transport: UpstreamTransport = f.transportType === "http"
       ? { type: "http", url: f.url.trim() }
@@ -704,7 +713,8 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       }
     }
 
-    await saveUpstreams([...upstreams(), server]);
+    const ok = await saveUpstreams([...upstreams(), server]);
+    if (!ok) return;
     setForm(emptyForm());
     setShowAdd(false);
   }

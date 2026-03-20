@@ -589,6 +589,10 @@ struct ChunkProcessor {
     last_question_text: Option<String>,
     /// Session CWD for resolving relative plan-file paths
     session_cwd: Option<String>,
+    /// Buffer for incomplete `[[intent:` or `[[suggest:` tokens split across chunks.
+    /// When a chunk contains an opener without the closing `]]`, we hold the data
+    /// and prepend it to the next chunk so colorize/conceal regexes see the full token.
+    pending_xterm: Option<String>,
 }
 
 impl ChunkProcessor {
@@ -598,7 +602,48 @@ impl ChunkProcessor {
             last_status_task: None,
             last_question_text: None,
             session_cwd,
+            pending_xterm: None,
         }
+    }
+
+    /// Apply colorize_intent / conceal_suggest to data destined for xterm,
+    /// buffering incomplete tokens across chunks to prevent cosmetic flash.
+    ///
+    /// Returns `Some(data)` ready to emit, or `None` if the data was buffered
+    /// (waiting for the closing `]]` in the next chunk).
+    fn transform_xterm(&mut self, data: String) -> Option<String> {
+        // Prepend any pending data from a previous incomplete token.
+        let combined = if let Some(pending) = self.pending_xterm.take() {
+            pending + &data
+        } else {
+            data
+        };
+
+        // Check for unclosed token openers.  We look for `[[intent:` or `[intent:`
+        // (or suggest) WITHOUT a matching `]]` or `]` after them.
+        if has_unclosed_token(&combined) {
+            self.pending_xterm = Some(combined);
+            return None;
+        }
+
+        // Full token present (or no token at all) — apply replacements.
+        let result = if combined.contains("[intent:") {
+            colorize_intent(&combined)
+        } else {
+            combined
+        };
+        let result = if result.contains("suggest:") {
+            conceal_suggest(&result)
+        } else {
+            result
+        };
+        Some(result)
+    }
+
+    /// Flush any pending xterm data (e.g. on session end or when we decide
+    /// the opener was a false positive). Returns data as-is without replacement.
+    fn flush_pending_xterm(&mut self) -> Option<String> {
+        self.pending_xterm.take()
     }
 
     /// Resolve a relative plan-file path to absolute using session CWD.
@@ -779,6 +824,31 @@ impl ChunkProcessor {
     }
 }
 
+/// Check if `data` contains an opening `[[intent:` or `[[suggest:` (or single-bracket
+/// variants) without the corresponding closing bracket(s).  Used to detect tokens
+/// that were split across streaming chunks so we can buffer them.
+fn has_unclosed_token(data: &str) -> bool {
+    // Find the LAST opener position for intent or suggest.
+    // We only care about the last one — earlier complete tokens are fine.
+    let last_intent = data.rfind("[intent:");
+    let last_suggest = data.rfind("[suggest:");
+    let opener_pos = match (last_intent, last_suggest) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    };
+    let Some(pos) = opener_pos else { return false };
+    // Check if there's a closing `]` after the opener.
+    // The token ends with `]]` or `]` or `⟧` (U+27E7).
+    let after = &data[pos..];
+    // Skip past the "intent:" or "suggest:" keyword to avoid matching the opener bracket
+    let keyword_end = after.find(':').map(|i| i + 1).unwrap_or(0);
+    let body = &after[keyword_end..];
+    // Must contain at least one `]` to be considered closed
+    !body.contains(']') && !body.contains('\u{27E7}')
+}
+
 /// Process kitty keyboard actions (push/pop/query) shared by both reader threads.
 fn process_kitty_actions(
     kitty_actions: &[KittyAction],
@@ -909,19 +979,17 @@ pub(crate) fn spawn_reader_thread(
                     process_kitty_actions(&kitty_actions, &session_id, &state, Some(&app));
 
                     if let Some(processed) = processor.process_chunk(&data, &silence, &session_id, &state, Some(&app)) {
-                        // Colorize [intent: ...] tokens yellow before sending to xterm.
-                        let data: String = if processed.contains("[intent:") { colorize_intent(&processed) } else { processed };
-
-                        // Conceal [[suggest: ...]] tokens so they are invisible in xterm.
-                        let data = if data.contains("suggest:") { conceal_suggest(&data) } else { data };
-
-                        let _ = app.emit(
-                            &format!("pty-output-{session_id}"),
-                            PtyOutput {
-                                session_id: session_id.clone(),
-                                data,
-                            },
-                        );
+                        // Colorize intent / conceal suggest tokens, buffering incomplete
+                        // tokens across streaming chunks to prevent cosmetic flash.
+                        if let Some(data) = processor.transform_xterm(processed) {
+                            let _ = app.emit(
+                                &format!("pty-output-{session_id}"),
+                                PtyOutput {
+                                    session_id: session_id.clone(),
+                                    data,
+                                },
+                            );
+                        }
                     }
                 }
                 Err(e) => {
@@ -936,6 +1004,17 @@ pub(crate) fn spawn_reader_thread(
         // Ensure shell state is idle on session end
         if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
             emit_shell_state(&state, Some(&app), &session_id, "idle");
+        }
+
+        // Flush any pending xterm token buffer (incomplete token at EOF — emit as-is)
+        if let Some(pending) = processor.flush_pending_xterm() {
+            let _ = app.emit(
+                &format!("pty-output-{session_id}"),
+                PtyOutput {
+                    session_id: session_id.clone(),
+                    data: pending,
+                },
+            );
         }
 
         // Flush remaining bytes at EOF

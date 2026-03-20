@@ -455,6 +455,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
       const currentActiveId = terminalsStore.state.activeId;
       if (currentActiveId && prevBranch?.terminals.includes(currentActiveId)) {
         repositoriesStore.setBranch(prevRepo.path, prevRepo.activeBranch, { lastActiveTerminal: currentActiveId });
+        appLogger.info("terminal", `BranchSelect SAVE lastActiveTerminal=${currentActiveId} for ${prevRepo.activeBranch}`);
+      } else {
+        appLogger.info("terminal", `BranchSelect SKIP save lastActiveTerminal — activeId=${currentActiveId} not in branch terminals ${JSON.stringify(prevBranch?.terminals)}`);
       }
       // Persist split layout on the departing branch
       const layout = terminalsStore.state.layout;
@@ -519,8 +522,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
       // Restore the last active terminal for this branch, or fall back to first
       const remembered = branch?.lastActiveTerminal;
       if (remembered && validTerminals.includes(remembered)) {
+        appLogger.info("terminal", `BranchSelect RESTORE lastActiveTerminal=${remembered} for ${branchName}`);
         terminalsStore.setActive(remembered);
       } else {
+        appLogger.info("terminal", `BranchSelect FALLBACK to first terminal=${validTerminals[0]} for ${branchName} (remembered=${remembered}, valid=${JSON.stringify(validTerminals)})`);
         terminalsStore.setActive(validTerminals[0]);
       }
     } else if (branch?.savedTerminals && branch.savedTerminals.length > 0) {

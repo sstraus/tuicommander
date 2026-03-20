@@ -424,7 +424,10 @@ export async function initApp(deps: AppInitDeps) {
           terminalsStore.getIds().includes(id),
         ) || [];
         if (validTerminals.length > 0) {
-          terminalsStore.setActive(validTerminals[0]);
+          const remembered = branch?.lastActiveTerminal;
+          const target = (remembered && validTerminals.includes(remembered)) ? remembered : validTerminals[0];
+          appLogger.info("terminal", `initApp RESTORE activeTerminal=${target} (remembered=${remembered}, valid=${JSON.stringify(validTerminals)})`);
+          terminalsStore.setActive(target);
         } else {
           await deps.handleBranchSelect(firstPath, firstRepo.activeBranch);
         }

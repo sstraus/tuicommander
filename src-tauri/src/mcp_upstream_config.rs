@@ -217,7 +217,7 @@ pub(crate) fn load_mcp_upstreams() -> UpstreamMcpConfig {
 #[tauri::command]
 pub(crate) async fn save_mcp_upstreams(
     config: UpstreamMcpConfig,
-    state: tauri::State<'_, crate::state::AppState>,
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
 ) -> Result<(), String> {
     let self_port = state.config.read().remote_access_port;
     let errors = validate_upstream_config(&config, self_port);
@@ -245,7 +245,7 @@ pub(crate) async fn save_mcp_upstreams(
 #[tauri::command]
 pub(crate) async fn reconnect_mcp_upstream(
     name: String,
-    state: tauri::State<'_, crate::state::AppState>,
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
 ) -> Result<(), String> {
     let config: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
     let self_port = state.config.read().remote_access_port;
@@ -278,7 +278,7 @@ pub(crate) async fn reconnect_mcp_upstream(
 /// Returns a JSON snapshot of all upstream statuses, tool lists, and metrics.
 #[tauri::command]
 pub(crate) fn get_mcp_upstream_status(
-    state: tauri::State<'_, crate::state::AppState>,
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
 ) -> serde_json::Value {
     state.mcp_upstream_registry.status_snapshot()
 }

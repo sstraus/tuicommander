@@ -30,7 +30,8 @@ export type AppLogSource =
   | "dictation"
   | "store"
   | "config"
-  | "settings";
+  | "settings"
+  | "mcp";
 
 export interface AppLogEntry {
   id: number;
