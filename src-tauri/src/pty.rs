@@ -3371,4 +3371,126 @@ mod tests {
         let resolved = cp.resolve_planfile_path("../../repo/plans/foo.md");
         assert_eq!(resolved, Some("/home/user/repo/plans/foo.md".to_string()));
     }
+
+    // --- has_unclosed_token tests ---
+
+    #[test]
+    fn test_has_unclosed_token_complete_intent() {
+        assert!(!has_unclosed_token("[[intent: Fix the bug(Fixing)]]"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_incomplete_intent() {
+        assert!(has_unclosed_token("[[intent: Fix the bug"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_complete_suggest() {
+        assert!(!has_unclosed_token("[[suggest: A | B | C]]"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_incomplete_suggest() {
+        assert!(has_unclosed_token("[[suggest: A | B"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_no_token() {
+        assert!(!has_unclosed_token("just regular output"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_single_bracket() {
+        assert!(!has_unclosed_token("[intent: some text]"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_single_bracket_incomplete() {
+        assert!(has_unclosed_token("[intent: some text"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_unicode_close() {
+        assert!(!has_unclosed_token("\u{27E6}intent: text\u{27E7}"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_text_before_token() {
+        // Text before + incomplete token at end
+        assert!(has_unclosed_token("hello world\n[[intent: doing stuff"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_complete_then_incomplete() {
+        // First token complete, second incomplete — should detect unclosed
+        assert!(has_unclosed_token("[[intent: done]] then [[suggest: A | B"));
+    }
+
+    // --- transform_xterm buffering tests ---
+
+    #[test]
+    fn test_transform_xterm_complete_token_passes_through() {
+        let mut cp = ChunkProcessor::new(None);
+        let result = cp.transform_xterm("[[intent: Fix bug(Fix)]]".to_string());
+        assert!(result.is_some(), "complete token should pass through");
+        assert!(result.unwrap().contains("intent:"), "should be colorized");
+    }
+
+    #[test]
+    fn test_transform_xterm_incomplete_buffers() {
+        let mut cp = ChunkProcessor::new(None);
+        let result = cp.transform_xterm("[[intent: Fix the".to_string());
+        assert!(result.is_none(), "incomplete token should be buffered");
+    }
+
+    #[test]
+    fn test_transform_xterm_buffered_completes_on_next_chunk() {
+        let mut cp = ChunkProcessor::new(None);
+        // First chunk: incomplete
+        let r1 = cp.transform_xterm("[[intent: Fix the".to_string());
+        assert!(r1.is_none());
+        // Second chunk: completes the token
+        let r2 = cp.transform_xterm(" bug(Fix)]]".to_string());
+        assert!(r2.is_some(), "completed token should be emitted");
+        let data = r2.unwrap();
+        assert!(data.contains("intent:"), "should be colorized");
+        assert!(!data.contains("[[intent:"), "raw brackets should be replaced");
+    }
+
+    #[test]
+    fn test_transform_xterm_no_token_passes_through() {
+        let mut cp = ChunkProcessor::new(None);
+        let result = cp.transform_xterm("just regular output".to_string());
+        assert_eq!(result, Some("just regular output".to_string()));
+    }
+
+    #[test]
+    fn test_transform_xterm_suggest_concealed() {
+        let mut cp = ChunkProcessor::new(None);
+        let result = cp.transform_xterm("[[suggest: A | B | C]]".to_string());
+        assert!(result.is_some());
+        let data = result.unwrap();
+        // Should not contain the raw suggest text (concealed)
+        assert!(!data.contains("suggest:"), "suggest token should be concealed");
+    }
+
+    #[test]
+    fn test_transform_xterm_suggest_incomplete_buffers() {
+        let mut cp = ChunkProcessor::new(None);
+        let r1 = cp.transform_xterm("[[suggest: A | B".to_string());
+        assert!(r1.is_none());
+        let r2 = cp.transform_xterm(" | C]]".to_string());
+        assert!(r2.is_some());
+        assert!(!r2.unwrap().contains("suggest:"));
+    }
+
+    #[test]
+    fn test_flush_pending_xterm() {
+        let mut cp = ChunkProcessor::new(None);
+        cp.transform_xterm("[[intent: incomplete".to_string());
+        let flushed = cp.flush_pending_xterm();
+        assert_eq!(flushed, Some("[[intent: incomplete".to_string()));
+        // After flush, pending should be empty
+        assert!(cp.flush_pending_xterm().is_none());
+    }
 }
