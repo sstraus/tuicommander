@@ -226,13 +226,13 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     }
   }
 
-  function openDiff(file: FileEntry) {
+  function openDiff(file: FileEntry, section: "staged" | "unstaged") {
     if (!props.repoPath || !isDiffStatus(file.status)) return;
     diffTabsStore.add(
       props.repoPath,
       file.path,
       file.status,
-      undefined,
+      section === "staged" ? "staged" : undefined,
       file.status === "?" || undefined,
     );
   }
@@ -366,7 +366,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     }
     if (e.key === "Enter") {
       e.preventDefault();
-      openDiff(file);
+      openDiff(file, section);
       return;
     }
     if ((e.key === "Delete" || e.key === "Backspace") && section === "unstaged") {
@@ -385,7 +385,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
         class={cx(s.fileEntry, focusedIndex() === flatIndex && s.fileFocused)}
         title={file.path}
         data-focused={focusedIndex() === flatIndex ? "" : undefined}
-        onClick={() => { setFocusedIndex(flatIndex); openDiff(file); props.onFileSelect?.(file.path); }}
+        onClick={() => { setFocusedIndex(flatIndex); openDiff(file, section); props.onFileSelect?.(file.path); }}
       >
         <span class={cx(s.statusBadge, statusClass(file.status))}>{file.status}</span>
         <span class={s.filePath}>
@@ -416,7 +416,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
             <button
               class={s.actionBtn}
               title="Diff"
-              onClick={(e) => { e.stopPropagation(); openDiff(file); }}
+              onClick={(e) => { e.stopPropagation(); openDiff(file, section); }}
             >
               <DiffIcon />
             </button>
@@ -433,7 +433,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
               <button
                 class={s.actionBtn}
                 title="Diff"
-                onClick={(e) => { e.stopPropagation(); openDiff(file); }}
+                onClick={(e) => { e.stopPropagation(); openDiff(file, section); }}
               >
                 <DiffIcon />
               </button>

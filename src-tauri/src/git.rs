@@ -266,6 +266,7 @@ pub(crate) fn get_recent_commits(path: String, count: Option<u32>) -> Result<Vec
 /// A commit hash compares `<hash>..HEAD`; empty/None compares working tree.
 fn diff_base_args(scope: &Option<String>) -> Result<Vec<String>, String> {
     match scope.as_deref() {
+        Some("staged") => Ok(vec!["diff".into(), "--cached".into()]),
         Some(hash) if !hash.is_empty() => {
             validate_git_hash(hash)?;
             Ok(vec!["diff".into(), format!("{hash}^"), hash.into()])
@@ -2187,6 +2188,24 @@ mod tests {
             err.contains("outside repository") || err.contains("Failed to resolve"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn diff_base_args_none_returns_plain_diff() {
+        let args = diff_base_args(&None).unwrap();
+        assert_eq!(args, vec!["diff"]);
+    }
+
+    #[test]
+    fn diff_base_args_staged_returns_cached() {
+        let args = diff_base_args(&Some("staged".into())).unwrap();
+        assert_eq!(args, vec!["diff", "--cached"]);
+    }
+
+    #[test]
+    fn diff_base_args_commit_hash_returns_parent_diff() {
+        let args = diff_base_args(&Some("abc123".into())).unwrap();
+        assert_eq!(args, vec!["diff", "abc123^", "abc123"]);
     }
 
     #[test]
