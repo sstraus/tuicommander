@@ -94,6 +94,7 @@ fn event_type_name(event: &AppEvent) -> &'static str {
         AppEvent::UpstreamStatusChanged { .. } => "upstream-status-changed",
         AppEvent::McpToast { .. } => "mcp-toast",
         AppEvent::DirChanged { .. } => "dir-changed",
+        AppEvent::WorktreeCreated { .. } => "worktree-created",
     }
 }
 
@@ -130,6 +131,9 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         }
         AppEvent::DirChanged { dir_path } => {
             serde_json::json!({ "dir_path": dir_path })
+        }
+        AppEvent::WorktreeCreated { repo_path, branch, worktree_path } => {
+            serde_json::json!({ "repo_path": repo_path, "branch": branch, "worktree_path": worktree_path })
         }
     }
 }

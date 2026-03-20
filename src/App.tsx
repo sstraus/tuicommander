@@ -84,6 +84,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { initApp } from "./hooks/useAppInit";
 import { startAutoFetch } from "./hooks/useAutoFetch";
 import { useAutoDeleteBranch } from "./hooks/useAutoDeleteBranch";
+import { useWorktreeSwitchPrompt } from "./hooks/useWorktreeSwitchPrompt";
 import { useCiHeal } from "./hooks/useCiHeal";
 import { applyAppTheme, applyFontFamily } from "./themes";
 import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
@@ -250,6 +251,12 @@ const App: Component = () => {
 
   // Auto-delete local branches when their PR is merged/closed
   useAutoDeleteBranch({ confirm: (opts) => dialogs.confirm(opts) });
+
+  // Offer to switch to newly created worktrees (from MCP)
+  useWorktreeSwitchPrompt({
+    confirm: (opts) => dialogs.confirm(opts),
+    handleBranchSelect: gitOps.handleBranchSelect,
+  });
 
   // Auto-heal CI failures by injecting logs into agent terminals
   useCiHeal();

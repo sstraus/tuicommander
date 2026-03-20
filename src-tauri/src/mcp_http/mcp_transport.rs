@@ -725,6 +725,20 @@ fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value) -> serde_jso
                 Ok(wt) => {
                     state.invalidate_repo_caches(&path);
                     let wt_path = wt.path.to_string_lossy().to_string();
+                    let branch_name = wt.branch.clone().unwrap_or_default();
+                    // Notify frontend so it can offer to switch to the new worktree
+                    let _ = state.event_bus.send(crate::state::AppEvent::WorktreeCreated {
+                        repo_path: path.clone(),
+                        branch: branch_name.clone(),
+                        worktree_path: wt_path.clone(),
+                    });
+                    if let Some(handle) = state.app_handle.read().as_ref() {
+                        let _ = handle.emit("worktree-created", serde_json::json!({
+                            "repo_path": path,
+                            "branch": branch_name,
+                            "worktree_path": wt_path,
+                        }));
+                    }
                     let mut response = serde_json::json!({
                         "worktree_path": wt_path,
                         "branch": wt.branch,

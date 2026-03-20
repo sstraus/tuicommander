@@ -71,6 +71,13 @@ pub enum AppEvent {
     DirChanged {
         dir_path: String,
     },
+    /// A worktree was created via MCP — frontend may offer to switch to it
+    #[serde(rename = "worktree-created")]
+    WorktreeCreated {
+        repo_path: String,
+        branch: String,
+        worktree_path: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -1102,7 +1109,8 @@ impl AppState {
             | AppEvent::PluginChanged { .. }
             | AppEvent::UpstreamStatusChanged { .. }
             | AppEvent::McpToast { .. }
-            | AppEvent::DirChanged { .. } => {}
+            | AppEvent::DirChanged { .. }
+            | AppEvent::WorktreeCreated { .. } => {}
         }
     }
 
