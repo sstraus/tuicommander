@@ -1,0 +1,31 @@
+src-tauri/src/mcp_http/mcp_transport.rs
+  5d3f39f1052f455c 728-741
+src/hooks/useWorktreeSwitchPrompt.ts
+  5d3f39f1052f455c 1-72
+src-tauri/src/mcp_http/sse_routes.rs
+  5d3f39f1052f455c 97,135-137
+src-tauri/src/state.rs
+  5d3f39f1052f455c 74-80,1113
+src/App.tsx
+  5d3f39f1052f455c 87,255-260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "d78e75782ffc03e42086f0654d9d52fdfce547c8",
+  "prompts": {
+    "5d3f39f1052f455c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4cb5cc5f-1b8f-4626-b2e8-a785f5ae30a7",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 107,
+      "total_deletions": 2,
+      "accepted_lines": 105,
+      "overriden_lines": 0
+    }
+  }
+}
