@@ -868,8 +868,9 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
         // Match plan file paths: optional leading path, then plans/<name>.md(x)
         // Captures the full path including any prefix directory.
         // Excludes <>, $, {}, `, * to avoid template placeholders, interpolation, and globs
+        // Trailing punctuation (period, comma, etc.) after .md/.mdx is stripped
         static ref PLAN_RE: regex::Regex =
-            regex::Regex::new(r#"(?:^|[\s'":])(/?(?:[^\s'"<>${}`*]+/)?plans/[^\s'"<>${}`*]+\.mdx?)"#).unwrap();
+            regex::Regex::new(r#"(?:^|[\s'":])(/?(?:[^\s'"<>${}`*]+/)?plans/[^\s'"<>${}`*]+\.mdx?)[.,;:!?)}\]]*(?:\s|$)"#).unwrap();
     }
     for line in clean.lines() {
         if let Some(caps) = PLAN_RE.captures(line) {
@@ -1885,6 +1886,26 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(get_plan_path(&parser.parse("plans/*.md")).is_none());
         assert!(get_plan_path(&parser.parse("/repo/plans/*.md")).is_none());
         assert!(get_plan_path(&parser.parse("ls plans/*.md")).is_none());
+    }
+
+    #[test]
+    fn test_plan_file_trailing_punctuation_stripped() {
+        let mut parser = OutputParser::new();
+        // Sentence-ending period should not be included in the path
+        let events = parser.parse("Piano scritto in plans/wiz-memory-integration.md.");
+        assert_eq!(get_plan_path(&events), Some("plans/wiz-memory-integration.md".to_string()));
+
+        // Same with tilde path
+        let events = parser.parse("Fatto, piano in ~/Gits/project/plans/my-plan.md.");
+        let path = get_plan_path(&events).expect("should detect plan path with trailing period");
+        assert!(path.ends_with("/plans/my-plan.md"), "trailing period should be stripped: {path}");
+    }
+
+    #[test]
+    fn test_plan_file_trailing_comma() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("See plans/foo.md, plans/bar.md for details");
+        assert_eq!(get_plan_path(&events), Some("plans/foo.md".to_string()));
     }
 
     // --- False positive prevention tests ---
