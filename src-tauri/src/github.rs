@@ -1379,6 +1379,109 @@ pub(crate) async fn get_pr_diff_impl(
     }
 }
 
+/// Maximum characters returned from CI failure logs to avoid overwhelming
+/// the agent's context window.
+const CI_LOG_MAX_CHARS: usize = 4000;
+
+/// Truncate log text to the last [`CI_LOG_MAX_CHARS`] characters, splitting
+/// at a newline boundary to avoid cutting mid-line.
+fn truncate_ci_logs(logs: &str) -> String {
+    let logs = logs.trim();
+    if logs.len() <= CI_LOG_MAX_CHARS {
+        return logs.to_string();
+    }
+    // Keep the tail — the most relevant failures are usually at the end
+    let truncated = &logs[logs.len() - CI_LOG_MAX_CHARS..];
+    let start = truncated.find('\n').map(|i| i + 1).unwrap_or(0);
+    format!(
+        "[… truncated to last ~{CI_LOG_MAX_CHARS} chars …]\n{}",
+        &truncated[start..]
+    )
+}
+
+/// Find the most recent failed workflow run for a branch, then fetch its logs.
+/// Uses `gh run list` to find the run ID, then `gh run view --log-failed`.
+/// Resolves the GitHub repo slug from the local repo path.
+fn fetch_ci_failure_logs_impl(repo_path: &str, branch: &str) -> Result<String, String> {
+    let repo_path_buf = PathBuf::from(repo_path);
+    let remote_url = get_github_remote_url(&repo_path_buf)
+        .ok_or_else(|| "No GitHub remote found for this repo".to_string())?;
+    let (owner, repo) = parse_remote_url(&remote_url)
+        .ok_or_else(|| format!("Cannot parse GitHub owner/repo from remote URL: {remote_url}"))?;
+    let repo_slug = format!("{owner}/{repo}");
+    let gh = crate::agent::resolve_cli("gh");
+
+    // Step 1: find the latest failed run for the branch
+    let mut list_cmd = Command::new(&gh);
+    list_cmd.args([
+        "run",
+        "list",
+        "--repo",
+        &repo_slug,
+        "--branch",
+        branch,
+        "--status",
+        "failure",
+        "--limit",
+        "1",
+        "--json",
+        "databaseId",
+    ]);
+    crate::cli::apply_no_window(&mut list_cmd);
+
+    let list_output = list_cmd
+        .output()
+        .map_err(|e| format!("Failed to run gh: {e}"))?;
+    if !list_output.status.success() {
+        let stderr = String::from_utf8_lossy(&list_output.stderr);
+        return Err(format!("gh run list failed: {stderr}"));
+    }
+
+    let list_json: serde_json::Value = serde_json::from_slice(&list_output.stdout)
+        .map_err(|e| format!("Failed to parse gh run list output: {e}"))?;
+    let run_id = list_json
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|obj| obj.get("databaseId"))
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| "No failed workflow runs found for this branch".to_string())?;
+
+    // Step 2: fetch failure logs for that run
+    let mut view_cmd = Command::new(&gh);
+    view_cmd.args([
+        "run",
+        "view",
+        &run_id.to_string(),
+        "--repo",
+        &repo_slug,
+        "--log-failed",
+    ]);
+    crate::cli::apply_no_window(&mut view_cmd);
+
+    let view_output = view_cmd
+        .output()
+        .map_err(|e| format!("Failed to run gh: {e}"))?;
+    if !view_output.status.success() {
+        let stderr = String::from_utf8_lossy(&view_output.stderr);
+        return Err(format!("gh run view failed: {stderr}"));
+    }
+
+    let logs = String::from_utf8_lossy(&view_output.stdout);
+    Ok(truncate_ci_logs(&logs))
+}
+
+/// Tauri command: fetch CI failure logs for the latest failed run on a branch.
+#[tauri::command]
+pub(crate) async fn fetch_ci_failure_logs(
+    repo_path: String,
+    branch: String,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || fetch_ci_failure_logs_impl(&repo_path, &branch))
+        .await
+        .map_err(|e| format!("Task failed: {e}"))
+        .and_then(|r| r)
+}
+
 /// Fetch PR diff via GitHub REST API (Tauri command).
 #[tauri::command]
 pub(crate) async fn get_pr_diff(
@@ -2532,6 +2635,36 @@ mod tests {
 
         assert!(!cache.github_repo_cooldown.contains_key("owner/expired"));
         assert!(cache.github_repo_cooldown.contains_key("owner/active"));
+    }
+
+    // --- truncate_ci_logs tests ---
+
+    #[test]
+    fn test_ci_log_short_output_unchanged() {
+        let short = "Error: test failed\nassert_eq failed";
+        let result = truncate_ci_logs(short);
+        assert_eq!(result, short);
+    }
+
+    #[test]
+    fn test_ci_log_truncation_keeps_tail() {
+        let mut logs = String::new();
+        for i in 0..500 {
+            logs.push_str(&format!("line {i}: some log output here\n"));
+        }
+        let result = truncate_ci_logs(&logs);
+
+        assert!(result.starts_with("[… truncated"));
+        assert!(result.contains("line 499"));
+        assert!(!result.contains("line 0:"));
+        // Result length should be manageable
+        assert!(result.len() <= CI_LOG_MAX_CHARS + 100); // header adds a bit
+    }
+
+    #[test]
+    fn test_ci_log_empty_input() {
+        assert_eq!(truncate_ci_logs(""), "");
+        assert_eq!(truncate_ci_logs("  \n  "), "");
     }
 
     #[test]

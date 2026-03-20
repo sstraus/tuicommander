@@ -84,6 +84,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { initApp } from "./hooks/useAppInit";
 import { startAutoFetch } from "./hooks/useAutoFetch";
 import { useAutoDeleteBranch } from "./hooks/useAutoDeleteBranch";
+import { useCiHeal } from "./hooks/useCiHeal";
 import { applyAppTheme, applyFontFamily } from "./themes";
 import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
 import { applyPlatformClass, getModifierSymbol, isQuickSwitcherActive, isQuickSwitcherRelease } from "./platform";
@@ -249,6 +250,9 @@ const App: Component = () => {
 
   // Auto-delete local branches when their PR is merged/closed
   useAutoDeleteBranch({ confirm: (opts) => dialogs.confirm(opts) });
+
+  // Auto-heal CI failures by injecting logs into agent terminals
+  useCiHeal();
 
   // Stop GitHub polling on component teardown — registered at body level so
   // SolidJS can track it synchronously (onCleanup inside async onMount is unreliable).

@@ -608,7 +608,16 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Review button: if the branch's active agent has a run config named "review", spawns a terminal running the interpolated command with `{pr_number}`, `{branch}`, `{base_branch}`, `{repo}`, `{pr_url}`. Hidden when no matching config exists
 - Triggered from: sidebar PR badge, status bar PR badge, status bar CI badge, toolbar notification bell
 
-### 8.4 PR Notifications
+### 8.4 CI Auto-Heal
+- When CI checks fail on a branch with an active agent terminal, auto-heal can fetch failure logs and inject them into the agent
+- Toggle per-branch via checkbox in PR detail popover (visible when CI checks are failing)
+- Fetches logs via `gh run view --log-failed`, truncated to ~4000 chars
+- Waits for agent to be idle/awaiting input before injecting
+- Max 3 attempts per failure cycle, then stops and logs a warning
+- Attempt counter visible in PR detail popover
+- Status tracked per-branch in `BranchState.ciAutoHeal`
+
+### 8.5 PR Notifications
 - Types: Merged, Closed, Conflicts, CI Failed, Changes Requested, Ready
 - Toolbar bell with count badge
 - Individual dismiss or dismiss all

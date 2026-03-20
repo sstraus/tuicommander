@@ -423,6 +423,32 @@
   color: var(--error);
 }
 
+/* Auto-heal CI toggle */
+.autoHealRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: var(--font-sm);
+}
+
+.autoHealToggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--fg-secondary);
+}
+
+.autoHealToggle input {
+  accent-color: var(--accent);
+}
+
+.autoHealStatus {
+  color: var(--orange);
+  font-size: var(--font-xs);
+}
+
 /* Empty state */
 .empty {
   padding: 20px;

@@ -26,6 +26,7 @@ export type AppLogSource =
   | "network"
   | "terminal"
   | "github"
+  | "ci-heal"
   | "dictation"
   | "store"
   | "config"

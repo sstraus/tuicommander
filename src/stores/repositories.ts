@@ -23,6 +23,8 @@ export interface BranchState {
   lastCommitTs: number | null; // Unix timestamp of last commit on this branch
   runCommand?: string; // Saved run command for this branch
   savedTerminals?: SavedTerminal[]; // Persisted terminal metadata for session restore
+  /** CI auto-heal: when enabled, CI failures trigger automatic agent fix cycles */
+  ciAutoHeal?: { enabled: boolean; attempts: number; lastRunId?: number; healing?: boolean };
   /** Split layout — persisted per-branch, restored on branch switch */
   layout?: TabLayout;
 }
@@ -377,6 +379,12 @@ function createRepositoriesStore() {
         setState("repositories", repoPath, "branches", branchName, "runCommand", command);
         save();
       }
+    },
+
+    /** Update CI auto-heal state for a branch */
+    setCiAutoHeal(repoPath: string, branchName: string, value: BranchState["ciAutoHeal"]): void {
+      if (!state.repositories[repoPath]?.branches[branchName]) return;
+      setState("repositories", repoPath, "branches", branchName, "ciAutoHeal", value);
     },
 
     /** Update branch stats (additions/deletions) — only if branch already exists */

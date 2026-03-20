@@ -382,7 +382,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
         switch (parsed.type) {
           case "progress": {
-            terminalsStore.clearAwaitingInput(props.id);
+            // Don't clear error state on progress — API errors are persistent
+            // and should only be cleared by user input or process exit.
+            if (terminalsStore.get(props.id)?.awaitingInput !== "error") {
+              terminalsStore.clearAwaitingInput(props.id);
+            }
             if (parsed.state === 0) {
               terminalsStore.update(props.id, { progress: null });
             } else if (parsed.state === 1 || parsed.state === 2 || parsed.state === 3) {
@@ -394,7 +398,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
             // Agent is working again — clear question state (but NOT suggest:
             // suggested actions persist until the user selects one, dismisses, or
             // sends new input via write_pty).
-            terminalsStore.clearAwaitingInput(props.id);
+            // Don't clear error state — API errors are persistent.
+            if (terminalsStore.get(props.id)?.awaitingInput !== "error") {
+              terminalsStore.clearAwaitingInput(props.id);
+            }
             terminalsStore.update(props.id, { currentTask: parsed.task_name });
             break;
           }

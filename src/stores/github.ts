@@ -48,6 +48,10 @@ function createGitHubStore() {
 
   /** Callback fired when a PR reaches a terminal state (merged/closed) */
   let prTerminalCallback: ((repoPath: string, branch: string, prNumber: number, type: "merged" | "closed") => void) | null = null;
+  /** Callback fired when CI checks transition to failed for a PR */
+  let ciFailedCallback: ((repoPath: string, branch: string, prNumber: number) => void) | null = null;
+  /** Callback fired when CI checks recover (failed → all passing) for a PR */
+  let ciRecoveredCallback: ((repoPath: string, branch: string, prNumber: number) => void) | null = null;
 
   /** Detect significant PR state transitions and emit notifications */
   function detectTransitions(repoPath: string, oldPr: BranchPrStatus, newPr: BranchPrStatus): void {
@@ -97,6 +101,20 @@ function createGitHubStore() {
       // Fire terminal state callback for auto-delete logic
       if ((type === "merged" || type === "closed") && prTerminalCallback) {
         prTerminalCallback(repoPath, newPr.branch, newPr.number, type);
+      }
+      // Fire CI failed callback for auto-heal logic
+      if (type === "ci_failed" && ciFailedCallback) {
+        ciFailedCallback(repoPath, newPr.branch, newPr.number);
+      }
+    }
+
+    // Detect CI recovery (failed → all passing) — separate from the notification type system
+    if (ciRecoveredCallback && newState === "OPEN") {
+      const oldFailed = oldPr.checks?.failed ?? 0;
+      const newFailed = newPr.checks?.failed ?? 0;
+      const newPending = newPr.checks?.pending ?? 0;
+      if (oldFailed > 0 && newFailed === 0 && newPending === 0) {
+        ciRecoveredCallback(repoPath, newPr.branch, newPr.number);
       }
     }
   }
@@ -427,6 +445,14 @@ function createGitHubStore() {
     /** Register a callback for PR terminal state transitions (merged/closed) */
     setOnPrTerminal(cb: ((repoPath: string, branch: string, prNumber: number, type: "merged" | "closed") => void) | null): void {
       prTerminalCallback = cb;
+    },
+    /** Register a callback for CI failure transitions */
+    setOnCiFailed(cb: ((repoPath: string, branch: string, prNumber: number) => void) | null): void {
+      ciFailedCallback = cb;
+    },
+    /** Register a callback for CI recovery (failed → all passing) */
+    setOnCiRecovered(cb: ((repoPath: string, branch: string, prNumber: number) => void) | null): void {
+      ciRecoveredCallback = cb;
     },
   };
 }

@@ -1,5 +1,6 @@
 import { Component, Show, For, createEffect, type JSX } from "solid-js";
 import { githubStore } from "../../stores/github";
+import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { CiRing } from "../ui/CiRing";
 import { relativeTime } from "../../utils/time";
@@ -29,6 +30,42 @@ const CI_CLASSES: Record<string, string> = {
   success: s.success,
   failure: s.failure,
   pending: s.pending,
+};
+
+/** Inline toggle for CI auto-heal per branch */
+const CiAutoHealToggle: Component<{ repoPath: string; branch: string }> = (props) => {
+  const healState = () =>
+    repositoriesStore.state.repositories[props.repoPath]?.branches[props.branch]?.ciAutoHeal;
+  const enabled = () => healState()?.enabled ?? false;
+  const healing = () => healState()?.healing ?? false;
+  const attempts = () => healState()?.attempts ?? 0;
+
+  const toggle = () => {
+    const current = healState();
+    repositoriesStore.setCiAutoHeal(props.repoPath, props.branch, {
+      enabled: !enabled(),
+      attempts: enabled() ? 0 : (current?.attempts ?? 0),
+    });
+  };
+
+  return (
+    <div class={s.autoHealRow}>
+      <label class={s.autoHealToggle}>
+        <input type="checkbox" checked={enabled()} onChange={toggle} />
+        <span>{t("prDetail.autoHeal", "Auto-heal CI")}</span>
+      </label>
+      <Show when={healing()}>
+        <span class={s.autoHealStatus}>
+          {t("prDetail.healing", "Healing")} ({attempts()}/3)
+        </span>
+      </Show>
+      <Show when={!healing() && enabled() && attempts() > 0}>
+        <span class={s.autoHealStatus}>
+          {attempts()}/3 {t("prDetail.attempts", "attempts")}
+        </span>
+      </Show>
+    </div>
+  );
 };
 
 export interface PrDetailContentProps {
@@ -170,6 +207,11 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
                 </span>
               </div>
             )}
+          </Show>
+
+          {/* Auto-heal CI toggle */}
+          <Show when={checkSummary()?.failed}>
+            <CiAutoHealToggle repoPath={props.repoPath} branch={props.branch} />
           </Show>
 
           {/* Check list */}
