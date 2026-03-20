@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Stdio upstream `cwd` field** — MCP upstream servers using stdio transport can now specify a working directory. Required for mdkb which uses cwd as project root
 - **Boot-time upstream auto-connect** — Saved MCP upstream servers in `mcp-upstreams.json` now connect automatically on app launch (previously required UI interaction)
 - **CI Auto-Heal** — When CI checks fail on a branch with auto-heal enabled and an active agent terminal, TUICommander fetches the failure logs via `gh run view --log-failed`, waits for the agent to be idle, and injects the logs with a fix prompt. Up to 3 attempts per cycle. Toggle per-branch in the PR detail popover
+- **PWA WebSocket auto-reconnect** — When the browser closes the WebSocket (e.g. mobile backgrounding), the terminal now auto-reconnects with exponential backoff (1s→30s, up to 10 attempts). A pulsing "Reconnecting" banner shows progress. PTY sessions survive on the server — no data loss
+- **Chunked backlog streaming** — Initial PTY catch-up on WebSocket connect is now sent in 64KB chunks instead of one giant frame. Supports `?offset=N` for delta-only catch-up on reconnect, skipping already-received data
+
+### Fixed
+- **MCP stale session auto-recovery** — When a `tools/call` or SSE request arrives with a session ID the server no longer recognizes (e.g. after app restart), the session is re-registered automatically instead of returning a `-32600` error. Only requests missing the header entirely are rejected
 
 ### Changed
 - **MCP tool rationalization** — Removed `git` tool (thin CLI wrappers CC does natively). Replaced with `github` tool (`prs` for batched PR+CI, `status` for cross-repo aggregate) and `worktree` tool (`list`, `create` with optional `spawn_session`, `remove`). Tool count 7→8, action count 24→21
