@@ -795,6 +795,10 @@ export interface SubscribePtyOptions {
   /** Receive real-time SessionState snapshots pushed by the server on parsed events. */
   onStateChange?: (state: Record<string, unknown>) => void;
   onParsed?: (event: WsParsedEvent) => void;
+  /** Called when WebSocket drops and reconnect is attempted (browser mode only). */
+  onReconnecting?: (attempt: number, maxAttempts: number) => void;
+  /** Called when WebSocket reconnect succeeds (browser mode only). */
+  onReconnected?: () => void;
 }
 
 export async function subscribePty(
@@ -822,15 +826,15 @@ export async function subscribePty(
     };
   }
 
-  // Browser mode: WebSocket with JSON framing
+  // Browser mode: WebSocket with JSON framing and auto-reconnect
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const queryFormat = opts.format === "log" ? "log" : opts.stripAnsi ? "text" : null;
-  const params = new URLSearchParams();
-  if (queryFormat) params.set("format", queryFormat);
-  if (opts.logOffset != null) params.set("offset", String(opts.logOffset));
-  const query = params.size > 0 ? `?${params}` : "";
-  const wsUrl = `${protocol}//${window.location.host}/sessions/${sessionId}/stream${query}`;
-  const ws = new WebSocket(wsUrl);
+
+  // Track server-side write offset for delta catch-up on reconnect
+  let lastTotalWritten: number | null = null;
+  let disposed = false;
+  let activeWs: WebSocket | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   const handleMessage = (event: MessageEvent) => {
     const raw = event.data as string;
@@ -838,6 +842,10 @@ export async function subscribePty(
     if (raw.startsWith("{")) {
       try {
         const frame = JSON.parse(raw) as WsParsedEvent;
+        // Track total_written for reconnect delta
+        if (typeof (frame as Record<string, unknown>).total_written === "number") {
+          lastTotalWritten = (frame as Record<string, unknown>).total_written as number;
+        }
         switch (frame.type) {
           case "output":
             onData(frame.data as string);
@@ -880,6 +888,7 @@ export async function subscribePty(
             break;
           case "exit":
           case "closed":
+            disposed = true; // Session truly ended — don't reconnect
             onExit();
             break;
         }
@@ -891,27 +900,90 @@ export async function subscribePty(
     onData(raw);
   };
 
-  // Wait for connection to open. Wire all handlers inside the promise so
-  // a pre-handshake close (e.g. session not found) correctly rejects.
-  await new Promise<void>((resolve, reject) => {
-    ws.onopen = () => resolve();
-    ws.onerror = (e) => reject(new Error(`WebSocket connection failed: ${e}`));
-    ws.onclose = (event: CloseEvent) => {
-      reject(new Error(`WebSocket closed before opening (code ${event.code}): ${event.reason || "no reason"}`));
-    };
-    ws.onmessage = handleMessage;
-  });
-
-  // Re-wire onclose for the live session after successful open
-  ws.onclose = (event: CloseEvent) => {
-    if (!event.wasClean) {
-      appLogger.debug("network", `WebSocket closed abnormally (code ${event.code}): ${event.reason || "unknown"}`);
+  /** Build the WS URL with current params (including offset for reconnect). */
+  const buildWsUrl = (reconnectOffset?: number | null): string => {
+    const params = new URLSearchParams();
+    if (queryFormat) params.set("format", queryFormat);
+    if (reconnectOffset != null) {
+      params.set("offset", String(reconnectOffset));
+    } else if (opts.logOffset != null) {
+      params.set("offset", String(opts.logOffset));
     }
-    onExit();
+    const query = params.size > 0 ? `?${params}` : "";
+    return `${protocol}//${window.location.host}/sessions/${sessionId}/stream${query}`;
   };
 
+  /** Connect (or reconnect) the WebSocket. */
+  const connect = (reconnectOffset?: number | null): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      const wsUrl = buildWsUrl(reconnectOffset);
+      const ws = new WebSocket(wsUrl);
+      activeWs = ws;
+
+      ws.onopen = () => {
+        appLogger.debug("network", `WebSocket connected: ${sessionId}`);
+        // Re-wire onclose for live session
+        ws.onclose = (evt: CloseEvent) => {
+          if (disposed) return;
+          if (evt.code === 1000 || evt.code === 1001) {
+            // Normal close or going away — don't reconnect
+            onExit();
+            return;
+          }
+          appLogger.debug("network", `WebSocket closed abnormally (code ${evt.code}), will reconnect`);
+          scheduleReconnect();
+        };
+        resolve();
+      };
+
+      ws.onerror = () => {
+        // onerror is always followed by onclose, so reject is handled there
+      };
+
+      ws.onclose = (evt: CloseEvent) => {
+        reject(new Error(`WebSocket closed before opening (code ${evt.code}): ${evt.reason || "no reason"}`));
+      };
+
+      ws.onmessage = handleMessage;
+    });
+
+  // Reconnect with exponential backoff
+  const MAX_RETRIES = 10;
+  const BASE_DELAY_MS = 1000;
+  const MAX_DELAY_MS = 30_000;
+  let retryCount = 0;
+
+  const scheduleReconnect = () => {
+    if (disposed) return;
+    if (retryCount >= MAX_RETRIES) {
+      appLogger.warn("network", `WebSocket reconnect failed after ${MAX_RETRIES} attempts: ${sessionId}`);
+      onExit();
+      return;
+    }
+    const delay = Math.min(BASE_DELAY_MS * Math.pow(2, retryCount), MAX_DELAY_MS);
+    retryCount++;
+    appLogger.debug("network", `WebSocket reconnecting in ${delay}ms (attempt ${retryCount}/${MAX_RETRIES})`);
+    opts.onReconnecting?.(retryCount, MAX_RETRIES);
+    reconnectTimer = setTimeout(async () => {
+      if (disposed) return;
+      try {
+        await connect(lastTotalWritten);
+        retryCount = 0; // Reset on success
+        opts.onReconnected?.();
+      } catch {
+        // connect() failed (e.g. session gone → 404 triggers immediate close)
+        scheduleReconnect();
+      }
+    }, delay);
+  };
+
+  // Initial connection
+  await connect();
+
   return () => {
-    ws.close();
+    disposed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    activeWs?.close();
   };
 }
 

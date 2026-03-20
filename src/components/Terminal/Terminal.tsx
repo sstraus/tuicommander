@@ -124,6 +124,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   // Search overlay state
   const [searchVisible, setSearchVisible] = createSignal(false);
+  // WebSocket reconnect state (browser/PWA mode only)
+  const [reconnecting, setReconnecting] = createSignal<{ attempt: number; max: number } | null>(null);
   let sessionInitialized = false;
   let unsubscribePty: Unsubscribe | undefined;
   let unlistenParsed: (() => void) | undefined;
@@ -371,6 +373,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
           appLogger.info("terminal", `[Notify] ${props.id} completion — session exited (background tab)`);
           notificationsStore.playCompletion();
         }
+      },
+      {
+        onReconnecting: (attempt, max) => setReconnecting({ attempt, max }),
+        onReconnected: () => setReconnecting(null),
       },
     );
 
@@ -1208,6 +1214,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
           terminal?.focus();
         }}
       />
+      <Show when={reconnecting()}>
+        {(info) => (
+          <div class={s.reconnectBanner}>
+            Reconnecting ({info().attempt}/{info().max})...
+          </div>
+        )}
+      </Show>
       <Show when={terminalsStore.get(props.id)?.pendingResumeCommand}>
         <div class={s.resumeBanner} onClick={handleResume}>
           <span>Agent session was active — click to resume</span>

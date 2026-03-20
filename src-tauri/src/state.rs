@@ -479,6 +479,25 @@ impl OutputRingBuffer {
 
         (result, self.total_written)
     }
+
+    /// Read bytes written after `since_offset` (based on `total_written`).
+    /// Returns (bytes, current_total_written).
+    /// If `since_offset` is older than the buffer capacity, returns whatever is still available.
+    pub fn read_since(&self, since_offset: u64) -> (Vec<u8>, u64) {
+        if since_offset >= self.total_written {
+            return (Vec::new(), self.total_written);
+        }
+        let bytes_behind = (self.total_written - since_offset) as usize;
+        // Clamp to available data in the ring buffer
+        let available = std::cmp::min(self.total_written as usize, self.capacity);
+        let to_read = std::cmp::min(bytes_behind, available);
+        self.read_last(to_read)
+    }
+
+    /// Current total_written counter (bytes ever written, monotonically increasing).
+    pub fn total_written(&self) -> u64 {
+        self.total_written
+    }
 }
 
 pub(crate) const OUTPUT_RING_BUFFER_CAPACITY: usize = 2 * 1024 * 1024; // 2 MB
@@ -1964,6 +1983,63 @@ mod tests {
             "read_last(2MB) took {:?} per call — too slow",
             per_call
         );
+    }
+
+    // --- read_since tests ---
+
+    #[test]
+    fn test_ring_buffer_read_since_basic() {
+        let mut rb = OutputRingBuffer::new(16);
+        rb.write(b"hello");
+        // offset 0 → get everything
+        let (data, total) = rb.read_since(0);
+        assert_eq!(&data, b"hello");
+        assert_eq!(total, 5);
+
+        rb.write(b" world");
+        // offset 5 → only " world"
+        let (data, total) = rb.read_since(5);
+        assert_eq!(&data, b" world");
+        assert_eq!(total, 11);
+    }
+
+    #[test]
+    fn test_ring_buffer_read_since_at_current() {
+        let mut rb = OutputRingBuffer::new(16);
+        rb.write(b"abc");
+        let (data, _) = rb.read_since(3);
+        assert!(data.is_empty());
+    }
+
+    #[test]
+    fn test_ring_buffer_read_since_future_offset() {
+        let mut rb = OutputRingBuffer::new(16);
+        rb.write(b"abc");
+        let (data, total) = rb.read_since(999);
+        assert!(data.is_empty());
+        assert_eq!(total, 3);
+    }
+
+    #[test]
+    fn test_ring_buffer_read_since_old_offset_clamped() {
+        // Offset is so old that data has been overwritten — return what's available
+        let mut rb = OutputRingBuffer::new(8);
+        rb.write(b"12345678"); // total=8, buf full
+        rb.write(b"ABCD");    // total=12, oldest is 5678ABCD
+        // offset 2 would want 10 bytes, but only 8 available
+        let (data, total) = rb.read_since(2);
+        assert_eq!(&data, b"5678ABCD");
+        assert_eq!(total, 12);
+    }
+
+    #[test]
+    fn test_ring_buffer_total_written() {
+        let mut rb = OutputRingBuffer::new(8);
+        assert_eq!(rb.total_written(), 0);
+        rb.write(b"abc");
+        assert_eq!(rb.total_written(), 3);
+        rb.write(b"defghij");
+        assert_eq!(rb.total_written(), 10);
     }
 
     // --- EscapeAwareBuffer tests ---

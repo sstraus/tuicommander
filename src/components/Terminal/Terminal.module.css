@@ -16,6 +16,28 @@
 }
 
 /* Resume banner — shown when a restored terminal had an active agent session */
+.reconnectBanner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  background: var(--warning-bg, #3a2e00);
+  border-bottom: 1px solid var(--warning-border, #5c4a00);
+  color: var(--warning-fg, #f0c040);
+  font-size: var(--font-sm);
+  animation: reconnectPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes reconnectPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .resumeBanner {
   position: absolute;
   top: 0;
