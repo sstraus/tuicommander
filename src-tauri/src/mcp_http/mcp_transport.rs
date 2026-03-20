@@ -1182,6 +1182,57 @@ fn get_repo_paths_for_group(group_filter: Option<&str>) -> Vec<String> {
     }
 }
 
+/// Auto-provision mdkb upstreams for repos that have a `.mdkb/` directory
+/// but are not yet registered in the upstream registry.
+/// Returns the list of repo paths that are now provisioned (or were already).
+async fn ensure_mdkb_provisioned(state: &Arc<AppState>, paths: &[String]) {
+    let registry = &state.mcp_upstream_registry;
+    let self_port = state.config.read().remote_access_port;
+    let mut new_servers = Vec::new();
+
+    for path in paths {
+        let name = mdkb_upstream_name(path);
+        if registry.status(&name).is_some() {
+            continue;
+        }
+        // Only auto-provision if the repo has a .mdkb/ directory
+        if !std::path::Path::new(path).join(".mdkb").is_dir() {
+            continue;
+        }
+        let server = crate::mcp_upstream_config::UpstreamMcpServer {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.clone(),
+            transport: crate::mcp_upstream_config::UpstreamTransport::Stdio {
+                command: "mdkb".to_string(),
+                args: vec!["serve".to_string()],
+                env: std::collections::HashMap::new(),
+                cwd: Some(path.clone()),
+            },
+            enabled: true,
+            timeout_secs: 60,
+            tool_filter: None,
+        };
+        match registry.connect_upstream(server.clone(), Some(self_port)).await {
+            Ok(()) => {
+                tracing::info!(source = "knowledge", repo = %path, "Auto-provisioned mdkb upstream");
+                new_servers.push(server);
+            }
+            Err(e) => {
+                tracing::warn!(source = "knowledge", repo = %path, "Auto-provision failed: {e}");
+            }
+        }
+    }
+
+    // Persist newly created servers
+    if !new_servers.is_empty() {
+        let mut config = crate::mcp_upstream_config::load_mcp_upstreams();
+        config.servers.extend(new_servers);
+        if let Err(e) = crate::config::save_json_config("mcp-upstreams.json", &config) {
+            tracing::warn!(source = "knowledge", "Failed to persist mdkb upstreams: {e}");
+        }
+    }
+}
+
 async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
     let action = match require_action(args, "knowledge", KNOWLEDGE_ACTIONS) {
         Ok(a) => a,
@@ -1198,48 +1249,27 @@ async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> se
                 return serde_json::json!({"error": "No repos found. Add repos to the workspace first."});
             }
 
-            let self_port = state.config.read().remote_access_port;
             let registry = &state.mcp_upstream_registry;
+            // Snapshot before provisioning to report what changed
+            let before: Vec<String> = paths.iter()
+                .map(|p| mdkb_upstream_name(p))
+                .filter(|n| registry.status(n).is_some())
+                .collect();
+
+            ensure_mdkb_provisioned(state, &paths).await;
+
+            // Build report
             let mut created = Vec::new();
             let mut skipped = Vec::new();
             let mut errors = Vec::new();
-            let mut new_servers = Vec::new();
-
             for path in &paths {
                 let name = mdkb_upstream_name(path);
-                // Skip if already registered
-                if registry.status(&name).is_some() {
+                if before.contains(&name) {
                     skipped.push(name);
-                    continue;
-                }
-                let server = crate::mcp_upstream_config::UpstreamMcpServer {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    name: name.clone(),
-                    transport: crate::mcp_upstream_config::UpstreamTransport::Stdio {
-                        command: "mdkb".to_string(),
-                        args: vec!["serve".to_string()],
-                        env: std::collections::HashMap::new(),
-                        cwd: Some(path.clone()),
-                    },
-                    enabled: true,
-                    timeout_secs: 60,
-                    tool_filter: None,
-                };
-                match registry.connect_upstream(server.clone(), Some(self_port)).await {
-                    Ok(()) => {
-                        created.push(name);
-                        new_servers.push(server);
-                    }
-                    Err(e) => errors.push(serde_json::json!({"name": name, "error": e})),
-                }
-            }
-
-            // Persist newly created servers to config file
-            if !new_servers.is_empty() {
-                let mut config = crate::mcp_upstream_config::load_mcp_upstreams();
-                config.servers.extend(new_servers);
-                if let Err(e) = crate::config::save_json_config("mcp-upstreams.json", &config) {
-                    tracing::warn!(source = "knowledge", "Failed to persist mdkb upstreams: {e}");
+                } else if registry.status(&name).is_some() {
+                    created.push(name);
+                } else {
+                    errors.push(serde_json::json!({"name": name, "error": "failed to provision"}));
                 }
             }
 
@@ -1270,6 +1300,7 @@ async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> se
             let limit = args["limit"].as_u64().unwrap_or(10);
 
             let paths = get_repo_paths_for_group(group_filter);
+            ensure_mdkb_provisioned(state, &paths).await;
             let registry = &state.mcp_upstream_registry;
             let mut all_results = Vec::new();
 
@@ -1301,6 +1332,7 @@ async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> se
             let max_depth = args["max_depth"].as_u64().unwrap_or(3);
 
             let paths = get_repo_paths_for_group(group_filter);
+            ensure_mdkb_provisioned(state, &paths).await;
             let registry = &state.mcp_upstream_registry;
             let mut all_results = Vec::new();
 
