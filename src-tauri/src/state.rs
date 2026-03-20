@@ -495,6 +495,7 @@ impl OutputRingBuffer {
     }
 
     /// Current total_written counter (bytes ever written, monotonically increasing).
+    #[cfg(test)]
     pub fn total_written(&self) -> u64 {
         self.total_written
     }

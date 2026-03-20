@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-03-19
+
 ### Added
 - **Cross-repo knowledge base** — New `knowledge` MCP tool powered by mdkb. Actions: `setup` (auto-provisions mdkb upstream per repo), `search` (hybrid BM25+semantic fan-out across repo groups), `code_graph` (cross-repo call graph queries), `status` (indexing status). Provisioned upstreams persist in `mcp-upstreams.json`
 - **Stdio upstream `cwd` field** — MCP upstream servers using stdio transport can now specify a working directory. Required for mdkb which uses cwd as project root

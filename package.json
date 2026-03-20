@@ -1,7 +1,7 @@
 {
   "name": "tuicommander",
   "private": true,
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Multi-agent terminal orchestrator with xterm.js and Tauri",
   "type": "module",
   "scripts": {
