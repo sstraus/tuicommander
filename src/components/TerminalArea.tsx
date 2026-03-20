@@ -263,8 +263,9 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
             const active = () => terminalsStore.getActive();
             const actions = () => active()?.suggestedActions;
             const activeId = () => terminalsStore.state.activeId;
+            const dismissed = () => active()?.suggestDismissed;
             return (
-              <Show when={actions()?.length}>
+              <Show when={actions()?.length && !dismissed()}>
                 {(() => {
                   // Capture terminal ID at render time so dismiss always targets the right terminal
                   const capturedId = activeId()!;
