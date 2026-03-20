@@ -486,8 +486,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
           case "api-error": {
             const agent = terminalsStore.get(props.id)?.agentType;
             const { error_kind: kind, pattern_name: patternName, matched_text: matchedText } = parsed;
-            appLogger.warn("terminal", `[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
-            appLogger.error("terminal", `API error (${kind}): ${matchedText}`);
+            appLogger.debug("terminal", `[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
+            const label = agent ?? "Agent";
+            const kindLabel = kind === "server" ? "server error" : kind === "auth" ? "auth failure" : "API error";
+            appLogger.error("terminal", `${label}: ${kindLabel} (${patternName})`);
             terminalsStore.setAwaitingInput(props.id, "error");
             break;
           }
