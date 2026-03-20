@@ -1382,17 +1382,29 @@ pub(super) async fn mcp_post(
         }
 
         "tools/call" => {
-            // Validate that the caller has an active MCP session (established via initialize)
+            // Validate MCP session. If the session ID is stale (e.g. app restarted, or
+            // long-lived client like Claude Code lost its session), auto-recover by
+            // re-registering the session instead of returning an error.
             let session_valid = headers
                 .get(MCP_SESSION_HEADER)
                 .and_then(|v| v.to_str().ok())
-                .map(|sid| state.mcp_sessions.contains_key(sid))
+                .map(|sid| {
+                    if state.mcp_sessions.contains_key(sid) {
+                        true
+                    } else {
+                        // Auto-recover: re-register the stale session ID
+                        tracing::info!("MCP session auto-recovered (stale session_id: {sid})");
+                        state.mcp_sessions.insert(sid.to_string(), std::time::Instant::now());
+                        true
+                    }
+                })
                 .unwrap_or(false);
             if !session_valid {
+                // No session header at all — reject
                 let response = serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
-                    "error": { "code": -32600, "message": "Valid mcp-session-id header required. Call initialize first." }
+                    "error": { "code": -32600, "message": "mcp-session-id header required. Call initialize first." }
                 });
                 return Json(response).into_response();
             }
@@ -1448,11 +1460,17 @@ pub(super) async fn mcp_get(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    // Validate MCP session
+    // Validate MCP session (auto-recover stale sessions, same as tools/call)
     let session_valid = headers
         .get(MCP_SESSION_HEADER)
         .and_then(|v| v.to_str().ok())
-        .map(|sid| state.mcp_sessions.contains_key(sid))
+        .map(|sid| {
+            if !state.mcp_sessions.contains_key(sid) {
+                tracing::info!("MCP SSE session auto-recovered (stale session_id: {sid})");
+                state.mcp_sessions.insert(sid.to_string(), std::time::Instant::now());
+            }
+            true
+        })
         .unwrap_or(false);
     if !session_valid {
         return StatusCode::UNAUTHORIZED.into_response();
