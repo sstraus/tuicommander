@@ -737,8 +737,8 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 ### 11.3 Services
 - HTTP API server: always active on IPC listener (Unix domain socket on macOS/Linux, named pipe `\\.\pipe\tuicommander-mcp` on Windows). TCP port only for remote access
 - MCP connection info: bridge sidecar auto-installs configs for supported agents (Claude Code, Cursor, etc.)
-- TUIC native tool toggles: enable/disable individual MCP tools (`session`, `git`, `agent`, `config`, `workspace`, `notify`, `plugin_dev_guide`) to restrict what AI agents can access
-- MCP Upstreams: add/edit/remove upstream MCP servers (HTTP or stdio), per-upstream enable/disable, reconnect, credential storage via OS keyring, live status dots, tool count and metrics
+- TUIC native tool toggles: enable/disable individual MCP tools (`session`, `git`, `agent`, `config`, `workspace`, `notify`, `knowledge`, `plugin_dev_guide`) to restrict what AI agents can access
+- MCP Upstreams: add/edit/remove upstream MCP servers (HTTP or stdio with optional `cwd`), per-upstream enable/disable, reconnect, credential storage via OS keyring, live status dots, tool count and metrics. Saved upstreams auto-connect on boot
 - Remote access: port, username, password (bcrypt hash), URL display, QR code, token duration, IPv6 dual-stack, LAN auth bypass
 - Voice dictation: full setup (see section 9)
 
@@ -842,7 +842,15 @@ All data persisted to platform config directory via Rust:
 - Local connections use Unix domain socket (`<config_dir>/mcp.sock`) on macOS/Linux or named pipe (`\\.\pipe\tuicommander-mcp`) on Windows; TCP port reserved for remote access only
 - Unix socket lifecycle is crash-safe: RAII guard removes the socket file on `Drop`; bind retries 3× (×100 ms) removing any stale file before each attempt; liveness check uses a real `connect()` probe so a dead socket from a crashed run never blocks MCP tool loading
 
-### 14.7 macOS Dock Badge
+### 14.7 Cross-Repo Knowledge Base
+- `knowledge` MCP tool: fan-out queries across all repos in a workspace group via mdkb upstream servers
+- `setup`: auto-provisions `mdkb serve` (stdio) for each repo, persists to `mcp-upstreams.json`
+- `search`: hybrid BM25 + semantic search across docs, code, symbols, and memory in all group repos
+- `code_graph`: cross-repo call graph queries (calls, callers, impact analysis)
+- `status`: indexing health for all mdkb instances
+- Requires `mdkb` binary on PATH (installed separately)
+
+### 14.8 macOS Dock Badge
 - Badge count for attention-requiring notifications (questions, errors)
 
 ---

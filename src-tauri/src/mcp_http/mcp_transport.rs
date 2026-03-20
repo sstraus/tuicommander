@@ -68,7 +68,9 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     out.push_str("3. `session action=output` → read terminal (`exited`/`exit_code` tell you when done)\n");
     out.push_str("4. `agent action=spawn` → launch AI agent in new PTY\n");
     out.push_str("5. `github action=prs` → all open PRs with CI rollup (single GraphQL batch)\n");
-    out.push_str("6. `worktree action=create` → isolated worktree, optional `spawn_session`\n\n");
+    out.push_str("6. `worktree action=create` → isolated worktree, optional `spawn_session`\n");
+    out.push_str("7. `knowledge action=setup` → auto-provision mdkb knowledge base for all repos\n");
+    out.push_str("8. `knowledge action=search` → cross-repo hybrid search (docs, code, symbols)\n\n");
 
     // Claude Code-specific teammate guidance
     let is_claude_code = client_name.is_some_and(|n| n.contains("claude") || n.contains("tuic-bridge"));
@@ -127,6 +129,7 @@ const WORKTREE_ACTIONS: &str = "list, create, remove";
 const CONFIG_ACTIONS: &str = "get, save";
 const WORKSPACE_ACTIONS: &str = "list, active";
 const NOTIFY_ACTIONS: &str = "toast, confirm";
+const KNOWLEDGE_ACTIONS: &str = "search, code_graph, status, setup";
 
 /// MCP tool definitions — 5 meta-commands mirroring tui_mcp_bridge
 fn native_tool_definitions() -> serde_json::Value {
@@ -207,6 +210,20 @@ fn native_tool_definitions() -> serde_json::Value {
                 "message": { "type": "string", "description": "Optional body text" },
                 "level": { "type": "string", "description": "Toast level: info, warn, error (default: info)" }
             }, "required": ["action", "title"] }
+        },
+        {
+            "name": "knowledge",
+            "description": "Cross-repo knowledge base powered by mdkb. Search docs, code, symbols, and call graphs across all repos in a workspace group.\n\nActions (pass as 'action' parameter):\n- search: Hybrid search (BM25 + semantic) across repos in a group. Requires query. Optional: group, scope (docs/memory/code/symbols), limit.\n- code_graph: Query call graph across repos. Requires name (symbol). Optional: group, direction (calls/callers/impact), max_depth.\n- status: Returns indexing status for all mdkb instances.\n- setup: Auto-provision mdkb upstream servers for all repos (or a specific group).",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: search, code_graph, status, setup" },
+                "query": { "type": "string", "description": "Search query text (action=search)" },
+                "name": { "type": "string", "description": "Symbol name to look up (action=code_graph)" },
+                "group": { "type": "string", "description": "Group name to scope the search. Omit to search all repos." },
+                "scope": { "type": "string", "description": "Search scope: docs, memory, code, symbols (action=search)" },
+                "direction": { "type": "string", "description": "Graph direction: calls, callers, impact (action=code_graph, default: calls)" },
+                "max_depth": { "type": "integer", "description": "Max traversal depth (action=code_graph, default: 3)" },
+                "limit": { "type": "integer", "description": "Max results per repo (default: 10)" }
+            }, "required": ["action"] }
         },
         {
             "name": "plugin_dev_guide",
@@ -316,11 +333,12 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
         "config" => handle_config(state, addr, args),
         "workspace" => handle_workspace(state, args),
         "notify" => handle_notify(state, addr, args),
+        "knowledge" => handle_knowledge(state, args).await,
         "plugin_dev_guide" => {
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
         }
         _ => serde_json::json!({"error": format!(
-            "Unknown tool '{}'. Available: session, github, worktree, agent, config, workspace, notify, plugin_dev_guide", name
+            "Unknown tool '{}'. Available: session, github, worktree, agent, config, workspace, notify, knowledge, plugin_dev_guide", name
         )}),
     }
 }
@@ -1095,6 +1113,205 @@ fn handle_notify(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'notify'. Available: {}", other, NOTIFY_ACTIONS
+        )}),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge (cross-repo mdkb fan-out)
+// ---------------------------------------------------------------------------
+
+/// Slug a repo path for use as an upstream name: `mdkb-{last_component}`.
+fn mdkb_upstream_name(repo_path: &str) -> String {
+    let name = std::path::Path::new(repo_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
+    // Sanitize to [a-z0-9_-]
+    let slug: String = name.to_lowercase().chars().map(|c| {
+        if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' }
+    }).collect();
+    format!("mdkb-{slug}")
+}
+
+/// Get repo paths, optionally filtered by group name.
+fn get_repo_paths_for_group(group_filter: Option<&str>) -> Vec<String> {
+    let repo_data = crate::config::load_repositories();
+    let repo_order = repo_data.get("repoOrder")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let groups = repo_data.get("groups").cloned().unwrap_or(serde_json::json!({}));
+
+    // Build group→repos mapping
+    let mut group_repos: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    if let Some(groups_obj) = groups.as_object() {
+        for (_gid, group) in groups_obj {
+            let gname = group["name"].as_str().unwrap_or("").to_lowercase();
+            if let Some(order) = group["repoOrder"].as_array() {
+                let paths: Vec<String> = order.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+                group_repos.insert(gname, paths);
+            }
+        }
+    }
+
+    if let Some(filter) = group_filter {
+        let filter_lower = filter.to_lowercase();
+        group_repos.get(&filter_lower).cloned().unwrap_or_default()
+    } else {
+        // All repos
+        repo_order.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect()
+    }
+}
+
+async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "knowledge", KNOWLEDGE_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+
+    let group_filter = args["group"].as_str();
+
+    match action {
+        "setup" => {
+            // Auto-provision mdkb upstreams for all repos (or repos in a group)
+            let paths = get_repo_paths_for_group(group_filter);
+            if paths.is_empty() {
+                return serde_json::json!({"error": "No repos found. Add repos to the workspace first."});
+            }
+
+            let self_port = state.config.read().remote_access_port;
+            let registry = &state.mcp_upstream_registry;
+            let mut created = Vec::new();
+            let mut skipped = Vec::new();
+            let mut errors = Vec::new();
+            let mut new_servers = Vec::new();
+
+            for path in &paths {
+                let name = mdkb_upstream_name(path);
+                // Skip if already registered
+                if registry.status(&name).is_some() {
+                    skipped.push(name);
+                    continue;
+                }
+                let server = crate::mcp_upstream_config::UpstreamMcpServer {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    name: name.clone(),
+                    transport: crate::mcp_upstream_config::UpstreamTransport::Stdio {
+                        command: "mdkb".to_string(),
+                        args: vec!["serve".to_string()],
+                        env: std::collections::HashMap::new(),
+                        cwd: Some(path.clone()),
+                    },
+                    enabled: true,
+                    timeout_secs: 60,
+                    tool_filter: None,
+                };
+                match registry.connect_upstream(server.clone(), Some(self_port)).await {
+                    Ok(()) => {
+                        created.push(name);
+                        new_servers.push(server);
+                    }
+                    Err(e) => errors.push(serde_json::json!({"name": name, "error": e})),
+                }
+            }
+
+            // Persist newly created servers to config file
+            if !new_servers.is_empty() {
+                let mut config = crate::mcp_upstream_config::load_mcp_upstreams();
+                config.servers.extend(new_servers);
+                if let Err(e) = crate::config::save_json_config("mcp-upstreams.json", &config) {
+                    tracing::warn!(source = "knowledge", "Failed to persist mdkb upstreams: {e}");
+                }
+            }
+
+            serde_json::json!({"created": created, "skipped": skipped, "errors": errors})
+        }
+
+        "status" => {
+            // Show mdkb upstream status for all repos
+            let paths = get_repo_paths_for_group(group_filter);
+            let registry = &state.mcp_upstream_registry;
+            let mut statuses = Vec::new();
+            for path in &paths {
+                let name = mdkb_upstream_name(path);
+                let status = registry.status(&name)
+                    .map(|s| format!("{s:?}"))
+                    .unwrap_or_else(|| "not provisioned".to_string());
+                statuses.push(serde_json::json!({"repo": path, "upstream": name, "status": status}));
+            }
+            serde_json::json!(statuses)
+        }
+
+        "search" => {
+            let query = match args["query"].as_str() {
+                Some(q) => q,
+                None => return serde_json::json!({"error": "Action 'search' requires 'query'"}),
+            };
+            let scope = args["scope"].as_str();
+            let limit = args["limit"].as_u64().unwrap_or(10);
+
+            let paths = get_repo_paths_for_group(group_filter);
+            let registry = &state.mcp_upstream_registry;
+            let mut all_results = Vec::new();
+
+            for path in &paths {
+                let name = mdkb_upstream_name(path);
+                let tool_name = format!("{name}__search");
+                let mut tool_args = serde_json::json!({"query": query, "limit": limit});
+                if let Some(s) = scope {
+                    tool_args["scope"] = serde_json::json!(s);
+                }
+                match registry.proxy_tool_call(&tool_name, tool_args).await {
+                    Ok(result) => {
+                        all_results.push(serde_json::json!({"repo": path, "results": result}));
+                    }
+                    Err(e) => {
+                        all_results.push(serde_json::json!({"repo": path, "error": e}));
+                    }
+                }
+            }
+            serde_json::json!(all_results)
+        }
+
+        "code_graph" => {
+            let symbol_name = match args["name"].as_str() {
+                Some(n) => n,
+                None => return serde_json::json!({"error": "Action 'code_graph' requires 'name'"}),
+            };
+            let direction = args["direction"].as_str().unwrap_or("calls");
+            let max_depth = args["max_depth"].as_u64().unwrap_or(3);
+
+            let paths = get_repo_paths_for_group(group_filter);
+            let registry = &state.mcp_upstream_registry;
+            let mut all_results = Vec::new();
+
+            for path in &paths {
+                let name = mdkb_upstream_name(path);
+                let tool_name = format!("{name}__code_graph");
+                let tool_args = serde_json::json!({
+                    "name": symbol_name,
+                    "direction": direction,
+                    "max_depth": max_depth,
+                });
+                match registry.proxy_tool_call(&tool_name, tool_args).await {
+                    Ok(result) => {
+                        all_results.push(serde_json::json!({"repo": path, "results": result}));
+                    }
+                    Err(e) => {
+                        all_results.push(serde_json::json!({"repo": path, "error": e}));
+                    }
+                }
+            }
+            serde_json::json!(all_results)
+        }
+
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'knowledge'. Available: {}", other, KNOWLEDGE_ACTIONS
         )}),
     }
 }

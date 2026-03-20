@@ -618,12 +618,17 @@ pub fn run() {
         let remote_enabled = config.remote_access_enabled;
         let mcp_state = state.clone();
         let accumulator_state = state.clone();
+        let boot_registry_state = state.clone();
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new()
                 .expect("Failed to create tokio runtime for HTTP server");
             rt.block_on(async move {
                 // Start session state accumulator (consumes broadcast events)
                 AppState::spawn_session_state_accumulator(accumulator_state);
+
+                // Auto-connect saved upstream MCP servers on boot
+                crate::mcp_upstream_config::auto_connect_saved_upstreams(&boot_registry_state).await;
+
                 mcp_http::start_server(mcp_state, true, remote_enabled).await;
             });
         });

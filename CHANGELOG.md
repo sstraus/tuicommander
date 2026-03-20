@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Cross-repo knowledge base** — New `knowledge` MCP tool powered by mdkb. Actions: `setup` (auto-provisions mdkb upstream per repo), `search` (hybrid BM25+semantic fan-out across repo groups), `code_graph` (cross-repo call graph queries), `status` (indexing status). Provisioned upstreams persist in `mcp-upstreams.json`
+- **Stdio upstream `cwd` field** — MCP upstream servers using stdio transport can now specify a working directory. Required for mdkb which uses cwd as project root
+- **Boot-time upstream auto-connect** — Saved MCP upstream servers in `mcp-upstreams.json` now connect automatically on app launch (previously required UI interaction)
+
 ### Changed
 - **MCP tool rationalization** — Removed `git` tool (thin CLI wrappers CC does natively). Replaced with `github` tool (`prs` for batched PR+CI, `status` for cross-repo aggregate) and `worktree` tool (`list`, `create` with optional `spawn_session`, `remove`). Tool count 7→8, action count 24→21
 - **Session output now includes exit status** — `session action=output` returns `exited` (bool) and `exit_code` (number|null) so agents know when a teammate has finished

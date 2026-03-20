@@ -636,6 +636,7 @@ function emptyForm() {
     url: "",
     command: "",
     args: "",
+    cwd: "",
     credential: "",
     timeout: 30,
   };
@@ -683,6 +684,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
           type: "stdio",
           command: f.command.trim(),
           args: f.args.trim() ? f.args.trim().split(/\s+/) : [],
+          ...(f.cwd.trim() ? { cwd: f.cwd.trim() } : {}),
         };
 
     const server: UpstreamMcpServer = {
@@ -731,6 +733,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       url: server.transport.type === "http" ? server.transport.url : "",
       command: server.transport.type === "stdio" ? server.transport.command : "",
       args: server.transport.type === "stdio" ? (server.transport.args?.join(" ") ?? "") : "",
+      cwd: server.transport.type === "stdio" ? (server.transport.cwd ?? "") : "",
       credential: "",
       timeout: server.timeout_secs,
     });
@@ -740,7 +743,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
     const f = editForm();
     const transport: UpstreamTransport = f.transportType === "http"
       ? { type: "http", url: f.url.trim() }
-      : { type: "stdio", command: f.command.trim(), args: f.args.trim() ? f.args.trim().split(/\s+/) : [] };
+      : { type: "stdio", command: f.command.trim(), args: f.args.trim() ? f.args.trim().split(/\s+/) : [], ...(f.cwd.trim() ? { cwd: f.cwd.trim() } : {}) };
 
     const updated: UpstreamMcpServer = {
       ...server,
@@ -837,6 +840,13 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                 placeholder="Args (space-separated, e.g. -y @modelcontextprotocol/server-filesystem /path)"
                 value={form().args}
                 onInput={e => setForm(f => ({ ...f, args: e.currentTarget.value }))}
+              />
+              <input
+                type="text"
+                class={s.input}
+                placeholder="Working directory (optional)"
+                value={form().cwd}
+                onInput={e => setForm(f => ({ ...f, cwd: e.currentTarget.value }))}
               />
             </Show>
             <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
@@ -997,6 +1007,12 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                         <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Args</label>
                         <input type="text" class={s.input} value={editForm().args}
                           onInput={e => setEditForm(f => ({ ...f, args: e.currentTarget.value }))} />
+                      </div>
+                      <div>
+                        <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Working directory</label>
+                        <input type="text" class={s.input} value={editForm().cwd}
+                          placeholder="Optional"
+                          onInput={e => setEditForm(f => ({ ...f, cwd: e.currentTarget.value }))} />
                       </div>
                     </Show>
                     <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
