@@ -224,6 +224,119 @@ pub(crate) fn rename_branch(state: State<'_, Arc<AppState>>, path: String, old_n
     Ok(())
 }
 
+/// Core logic for creating a git branch.
+pub(crate) fn create_branch_impl(path: &str, name: &str, start_point: Option<&str>, checkout: bool) -> Result<(), String> {
+    let repo_path = PathBuf::from(path);
+
+    // Validate branch name (same rules as rename_branch_impl)
+    if name.is_empty() {
+        return Err("Branch name cannot be empty".to_string());
+    }
+    if name.contains(' ') {
+        return Err("Branch name cannot contain spaces".to_string());
+    }
+    if name.starts_with('-') {
+        return Err("Branch name cannot start with a hyphen".to_string());
+    }
+    if name.contains("..") {
+        return Err("Branch name cannot contain '..'".to_string());
+    }
+    if name.ends_with(".lock") {
+        return Err("Branch name cannot end with '.lock'".to_string());
+    }
+
+    // Build `git branch <name> [<start_point>]`
+    let mut args = vec!["branch", name];
+    if let Some(sp) = start_point {
+        args.push(sp);
+    }
+
+    match git_cmd(&repo_path).args(&args).run() {
+        Ok(_) => {}
+        Err(crate::git_cli::GitError::NonZeroExit { stderr, .. }) => {
+            if stderr.contains("already exists") {
+                return Err(format!("Branch '{name}' already exists"));
+            } else {
+                return Err(format!("git branch failed: {stderr}"));
+            }
+        }
+        Err(e) => return Err(e.to_string()),
+    }
+
+    if checkout {
+        match git_cmd(&repo_path).args(["checkout", name]).run() {
+            Ok(_) => {}
+            Err(crate::git_cli::GitError::NonZeroExit { stderr, .. }) => {
+                return Err(format!("git checkout failed: {stderr}"));
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+
+    Ok(())
+}
+
+/// Create a git branch (Tauri command with cache invalidation)
+#[tauri::command]
+pub(crate) fn create_branch(state: State<'_, Arc<AppState>>, path: String, name: String, start_point: Option<String>, checkout: bool) -> Result<(), String> {
+    create_branch_impl(&path, &name, start_point.as_deref(), checkout)?;
+    state.invalidate_repo_caches(&path);
+    Ok(())
+}
+
+/// Result of a branch deletion operation.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct DeleteBranchResult {
+    pub deleted: bool,
+    pub branch: String,
+    pub was_force: bool,
+}
+
+/// Core logic for deleting a git branch.
+///
+/// Refuses to delete protected main branches or the currently checked-out branch.
+/// Use `force=true` to delete branches with unmerged commits (`git branch -D`).
+pub(crate) fn delete_branch_impl(path: &str, name: &str, force: bool) -> Result<DeleteBranchResult, String> {
+    let repo_path = PathBuf::from(path);
+
+    if name.is_empty() {
+        return Err("Branch name cannot be empty".to_string());
+    }
+
+    // Refuse to delete main/primary branches
+    if is_main_branch(name) {
+        return Err(format!("Cannot delete protected branch '{name}'"));
+    }
+
+    // Refuse to delete the currently checked-out branch
+    if let Some(current) = read_branch_from_head(&repo_path) {
+        if current == name {
+            return Err(format!("Cannot delete the currently checked-out branch '{name}'"));
+        }
+    }
+
+    let flag = if force { "-D" } else { "-d" };
+    match git_cmd(&repo_path).args(["branch", flag, name]).run() {
+        Ok(_) => Ok(DeleteBranchResult {
+            deleted: true,
+            branch: name.to_string(),
+            was_force: force,
+        }),
+        Err(crate::git_cli::GitError::NonZeroExit { stderr, .. }) => {
+            Err(format!("git branch delete failed: {stderr}"))
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Delete a git branch (Tauri command with cache invalidation)
+#[tauri::command]
+pub(crate) fn delete_branch(state: State<'_, Arc<AppState>>, path: String, name: String, force: bool) -> Result<DeleteBranchResult, String> {
+    let result = delete_branch_impl(&path, &name, force)?;
+    state.invalidate_repo_caches(&path);
+    Ok(result)
+}
+
 /// A recent commit entry for the dropdown
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct RecentCommit {
@@ -901,6 +1014,128 @@ pub(crate) fn get_git_branches(path: String) -> Result<Vec<serde_json::Value>, S
     sort_branches(&mut branches);
 
     Ok(branches)
+}
+
+/// Rich per-branch information returned by `get_branches_detail`.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct BranchDetail {
+    pub name: String,
+    pub is_current: bool,
+    pub is_remote: bool,
+    pub is_main: bool,
+    pub is_merged: bool,
+    pub ahead: Option<u32>,
+    pub behind: Option<u32>,
+    pub upstream: Option<String>,
+    pub last_commit_date: Option<String>,     // ISO 8601
+    pub last_commit_message: Option<String>,  // first line only
+    pub last_commit_author: Option<String>,
+}
+
+/// Field separator used in `git for-each-ref` output.
+/// Must not appear in branch names, commit messages, author names, or tracking info.
+const BRANCH_FIELD_SEP: &str = "|||";
+
+/// Core logic for fetching rich branch details (no Tauri state).
+///
+/// Uses `git for-each-ref` for a single-pass data collection across all local and
+/// remote branches. Fields are delimited by `|||` which cannot appear in any of
+/// the output fields (branch names, subjects, author names, or tracking tokens).
+pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>, String> {
+    // Each ref line: refname|||HEAD|||upstream:short|||upstream:track|||committerdate|||subject|||authorname
+    let sep = BRANCH_FIELD_SEP;
+    let fmt = format!(
+        "%(refname:short){sep}%(HEAD){sep}%(upstream:short){sep}%(upstream:track){sep}%(committerdate:iso8601){sep}%(subject){sep}%(authorname)"
+    );
+
+    let out = git_cmd(path)
+        .args(["for-each-ref", &format!("--format={fmt}"), "refs/heads/", "refs/remotes/"])
+        .run()
+        .map_err(|e| format!("git for-each-ref failed: {e}"))?;
+
+    // Collect merged branch names once so we can do O(1) lookups.
+    let merged_set: std::collections::HashSet<String> =
+        get_merged_branches_impl(path).unwrap_or_default().into_iter().collect();
+
+    let mut branches: Vec<BranchDetail> = out.stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(7, BRANCH_FIELD_SEP).collect();
+            if parts.len() < 7 { return None; }
+
+            let name = parts[0].trim().to_string();
+
+            // Skip the synthetic origin/HEAD pointer
+            if name == "origin/HEAD" || name.ends_with("/HEAD") { return None; }
+
+            let is_current = parts[1].trim() == "*";
+            let is_remote = name.contains('/');
+
+            let upstream_raw = parts[2].trim();
+            let upstream = if upstream_raw.is_empty() { None } else { Some(upstream_raw.to_string()) };
+
+            // upstream:track looks like "[ahead 2, behind 3]", "[ahead 1]", "[behind 4]", or ""
+            let track = parts[3].trim();
+            let ahead = parse_track_value(track, "ahead");
+            let behind = parse_track_value(track, "behind");
+
+            let commit_date_raw = parts[4].trim();
+            let last_commit_date = if commit_date_raw.is_empty() { None } else { Some(commit_date_raw.to_string()) };
+
+            let subject = parts[5].trim();
+            let last_commit_message = if subject.is_empty() { None } else { Some(subject.to_string()) };
+
+            let author = parts[6].trim();
+            let last_commit_author = if author.is_empty() { None } else { Some(author.to_string()) };
+
+            let is_merged = merged_set.contains(&name);
+
+            Some(BranchDetail {
+                is_main: is_main_branch(&name),
+                name,
+                is_current,
+                is_remote,
+                is_merged,
+                ahead,
+                behind,
+                upstream,
+                last_commit_date,
+                last_commit_message,
+                last_commit_author,
+            })
+        })
+        .collect();
+
+    // Sort: main/primary branches first, then alphabetical
+    branches.sort_by(|a, b| {
+        match (a.is_main, b.is_main) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.cmp(&b.name),
+        }
+    });
+
+    Ok(branches)
+}
+
+/// Parse `ahead` or `behind` count from a `%(upstream:track)` string.
+///
+/// The format is `[ahead N]`, `[behind N]`, or `[ahead N, behind M]`.
+fn parse_track_value(track: &str, key: &str) -> Option<u32> {
+    // Find "ahead N" or "behind N" within the brackets
+    let search = format!("{key} ");
+    let start = track.find(&search)? + search.len();
+    let rest = &track[start..];
+    // Number ends at the next comma, closing bracket, or end of string
+    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    rest[..end].parse().ok()
+}
+
+/// Get rich branch details for a repository.
+#[tauri::command]
+pub(crate) fn get_branches_detail(path: String) -> Result<Vec<BranchDetail>, String> {
+    get_branches_detail_impl(Path::new(&path))
 }
 
 /// Rich context for the Git Operations Panel (single IPC round-trip).
@@ -3070,5 +3305,204 @@ filename test.txt
             merged.iter().any(|b| b == "feat-merged"),
             "truly merged branch should be in the merged list, got: {merged:?}"
         );
+    }
+
+    // --- create_branch_impl tests ---
+
+    #[test]
+    fn test_create_branch_from_head() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let result = create_branch_impl(path.to_str().unwrap(), "feature-x", None, false);
+        assert!(result.is_ok(), "should create branch: {result:?}");
+        // Verify branch exists
+        let out = git_cmd(&path).args(["branch", "--list", "feature-x"]).run().unwrap();
+        assert!(out.stdout.contains("feature-x"), "branch should exist after creation");
+    }
+
+    #[test]
+    fn test_create_branch_with_checkout() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let result = create_branch_impl(path.to_str().unwrap(), "feature-checkout", None, true);
+        assert!(result.is_ok(), "should create and checkout branch: {result:?}");
+        // Verify HEAD points to the new branch
+        let out = git_cmd(&path).args(["rev-parse", "--abbrev-ref", "HEAD"]).run().unwrap();
+        assert_eq!(out.stdout.trim(), "feature-checkout");
+    }
+
+    #[test]
+    fn test_create_branch_from_ref() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        // Get HEAD commit hash to use as start point
+        let out = git_cmd(&path).args(["rev-parse", "HEAD"]).run().unwrap();
+        let commit_hash = out.stdout.trim().to_string();
+        let result = create_branch_impl(path.to_str().unwrap(), "from-ref", Some(&commit_hash), false);
+        assert!(result.is_ok(), "should create branch from ref: {result:?}");
+        let out = git_cmd(&path).args(["branch", "--list", "from-ref"]).run().unwrap();
+        assert!(out.stdout.contains("from-ref"), "branch should exist after creation from ref");
+    }
+
+    #[test]
+    fn test_create_branch_refuses_empty_name() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let result = create_branch_impl(path.to_str().unwrap(), "", None, false);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"), "error should mention empty name");
+    }
+
+    #[test]
+    fn test_create_branch_refuses_invalid_name() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let result = create_branch_impl(path.to_str().unwrap(), "bad name with spaces", None, false);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("spaces"), "error should mention spaces");
+    }
+
+    #[test]
+    fn test_create_branch_refuses_duplicate() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        // Create once — should succeed
+        let first = create_branch_impl(path.to_str().unwrap(), "dup-branch", None, false);
+        assert!(first.is_ok(), "first creation should succeed: {first:?}");
+        // Create again — should fail
+        let second = create_branch_impl(path.to_str().unwrap(), "dup-branch", None, false);
+        assert!(second.is_err(), "duplicate branch creation should fail");
+        assert!(second.unwrap_err().contains("already exists"), "error should mention already exists");
+    }
+
+    // --- get_branches_detail tests ---
+
+    #[test]
+    fn test_get_branches_detail_returns_rich_info() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let repo_root = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
+
+        let branches = get_branches_detail_impl(&repo_root)
+            .expect("get_branches_detail_impl should succeed on real repo");
+
+        assert!(!branches.is_empty(), "should return at least one branch");
+
+        // Branch names must not be empty
+        for b in &branches {
+            assert!(!b.name.is_empty(), "branch name should not be empty");
+        }
+
+        // Exactly one branch must be current
+        let current_branches: Vec<&BranchDetail> = branches.iter().filter(|b| b.is_current).collect();
+        assert_eq!(
+            current_branches.len(), 1,
+            "exactly one branch should be current, got: {:?}",
+            current_branches.iter().map(|b| &b.name).collect::<Vec<_>>()
+        );
+
+        // The current branch must have a last_commit_date
+        let current = current_branches[0];
+        assert!(
+            current.last_commit_date.is_some(),
+            "current branch should have a last_commit_date"
+        );
+
+        // At least one branch should have a non-empty last_commit_date
+        assert!(
+            branches.iter().any(|b| b.last_commit_date.is_some()),
+            "at least one branch should have a last_commit_date"
+        );
+
+        // No origin/HEAD pseudo-ref should appear
+        assert!(
+            !branches.iter().any(|b| b.name.ends_with("/HEAD")),
+            "origin/HEAD should be filtered out"
+        );
+    }
+
+    #[test]
+    fn test_parse_track_value_various_formats() {
+        assert_eq!(parse_track_value("[ahead 3]", "ahead"), Some(3));
+        assert_eq!(parse_track_value("[behind 7]", "behind"), Some(7));
+        assert_eq!(parse_track_value("[ahead 2, behind 5]", "ahead"), Some(2));
+        assert_eq!(parse_track_value("[ahead 2, behind 5]", "behind"), Some(5));
+        assert_eq!(parse_track_value("", "ahead"), None);
+        assert_eq!(parse_track_value("[behind 7]", "ahead"), None);
+        assert_eq!(parse_track_value("[ahead 3]", "behind"), None);
+    }
+
+    // --- delete_branch_impl tests ---
+
+    #[test]
+    fn test_delete_branch_safe() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let path_str = path.to_string_lossy().to_string();
+        // Ensure we're on main
+        std::process::Command::new("git").current_dir(&path).args(["branch", "-M", "main"]).output().expect("rename to main");
+        // Create a branch to delete at same commit as main (fully merged)
+        std::process::Command::new("git").current_dir(&path).args(["branch", "to-delete"]).output().expect("create branch");
+
+        let result = delete_branch_impl(&path_str, "to-delete", false);
+        assert!(result.is_ok(), "safe delete of merged branch should succeed: {result:?}");
+        let r = result.unwrap();
+        assert_eq!(r.branch, "to-delete");
+        assert!(!r.was_force);
+        assert!(r.deleted);
+    }
+
+    #[test]
+    fn test_delete_branch_force() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let path_str = path.to_string_lossy().to_string();
+        std::process::Command::new("git").current_dir(&path).args(["branch", "-M", "main"]).output().expect("rename to main");
+        // Create a branch with unmerged commits
+        std::process::Command::new("git").current_dir(&path).args(["checkout", "-b", "unmerged-branch"]).output().expect("checkout -b");
+        std::fs::write(path.join("unmerged.txt"), "data").expect("write");
+        std::process::Command::new("git").current_dir(&path).args(["add", "unmerged.txt"]).output().expect("add");
+        std::process::Command::new("git").current_dir(&path).args(["commit", "-m", "unmerged commit"]).output().expect("commit");
+        // Switch back to main so we can delete the unmerged branch
+        std::process::Command::new("git").current_dir(&path).args(["checkout", "main"]).output().expect("checkout main");
+
+        // Safe delete should fail (unmerged)
+        let safe_result = delete_branch_impl(&path_str, "unmerged-branch", false);
+        assert!(safe_result.is_err(), "safe delete of unmerged branch should fail");
+
+        // Force delete should succeed
+        let result = delete_branch_impl(&path_str, "unmerged-branch", true);
+        assert!(result.is_ok(), "force delete should succeed: {result:?}");
+        let r = result.unwrap();
+        assert_eq!(r.branch, "unmerged-branch");
+        assert!(r.was_force);
+        assert!(r.deleted);
+    }
+
+    #[test]
+    fn test_delete_branch_refuses_main() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let path_str = path.to_string_lossy().to_string();
+        std::process::Command::new("git").current_dir(&path).args(["branch", "-M", "main"]).output().expect("rename to main");
+
+        let result = delete_branch_impl(&path_str, "main", false);
+        assert!(result.is_err(), "should refuse to delete main branch");
+        let err = result.unwrap_err();
+        assert!(err.contains("main") || err.contains("protected"), "error should mention protection: {err}");
+    }
+
+    #[test]
+    fn test_delete_branch_refuses_current() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let path_str = path.to_string_lossy().to_string();
+        // Rename to something non-main so is_main_branch check doesn't fire first
+        std::process::Command::new("git").current_dir(&path).args(["branch", "-M", "feature-branch"]).output().expect("rename");
+
+        let result = delete_branch_impl(&path_str, "feature-branch", false);
+        assert!(result.is_err(), "should refuse to delete current branch");
+        let err = result.unwrap_err();
+        assert!(err.contains("current") || err.contains("checked out"), "error should mention current branch: {err}");
+    }
+
+    #[test]
+    fn test_delete_branch_refuses_empty_name() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let path_str = path.to_string_lossy().to_string();
+
+        let result = delete_branch_impl(&path_str, "", false);
+        assert!(result.is_err(), "empty branch name should fail");
+        let err = result.unwrap_err();
+        assert!(err.to_lowercase().contains("empty"), "error should mention empty: {err}");
     }
 }
