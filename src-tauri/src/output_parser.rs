@@ -231,8 +231,15 @@ impl OutputParser {
     pub fn parse_clean_lines(&mut self, rows: &[crate::state::ChangedRow]) -> Vec<ParsedEvent> {
         let mut events = Vec::new();
         // Join rows into a single string so multi-line parsers (rate_limit, etc.) work.
-        // Individual row texts are already clean — no stripping required.
-        let joined: String = rows.iter().map(|r| r.text.as_str()).collect::<Vec<_>>().join("\n");
+        // Individual row texts are already clean — no ANSI stripping required.
+        // Strip backtick characters: Claude Code renders file paths and tokens as
+        // markdown inline code (`path`), which leaves literal backticks in the clean
+        // text. Removing them lets all parsers match paths/tokens without needing
+        // backtick-aware regexes — plugins benefit too via structured events.
+        let joined: String = rows.iter()
+            .map(|r| if r.text.contains('`') { r.text.replace('`', "") } else { r.text.clone() })
+            .collect::<Vec<_>>()
+            .join("\n");
 
         // PR/MR URL detection (operates on text directly)
         if let Some(evt) = parse_pr_url(&joined) {
@@ -3124,6 +3131,20 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             events.iter().any(|e| matches!(e, ParsedEvent::PlanFile { .. })),
             "expected PlanFile, got: {:?}", events
         );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_plan_file_backtick_stripped() {
+        let mut parser = OutputParser::new();
+        // Backticks around the path should be stripped by parse_clean_lines
+        let rows = vec![row(0, "Piano scritto in `plans/document-organizer.md`.")];
+        let events = parser.parse_clean_lines(&rows);
+        let path = events.iter().find_map(|e| match e {
+            ParsedEvent::PlanFile { path } => Some(path.clone()),
+            _ => None,
+        });
+        assert_eq!(path, Some("plans/document-organizer.md".to_string()),
+            "backtick-wrapped plan path should be detected via clean_lines strip; got: {:?}", events);
     }
 
     #[test]
