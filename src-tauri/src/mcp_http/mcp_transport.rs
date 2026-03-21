@@ -1691,6 +1691,7 @@ mod tests {
             dir_watchers: dashmap::DashMap::new(),
             http_client: reqwest::Client::new(),
             github_token: parking_lot::RwLock::new(None),
+            github_token_source: parking_lot::RwLock::new(Default::default()),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             server_shutdown: parking_lot::Mutex::new(None),
             session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),

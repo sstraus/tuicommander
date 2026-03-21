@@ -566,9 +566,9 @@ pub fn run() {
 
     let config = config::load_app_config();
 
-    let github_token = crate::github::resolve_github_token();
+    let (github_token, github_token_source) = crate::github_auth::resolve_token_with_source();
     if github_token.is_none() {
-        tracing::warn!(source = "github", "No GitHub token found (checked GH_TOKEN, GITHUB_TOKEN, gh CLI config)");
+        tracing::warn!(source = "github", "No GitHub token found (checked GH_TOKEN, GITHUB_TOKEN, OAuth keyring, gh CLI config)");
     }
 
     let state = Arc::new(AppState {
@@ -585,6 +585,7 @@ pub fn run() {
         dir_watchers: DashMap::new(),
         http_client: reqwest::Client::new(),
         github_token: parking_lot::RwLock::new(github_token),
+        github_token_source: parking_lot::RwLock::new(github_token_source),
         github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
         server_shutdown: parking_lot::Mutex::new(None),
         session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
@@ -838,6 +839,10 @@ pub fn run() {
             github::get_pr_diff,
             github::approve_pr,
             github::fetch_ci_failure_logs,
+            github_auth::github_start_login,
+            github_auth::github_poll_login,
+            github_auth::github_logout,
+            github_auth::github_auth_status,
             worktree::generate_worktree_name_cmd,
             worktree::generate_clone_branch_name_cmd,
             worktree::merge_and_archive_worktree,

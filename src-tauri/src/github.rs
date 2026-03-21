@@ -13,7 +13,7 @@ use crate::state::{AppState, GIT_CACHE_TTL, GITHUB_CACHE_TTL};
 /// Run `gh auth token` CLI to get the current token from gh's secure storage.
 /// This works even when env vars are empty/unset, because gh reads from the
 /// system keychain on macOS or credential store on other platforms.
-fn token_from_gh_cli() -> Option<String> {
+pub(crate) fn token_from_gh_cli() -> Option<String> {
     let mut cmd = Command::new(crate::agent::resolve_cli("gh"));
     cmd.args(["auth", "token"]);
     crate::cli::apply_no_window(&mut cmd);
@@ -170,6 +170,14 @@ impl GitHubCircuitBreaker {
     pub(crate) fn record_success(&self) {
         self.failure_count.store(0, Ordering::Relaxed);
         *self.open_until.write() = None;
+    }
+
+    /// Reset the circuit breaker entirely — clears failures, backoff, and rate limits.
+    /// Used after a new token is obtained (e.g. OAuth login).
+    pub(crate) fn reset(&self) {
+        self.failure_count.store(0, Ordering::Relaxed);
+        *self.open_until.write() = None;
+        *self.rate_limit_until.write() = None;
     }
 
     /// Record a rate limit response. Sets a dedicated backoff timer

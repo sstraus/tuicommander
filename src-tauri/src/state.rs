@@ -733,6 +733,8 @@ pub struct AppState {
     pub(crate) http_client: reqwest::Client,
     /// GitHub API token — updated on fallback when a 401 triggers candidate rotation
     pub(crate) github_token: parking_lot::RwLock<Option<String>>,
+    /// Where the current GitHub token came from (env, OAuth keyring, gh CLI)
+    pub(crate) github_token_source: parking_lot::RwLock<crate::github_auth::TokenSource>,
     /// Circuit breaker for GitHub API calls
     pub(crate) github_circuit_breaker: crate::github::GitHubCircuitBreaker,
     /// Shutdown sender for the HTTP server — send () to gracefully stop it
@@ -1774,6 +1776,7 @@ pub(crate) mod tests_support {
             dir_watchers: dashmap::DashMap::new(),
             http_client: reqwest::Client::new(),
             github_token: parking_lot::RwLock::new(None),
+            github_token_source: parking_lot::RwLock::new(Default::default()),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             server_shutdown: parking_lot::Mutex::new(None),
             session_token: parking_lot::RwLock::new(String::from("test-token")),
@@ -2193,6 +2196,7 @@ mod tests {
             dir_watchers: dashmap::DashMap::new(),
             http_client: reqwest::Client::new(),
             github_token: parking_lot::RwLock::new(None),
+            github_token_source: parking_lot::RwLock::new(Default::default()),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             server_shutdown: parking_lot::Mutex::new(None),
             session_token: parking_lot::RwLock::new(String::from("test-token")),

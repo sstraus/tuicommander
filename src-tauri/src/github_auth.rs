@@ -7,7 +7,12 @@
 //! - Windows: Credential Manager
 //! - Linux: keyutils / Secret Service
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
+use tauri::State;
+
+use crate::state::AppState;
 
 const SERVICE_NAME: &str = "tuicommander-github";
 const KEYRING_KEY: &str = "oauth-token";
@@ -54,6 +59,31 @@ pub(crate) enum PollResult {
     /// User denied access.
     #[serde(rename = "denied")]
     AccessDenied,
+}
+
+/// Where the active GitHub token came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum TokenSource {
+    /// GH_TOKEN or GITHUB_TOKEN environment variable
+    Env,
+    /// OAuth Device Flow token stored in OS keyring
+    OAuth,
+    /// gh CLI config or `gh auth token`
+    GhCli,
+    /// No token available
+    #[default]
+    None,
+}
+
+/// Authentication status returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct AuthStatus {
+    pub authenticated: bool,
+    pub login: Option<String>,
+    pub avatar_url: Option<String>,
+    pub source: TokenSource,
+    pub scopes: Option<String>,
 }
 
 /// Raw GitHub error response during token polling.
@@ -154,6 +184,162 @@ pub(crate) async fn poll_device_flow(
     }
 
     Err(format!("Unexpected Device Flow response: {body}"))
+}
+
+// ---------------------------------------------------------------------------
+// Tauri commands
+// ---------------------------------------------------------------------------
+
+/// Start a Device Flow login. Returns the device code and user code
+/// for display in the UI.
+#[tauri::command]
+pub(crate) async fn github_start_login(
+    state: State<'_, Arc<AppState>>,
+) -> Result<DeviceCodeResponse, String> {
+    start_device_flow(&state.http_client).await
+}
+
+/// Poll GitHub for the Device Flow token. The frontend calls this repeatedly
+/// with the interval from `github_start_login`. On success, the token is saved
+/// to the OS keyring and activated in AppState.
+#[tauri::command]
+pub(crate) async fn github_poll_login(
+    state: State<'_, Arc<AppState>>,
+    device_code: String,
+) -> Result<PollResult, String> {
+    let result = poll_device_flow(&state.http_client, &device_code).await?;
+
+    if let PollResult::Success {
+        ref access_token, ..
+    } = result
+    {
+        // Save to keyring for persistence across restarts
+        save_github_oauth_token(access_token)?;
+        // Activate immediately in runtime state
+        *state.github_token.write() = Some(access_token.clone());
+        *state.github_token_source.write() = TokenSource::OAuth;
+        // Reset circuit breaker so we retry any previously-failed repos
+        state.github_circuit_breaker.reset();
+        // Clear the repo cooldown cache so "not found" repos get re-checked
+        state.git_cache.github_repo_cooldown.clear();
+        tracing::info!(source = "github", "OAuth Device Flow login successful");
+    }
+
+    Ok(result)
+}
+
+/// Log out of GitHub OAuth. Deletes the token from keyring and clears
+/// the runtime state. Falls back to env/gh CLI tokens if available.
+#[tauri::command]
+pub(crate) async fn github_logout(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    delete_github_oauth_token()?;
+
+    // Re-resolve token from remaining sources (env vars, gh CLI)
+    let (token, source) = resolve_token_with_source();
+    *state.github_token.write() = token;
+    *state.github_token_source.write() = source;
+
+    tracing::info!(source = "github", ?source, "OAuth logout — fell back to {source:?}");
+    Ok(())
+}
+
+/// Get the current GitHub authentication status, including the user's
+/// login name if authenticated.
+#[tauri::command]
+pub(crate) async fn github_auth_status(
+    state: State<'_, Arc<AppState>>,
+) -> Result<AuthStatus, String> {
+    let token = state.github_token.read().clone();
+    let source = *state.github_token_source.read();
+
+    let Some(token) = token else {
+        return Ok(AuthStatus {
+            authenticated: false,
+            login: None,
+            avatar_url: None,
+            source: TokenSource::None,
+            scopes: None,
+        });
+    };
+
+    // Call GitHub /user to get login + avatar
+    let resp = state
+        .http_client
+        .get("https://api.github.com/user")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "TUICommander")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) if r.status().is_success() => {
+            let body: serde_json::Value = r.json().await.unwrap_or_default();
+            let scopes_header = None; // OAuth scopes are in X-OAuth-Scopes but we don't get headers after .json()
+            Ok(AuthStatus {
+                authenticated: true,
+                login: body["login"].as_str().map(|s| s.to_string()),
+                avatar_url: body["avatar_url"].as_str().map(|s| s.to_string()),
+                source,
+                scopes: scopes_header,
+            })
+        }
+        Ok(r) if r.status() == 401 => {
+            // Token is invalid — clear it if it was an OAuth token
+            if source == TokenSource::OAuth {
+                let _ = delete_github_oauth_token();
+                let (fallback_token, fallback_source) = resolve_token_with_source();
+                *state.github_token.write() = fallback_token;
+                *state.github_token_source.write() = fallback_source;
+            }
+            Ok(AuthStatus {
+                authenticated: false,
+                login: None,
+                avatar_url: None,
+                source: TokenSource::None,
+                scopes: None,
+            })
+        }
+        _ => Ok(AuthStatus {
+            authenticated: true,
+            login: None,
+            avatar_url: None,
+            source,
+            scopes: None,
+        }),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Token resolution with source tracking
+// ---------------------------------------------------------------------------
+
+/// Resolve a GitHub token and its source, for use at startup and after logout.
+/// Priority: GH_TOKEN env → GITHUB_TOKEN env → keyring OAuth → gh_token crate → gh CLI.
+pub(crate) fn resolve_token_with_source() -> (Option<String>, TokenSource) {
+    if let Ok(token) = std::env::var("GH_TOKEN")
+        && !token.is_empty()
+    {
+        return (Some(token), TokenSource::Env);
+    }
+    if let Ok(token) = std::env::var("GITHUB_TOKEN")
+        && !token.is_empty()
+    {
+        return (Some(token), TokenSource::Env);
+    }
+    if let Ok(Some(token)) = read_github_oauth_token() {
+        return (Some(token), TokenSource::OAuth);
+    }
+    if let Some(token) = gh_token::get().ok().filter(|t| !t.is_empty()) {
+        return (Some(token), TokenSource::GhCli);
+    }
+    if let Some(token) = crate::github::token_from_gh_cli() {
+        return (Some(token), TokenSource::GhCli);
+    }
+    (None, TokenSource::None)
 }
 
 // ---------------------------------------------------------------------------
