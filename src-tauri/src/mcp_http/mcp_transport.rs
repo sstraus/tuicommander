@@ -750,6 +750,22 @@ fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_
                             Err(e) => { response["session_error"] = serde_json::json!(e); }
                         }
                     }
+                    // Add structured hint for Claude Code clients to spawn a subagent in the worktree
+                    if let Some(sid) = mcp_session_id {
+                        if let Some(meta) = state.mcp_sessions.get(sid) {
+                            if meta.is_claude_code {
+                                response["cc_agent_hint"] = serde_json::json!({
+                                    "worktree_path": wt_path,
+                                    "suggested_prompt": format!(
+                                        "Work in the worktree at `{}`. Use absolute paths for ALL file operations \
+                                        (Read, Edit, Glob, Grep). For git commands, use `cd {} && git ...`. \
+                                        The branch is `{}`.",
+                                        wt_path, wt_path, branch_name,
+                                    )
+                                });
+                            }
+                        }
+                    }
                     response
                 }
                 Err(e) => serde_json::json!({"error": e}),

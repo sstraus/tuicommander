@@ -1141,6 +1141,56 @@ mod tests {
 
     /// Helper: send a tools/call MCP request via POST /mcp and return the parsed result content.
     /// Automatically initializes a session first to pass session validation.
+    /// Initialize MCP session with a specific client name (for CC detection tests).
+    async fn mcp_initialize_as(state: &Arc<AppState>, client_name: &str) -> String {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": { "name": client_name, "version": "1.0" }
+            }
+        });
+        let app = build_router(state.clone(), false, true);
+        let resp = app.oneshot(mcp_post("/mcp", &body)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        resp.headers()
+            .get("mcp-session-id")
+            .expect("initialize must return mcp-session-id")
+            .to_str()
+            .unwrap()
+            .to_string()
+    }
+
+    /// Send a tools/call MCP request with a specific session_id and return the parsed result.
+    async fn call_mcp_tool_with_session(state: &Arc<AppState>, tool_name: &str, args: serde_json::Value, session_id: &str) -> serde_json::Value {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 99,
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": args,
+            }
+        });
+        let app = build_router(state.clone(), false, true);
+        let resp = app
+            .oneshot(mcp_post_with_session("/mcp", &body, session_id))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let resp_body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
+        assert_eq!(json["jsonrpc"], "2.0");
+        assert_eq!(json["id"], 99);
+
+        let text = json["result"]["content"][0]["text"].as_str().unwrap();
+        serde_json::from_str(text).unwrap_or_else(|_| serde_json::json!(text))
+    }
+
     async fn call_mcp_tool(state: &Arc<AppState>, tool_name: &str, args: serde_json::Value) -> serde_json::Value {
         let session_id = mcp_initialize(state).await;
         let body = serde_json::json!({
@@ -1442,6 +1492,58 @@ mod tests {
         let state = test_state();
         let result = call_mcp_tool(&state, "worktree", serde_json::json!({})).await;
         assert!(result["error"].as_str().unwrap().contains("Missing 'action'"));
+    }
+
+    /// Helper: create a temporary git repo with an initial commit for worktree tests.
+    fn create_temp_git_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path();
+        std::process::Command::new("git").args(["init"]).current_dir(path).output().unwrap();
+        std::process::Command::new("git").args(["config", "user.email", "test@test.com"]).current_dir(path).output().unwrap();
+        std::process::Command::new("git").args(["config", "user.name", "Test"]).current_dir(path).output().unwrap();
+        std::fs::write(path.join("README.md"), "test").unwrap();
+        std::process::Command::new("git").args(["add", "."]).current_dir(path).output().unwrap();
+        std::process::Command::new("git").args(["commit", "-m", "initial"]).current_dir(path).output().unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn test_worktree_create_cc_agent_hint_present_for_claude_code() {
+        let repo = create_temp_git_repo();
+        let repo_path = repo.path().to_str().unwrap();
+        let state = test_state();
+        let sid = mcp_initialize_as(&state, "claude-code").await;
+        let result = call_mcp_tool_with_session(&state, "worktree", serde_json::json!({
+            "action": "create",
+            "path": repo_path,
+            "branch": "test-cc-hint"
+        }), &sid).await;
+        assert!(result.get("worktree_path").is_some(), "should have worktree_path: {result}");
+        let hint = &result["cc_agent_hint"];
+        assert!(hint.is_object(), "CC client should receive cc_agent_hint: {result}");
+        assert!(hint["worktree_path"].as_str().is_some(), "hint should have worktree_path");
+        assert!(hint["suggested_prompt"].as_str().unwrap().contains("absolute paths"), "hint prompt should mention absolute paths");
+        // Cleanup
+        let wt_path = result["worktree_path"].as_str().unwrap();
+        let _ = std::process::Command::new("git").args(["worktree", "remove", "--force", wt_path]).current_dir(repo_path).output();
+    }
+
+    #[tokio::test]
+    async fn test_worktree_create_no_cc_agent_hint_for_other_clients() {
+        let repo = create_temp_git_repo();
+        let repo_path = repo.path().to_str().unwrap();
+        let state = test_state();
+        let sid = mcp_initialize_as(&state, "cursor").await;
+        let result = call_mcp_tool_with_session(&state, "worktree", serde_json::json!({
+            "action": "create",
+            "path": repo_path,
+            "branch": "test-no-hint"
+        }), &sid).await;
+        assert!(result.get("worktree_path").is_some(), "should have worktree_path: {result}");
+        assert!(result.get("cc_agent_hint").is_none(), "Non-CC client should NOT receive cc_agent_hint: {result}");
+        // Cleanup
+        let wt_path = result["worktree_path"].as_str().unwrap();
+        let _ = std::process::Command::new("git").args(["worktree", "remove", "--force", wt_path]).current_dir(repo_path).output();
     }
 
     #[tokio::test]
