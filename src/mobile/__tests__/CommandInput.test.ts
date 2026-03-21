@@ -29,6 +29,27 @@ describe("CommandInput agent live-sync guard", () => {
   });
 });
 
+describe("CommandInput send() agent-aware write splitting", () => {
+  it("send() uses two separate writes for agent sessions", () => {
+    // Ink-based TUIs treat \\r as newline when combined with text in one write.
+    // Agent sessions must split: (1) \\x15 + text, (2) \\r — matching CommandWidget pattern.
+    const sendBlock = tsx.match(/async function send\(\)[\s\S]*?^  \}/m);
+    expect(sendBlock, "send() function not found").toBeTruthy();
+    const sendCode = sendBlock![0];
+    // Must check agentType to decide write strategy
+    expect(sendCode).toContain("props.agentType");
+  });
+
+  it("send() uses single atomic write for shell sessions", () => {
+    // Shell sessions (no agentType) use Ctrl-U + text + \\r in one write — kernel line discipline handles it.
+    const sendBlock = tsx.match(/async function send\(\)[\s\S]*?^  \}/m);
+    expect(sendBlock, "send() function not found").toBeTruthy();
+    const sendCode = sendBlock![0];
+    // Must still have the single-write path with \\x15 + text + \\r
+    expect(sendCode).toContain('"\\x15" + text + "\\r"');
+  });
+});
+
 describe("CommandInput iOS auto-zoom prevention", () => {
   it("input font-size is >= 16px to prevent iOS auto-zoom", () => {
     // iOS Safari zooms when the focused input has font-size < 16px.
