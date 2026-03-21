@@ -50,7 +50,7 @@ export interface TerminalProps {
   onOpenFilePath?: (absolutePath: string, line?: number, col?: number) => void;
   /** When false, disables left-Option-as-Meta key sequences (macOS only). Default: true */
   metaHotkeys?: boolean;
-  /** When true, terminal initializes immediately without requiring activeId match (e.g. lazygit pane) */
+  /** When true, terminal initializes immediately without requiring activeId match */
   alwaysVisible?: boolean;
   /** Called when the shell reports a working directory change via OSC 7 */
   onCwdChange?: (id: string, cwd: string) => void;
@@ -111,7 +111,7 @@ const HIGH_WATERMARK = 512 * 1024;  // 512KB — pause reader when exceeded
 const LOW_WATERMARK = 128 * 1024;   // 128KB — resume reader when drained below
 
 // Minimum container dimensions before fit() is allowed — prevents WebGL rendering
-// artifacts when xterm gets squeezed into impossibly small panes (e.g. narrow lazygit split)
+// artifacts when xterm gets squeezed into impossibly small panes (e.g. narrow split)
 const MIN_FIT_WIDTH = 80;   // px (~5 columns at 14px)
 const MIN_FIT_HEIGHT = 40;  // px (~2 rows)
 
@@ -381,7 +381,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           terminal.writeln("\r\n\x1b[33m[Process exited]\x1b[0m");
         }
         // Guard: terminal may have been removed from the store already
-        // (e.g. lazygit pane closed). Updating a removed entry would recreate it as a ghost.
+        // (e.g. pane closed). Updating a removed entry would recreate it as a ghost.
         const stillExists = terminalsStore.get(props.id);
         if (stillExists) {
           // Restore original tab name if it was overwritten by OSC title
