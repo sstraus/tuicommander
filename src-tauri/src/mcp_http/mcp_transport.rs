@@ -161,7 +161,7 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "worktree",
-            "description": "Manage git worktrees for parallel work.\n\nActions (pass as 'action' parameter):\n- list: Returns [{branch, path}] for all worktrees of a repo. Requires path.\n- create: Creates a new worktree with optional branch. Requires path. Optional: branch, base_ref, spawn_session (auto-creates PTY). Returns {worktree_path, branch}.\n- remove: Removes a worktree by branch name. Requires path, branch.",
+            "description": "Manage git worktrees for parallel work.\n\nActions (pass as 'action' parameter):\n- list: Returns [{branch, path}] for all worktrees of a repo. Requires path.\n- create: Creates a new worktree with optional branch. Requires path. Optional: branch, base_ref, spawn_session (auto-creates PTY). Returns {worktree_path, branch}. Claude Code clients also receive a cc_agent_hint field with worktree_path and suggested_prompt for spawning a subagent.\n- remove: Removes a worktree by branch name. Requires path, branch.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: list, create, remove" },
                 "path": { "type": "string", "description": "Absolute path to base git repository" },
