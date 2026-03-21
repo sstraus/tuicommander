@@ -807,6 +807,7 @@ pub fn run() {
             worktree::get_worktree_paths,
             git::get_git_branches,
             git::get_branches_detail,
+            git::get_recent_branches,
             git::get_merged_branches,
             git::get_repo_summary,
             git::get_repo_structure,

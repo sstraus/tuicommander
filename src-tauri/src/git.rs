@@ -1138,6 +1138,45 @@ pub(crate) fn get_branches_detail(path: String) -> Result<Vec<BranchDetail>, Str
     get_branches_detail_impl(Path::new(&path))
 }
 
+/// Core logic for fetching recently checked-out branch names from the reflog.
+///
+/// Parses `git reflog show --format='%gs' -n 100`, extracts the target branch
+/// from each `checkout: moving from X to Y` line, deduplicates preserving
+/// order (most recent first), and returns up to `limit` entries.
+pub(crate) fn get_recent_branches_impl(path: &Path, limit: usize) -> Result<Vec<String>, String> {
+    let output = git_cmd(path)
+        .args(["reflog", "show", "--format=%gs", "-n", "100"])
+        .run()
+        .map_err(|e| e.to_string())?;
+
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+
+    for line in output.stdout.lines() {
+        // Match "checkout: moving from <from> to <to>"
+        if let Some(rest) = line.strip_prefix("checkout: moving from ") {
+            if let Some(to_pos) = rest.rfind(" to ") {
+                let target = &rest[to_pos + 4..];
+                let target = target.trim().to_string();
+                if !target.is_empty() && seen.insert(target.clone()) {
+                    result.push(target);
+                    if result.len() >= limit {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Get recently checked-out branch names for a repository (most recent first).
+#[tauri::command]
+pub(crate) fn get_recent_branches(path: String, limit: Option<usize>) -> Result<Vec<String>, String> {
+    get_recent_branches_impl(Path::new(&path), limit.unwrap_or(5))
+}
+
 /// Rich context for the Git Operations Panel (single IPC round-trip).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct GitPanelContext {
@@ -3504,5 +3543,62 @@ filename test.txt
         assert!(result.is_err(), "empty branch name should fail");
         let err = result.unwrap_err();
         assert!(err.to_lowercase().contains("empty"), "error should mention empty: {err}");
+    }
+
+    // --- get_recent_branches_impl tests ---
+
+    #[test]
+    fn test_get_recent_branches_on_real_repo() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let repo_root = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
+
+        let result = get_recent_branches_impl(&repo_root, 5);
+        assert!(result.is_ok(), "should not error on a real repo: {result:?}");
+        // Result may be empty on a fresh repo, but it must be a Vec
+        let branches = result.unwrap();
+        // Branch names must not be empty strings
+        for b in &branches {
+            assert!(!b.is_empty(), "branch names must not be empty");
+        }
+    }
+
+    #[test]
+    fn test_get_recent_branches_limit() {
+        let (_dir, path) = setup_test_repo_with_commit();
+
+        // Create and switch between several branches to populate reflog
+        for name in &["branch-a", "branch-b", "branch-c", "branch-d"] {
+            std::process::Command::new("git")
+                .current_dir(&path)
+                .args(["checkout", "-b", name])
+                .output()
+                .expect("checkout -b");
+        }
+
+        // Switch back to the initial branch (master or main) to ensure some checkouts happened
+        let out = std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["checkout", "master"])
+            .output()
+            .expect("checkout master/main");
+        if !out.status.success() {
+            std::process::Command::new("git")
+                .current_dir(&path)
+                .args(["checkout", "main"])
+                .output()
+                .ok();
+        }
+
+        let result = get_recent_branches_impl(&path, 2);
+        assert!(result.is_ok(), "should succeed: {result:?}");
+        let branches = result.unwrap();
+        assert!(branches.len() <= 2, "limit of 2 must be respected, got: {branches:?}");
+    }
+
+    #[test]
+    fn test_get_recent_branches_on_nonexistent_path() {
+        let result = get_recent_branches_impl(Path::new("/nonexistent/path/xyz"), 5);
+        // A non-existent path must produce an error (git spawn or non-zero exit)
+        assert!(result.is_err(), "nonexistent path should return an error");
     }
 }
