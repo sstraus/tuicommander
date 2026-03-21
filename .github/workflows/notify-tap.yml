@@ -1,0 +1,17 @@
+name: Notify homebrew tap
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to homebrew-tap
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: sstraus/homebrew-tap
+          event-type: release-published
+          client-payload: '{"repo": "tuicommander", "version": "${{ github.event.release.tag_name }}"}'
