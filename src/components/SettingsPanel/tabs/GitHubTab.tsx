@@ -15,7 +15,7 @@ interface DeviceCodeResponse {
 }
 
 interface PollResult {
-  status: "pending" | "slow_down" | "success" | "expired" | "denied";
+  status: "pending" | "slow_down" | "success" | "expired" | "access_denied";
   access_token?: string;
   scope?: string;
 }
@@ -65,6 +65,7 @@ export const GitHubTab: Component = () => {
   }
 
   async function startLogin() {
+    cancelled = false;
     setError(null);
     setLoading(true);
     try {
@@ -74,7 +75,9 @@ export const GitHubTab: Component = () => {
       setLoading(false);
 
       // Copy code to clipboard
-      try { await navigator.clipboard.writeText(resp.user_code); } catch { /* ignore */ }
+      try { await navigator.clipboard.writeText(resp.user_code); } catch (e) {
+        appLogger.warn("github", "Clipboard auto-copy failed", e);
+      }
 
       // Open GitHub in browser
       handleOpenUrl(resp.verification_uri);
@@ -115,7 +118,7 @@ export const GitHubTab: Component = () => {
           setError("Code expired. Please try again.");
           return;
 
-        case "denied":
+        case "access_denied":
           setPolling(false);
           setDeviceCode(null);
           setError("Access denied. You cancelled the authorization.");
@@ -130,6 +133,7 @@ export const GitHubTab: Component = () => {
       setPolling(false);
       setDeviceCode(null);
       setError(e instanceof Error ? e.message : String(e));
+      appLogger.error("github", "Device Flow poll failed", e);
     }
   }
 
@@ -138,7 +142,6 @@ export const GitHubTab: Component = () => {
     if (pollTimer) clearTimeout(pollTimer);
     setPolling(false);
     setDeviceCode(null);
-    cancelled = false; // Reset for future attempts
   }
 
   async function logout() {

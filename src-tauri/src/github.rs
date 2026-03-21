@@ -20,37 +20,9 @@ pub(crate) fn resolve_github_token() -> Option<String> {
 }
 
 /// Collect all non-empty GitHub token candidates in priority order.
-/// Used for fallback when the primary token gets a 401.
-pub(crate) fn resolve_github_token_candidates() -> Vec<String> {
-    let mut candidates = Vec::new();
-    if let Ok(token) = std::env::var("GH_TOKEN")
-        && !token.is_empty()
-    {
-        candidates.push(token);
-    }
-    if let Ok(token) = std::env::var("GITHUB_TOKEN")
-        && !token.is_empty()
-    {
-        candidates.push(token);
-    }
-    // OAuth token from OS keyring
-    if let Ok(Some(token)) = crate::github_auth::read_github_oauth_token()
-        && !candidates.contains(&token)
-    {
-        candidates.push(token);
-    }
-    if let Ok(token) = gh_token::get()
-        && !token.is_empty() && !candidates.contains(&token)
-    {
-        candidates.push(token);
-    }
-    // Explicit CLI fallback for when gh_token short-circuits on empty env vars
-    if let Some(token) = crate::github_auth::token_from_gh_cli()
-        && !candidates.contains(&token)
-    {
-        candidates.push(token);
-    }
-    candidates
+/// Delegates to the single source of truth in `github_auth::resolve_all_candidates`.
+fn resolve_github_token_candidates() -> Vec<(String, crate::github_auth::TokenSource)> {
+    crate::github_auth::resolve_all_candidates()
 }
 
 /// Error type for GraphQL requests, distinguishing auth failures and rate limits from other errors.
@@ -386,7 +358,7 @@ pub(crate) async fn graphql_with_retry(
             tracing::warn!(source = "github", "401 with current token, trying fallback candidates");
             // Try other candidates
             let candidates = resolve_github_token_candidates();
-            for candidate in &candidates {
+            for (candidate, candidate_source) in &candidates {
                 if candidate == &token {
                     continue; // Skip the one that already failed
                 }
@@ -394,9 +366,7 @@ pub(crate) async fn graphql_with_retry(
                     Ok(response) => {
                         tracing::info!(source = "github", "Token fallback succeeded");
                         *state.github_token.write() = Some(candidate.clone());
-                        // Keep token source in sync with the active token
-                        let (_, new_source) = crate::github_auth::resolve_token_with_source();
-                        *state.github_token_source.write() = new_source;
+                        *state.github_token_source.write() = *candidate_source;
                         state.github_circuit_breaker.record_success();
                         return Ok(response);
                     }
@@ -2268,9 +2238,10 @@ mod tests {
         }
 
         let candidates = resolve_github_token_candidates();
-        assert!(candidates.len() >= 2, "Should have at least 2 candidates");
-        assert_eq!(candidates[0], "gh-token-1");
-        assert_eq!(candidates[1], "github-token-2");
+        let tokens: Vec<&str> = candidates.iter().map(|(t, _)| t.as_str()).collect();
+        assert!(tokens.len() >= 2, "Should have at least 2 candidates");
+        assert_eq!(tokens[0], "gh-token-1");
+        assert_eq!(tokens[1], "github-token-2");
 
         // Cleanup
         unsafe {
@@ -2316,8 +2287,8 @@ mod tests {
         }
 
         let candidates = resolve_github_token_candidates();
-        for candidate in &candidates {
-            assert!(!candidate.is_empty(),
+        for (token, _source) in &candidates {
+            assert!(!token.is_empty(),
                 "Candidates must never contain empty strings");
         }
 

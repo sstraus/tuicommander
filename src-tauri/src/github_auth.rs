@@ -57,7 +57,7 @@ pub(crate) enum PollResult {
     #[serde(rename = "expired")]
     Expired,
     /// User denied access.
-    #[serde(rename = "denied")]
+    #[serde(rename = "access_denied")]
     AccessDenied,
 }
 
@@ -309,11 +309,20 @@ pub(crate) async fn github_auth_status(
         Ok(r) if r.status() == 401 => {
             // Token is invalid — clear it if it was an OAuth token
             if source == TokenSource::OAuth {
-                let _ = tokio::task::spawn_blocking(delete_github_oauth_token).await;
+                if let Err(e) = tokio::task::spawn_blocking(delete_github_oauth_token)
+                    .await
+                    .map_err(|e| format!("keyring task panicked: {e}"))
+                    .and_then(|r| r)
+                {
+                    tracing::warn!(source = "github", error = %e, "Failed to delete stale OAuth token from keyring");
+                }
                 let (fallback_token, fallback_source) =
                     tokio::task::spawn_blocking(resolve_token_with_source)
                         .await
-                        .unwrap_or((None, TokenSource::None));
+                        .unwrap_or_else(|e| {
+                            tracing::warn!(source = "github", error = %e, "Token resolution panicked during 401 recovery");
+                            (None, TokenSource::None)
+                        });
                 *state.github_token.write() = fallback_token;
                 *state.github_token_source.write() = fallback_source;
             }
@@ -369,29 +378,49 @@ pub(crate) fn token_from_gh_cli() -> Option<String> {
     if token.is_empty() { None } else { Some(token) }
 }
 
-/// Resolve a GitHub token and its source, for use at startup and after logout.
+/// Collect all non-empty GitHub token candidates with their source, in priority order.
+/// Single source of truth for token priority — used at startup, fallback, and logout.
 /// Priority: GH_TOKEN env → GITHUB_TOKEN env → keyring OAuth → gh_token crate → gh CLI.
-pub(crate) fn resolve_token_with_source() -> (Option<String>, TokenSource) {
+pub(crate) fn resolve_all_candidates() -> Vec<(String, TokenSource)> {
+    let mut candidates = Vec::new();
     if let Ok(token) = std::env::var("GH_TOKEN")
         && !token.is_empty()
     {
-        return (Some(token), TokenSource::Env);
+        candidates.push((token, TokenSource::Env));
     }
     if let Ok(token) = std::env::var("GITHUB_TOKEN")
         && !token.is_empty()
+        && !candidates.iter().any(|(t, _)| t == &token)
     {
-        return (Some(token), TokenSource::Env);
+        candidates.push((token, TokenSource::Env));
     }
-    if let Ok(Some(token)) = read_github_oauth_token() {
-        return (Some(token), TokenSource::OAuth);
+    if let Ok(Some(token)) = read_github_oauth_token()
+        && !candidates.iter().any(|(t, _)| t == &token)
+    {
+        candidates.push((token, TokenSource::OAuth));
     }
-    if let Some(token) = gh_token::get().ok().filter(|t| !t.is_empty()) {
-        return (Some(token), TokenSource::GhCli);
+    if let Ok(token) = gh_token::get()
+        && !token.is_empty()
+        && !candidates.iter().any(|(t, _)| t == &token)
+    {
+        candidates.push((token, TokenSource::GhCli));
     }
-    if let Some(token) = token_from_gh_cli() {
-        return (Some(token), TokenSource::GhCli);
+    if let Some(token) = token_from_gh_cli()
+        && !candidates.iter().any(|(t, _)| t == &token)
+    {
+        candidates.push((token, TokenSource::GhCli));
     }
-    (None, TokenSource::None)
+    candidates
+}
+
+/// Resolve the highest-priority GitHub token and its source.
+/// Thin wrapper over `resolve_all_candidates()`.
+pub(crate) fn resolve_token_with_source() -> (Option<String>, TokenSource) {
+    resolve_all_candidates()
+        .into_iter()
+        .next()
+        .map(|(t, s)| (Some(t), s))
+        .unwrap_or((None, TokenSource::None))
 }
 
 // ---------------------------------------------------------------------------
