@@ -1,4 +1,4 @@
-import { createSignal, createMemo, onMount, onCleanup, For, Index, Show } from "solid-js";
+import { createSignal, createMemo, createEffect, onMount, onCleanup, For, Index, Show } from "solid-js";
 import { subscribePty } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
 import { type LogLine, normalizeLogLine, spanStyle, lineMatchesQuery, groupLineBlocks } from "../utils/logLine";
@@ -14,6 +14,8 @@ interface OutputViewProps {
   onInputLine?: (text: string | null) => void;
   /** When set, only lines matching this query (case-insensitive) are shown. */
   searchQuery?: string;
+  /** Receive raw screen row text whenever screen content updates. */
+  onScreenText?: (rows: string[]) => void;
 }
 
 export function OutputView(props: OutputViewProps) {
@@ -25,6 +27,16 @@ export function OutputView(props: OutputViewProps) {
   // When the user scrolls up manually, stop auto-scrolling until they
   // return near the bottom.
   let userScrolledUp = false;
+
+  // Propagate raw screen text to parent for question context overlay
+  createEffect(() => {
+    if (!props.onScreenText) return;
+    const rows = screenRows();
+    const texts = rows.map((r) =>
+      typeof r === "string" ? r : (r.spans?.map((s: { text?: string }) => s.text ?? "").join("") ?? ""),
+    );
+    props.onScreenText(texts);
+  });
 
   /** Fetch initial log lines + screen rows via HTTP; returns the total_lines offset for WS catch-up. */
   async function fetchInitialOutput(): Promise<number> {

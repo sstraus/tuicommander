@@ -6,6 +6,7 @@ import { SlashMenuOverlay } from "../components/SlashMenuOverlay";
 import { CommandWidget } from "../components/CommandWidget";
 import { CommandInput } from "../components/CommandInput";
 import { TerminalKeybar } from "../components/TerminalKeybar";
+import { QuestionContext } from "../components/QuestionContext";
 import type { SessionInfo } from "../useSessions";
 import { deriveStatus } from "../utils/deriveStatus";
 import { formatRetryCountdown } from "../utils/formatRetryCountdown";
@@ -50,6 +51,9 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 
   // PTY input line synced from WebSocket (what's on the terminal prompt)
   const [ptyInputLine, setPtyInputLine] = createSignal<string | null>(null);
+
+  // Raw screen text for question context overlay
+  const [screenText, setScreenText] = createSignal<string[]>([]);
 
   // Local dismiss flag for the slash menu overlay (resets when new items arrive)
   const [slashMenuDismissed, setSlashMenuDismissed] = createSignal(false);
@@ -192,9 +196,10 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
       </Show>
 
       <Show when={sessionState()?.question_text}>
-        <div class={styles.questionBar}>
-          {sessionState()!.question_text}
-        </div>
+        <QuestionContext
+          questionText={sessionState()!.question_text!}
+          screenText={screenText()}
+        />
       </Show>
 
       <Show when={sessionState()?.last_error}>
@@ -215,7 +220,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
       </Show>
 
       <div class={styles.outputArea}>
-        <OutputView sessionId={props.session.session_id} onStateChange={setWsState} onInputLine={setPtyInputLine} searchQuery={searchQuery()} />
+        <OutputView sessionId={props.session.session_id} onStateChange={setWsState} onInputLine={setPtyInputLine} onScreenText={setScreenText} searchQuery={searchQuery()} />
         <Show when={!props.sessionExists}>
           <div class={styles.endedOverlay}>
             <span class={styles.endedText}>Session ended</span>
