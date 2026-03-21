@@ -1,10 +1,31 @@
 # GitHub Integration
 
-**Module:** `src-tauri/src/github.rs`
+**Modules:** `src-tauri/src/github.rs`, `src-tauri/src/github_auth.rs`
 
-Integrates with GitHub via the `gh` CLI for PR status, CI checks, and batch queries.
+Integrates with GitHub via GraphQL API for PR status, CI checks, and batch queries. Supports OAuth Device Flow login as an alternative to gh CLI tokens.
 
-## Tauri Commands
+## Token Resolution
+
+Priority order (first non-empty wins):
+
+1. `GH_TOKEN` environment variable
+2. `GITHUB_TOKEN` environment variable
+3. OAuth keyring token (`github_auth.rs` — stored in OS keyring via `keyring` crate)
+4. `gh_token` crate (reads `~/.config/gh/hosts.yml`)
+5. `gh auth token` CLI subprocess
+
+The active token source is tracked in `AppState.github_token_source` as a `TokenSource` enum (`Env`, `OAuth`, `GhCli`, `None`).
+
+## Tauri Commands — Authentication (`github_auth.rs`)
+
+| Command | Signature | Description |
+|---------|-----------|-------------|
+| `github_start_login` | `() -> DeviceCodeResponse` | Start OAuth Device Flow, returns user code |
+| `github_poll_login` | `(device_code: String) -> PollResult` | Poll for token, saves to keyring on success |
+| `github_logout` | `() -> ()` | Delete OAuth token from keyring, fall back to env/CLI |
+| `github_auth_status` | `() -> AuthStatus` | Current auth status with login, avatar, source |
+
+## Tauri Commands — GitHub Data (`github.rs`)
 
 | Command | Signature | Description |
 |---------|-----------|-------------|

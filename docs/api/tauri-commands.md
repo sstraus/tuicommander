@@ -63,6 +63,15 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 |---------|------|---------|-------------|
 | `get_commit_graph` | `path, count?` | `Vec<GraphNode>` | Lane-assigned commit graph for visual rendering. Default 200, max 1000. Returns hash, column, row, color_index (0–7), parents, refs, and connection metadata (from/to col/row) for Bezier curve drawing |
 
+## GitHub Authentication (`github_auth.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `github_start_login` | — | `DeviceCodeResponse` | Start OAuth Device Flow, returns user/device code |
+| `github_poll_login` | `device_code` | `PollResult` | Poll for token; saves to keyring on success |
+| `github_logout` | — | `()` | Delete OAuth token from keyring, fall back to env/CLI |
+| `github_auth_status` | — | `AuthStatus` | Current auth: login, avatar, source, scopes |
+
 ## GitHub Integration (`github.rs`)
 
 | Command | Args | Returns | Description |

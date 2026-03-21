@@ -2,9 +2,37 @@
 
 TUICommander monitors your GitHub PRs and CI status automatically.
 
+## Authentication
+
+TUICommander needs a GitHub token to access PRs and CI status. You have two options:
+
+### Option 1: OAuth Login (Recommended)
+
+1. Open **Settings > GitHub**
+2. Click **"Login with GitHub"**
+3. A code appears — it's auto-copied to your clipboard
+4. Your browser opens GitHub's authorization page
+5. Paste the code and authorize
+6. Done — the token is stored securely in your OS keyring
+
+This method automatically requests the correct scopes (`repo`, `read:org`) and works with private repositories and organization repos.
+
+### Option 2: gh CLI
+
+If you prefer, install the `gh` CLI and run `gh auth login`. TUICommander will use the `gh` token automatically.
+
+### Token Priority
+
+When multiple sources are available, TUICommander uses this priority:
+
+1. `GH_TOKEN` environment variable
+2. `GITHUB_TOKEN` environment variable
+3. OAuth token (from Settings login)
+4. `gh` CLI token
+
 ## Requirements
 
-- `gh` CLI installed and authenticated (`gh auth login`)
+- GitHub authentication (see above)
 - Repository with a GitHub remote
 
 ## PR Monitoring

@@ -239,4 +239,9 @@ export const TIPS: Tip[] = [
     description: "Right-click any branch in the Branches tab for quick actions: merge, rebase, compare diff, push, delete.",
     shortcut: null,
   },
+  {
+    feature: "GitHub Login",
+    description: "Sign in to GitHub from Settings > GitHub for automatic PR and CI monitoring. No need to manage tokens manually.",
+    shortcut: null,
+  },
 ];
