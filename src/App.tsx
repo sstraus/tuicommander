@@ -8,7 +8,6 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
-import { Terminal } from "./components/Terminal";
 import { Sidebar } from "./components/Sidebar";
 import { Toolbar } from "./components/Toolbar";
 import { TabBar } from "./components/TabBar";
@@ -71,7 +70,6 @@ import { useKeyboardRedirect } from "./hooks/useKeyboardRedirect";
 import { useConfirmDialog } from "./hooks/useConfirmDialog";
 import { useTerminalLifecycle } from "./hooks/useTerminalLifecycle";
 import { useGitOperations } from "./hooks/useGitOperations";
-import { useAppLazygit } from "./hooks/useAppLazygit";
 import { useDictation } from "./hooks/useDictation";
 import { useQuickSwitcher } from "./hooks/useQuickSwitcher";
 import { useSplitPanes } from "./hooks/useSplitPanes";
@@ -224,12 +222,6 @@ const App: Component = () => {
     gitOps.dismissMergePending();
   };
 
-  const lazygit = useAppLazygit({
-    pty,
-    getCurrentRepoPath: gitOps.currentRepoPath,
-    getDefaultFontSize,
-  });
-
   const dictation = useDictation({
     pty,
     dictation: dictationStore,
@@ -271,7 +263,6 @@ const App: Component = () => {
   onMount(async () => {
     await initApp({
       pty,
-      setLazygitAvailable: lazygit.setLazygitAvailable,
       setQuitDialogVisible,
       setStatusInfo,
       setCurrentRepoPath: gitOps.setCurrentRepoPath,
@@ -313,7 +304,6 @@ const App: Component = () => {
         }),
         startUserActivityListening: userActivityStore.startListening,
       },
-      detectBinary: (binary) => invoke("detect_agent_binary", { binary }),
       applyPlatformClass,
       onCloseRequested: (handler) => {
         if (!isTauri()) return;
@@ -635,7 +625,6 @@ const App: Component = () => {
       },
       separator: true,
     },
-    ...(lazygit.lazygitAvailable() ? [{ label: "Open Lazygit", shortcut: `${getModifierSymbol()}G`, action: lazygit.spawnLazygit, separator: true }] : []),
     ...(() => {
       const pluginActions = contextMenuActionsStore.getActions();
       if (pluginActions.length === 0) return [];
@@ -877,9 +866,6 @@ const App: Component = () => {
     handleRunCommand: (forceDialog: boolean) => gitOps.handleRunCommand(forceDialog, () => setRunCommandDialogVisible(true)),
     switchToBranchByIndex: quickSwitcher.switchToBranchByIndex,
     isQuickSwitcherOpen: quickSwitcherVisible,
-    lazygitAvailable: lazygit.lazygitAvailable,
-    spawnLazygit: lazygit.spawnLazygit,
-    openLazygitPane: lazygit.openLazygitPane,
     toggleMarkdownPanel: uiStore.toggleMarkdownPanel,
     toggleSidebar: uiStore.toggleSidebar,
     togglePromptLibrary: promptLibraryStore.toggleDrawer,
@@ -1093,8 +1079,6 @@ const App: Component = () => {
         case "prompt-library": promptLibraryStore.toggleDrawer(); break;
         case "run-command": gitOps.handleRunCommand(false, () => setRunCommandDialogVisible(true)); break;
         case "edit-run-command": gitOps.handleRunCommand(true, () => setRunCommandDialogVisible(true)); break;
-        case "lazygit": if (lazygit.lazygitAvailable()) lazygit.spawnLazygit(); break;
-        case "lazygit-split": if (lazygit.lazygitAvailable()) lazygit.openLazygitPane(); break;
         case "git-operations": uiStore.toggleGitPanel(); break;
         case "task-queue": setTaskQueueVisible((v) => !v); break;
 
@@ -1278,13 +1262,6 @@ const App: Component = () => {
           onCloseTab={terminalLifecycle.closeTerminal}
           onOpenFilePath={handleOpenFilePath}
           onContextMenu={contextMenu.open}
-          lazygitPaneVisible={lazygit.lazygitPaneVisible()}
-          lazygitTermId={lazygit.lazygitTermId()}
-          lazygitFloating={lazygit.lazygitFloating()}
-          lazygitRepoPath={gitOps.currentRepoPath() || null}
-          lazygitCmd={gitOps.currentRepoPath() ? lazygit.buildLazygitCmd(gitOps.currentRepoPath()!) : null}
-          onLazygitFloat={() => lazygit.setLazygitFloating(true)}
-          onLazygitClose={lazygit.closeLazygitPane}
           onCwdChange={gitOps.handleTerminalCwdChange}
         >
           {/* Side panels (right panes inside #terminal-container) */}
@@ -1504,41 +1481,6 @@ const App: Component = () => {
             />
           );
         })()}
-      </Show>
-
-      {/* Lazygit floating window (Story 051) */}
-      <Show when={lazygit.lazygitFloating() && lazygit.lazygitPaneVisible() && lazygit.lazygitTermId()}>
-        <div class="lazygit-floating">
-          <div class="lazygit-floating-header">
-            <span class="lazygit-pane-title">
-              <span>⎇</span> lazygit (floating)
-            </span>
-            <div style={{ display: "flex", gap: "4px" }}>
-              <button
-                class="lazygit-pane-close"
-                onClick={() => lazygit.setLazygitFloating(false)}
-                title="Dock (reattach)"
-              >
-                ⇲
-              </button>
-              <button class="lazygit-pane-close" onClick={lazygit.closeLazygitPane}>
-                &times;
-              </button>
-            </div>
-          </div>
-          <div class="lazygit-floating-content">
-            <Terminal
-              id={lazygit.lazygitTermId()!}
-              cwd={gitOps.currentRepoPath() || null}
-              alwaysVisible
-              onSessionCreated={(id) => {
-                requestAnimationFrame(() => {
-                  terminalsStore.get(id)?.ref?.focus();
-                });
-              }}
-            />
-          </div>
-        </div>
       </Show>
 
       {/* Help panel (Story 053) */}

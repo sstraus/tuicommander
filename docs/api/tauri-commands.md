@@ -133,7 +133,6 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `detect_agent_binary` | `binary` | `AgentBinaryDetection` | Check binary in PATH |
 | `detect_all_agent_binaries` | -- | `Vec<AgentBinaryDetection>` | Detect all known agents |
 | `detect_claude_binary` | -- | `String` | Detect Claude binary |
-| `detect_lazygit_binary` | -- | `AgentBinaryDetection` | Detect lazygit |
 | `detect_installed_ides` | -- | `Vec<String>` | Detect installed IDEs |
 | `open_in_app` | `path, app` | `()` | Open path in application |
 | `spawn_agent` | `pty_config, agent_config` | `String` (session ID) | Spawn agent in PTY |

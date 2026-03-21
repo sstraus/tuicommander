@@ -16,7 +16,7 @@ use uuid::Uuid;
 use super::types::*;
 
 pub(super) async fn detect_agents() -> impl IntoResponse {
-    let known_agents = ["claude", "codex", "aider", "goose", "lazygit"];
+    let known_agents = ["claude", "codex", "aider", "goose"];
     let results: Vec<serde_json::Value> = known_agents
         .iter()
         .map(|name| {
@@ -32,7 +32,7 @@ pub(super) async fn detect_agents() -> impl IntoResponse {
 }
 
 pub(super) async fn detect_agent_binary_http(Query(q): Query<DetectBinaryQuery>) -> Response {
-    const KNOWN_AGENTS: &[&str] = &["claude", "codex", "aider", "goose", "lazygit"];
+    const KNOWN_AGENTS: &[&str] = &["claude", "codex", "aider", "goose"];
     if !KNOWN_AGENTS.contains(&q.binary.as_str()) {
         return Json(serde_json::json!({"error": "Unknown agent"})).into_response();
     }

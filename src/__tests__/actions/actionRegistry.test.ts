@@ -19,9 +19,6 @@ function createMockHandlers(): ShortcutHandlers {
     handleRunCommand: vi.fn(),
     switchToBranchByIndex: vi.fn(),
     isQuickSwitcherOpen: vi.fn().mockReturnValue(false),
-    lazygitAvailable: vi.fn().mockReturnValue(true),
-    spawnLazygit: vi.fn(),
-    openLazygitPane: vi.fn(),
     toggleMarkdownPanel: vi.fn(),
     toggleSidebar: vi.fn(),
     togglePromptLibrary: vi.fn(),
@@ -86,7 +83,7 @@ describe("actionRegistry", () => {
       const panelEntry = entries.find((e) => e.id === "toggle-markdown");
       expect(panelEntry?.category).toBe("Panels");
 
-      const gitEntry = entries.find((e) => e.id === "open-lazygit");
+      const gitEntry = entries.find((e) => e.id === "toggle-git-ops");
       expect(gitEntry?.category).toBe("Git");
     });
 
@@ -122,27 +119,5 @@ describe("actionRegistry", () => {
     });
   });
 
-  describe("lazygit guard", () => {
-    it("does not call spawnLazygit when lazygitAvailable returns false", () => {
-      const handlers = createMockHandlers();
-      handlers.lazygitAvailable = vi.fn().mockReturnValue(false);
-      const testEntries = getActionEntries(handlers);
-
-      const entry = testEntries.find((e) => e.id === "open-lazygit");
-      entry?.execute();
-
-      expect(handlers.spawnLazygit).not.toHaveBeenCalled();
-    });
-
-    it("calls spawnLazygit when lazygitAvailable returns true", () => {
-      const handlers = createMockHandlers();
-      handlers.lazygitAvailable = vi.fn().mockReturnValue(true);
-      const testEntries = getActionEntries(handlers);
-
-      const entry = testEntries.find((e) => e.id === "open-lazygit");
-      entry?.execute();
-
-      expect(handlers.spawnLazygit).toHaveBeenCalled();
-    });
-  });
 });
+

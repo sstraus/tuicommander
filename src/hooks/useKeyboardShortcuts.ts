@@ -39,9 +39,6 @@ export interface ShortcutHandlers {
   handleRunCommand: (forceDialog: boolean) => void;
   switchToBranchByIndex: (index: number) => void;
   isQuickSwitcherOpen: () => boolean;
-  lazygitAvailable: () => boolean;
-  spawnLazygit: () => void;
-  openLazygitPane: () => void;
   toggleMarkdownPanel: () => void;
   toggleSidebar: () => void;
   togglePromptLibrary: () => void;
@@ -139,14 +136,6 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     // Tab navigation
     case "prev-tab": handlers.navigateTab("prev"); return true;
     case "next-tab": handlers.navigateTab("next"); return true;
-
-    // Lazygit
-    case "open-lazygit":
-      if (handlers.lazygitAvailable()) handlers.spawnLazygit();
-      return true;
-    case "open-lazygit-pane":
-      if (handlers.lazygitAvailable()) handlers.openLazygitPane();
-      return true;
 
     default: {
       // switch-tab-N

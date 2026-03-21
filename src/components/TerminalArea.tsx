@@ -25,14 +25,6 @@ export interface TerminalAreaProps {
   onCloseTab: (id: string) => void;
   onOpenFilePath: (path: string, line?: number, col?: number) => void;
   onContextMenu: (e: MouseEvent) => void;
-  /** Lazygit split pane */
-  lazygitPaneVisible: boolean;
-  lazygitTermId: string | null;
-  lazygitFloating: boolean;
-  lazygitRepoPath: string | null;
-  lazygitCmd: string | null;
-  onLazygitFloat: () => void;
-  onLazygitClose: () => void;
   onCwdChange?: (id: string, cwd: string) => void;
   children?: JSX.Element;
 }
@@ -306,47 +298,6 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
           </div>
         </Show>
       </div>
-
-      {/* Lazygit split pane (Story 047) */}
-      <Show when={props.lazygitPaneVisible && props.lazygitTermId && !props.lazygitFloating}>
-        <div class="lazygit-pane">
-          <div class="lazygit-pane-header">
-            <span class="lazygit-pane-title">
-              <span>⎇</span> lazygit
-            </span>
-            <div style={{ display: "flex", gap: "4px" }}>
-              <button
-                class="lazygit-pane-close"
-                onClick={props.onLazygitFloat}
-                title="Float (detach)"
-              >
-                ⇱
-              </button>
-              <button class="lazygit-pane-close" onClick={props.onLazygitClose}>
-                &times;
-              </button>
-            </div>
-          </div>
-          <div class="lazygit-pane-content">
-            <Terminal
-              id={props.lazygitTermId!}
-              cwd={props.lazygitRepoPath}
-              alwaysVisible
-              onSessionCreated={(id, _sid) => {
-                requestAnimationFrame(() => {
-                  const lgTerm = terminalsStore.get(id);
-                  if (lgTerm?.ref) {
-                    if (props.lazygitCmd) {
-                      lgTerm.ref.write(`${props.lazygitCmd}\r`);
-                    }
-                    lgTerm.ref.focus();
-                  }
-                });
-              }}
-            />
-          </div>
-        </div>
-      </Show>
 
       {/* Side panels (must be inside #terminal-container for flex row layout) */}
       {props.children}

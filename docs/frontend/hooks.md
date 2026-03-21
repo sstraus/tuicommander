@@ -14,7 +14,7 @@ export function initApp(deps: AppInitDeps): Promise<void>
 
 **What it does:**
 1. Hydrates all stores from Rust backend (settings, repos, UI, prompts, etc.)
-2. Detects installed binaries (Claude, Aider, lazygit)
+2. Detects installed binaries (Claude, Aider)
 3. Applies platform CSS class (`platform-darwin`, `platform-win32`, `platform-linux`)
 4. Sets up close handler (quit confirmation dialog)
 5. Starts GitHub polling
@@ -251,21 +251,6 @@ Detect installed AI agents and IDEs.
 | `isAvailable(type)` | Check if agent is available |
 | `getAvailable()` | Get all available agents |
 | `getDetection(type)` | Get detection result (path, version) |
-
----
-
-## useAppLazygit
-
-**File:** `src/hooks/useAppLazygit.ts`
-
-Lazygit integration (inline pane or floating window).
-
-| Method | Description |
-|--------|-------------|
-| `spawnLazygit()` | Spawn lazygit inline |
-| `openLazygitPane()` | Open lazygit pane |
-| `closeLazygitPane()` | Close lazygit pane |
-| `buildLazygitCmd(repoPath)` | Build lazygit command for repo |
 
 ---
 

@@ -28,7 +28,6 @@
 
 - [GitHub Integration](./user-guide/github-integration.md)
 - [Worktrees](./user-guide/worktrees.md)
-- [Lazygit](./user-guide/lazygit.md)
 
 ## Extensibility
 

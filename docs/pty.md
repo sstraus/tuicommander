@@ -176,7 +176,7 @@ All actions require `path` (absolute path to git repository).
 
 | Action | Description | Required params |
 |--------|-------------|-----------------|
-| `detect` | Returns `[{name, path, version}]` for known agents (claude, codex, aider, goose, lazygit) | — |
+| `detect` | Returns `[{name, path, version}]` for known agents (claude, codex, aider, goose) | — |
 | `spawn` | Launches an agent in a new PTY session. Returns `{session_id}` | `prompt` |
 | `stats` | Returns `{active_sessions, max_sessions, available_slots}` | — |
 | `metrics` | Returns cumulative metrics `{total_spawned, total_failed, active_sessions, bytes_emitted, pauses_triggered}` | — |

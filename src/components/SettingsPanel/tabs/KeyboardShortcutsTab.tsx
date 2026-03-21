@@ -71,9 +71,7 @@ function getShortcutSections(): ShortcutSection[] {
   {
     title: t("helpPanel.git", "Git"),
     shortcuts: [
-      { action: "open-lazygit", keys: keyFor("open-lazygit"), description: t("helpPanel.openLazygit", "Open lazygit in terminal") },
       { action: "toggle-git-ops", keys: keyFor("toggle-git-ops"), description: t("helpPanel.gitPanel", "Git Panel") },
-      { action: "open-lazygit-pane", keys: keyFor("open-lazygit-pane"), description: t("helpPanel.lazygitSplitPane", "Lazygit split pane") },
     ],
   },
   {

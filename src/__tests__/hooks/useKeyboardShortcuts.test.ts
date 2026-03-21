@@ -26,9 +26,6 @@ function createMockHandlers(): ShortcutHandlers {
     handleRunCommand: vi.fn(),
     switchToBranchByIndex: vi.fn(),
     isQuickSwitcherOpen: vi.fn().mockReturnValue(false),
-    lazygitAvailable: vi.fn().mockReturnValue(true),
-    spawnLazygit: vi.fn(),
-    openLazygitPane: vi.fn(),
     toggleMarkdownPanel: vi.fn(),
     toggleSidebar: vi.fn(),
     togglePromptLibrary: vi.fn(),
@@ -214,30 +211,6 @@ describe("useKeyboardShortcuts", () => {
     it("Cmd+Shift+D toggles git ops panel", () => {
       fireKeydown("D", { metaKey: true, shiftKey: true });
       expect(handlers.toggleGitOpsPanel).toHaveBeenCalled();
-    });
-  });
-
-  describe("lazygit shortcuts", () => {
-    it("Cmd+G spawns lazygit when available", () => {
-      fireKeydown("g", { metaKey: true });
-      expect(handlers.spawnLazygit).toHaveBeenCalled();
-    });
-
-    it("Cmd+G does nothing when lazygit unavailable", () => {
-      (handlers.lazygitAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
-      fireKeydown("g", { metaKey: true });
-      expect(handlers.spawnLazygit).not.toHaveBeenCalled();
-    });
-
-    it("Cmd+Shift+L opens lazygit pane", () => {
-      fireKeydown("L", { metaKey: true, shiftKey: true });
-      expect(handlers.openLazygitPane).toHaveBeenCalled();
-    });
-
-    it("Cmd+Shift+L does nothing when lazygit unavailable", () => {
-      (handlers.lazygitAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
-      fireKeydown("L", { metaKey: true, shiftKey: true });
-      expect(handlers.openLazygitPane).not.toHaveBeenCalled();
     });
   });
 

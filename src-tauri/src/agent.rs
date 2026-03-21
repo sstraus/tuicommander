@@ -644,12 +644,6 @@ pub(crate) async fn spawn_agent(
     Ok(session_id)
 }
 
-/// Detect if lazygit is installed (Story 048)
-#[tauri::command]
-pub(crate) fn detect_lazygit_binary() -> AgentBinaryDetection {
-    detect_agent_binary("lazygit".to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

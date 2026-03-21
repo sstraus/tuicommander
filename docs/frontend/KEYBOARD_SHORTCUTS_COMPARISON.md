@@ -16,7 +16,6 @@ Research date: 2026-02-22
 |----------|---------------|
 | Cmd+Shift+D | Toggle git diff panel |
 | Cmd+E | Toggle file browser |
-| Cmd+G | Open lazygit |
 | Cmd+J | Toggle task queue |
 | Cmd+K | Prompt library |
 | Cmd+M | Toggle markdown panel |
@@ -24,7 +23,6 @@ Research date: 2026-02-22
 | Cmd+R | Run saved command |
 | Cmd+\ | Split vertically |
 | Cmd+Shift+D | Git Panel |
-| Cmd+Shift+L | Lazygit split pane |
 | Cmd+Shift+T | Reopen closed tab |
 | Cmd+Shift+R | Edit saved command |
 | Alt+arrows | Navigate panes |
@@ -211,7 +209,6 @@ These are reserved by Windows itself and **must never be used**:
 |-------|---------------|-------------|-------------------|
 | Cmd+D | Ctrl+D | Diff panel | VS Code multi-select, shell EOF |
 | Cmd+E | Ctrl+E | File browser | VS Code quick open recent |
-| Cmd+G | Ctrl+G | Lazygit | VS Code go to line |
 | Cmd+J | Ctrl+J | Task queue | VS Code toggle panel |
 | Cmd+K | Ctrl+K | Prompt library | VS Code chord prefix |
 | Cmd+M | Ctrl+M | Markdown panel | Low conflict (VS Code: tab focus toggle) |
@@ -219,7 +216,6 @@ These are reserved by Windows itself and **must never be used**:
 | Cmd+R | Ctrl+R | Run command | VS Code open recent, browsers reload |
 | Cmd+\\ | Ctrl+\\ | Split | VS Code split editor (same semantics) |
 | Cmd+Shift+D | Ctrl+Shift+D | Git Panel | VS Code debug (conflicts!) |
-| Cmd+Shift+L | Ctrl+Shift+L | Lazygit split | VS Code select all occurrences |
 | Cmd+Shift+T | Ctrl+Shift+T | Reopen tab | Same semantics everywhere (good) |
 | Alt+arrows | Alt+arrows | Navigate panes | Windows Terminal pane nav (same!) |
 
@@ -250,7 +246,6 @@ These are reserved by Windows itself and **must never be used**:
 |-------------|----------------|
 | **Cmd+D** (diff) | iTerm2/Warp/Ghostty (split), VS Code/Zed (multi-select) |
 | **Cmd+E** (file browser) | Zed (buffer search). Low conflict otherwise |
-| **Cmd+G** (lazygit) | Warp (find next), VS Code (find next/go to line), Zed (select next match) |
 | **Cmd+J** (task queue) | iTerm2 (jump to mark), VS Code (toggle panel), Zed (toggle bottom dock) |
 | **Cmd+K** (prompt library) | iTerm2/Warp/Ghostty (clear), VS Code (chord prefix), Cursor (inline AI), Zed (clear/chord) |
 | **Cmd+M** (markdown) | iTerm2 (set mark), Zed (minimize) |
@@ -258,7 +253,6 @@ These are reserved by Windows itself and **must never be used**:
 | **Cmd+R** (run command) | Ghostty (clear), Kitty (resize), VS Code (open recent), Zed (toggle right dock) |
 | **Cmd+\\** (split) | iTerm2 (find cursor), Warp (Warp Drive), Zed (split right) |
 | **Cmd+Shift+D** (Git Panel) | VS Code (debug), Warp (n/a) |
-| **Cmd+Shift+L** (lazygit split) | VS Code/Zed (select all occurrences), Cursor (AI chat w/ selection) |
 | **Cmd+Shift+T** (reopen tab) | VS Code/Warp/Zed (reopen closed tab) -- GOOD, same semantics! |
 
 ### 3. "Safe" Cmd/Ctrl+Letter Combos (cross-platform analysis)

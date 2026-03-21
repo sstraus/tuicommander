@@ -134,12 +134,6 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
             "CmdOrCtrl+Shift+R"
         ))
         .separator()
-        .item(&item!("lazygit", "Lazygit", "CmdOrCtrl+G"))
-        .item(&item!(
-            "lazygit-split",
-            "Lazygit Split",
-            "CmdOrCtrl+Shift+L"
-        ))
         .item(&item!(
             "git-operations",
             "Git Operations",

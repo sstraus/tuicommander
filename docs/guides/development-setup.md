@@ -188,4 +188,3 @@ src-tauri\target\release\bundle\nsis\TUICommander_0.x.x_x64-setup.exe
 | WiX `.msi` bundle fails | WiX `light.exe` tooling issue | Use `--bundles nsis` instead |
 | App window opens but shows a **black screen** | Navigation guard in `lib.rs` blocked `http://tauri.localhost/` (Windows' internal Tauri URL) | Fixed in current code — `tauri.localhost` is explicitly allowed |
 | `Update check failed: windows-x86_64-nsis not found` | Custom local build isn't listed in official release manifest | Harmless — auto-update simply won't trigger |
-| `Lazygit not found` | Lazygit is not installed | Optional: `winget install jesseduffield.lazygit` |

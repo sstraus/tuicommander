@@ -216,8 +216,6 @@ Features:
 | Cmd+E | Toggle file browser |
 | Cmd+[ | Toggle sidebar |
 | Cmd+? | Toggle help panel |
-| Cmd+G | Open lazygit |
-| Cmd+Shift+L | Lazygit split pane |
 | Cmd+Shift+[ | Previous tab |
 | Cmd+Shift+] | Next tab |
 | Cmd+Shift+T | Reopen closed tab |
@@ -277,7 +275,6 @@ All stores persist to localStorage:
 - [x] Repository groups with accordion UI (named, colored, collapsible, drag-and-drop)
 - [x] HEAD file watcher for branch change detection
 - [x] Git status via .git file reads (no subprocess)
-- [x] Lazygit integration (inline, split pane, floating window)
 - [x] Lazy terminal restore (sessions materialize on branch click, not app startup)
 - [x] Windows compatibility (shell escaping, process detection, resolve_cli, IDE detection)
 - [x] Repo watcher for automatic panel refresh on `.git/` changes

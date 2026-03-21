@@ -152,10 +152,9 @@ Queue operations, track progress, cancel running tasks. The task queue manages b
 </details>
 
 <details>
-<summary><strong>Git integration</strong> — Worktrees, lazygit, quick actions</summary>
+<summary><strong>Git integration</strong> — Worktrees, quick actions</summary>
 
 - Auto-create worktrees per branch with configurable base branch and setup scripts
-- Lazygit: inline (`Cmd+G`), split pane (`Cmd+Shift+L`), or floating window
 - Git Panel (`Cmd+Shift+D`): staging, commit, log with commit graph, stashes, history, blame
 - Repository groups: named, colored, collapsible, drag-and-drop reordering
 - Park repos: temporarily hide repos you're not using

@@ -787,7 +787,7 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
     };
     match action {
         "detect" => {
-            let known = ["claude", "codex", "aider", "goose", "lazygit"];
+            let known = ["claude", "codex", "aider", "goose"];
             let results: Vec<serde_json::Value> = known.iter().map(|name| {
                 let det = crate::agent::detect_agent_binary(name.to_string());
                 serde_json::json!({"name": name, "path": det.path, "version": det.version})

@@ -127,6 +127,5 @@ App.tsx
 ├── useGitHub        → GitHub polling (uses githubStore)
 ├── useDictation     → push-to-talk (uses dictationStore)
 ├── useQuickSwitcher → branch quick-switch UI
-├── useSplitPanes    → split terminal panes
-└── useAppLazygit    → lazygit integration
+└── useSplitPanes    → split terminal panes
 ```

@@ -103,13 +103,11 @@ Note: File browser and Markdown panels are mutually exclusive — opening one cl
 | `Cmd+Shift+P` | Command palette |
 | `Cmd+Shift+A` | Activity dashboard |
 
-## Git & Lazygit
+## Git
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+G` | Open lazygit in terminal |
 | `Cmd+Shift+D` | Git Panel |
-| `Cmd+Shift+L` | Lazygit in split pane |
 | `Cmd+B` | Quick branch switch (fuzzy search) |
 
 ## Quick Branch Switcher
@@ -209,8 +207,6 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `toggle-task-queue` | `Cmd+J` | Task queue |
 | `toggle-help` | `Cmd+?` | Toggle help panel |
 | `toggle-git-ops` | `Cmd+Shift+D` | Git Panel |
-| `open-lazygit` | `Cmd+G` | Open lazygit |
-| `open-lazygit-pane` | `Cmd+Shift+L` | Lazygit split pane |
 | `worktree-manager` | `Cmd+Shift+W` | Worktree Manager panel |
 | `quick-branch-switch` | `Cmd+B` | Quick branch switch |
 | `find-in-terminal` | `Cmd+F` | Find in terminal |

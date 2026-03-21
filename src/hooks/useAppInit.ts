@@ -18,7 +18,6 @@ export interface AppInitDeps {
     listActiveSessions: () => Promise<Array<{ session_id: string; cwd: string | null }>>;
     close: (sessionId: string) => Promise<void>;
   };
-  setLazygitAvailable: (available: boolean) => void;
   setQuitDialogVisible: (visible: boolean) => void;
   setStatusInfo: (msg: string) => void;
   setCurrentRepoPath: (path: string | undefined) => void;
@@ -36,7 +35,6 @@ export interface AppInitDeps {
     refreshDictationConfig: () => Promise<void>;
     startUserActivityListening: () => void;
   };
-  detectBinary: (binary: string) => Promise<{ path: string | null; version: string | null }>;
   applyPlatformClass: () => string;
   onCloseRequested: (handler: (event: { preventDefault: () => void }) => void) => void;
 }
@@ -95,20 +93,6 @@ export async function initApp(deps: AppInitDeps) {
 
   const platform = deps.applyPlatformClass();
   appLogger.debug("app", `Platform detected: ${platform}`);
-
-  // Detect lazygit binary (Story 048)
-  try {
-    const detection = await deps.detectBinary("lazygit");
-    deps.setLazygitAvailable(detection.path !== null);
-    if (detection.path) {
-      appLogger.info("app", `Lazygit found: ${detection.path} (${detection.version ?? "unknown version"})`);
-    } else {
-      appLogger.info("app", "Lazygit not found — lazygit features disabled");
-    }
-  } catch {
-    appLogger.warn("app", "Lazygit detection failed");
-    deps.setLazygitAvailable(false);
-  }
 
   // Intercept window close for quit confirmation (Story 057)
   deps.onCloseRequested((event) => {

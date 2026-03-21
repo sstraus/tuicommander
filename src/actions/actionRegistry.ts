@@ -49,9 +49,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "toggle-file-browser-content-search": { label: "Search file contents", category: "File Browser" },
   "toggle-plan": { label: "Toggle plan panel", category: "Panels" },
 
-  "open-lazygit": { label: "Open lazygit", category: "Git" },
   "toggle-git-ops": { label: "Git panel", category: "Git" },
-  "open-lazygit-pane": { label: "Lazygit split pane", category: "Git" },
 
   "split-vertical": { label: "Split vertically", category: "Split Panes" },
   "split-horizontal": { label: "Split horizontally", category: "Split Panes" },
@@ -98,9 +96,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "toggle-help": handlers.toggleHelpPanel,
     "toggle-file-browser": handlers.toggleFileBrowserPanel,
     "toggle-plan": handlers.togglePlanPanel,
-    "open-lazygit": () => { if (handlers.lazygitAvailable()) handlers.spawnLazygit(); },
     "toggle-git-ops": handlers.toggleGitOpsPanel,
-    "open-lazygit-pane": () => { if (handlers.lazygitAvailable()) handlers.openLazygitPane(); },
     "split-vertical": () => handlers.handleSplit("vertical"),
     "split-horizontal": () => handlers.handleSplit("horizontal"),
     "toggle-sidebar": handlers.toggleSidebar,

@@ -115,11 +115,6 @@ export const TIPS: Tip[] = [
     shortcut: null,
   },
   {
-    feature: "Lazygit",
-    description: "Open Lazygit in a dedicated tab for full-featured git operations.",
-    shortcut: `${mod}+G`,
-  },
-  {
     feature: "Git Panel",
     description: "Stage, commit, browse history, and view blame — all in a tabbed side panel.",
     shortcut: `${mod}+Shift+D`,

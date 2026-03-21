@@ -565,13 +565,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Triggers UI refresh without polling
 - When a terminal runs `git checkout -b new-branch` in the main working directory (not a worktree), the sidebar renames the existing branch entry in-place (preserving all terminal state) instead of creating a duplicate
 
-### 7.5 Lazygit Integration
-- In terminal: `Cmd+G`
-- Split pane: `Cmd+Shift+L`
-- Dedicated tab naming to avoid OSC title pollution
-- Binary detection via `resolve_cli()`
-
-### 7.6 Diff
+### 7.5 Diff
 - Working tree diff and per-commit diff via Git Panel Changes tab
 - Per-file diff counts (additions/deletions) shown inline in Changes tab
 - Click a file row to view its diff
@@ -809,7 +803,6 @@ All data persisted to platform config directory via Rust:
 - `Cmd` ↔ `Ctrl` key abstraction
 - `resolve_cli()`: probes well-known directories when PATH unavailable (release builds)
 - Windows: `cmd.exe` shell escaping, `CreateToolhelp32Snapshot` for process detection
-- Windows: `if exist` syntax for lazygit config detection
 - IDE detection: `.app` bundles (macOS), registry entries (Windows), PATH probing (Linux)
 
 ---
@@ -912,13 +905,11 @@ All data persisted to platform config directory via Rust:
 | `Cmd+Shift+W` | Worktree manager |
 | `Cmd+Shift+A` | Activity dashboard |
 
-### Git & Lazygit
+### Git
 | Shortcut | Action |
 |----------|--------|
 | `Cmd+B` | Quick branch switch (fuzzy search) |
-| `Cmd+G` | Open lazygit in terminal |
 | `Cmd+Shift+D` | Git Panel |
-| `Cmd+Shift+L` | Lazygit in split pane |
 
 ### File Browser (when focused)
 | Shortcut | Action |

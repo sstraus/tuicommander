@@ -65,11 +65,6 @@ Features to test when TUICommander is more usable.
 
 ## Rust Backend (batch 047-070)
 
-### Lazygit Auto-Detection (048)
-- [ ] Lazygit binary detected when installed
-- [ ] Graceful fallback when lazygit not installed
-- [ ] detect_lazygit_binary returns correct path
-
 ### Git Branches Command (052)
 - [ ] get_git_branches returns all local branches
 - [ ] Works on repos with many branches
@@ -97,27 +92,11 @@ Features to test when TUICommander is more usable.
 
 ## Frontend (batch 047-070)
 
-### Lazygit Split Pane (047)
-- [ ] Cmd+Shift+L opens lazygit in split pane
-- [ ] Lazygit runs in correct repo directory
-- [ ] Closing pane cleans up terminal session
-- [ ] Split pane resizes correctly with window
-
-### Per-Repo Lazygit Config (049)
-- [ ] .lazygit.yml in repo root is detected and used
-- [ ] .lazygit.yaml also works
-- [ ] Lazygit launches without config if none present
-
 ### Git Quick Actions in Sidebar (050)
 - [ ] Pull/Push/Fetch/Stash buttons visible in sidebar
 - [ ] Each button sends correct git command to active terminal
 - [ ] Commands execute in shell (not just displayed)
 - [ ] Buttons disabled when no active terminal
-
-### Lazygit Floating Window (051)
-- [ ] Can dock/undock lazygit between split and floating mode
-- [ ] Floating window is draggable/resizable
-- [ ] Terminal content preserved when switching modes
 
 ### GitOperationsPanel Live Branches (052-frontend)
 - [ ] Branch list populated from get_git_branches (not hardcoded)
@@ -219,7 +198,7 @@ Features to test when TUICommander is more usable.
 - [ ] Edit menu: Undo, Redo, Cut, Copy, Paste, Select All, Clear Terminal
 - [ ] View menu: Toggle Sidebar, Split Right/Down, Zoom In/Out/Reset, Diff/Markdown panels
 - [ ] Go menu: Next/Previous Tab, Switch to Tab 1-9
-- [ ] Tools menu: Prompt Library, Run/Edit & Run Command, Lazygit, Git Operations, Task Queue
+- [ ] Tools menu: Prompt Library, Run/Edit & Run Command, Git Operations, Task Queue
 - [ ] Help menu: Help Panel, About TUICommander
 - [ ] Clicking menu items triggers correct action (same as keyboard shortcut)
 - [ ] Accelerator labels show correct modifier key per platform (Cmd on macOS, Ctrl on others)

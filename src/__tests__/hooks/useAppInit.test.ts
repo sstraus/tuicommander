@@ -20,7 +20,6 @@ function createMockDeps(overrides: Partial<AppInitDeps> = {}): AppInitDeps {
       listActiveSessions: vi.fn().mockResolvedValue([]),
       close: vi.fn().mockResolvedValue(undefined),
     },
-    setLazygitAvailable: vi.fn(),
     setQuitDialogVisible: vi.fn(),
     setStatusInfo: vi.fn(),
     setCurrentRepoPath: vi.fn(),
@@ -38,7 +37,6 @@ function createMockDeps(overrides: Partial<AppInitDeps> = {}): AppInitDeps {
       refreshDictationConfig: vi.fn().mockResolvedValue(undefined),
       startUserActivityListening: vi.fn(),
     },
-    detectBinary: vi.fn().mockResolvedValue({ path: null, version: null }),
     applyPlatformClass: vi.fn().mockReturnValue("macos"),
     onCloseRequested: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -57,26 +55,6 @@ describe("initApp", () => {
     expect(deps.applyPlatformClass).toHaveBeenCalled();
     expect(deps.stores.hydrate).toHaveBeenCalled();
     expect(deps.stores.loadFontFromConfig).toHaveBeenCalled();
-  });
-
-  it("detects lazygit binary", async () => {
-    const deps = createMockDeps({
-      detectBinary: vi.fn().mockResolvedValue({ path: "/usr/bin/lazygit", version: "0.40" }),
-    });
-
-    await initApp(deps);
-
-    expect(deps.setLazygitAvailable).toHaveBeenCalledWith(true);
-  });
-
-  it("handles lazygit detection failure", async () => {
-    const deps = createMockDeps({
-      detectBinary: vi.fn().mockRejectedValue(new Error("failed")),
-    });
-
-    await initApp(deps);
-
-    expect(deps.setLazygitAvailable).toHaveBeenCalledWith(false);
   });
 
   it("re-adopts surviving PTY sessions", async () => {

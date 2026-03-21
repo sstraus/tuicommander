@@ -912,10 +912,9 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let agents = json.as_array().unwrap();
-        assert_eq!(agents.len(), 5);
+        assert_eq!(agents.len(), 4);
         let names: Vec<&str> = agents.iter().map(|a| a["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"claude"));
-        assert!(names.contains(&"lazygit"));
     }
 
     #[tokio::test]
@@ -1289,10 +1288,9 @@ mod tests {
         let state = test_state();
         let result = call_mcp_tool(&state, "agent", serde_json::json!({"action": "detect"})).await;
         let agents = result.as_array().unwrap();
-        assert_eq!(agents.len(), 5, "Should detect 5 known agents");
+        assert_eq!(agents.len(), 4, "Should detect 4 known agents");
         let names: Vec<&str> = agents.iter().map(|a| a["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"claude"));
-        assert!(names.contains(&"lazygit"));
     }
 
     #[tokio::test]
