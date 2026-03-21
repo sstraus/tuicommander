@@ -7,7 +7,7 @@
   overflow-y: auto;
 }
 
-/* Inline search bar */
+/* Inline search bar — sticky header with fold-toggle button */
 .searchBar {
   position: sticky;
   top: 0;
@@ -16,6 +16,9 @@
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .searchInput {
@@ -372,13 +375,6 @@
 }
 
 /* --- Prefix folding: group header and indented rows --- */
-
-/* Search bar: flex row to accommodate the fold-toggle button */
-.searchBar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 
 /* Fold toggle button in the search bar */
 .foldToggle {

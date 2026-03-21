@@ -104,9 +104,7 @@ function groupBranchesByPrefix(branchList: BranchDetail[]): { ungrouped: BranchD
 type DialogKind =
   | { type: "delete"; branch: BranchDetail }
   | { type: "merge"; branch: BranchDetail; currentBranch: string }
-  | { type: "rebase"; branch: BranchDetail; currentBranch: string }
-  | { type: "merge-confirm"; branch: BranchDetail; currentBranch: string }
-  | { type: "rebase-confirm"; branch: BranchDetail; currentBranch: string };
+  | { type: "rebase"; branch: BranchDetail; currentBranch: string };
 
 /** Checkout dirty-worktree state: need to choose stash/force/cancel */
 interface DirtyCheckoutState {
@@ -166,7 +164,10 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
     try {
       const [result, recent] = await Promise.all([
         invoke<BranchDetail[]>("get_branches_detail", { path: repoPath }),
-        invoke<string[]>("get_recent_branches", { path: repoPath, limit: 5 }).catch(() => [] as string[]),
+        invoke<string[]>("get_recent_branches", { path: repoPath, limit: 5 }).catch((err) => {
+          appLogger.warn("git", "Failed to load recent branches", err);
+          return [] as string[];
+        }),
       ]);
       setBranches(result);
       setRecentNames(recent);
@@ -199,19 +200,19 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
     ),
   );
 
+  const localBranches = createMemo(() =>
+    branches().filter((b) => !b.is_remote),
+  );
+
   /** Recent branches resolved to BranchDetail objects (only local, matching recent reflog names) */
   const recentBranches = createMemo(() => {
     const names = recentNames();
     if (names.length === 0) return [];
-    const local = branches().filter((b) => !b.is_remote);
+    const byName = new Map(localBranches().map((b) => [b.name, b]));
     return names
-      .map((name) => local.find((b) => b.name === name))
+      .map((name) => byName.get(name))
       .filter((b): b is BranchDetail => b !== undefined);
   });
-
-  const localBranches = createMemo(() =>
-    branches().filter((b) => !b.is_remote),
-  );
 
   const remoteBranches = createMemo(() =>
     branches().filter((b) => b.is_remote),
@@ -243,6 +244,13 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
   const currentBranch = createMemo(() =>
     branches().find((b) => b.is_current && !b.is_remote),
   );
+
+  /** Lookup map for O(1) flat index resolution by branch identity */
+  const flatIndexMap = createMemo(() => {
+    const map = new Map<string, number>();
+    flatVisible().forEach((b, i) => map.set(`${b.name}:${b.is_remote}`, i));
+    return map;
+  });
 
   // --- Checkout ---
 
@@ -410,7 +418,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
   async function doMerge() {
     const d = dialog();
-    if (!d || (d.type !== "merge" && d.type !== "merge-confirm") || !props.repoPath) return;
+    if (!d || d.type !== "merge" || !props.repoPath) return;
     const { branch } = d;
     setDialog(null);
     try {
@@ -418,7 +426,8 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
       repositoriesStore.bumpRevision(props.repoPath);
       appLogger.info("git", `Merged ${branch.name} into ${currentBranch()?.name ?? "current"}`);
     } catch (err) {
-      appLogger.warn("git", `Merge of ${branch.name} failed (possible conflict)`, err);
+      appLogger.error("git", `Merge of ${branch.name} failed (possible conflict)`, err);
+      repositoriesStore.bumpRevision(props.repoPath!);
     }
   }
 
@@ -437,7 +446,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
   async function doRebase() {
     const d = dialog();
-    if (!d || (d.type !== "rebase" && d.type !== "rebase-confirm") || !props.repoPath) return;
+    if (!d || d.type !== "rebase" || !props.repoPath) return;
     const { branch } = d;
     setDialog(null);
     try {
@@ -445,7 +454,8 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
       repositoriesStore.bumpRevision(props.repoPath);
       appLogger.info("git", `Rebased current branch onto ${branch.name}`);
     } catch (err) {
-      appLogger.warn("git", `Rebase onto ${branch.name} failed`, err);
+      appLogger.error("git", `Rebase onto ${branch.name} failed`, err);
+      repositoriesStore.bumpRevision(props.repoPath!);
     }
   }
 
@@ -683,7 +693,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
   // Helper: get the global flat index for a branch
   function getFlatIndex(branch: BranchDetail): number {
-    return flatVisible().findIndex((b) => b.name === branch.name && b.is_remote === branch.is_remote);
+    return flatIndexMap().get(`${branch.name}:${branch.is_remote}`) ?? -1;
   }
 
   // --- Dialog helpers ---
@@ -702,7 +712,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
         branch,
       };
     }
-    if (d.type === "merge" || d.type === "merge-confirm") {
+    if (d.type === "merge") {
       const { branch, currentBranch: cur } = d;
       return {
         title: `Merge into ${cur}`,
@@ -710,7 +720,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
         branch,
       };
     }
-    if (d.type === "rebase" || d.type === "rebase-confirm") {
+    if (d.type === "rebase") {
       const { branch, currentBranch: cur } = d;
       return {
         title: `Rebase ${cur}`,
@@ -751,7 +761,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
     );
   }
 
-  function renderLocalRow(branch: BranchDetail, indented = false) {
+  function renderBranchRow(branch: BranchDetail, isLocal: boolean, indented = false) {
     const flatIndex = getFlatIndex(branch);
     const isSelected = selectedIndex() === flatIndex;
     return (
@@ -768,53 +778,26 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
         onContextMenu={(e) => openContextMenu(e, branch)}
       >
         <Show
-          when={branch.is_current}
+          when={isLocal && branch.is_current}
           fallback={<span class={s.branchIconPlaceholder} />}
         >
           <span class={s.branchCurrentIcon}>
             <CheckIcon />
           </span>
         </Show>
-        {renderBranchName(branch, flatIndex)}
+        <Show
+          when={isLocal}
+          fallback={<span class={s.branchName}>{branch.name}</span>}
+        >
+          {renderBranchName(branch, flatIndex)}
+        </Show>
         <span class={s.branchMeta}>
-          <Show when={(branch.ahead ?? 0) > 0}>
+          <Show when={isLocal && (branch.ahead ?? 0) > 0}>
             <span class={s.ahead}>&#x2191;{branch.ahead}</span>
           </Show>
-          <Show when={(branch.behind ?? 0) > 0}>
+          <Show when={isLocal && (branch.behind ?? 0) > 0}>
             <span class={s.behind}>&#x2193;{branch.behind}</span>
           </Show>
-          <Show when={branch.is_merged}>
-            <span class={s.merged}>merged</span>
-          </Show>
-          <Show when={branch.last_commit_date}>
-            <span class={s.metaDate}>{relativeDate(branch.last_commit_date)}</span>
-          </Show>
-        </span>
-      </div>
-    );
-  }
-
-  function renderRemoteRow(branch: BranchDetail, indented = false) {
-    const flatIndex = getFlatIndex(branch);
-    const isSelected = selectedIndex() === flatIndex;
-    return (
-      <div
-        class={cx(
-          s.branchRow,
-          indented && s.branchRowIndented,
-          isStale(branch.last_commit_date) && s.stale,
-          isSelected && s.selected,
-        )}
-        title={branchTooltip(branch)}
-        onClick={() => setSelectedIndex(flatIndex)}
-        onDblClick={() => handleCheckout(branch)}
-        onContextMenu={(e) => openContextMenu(e, branch)}
-      >
-        <span class={s.branchIconPlaceholder} />
-        <span class={s.branchName}>
-          {branch.name}
-        </span>
-        <span class={s.branchMeta}>
           <Show when={branch.is_merged}>
             <span class={s.merged}>merged</span>
           </Show>
@@ -945,7 +928,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
             </div>
             <Show when={recentExpanded()}>
               <For each={recentBranches()}>
-                {(branch) => renderLocalRow(branch)}
+                {(branch) => renderBranchRow(branch, true)}
               </For>
             </Show>
           </Show>
@@ -960,7 +943,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
             <span class={s.sectionCount}>{localBranches().length}</span>
           </div>
           <Show when={localExpanded()}>
-            {renderBranchList(filteredLocal(), "local", renderLocalRow)}
+            {renderBranchList(filteredLocal(), "local", (b, indented) => renderBranchRow(b, true, indented))}
           </Show>
 
           {/* Remote section - only show when there are remote branches */}
@@ -974,7 +957,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
               <span class={s.sectionCount}>{remoteBranches().length}</span>
             </div>
             <Show when={remoteExpanded()}>
-              {renderBranchList(filteredRemote(), "remote", renderRemoteRow)}
+              {renderBranchList(filteredRemote(), "remote", (b, indented) => renderBranchRow(b, false, indented))}
             </Show>
           </Show>
 
@@ -1037,7 +1020,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
       {/* Merge confirm dialog */}
       <ConfirmDialog
-        visible={dialog()?.type === "merge" || dialog()?.type === "merge-confirm"}
+        visible={dialog()?.type === "merge"}
         title={dialogData()?.title ?? ""}
         message={dialogData()?.message ?? ""}
         confirmLabel="Merge"
@@ -1048,7 +1031,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
       {/* Rebase confirm dialog */}
       <ConfirmDialog
-        visible={dialog()?.type === "rebase" || dialog()?.type === "rebase-confirm"}
+        visible={dialog()?.type === "rebase"}
         title={dialogData()?.title ?? ""}
         message={dialogData()?.message ?? ""}
         confirmLabel="Rebase"

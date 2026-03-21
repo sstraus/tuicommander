@@ -179,26 +179,31 @@ pub(crate) fn get_remote_url(path: String) -> Option<String> {
     read_remote_url(Path::new(&path))
 }
 
+/// Validate that a branch name is a legal git branch name.
+fn validate_branch_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Branch name cannot be empty".to_string());
+    }
+    if name.contains(' ') {
+        return Err("Branch name cannot contain spaces".to_string());
+    }
+    if name.starts_with('-') {
+        return Err("Branch name cannot start with a hyphen".to_string());
+    }
+    if name.contains("..") {
+        return Err("Branch name cannot contain '..'".to_string());
+    }
+    if name.ends_with(".lock") {
+        return Err("Branch name cannot end with '.lock'".to_string());
+    }
+    Ok(())
+}
+
 /// Core logic for renaming a git branch.
 pub(crate) fn rename_branch_impl(path: &str, old_name: &str, new_name: &str) -> Result<(), String> {
     let repo_path = PathBuf::from(path);
 
-    // Validate new branch name (no spaces, valid git branch name characters)
-    if new_name.is_empty() {
-        return Err("Branch name cannot be empty".to_string());
-    }
-    if new_name.contains(' ') {
-        return Err("Branch name cannot contain spaces".to_string());
-    }
-    if new_name.starts_with('-') {
-        return Err("Branch name cannot start with a hyphen".to_string());
-    }
-    if new_name.contains("..") {
-        return Err("Branch name cannot contain '..'".to_string());
-    }
-    if new_name.ends_with(".lock") {
-        return Err("Branch name cannot end with '.lock'".to_string());
-    }
+    validate_branch_name(new_name)?;
 
     // Execute git branch -m oldname newname
     match git_cmd(&repo_path).args(["branch", "-m", old_name, new_name]).run() {
@@ -228,22 +233,7 @@ pub(crate) fn rename_branch(state: State<'_, Arc<AppState>>, path: String, old_n
 pub(crate) fn create_branch_impl(path: &str, name: &str, start_point: Option<&str>, checkout: bool) -> Result<(), String> {
     let repo_path = PathBuf::from(path);
 
-    // Validate branch name (same rules as rename_branch_impl)
-    if name.is_empty() {
-        return Err("Branch name cannot be empty".to_string());
-    }
-    if name.contains(' ') {
-        return Err("Branch name cannot contain spaces".to_string());
-    }
-    if name.starts_with('-') {
-        return Err("Branch name cannot start with a hyphen".to_string());
-    }
-    if name.contains("..") {
-        return Err("Branch name cannot contain '..'".to_string());
-    }
-    if name.ends_with(".lock") {
-        return Err("Branch name cannot end with '.lock'".to_string());
-    }
+    validate_branch_name(name)?;
 
     // Build `git branch <name> [<start_point>]`
     let mut args = vec!["branch", name];
@@ -1042,10 +1032,10 @@ const BRANCH_FIELD_SEP: &str = "|||";
 /// remote branches. Fields are delimited by `|||` which cannot appear in any of
 /// the output fields (branch names, subjects, author names, or tracking tokens).
 pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>, String> {
-    // Each ref line: refname|||HEAD|||upstream:short|||upstream:track|||committerdate|||subject|||authorname
+    // Each ref line: refname|||refname:short|||HEAD|||upstream:short|||upstream:track|||committerdate|||subject|||authorname
     let sep = BRANCH_FIELD_SEP;
     let fmt = format!(
-        "%(refname:short){sep}%(HEAD){sep}%(upstream:short){sep}%(upstream:track){sep}%(committerdate:iso8601){sep}%(subject){sep}%(authorname)"
+        "%(refname){sep}%(refname:short){sep}%(HEAD){sep}%(upstream:short){sep}%(upstream:track){sep}%(committerdate:iso8601){sep}%(subject){sep}%(authorname)"
     );
 
     let out = git_cmd(path)
@@ -1054,39 +1044,47 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
         .map_err(|e| format!("git for-each-ref failed: {e}"))?;
 
     // Collect merged branch names once so we can do O(1) lookups.
-    let merged_set: std::collections::HashSet<String> =
-        get_merged_branches_impl(path).unwrap_or_default().into_iter().collect();
+    let merged_set: std::collections::HashSet<String> = match get_merged_branches_impl(path) {
+        Ok(names) => names.into_iter().collect(),
+        Err(e) => {
+            eprintln!("[warn] Failed to determine merged branches: {e}");
+            std::collections::HashSet::new()
+        }
+    };
 
     let mut branches: Vec<BranchDetail> = out.stdout
         .lines()
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
-            let parts: Vec<&str> = line.splitn(7, BRANCH_FIELD_SEP).collect();
-            if parts.len() < 7 { return None; }
+            let parts: Vec<&str> = line.splitn(8, BRANCH_FIELD_SEP).collect();
+            if parts.len() < 8 { return None; }
 
-            let name = parts[0].trim().to_string();
+            let refname = parts[0].trim();
+            let name = parts[1].trim().to_string();
 
             // Skip the synthetic origin/HEAD pointer
             if name == "origin/HEAD" || name.ends_with("/HEAD") { return None; }
 
-            let is_current = parts[1].trim() == "*";
-            let is_remote = name.contains('/');
+            let is_current = parts[2].trim() == "*";
+            // Use the full refname (refs/remotes/…) to reliably detect remote branches,
+            // avoiding false positives from local branches with slashes (e.g. feature/auth).
+            let is_remote = refname.starts_with("refs/remotes/");
 
-            let upstream_raw = parts[2].trim();
+            let upstream_raw = parts[3].trim();
             let upstream = if upstream_raw.is_empty() { None } else { Some(upstream_raw.to_string()) };
 
             // upstream:track looks like "[ahead 2, behind 3]", "[ahead 1]", "[behind 4]", or ""
-            let track = parts[3].trim();
+            let track = parts[4].trim();
             let ahead = parse_track_value(track, "ahead");
             let behind = parse_track_value(track, "behind");
 
-            let commit_date_raw = parts[4].trim();
+            let commit_date_raw = parts[5].trim();
             let last_commit_date = if commit_date_raw.is_empty() { None } else { Some(commit_date_raw.to_string()) };
 
-            let subject = parts[5].trim();
+            let subject = parts[6].trim();
             let last_commit_message = if subject.is_empty() { None } else { Some(subject.to_string()) };
 
-            let author = parts[6].trim();
+            let author = parts[7].trim();
             let last_commit_author = if author.is_empty() { None } else { Some(author.to_string()) };
 
             let is_merged = merged_set.contains(&name);
@@ -1132,10 +1130,25 @@ fn parse_track_value(track: &str, key: &str) -> Option<u32> {
     rest[..end].parse().ok()
 }
 
-/// Get rich branch details for a repository.
+/// Get rich branch details for a repository (cached, 5s TTL).
 #[tauri::command]
-pub(crate) fn get_branches_detail(path: String) -> Result<Vec<BranchDetail>, String> {
-    get_branches_detail_impl(Path::new(&path))
+pub(crate) async fn get_branches_detail(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+) -> Result<Vec<BranchDetail>, String> {
+    if let Some(cached) = AppState::get_cached(&state.git_cache.branches_detail, &path, GIT_CACHE_TTL) {
+        return Ok(cached);
+    }
+
+    let state_arc = state.inner().clone();
+    let path_clone = path.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        get_branches_detail_impl(Path::new(&path_clone))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))??;
+    AppState::set_cached(&state_arc.git_cache.branches_detail, path, result.clone());
+    Ok(result)
 }
 
 /// Core logic for fetching recently checked-out branch names from the reflog.

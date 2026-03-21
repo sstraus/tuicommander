@@ -811,6 +811,7 @@ impl RelayState {
 pub(crate) struct GitCacheState {
     pub(crate) repo_info: DashMap<String, (crate::git::RepoInfo, Instant)>,
     pub(crate) merged_branches: DashMap<String, (Vec<String>, Instant)>,
+    pub(crate) branches_detail: DashMap<String, (Vec<crate::git::BranchDetail>, Instant)>,
     pub(crate) github_status: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
     pub(crate) git_status: DashMap<String, (crate::github::GitHubStatus, Instant)>,
     pub(crate) git_panel_context: DashMap<String, (crate::git::GitPanelContext, Instant)>,
@@ -825,6 +826,7 @@ impl GitCacheState {
         Self {
             repo_info: DashMap::new(),
             merged_branches: DashMap::new(),
+            branches_detail: DashMap::new(),
             github_status: DashMap::new(),
             git_status: DashMap::new(),
             git_panel_context: DashMap::new(),
@@ -836,6 +838,7 @@ impl GitCacheState {
     pub(crate) fn clear_all(&self) {
         self.repo_info.clear();
         self.merged_branches.clear();
+        self.branches_detail.clear();
         self.github_status.clear();
         self.git_status.clear();
         self.git_panel_context.clear();
@@ -846,6 +849,7 @@ impl GitCacheState {
     pub(crate) fn invalidate_repo(&self, path: &str) {
         self.repo_info.remove(path);
         self.merged_branches.remove(path);
+        self.branches_detail.remove(path);
         self.github_status.remove(path);
         self.git_status.remove(path);
         self.git_panel_context.remove(path);
