@@ -43,6 +43,10 @@ pub(crate) fn resolve_github_token() -> Option<String> {
     {
         return Some(token);
     }
+    // OAuth token from OS keyring (set via Device Flow login in Settings)
+    if let Ok(Some(token)) = crate::github_auth::read_github_oauth_token() {
+        return Some(token);
+    }
     // gh_token crate doesn't filter empty env var values (env::var_os returns
     // Some("") for vars set to empty string), so we must filter here.
     if let Some(token) = gh_token::get().ok().filter(|t| !t.is_empty()) {
@@ -64,6 +68,12 @@ pub(crate) fn resolve_github_token_candidates() -> Vec<String> {
     }
     if let Ok(token) = std::env::var("GITHUB_TOKEN")
         && !token.is_empty()
+    {
+        candidates.push(token);
+    }
+    // OAuth token from OS keyring
+    if let Ok(Some(token)) = crate::github_auth::read_github_oauth_token()
+        && !candidates.contains(&token)
     {
         candidates.push(token);
     }
