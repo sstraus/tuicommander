@@ -870,9 +870,13 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
         // Excludes <>, $, {}, `, * to avoid template placeholders, interpolation, and globs
         // Trailing punctuation (period, comma, etc.) after .md/.mdx is stripped
         static ref PLAN_RE: regex::Regex =
-            regex::Regex::new(r#"(?:^|[\s'":])(/?(?:[^\s'"<>${}`*]+/)?plans/[^\s'"<>${}`*]+\.mdx?)[.,;:!?)}\]]*(?:\s|$)"#).unwrap();
+            regex::Regex::new(r#"(?:^|[\s'"`:])(/?(?:[^\s'"<>${}`*]+/)?plans/[^\s'"<>${}`*]+\.mdx?)[.,;:!?)}\]`]*(?:\s|$)"#).unwrap();
     }
+    tracing::debug!("[plan-file] fast-path hit, scanning lines (len={})", clean.len());
     for line in clean.lines() {
+        if line.contains("plans/") {
+            tracing::debug!("[plan-file] candidate line: {:?}", line);
+        }
         if let Some(caps) = PLAN_RE.captures(line) {
             let mut path = caps[1].to_string();
             // Expand leading ~/ to the user's home directory so the
@@ -1909,6 +1913,21 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let mut parser = OutputParser::new();
         let events = parser.parse("See plans/foo.md, plans/bar.md for details");
         assert_eq!(get_plan_path(&events), Some("plans/foo.md".to_string()));
+    }
+
+    #[test]
+    fn test_plan_file_backtick_wrapped() {
+        let mut parser = OutputParser::new();
+        // Claude Code renders paths in backticks (inline code markdown)
+        let events = parser.parse("Piano scritto in `plans/document-organizer.md`.");
+        assert_eq!(get_plan_path(&events), Some("plans/document-organizer.md".to_string()));
+    }
+
+    #[test]
+    fn test_plan_file_backtick_wrapped_absolute() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("Plan saved to `/Users/dev/project/plans/my-plan.md`.");
+        assert_eq!(get_plan_path(&events), Some("/Users/dev/project/plans/my-plan.md".to_string()));
     }
 
     // --- False positive prevention tests ---

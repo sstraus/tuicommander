@@ -153,47 +153,54 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
   let planFileNotified = false; // Play info sound at most once per agent cycle
 
-  // Continuously-tracked scroll position — immune to display:none zeroing scrollTop.
-  // Updated on every xterm scroll event (see openTerminal), so always holds the
-  // last valid position even after the terminal is hidden by CSS.
+  // Last-known scroll position, immune to display:none zeroing scrollTop.
+  // Two writers: onScroll (user-initiated scrolls) and write callback (baseY
+  // growth/contraction that onScroll misses). doFit() reads this to restore
+  // position after reflow.
   let trackedScrollState = { viewportY: 0, baseY: 0, bufferType: "normal" as "normal" | "alternate", wasAtBottom: true };
 
-  /** Fit terminal to container, guarded against undersized containers.
-   *  Preserves viewport scroll position across reflows and tab switches.
-   *  Uses continuously-tracked scroll state (not buffer.viewportY which can
-   *  read as 0 after display:none in WebKit). */
+  /** Update trackedScrollState from current buffer values.
+   *  When the container is hidden (display:none), buf.viewportY is unreliable
+   *  (xterm doesn't auto-scroll a zero-dimension viewport), so we infer it. */
+  const updateTrackedScroll = (buf: { viewportY: number; baseY: number; type: string }, isVisible: boolean) => {
+    if (isVisible) {
+      trackedScrollState = {
+        viewportY: buf.viewportY,
+        baseY: buf.baseY,
+        bufferType: buf.type as "normal" | "alternate",
+        wasAtBottom: buf.viewportY >= buf.baseY,
+      };
+    } else {
+      trackedScrollState.baseY = buf.baseY;
+      trackedScrollState.bufferType = buf.type as "normal" | "alternate";
+      if (trackedScrollState.wasAtBottom) {
+        trackedScrollState.viewportY = buf.baseY;
+      } else {
+        trackedScrollState.viewportY = Math.min(trackedScrollState.viewportY, buf.baseY);
+        trackedScrollState.wasAtBottom = trackedScrollState.viewportY >= buf.baseY;
+      }
+    }
+  };
+
+  /** Fit terminal to container, preserving scroll position across reflows. */
   const doFit = () => {
     if (!containerRef || !fitAddon || !terminal) return;
     if (containerRef.offsetWidth < MIN_FIT_WIDTH || containerRef.offsetHeight < MIN_FIT_HEIGHT) return;
-    // Use BOTH values from trackedScrollState for consistency.
-    // buf.baseY can diverge from tracked baseY when data arrives while user
-    // is scrolled up (onScroll doesn't fire for baseY-only increases).
-    // Mixing fresh baseY with stale viewportY inflates linesFromBottom,
-    // causing scrollToLine(0) jumps when reflow shrinks newBase.
+
     const linesFromBottom = trackedScrollState.baseY - trackedScrollState.viewportY;
     const wasAtBottom = trackedScrollState.wasAtBottom;
-    const preBaseY = terminal.buffer.active.baseY;
     fitAddon.fit();
+
     if (wasAtBottom) {
       terminal.scrollToBottom();
     } else {
-      // Restore relative position from bottom (baseY may have changed after reflow)
       const newBase = terminal.buffer.active.baseY;
-      const rawTarget = newBase - linesFromBottom;
-      const target = Math.max(0, rawTarget);
-      appLogger.warn("terminal", "doFit-restore", {
+      const target = Math.max(0, newBase - linesFromBottom);
+      appLogger.debug("terminal", "doFit-restore", {
         trackedViewportY: trackedScrollState.viewportY,
         trackedBaseY: trackedScrollState.baseY,
-        preBaseY, newBase, linesFromBottom, rawTarget, target,
+        newBase, linesFromBottom, target,
       });
-      if (rawTarget < 0) {
-        appLogger.warn("terminal", "doFit-restore-clamped-to-zero", {
-          reason: "linesFromBottom exceeds newBase after reflow",
-          linesFromBottom, newBase, trackedBaseY: trackedScrollState.baseY,
-          trackedViewportY: trackedScrollState.viewportY,
-          preBaseY,
-        });
-      }
       terminal.scrollToLine(target);
     }
   };
@@ -256,10 +263,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pty.pause(sessionId).catch(() => {});
       }
 
-      // Capture scroll state BEFORE write. xterm may jump the viewport when
-      // processing escape sequences (cursor moves, screen clears) that agents
-      // like Claude Code emit during TUI redraws. We restore position in the
-      // callback if the user was scrolled up and the viewport moved at all.
+      // Snapshot scroll state before write — xterm may jump the viewport when
+      // processing escape sequences (cursor moves, TUI redraws).
       const buf = terminal.buffer.active;
       const viewportYBefore = buf.viewportY;
       const wasAtBottomBefore = buf.viewportY >= buf.baseY;
@@ -267,90 +272,41 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
       terminal.write(data, () => {
         pendingWriteBytes -= byteLen;
-
-        // Resume reader once xterm has drained enough
         if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
           isPaused = false;
           pty.resume(sessionId).catch(() => {});
         }
-
         if (!terminal) return;
+
         const afterBuf = terminal.buffer.active;
 
-        // When the buffer type changed (normal↔alternate), skip scroll
-        // restoration AND state tracking. The alternate buffer is a separate
-        // viewport — its position (always 0,0) is irrelevant to the normal
-        // buffer's scroll state. Updating trackedScrollState here would set
-        // wasAtBottom=true (0>=0), causing the next doFit() to scrollToBottom()
-        // and jump the user away from their scroll position in the normal buffer.
+        // Ignore buffer type transitions (normal↔alternate). The alternate
+        // buffer always reads 0,0 — recording that would corrupt trackedScrollState.
         if (afterBuf.type !== bufferTypeBefore) {
-          appLogger.warn("terminal", "write-buffer-type-changed", {
+          appLogger.debug("terminal", "write-buffer-type-changed", {
             from: bufferTypeBefore, to: afterBuf.type,
-            viewportYBefore, trackedViewportY: trackedScrollState.viewportY,
-            trackedBaseY: trackedScrollState.baseY,
           });
           return;
         }
 
-        // When container is hidden (display:none for inactive tabs), xterm.js
-        // doesn't auto-scroll viewportY while baseY keeps growing. This makes
-        // buf.viewportY unreliable — it stays at 0 after a buffer contraction
-        // while baseY grows to 1000+, causing doFit() to scroll to line 0.
-        const isContainerVisible = containerRef && containerRef.offsetWidth > 0;
+        const isVisible = containerRef != null && containerRef.offsetWidth > 0;
 
-        // Guard: restore scroll position if user was scrolled up and xterm
-        // moved the viewport (up OR down). Only meaningful when visible —
-        // hidden terminals have unreliable viewportY values.
-        if (isContainerVisible && !wasAtBottomBefore) {
-          if (afterBuf.viewportY !== viewportYBefore) {
-            // If the buffer contracted below our previous position (e.g. agent
-            // cleared/compacted the session), the old viewport line no longer
-            // exists — skip restore and let xterm settle naturally.
-            if (afterBuf.baseY >= viewportYBefore) {
-              const restoreTo = Math.min(viewportYBefore, afterBuf.baseY);
-              appLogger.warn("terminal", "write-restore", {
-                viewportYBefore, afterViewportY: afterBuf.viewportY,
-                afterBaseY: afterBuf.baseY, restoreTo,
-                trackedBaseY: trackedScrollState.baseY,
-              });
-              terminal.scrollToLine(restoreTo);
-            } else {
-              appLogger.warn("terminal", "write-restore-skip", {
-                viewportYBefore, afterViewportY: afterBuf.viewportY,
-                afterBaseY: afterBuf.baseY,
-                reason: "buffer contracted below previous viewport position",
-              });
-            }
+        // Restore scroll if user was scrolled up and xterm moved the viewport
+        // (escape sequences like \033[H can pull it away). Skip when hidden
+        // (viewportY unreliable) or when the buffer contracted below the old
+        // position (agent cleared screen — old line no longer exists).
+        if (isVisible && !wasAtBottomBefore && afterBuf.viewportY !== viewportYBefore) {
+          if (afterBuf.baseY >= viewportYBefore) {
+            appLogger.debug("terminal", "write-restore", {
+              viewportYBefore, afterViewportY: afterBuf.viewportY,
+              afterBaseY: afterBuf.baseY,
+            });
+            terminal.scrollToLine(viewportYBefore);
           }
         }
 
-        // Keep trackedScrollState fresh after every write. onScroll only fires
-        // when viewportY changes, NOT when baseY grows (user scrolled up) or
-        // shrinks (buffer contraction). Without this, trackedScrollState.baseY
-        // drifts from reality and doFit() computes a bogus linesFromBottom,
-        // causing the viewport to jump to line 0 on the next resize.
-        if (isContainerVisible) {
-          trackedScrollState = {
-            viewportY: afterBuf.viewportY,
-            baseY: afterBuf.baseY,
-            bufferType: afterBuf.type,
-            wasAtBottom: afterBuf.viewportY >= afterBuf.baseY,
-          };
-        } else {
-          // Hidden: buf.viewportY is unreliable (xterm doesn't auto-scroll
-          // when the viewport element has zero dimensions). Only update baseY
-          // and infer viewportY from the wasAtBottom relationship.
-          trackedScrollState.baseY = afterBuf.baseY;
-          trackedScrollState.bufferType = afterBuf.type;
-          if (trackedScrollState.wasAtBottom) {
-            trackedScrollState.viewportY = afterBuf.baseY;
-          } else {
-            // User was scrolled up — clamp viewportY to not exceed new baseY
-            // (handles buffer contraction while hidden)
-            trackedScrollState.viewportY = Math.min(trackedScrollState.viewportY, afterBuf.baseY);
-            trackedScrollState.wasAtBottom = trackedScrollState.viewportY >= afterBuf.baseY;
-          }
-        }
+        // Keep trackedScrollState fresh — onScroll misses baseY-only changes.
+        updateTrackedScroll(afterBuf, isVisible);
       });
     } else {
       // Buffer output until terminal.open() is called
@@ -1024,21 +980,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Replay any PTY output buffered while terminal was not yet open
     replayBuffer();
 
-    // Track scroll position continuously so doFit always has a valid last-known
-    // position, even after display:none zeros scrollTop in WebKit.
+    // Track user-initiated scrolls so doFit() can restore position after reflow.
+    // Ignores alternate buffer (always 0,0 — would corrupt tracked state).
     terminal.onScroll(() => {
       const buf = terminal!.buffer.active;
-      // Only track normal buffer scroll state. Alternate buffer (used by TUI
-      // apps like Claude Code for redraws) always has baseY=0/viewportY=0.
-      // Recording those values would set wasAtBottom=true and cause doFit()
-      // to scrollToBottom() on the next resize, losing the user's position.
       if (buf.type !== "normal") return;
-      trackedScrollState = {
-        viewportY: buf.viewportY,
-        baseY: buf.baseY,
-        bufferType: buf.type,
-        wasAtBottom: buf.viewportY >= buf.baseY,
-      };
+      updateTrackedScroll(buf, true);
     });
 
     resizeObserver = new ResizeObserver(() => {

@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { rpc } from "../../../transport";
 import { appLogger } from "../../../stores/appLogger";
 import { handleOpenUrl } from "../../../utils/openUrl";
@@ -26,6 +26,14 @@ interface AuthStatus {
   avatar_url: string | null;
   source: "env" | "oauth" | "gh_cli" | "none";
   scopes: string | null;
+  error?: string | null;
+}
+
+interface GitHubDiagnostics {
+  circuit_breaker_open: boolean;
+  circuit_breaker_status: string;
+  repos_not_found: string[];
+  repos_monitored: number;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -42,12 +50,15 @@ export const GitHubTab: Component = () => {
   const [deviceCode, setDeviceCode] = createSignal<DeviceCodeResponse | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [copied, setCopied] = createSignal(false);
+  const [avatarBroken, setAvatarBroken] = createSignal(false);
+  const [diagnostics, setDiagnostics] = createSignal<GitHubDiagnostics | null>(null);
 
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
   let cancelled = false;
 
   onMount(() => {
     fetchStatus();
+    fetchDiagnostics();
   });
 
   onCleanup(() => {
@@ -58,9 +69,25 @@ export const GitHubTab: Component = () => {
   async function fetchStatus() {
     try {
       const status = await rpc<AuthStatus>("github_auth_status");
+      setAvatarBroken(false);
       setAuthStatus(status);
+      // Surface backend-reported errors (e.g. 401, network failures)
+      if (status.error) {
+        setError(status.error);
+      }
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
       appLogger.error("github", "Failed to fetch auth status", e);
+    }
+  }
+
+  async function fetchDiagnostics() {
+    try {
+      const diag = await rpc<GitHubDiagnostics>("github_diagnostics");
+      setDiagnostics(diag);
+    } catch (e) {
+      appLogger.warn("github", "Failed to fetch diagnostics", e);
     }
   }
 
@@ -157,6 +184,20 @@ export const GitHubTab: Component = () => {
     }
   }
 
+  async function disconnect() {
+    setLoading(true);
+    try {
+      await rpc<void>("github_disconnect");
+      setError(null);
+      await fetchStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      appLogger.error("github", "Failed to disconnect", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function copyCode() {
     const code = deviceCode()?.user_code;
     if (!code) return;
@@ -207,20 +248,30 @@ export const GitHubTab: Component = () => {
         <Show when={!polling() && authStatus()?.authenticated}>
           <div class={g.statusCard}>
             <Show
-              when={authStatus()?.avatar_url}
+              when={authStatus()?.avatar_url && !avatarBroken()}
               fallback={<div class={g.avatarPlaceholder}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                   <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor"/>
                 </svg>
               </div>}
             >
-              <img class={g.avatar} src={authStatus()!.avatar_url!} alt="avatar" />
+              <img
+                class={g.avatar}
+                src={authStatus()!.avatar_url!}
+                alt=""
+                onError={() => setAvatarBroken(true)}
+              />
             </Show>
             <div class={g.userInfo}>
               <div class={g.userName}>{authStatus()?.login ?? "Authenticated"}</div>
               <div class={g.tokenSource}>
                 {SOURCE_LABELS[authStatus()?.source ?? "none"]}
               </div>
+              <Show when={authStatus()?.scopes}>
+                <div class={g.tokenScopes}>
+                  {authStatus()!.scopes!.split(",").map((s) => s.trim()).filter(Boolean).join(", ")}
+                </div>
+              </Show>
             </div>
           </div>
 
@@ -237,19 +288,83 @@ export const GitHubTab: Component = () => {
             </div>
           </Show>
 
-          <Show when={authStatus()?.source === "env"}>
+          <Show when={authStatus()?.source === "env" || authStatus()?.source === "gh_cli"}>
             <div class={s.hint}>
-              Token is provided via environment variable (GH_TOKEN or GITHUB_TOKEN).
-              To use OAuth instead, unset the variable and restart.
+              Token provided via {authStatus()?.source === "env" ? "environment variable (GH_TOKEN or GITHUB_TOKEN)" : "gh CLI"}.
+            </div>
+            <div class={g.actions}>
+              <button
+                class={cx(g.btn)}
+                onClick={startLogin}
+                disabled={loading()}
+              >
+                {loading() ? "Starting..." : "Switch to OAuth"}
+              </button>
+              <button
+                class={cx(g.btn, g.btnDanger)}
+                onClick={disconnect}
+                disabled={loading()}
+              >
+                Disconnect
+              </button>
             </div>
           </Show>
+        </Show>
 
-          <Show when={authStatus()?.source === "gh_cli"}>
-            <div class={s.hint}>
-              Token is provided by the gh CLI. To use OAuth instead, log in below.
-              The OAuth token will take priority.
-            </div>
-          </Show>
+        {/* Diagnostics section — shown when authenticated */}
+        <Show when={!polling() && authStatus()?.authenticated && diagnostics()}>
+          <div class={g.diagnosticsSection}>
+            <h4 class={g.diagnosticsTitle}>Status</h4>
+
+            {/* Circuit breaker */}
+            <Show when={diagnostics()!.circuit_breaker_open}>
+              <div class={g.diagWarning}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0">
+                  <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                </svg>
+                <span>API requests paused: {diagnostics()!.circuit_breaker_status}</span>
+              </div>
+            </Show>
+
+            {/* Repos not found */}
+            <Show when={diagnostics()!.repos_not_found.length > 0}>
+              <div class={g.diagWarning}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0">
+                  <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                </svg>
+                <div>
+                  <div>Cannot access {diagnostics()!.repos_not_found.length} repo(s) with this token:</div>
+                  <ul class={g.diagRepoList}>
+                    <For each={diagnostics()!.repos_not_found}>
+                      {(repo) => <li>{repo}</li>}
+                    </For>
+                  </ul>
+                  <div class={g.diagHint}>
+                    The token may lack organization access or SSO authorization for these repos.
+                  </div>
+                </div>
+              </div>
+            </Show>
+
+            {/* All good */}
+            <Show when={!diagnostics()!.circuit_breaker_open && diagnostics()!.repos_not_found.length === 0}>
+              <div class={g.diagOk}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                </svg>
+                <span>PR monitoring active — {diagnostics()!.repos_monitored} repo(s) tracked</span>
+              </div>
+            </Show>
+
+            <Show when={diagnostics()!.repos_monitored > 0 && diagnostics()!.repos_not_found.length > 0}>
+              <div class={g.diagOk}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                </svg>
+                <span>{diagnostics()!.repos_monitored} repo(s) tracked successfully</span>
+              </div>
+            </Show>
+          </div>
         </Show>
 
         {/* Not authenticated / disconnected state */}

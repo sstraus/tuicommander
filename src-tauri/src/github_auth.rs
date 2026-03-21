@@ -84,6 +84,9 @@ pub(crate) struct AuthStatus {
     pub avatar_url: Option<String>,
     pub source: TokenSource,
     pub scopes: Option<String>,
+    /// Human-readable error when the token exists but validation failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// Raw GitHub error response during token polling.
@@ -256,6 +259,72 @@ pub(crate) async fn github_logout(
     Ok(())
 }
 
+/// Disconnect from GitHub entirely, clearing the runtime token regardless
+/// of source. Does NOT delete env vars or gh CLI config — only clears the
+/// in-memory token so the app stops using it until restart or re-login.
+#[tauri::command]
+pub(crate) async fn github_disconnect(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    // Delete OAuth token from keyring if present
+    if let Err(e) = tokio::task::spawn_blocking(delete_github_oauth_token)
+        .await
+        .map_err(|e| format!("keyring task panicked: {e}"))
+        .and_then(|r| r)
+    {
+        tracing::warn!(source = "github", error = %e, "Failed to delete OAuth token during disconnect");
+    }
+    // Clear runtime state entirely
+    *state.github_token.write() = None;
+    *state.github_token_source.write() = TokenSource::None;
+    tracing::info!(source = "github", "GitHub disconnected (runtime token cleared)");
+    Ok(())
+}
+
+/// Diagnostics about the GitHub integration — repos with errors, circuit breaker state, etc.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct GitHubDiagnostics {
+    /// Whether the circuit breaker is currently open (API calls blocked)
+    pub circuit_breaker_open: bool,
+    /// Human-readable circuit breaker status
+    pub circuit_breaker_status: String,
+    /// Repos that returned "not found" from GitHub (in cooldown)
+    pub repos_not_found: Vec<String>,
+    /// Number of repos successfully monitored
+    pub repos_monitored: u32,
+}
+
+/// Get GitHub integration diagnostics for the settings UI.
+#[tauri::command]
+pub(crate) async fn github_diagnostics(
+    state: State<'_, Arc<AppState>>,
+) -> Result<GitHubDiagnostics, String> {
+    let circuit_breaker_open = state.github_circuit_breaker.check().is_err();
+    let circuit_breaker_status = match state.github_circuit_breaker.check() {
+        Ok(()) => "OK".to_string(),
+        Err(msg) => msg,
+    };
+
+    let now = std::time::Instant::now();
+    let repos_not_found: Vec<String> = state
+        .git_cache
+        .github_repo_cooldown
+        .iter()
+        .filter(|entry| *entry.value() > now)
+        .map(|entry| entry.key().clone())
+        .collect();
+
+    // Count repos with cached GitHub status (successfully queried)
+    let repos_monitored = state.git_cache.github_status.len() as u32;
+
+    Ok(GitHubDiagnostics {
+        circuit_breaker_open,
+        circuit_breaker_status,
+        repos_not_found,
+        repos_monitored,
+    })
+}
+
 /// Get the current GitHub authentication status, including the user's
 /// login name if authenticated.
 #[tauri::command]
@@ -272,6 +341,7 @@ pub(crate) async fn github_auth_status(
             avatar_url: None,
             source: TokenSource::None,
             scopes: None,
+            error: None,
         });
     };
 
@@ -304,10 +374,19 @@ pub(crate) async fn github_auth_status(
                 avatar_url: body["avatar_url"].as_str().map(|s| s.to_string()),
                 source,
                 scopes,
+                error: None,
             })
         }
         Ok(r) if r.status() == 401 => {
             // Token is invalid — clear it if it was an OAuth token
+            let error_msg = format!("Token rejected by GitHub (HTTP 401). The {} token may be expired or revoked.",
+                match source {
+                    TokenSource::Env => "environment variable",
+                    TokenSource::OAuth => "OAuth",
+                    TokenSource::GhCli => "gh CLI",
+                    TokenSource::None => "current",
+                }
+            );
             if source == TokenSource::OAuth {
                 if let Err(e) = tokio::task::spawn_blocking(delete_github_oauth_token)
                     .await
@@ -332,10 +411,12 @@ pub(crate) async fn github_auth_status(
                 avatar_url: None,
                 source: TokenSource::None,
                 scopes: None,
+                error: Some(error_msg),
             })
         }
         Ok(r) => {
             let status = r.status();
+            let body = r.text().await.unwrap_or_default();
             tracing::warn!(source = "github", %status, "GitHub /user returned unexpected status");
             Ok(AuthStatus {
                 authenticated: false,
@@ -343,6 +424,7 @@ pub(crate) async fn github_auth_status(
                 avatar_url: None,
                 source,
                 scopes: None,
+                error: Some(format!("GitHub API error (HTTP {status}): {}", body.lines().next().unwrap_or("unknown error"))),
             })
         }
         Err(e) => {
@@ -353,6 +435,7 @@ pub(crate) async fn github_auth_status(
                 avatar_url: None,
                 source,
                 scopes: None,
+                error: Some(format!("Could not reach GitHub API: {e}")),
             })
         }
     }

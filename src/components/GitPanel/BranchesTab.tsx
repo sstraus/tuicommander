@@ -192,7 +192,15 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
         const repoPath = props.repoPath;
         if (repoPath) void fetchBranches(repoPath);
         else setBranches([]);
-        // Reset selection on repo change
+      },
+    ),
+  );
+
+  // Reset selection only when the active repo changes
+  createEffect(
+    on(
+      () => props.repoPath,
+      () => {
         setSelectedIndex(-1);
         setRenamingIndex(-1);
         setCreating(false);
@@ -259,11 +267,11 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
     try {
       if (branch.is_remote) {
         const localName = branch.name.replace(/^origin\//, "");
-        await invoke("checkout_remote_branch", { repo_path: props.repoPath, branch_name: localName });
+        await invoke("checkout_remote_branch", { repoPath: props.repoPath, branchName: localName });
       } else {
         await invoke("switch_branch", {
-          repo_path: props.repoPath,
-          branch_name: branch.name,
+          repoPath: props.repoPath,
+          branchName: branch.name,
           force,
           stash,
         });
@@ -326,7 +334,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
       await invoke("create_branch", {
         path: props.repoPath,
         name,
-        start_point: null,
+        startPoint: null,
         checkout: state.checkout,
       });
       repositoriesStore.bumpRevision(props.repoPath);
@@ -390,7 +398,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
     setRenamingIndex(-1);
     if (!newName || newName === branch.name) return;
     try {
-      await invoke("rename_branch", { path: props.repoPath, old_name: branch.name, new_name: newName });
+      await invoke("rename_branch", { path: props.repoPath, oldName: branch.name, newName });
       repositoriesStore.bumpRevision(props.repoPath);
       appLogger.info("git", `Renamed branch ${branch.name} to ${newName}`);
     } catch (err) {
@@ -553,11 +561,15 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
     const cur = currentBranch();
     const isCurrent = branch.is_current;
 
+    const copyName = { label: "Copy Name", action: () => void navigator.clipboard.writeText(branch.name) };
+
     if (branch.is_remote) {
       return [
         { label: "Checkout (create local)", action: () => void handleCheckout(branch) },
         { label: "Fetch", action: () => void doFetch(branch) },
         { label: "Compare with current", action: () => void doCompare(branch), disabled: !cur },
+        { separator: true, label: "", action: () => undefined },
+        copyName,
       ];
     }
 
@@ -565,6 +577,8 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
       return [
         { label: "Push", action: () => void doPush(branch) },
         { label: "Pull", action: () => void doPull(branch) },
+        { separator: true, label: "", action: () => undefined },
+        copyName,
       ];
     }
 
@@ -580,6 +594,9 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
     if (!branch.is_main) {
       items.push({ label: "Delete", action: () => startDelete(branch) });
     }
+
+    items.push({ separator: true, label: "", action: () => undefined });
+    items.push(copyName);
 
     return items;
   }
@@ -773,7 +790,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
           isSelected && s.selected,
         )}
         title={branchTooltip(branch)}
-        onClick={() => setSelectedIndex(flatIndex)}
+        onClick={() => { setSelectedIndex(flatIndex); containerRef?.focus(); }}
         onDblClick={() => handleCheckout(branch)}
         onContextMenu={(e) => openContextMenu(e, branch)}
       >

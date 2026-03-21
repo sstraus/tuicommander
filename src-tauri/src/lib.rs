@@ -842,6 +842,8 @@ pub fn run() {
             github_auth::github_start_login,
             github_auth::github_poll_login,
             github_auth::github_logout,
+            github_auth::github_disconnect,
+            github_auth::github_diagnostics,
             github_auth::github_auth_status,
             worktree::generate_worktree_name_cmd,
             worktree::generate_clone_branch_name_cmd,

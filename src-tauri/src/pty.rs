@@ -750,9 +750,17 @@ impl ChunkProcessor {
             let resolved = if let ParsedEvent::PlanFile { path } = event {
                 match self.resolve_planfile_path(path) {
                     Some(p) if std::path::Path::new(&p).is_file() => {
+                        tracing::info!("[plan-file] Detected: {p} (cwd={:?})", self.session_cwd);
                         Some(ParsedEvent::PlanFile { path: p })
                     }
-                    _ => continue, // File doesn't exist or can't resolve — suppress
+                    Some(p) => {
+                        tracing::warn!("[plan-file] File not found on disk: {p} (raw={path}, cwd={:?})", self.session_cwd);
+                        continue;
+                    }
+                    None => {
+                        tracing::warn!("[plan-file] Cannot resolve relative path: {path} (cwd={:?})", self.session_cwd);
+                        continue;
+                    }
                 }
             } else {
                 None

@@ -54,6 +54,13 @@
   margin-top: 2px;
 }
 
+.tokenScopes {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  margin-top: 2px;
+  opacity: 0.7;
+}
+
 /* ── Device Flow code display ── */
 .codeCard {
   padding: 24px;
@@ -176,6 +183,63 @@
   padding: 8px 12px;
   background: rgba(248, 81, 73, 0.1);
   border-radius: var(--radius-sm);
+}
+
+/* ── Diagnostics section ── */
+.diagnosticsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diagnosticsTitle {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-secondary);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.diagWarning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--font-sm);
+  color: var(--warning, #e3b341);
+  padding: 8px 12px;
+  background: rgba(227, 179, 65, 0.08);
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+
+.diagOk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-sm);
+  color: var(--success, #3fb950);
+  padding: 8px 12px;
+  background: rgba(63, 185, 80, 0.08);
+  border-radius: var(--radius-sm);
+}
+
+.diagRepoList {
+  margin: 4px 0 4px 16px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+}
+
+.diagRepoList li {
+  margin: 2px 0;
+}
+
+.diagHint {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  margin-top: 4px;
 }
 
 .scopeList {
