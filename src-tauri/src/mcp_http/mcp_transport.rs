@@ -324,11 +324,11 @@ fn require_path(args: &serde_json::Value, action: &str) -> Result<String, serde_
 }
 
 /// Handle an MCP tools/call request, executing against the app state directly (no HTTP round-trip)
-async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value) -> serde_json::Value {
+async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
     match name {
         "session" => handle_session(state, args),
         "github" => handle_github(state, args).await,
-        "worktree" => handle_worktree(state, args),
+        "worktree" => handle_worktree(state, args, mcp_session_id),
         "agent" => handle_agent(state, addr, args),
         "config" => handle_config(state, addr, args),
         "workspace" => handle_workspace(state, args),
@@ -674,7 +674,7 @@ fn create_session_in_dir(state: &Arc<AppState>, cwd: &str) -> Result<String, Str
     Ok(session_id)
 }
 
-fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
     let action = match require_action(args, "worktree", WORKTREE_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
@@ -1511,6 +1511,10 @@ pub(super) async fn mcp_post(
             let params = body.get("params").cloned().unwrap_or(serde_json::Value::Null);
             let tool_name = params["name"].as_str().unwrap_or("").to_string();
             let args = params.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+            let session_id_str = headers
+                .get(MCP_SESSION_HEADER)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
 
             // Route upstream-prefixed tools ({upstream}__{tool}) via the proxy registry.
             // Native tools (no "__") go through the sync handler via spawn_blocking.
@@ -1520,7 +1524,7 @@ pub(super) async fn mcp_post(
                     Err(e) => (serde_json::json!({"error": e}), true),
                 }
             } else {
-                let result = handle_mcp_tool_call(&state, addr, &tool_name, &args).await;
+                let result = handle_mcp_tool_call(&state, addr, &tool_name, &args, session_id_str.as_deref()).await;
                 let is_error = result.get("error").is_some();
                 (result, is_error)
             };
