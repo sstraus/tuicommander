@@ -897,22 +897,7 @@ struct TrimResult {
     cutoff: usize,
 }
 
-/// A line is a separator if it contains a run of 4+ box-drawing characters.
-/// Claude Code v2.1.70+ adds decorative text to separators (e.g. "──── ■■■ Medium /model ─").
-fn is_separator_line(s: &str) -> bool {
-    let mut run = 0u32;
-    for c in s.chars() {
-        if matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍') {
-            run += 1;
-            if run >= 4 {
-                return true;
-            }
-        } else {
-            run = 0;
-        }
-    }
-    false
-}
+use crate::chrome::{is_separator_line, is_prompt_line, CHROME_SCAN_ROWS};
 
 fn trim_screen_chrome(rows: Vec<String>) -> TrimResult {
     if rows.is_empty() {
@@ -925,7 +910,7 @@ fn trim_screen_chrome(rows: Vec<String>) -> TrimResult {
         return TrimResult { cutoff: 0 };
     }
 
-    let scan_start = content_end.saturating_sub(15);
+    let scan_start = content_end.saturating_sub(CHROME_SCAN_ROWS);
 
     // Strategy 1: find the lowest separator line — everything from separator
     // down is chrome (status bar, permissions line, etc.).
@@ -933,10 +918,9 @@ fn trim_screen_chrome(rows: Vec<String>) -> TrimResult {
         is_separator_line(rows[i].trim())
     });
 
-    // Strategy 2: find prompt line (`❯`, `> `).
+    // Strategy 2: find prompt line (`❯`, `›`, `> `).
     let prompt_idx = (scan_start..content_end).rev().find(|&i| {
-        let t = rows[i].trim_start();
-        t.starts_with('❯') || t == ">" || t.starts_with("> ")
+        is_prompt_line(&rows[i])
     });
 
     // Use whichever anchor is higher (closer to content), then extend up

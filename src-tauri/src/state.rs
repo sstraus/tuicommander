@@ -1678,20 +1678,7 @@ impl VtLogBuffer {
 // redraw batches so they don't pollute the mobile log.
 // ---------------------------------------------------------------------------
 
-/// Number of rows from the bottom of a batch to scan for a prompt line.
-const CHROME_SCAN_ROWS: usize = 8;
-
-/// Returns true if `text` looks like an agent prompt line.
-fn is_prompt_line(text: &str) -> bool {
-    let t = text.trim_start();
-    t.starts_with('❯') || t == ">" || t.starts_with("> ")
-}
-
-/// Returns true if `text` is a separator line (only box-drawing characters).
-fn is_separator_line(text: &str) -> bool {
-    let t = text.trim();
-    !t.is_empty() && t.chars().all(|c| matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍'))
-}
+use crate::chrome::{CHROME_SCAN_ROWS, is_prompt_line, is_separator_line};
 
 /// Returns the index of the first line to discard when a prompt line is found
 /// in the last [`CHROME_SCAN_ROWS`] rows of `lines`, scanning from the bottom.
@@ -3383,14 +3370,14 @@ mod tests {
     /// is not mistaken for a prompt.  Only the last 8 rows are scanned.
     #[test]
     fn test_find_prompt_cutoff_prompt_outside_scan_window_ignored() {
-        // 16 lines: prompt at index 5 (scan window = indices 8-15, no prompt there)
-        let mut items: Vec<&str> = vec!["content"; 16];
-        items[5] = "> git diff output";
+        // 20 lines: prompt at index 2 (scan window = last 15 = indices 5-19)
+        let mut items: Vec<&str> = vec!["content"; 20];
+        items[2] = "> git diff output";
         let lines = make_lines(&items);
         assert_eq!(
             find_prompt_cutoff(&lines),
             None,
-            "prompt outside last 8 rows must not trigger cutoff"
+            "prompt outside last 15 rows must not trigger cutoff"
         );
     }
 
@@ -3398,13 +3385,13 @@ mod tests {
     /// is used as the cutoff (not an earlier one).
     #[test]
     fn test_find_prompt_cutoff_uses_bottom_most_prompt_in_window() {
-        // scan window (last 8 of 12) = indices 4-11
-        // prompts at indices 5 and 9 → bottom-most in window is 9
-        let mut items: Vec<&str> = vec!["content"; 12];
-        items[5] = "❯ earlier";
-        items[9] = "❯ later";
+        // scan window (last 15 of 20) = indices 5-19
+        // prompts at indices 6 and 15 → bottom-most in window is 15
+        let mut items: Vec<&str> = vec!["content"; 20];
+        items[6] = "❯ earlier";
+        items[15] = "❯ later";
         let lines = make_lines(&items);
-        assert_eq!(find_prompt_cutoff(&lines), Some(9));
+        assert_eq!(find_prompt_cutoff(&lines), Some(15));
     }
 
     /// Large batch (>= 2/3 of screen height) with an Ink prompt → chrome trimmed.

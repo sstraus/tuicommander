@@ -104,16 +104,8 @@ const SHELL_NULL: u8 = 0;
 const SHELL_BUSY: u8 = 1;
 const SHELL_IDLE: u8 = 2;
 
-/// Extract the last `?`-ending line from changed rows for silence-based question detection.
-/// Returns true if a row contains agent UI chrome (mode-line / status-line).
-/// Used to classify chunks as "chrome-only" when ALL changed rows are chrome.
-/// Detects: ⏵ (U+23F5 Claude Code), › (U+203A Claude Code/Codex), ✻ (U+273B timer), • (U+2022 Codex spinner).
-pub(crate) fn is_chrome_row(text: &str) -> bool {
-    text.contains('\u{23F5}')    // ⏵ — Claude Code mode-line prefix
-        || text.contains('\u{203A}') // › — Claude Code / Codex mode-line prefix
-        || text.contains('✻')       // Claude Code timer marker
-        || text.contains('•')       // Codex spinner / status indicator
-}
+// Re-export from chrome module for use by this module and tests.
+pub(crate) use crate::chrome::is_chrome_row;
 
 /// Searches all changed rows (not just the last non-empty one) so a question row
 /// is found even when a mode/status line with a higher row index arrives in the same chunk.
@@ -168,29 +160,7 @@ pub(crate) fn verify_question_on_screen(screen_rows: &[String], question: &str, 
         .any(|r| r.trim() == q)
 }
 
-/// Returns true if `text` contains a run of 4+ box-drawing characters,
-/// indicating a separator line (e.g. `────────` or `──── label ────`).
-fn is_separator_line(text: &str) -> bool {
-    let mut run = 0u32;
-    for c in text.chars() {
-        if matches!(c, '─' | '━' | '═' | '—' | '╌' | '╍') {
-            run += 1;
-            if run >= 4 {
-                return true;
-            }
-        } else {
-            run = 0;
-        }
-    }
-    false
-}
-
-/// Returns true if `text` looks like an agent prompt line.
-/// Matches `❯` (U+276F, Claude Code/Ink), `›` (U+203A, Codex), `> `, and bare `>`.
-fn is_prompt_line(text: &str) -> bool {
-    let t = text.trim_start();
-    t.starts_with('❯') || t.starts_with('›') || t == ">" || t.starts_with("> ")
-}
+use crate::chrome::{is_separator_line, is_prompt_line};
 
 /// Extract the last chat line from the terminal screen by locating the prompt
 /// line and returning the first non-empty, non-chrome line above it.
