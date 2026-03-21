@@ -292,11 +292,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
           return;
         }
 
+        // When container is hidden (display:none for inactive tabs), xterm.js
+        // doesn't auto-scroll viewportY while baseY keeps growing. This makes
+        // buf.viewportY unreliable — it stays at 0 after a buffer contraction
+        // while baseY grows to 1000+, causing doFit() to scroll to line 0.
+        const isContainerVisible = containerRef && containerRef.offsetWidth > 0;
+
         // Guard: restore scroll position if user was scrolled up and xterm
-        // moved the viewport (up OR down). Cursor-positioning escapes from
-        // agent TUI redraws can jump the viewport to the bottom, which also
-        // corrupts trackedScrollState.wasAtBottom for subsequent doFit calls.
-        if (!wasAtBottomBefore) {
+        // moved the viewport (up OR down). Only meaningful when visible —
+        // hidden terminals have unreliable viewportY values.
+        if (isContainerVisible && !wasAtBottomBefore) {
           if (afterBuf.viewportY !== viewportYBefore) {
             // If the buffer contracted below our previous position (e.g. agent
             // cleared/compacted the session), the old viewport line no longer
@@ -324,12 +329,28 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // shrinks (buffer contraction). Without this, trackedScrollState.baseY
         // drifts from reality and doFit() computes a bogus linesFromBottom,
         // causing the viewport to jump to line 0 on the next resize.
-        trackedScrollState = {
-          viewportY: afterBuf.viewportY,
-          baseY: afterBuf.baseY,
-          bufferType: afterBuf.type,
-          wasAtBottom: afterBuf.viewportY >= afterBuf.baseY,
-        };
+        if (isContainerVisible) {
+          trackedScrollState = {
+            viewportY: afterBuf.viewportY,
+            baseY: afterBuf.baseY,
+            bufferType: afterBuf.type,
+            wasAtBottom: afterBuf.viewportY >= afterBuf.baseY,
+          };
+        } else {
+          // Hidden: buf.viewportY is unreliable (xterm doesn't auto-scroll
+          // when the viewport element has zero dimensions). Only update baseY
+          // and infer viewportY from the wasAtBottom relationship.
+          trackedScrollState.baseY = afterBuf.baseY;
+          trackedScrollState.bufferType = afterBuf.type;
+          if (trackedScrollState.wasAtBottom) {
+            trackedScrollState.viewportY = afterBuf.baseY;
+          } else {
+            // User was scrolled up — clamp viewportY to not exceed new baseY
+            // (handles buffer contraction while hidden)
+            trackedScrollState.viewportY = Math.min(trackedScrollState.viewportY, afterBuf.baseY);
+            trackedScrollState.wasAtBottom = trackedScrollState.viewportY >= afterBuf.baseY;
+          }
+        }
       });
     } else {
       // Buffer output until terminal.open() is called
