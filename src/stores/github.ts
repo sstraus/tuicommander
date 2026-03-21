@@ -273,8 +273,7 @@ function createGitHubStore() {
         paths,
         includeMerged,
       });
-      for (const path of paths) {
-        const statuses = allStatuses[path] ?? [];
+      for (const [path, statuses] of Object.entries(allStatuses)) {
         updateRepoData(path, statuses);
       }
       batchSucceeded = true;
