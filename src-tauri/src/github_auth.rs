@@ -213,11 +213,15 @@ pub(crate) async fn github_poll_login(
         ref access_token, ..
     } = result
     {
-        // Save to keyring for persistence across restarts
-        save_github_oauth_token(access_token).map_err(|e| {
-            tracing::error!(source = "github", error = %e, "OAuth token keyring save failed");
-            e
-        })?;
+        // Save to keyring for persistence across restarts (blocking I/O → spawn_blocking)
+        let token_for_keyring = access_token.clone();
+        tokio::task::spawn_blocking(move || save_github_oauth_token(&token_for_keyring))
+            .await
+            .map_err(|e| format!("keyring task panicked: {e}"))?
+            .map_err(|e| {
+                tracing::error!(source = "github", error = %e, "OAuth token keyring save failed");
+                e
+            })?;
         // Activate immediately in runtime state
         *state.github_token.write() = Some(access_token.clone());
         *state.github_token_source.write() = TokenSource::OAuth;
@@ -237,10 +241,14 @@ pub(crate) async fn github_poll_login(
 pub(crate) async fn github_logout(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    delete_github_oauth_token()?;
+    tokio::task::spawn_blocking(delete_github_oauth_token)
+        .await
+        .map_err(|e| format!("keyring task panicked: {e}"))??;
 
     // Re-resolve token from remaining sources (env vars, gh CLI)
-    let (token, source) = resolve_token_with_source();
+    let (token, source) = tokio::task::spawn_blocking(resolve_token_with_source)
+        .await
+        .map_err(|e| format!("token resolve task panicked: {e}"))?;
     *state.github_token.write() = token;
     *state.github_token_source.write() = source;
 
@@ -301,8 +309,11 @@ pub(crate) async fn github_auth_status(
         Ok(r) if r.status() == 401 => {
             // Token is invalid — clear it if it was an OAuth token
             if source == TokenSource::OAuth {
-                let _ = delete_github_oauth_token();
-                let (fallback_token, fallback_source) = resolve_token_with_source();
+                let _ = tokio::task::spawn_blocking(delete_github_oauth_token).await;
+                let (fallback_token, fallback_source) =
+                    tokio::task::spawn_blocking(resolve_token_with_source)
+                        .await
+                        .unwrap_or((None, TokenSource::None));
                 *state.github_token.write() = fallback_token;
                 *state.github_token_source.write() = fallback_source;
             }
