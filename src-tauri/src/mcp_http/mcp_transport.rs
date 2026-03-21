@@ -22,6 +22,11 @@ fn to_json_or_error<T: serde::Serialize>(value: T) -> serde_json::Value {
     }
 }
 
+/// Single source of truth for detecting Claude Code (or tuic-bridge) clients.
+fn detect_claude_code_client(client_name: Option<&str>) -> bool {
+    client_name.is_some_and(|n| n.contains("claude") || n.contains("tuic-bridge"))
+}
+
 /// Build server instructions for the MCP initialize response.
 /// Tells the connecting agent what tools are available, which repos are managed,
 /// and what sessions are currently active so it can orient itself.
@@ -73,7 +78,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     out.push_str("8. `knowledge action=search` → cross-repo hybrid search (docs, code, symbols)\n\n");
 
     // Claude Code-specific worktree and teammate guidance
-    let is_claude_code = client_name.is_some_and(|n| n.contains("claude") || n.contains("tuic-bridge"));
+    let is_claude_code = detect_claude_code_client(client_name);
     if is_claude_code {
         out.push_str("**Worktree workflow:** When `worktree action=create` returns a `cc_agent_hint` field, spawn a subagent (Agent tool) that works in the worktree using absolute paths. The subagent should use Read, Edit, Glob, Grep with absolute file paths and `cd <path> && ...` for shell commands. Do NOT try to change your own working directory — use the subagent pattern instead.\n\n");
         out.push_str("**Teammates:** When spawning teammates for parallel work, use `worktree action=create` with `spawn_session=true` — creates an isolated worktree + PTY visible in the UI.\n\n");
@@ -326,10 +331,15 @@ fn require_path(args: &serde_json::Value, action: &str) -> Result<String, serde_
 
 /// Handle an MCP tools/call request, executing against the app state directly (no HTTP round-trip)
 async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
+    // Resolve client identity at dispatch level — tool handlers get a plain bool
+    let is_claude_code = mcp_session_id
+        .and_then(|sid| state.mcp_sessions.get(sid))
+        .map(|meta| meta.is_claude_code)
+        .unwrap_or(false);
     match name {
         "session" => handle_session(state, args),
         "github" => handle_github(state, args).await,
-        "worktree" => handle_worktree(state, args, mcp_session_id),
+        "worktree" => handle_worktree(state, args, is_claude_code),
         "agent" => handle_agent(state, addr, args),
         "config" => handle_config(state, addr, args),
         "workspace" => handle_workspace(state, args),
@@ -675,7 +685,7 @@ fn create_session_in_dir(state: &Arc<AppState>, cwd: &str) -> Result<String, Str
     Ok(session_id)
 }
 
-fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
+fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, is_claude_code: bool) -> serde_json::Value {
     let action = match require_action(args, "worktree", WORKTREE_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
@@ -703,11 +713,13 @@ fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_
 
             // Generate a branch name if not specified
             let branch_name = branch.unwrap_or_else(|| {
-                let existing: Vec<String> = crate::worktree::get_worktree_paths(path.clone())
-                    .unwrap_or_default()
-                    .keys()
-                    .cloned()
-                    .collect();
+                let existing: Vec<String> = match crate::worktree::get_worktree_paths(path.clone()) {
+                    Ok(wts) => wts.keys().cloned().collect(),
+                    Err(e) => {
+                        tracing::warn!("Failed to list worktrees for name generation: {e}");
+                        vec![]
+                    }
+                };
                 crate::worktree::generate_worktree_name(&existing)
             });
 
@@ -752,17 +764,16 @@ fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_
                         }
                     }
                     // Add structured hint for Claude Code clients to spawn a subagent in the worktree
-                    if let Some(sid) = mcp_session_id
-                        && let Some(meta) = state.mcp_sessions.get(sid)
-                        && meta.is_claude_code
-                    {
+                    if is_claude_code {
+                        // Sanitize branch name to prevent prompt injection via backticks/newlines
+                        let safe_branch = branch_name.replace('`', "'").replace('\n', " ");
                         response["cc_agent_hint"] = serde_json::json!({
                             "worktree_path": wt_path,
                             "suggested_prompt": format!(
                                 "Work in the worktree at `{}`. Use absolute paths for ALL file operations \
                                 (Read, Edit, Glob, Grep). For git commands, use `cd {} && git ...`. \
                                 The branch is `{}`.",
-                                wt_path, wt_path, branch_name,
+                                wt_path, wt_path, safe_branch,
                             )
                         });
                     }
@@ -1445,7 +1456,7 @@ pub(super) async fn mcp_post(
         "initialize" => {
             let session_id = Uuid::new_v4().to_string();
             let client_name = body["params"]["clientInfo"]["name"].as_str();
-            let is_claude_code = client_name.is_some_and(|n| n.contains("claude") || n.contains("tuic-bridge"));
+            let is_claude_code = detect_claude_code_client(client_name);
             state.mcp_sessions.insert(session_id.clone(), crate::state::McpSessionMeta {
                 created_at: std::time::Instant::now(),
                 is_claude_code,
@@ -1504,8 +1515,9 @@ pub(super) async fn mcp_post(
                     if state.mcp_sessions.contains_key(sid) {
                         true
                     } else {
-                        // Auto-recover: re-register the stale session ID (unknown client identity)
-                        tracing::info!("MCP session auto-recovered (stale session_id: {sid})");
+                        // Auto-recover: re-register the stale session ID (unknown client identity).
+                        // cc_agent_hint will be unavailable until the client re-initializes.
+                        tracing::warn!("MCP session auto-recovered (stale session_id: {sid}); client identity unknown — cc_agent_hint disabled");
                         state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
                             created_at: std::time::Instant::now(),
                             is_claude_code: false,
@@ -1585,7 +1597,7 @@ pub(super) async fn mcp_get(
         .and_then(|v| v.to_str().ok())
         .map(|sid| {
             if !state.mcp_sessions.contains_key(sid) {
-                tracing::info!("MCP SSE session auto-recovered (stale session_id: {sid})");
+                tracing::warn!("MCP SSE session auto-recovered (stale session_id: {sid}); client identity unknown — cc_agent_hint disabled");
                 state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
                     created_at: std::time::Instant::now(),
                     is_claude_code: false,
