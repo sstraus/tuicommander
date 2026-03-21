@@ -112,9 +112,17 @@ export function CommandInput(props: CommandInputProps) {
     setValue("");
     if (textareaEl) { textareaEl.value = ""; textareaEl.style.height = "auto"; }
     try {
-      // Single atomic write: Ctrl-U clears existing PTY input, then text + Enter.
-      // Must be ONE write to prevent in-flight debouncedSync from interleaving.
-      await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text + "\r" }));
+      if (props.agentType) {
+        // Ink-based agents in raw mode: split into two writes.
+        // Ctrl-U + text in one write, then \r separately — Ink treats \r
+        // as newline when combined with text in a single write.
+        await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text }));
+        await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\r" }));
+      } else {
+        // Shell sessions (cooked mode): single atomic write.
+        // Ctrl-U is handled by kernel line discipline before the app sees it.
+        await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text + "\r" }));
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       appLogger.error("network", `Failed to send command after retries: ${msg}`);
