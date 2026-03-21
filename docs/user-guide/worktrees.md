@@ -142,6 +142,23 @@ Select multiple worktrees using the checkboxes (shown when more than one selecta
 
 Use the **Select All** checkbox in the toolbar to toggle all non-main worktrees.
 
+## MCP Worktree Creation (AI Agents)
+
+AI agents connected via MCP can create worktrees using the `worktree action=create` tool.
+
+### Claude Code — Agent Bridge
+
+Claude Code cannot change its working directory mid-session. When CC creates a worktree via MCP, the response includes a `cc_agent_hint` field with:
+
+- `worktree_path` — Absolute path to the worktree directory
+- `suggested_prompt` — Instructions for spawning a subagent that works in the worktree using absolute paths
+
+CC should spawn a subagent (Agent tool) with the suggested prompt. The subagent uses Read, Edit, Glob, Grep with absolute file paths and `cd <path> && ...` for shell commands.
+
+### Other MCP Clients
+
+Non-Claude Code MCP clients receive the standard `{worktree_path, branch}` response without the `cc_agent_hint` field. These clients can change into the worktree directory directly.
+
 ## External Worktree Detection
 
 TUICommander monitors `.git/worktrees/` for changes. Worktrees created outside the app (via CLI or other tools) are detected and appear in the sidebar after the next refresh.

@@ -149,6 +149,25 @@ The `session` tool's `action=output` strips ANSI escape codes by default, return
 | `limit` | `8192` | Max bytes to read |
 | `format` | (text) | `"raw"` preserves ANSI escape codes |
 
+### MCP Tool: `worktree` — Claude Code Agent Hint
+
+When the MCP client identifies as Claude Code (detected via `clientInfo.name` at initialize time), the `worktree action=create` response includes an additional `cc_agent_hint` field:
+
+```json
+{
+  "worktree_path": "/path/to/repo__wt/feature-branch",
+  "branch": "feature-branch",
+  "cc_agent_hint": {
+    "worktree_path": "/path/to/repo__wt/feature-branch",
+    "suggested_prompt": "Work in the worktree at `/path/...`. Use absolute paths for ALL file operations..."
+  }
+}
+```
+
+This works around Claude Code's inability to change its working directory mid-session. The hint tells CC to spawn a subagent that uses absolute paths for all file operations (Read, Edit, Glob, Grep) and `cd <path> && ...` for shell commands.
+
+Non-Claude Code MCP clients do not receive this field.
+
 ## Authentication
 
 When remote access is enabled:

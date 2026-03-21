@@ -299,10 +299,10 @@ pub(crate) fn delete_branch_impl(path: &str, name: &str, force: bool) -> Result<
     }
 
     // Refuse to delete the currently checked-out branch
-    if let Some(current) = read_branch_from_head(&repo_path) {
-        if current == name {
-            return Err(format!("Cannot delete the currently checked-out branch '{name}'"));
-        }
+    if let Some(current) = read_branch_from_head(&repo_path)
+        && current == name
+    {
+        return Err(format!("Cannot delete the currently checked-out branch '{name}'"));
     }
 
     let flag = if force { "-D" } else { "-d" };
@@ -1167,15 +1167,15 @@ pub(crate) fn get_recent_branches_impl(path: &Path, limit: usize) -> Result<Vec<
 
     for line in output.stdout.lines() {
         // Match "checkout: moving from <from> to <to>"
-        if let Some(rest) = line.strip_prefix("checkout: moving from ") {
-            if let Some(to_pos) = rest.rfind(" to ") {
-                let target = &rest[to_pos + 4..];
-                let target = target.trim().to_string();
-                if !target.is_empty() && seen.insert(target.clone()) {
-                    result.push(target);
-                    if result.len() >= limit {
-                        break;
-                    }
+        if let Some(rest) = line.strip_prefix("checkout: moving from ")
+            && let Some(to_pos) = rest.rfind(" to ")
+        {
+            let target = &rest[to_pos + 4..];
+            let target = target.trim().to_string();
+            if !target.is_empty() && seen.insert(target.clone()) {
+                result.push(target);
+                if result.len() >= limit {
+                    break;
                 }
             }
         }

@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Branch Panel** — New Branches tab (4th tab) in the Git Panel with full branch management: checkout (with dirty-worktree stash/force/cancel dialog), create, delete (safe + force), rename, merge, rebase, push (auto-sets upstream), pull, fetch, inline search, context menu, stale dimming (>30 days), merged badge, ahead/behind counts, prefix folding, and recent branches from reflog. `Cmd+G` opens the Git Panel directly on the Branches tab; clicking the sidebar "GIT" vertical label also lands on Branches
+- **Worktree Agent Bridge** — MCP `worktree action=create` now returns a `cc_agent_hint` field for Claude Code clients, guiding CC to spawn a subagent that works in the worktree using absolute paths. Works around CC's inability to change working directory mid-session
 
 ### Removed
 - **Lazygit integration** — Replaced by the native Branch Panel. `Cmd+G` is reassigned to the Branches tab
