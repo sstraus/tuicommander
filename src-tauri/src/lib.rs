@@ -13,6 +13,7 @@ pub(crate) mod git;
 pub(crate) mod git_cli;
 pub(crate) mod git_graph;
 pub(crate) mod github;
+pub(crate) mod github_auth;
 pub(crate) mod head_watcher;
 pub(crate) mod repo_watcher;
 pub(crate) mod dir_watcher;

@@ -36,7 +36,7 @@ tauri-plugin-single-instance = "2"
 whisper-rs = "0.15"
 cpal = "0.17"
 rodio = "0.20"
-reqwest = { version = "0.13", features = ["stream", "json"] }
+reqwest = { version = "0.13", features = ["stream", "json", "form"] }
 futures-util = "0.3"
 axum = { version = "0.8", features = ["ws"] }
 async-stream = "0.3"
