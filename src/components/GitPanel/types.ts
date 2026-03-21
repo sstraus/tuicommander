@@ -36,3 +36,18 @@ export interface ChangedFile {
   additions: number;
   deletions: number;
 }
+
+/** Mirrors the Rust BranchDetail struct from git.rs */
+export interface BranchDetail {
+  name: string;
+  is_current: boolean;
+  is_remote: boolean;
+  is_main: boolean;
+  is_merged: boolean;
+  ahead: number | null;
+  behind: number | null;
+  upstream: string | null;
+  last_commit_date: string | null;
+  last_commit_message: string | null;
+  last_commit_author: string | null;
+}

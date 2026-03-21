@@ -55,6 +55,7 @@ export interface ShortcutHandlers {
   toggleWorktreeManager: () => void;
   toggleBranchSwitcher: () => void;
   toggleErrorLog: () => void;
+  toggleBranchesTab: () => void;
 }
 
 /** Keys that are modifiers only — not real shortcut targets */
@@ -132,6 +133,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "worktree-manager": handlers.toggleWorktreeManager(); return true;
     case "quick-branch-switch": handlers.toggleBranchSwitcher(); return true;
     case "toggle-error-log": handlers.toggleErrorLog(); return true;
+    case "toggle-branches-tab": handlers.toggleBranchesTab(); return true;
 
     // Tab navigation
     case "prev-tab": handlers.navigateTab("prev"); return true;

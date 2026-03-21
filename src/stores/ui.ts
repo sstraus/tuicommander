@@ -16,6 +16,9 @@ const PLAN_PANEL_DEFAULT_WIDTH = 350;
 const GIT_PANEL_DEFAULT_WIDTH = 380;
 const SETTINGS_NAV_DEFAULT_WIDTH = 180;
 
+/** Git panel tab names */
+export type GitPanelTab = "changes" | "log" | "stashes" | "branches";
+
 /** UI store state */
 interface UIStoreState {
   // Sidebar visibility
@@ -30,6 +33,9 @@ interface UIStoreState {
   fileBrowserPanelVisible: boolean;
   planPanelVisible: boolean;
   gitPanelVisible: boolean;
+
+  // Requested active tab for the git panel (set by external actions like toggle-branches-tab)
+  gitPanelRequestedTab: GitPanelTab | null;
 
   // Resizable panel widths (persisted)
   markdownPanelWidth: number;
@@ -60,6 +66,7 @@ function createUIStore() {
     fileBrowserPanelVisible: false,
     planPanelVisible: false,
     gitPanelVisible: false,
+    gitPanelRequestedTab: null,
     markdownPanelWidth: MARKDOWN_PANEL_DEFAULT_WIDTH,
     notesPanelWidth: NOTES_PANEL_DEFAULT_WIDTH,
     planPanelWidth: PLAN_PANEL_DEFAULT_WIDTH,
@@ -228,6 +235,21 @@ function createUIStore() {
 
     setGitPanelVisible(visible: boolean): void {
       setExclusivePanel("gitPanelVisible", visible);
+    },
+
+    /**
+     * Open the git panel and switch to the given tab.
+     * If the panel is already open on that tab, close it (toggle behaviour).
+     */
+    toggleGitPanelOnTab(tab: GitPanelTab): void {
+      const alreadyOpenOnTab =
+        state.gitPanelVisible && state.gitPanelRequestedTab === tab;
+      if (alreadyOpenOnTab) {
+        setExclusivePanel("gitPanelVisible", false);
+      } else {
+        setState("gitPanelRequestedTab", tab);
+        setExclusivePanel("gitPanelVisible", true);
+      }
     },
 
     // Dropdown management

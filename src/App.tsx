@@ -898,6 +898,7 @@ const App: Component = () => {
     toggleWorktreeManager: () => worktreeManagerStore.toggle(),
     toggleBranchSwitcher: () => branchSwitcherStore.toggle(),
     toggleErrorLog: () => errorLogStore.toggle(),
+    toggleBranchesTab: () => uiStore.toggleGitPanelOnTab("branches"),
   };
 
   // Worktree manager action callbacks
@@ -1080,6 +1081,7 @@ const App: Component = () => {
         case "run-command": gitOps.handleRunCommand(false, () => setRunCommandDialogVisible(true)); break;
         case "edit-run-command": gitOps.handleRunCommand(true, () => setRunCommandDialogVisible(true)); break;
         case "git-operations": uiStore.toggleGitPanel(); break;
+        case "branches": uiStore.toggleGitPanelOnTab("branches"); break;
         case "task-queue": setTaskQueueVisible((v) => !v); break;
 
         // Help

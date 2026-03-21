@@ -139,6 +139,11 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
             "Git Operations",
             "CmdOrCtrl+Shift+G"
         ))
+        .item(&item!(
+            "branches",
+            "Branches",
+            "CmdOrCtrl+G"
+        ))
         .separator()
         .item(&item!("task-queue", "Task Queue", "CmdOrCtrl+J"))
         .build()?;

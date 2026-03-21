@@ -57,6 +57,7 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
         repoPath={props.repoPath}
         fsRoot={props.fsRoot}
         onClose={() => uiStore.toggleGitPanel()}
+        requestedTab={uiStore.state.gitPanelRequestedTab}
       />
     </>
   );

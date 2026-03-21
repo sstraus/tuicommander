@@ -1,0 +1,174 @@
+/* BranchesTab — local and remote branch list with inline search */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Inline search bar */
+.searchBar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 12px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.searchInput {
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  padding: 4px 8px;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.searchInput:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.searchInput::placeholder {
+  color: var(--fg-muted);
+}
+
+/* Collapsible section headers (Local, Remote) */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s ease;
+}
+
+.sectionHeader:hover {
+  background: var(--bg-highlight);
+}
+
+.sectionCount {
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  font-weight: 400;
+}
+
+/* Chevron for collapsible sections */
+.chevron {
+  font-size: var(--font-xs);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.chevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+/* Individual branch row */
+.branchRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 4px 20px;
+  cursor: default;
+  transition: background 0.1s ease;
+  font-size: var(--font-md);
+  font-family: var(--font-ui);
+  min-width: 0;
+}
+
+.branchRow:hover {
+  background: var(--bg-highlight);
+}
+
+/* Current branch: slightly bolder + accent icon */
+.branchCurrent {
+  color: var(--accent);
+}
+
+.branchCurrentIcon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+/* Placeholder to align non-current rows with current (icon width) */
+.branchIconPlaceholder {
+  width: 14px;
+  flex-shrink: 0;
+}
+
+/* Branch name — truncates if too long */
+.branchName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.branchNameBold {
+  font-weight: 600;
+}
+
+/* Ahead/behind indicators and date — dimmed, right-aligned */
+.branchMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+  font-family: var(--font-ui);
+  color: var(--fg-secondary);
+}
+
+.ahead {
+  color: var(--success);
+}
+
+.behind {
+  color: var(--fg-muted);
+}
+
+.metaDate {
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* "merged" badge */
+.merged {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+/* Stale branches (old last commit) */
+.stale .branchName {
+  color: var(--fg-muted);
+}
+
+/* Empty state */
+.empty {
+  composes: empty from "./panel.module.css";
+  font-family: var(--font-ui);
+}

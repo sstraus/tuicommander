@@ -1,20 +1,22 @@
-import { Component, createSignal, Match, Show, Switch } from "solid-js";
+import { Component, createEffect, createSignal, Match, Show, Switch } from "solid-js";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { cx } from "../../utils";
 import { ChangesTab } from "./ChangesTab";
 import { LogTab } from "./LogTab";
 import { StashesTab } from "./StashesTab";
+import { BranchesTab } from "./BranchesTab";
 import { HistoryTab } from "./HistoryTab";
 import { BlameTab } from "./BlameTab";
 import p from "../shared/panel.module.css";
 import s from "./GitPanel.module.css";
 
-type GitTab = "changes" | "log" | "stashes";
+type GitTab = "changes" | "log" | "stashes" | "branches";
 
 const TABS: { id: GitTab; label: string }[] = [
   { id: "changes", label: "Changes" },
   { id: "log", label: "Log" },
   { id: "stashes", label: "Stashes" },
+  { id: "branches", label: "Branches" },
 ];
 
 export interface GitPanelProps {
@@ -23,6 +25,8 @@ export interface GitPanelProps {
   /** Effective filesystem root (worktree path when on a linked worktree) */
   fsRoot?: string | null;
   onClose: () => void;
+  /** When set, switches to the given tab (used by external shortcuts like toggle-branches-tab) */
+  requestedTab?: GitTab | null;
 }
 
 export const GitPanel: Component<GitPanelProps> = (props) => {
@@ -31,6 +35,12 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
   const [historyExpanded, setHistoryExpanded] = createSignal(false);
   const [blameExpanded, setBlameExpanded] = createSignal(false);
   const gitPath = () => (props.fsRoot || props.repoPath) as string | null;
+
+  // Switch to the requested tab when an external action (e.g. keyboard shortcut) specifies one
+  createEffect(() => {
+    const tab = props.requestedTab;
+    if (tab) setActiveTab(tab);
+  });
 
   function handlePanelKeyDown(e: KeyboardEvent) {
     if (e.key === "Escape") {
@@ -94,6 +104,9 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
           </Match>
           <Match when={activeTab() === "stashes"}>
             <StashesTab repoPath={props.visible ? gitPath() : null} />
+          </Match>
+          <Match when={activeTab() === "branches"}>
+            <BranchesTab repoPath={props.visible ? gitPath() : null} />
           </Match>
         </Switch>
       </div>

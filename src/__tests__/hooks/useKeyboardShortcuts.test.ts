@@ -42,6 +42,7 @@ function createMockHandlers(): ShortcutHandlers {
     toggleWorktreeManager: vi.fn(),
     toggleBranchSwitcher: vi.fn(),
     toggleErrorLog: vi.fn(),
+    toggleBranchesTab: vi.fn(),
   };
 }
 

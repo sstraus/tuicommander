@@ -50,6 +50,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "toggle-plan": { label: "Toggle plan panel", category: "Panels" },
 
   "toggle-git-ops": { label: "Git panel", category: "Git" },
+  "toggle-branches-tab": { label: "Branches tab", category: "Git" },
 
   "split-vertical": { label: "Split vertically", category: "Split Panes" },
   "split-horizontal": { label: "Split horizontally", category: "Split Panes" },
@@ -97,6 +98,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "toggle-file-browser": handlers.toggleFileBrowserPanel,
     "toggle-plan": handlers.togglePlanPanel,
     "toggle-git-ops": handlers.toggleGitOpsPanel,
+    "toggle-branches-tab": handlers.toggleBranchesTab,
     "split-vertical": () => handlers.handleSplit("vertical"),
     "split-horizontal": () => handlers.handleSplit("horizontal"),
     "toggle-sidebar": handlers.toggleSidebar,
