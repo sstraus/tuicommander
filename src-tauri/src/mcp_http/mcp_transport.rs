@@ -72,9 +72,10 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     out.push_str("7. `knowledge action=setup` → auto-provision mdkb knowledge base for all repos\n");
     out.push_str("8. `knowledge action=search` → cross-repo hybrid search (docs, code, symbols)\n\n");
 
-    // Claude Code-specific teammate guidance
+    // Claude Code-specific worktree and teammate guidance
     let is_claude_code = client_name.is_some_and(|n| n.contains("claude") || n.contains("tuic-bridge"));
     if is_claude_code {
+        out.push_str("**Worktree workflow:** When `worktree action=create` returns a `cc_agent_hint` field, spawn a subagent (Agent tool) that works in the worktree using absolute paths. The subagent should use Read, Edit, Glob, Grep with absolute file paths and `cd <path> && ...` for shell commands. Do NOT try to change your own working directory — use the subagent pattern instead.\n\n");
         out.push_str("**Teammates:** When spawning teammates for parallel work, use `worktree action=create` with `spawn_session=true` — creates an isolated worktree + PTY visible in the UI.\n\n");
     }
 

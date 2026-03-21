@@ -1030,6 +1030,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_mcp_instructions_include_worktree_hint_for_cc() {
+        let state = test_state();
+        let body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26", "capabilities": {},
+                "clientInfo": { "name": "claude-code", "version": "2.0" }
+            }
+        });
+        let app = build_router(state, false, true);
+        let resp = app.oneshot(mcp_post("/mcp", &body)).await.unwrap();
+        let resp_body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
+        let instructions = json["result"]["instructions"].as_str().unwrap();
+        assert!(instructions.contains("cc_agent_hint"), "CC instructions should mention cc_agent_hint: {instructions}");
+        assert!(instructions.contains("absolute paths"), "CC instructions should mention absolute paths");
+    }
+
+    #[tokio::test]
     async fn test_mcp_get_without_session_returns_401() {
         let state = test_state();
         let app = build_router(state, false, true);
