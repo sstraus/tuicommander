@@ -271,7 +271,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       {/* Git Quick Actions (Story 050) */}
       <Show when={repositoriesStore.getActive()}>
         <div class={s.gitQuickActions}>
-          <svg class={s.gitQuickLabel} width="10" height="28" viewBox="0 0 10 28" aria-hidden="true">
+          <svg class={s.gitQuickLabel} width="10" height="28" viewBox="0 0 10 28" aria-hidden="true"
+            onClick={() => uiStore.toggleGitPanelOnTab("branches")}
+            style={{ cursor: "pointer" }}
+          >
             <text
               x="5" y="14"
               transform="rotate(-90 5 14)"
