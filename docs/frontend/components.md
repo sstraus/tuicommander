@@ -15,7 +15,8 @@ App.tsx (central orchestrator)
 │   ├── TabBar/               # Terminal tabs with drag-to-reorder
 │   ├── Terminal/             # xterm.js wrapper (never unmounted)
 │   ├── TerminalArea/         # Terminal + split pane layout
-│   ├── GitPanel/             # Git panel (Changes, Log, Stashes)
+│   ├── GitPanel/             # Git panel (Changes, Log, Stashes, Branches)
+│   │   └── BranchesTab/      # Branch list with CRUD operations, prefix folding, search
 │   ├── DiffTab/              # Individual file diff tab
 │   ├── MarkdownPanel/        # Markdown file browser
 │   │   └── MarkdownRenderer  # Markdown to HTML (DOMPurify)
@@ -38,7 +39,7 @@ App.tsx (central orchestrator)
 │   ├── tabs/RepoScriptsTab   # Per-repo scripts
 │   └── tabs/RepoWorktreeTab  # Per-repo worktree options
 ├── HelpPanel/                # Keyboard shortcuts documentation
-├── GitPanel/                 # Git panel (Changes, Log, Stashes)
+├── GitPanel/                 # Git panel (Changes, Log, Stashes, Branches)
 ├── TaskQueuePanel/           # Agent task queue
 ├── PromptOverlay/            # Agent prompt interception
 ├── PromptDrawer/             # Prompt library management

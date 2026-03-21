@@ -244,7 +244,7 @@ Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens t
 - Keyboard shortcuts are now in Settings > Keyboard Shortcuts tab (auto-generated from `actionRegistry.ts`)
 
 ### 3.8 Git Panel (`Cmd+Shift+D`)
-Tabbed side panel with three tabs: Changes, Log, Stashes. Replaces the former Git Operations Panel floating overlay and the standalone Diff Panel.
+Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the former Git Operations Panel floating overlay and the standalone Diff Panel.
 
 **Changes tab:**
 - Porcelain v2 working tree status via `get_working_tree_status` (branch, upstream, ahead/behind, stash count, staged/unstaged/untracked files)
@@ -272,9 +272,28 @@ Tabbed side panel with three tabs: Changes, Log, Stashes. Replaces the former Gi
 - List all stash entries via `get_stash_list`
 - Per-stash actions: Apply, Pop, Drop (via `run_git_command`)
 
+**Branches tab (`Cmd+G` — opens Git Panel directly on this tab):**
+- Local and Remote branches in collapsible sections
+- Rich info per branch: ahead/behind counts (↑N ↓M), relative date, merged badge, stale dimming (branches with last commit > 30 days)
+- Prefix folding: groups branches by `/` separator (e.g. `feature/`, `bugfix/`), toggle to expand/collapse groups
+- Recent Branches section from git reflog
+- Inline search/filter to narrow branch list
+- Checkout (Enter / double-click): switches to the selected branch, with dirty worktree dialog (stash / force / cancel)
+- **n** — Create new branch (inline form, optional checkout)
+- **d** — Delete branch (safe + force options; refuses main branch and current branch)
+- **R** — Rename branch (inline edit)
+- **M** — Merge selected branch into current
+- **r** — Rebase current onto selected branch
+- **P** — Push branch (auto-detects missing upstream and sets tracking)
+- **p** — Pull current branch
+- **f** — Fetch all remotes
+- Context menu (right-click): Checkout, Create Branch from Here, Delete, Rename, Merge into Current, Rebase Current onto This, Push, Pull, Fetch, Compare (shows `diff --name-status`)
+- Backend: `get_branches_detail`, `delete_branch`, `create_branch`, `get_recent_branches`
+- Click on sidebar "GIT" vertical label also opens Git Panel on the Branches tab
+
 **Keyboard navigation:**
 - `Escape` to close the panel
-- `Ctrl/Cmd+1–3` to switch between tabs
+- `Ctrl/Cmd+1–4` to switch between tabs (1=Changes, 2=Log, 3=Stashes, 4=Branches)
 - Auto-refreshes via repo revision subscription
 
 ### 3.9 Quick Branch Switch (`Cmd+B`)
@@ -909,7 +928,22 @@ All data persisted to platform config directory via Rust:
 | Shortcut | Action |
 |----------|--------|
 | `Cmd+B` | Quick branch switch (fuzzy search) |
-| `Cmd+Shift+D` | Git Panel |
+| `Cmd+Shift+D` | Git Panel (opens on last active tab) |
+| `Cmd+G` | Git Panel — Branches tab |
+
+### Branches Panel (when panel is focused)
+| Shortcut | Action |
+|----------|--------|
+| `↑` / `↓` | Navigate branches |
+| `Enter` | Checkout selected branch |
+| `n` | Create new branch |
+| `d` | Delete branch |
+| `R` | Rename branch (inline edit) |
+| `M` | Merge selected into current |
+| `r` | Rebase current onto selected |
+| `P` | Push branch |
+| `p` | Pull current branch |
+| `f` | Fetch all remotes |
 
 ### File Browser (when focused)
 | Shortcut | Action |

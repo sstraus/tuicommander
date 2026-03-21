@@ -207,6 +207,7 @@ Features:
 | Cmd+W | Close terminal |
 | Cmd+K | Open prompt library |
 | Cmd+Shift+D | Toggle Git Panel |
+| Cmd+G | Git Panel — Branches tab |
 | Cmd+M | Toggle markdown panel |
 | Cmd+N | Toggle Ideas panel |
 | Cmd+1-9 | Switch to tab N |
@@ -278,7 +279,8 @@ All stores persist to localStorage:
 - [x] Lazy terminal restore (sessions materialize on branch click, not app startup)
 - [x] Windows compatibility (shell escaping, process detection, resolve_cli, IDE detection)
 - [x] Repo watcher for automatic panel refresh on `.git/` changes
-- [x] Git Panel (3 tabs: Changes with History/Blame sub-panels, Log with canvas commit graph, Stashes) — replaces Git Operations Panel and DiffPanel
+- [x] Git Panel (4 tabs: Changes with History/Blame sub-panels, Log with canvas commit graph, Stashes, Branches) — replaces Git Operations Panel and DiffPanel
+- [x] Branch Panel (4th tab in Git Panel): checkout, create, delete, rename, merge, rebase, push, pull, fetch, prefix folding, inline search, context menu, stale/merged indicators. `Cmd+G` opens directly on Branches tab
 - [x] Context menu submenus and "New Group..." via PromptDialog
 - [x] File Browser panel (`Cmd+E`) with content search (`Cmd+Shift+F`, case/regex/whole-word, streaming results)
 - [x] CodeMirror code editor

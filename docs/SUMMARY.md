@@ -28,6 +28,7 @@
 
 - [GitHub Integration](./user-guide/github-integration.md)
 - [Worktrees](./user-guide/worktrees.md)
+- [Branch Management](./user-guide/branches.md)
 
 ## Extensibility
 

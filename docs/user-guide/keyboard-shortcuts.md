@@ -43,7 +43,8 @@ See the action table below for all available action names.
 | `Cmd+Shift+R` | Edit and run command |
 | `Cmd+L` | Clear terminal |
 | `Cmd+F` | Find in terminal / diff tab |
-| `Cmd+G` / `Enter` | Find next match (when search is open) |
+| `Cmd+G` | Git Panel — Branches tab (or Find next match when search is open) |
+| `Enter` | Find next match (when search is open) |
 | `Cmd+Shift+G` / `Shift+Enter` | Find previous match (when search is open) |
 | `Escape` | Close search overlay |
 | `Cmd+C` | Copy selection |
@@ -107,8 +108,25 @@ Note: File browser and Markdown panels are mutually exclusive — opening one cl
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+Shift+D` | Git Panel |
+| `Cmd+Shift+D` | Git Panel (opens on last active tab) |
+| `Cmd+G` | Git Panel — Branches tab |
 | `Cmd+B` | Quick branch switch (fuzzy search) |
+
+## Branches Panel (when panel is focused)
+
+| Shortcut | Action |
+|----------|--------|
+| `↑` / `↓` | Navigate branch list |
+| `Enter` / double-click | Checkout selected branch |
+| `n` | Create new branch (inline form) |
+| `d` | Delete branch (safe; hold to force) |
+| `R` | Rename branch (inline edit) |
+| `M` | Merge selected branch into current |
+| `r` | Rebase current onto selected branch |
+| `P` | Push branch (auto-sets upstream if missing) |
+| `p` | Pull current branch |
+| `f` | Fetch all remotes |
+| `Ctrl/Cmd+1–4` | Switch Git Panel tab (1=Changes, 2=Log, 3=Stashes, 4=Branches) |
 
 ## Quick Branch Switcher
 
@@ -207,6 +225,7 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `toggle-task-queue` | `Cmd+J` | Task queue |
 | `toggle-help` | `Cmd+?` | Toggle help panel |
 | `toggle-git-ops` | `Cmd+Shift+D` | Git Panel |
+| `toggle-git-branches` | `Cmd+G` | Git Panel — Branches tab |
 | `worktree-manager` | `Cmd+Shift+W` | Worktree Manager panel |
 | `quick-branch-switch` | `Cmd+B` | Quick branch switch |
 | `find-in-terminal` | `Cmd+F` | Find in terminal |

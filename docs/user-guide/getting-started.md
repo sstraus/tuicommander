@@ -75,7 +75,7 @@ The sidebar shows all your repositories and their branches.
 - [File Browser & Code Editor](file-browser.md) — Browse files, edit code, git status
 - [GitHub Integration](github-integration.md) — PR monitoring, CI rings, notifications
 - [Git Worktrees](worktrees.md) — Worktree workflow, configuration
-- [Lazygit](lazygit.md) — Three modes for lazygit integration
+- [Branch Management](branches.md) — Checkout, create, delete, merge, rebase, push/pull
 - [Prompt Library](prompt-library.md) — Template management, variables
 - [Plugins](plugins.md) — Install, browse, and manage plugins
 - [Voice Dictation](dictation.md) — Push-to-talk setup

@@ -303,6 +303,34 @@ Features to test when TUICommander is more usable.
 - [ ] Starting a new search cancels any in-progress search
 - [ ] Empty query shows no results (no crash)
 
+## Branch Panel (855-e86b)
+- [ ] `Cmd+G` opens Git Panel on the Branches tab
+- [ ] Clicking the "GIT" vertical label in the sidebar opens on Branches tab
+- [ ] Branch list shows local and remote sections (collapsible)
+- [ ] Each branch row shows ahead/behind counts, relative date, merged badge
+- [ ] Stale branches (>30 days) are visually dimmed
+- [ ] Recent branches section is populated from reflog
+- [ ] Inline search/filter narrows the branch list in real time
+- [ ] Prefix folding groups branches by `/` prefix (feature/, bugfix/, etc.)
+- [ ] Prefix folding toggle in panel header enables/disables grouping
+- [ ] Checkout via `Enter` or double-click switches branch
+- [ ] Checkout with dirty worktree shows stash/force/cancel dialog
+- [ ] `n` key opens inline create-branch form
+- [ ] Create branch with "Checkout after create" creates and switches
+- [ ] `d` key deletes branch with confirmation (safe delete refuses unmerged)
+- [ ] Force delete option available in confirmation
+- [ ] Deleting current branch or default branch is blocked
+- [ ] `R` key opens inline rename form pre-filled with current name
+- [ ] `M` key merges selected branch into current
+- [ ] `r` key rebases current onto selected
+- [ ] `P` key pushes branch; auto-sets upstream if missing
+- [ ] `p` key pulls current branch
+- [ ] `f` key fetches all remotes
+- [ ] Context menu (right-click) shows all branch actions
+- [ ] "Compare" context menu action shows diff --name-status
+- [ ] `Ctrl/Cmd+4` switches to Branches tab from within Git Panel
+- [ ] `Ctrl/Cmd+1/2/3` switches back to Changes/Log/Stashes tabs
+
 ## PWA / Mobile Output View
 - [ ] Normal text wraps on narrow screens (no horizontal scroll)
 - [ ] Box-drawing table output preserves alignment (│ ┌ ─ etc.)

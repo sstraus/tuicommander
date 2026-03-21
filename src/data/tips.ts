@@ -224,4 +224,19 @@ export const TIPS: Tip[] = [
     description: "Paste images into the Notes panel with Ctrl+V — thumbnails render inline, and paths are sent to agents so they can read the files.",
     shortcut: null,
   },
+  {
+    feature: "Branch Management",
+    description: "Press Cmd+G to open the Branches tab — checkout, create, delete, merge, rebase, push, and pull without touching the terminal.",
+    shortcut: `${mod}+G`,
+  },
+  {
+    feature: "Prefix Folding",
+    description: "In the Branches tab, branches sharing a common prefix (feature/, bugfix/) are automatically grouped. Toggle folding in the panel header.",
+    shortcut: null,
+  },
+  {
+    feature: "Branch Context Menu",
+    description: "Right-click any branch in the Branches tab for quick actions: merge, rebase, compare diff, push, delete.",
+    shortcut: null,
+  },
 ];
