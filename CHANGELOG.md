@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-03-21
+
 ### Added
 - **GitHub OAuth Login** — New "GitHub" tab in Settings with one-click Device Flow authentication. Stores token securely in OS keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service). Eliminates manual PAT management and missing-scope issues. Token resolution priority: env vars → OAuth keyring → gh CLI
 - **Branch Panel** — New Branches tab (4th tab) in the Git Panel with full branch management: checkout (with dirty-worktree stash/force/cancel dialog), create, delete (safe + force), rename, merge, rebase, push (auto-sets upstream), pull, fetch, inline search, context menu, stale dimming (>30 days), merged badge, ahead/behind counts, prefix folding, and recent branches from reflog. `Cmd+G` opens the Git Panel directly on the Branches tab; clicking the sidebar "GIT" vertical label also lands on Branches
