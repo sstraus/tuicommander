@@ -123,6 +123,8 @@ interface CreateBranchState {
 export const BranchesTab: Component<BranchesTabProps> = (props) => {
   const [branches, setBranches] = createSignal<BranchDetail[]>([]);
   const [loading, setLoading] = createSignal(false);
+  const [recentNames, setRecentNames] = createSignal<string[]>([]);
+  const [recentExpanded, setRecentExpanded] = createSignal(true);
   const [search, setSearch] = createSignal("");
   const [localExpanded, setLocalExpanded] = createSignal(true);
   const [remoteExpanded, setRemoteExpanded] = createSignal(true);
@@ -162,11 +164,16 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
   async function fetchBranches(repoPath: string) {
     setLoading(true);
     try {
-      const result = await invoke<BranchDetail[]>("get_branches_detail", { path: repoPath });
+      const [result, recent] = await Promise.all([
+        invoke<BranchDetail[]>("get_branches_detail", { path: repoPath }),
+        invoke<string[]>("get_recent_branches", { path: repoPath, limit: 5 }).catch(() => [] as string[]),
+      ]);
       setBranches(result);
+      setRecentNames(recent);
     } catch (err) {
       appLogger.error("git", "Failed to load branches", err);
       setBranches([]);
+      setRecentNames([]);
     } finally {
       setLoading(false);
     }
@@ -191,6 +198,16 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
       },
     ),
   );
+
+  /** Recent branches resolved to BranchDetail objects (only local, matching recent reflog names) */
+  const recentBranches = createMemo(() => {
+    const names = recentNames();
+    if (names.length === 0) return [];
+    const local = branches().filter((b) => !b.is_remote);
+    return names
+      .map((name) => local.find((b) => b.name === name))
+      .filter((b): b is BranchDetail => b !== undefined);
+  });
 
   const localBranches = createMemo(() =>
     branches().filter((b) => !b.is_remote),
@@ -915,6 +932,23 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
       <Show when={!loading()} fallback={<div class={s.empty}>Loading branches...</div>}>
         <Show when={branches().length > 0} fallback={<div class={s.empty}>No branches</div>}>
+
+          {/* Recent section */}
+          <Show when={recentBranches().length > 0}>
+            <div
+              class={s.sectionHeader}
+              onClick={() => setRecentExpanded((v) => !v)}
+            >
+              <span class={cx(s.chevron, !recentExpanded() && s.chevronCollapsed)}>&#x25BC;</span>
+              Recent
+              <span class={s.sectionCount}>{recentBranches().length}</span>
+            </div>
+            <Show when={recentExpanded()}>
+              <For each={recentBranches()}>
+                {(branch) => renderLocalRow(branch)}
+              </For>
+            </Show>
+          </Show>
 
           {/* Local section */}
           <div
