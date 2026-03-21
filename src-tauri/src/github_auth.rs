@@ -214,7 +214,10 @@ pub(crate) async fn github_poll_login(
     } = result
     {
         // Save to keyring for persistence across restarts
-        save_github_oauth_token(access_token)?;
+        save_github_oauth_token(access_token).map_err(|e| {
+            tracing::error!(source = "github", error = %e, "OAuth token keyring save failed");
+            e
+        })?;
         // Activate immediately in runtime state
         *state.github_token.write() = Some(access_token.clone());
         *state.github_token_source.write() = TokenSource::OAuth;
@@ -277,14 +280,22 @@ pub(crate) async fn github_auth_status(
 
     match resp {
         Ok(r) if r.status().is_success() => {
-            let body: serde_json::Value = r.json().await.unwrap_or_default();
-            let scopes_header = None; // OAuth scopes are in X-OAuth-Scopes but we don't get headers after .json()
+            // Extract scopes header before consuming the body
+            let scopes = r
+                .headers()
+                .get("x-oauth-scopes")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+            let body: serde_json::Value = r
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse GitHub /user response: {e}"))?;
             Ok(AuthStatus {
                 authenticated: true,
                 login: body["login"].as_str().map(|s| s.to_string()),
                 avatar_url: body["avatar_url"].as_str().map(|s| s.to_string()),
                 source,
-                scopes: scopes_header,
+                scopes,
             })
         }
         Ok(r) if r.status() == 401 => {
@@ -303,19 +314,49 @@ pub(crate) async fn github_auth_status(
                 scopes: None,
             })
         }
-        _ => Ok(AuthStatus {
-            authenticated: true,
-            login: None,
-            avatar_url: None,
-            source,
-            scopes: None,
-        }),
+        Ok(r) => {
+            let status = r.status();
+            tracing::warn!(source = "github", %status, "GitHub /user returned unexpected status");
+            Ok(AuthStatus {
+                authenticated: false,
+                login: None,
+                avatar_url: None,
+                source,
+                scopes: None,
+            })
+        }
+        Err(e) => {
+            tracing::warn!(source = "github", error = %e, "GitHub /user request failed");
+            Ok(AuthStatus {
+                authenticated: false,
+                login: None,
+                avatar_url: None,
+                source,
+                scopes: None,
+            })
+        }
     }
 }
 
 // ---------------------------------------------------------------------------
 // Token resolution with source tracking
 // ---------------------------------------------------------------------------
+
+/// Run `gh auth token` CLI to get the current token from gh's secure storage.
+/// This works even when env vars are empty/unset, because gh reads from the
+/// system keychain on macOS or credential store on other platforms.
+pub(crate) fn token_from_gh_cli() -> Option<String> {
+    let mut cmd = std::process::Command::new(crate::agent::resolve_cli("gh"));
+    cmd.args(["auth", "token"]);
+    crate::cli::apply_no_window(&mut cmd);
+    let output = cmd.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let token = String::from_utf8(output.stdout).ok()?;
+    let token = token.trim().to_string();
+    if token.is_empty() { None } else { Some(token) }
+}
 
 /// Resolve a GitHub token and its source, for use at startup and after logout.
 /// Priority: GH_TOKEN env → GITHUB_TOKEN env → keyring OAuth → gh_token crate → gh CLI.
@@ -336,7 +377,7 @@ pub(crate) fn resolve_token_with_source() -> (Option<String>, TokenSource) {
     if let Some(token) = gh_token::get().ok().filter(|t| !t.is_empty()) {
         return (Some(token), TokenSource::GhCli);
     }
-    if let Some(token) = crate::github::token_from_gh_cli() {
+    if let Some(token) = token_from_gh_cli() {
         return (Some(token), TokenSource::GhCli);
     }
     (None, TokenSource::None)

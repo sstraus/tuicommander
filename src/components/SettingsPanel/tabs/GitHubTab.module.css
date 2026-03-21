@@ -1,0 +1,185 @@
+/* GitHub OAuth Settings Tab */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── Status card ── */
+.statusCard {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.avatarPlaceholder {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: var(--bg-highlight);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+  font-size: var(--font-2xl);
+  flex-shrink: 0;
+}
+
+.userInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.userName {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.tokenSource {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  margin-top: 2px;
+}
+
+/* ── Device Flow code display ── */
+.codeCard {
+  padding: 24px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
+.codeLabel {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  margin-bottom: 8px;
+}
+
+.userCode {
+  font-family: var(--font-mono);
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: var(--fg-primary);
+  margin: 12px 0;
+  user-select: all;
+}
+
+.codeHint {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  margin-top: 12px;
+}
+
+.pollingDots {
+  display: inline-block;
+  animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0%, 20% { content: ""; }
+  40% { content: "."; }
+  60% { content: ".."; }
+  80%, 100% { content: "..."; }
+}
+
+/* ── Buttons ── */
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.btn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+  border-color: var(--accent);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btnPrimary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-primary);
+}
+
+.btnPrimary:hover {
+  opacity: 0.9;
+  color: var(--bg-primary);
+}
+
+.btnDanger:hover {
+  background: rgba(248, 81, 73, 0.1);
+  color: var(--error);
+  border-color: var(--error);
+}
+
+/* ── Disconnected state ── */
+.disconnected {
+  text-align: center;
+  padding: 32px 16px;
+}
+
+.disconnectedIcon {
+  font-size: 48px;
+  color: var(--fg-muted);
+  margin-bottom: 16px;
+}
+
+.disconnectedTitle {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--fg-primary);
+  margin-bottom: 8px;
+}
+
+.disconnectedHint {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+/* ── Error ── */
+.error {
+  color: var(--error);
+  font-size: var(--font-sm);
+  padding: 8px 12px;
+  background: rgba(248, 81, 73, 0.1);
+  border-radius: var(--radius-sm);
+}
+
+.scopeList {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  margin-top: 4px;
+}

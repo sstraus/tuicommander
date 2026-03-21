@@ -10,51 +10,13 @@ use tauri::State;
 use crate::error_classification::calculate_backoff_delay;
 use crate::state::{AppState, GIT_CACHE_TTL, GITHUB_CACHE_TTL};
 
-/// Run `gh auth token` CLI to get the current token from gh's secure storage.
-/// This works even when env vars are empty/unset, because gh reads from the
-/// system keychain on macOS or credential store on other platforms.
-pub(crate) fn token_from_gh_cli() -> Option<String> {
-    let mut cmd = Command::new(crate::agent::resolve_cli("gh"));
-    cmd.args(["auth", "token"]);
-    crate::cli::apply_no_window(&mut cmd);
-    let output = cmd.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let token = String::from_utf8(output.stdout).ok()?;
-    let token = token.trim().to_string();
-    if token.is_empty() { None } else { Some(token) }
-}
 
-/// Resolve a GitHub API token from environment or gh CLI.
-/// Order: GH_TOKEN env → GITHUB_TOKEN env → gh_token crate → `gh auth token` CLI.
-/// The gh_token crate has a bug where it returns empty strings for env vars set
-/// to "" (e.g., in Tauri GUI processes that don't inherit shell env vars).
-/// We filter empty values and fall back to the CLI as a last resort.
-/// Returns None if no token is found (graceful degradation).
+/// Resolve a GitHub API token from all available sources.
+/// Delegates to `github_auth::resolve_token_with_source()` — single source of truth
+/// for the priority chain: GH_TOKEN env → GITHUB_TOKEN env → keyring OAuth → gh_token crate → gh CLI.
+#[cfg(test)]
 pub(crate) fn resolve_github_token() -> Option<String> {
-    if let Ok(token) = std::env::var("GH_TOKEN")
-        && !token.is_empty()
-    {
-        return Some(token);
-    }
-    if let Ok(token) = std::env::var("GITHUB_TOKEN")
-        && !token.is_empty()
-    {
-        return Some(token);
-    }
-    // OAuth token from OS keyring (set via Device Flow login in Settings)
-    if let Ok(Some(token)) = crate::github_auth::read_github_oauth_token() {
-        return Some(token);
-    }
-    // gh_token crate doesn't filter empty env var values (env::var_os returns
-    // Some("") for vars set to empty string), so we must filter here.
-    if let Some(token) = gh_token::get().ok().filter(|t| !t.is_empty()) {
-        return Some(token);
-    }
-    // Direct CLI fallback: gh_token's internal CLI call may be skipped when it
-    // short-circuits on an empty env var. Call `gh auth token` explicitly.
-    token_from_gh_cli()
+    crate::github_auth::resolve_token_with_source().0
 }
 
 /// Collect all non-empty GitHub token candidates in priority order.
@@ -83,7 +45,7 @@ pub(crate) fn resolve_github_token_candidates() -> Vec<String> {
         candidates.push(token);
     }
     // Explicit CLI fallback for when gh_token short-circuits on empty env vars
-    if let Some(token) = token_from_gh_cli()
+    if let Some(token) = crate::github_auth::token_from_gh_cli()
         && !candidates.contains(&token)
     {
         candidates.push(token);
@@ -432,6 +394,9 @@ pub(crate) async fn graphql_with_retry(
                     Ok(response) => {
                         tracing::info!(source = "github", "Token fallback succeeded");
                         *state.github_token.write() = Some(candidate.clone());
+                        // Keep token source in sync with the active token
+                        let (_, new_source) = crate::github_auth::resolve_token_with_source();
+                        *state.github_token_source.write() = new_source;
                         state.github_circuit_breaker.record_success();
                         return Ok(response);
                     }
