@@ -382,8 +382,8 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
             let now = std::time::Instant::now();
-            reaper_state.mcp_sessions.retain(|_id, created_at| {
-                now.duration_since(*created_at) < MCP_SESSION_TTL
+            reaper_state.mcp_sessions.retain(|_id, meta| {
+                now.duration_since(meta.created_at) < MCP_SESSION_TTL
             });
         }
     });
@@ -993,6 +993,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_mcp_initialize_stores_claude_code_identity() {
+        let state = test_state();
+        let app = build_router(state.clone(), false, true);
+        // Initialize with Claude Code client name
+        let body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26", "capabilities": {},
+                "clientInfo": { "name": "claude-code", "version": "2.0" }
+            }
+        });
+        let resp = app.oneshot(mcp_post("/mcp", &body)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let sid = resp.headers().get("mcp-session-id").unwrap().to_str().unwrap().to_string();
+        let meta = state.mcp_sessions.get(&sid).expect("session should be stored");
+        assert!(meta.is_claude_code, "Claude Code client should be detected");
+    }
+
+    #[tokio::test]
+    async fn test_mcp_initialize_non_cc_client_not_flagged() {
+        let state = test_state();
+        let app = build_router(state.clone(), false, true);
+        let body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26", "capabilities": {},
+                "clientInfo": { "name": "cursor", "version": "1.0" }
+            }
+        });
+        let resp = app.oneshot(mcp_post("/mcp", &body)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let sid = resp.headers().get("mcp-session-id").unwrap().to_str().unwrap().to_string();
+        let meta = state.mcp_sessions.get(&sid).expect("session should be stored");
+        assert!(!meta.is_claude_code, "Non-CC client should not be flagged");
+    }
+
+    #[tokio::test]
     async fn test_mcp_get_without_session_returns_401() {
         let state = test_state();
         let app = build_router(state, false, true);
@@ -1006,7 +1043,10 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_delete_session() {
         let state = test_state();
-        state.mcp_sessions.insert("test-sid".to_string(), std::time::Instant::now());
+        state.mcp_sessions.insert("test-sid".to_string(), crate::state::McpSessionMeta {
+            created_at: std::time::Instant::now(),
+            is_claude_code: false,
+        });
         let app = build_router(state.clone(), false, true);
         let mut req = Request::delete("/mcp")
             .header("mcp-session-id", "test-sid")
@@ -1890,7 +1930,10 @@ mod tests {
     async fn test_tools_call_upstream_prefix_returns_error_when_no_upstream() {
         let state = test_state();
         // Inject a session so the session_valid check passes
-        state.mcp_sessions.insert("test-sid-proxy".to_string(), std::time::Instant::now());
+        state.mcp_sessions.insert("test-sid-proxy".to_string(), crate::state::McpSessionMeta {
+            created_at: std::time::Instant::now(),
+            is_claude_code: false,
+        });
 
         let app = build_router(state, false, true);
         let body = serde_json::json!({
@@ -1913,7 +1956,10 @@ mod tests {
     #[tokio::test]
     async fn test_native_tool_call_still_works_after_wiring() {
         let state = test_state();
-        state.mcp_sessions.insert("test-sid-native".to_string(), std::time::Instant::now());
+        state.mcp_sessions.insert("test-sid-native".to_string(), crate::state::McpSessionMeta {
+            created_at: std::time::Instant::now(),
+            is_claude_code: false,
+        });
         let app = build_router(state, false, true);
         let body = serde_json::json!({
             "jsonrpc": "2.0", "id": 1,

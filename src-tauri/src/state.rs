@@ -698,6 +698,16 @@ impl SessionMetrics {
     }
 }
 
+/// Metadata for an active MCP protocol session.
+/// Stored per session_id so tool handlers can check client identity at call time.
+#[derive(Debug, Clone)]
+pub struct McpSessionMeta {
+    /// When the session was created (for TTL reaping)
+    pub created_at: Instant,
+    /// Whether the client identified as Claude Code (or tuic-bridge) at initialize time
+    pub is_claude_code: bool,
+}
+
 /// Global state for managing PTY sessions and worktrees
 pub struct AppState {
     pub sessions: DashMap<String, Mutex<PtySession>>,
@@ -705,8 +715,8 @@ pub struct AppState {
     pub(crate) metrics: SessionMetrics,
     /// Ring buffers for MCP output access (one per session)
     pub output_buffers: DashMap<String, Mutex<OutputRingBuffer>>,
-    /// Active MCP Streamable HTTP sessions (session_id -> creation time for TTL reaping)
-    pub mcp_sessions: DashMap<String, Instant>,
+    /// Active MCP Streamable HTTP sessions (session_id -> metadata for TTL reaping + client identity)
+    pub mcp_sessions: DashMap<String, McpSessionMeta>,
     /// WebSocket clients per PTY session for streaming output
     pub ws_clients: DashMap<String, Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
     /// Cached AppConfig to avoid re-reading from disk on every request

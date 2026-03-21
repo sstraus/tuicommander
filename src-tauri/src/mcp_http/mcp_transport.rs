@@ -1428,8 +1428,12 @@ pub(super) async fn mcp_post(
     match method {
         "initialize" => {
             let session_id = Uuid::new_v4().to_string();
-            state.mcp_sessions.insert(session_id.clone(), std::time::Instant::now());
             let client_name = body["params"]["clientInfo"]["name"].as_str();
+            let is_claude_code = client_name.is_some_and(|n| n.contains("claude") || n.contains("tuic-bridge"));
+            state.mcp_sessions.insert(session_id.clone(), crate::state::McpSessionMeta {
+                created_at: std::time::Instant::now(),
+                is_claude_code,
+            });
             let instructions = build_mcp_instructions(&state, client_name);
 
             let response = serde_json::json!({
@@ -1484,9 +1488,12 @@ pub(super) async fn mcp_post(
                     if state.mcp_sessions.contains_key(sid) {
                         true
                     } else {
-                        // Auto-recover: re-register the stale session ID
+                        // Auto-recover: re-register the stale session ID (unknown client identity)
                         tracing::info!("MCP session auto-recovered (stale session_id: {sid})");
-                        state.mcp_sessions.insert(sid.to_string(), std::time::Instant::now());
+                        state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
+                            created_at: std::time::Instant::now(),
+                            is_claude_code: false,
+                        });
                         true
                     }
                 })
@@ -1559,7 +1566,10 @@ pub(super) async fn mcp_get(
         .map(|sid| {
             if !state.mcp_sessions.contains_key(sid) {
                 tracing::info!("MCP SSE session auto-recovered (stale session_id: {sid})");
-                state.mcp_sessions.insert(sid.to_string(), std::time::Instant::now());
+                state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
+                    created_at: std::time::Instant::now(),
+                    is_claude_code: false,
+                });
             }
             true
         })
