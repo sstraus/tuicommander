@@ -6,6 +6,24 @@
 	<string>TUICommander uses the microphone for speech-to-text dictation into the terminal.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>TUICommander runs a local HTTP server for MCP integration and remote terminal access.</string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>Terminal commands may need to access music files in your library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Terminal commands may need to access photos in your library.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Terminal commands may need to access files on your Desktop.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Terminal commands may need to access files in your Documents folder.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Terminal commands may need to access files in your Downloads folder.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>Terminal commands may need to access files on external drives.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>Terminal commands may need to access files on network volumes.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Terminal commands may need to access your calendar data.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Terminal commands may need to access your contacts.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
