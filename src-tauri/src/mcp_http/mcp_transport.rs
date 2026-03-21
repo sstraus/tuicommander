@@ -1137,12 +1137,18 @@ fn handle_notify(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
 
 /// Slug a repo path for use as an upstream name: `mdkb-{last_component}`.
 fn mdkb_upstream_name(repo_path: &str) -> String {
-    let name = std::path::Path::new(repo_path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
+    let path = std::path::Path::new(repo_path);
+    // Use parent/name to reduce collision risk (e.g. /work/api vs /personal/api)
+    let mut parts: Vec<&str> = Vec::new();
+    if let Some(parent) = path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()) {
+        parts.push(parent);
+    }
+    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+        parts.push(name);
+    }
+    let combined = if parts.is_empty() { "unknown".to_string() } else { parts.join("-") };
     // Sanitize to [a-z0-9_-]
-    let slug: String = name.to_lowercase().chars().map(|c| {
+    let slug: String = combined.to_lowercase().chars().map(|c| {
         if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' }
     }).collect();
     format!("mdkb-{slug}")
@@ -1182,21 +1188,40 @@ fn get_repo_paths_for_group(group_filter: Option<&str>) -> Vec<String> {
     }
 }
 
+/// Result of auto-provisioning mdkb upstreams.
+struct ProvisionResult {
+    created: Vec<String>,
+    skipped_registered: Vec<String>,
+    skipped_no_mdkb: Vec<String>,
+    errors: Vec<(String, String)>,
+}
+
 /// Auto-provision mdkb upstreams for repos that have a `.mdkb/` directory
 /// but are not yet registered in the upstream registry.
-/// Returns the list of repo paths that are now provisioned (or were already).
-async fn ensure_mdkb_provisioned(state: &Arc<AppState>, paths: &[String]) {
+async fn ensure_mdkb_provisioned(state: &Arc<AppState>, paths: &[String]) -> ProvisionResult {
     let registry = &state.mcp_upstream_registry;
     let self_port = state.config.read().remote_access_port;
-    let mut new_servers = Vec::new();
 
+    let mut result = ProvisionResult {
+        created: Vec::new(),
+        skipped_registered: Vec::new(),
+        skipped_no_mdkb: Vec::new(),
+        errors: Vec::new(),
+    };
+
+    // Collect servers to provision (filter already-registered and missing .mdkb/)
+    let mut to_provision = Vec::new();
     for path in paths {
         let name = mdkb_upstream_name(path);
         if registry.status(&name).is_some() {
+            result.skipped_registered.push(name);
             continue;
         }
-        // Only auto-provision if the repo has a .mdkb/ directory
-        if !std::path::Path::new(path).join(".mdkb").is_dir() {
+        // Non-blocking filesystem check
+        let mdkb_path = std::path::PathBuf::from(path).join(".mdkb");
+        let is_dir = tokio::fs::metadata(&mdkb_path).await.map(|m| m.is_dir()).unwrap_or(false);
+        if !is_dir {
+            result.skipped_no_mdkb.push(name);
             continue;
         }
         let server = crate::mcp_upstream_config::UpstreamMcpServer {
@@ -1212,25 +1237,61 @@ async fn ensure_mdkb_provisioned(state: &Arc<AppState>, paths: &[String]) {
             timeout_secs: 60,
             tool_filter: None,
         };
-        match registry.connect_upstream(server.clone(), Some(self_port)).await {
-            Ok(()) => {
-                tracing::info!(source = "knowledge", repo = %path, "Auto-provisioned mdkb upstream");
+        to_provision.push((path.clone(), name, server));
+    }
+
+    if to_provision.is_empty() {
+        return result;
+    }
+
+    // Connect all upstreams concurrently
+    let futs: Vec<_> = to_provision.into_iter().map(|(path, name, server)| {
+        let registry = Arc::clone(&state.mcp_upstream_registry);
+        async move {
+            let server_copy = server.clone();
+            match registry.connect_upstream(server, Some(self_port)).await {
+                Ok(()) => {
+                    tracing::info!(source = "knowledge", repo = %path, "Auto-provisioned mdkb upstream");
+                    Ok((name, server_copy))
+                }
+                Err(e) => {
+                    tracing::warn!(source = "knowledge", repo = %path, "Auto-provision failed: {e}");
+                    Err((name, e))
+                }
+            }
+        }
+    }).collect();
+
+    let outcomes = futures_util::future::join_all(futs).await;
+    let mut new_servers = Vec::new();
+    for outcome in outcomes {
+        match outcome {
+            Ok((name, server)) => {
+                result.created.push(name);
                 new_servers.push(server);
             }
-            Err(e) => {
-                tracing::warn!(source = "knowledge", repo = %path, "Auto-provision failed: {e}");
+            Err((name, e)) => {
+                result.errors.push((name, e));
             }
         }
     }
 
-    // Persist newly created servers
+    // Persist newly created servers (deduplicate by name to avoid corruption)
     if !new_servers.is_empty() {
         let mut config = crate::mcp_upstream_config::load_mcp_upstreams();
-        config.servers.extend(new_servers);
+        let existing_names: std::collections::HashSet<String> =
+            config.servers.iter().map(|s| s.name.clone()).collect();
+        for server in new_servers {
+            if !existing_names.contains(&server.name) {
+                config.servers.push(server);
+            }
+        }
         if let Err(e) = crate::config::save_json_config("mcp-upstreams.json", &config) {
             tracing::warn!(source = "knowledge", "Failed to persist mdkb upstreams: {e}");
         }
     }
+
+    result
 }
 
 async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
@@ -1249,31 +1310,16 @@ async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> se
                 return serde_json::json!({"error": "No repos found. Add repos to the workspace first."});
             }
 
-            let registry = &state.mcp_upstream_registry;
-            // Snapshot before provisioning to report what changed
-            let before: Vec<String> = paths.iter()
-                .map(|p| mdkb_upstream_name(p))
-                .filter(|n| registry.status(n).is_some())
+            let r = ensure_mdkb_provisioned(state, &paths).await;
+            let errors: Vec<serde_json::Value> = r.errors.iter()
+                .map(|(name, e)| serde_json::json!({"name": name, "error": e}))
                 .collect();
-
-            ensure_mdkb_provisioned(state, &paths).await;
-
-            // Build report
-            let mut created = Vec::new();
-            let mut skipped = Vec::new();
-            let mut errors = Vec::new();
-            for path in &paths {
-                let name = mdkb_upstream_name(path);
-                if before.contains(&name) {
-                    skipped.push(name);
-                } else if registry.status(&name).is_some() {
-                    created.push(name);
-                } else {
-                    errors.push(serde_json::json!({"name": name, "error": "failed to provision"}));
-                }
-            }
-
-            serde_json::json!({"created": created, "skipped": skipped, "errors": errors})
+            serde_json::json!({
+                "created": r.created,
+                "skipped": r.skipped_registered,
+                "skipped_no_mdkb": r.skipped_no_mdkb,
+                "errors": errors,
+            })
         }
 
         "status" => {

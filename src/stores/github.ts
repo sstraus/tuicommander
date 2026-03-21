@@ -155,7 +155,7 @@ function createGitHubStore() {
     if (existing) {
       for (const key of Object.keys(existing)) {
         if (!(key in branches)) {
-          setState("repos", repoPath, "branches", key, undefined!);
+          setState("repos", repoPath, "branches", key, undefined as unknown as BranchPrStatus);
         }
       }
     }
@@ -319,13 +319,14 @@ function createGitHubStore() {
     if (hitRateLimit) {
       currentInterval = MAX_INTERVAL;
       scheduleNext();
-    } else {
-      // Only fetch remote status (git ahead/behind) when API is reachable
-      await Promise.all(paths.map(pollRemoteStatus));
-      currentInterval = document.hidden ? HIDDEN_INTERVAL : BASE_INTERVAL;
-      persistPrState();
+      // Preserve isStartupPoll — retry with includeMerged on next attempt
+      return;
     }
 
+    // Only fetch remote status (git ahead/behind) when API is reachable
+    await Promise.all(paths.map(pollRemoteStatus));
+    currentInterval = document.hidden ? HIDDEN_INTERVAL : BASE_INTERVAL;
+    persistPrState();
     isStartupPoll = false;
   }
 
