@@ -24,6 +24,8 @@ The active token source is tracked in `AppState.github_token_source` as a `Token
 | `github_poll_login` | `(device_code: String) -> PollResult` | Poll for token, saves to keyring on success |
 | `github_logout` | `() -> ()` | Delete OAuth token from keyring, fall back to env/CLI |
 | `github_auth_status` | `() -> AuthStatus` | Current auth status with login, avatar, source |
+| `github_disconnect` | `() -> ()` | Disconnect GitHub — clear all tokens from keyring and env cache |
+| `github_diagnostics` | `() -> Value` | Diagnostics: token sources, scopes, API connectivity |
 
 ## Tauri Commands — GitHub Data (`github.rs`)
 
@@ -33,8 +35,11 @@ The active token source is tracked in `AppState.github_token_source` as a `Token
 | `get_ci_checks` | `(path: String) -> Vec<Value>` | Detailed CI check list |
 | `get_repo_pr_statuses` | `(path: String, include_merged: bool) -> Vec<BranchPrStatus>` | Batch PR status for all branches |
 | `approve_pr` | `(repo_path: String, pr_number: i32) -> String` | Submit approving review via GitHub API |
-| `get_repo_merge_methods` | `(repo_path: String) -> Vec<String>` | Query repo's allowed merge methods (merge, squash, rebase) |
-| `merge_pr` | `(repo_path: String, pr_number: i32, merge_method: String) -> String` | Merge PR via GitHub API |
+| `get_all_pr_statuses` | `(path: String) -> Vec<BranchPrStatus>` | Batch PR status for all branches (includes merged) |
+| `get_pr_diff` | `(repo_path: String, pr_number: i32) -> String` | Get PR diff content |
+| `merge_pr_via_github` | `(repo_path: String, pr_number: i32, merge_method: String) -> String` | Merge PR via GitHub API |
+| `fetch_ci_failure_logs` | `(repo_path: String, run_id: i64) -> String` | Fetch failure logs from a GitHub Actions run for CI auto-heal |
+| `check_github_circuit` | `(path: String) -> CircuitState` | Check GitHub API circuit breaker state |
 
 ## Data Types
 
@@ -170,13 +175,9 @@ Calculates relative luminance using the sRGB formula to determine if a color is 
 
 Submits an approving review on a pull request via `gh api`. Used by the remote-only PR popover.
 
-### `get_repo_merge_methods`
+### CI Auto-Heal (`fetch_ci_failure_logs`)
 
-Queries the GitHub API for the repository's allowed merge methods (`allow_merge_commit`, `allow_squash_merge`, `allow_rebase_merge`). Returns a `Vec<String>` of enabled methods (e.g., `["squash", "rebase"]`).
-
-### Merge Method Auto-Fallback
-
-When a merge attempt returns HTTP 405 (method not allowed), the frontend automatically retries with the next available merge method. Priority order: configured method → squash → merge → rebase.
+Fetches the latest failure logs from a GitHub Actions run. Used by the CI auto-heal hook (`useCiHeal`) to inject failure context into agent terminals for automatic fix cycles (up to 3 attempts per cycle).
 
 ## Stale PR Filtering
 

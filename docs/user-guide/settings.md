@@ -41,6 +41,19 @@ Each supported agent has an expandable row showing detection status, version, an
 
 See [AI Agents](ai-agents.md) for details on agent detection, rate limits, and the usage dashboard.
 
+## GitHub Tab
+
+GitHub authentication and token management:
+
+| Setting | Description |
+|---------|-------------|
+| **OAuth Login** | Device Flow login — click "Sign in with GitHub", enter code on github.com. Token stored in OS keyring. |
+| **Auth Status** | Shows current login, avatar, token source (OAuth/env/CLI), and available scopes |
+| **Disconnect** | Clear all GitHub tokens (keyring + env cache). Falls back to next available source. |
+| **Diagnostics** | Token source details, scope verification, API connectivity check |
+
+Token priority: `GH_TOKEN` env → `GITHUB_TOKEN` env → OAuth keyring → `gh` CLI config → `gh auth token` subprocess.
+
 ## Services Tab
 
 ### HTTP API Server

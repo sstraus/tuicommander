@@ -8,46 +8,65 @@ All components are SolidJS functional components in `src/components/`.
 App.tsx (central orchestrator)
 ├── Toolbar/                  # Window drag region, repo/branch display
 ├── Sidebar/                  # Repository tree with branches
+│   ├── GroupSection          # Collapsible repo group with color + drag-reorder
+│   ├── RepoSection           # Single repo entry with branches
+│   ├── ParkedReposPopover    # Popover to recall parked (hidden) repos
 │   ├── CiRing               # CI status ring per branch
 │   ├── StatusBadge           # Git status badge (clean/dirty/conflict)
 │   └── PrDetailPopover/      # PR details popup (CI, reviews, labels)
 ├── main
 │   ├── TabBar/               # Terminal tabs with drag-to-reorder
 │   ├── Terminal/             # xterm.js wrapper (never unmounted)
-│   ├── TerminalArea/         # Terminal + split pane layout
-│   ├── GitPanel/             # Git panel (Changes, Log, Stashes, Branches)
-│   │   └── BranchesTab/      # Branch list with CRUD operations, prefix folding, search
-│   ├── DiffTab/              # Individual file diff tab
+│   ├── TerminalArea/         # Terminal + split pane layout (up to 6 panes)
+│   ├── SuggestOverlay/       # [[suggest: ...]] follow-up action chips
+│   ├── GitPanel/             # Git panel (6 tabs)
+│   │   ├── ChangesTab        # Staged/unstaged file list with stage/unstage/discard
+│   │   ├── LogTab            # Commit log with expandable diffs
+│   │   ├── StashesTab        # Stash list with apply/pop/drop/show
+│   │   ├── BranchesTab       # Branch CRUD, prefix folding, search, checkout
+│   │   ├── BlameTab          # Line-by-line git blame viewer
+│   │   ├── HistoryTab        # Per-file commit history
+│   │   ├── CommitGraph       # Visual commit graph with lane assignments
+│   │   └── SyncRow           # Push/pull/fetch action bar
+│   ├── DiffTab/              # Individual file diff tab (with Cmd+F search)
+│   ├── PrDiffTab/            # PR diff viewer tab
+│   ├── CodeEditorPanel/      # CodeMirror 6 code editor tab
 │   ├── MarkdownPanel/        # Markdown file browser
 │   │   └── MarkdownRenderer  # Markdown to HTML (DOMPurify)
 │   ├── MarkdownTab/          # Individual markdown file tab
 │   ├── NotesPanel/           # Ideas/notes panel with edit, send, delete
-│   ├── FileBrowserPanel/     # File tree browser
+│   ├── FileBrowserPanel/     # File tree browser with content search
 │   ├── PlanPanel/            # Plan file browser (repo-scoped, from activity store)
+│   ├── PluginPanel/          # Plugin HTML panel (sandboxed iframe)
 │   ├── ClaudeUsageDashboard/ # Claude API usage dashboard (SolidJS)
+│   ├── ErrorLogPanel/        # Application error log viewer
 │   └── StatusBar/            # Status messages, agent badge, toggles
 │       └── ZoomIndicator     # Font size display
 ├── SettingsPanel/            # Tabbed settings overlay
 │   ├── tabs/GeneralTab       # Font, shell, IDE, theme
 │   ├── tabs/AgentsTab        # Agent detection, run configs, Claude Usage toggle
 │   ├── tabs/ServicesTab      # MCP, remote access, dictation
+│   ├── tabs/GitHubTab        # GitHub OAuth login, token management
 │   ├── tabs/PluginsTab       # Plugin management, logs
 │   ├── tabs/KeyboardShortcutsTab # Rebindable keyboard shortcuts
 │   ├── tabs/AppearanceTab    # Visual customization
 │   ├── tabs/NotificationsTab # Sound and notification prefs
-│   ├── tabs/AboutTab         # Version info, update check
 │   ├── tabs/RepoScriptsTab   # Per-repo scripts
 │   └── tabs/RepoWorktreeTab  # Per-repo worktree options
 ├── HelpPanel/                # Keyboard shortcuts documentation
-├── GitPanel/                 # Git panel (Changes, Log, Stashes, Branches)
 ├── TaskQueuePanel/           # Agent task queue
 ├── PromptOverlay/            # Agent prompt interception
 ├── PromptDrawer/             # Prompt library management
 ├── CommandPalette/           # Cmd+P command palette
 ├── ActivityDashboard/        # Activity center (bell dropdown)
+├── BranchSwitcher/           # Quick branch switcher (held-key overlay)
+├── BranchPopover/            # Branch selection popover
+├── TipOfTheDay/              # Startup tip notification
+├── DictationToast/           # Dictation recording/transcribing indicator
 ├── ConfirmDialog/            # Reusable in-app confirmation dialog
 ├── RenameBranchDialog/       # Branch rename dialog
 ├── CreateWorktreeDialog/     # Worktree creation dialog
+├── PostMergeCleanupDialog/   # Post-merge cleanup (switch base, pull, delete)
 ├── PromptDialog/             # Text input prompt dialog
 ├── RunCommandDialog/         # Configure terminal commands
 ├── WorktreeManager/          # Overlay panel for worktree management
@@ -109,11 +128,11 @@ Tabbed settings overlay.
 - **General** — Font family, font size, shell, IDE, theme, confirmations
 - **Agents** — Agent detection, run configurations, Claude Usage toggle
 - **Services** — MCP server, remote access, dictation settings
+- **GitHub** — GitHub OAuth login (Device Flow), token management, diagnostics
 - **Plugins** — Plugin management, enable/disable, log viewer
 - **Keyboard Shortcuts** — Rebindable shortcuts (auto-populated from `actionRegistry.ts`)
 - **Appearance** — Visual customization
 - **Notifications** — Sound and notification preferences
-- **About** — Version info, update check
 - **Repo Scripts** — Setup script, run command per repository
 - **Repo Worktree** — Base branch, copy ignored/untracked files
 
@@ -198,13 +217,24 @@ Native SolidJS component (not a plugin) showing Claude API usage data. Displayed
 
 | Component | Description |
 |-----------|-------------|
+| `AgentIcon` | Agent type icon with consistent sizing and coloring |
 | `CiRing` | SVG circular CI status indicator with proportional segments |
 | `DiffViewer` | Syntax-highlighted unified diff renderer |
+| `Dropdown` | Reusable dropdown select component |
 | `MarkdownRenderer` | Safe markdown-to-HTML rendering with DOMPurify sanitization |
+| `PanelResizeHandle` | Draggable resize handle for panel boundaries |
+| `PromptOption` | Agent prompt multiple-choice option |
 | `StatusBadge` | Git status badges (clean/dirty/conflict) |
 | `ZoomIndicator` | Terminal font size indicator |
-| `Dropdown` | Reusable dropdown select component |
-| `PromptOption` | Agent prompt multiple-choice option |
+
+## Shared Components (`components/shared/`)
+
+| Component | Description |
+|-----------|-------------|
+| `ColorPickerDialog` | Color selection dialog (used by repo groups) |
+| `ColorSwatchPicker` | Preset color swatch grid |
+| `KeyComboCapture` | Keyboard shortcut capture input (for keybinding editor) |
+| `SearchBar` | Reusable search bar with regex/case-sensitive toggles |
 
 ## Panel Toggle States
 
