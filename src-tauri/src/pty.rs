@@ -761,7 +761,8 @@ impl ChunkProcessor {
         let chrome_only = !regex_found_question
             && last_q_line.is_none()
             && !changed_rows.is_empty()
-            && changed_rows.iter().all(|r| is_chrome_row(&r.text));
+            && (changed_rows.iter().all(|r| is_chrome_row(&r.text))
+                || has_status_line);
         {
             let mut sl = silence.lock();
             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
@@ -2215,6 +2216,21 @@ mod tests {
         let rows = make_rows(&["\u{2022} Boot"]);
         let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
         assert!(chrome_only, "Codex spinner row should be chrome");
+    }
+
+    #[test]
+    fn test_chrome_only_status_line_event_is_chrome() {
+        // Gemini braille spinner rows have no chrome markers in is_chrome_row,
+        // but parse_status_line detects them. When has_status_line is true,
+        // the chunk should still be treated as chrome-only.
+        let rows = make_rows(&["\u{280B} Connecting to MCP servers..."]);
+        let all_chrome_markers = rows.iter().all(|r| is_chrome_row(&r.text));
+        assert!(!all_chrome_markers, "braille spinner has no chrome markers");
+        // But with has_status_line = true, chrome_only should be true
+        let has_status_line = true;
+        let chrome_only = !rows.is_empty()
+            && (rows.iter().all(|r| is_chrome_row(&r.text)) || has_status_line);
+        assert!(chrome_only, "status_line event should make chunk chrome-only");
     }
 
     // --- Staleness counter tests ---
