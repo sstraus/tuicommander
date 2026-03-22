@@ -16,6 +16,8 @@ models. This document covers:
 Agent-specific documents:
 - [Claude Code](agents/claude-code.md) — Ink-based, ANSI cursor positioning
 - [Codex CLI](agents/codex.md) — Ink-based, absolute positioning + scroll regions
+- [Gemini CLI](agents/gemini-cli.md) — Ink-like, relative positioning + prompt box
+- [Aider](agents/aider.md) — Sequential CLI, no TUI framework
 - [OpenCode](agents/opencode.md) — Bubble Tea full-screen TUI
 
 ## Detection Strategy Per Agent
