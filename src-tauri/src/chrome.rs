@@ -99,6 +99,64 @@ fn is_codex_chrome_bullet(text: &str) -> bool {
         || after.contains("esc to") || after.contains("interrupt")
 }
 
+/// Find the row index where agent chrome starts (from the bottom).
+///
+/// Returns `Some(cutoff)` where `rows[0..cutoff]` are content and
+/// `rows[cutoff..]` are chrome. Scans the last [`CHROME_SCAN_ROWS`] rows
+/// for separator or prompt anchors, then extends the cutoff upward past
+/// consecutive separators and empty lines.
+///
+/// Used by both the REST screen trim (session.rs) and mobile log trim (state.rs).
+pub fn find_chrome_cutoff(rows: &[&str]) -> Option<usize> {
+    if rows.is_empty() {
+        return None;
+    }
+
+    // Trim trailing empty rows (terminal padding below content).
+    let content_end = rows.iter().rposition(|r| !r.is_empty()).map_or(0, |i| i + 1);
+    if content_end == 0 {
+        return None;
+    }
+
+    let scan_start = content_end.saturating_sub(CHROME_SCAN_ROWS);
+
+    // Strategy 1: find the lowest separator line.
+    let separator_idx = (scan_start..content_end)
+        .rev()
+        .find(|&i| is_separator_line(rows[i].trim()));
+
+    // Strategy 2: find the lowest prompt line.
+    let prompt_idx = (scan_start..content_end)
+        .rev()
+        .find(|&i| is_prompt_line(rows[i]));
+
+    // Use whichever anchor is higher (closer to content).
+    let anchor = match (separator_idx, prompt_idx) {
+        (Some(s), Some(p)) => Some(s.min(p)),
+        (Some(s), None) => Some(s),
+        (None, Some(p)) => Some(p),
+        (None, None) => None,
+    };
+
+    let cutoff = match anchor {
+        Some(mut idx) => {
+            // Extend cutoff up past separators and empty lines above the anchor.
+            while idx > 0 {
+                let above = rows[idx - 1].trim();
+                if above.is_empty() || is_separator_line(above) {
+                    idx -= 1;
+                } else {
+                    break;
+                }
+            }
+            idx
+        }
+        None => return None,
+    };
+
+    Some(cutoff)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,5 +428,94 @@ mod tests {
     #[test]
     fn codex_status_not_separator() {
         assert!(!is_separator_line("  gpt-5.4 high · 100% left · ~/Gits/personal/tuicommander"));
+    }
+
+    // --- find_chrome_cutoff ---
+
+    #[test]
+    fn cutoff_cc_bypass_mode() {
+        // CC bypass mode: content + empty + separator + prompt + separator + 2 status + mode
+        // The empty line above separator is chrome padding, included in trim
+        let rows: Vec<&str> = vec![
+            "Here is the answer to your question.",
+            "",
+            "────────────────────────────────────────────────────────────────────────",
+            "❯",
+            "────────────────────────────────────────────────────────────────────────",
+            "  [Opus 4.6 (1M context) | Max] │ tuicommander git:(main*)",
+            "  ⏵⏵ bypass permissions on (shift+tab to cycle)",
+        ];
+        assert_eq!(find_chrome_cutoff(&rows), Some(1));
+    }
+
+    #[test]
+    fn cutoff_cc_default_mode() {
+        // CC default mode: content + empty + separator + prompt + separator + 1 status
+        let rows: Vec<&str> = vec![
+            "The project version is 0.9.5.",
+            "",
+            "────────────────────────────────────────────────────────────────────────",
+            "❯",
+            "────────────────────────────────────────────────────────────────────────",
+            "  [Opus 4.6 (1M context) | Max] 3% | tuicommander git:(main*)",
+        ];
+        assert_eq!(find_chrome_cutoff(&rows), Some(1));
+    }
+
+    #[test]
+    fn cutoff_codex_idle() {
+        // Codex: content + prompt + status
+        let rows: Vec<&str> = vec![
+            "• Created /tmp/codex-test.txt with hello.",
+            "› Summarize recent commits",
+            "  gpt-5.4 high · 100% left · ~/Gits/personal/tuicommander",
+        ];
+        assert_eq!(find_chrome_cutoff(&rows), Some(1));
+    }
+
+    #[test]
+    fn cutoff_aider_idle() {
+        // Aider: content + token report + separator + file list + prompt
+        let rows: Vec<&str> = vec![
+            "The version is 0.9.5.",
+            "Tokens: 8.0k sent, 106 received. Cost: $0.03 message, $0.06 session.",
+            "─────────────────────────────────────────────────────────────────────",
+            "package.json src-tauri/Cargo.toml",
+            ">",
+        ];
+        assert_eq!(find_chrome_cutoff(&rows), Some(2));
+    }
+
+    #[test]
+    fn cutoff_no_chrome() {
+        let rows: Vec<&str> = vec![
+            "Just plain text output.",
+            "No chrome markers here.",
+        ];
+        assert_eq!(find_chrome_cutoff(&rows), None);
+    }
+
+    #[test]
+    fn cutoff_empty() {
+        let rows: Vec<&str> = vec![];
+        assert_eq!(find_chrome_cutoff(&rows), None);
+    }
+
+    #[test]
+    fn cutoff_all_empty_rows() {
+        let rows: Vec<&str> = vec!["", "", ""];
+        assert_eq!(find_chrome_cutoff(&rows), None);
+    }
+
+    #[test]
+    fn cutoff_prompt_with_separator_above() {
+        // Separator above prompt should be included in chrome
+        let rows: Vec<&str> = vec![
+            "Line of real output.",
+            "",
+            "────────────────────────────────────────────",
+            "❯ hello",
+        ];
+        assert_eq!(find_chrome_cutoff(&rows), Some(1));
     }
 }

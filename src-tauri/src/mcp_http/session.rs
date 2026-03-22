@@ -897,56 +897,13 @@ struct TrimResult {
     cutoff: usize,
 }
 
-use crate::chrome::{is_separator_line, is_prompt_line, CHROME_SCAN_ROWS};
+use crate::chrome::find_chrome_cutoff;
+#[cfg(test)]
+use crate::chrome::is_separator_line;
 
 fn trim_screen_chrome(rows: Vec<String>) -> TrimResult {
-    if rows.is_empty() {
-        return TrimResult { cutoff: 0 };
-    }
-
-    // First: trim trailing empty rows (terminal padding below content).
-    let content_end = rows.iter().rposition(|r| !r.is_empty()).map_or(0, |i| i + 1);
-    if content_end == 0 {
-        return TrimResult { cutoff: 0 };
-    }
-
-    let scan_start = content_end.saturating_sub(CHROME_SCAN_ROWS);
-
-    // Strategy 1: find the lowest separator line — everything from separator
-    // down is chrome (status bar, permissions line, etc.).
-    let separator_idx = (scan_start..content_end).rev().find(|&i| {
-        is_separator_line(rows[i].trim())
-    });
-
-    // Strategy 2: find prompt line (`❯`, `›`, `> `).
-    let prompt_idx = (scan_start..content_end).rev().find(|&i| {
-        is_prompt_line(&rows[i])
-    });
-
-    // Use whichever anchor is higher (closer to content), then extend up
-    // past empty lines and separators.
-    let anchor = match (separator_idx, prompt_idx) {
-        (Some(s), Some(p)) => Some(s.min(p)),
-        (Some(s), None) => Some(s),
-        (None, Some(p)) => Some(p),
-        (None, None) => None,
-    };
-
-    let cutoff = match anchor {
-        Some(mut idx) => {
-            // Extend cutoff up past separators and empty lines above the anchor
-            while idx > 0 {
-                let above = rows[idx - 1].trim();
-                if above.is_empty() || is_separator_line(above) {
-                    idx -= 1;
-                } else {
-                    break;
-                }
-            }
-            idx
-        }
-        None => content_end,
-    };
+    let refs: Vec<&str> = rows.iter().map(|s| s.as_str()).collect();
+    let cutoff = find_chrome_cutoff(&refs).unwrap_or(rows.len());
     TrimResult { cutoff }
 }
 

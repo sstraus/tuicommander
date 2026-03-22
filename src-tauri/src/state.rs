@@ -1678,7 +1678,9 @@ impl VtLogBuffer {
 // redraw batches so they don't pollute the mobile log.
 // ---------------------------------------------------------------------------
 
-use crate::chrome::{CHROME_SCAN_ROWS, is_prompt_line, is_separator_line};
+use crate::chrome::find_chrome_cutoff;
+#[cfg(test)]
+use crate::chrome::is_separator_line;
 
 /// Returns the index of the first line to discard when a prompt line is found
 /// in the last [`CHROME_SCAN_ROWS`] rows of `lines`, scanning from the bottom.
@@ -1695,38 +1697,15 @@ use crate::chrome::{CHROME_SCAN_ROWS, is_prompt_line, is_separator_line};
 /// Returns `None` if no prompt line is found in the scan window.
 #[cfg(test)]
 fn find_prompt_cutoff(lines: &[String]) -> Option<usize> {
-    let scan_start = lines.len().saturating_sub(CHROME_SCAN_ROWS);
-    let prompt_idx = (scan_start..lines.len()).rev().find(|&i| is_prompt_line(&lines[i]))?;
-    // Extend cutoff up past separators and empty lines above the prompt.
-    let mut cutoff = prompt_idx;
-    while cutoff > 0 {
-        let above = lines[cutoff - 1].trim();
-        if above.is_empty() || is_separator_line(above) {
-            cutoff -= 1;
-        } else {
-            break;
-        }
-    }
-    Some(cutoff)
+    let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+    find_chrome_cutoff(&refs)
 }
 
 /// Like `find_prompt_cutoff` but works on `LogLine` slices.
 fn find_prompt_cutoff_loglines(lines: &[LogLine]) -> Option<usize> {
-    let scan_start = lines.len().saturating_sub(CHROME_SCAN_ROWS);
-    let prompt_idx = (scan_start..lines.len()).rev()
-        .find(|&i| is_prompt_line(&lines[i].text()))?;
-    // Extend cutoff up past separators and empty lines above the prompt.
-    let mut cutoff = prompt_idx;
-    while cutoff > 0 {
-        let text = lines[cutoff - 1].text();
-        let trimmed = text.trim();
-        if trimmed.is_empty() || is_separator_line(trimmed) {
-            cutoff -= 1;
-        } else {
-            break;
-        }
-    }
-    Some(cutoff)
+    let texts: Vec<String> = lines.iter().map(|l| l.text()).collect();
+    let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+    find_chrome_cutoff(&refs)
 }
 
 /// Trims agent prompt and chrome from a batch of scrolled-off lines.
