@@ -16,6 +16,29 @@ models. This document covers:
 Agent-specific documents:
 - [Claude Code](agents/claude-code.md) — Ink-based, ANSI cursor positioning
 - [Codex CLI](agents/codex.md) — Ink-based, absolute positioning + scroll regions
+- [OpenCode](agents/opencode.md) — Bubble Tea full-screen TUI
+
+## Detection Strategy Per Agent
+
+Each agent class requires a different parsing strategy:
+
+| Agent | UI Type | Parsing Strategy | `chrome.rs` applies? |
+|-------|---------|-----------------|---------------------|
+| Claude Code | CLI inline (Ink) | Changed-rows delta analysis | Yes |
+| Codex CLI | CLI inline (Ink) | Changed-rows delta analysis | Yes |
+| OpenCode | Full-screen TUI (Bubble Tea) | Screen snapshot analysis | No (all rows are "chrome") |
+| Gemini CLI | CLI inline | Changed-rows delta analysis | Yes |
+| Aider | CLI sequential | Changed-rows delta analysis | Yes |
+
+**CLI inline agents** (CC, Codex, Gemini, Aider) render output into the
+terminal sequentially, with chrome at specific positions. `chrome.rs`
+functions work for these — `is_separator_line`, `is_prompt_line`,
+`is_chrome_row` classify individual rows.
+
+**Full-screen TUI agents** (OpenCode) take over the entire screen. Every
+row changes on every update, making delta analysis useless. These need
+screen-snapshot-based parsing: identify panels by position, extract text
+from known regions, detect state changes by content comparison.
 
 ---
 

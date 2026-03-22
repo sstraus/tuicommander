@@ -85,6 +85,28 @@ Key elements:
   ┃                                                              • OpenCode 1.2.20
 ```
 
+### Working State (during tool execution)
+
+Footer changes to show progress bar and interrupt hint:
+
+```
+   ■■⬝⬝⬝⬝⬝⬝  esc interrupt                            tab agents  ctrl+p commands    • OpenCode 1.2.20
+```
+
+- `■` (U+25A0) — completed steps
+- `⬝` (U+2B1D) — remaining steps
+- Mode label may switch: `Build` → `Plan` in prompt box
+
+### Error State
+
+```
+  ┃  Error: Unable to connect. Is the computer able to access the url?
+```
+
+Errors displayed inline in the `┃` frame, same area as conversation.
+
+---
+
 Key elements:
 - **`△` (U+25B3)**: permission required marker
 - **`←`**: tool call prefix (Write direction)
@@ -191,6 +213,24 @@ or input box background color change.
 - `△ Permission required` is a unique text signal
 - `Allow once   Allow always   Reject` footer is unique to OpenCode
 - No OSC 777 notifications observed
+
+### Subtask / Subprocess Count
+**None.** OpenCode does not expose subprocess/subtask counts. Instead:
+- Tool calls shown inline in conversation panel (`→ Read`, `← Write`)
+- Progress bar in footer: `⬝■■■■■■⬝` (filled/empty squares)
+- Completion marker: `▣  Build · model · time`
+
+### Working State
+- **Progress bar**: `■■⬝⬝⬝⬝⬝⬝` in footer row — graphical, not numeric
+- **Mode label**: changes from `Build` to `Plan` in prompt box
+- **Interrupt hint**: `esc interrupt` in footer during work
+- **No spinner chars** — uses progress bar instead
+
+### Error Display
+Errors shown inline in the `┃` frame:
+```
+  ┃  Error: Unable to connect. Is the computer able to access the url?
+```
 
 ### Agent Identification
 OpenCode can be detected by:
