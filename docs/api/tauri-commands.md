@@ -22,6 +22,8 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `get_session_foreground_process` | `session_id` | `JSON` | Get foreground process info |
 | `get_kitty_flags` | `session_id` | `u32` | Get Kitty keyboard protocol flags for session |
 | `get_last_prompt` | `session_id` | `Option<String>` | Get last user-typed prompt from input line buffer |
+| `get_shell_state` | `session_id` | `Option<String>` | Get current shell state ("busy", "idle", or null) |
+| `set_session_name` | `session_id, name` | `()` | Set custom display name for a session |
 
 ## Git Operations (`git.rs`)
 
@@ -50,6 +52,10 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `git_commit` | `path, message, amend?` | `String` (commit hash) | Commit staged changes; optional `--amend`. Returns new HEAD hash |
 | `get_commit_log` | `path, count?, after?` | `Vec<CommitLogEntry>` | Paginated commit log (default 50, max 500). `after` is a commit hash for cursor-based pagination |
 | `get_stash_list` | `path` | `Vec<StashEntry>` | List stash entries (index, ref_name, message, hash) |
+| `git_stash_apply` | `path, index` | `()` | Apply stash entry by index |
+| `git_stash_pop` | `path, index` | `()` | Pop stash entry by index |
+| `git_stash_drop` | `path, index` | `()` | Drop stash entry by index |
+| `git_stash_show` | `path, index` | `String` | Show diff of stash entry |
 | `get_file_history` | `path, file, count?, after?` | `Vec<CommitLogEntry>` | Per-file commit log following renames (default 50, max 500) |
 | `get_file_blame` | `path, file` | `Vec<BlameLine>` | Per-line blame: hash, author, author_time (unix), line_number, content |
 | `get_branches_detail` | `path` | `Vec<BranchDetail>` | Rich branch listing: name, ahead/behind, last commit date, tracking upstream, merged status |
@@ -71,6 +77,8 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `github_poll_login` | `device_code` | `PollResult` | Poll for token; saves to keyring on success |
 | `github_logout` | — | `()` | Delete OAuth token from keyring, fall back to env/CLI |
 | `github_auth_status` | — | `AuthStatus` | Current auth: login, avatar, source, scopes |
+| `github_disconnect` | — | `()` | Disconnect GitHub (clear all tokens from keyring and env cache) |
+| `github_diagnostics` | — | `JSON` | Diagnostics: token sources, scopes, API connectivity |
 
 ## GitHub Integration (`github.rs`)
 
@@ -83,6 +91,7 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `merge_pr_via_github` | `repo_path, pr_number, merge_method` | `String` | Merge PR via GitHub API |
 | `get_all_pr_statuses` | `path` | `Vec<BranchPrStatus>` | Batch PR status for all branches (includes merged) |
 | `get_pr_diff` | `repo_path, pr_number` | `String` | Get PR diff content |
+| `fetch_ci_failure_logs` | `repo_path, run_id` | `String` | Fetch failure logs from a GitHub Actions run for CI auto-heal |
 | `check_github_circuit` | `path` | `CircuitState` | Check GitHub API circuit breaker state |
 
 ## Worktree Management (`worktree.rs`)
@@ -280,6 +289,8 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `install_plugin_from_url` | `url` | `PluginManifest` | Install from HTTPS URL |
 | `uninstall_plugin` | `id` | `()` | Remove plugin and all files |
 | `install_plugin_from_folder` | `path` | `PluginManifest` | Install from local folder |
+| `register_loaded_plugin` | `plugin_id` | `()` | Register a plugin as loaded (for lifecycle tracking) |
+| `unregister_loaded_plugin` | `plugin_id` | `()` | Unregister a plugin (on unload/disable) |
 
 ## Plugin Filesystem (`plugin_fs.rs`)
 

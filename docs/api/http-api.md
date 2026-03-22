@@ -122,6 +122,17 @@ POST /sessions/:id/pause
 POST /sessions/:id/resume
 ```
 
+### Rename Session
+
+```
+PUT /sessions/:id/name
+Content-Type: application/json
+
+{ "name": "my-session" }
+```
+
+Sets a custom display name for a session.
+
 ### Close Session
 
 ```
@@ -422,14 +433,6 @@ Content-Type: application/json
 
 Submits an approving review on a PR via the GitHub API.
 
-### Get Repo Merge Methods
-
-```
-GET /repo/merge-methods?path=/path/to/repo
-```
-
-Returns array of allowed merge methods for the repo (e.g., `["squash", "rebase"]`).
-
 ### CI Checks
 
 ```
@@ -437,6 +440,156 @@ GET /repo/ci?path=/path/to/repo
 ```
 
 Returns detailed CI check list.
+
+### PR Diff
+
+```
+GET /repo/pr-diff?path=/path/to/repo
+```
+
+Returns diff for the current branch's open PR.
+
+### Remote URL
+
+```
+GET /repo/remote-url?path=/path/to/repo
+```
+
+Returns the remote origin URL.
+
+## Git Panel Endpoints
+
+### Working Tree Status
+
+```
+GET /repo/working-tree-status?path=/path/to/repo
+```
+
+Returns porcelain v2 working tree status.
+
+### Panel Context
+
+```
+GET /repo/panel-context?path=/path/to/repo
+```
+
+Returns aggregated context for the Git Panel (status, branch, merge state).
+
+### Stage Files
+
+```
+POST /repo/stage
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "files": ["src/main.rs"] }
+```
+
+### Unstage Files
+
+```
+POST /repo/unstage
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "files": ["src/main.rs"] }
+```
+
+### Discard Files
+
+```
+POST /repo/discard
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "files": ["src/main.rs"] }
+```
+
+### Commit
+
+```
+POST /repo/commit
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "message": "feat: add feature" }
+```
+
+### Run Git Command
+
+```
+POST /repo/run-git
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "args": ["log", "--oneline", "-5"] }
+```
+
+Runs an arbitrary git command in the repo directory.
+
+### Commit Log
+
+```
+GET /repo/commit-log?path=/path/to/repo
+```
+
+Returns commit log entries.
+
+### File History
+
+```
+GET /repo/file-history?path=/path/to/repo&file=src/main.rs
+```
+
+Returns git log for a specific file.
+
+### File Blame
+
+```
+GET /repo/file-blame?path=/path/to/repo&file=src/main.rs
+```
+
+Returns line-by-line blame annotations.
+
+## Stash Endpoints
+
+### List Stashes
+
+```
+GET /repo/stash?path=/path/to/repo
+```
+
+Returns stash list.
+
+### Apply Stash
+
+```
+POST /repo/stash/apply
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "index": 0 }
+```
+
+### Pop Stash
+
+```
+POST /repo/stash/pop
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "index": 0 }
+```
+
+### Drop Stash
+
+```
+POST /repo/stash/drop
+Content-Type: application/json
+
+{ "repoPath": "/path/to/repo", "index": 0 }
+```
+
+### Show Stash
+
+```
+GET /repo/stash/show?path=/path/to/repo&index=0
+```
+
+Returns diff of a stash entry.
 
 ## Log Endpoints
 

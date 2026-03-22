@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.9.0 | **Last verified:** 2026-03-16
+**Version:** 0.9.5 | **Last verified:** 2026-03-22
 
 ---
 
@@ -44,7 +44,7 @@
 - Navigate: `Alt+←/→` (vertical), `Alt+↑/↓` (horizontal)
 - Close active pane: `Cmd+W`
 - Drag-resize divider between panes
-- Maximum 2 panes at a time
+- Up to 6 panes in same direction (N-way split)
 - Split layout persists per branch
 
 ### 1.4 Zoom (Per-Terminal)
@@ -429,6 +429,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 | Cursor Agent | `cursor-agent` | `cursor-agent resume` |
 | Warp Oz | `oz` | — |
 | Droid (Factory) | `droid` | — |
+| Git (background) | `git` | — |
 
 ### 6.1.1 Session-Aware Resume
 When an agent is detected running in a terminal, TUICommander automatically discovers its session ID from the filesystem and stores it per-terminal (`agentSessionId`). On restore, this enables session-specific resume instead of generic fallback commands.
@@ -1049,7 +1050,7 @@ All data persisted to platform config directory via Rust:
 - Built-in plugins (TypeScript, compiled with app) and external plugins (JS, loaded at runtime)
 - Hot-reload: file changes in plugin directories trigger automatic re-import
 - Per-plugin error logging with ring buffer (500 entries)
-- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`
+- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`, `git:read`
 - CLI execution API: sandboxed execution of whitelisted CLI binaries (`mdkb`) with timeout and size limits
 - Filesystem API: sandboxed read, write, rename, list, tail-read, and watch operations restricted to `$HOME`
 - HTTP API: outbound requests scoped to manifest-declared URL patterns (SSRF prevention)

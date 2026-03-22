@@ -280,3 +280,77 @@ A global `dragover`/`drop` `preventDefault` on `document` prevents the Tauri web
 **File:** `src/hooks/useKeyboardRedirect.ts`
 
 Redirects keyboard events from sidebar to active terminal (bypasses focus trap). Setup-only hook, no return value.
+
+---
+
+## useAutoFetch
+
+**File:** `src/hooks/useAutoFetch.ts`
+
+Periodic `git fetch` for all repositories at a configurable interval.
+
+| Method | Description |
+|--------|-------------|
+| `startAutoFetch()` | Start periodic fetching |
+| `stopAutoFetch()` | Stop periodic fetching |
+
+---
+
+## useAutoDeleteBranch
+
+**File:** `src/hooks/useAutoDeleteBranch.ts`
+
+Automatically deletes local branches after their PR is merged (configurable per-repo).
+
+---
+
+## usePostMergeCleanup
+
+**File:** `src/hooks/usePostMergeCleanup.ts`
+
+Handles post-merge cleanup: switches to main branch, removes worktree, optionally deletes local branch after a merged PR is detected.
+
+---
+
+## useCiHeal
+
+**File:** `src/hooks/useCiHeal.ts`
+
+CI auto-heal loop: monitors PR CI failures, fetches failure logs, and injects them into the agent terminal for automatic fix cycles (up to 3 attempts).
+
+---
+
+## useAgentPolling
+
+**File:** `src/hooks/useAgentPolling.ts`
+
+Polls agent status (foreground process detection) for all active terminal sessions at regular intervals.
+
+---
+
+## useLongPressHotkey
+
+**File:** `src/hooks/useLongPressHotkey.ts`
+
+Creates long-press keyboard handlers for push-to-talk dictation and other hold-to-activate features.
+
+| Function | Description |
+|----------|-------------|
+| `createLongPressHandler(opts)` | Generic long-press handler with configurable thresholds |
+| `createLongPressHandlerFromHotkey(hotkey, opts)` | Long-press handler bound to a specific hotkey combo |
+
+---
+
+## useWorktreeSwitchPrompt
+
+**File:** `src/hooks/useWorktreeSwitchPrompt.ts`
+
+Prompts the user when switching to a branch that has a worktree in a different location, offering to open it or stay.
+
+---
+
+## useFileBrowser
+
+**File:** `src/hooks/useFileBrowser.ts`
+
+File browser panel logic: directory listing, file operations (create, delete, rename, copy), content search, and gitignore management.

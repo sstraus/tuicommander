@@ -24,28 +24,35 @@ interface TerminalData {
   sessionId: string | null;
   name: string;
   nameIsCustom: boolean;            // When true, OSC/status-line title changes are ignored
-  repoPath: string;
-  branchName: string;
   fontSize: number;
   cwd: string | null;               // Current working directory (from OSC 7)
   awaitingInput: AwaitingInputType; // "question" | "error" | null
+  awaitingInputConfident: boolean;  // High-confidence detection — don't clear on idle→busy
   shellState: ShellState;           // "busy" | "idle" | null
   activity: boolean;
+  unseen: boolean;                  // Terminal completed work while user wasn't viewing it
   progress: number | null;          // OSC 9;4 progress (0-100), null when inactive
   agentType: AgentType | null;      // Detected foreground agent process (e.g. "claude")
+  pendingResumeCommand: string | null; // Set at restore time, consumed on first shell idle
+  pendingInitCommand: string | null;   // Setup/run script to auto-execute on first shell idle
   usageLimit: { percentage: number; limitType: string } | null;
   lastDataAt: number | null;        // Timestamp of last PTY output
   lastPrompt: string | null;        // Last relevant user prompt (>= 10 words), set by Rust
   agentIntent: string | null;       // LLM-declared intent via [[intent: ...]] token
   currentTask: string | null;       // Current agent task from status-line parsing
+  activeSubTasks: number;           // Count of running sub-agents from ›› status line
   isRemote: boolean;                // Created via HTTP/MCP (not locally by the UI)
+  agentSessionId: string | null;    // Agent session ID for session-specific resume
+  tuicSession: string | null;       // Stable tab UUID — injected as TUIC_SESSION env var
+  suggestedActions: string[] | null; // Follow-up suggestions from [[suggest: ...]] tokens
+  suggestDismissed: boolean;        // true after user dismissed — prevents re-show
 }
 
 interface TabLayout {
   direction: SplitDirection;  // "none" | "vertical" | "horizontal"
-  panes: string[];            // Terminal IDs (max 2)
-  ratio: number;              // Split ratio (0.2-0.8)
-  activePaneIndex: number;    // 0 or 1
+  panes: string[];            // Terminal IDs (up to MAX_SPLIT_PANES = 6)
+  ratios: number[];           // N fractions summing to 1.0 (length === panes.length)
+  activePaneIndex: number;    // 0..N-1
 }
 ```
 
@@ -97,22 +104,32 @@ Manages saved repositories, branches, terminal associations, and PR status cache
 ```typescript
 interface RepositoryState {
   path: string;
-  name: string;
+  displayName: string;
   initials: string;
+  isGitRepo?: boolean;    // false for plain directories
   expanded: boolean;      // Show branch list
   collapsed: boolean;     // Icon-only mode
-  activeBranch: string | null;
+  parked: boolean;        // Hidden from sidebar (recallable via popover)
   branches: Record<string, BranchState>;
+  activeBranch: string | null;
 }
 
 interface BranchState {
   name: string;
-  terminals: string[];     // Terminal IDs
-  worktreePath: string | null;
   isMain: boolean;
+  isShell?: boolean;               // true for non-git directory shell entries
+  worktreePath: string | null;
+  terminals: string[];             // Terminal IDs
+  hadTerminals: boolean;           // Suppresses auto-spawn after close-all
+  lastActiveTerminal: string | null;
   additions: number;
   deletions: number;
-  runCommand: string | null;
+  isMerged: boolean;               // Fully merged into main branch
+  lastCommitTs: number | null;     // Unix timestamp of last commit
+  runCommand?: string;
+  savedTerminals?: SavedTerminal[];
+  ciAutoHeal?: { enabled: boolean; attempts: number; lastRunId?: number; healing?: boolean };
+  layout?: TabLayout;              // Split layout persisted per-branch
 }
 ```
 
@@ -383,5 +400,35 @@ Worktree Manager overlay state and selection.
 
 **Actions:** `open()`, `close()` (resets all state), `toggle()`, `toggleSelect(id)`, `selectAll(ids)`, `clearSelection()`, `setRepoFilter(path)`, `setTextFilter(text)`.
 
+### agentConfigsStore (`agentConfigs.ts`)
+Per-agent configuration (spawn args, environment overrides).
+
 ### editorTabsStore (`editorTabs.ts`)
 Open code editor tabs (CodeEditorTab).
+
+### activityStore (`activityStore.ts`)
+Session activity history and timeline data.
+
+### branchSwitcher (`branchSwitcher.ts`)
+Branch switch state and loading indicators.
+
+### contextMenuActionsStore (`contextMenuActionsStore.ts`)
+Dynamic context menu action registration.
+
+### errorLog (`errorLog.ts`)
+Error ring buffer and error panel state.
+
+### pluginStore (`pluginStore.ts`)
+Loaded plugin instances and lifecycle state.
+
+### registryStore (`registryStore.ts`)
+Remote plugin registry cache and install state.
+
+### repoDefaults (`repoDefaults.ts`)
+Default settings applied to newly added repositories.
+
+### tabManager (`tabManager.ts`)
+Tab ordering, branch-key mapping, and tab persistence logic.
+
+### appLogger (`appLogger.ts`)
+Centralized logging — replaces direct `console.*` calls. Writes to ring buffer, forwards to console, and surfaces in ErrorLogPanel.
