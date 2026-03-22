@@ -159,6 +159,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // position after reflow.
   let trackedScrollState = { viewportY: 0, baseY: 0, bufferType: "normal" as "normal" | "alternate", wasAtBottom: true };
 
+  // Tracks whether the terminal was visible on the last check (write callback
+  // or onScroll). Used to detect hidden→visible transitions: xterm fires
+  // onScroll with viewportY=0 when display:none→block resets DOM scrollTop,
+  // which would corrupt trackedScrollState. We skip that false scroll event.
+  let lastKnownVisible = true;
+
   /** Update trackedScrollState from current buffer values.
    *  When the container is hidden (display:none), buf.viewportY is unreliable
    *  (xterm doesn't auto-scroll a zero-dimension viewport), so we infer it. */
@@ -280,16 +286,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
         const afterBuf = terminal.buffer.active;
 
-        // Ignore buffer type transitions (normal↔alternate). The alternate
-        // buffer always reads 0,0 — recording that would corrupt trackedScrollState.
-        if (afterBuf.type !== bufferTypeBefore) {
-          appLogger.debug("terminal", "write-buffer-type-changed", {
-            from: bufferTypeBefore, to: afterBuf.type,
-          });
+        // Skip all scroll handling when in or transitioning to/from alternate
+        // buffer. Alt buffer always reads viewportY=0/baseY=0 — updating
+        // trackedScrollState with those values corrupts the normal buffer's
+        // tracked position, causing doFit() to jump on the next resize.
+        if (afterBuf.type !== "normal" || bufferTypeBefore !== "normal") {
           return;
         }
 
         const isVisible = containerRef != null && containerRef.offsetWidth > 0;
+        lastKnownVisible = isVisible;
 
         // Restore scroll if user was scrolled up and xterm moved the viewport
         // (escape sequences like \033[H can pull it away). Skip when hidden
@@ -982,9 +988,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     // Track user-initiated scrolls so doFit() can restore position after reflow.
     // Ignores alternate buffer (always 0,0 — would corrupt tracked state).
+    // Skips the first scroll event after a hidden→visible transition: xterm fires
+    // onScroll with viewportY=0 when display:none→block resets DOM scrollTop.
     terminal.onScroll(() => {
       const buf = terminal!.buffer.active;
       if (buf.type !== "normal") return;
+      const isNowVisible = containerRef != null && containerRef.offsetWidth > 0;
+      if (isNowVisible && !lastKnownVisible) {
+        // Hidden→visible transition: this onScroll has a stale viewportY (DOM
+        // scrollTop reset to 0). Skip — trackedScrollState from the hidden
+        // period is more accurate. doFit() will restore the correct position.
+        lastKnownVisible = true;
+        return;
+      }
+      lastKnownVisible = isNowVisible;
       updateTrackedScroll(buf, true);
     });
 
@@ -1082,6 +1099,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
       rafHandle = requestAnimationFrame(() => {
         rafHandle = 0;
         openTerminal();
+        // Rebuild the WebGL glyph atlas after display:none → block transitions.
+        // The GPU texture can become corrupt when the terminal was hidden.
+        terminal?.clearTextureAtlas();
         safeFit(() => initSession());
 
         // For reconnected terminals (existing sessionId), explicitly sync PTY dimensions.
