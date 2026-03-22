@@ -518,4 +518,65 @@ mod tests {
         ];
         assert_eq!(find_chrome_cutoff(&rows), Some(1));
     }
+
+    // Gemini CLI bottom-zone tests (captured 2026-03-22, v0.34.0)
+
+    #[test]
+    fn cutoff_gemini_idle() {
+        // Gemini idle: content + suggest + hint + separator + info + prompt box (3) + status (2)
+        let rows: Vec<&str> = vec![
+            "✦ The version of this project is 0.9.5.",
+            "  [[suggest: View CHANGELOG.md | Check README.md]]",
+            "                                                                  ? for shortcuts",
+            "─────────────────────────────────────────────────────────────────────────────────",
+            " Shift+Tab to accept edits                              1 MCP server | 3 skills",
+            "▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀",
+            " >   Type your message or @path/to/file",
+            "▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀▀",
+            " workspace (/directory)          branch          sandbox              /model",
+            " ~/Gits/personal/tuicommander   main            no sandbox           Auto (Gemini 3)",
+        ];
+        // Separator at index 3 is the anchor, walks up: index 2 is not empty/separator → cutoff=3
+        assert_eq!(find_chrome_cutoff(&rows), Some(3));
+    }
+
+    #[test]
+    fn cutoff_gemini_with_spinner() {
+        // Gemini working: content + spinner + separator + info + prompt box (3) + status (2)
+        let rows: Vec<&str> = vec![
+            "✦ I will read the package.json file.",
+            " ⠴ Check tool-specific usage stats… (esc to cancel, 14s)",
+            "─────────────────────────────────────────────────────────────────────────────────",
+            " Shift+Tab to accept edits",
+            "▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀",
+            " >   Type your message or @path/to/file",
+            "▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀▀",
+            " workspace (/directory)          branch          sandbox              /model",
+            " ~/Gits/personal/tuicommander   main            no sandbox           Auto (Gemini 3)",
+        ];
+        // Separator at index 2, spinner at index 1 is not separator/empty → cutoff=2
+        assert_eq!(find_chrome_cutoff(&rows), Some(2));
+    }
+
+    #[test]
+    fn cutoff_gemini_with_tool_box() {
+        // Gemini with tool call box above chrome
+        let rows: Vec<&str> = vec![
+            "╭───────────────────────────────────────────────╮",
+            "│ ✓  ReadFile package.json                       │",
+            "│                                                │",
+            "╰───────────────────────────────────────────────╯",
+            "✦ The version is 0.9.5.",
+            "  [[suggest: View CHANGELOG.md | Check README.md]]",
+            "─────────────────────────────────────────────────────────────────────────────────",
+            " Shift+Tab to accept edits                              1 MCP server | 3 skills",
+            "▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀",
+            " >   Type your message or @path/to/file",
+            "▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀▀",
+            " workspace (/directory)          branch          sandbox              /model",
+            " ~/Gits/personal/tuicommander   main            no sandbox           Auto (Gemini 3)",
+        ];
+        // Separator at index 6 → cutoff=6
+        assert_eq!(find_chrome_cutoff(&rows), Some(6));
+    }
 }
