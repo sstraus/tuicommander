@@ -56,12 +56,16 @@ pub fn is_prompt_line(text: &str) -> bool {
 /// - `✻` (U+273B) — Claude Code timer marker (also covers ✶✳✢ via font rendering)
 /// - `•` (U+2022) — Codex spinner / status indicator
 pub fn is_chrome_row(text: &str) -> bool {
+    // Check • (U+2022) separately — Codex uses it for both spinner and output.
+    // Only classify as chrome when it matches known chrome patterns.
+    if is_codex_chrome_bullet(text) {
+        return true;
+    }
     for c in text.chars() {
         match c {
             '\u{23F5}'          // ⏵ — Claude Code mode-line prefix
             | '\u{23F8}'        // ⏸ — Claude Code plan mode prefix
             | '\u{203A}'        // › — Claude Code / Codex mode-line prefix
-            | '\u{2022}'        // • — Codex spinner / status indicator
             | '\u{00B7}'        // · — Claude Code middle-dot spinner prefix
             | '\u{2580}'        // ▀ — Gemini prompt box top border
             | '\u{2584}'        // ▄ — Gemini prompt box bottom border
@@ -75,6 +79,24 @@ pub fn is_chrome_row(text: &str) -> bool {
         }
     }
     false
+}
+
+/// Codex uses `•` (U+2022) for both chrome (spinner) and real output (action results).
+/// Returns true only for known chrome patterns.
+fn is_codex_chrome_bullet(text: &str) -> bool {
+    let t = text.trim_start();
+    if !t.starts_with('\u{2022}') {
+        return false;
+    }
+    // Short lines like "• Boot" are always chrome
+    if t.len() <= 8 {
+        return true;
+    }
+    let after = &t[3..]; // skip "• " (U+2022 is 3 bytes in UTF-8)
+    let after = after.trim_start();
+    // Known chrome patterns: Working, Boot, esc/interrupt hints
+    after.starts_with("Working") || after.starts_with("Boot")
+        || after.contains("esc to") || after.contains("interrupt")
 }
 
 #[cfg(test)]
@@ -301,9 +323,19 @@ mod tests {
     }
 
     #[test]
-    fn codex_bullet_output() {
-        // Codex uses • for regular output too — this is a known false positive
-        assert!(is_chrome_row("• Created /tmp/codex-test.txt with hello."));
+    fn codex_bullet_output_not_chrome() {
+        // Codex uses • for regular output — should NOT be classified as chrome
+        assert!(!is_chrome_row("• Created /tmp/codex-test.txt with hello."));
+    }
+
+    #[test]
+    fn codex_bullet_added_not_chrome() {
+        assert!(!is_chrome_row("• Added /tmp/file.txt (+1 -0)"));
+    }
+
+    #[test]
+    fn codex_boot_spinner() {
+        assert!(is_chrome_row("• Boot"));
     }
 
     // Claude Code status lines — now detected via █/░ block chars
