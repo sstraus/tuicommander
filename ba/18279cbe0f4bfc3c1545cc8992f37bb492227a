@@ -1,0 +1,59 @@
+docs/api/http-api.md
+  6cf9ef103a779cbc 125-135,444,447,450-592
+docs/api/tauri-commands.md
+  6cf9ef103a779cbc 25-26,55-58,80-81,94,292-293
+docs/frontend/hooks.md
+  6cf9ef103a779cbc 283-356
+docs/frontend/stores.md
+  6cf9ef103a779cbc 30,33,36-37,43,45-48,53-55,107,109,112,114,120-124,127-132,403-405,408-434
+website/index.html
+  6cf9ef103a779cbc 624,632-635
+docs/FEATURES.md
+  6cf9ef103a779cbc 6,47,432,1053
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "ba18279cbe0f4bfc3c1545cc8992f37bb492227a",
+  "prompts": {
+    "6cf9ef103a779cbc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51d440b2-01da-4ffa-82ab-e10cd4580419",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 312,
+      "total_deletions": 22,
+      "accepted_lines": 312,
+      "overriden_lines": 0
+    },
+    "91159334feb8722d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d11c4-82d2-7e33-b4e8-4b8cd98493cc",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 268,
+      "overriden_lines": 0
+    },
+    "a0f3719aefac47b8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d11d5-f6de-7840-b0b7-b3241d8a59ce",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}
