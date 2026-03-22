@@ -1,30 +1,63 @@
 # Prompt Library
 
-Store and reuse command templates with variable substitution.
+Store and reuse command templates with optional variable substitution. Prompts are injected directly into the active terminal.
 
-## Access
+## Opening the Drawer
 
-- **Cmd+K** — Toggle prompt library drawer
-- **Toolbar button** — Prompt library icon
+- **Cmd+K** — Toggle the prompt library drawer
+- **Toolbar button** — Prompt library icon in the main toolbar
 
-## Creating Prompts
+## Browsing and Searching
 
-1. Open the prompt library (`Cmd+K`)
-2. Click "New Prompt"
-3. Enter a label (e.g., "Run tests for module")
-4. Enter the prompt text with optional variables:
+When the drawer opens, the search input is focused automatically. Type to filter prompts by name, description, or content. Matching is case-insensitive and searches all three fields simultaneously.
+
+Use the category tabs to narrow the list:
+
+| Tab | Shows |
+|-----|-------|
+| **All** | Every saved prompt, sorted by most recently used |
+| **Custom** | User-created prompts |
+| **Favorites** | Prompts you have starred |
+| **Recent** | Last 10 prompts you used |
+
+## Keyboard Navigation
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Move selection up/down |
+| `Enter` | Insert selected prompt into terminal |
+| Double-click | Insert and immediately execute (adds newline) |
+| `Ctrl+N` / `Cmd+N` | Create a new prompt |
+| `Ctrl+E` / `Cmd+E` | Edit the selected prompt |
+| `Ctrl+F` / `Cmd+F` | Toggle favorite on the selected prompt |
+| `Escape` | Close the drawer |
+
+## Creating a Prompt
+
+1. Open the drawer (`Cmd+K`) and click **+ New Prompt**, or press `Ctrl+N`/`Cmd+N`
+2. Fill in the fields:
+   - **Name** (required) — shown in the list
+   - **Description** — optional subtitle, also searchable
+   - **Content** (required) — the text to insert; use `{{variable}}` for dynamic values
+   - **Keyboard Shortcut** — optional global shortcut to trigger this prompt directly
+3. Click **Save**
+
+## Editing and Deleting
+
+- Click the **pencil icon** on any prompt row, or select it and press `Ctrl+E`/`Cmd+E`
+- Click the **trash icon** to delete — a confirmation dialog appears before deletion
+
+## Variable Substitution
+
+Use `{{variable_name}}` placeholders in prompt content. When you send a prompt that contains variables, a dialog appears asking you to fill in each value before injection.
 
 ```
-cd {{cwd}} && npm test -- --testPathPattern={{module}}
+cd {{project_dir}} && cargo test -- {{test_filter}}
 ```
-
-5. Save
-
-## Variables
-
-Use `{{variable_name}}` syntax for dynamic values. When you use the prompt, TUICommander asks you to fill in each variable.
 
 ### Built-in Variables
+
+These are resolved automatically by the backend when present:
 
 | Variable | Value |
 |----------|-------|
@@ -36,28 +69,36 @@ Use `{{variable_name}}` syntax for dynamic values. When you use the prompt, TUIC
 
 ### Custom Variables
 
-Any `{{name}}` not in the built-in list becomes a custom variable. You'll be prompted to enter a value when using the prompt.
+Any `{{name}}` not in the built-in list becomes a custom input field in the variable dialog. You can optionally add a description and default value per variable when editing the prompt — the description appears as placeholder text in the dialog.
 
-## Using Prompts
+### Inserting with Variables
 
-1. Open prompt library (`Cmd+K`)
-2. Search or browse prompts
-3. Click a prompt
-4. Fill in any variables
-5. Text is injected into the active terminal
+The variable dialog offers two actions:
 
-## Organization
+- **Insert** — writes the resolved text to the terminal input line (you can review before pressing Enter)
+- **Insert & Run** — appends a newline, sending the command immediately
 
-- **Pin** prompts to keep them at the top
-- **Search** by name or content
-- **Categories:** Custom, Recent, Favorite
-- **Recent list** tracks your last-used prompts
+## Favorites and Pinning
+
+Click the **star icon** on any prompt row to toggle its favorite status. Favorited prompts appear at the top of any list view with a `★` prefix and are accessible via the **Favorites** category tab.
+
+## Recently Used
+
+The **Recent** tab shows the last 10 prompts you sent, in order of use. Recency is also used to sort the **All** view — most recently used prompts appear first.
+
+## Sending to Terminal
+
+Selecting a prompt (click or Enter) writes its content to the currently active terminal. If the prompt has no variables, it is injected immediately. If it does, the variable dialog appears first.
+
+The drawer closes automatically after a successful injection and focus returns to the terminal.
+
+---
 
 ## Run Commands
 
-A simpler alternative for per-branch commands:
+A lighter-weight alternative for per-branch one-off commands:
 
 - **Cmd+R** — Run the saved command for the active branch
 - **Cmd+Shift+R** — Edit the command before running
 
-Configure run commands in Settings → Repository → Scripts tab, or via the "Edit & Run Command" dialog.
+Configure run commands in **Settings → Repository → Scripts** tab.
