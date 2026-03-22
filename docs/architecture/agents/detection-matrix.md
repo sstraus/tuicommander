@@ -10,31 +10,31 @@ agent is considered fully supported.
 
 | Property | Claude Code | Codex CLI | Gemini CLI | Aider | _New Agent_ |
 |----------|------------|-----------|------------|-------|-------------|
-| **Version tested** | v2.1.81 | v0.116.0 | — | — | |
-| **Date tested** | 2026-03-21 | 2026-03-21 | — | — | |
-| **Rendering engine** | Ink (React) | Ink (React) | ? | stdin/stdout | |
-| **Cursor positioning** | Relative (`\033[NA]`) | Absolute (`\033[r;cH`) | ? | Sequential | |
-| **Scroll mechanism** | `\r\n` padding | Scroll regions (`\033[n;mr]`) | ? | Normal scroll | |
-| **Screen clear on menus** | Sometimes (`\033[2J`) | No | ? | N/A | |
+| **Version tested** | v2.1.81 | v0.116.0 | — | — | v1.2.20 |
+| **Date tested** | 2026-03-21 | 2026-03-21 | — | — | 2026-03-22 |
+| **Rendering engine** | Ink (React) | Ink (React) | ? | stdin/stdout | Bubble Tea (Go) |
+| **Cursor positioning** | Relative (`\033[NA]`) | Absolute (`\033[r;cH`) | ? | Sequential | Absolute (`\033[r;cH`) |
+| **Scroll mechanism** | `\r\n` padding | Scroll regions (`\033[n;mr]`) | ? | Normal scroll | Full-screen redraw |
+| **Screen clear on menus** | Sometimes (`\033[2J`) | No | ? | N/A | Full-screen TUI |
 
 ### 2. Prompt Line
 
 | Property | Claude Code | Codex CLI | Gemini CLI | Aider | _New Agent_ |
 |----------|------------|-----------|------------|-------|-------------|
-| **Prompt char** | `❯` (U+276F) | `›` (U+203A, bold) | `>` | `>` | |
-| **Prompt background** | None | Dark gray (rgb 57,57,57) | None | None | |
-| **Ghost text style** | `dim` cell attribute | `\033[2m` dim | ? | N/A | |
-| **Multiline input** | Enter = submit | Enter = newline | ? | Enter = submit | |
+| **Prompt char** | `❯` (U+276F) | `›` (U+203A, bold) | `>` | `>` | None (framed box) |
+| **Prompt background** | None | Dark gray (rgb 57,57,57) | None | None | Dark (rgb 30,30,30) |
+| **Ghost text style** | `dim` cell attribute | `\033[2m` dim | ? | N/A | Gray placeholder |
+| **Multiline input** | Enter = submit | Enter = newline | ? | Enter = submit | ? |
 
 ### 3. Separator Lines
 
 | Property | Claude Code | Codex CLI | Gemini CLI | Aider | _New Agent_ |
 |----------|------------|-----------|------------|-------|-------------|
-| **Uses separators** | Yes | Partially | No | No | |
-| **Separator chars** | `─` (U+2500) | `─` (U+2500) | — | — | |
-| **Separator purpose** | Frame prompt box | Between tool output & summary | — | — | |
-| **Decorated separators** | Yes (`──── label ──`) | No | — | — | |
-| **Min run length** | 4+ chars | Full width | — | — | |
+| **Uses separators** | Yes | Partially | No | No | No (uses `┃╹▀`) |
+| **Separator chars** | `─` (U+2500) | `─` (U+2500) | — | — | `┃` `╹` `▀` (vertical frame) |
+| **Separator purpose** | Frame prompt box | Between tool output & summary | — | — | Prompt box border |
+| **Decorated separators** | Yes (`──── label ──`) | No | — | — | N/A |
+| **Min run length** | 4+ chars | Full width | — | — | N/A |
 
 ### 4. Status / Chrome Lines
 
@@ -49,11 +49,11 @@ agent is considered fully supported.
 
 | Property | Claude Code | Codex CLI | Gemini CLI | Aider | _New Agent_ |
 |----------|------------|-----------|------------|-------|-------------|
-| **Spinner chars** | `✶✻✳✢·` (U+2720-273F) | `•` (U+2022) | `⠋⠙⠹...` (braille) | `░█` | |
-| **Spinner position** | Above separator | Inline with output | Below prompt | Inline | |
-| **Time display** | `(1m 32s)` | `(10s • esc to interrupt)` | ? | N/A | |
-| **Token display** | `↓ 2.2k tokens` | None | ? | `Tokens: N sent, N received.` | |
-| **Detected by** | `is_chrome_row` ✓ | `is_chrome_row` ✓ | `parse_status_line` ✓ | `parse_status_line` ✓ | |
+| **Spinner chars** | `✶✻✳✢·` (U+2720-273F) | `•` (U+2022) | `⠋⠙⠹...` (braille) | `░█` | ? (full-screen) |
+| **Spinner position** | Above separator | Inline with output | Below prompt | Inline | ? (in panel) |
+| **Time display** | `(1m 32s)` | `(10s • esc to interrupt)` | ? | N/A | ? |
+| **Token display** | `↓ 2.2k tokens` | None | ? | `Tokens: N sent, N received.` | ? |
+| **Detected by** | `is_chrome_row` ✓ | `is_chrome_row` ✓ | `parse_status_line` ✓ | `parse_status_line` ✓ | N/A (full TUI) |
 
 ### 6. Interactive Menus
 
