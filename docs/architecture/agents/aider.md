@@ -182,8 +182,11 @@ Aider is the ideal case for `chrome.rs` changed-rows detection:
 - `AIDER_TOKENS_RE` detects token reports
 - `is_separator_line` matches the green `─────` separators
 - `is_prompt_line` matches the bare `>` prompt
+- `░` (U+2591) and `█` (U+2588) detected by `is_chrome_row` — Knight Rider spinner classified as chrome
+- `has_status_line` in `chrome_only` calculation — spinner-only chunks don't reset silence timer
+- `find_chrome_cutoff` correctly trims Aider bottom zone (separator + file list + prompt)
 
 ### Not Yet Supported
 - File approval prompt detection (`Add file to the chat?`)
 - Token/cost extraction from the report line
-- File context list (shown before prompt)
+- File context list (shown before prompt) — not classified as chrome

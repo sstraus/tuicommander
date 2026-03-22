@@ -114,51 +114,47 @@ Terminal escape sequences that carry structured metadata:
 
 ## Code Architecture
 
-### Current state: 3 divergent pipelines
+### Unified `chrome.rs` module
 
-The bottom-zone parsing logic is duplicated across three separate pipelines
-that share concepts but diverge in implementation:
-
-| Pipeline | File | Purpose | Consumers |
-|----------|------|---------|-----------|
-| Changed-rows parser | `pty.rs` | Classify chrome vs real output, detect questions | Desktop + PWA (shared reader thread) |
-| Screen trim (REST) | `session.rs` | Strip chrome from screen snapshot for API | PWA/MCP REST clients |
-| Log trim (mobile) | `state.rs` | Strip chrome from scrollback for mobile log | Mobile log view |
-
-The event parser (`output_parser.rs` → `parse_clean_lines`) is shared across
-all pipelines. But the helper functions are duplicated:
-
-| Function | pty.rs | session.rs | state.rs | Notes |
-|----------|--------|------------|----------|-------|
-| `is_separator_line` | run-of-4 ✓ | run-of-4 ✓ | all-chars ✗ | state.rs broken for decorated separators |
-| `is_prompt_line` | `❯›>` ✓ | `❯>` (inline) | `❯>` ✗ | state.rs missing Codex `›` |
-| `is_chrome_row` | 4 markers | N/A | N/A | Missing `⏸`, no positional awareness |
-| Scan window | 15 rows | 15 rows | **8 rows** | state.rs too small for Wiz HUD |
-
-### Recommendation: shared `chrome.rs` module
-
-Extract canonical versions of all shared functions into a single module:
+All chrome detection is centralized in `src-tauri/src/chrome.rs`. The three
+pipelines (pty.rs, session.rs, state.rs) all import from this single module:
 
 ```
 src-tauri/src/chrome.rs
-├── is_separator_line()    — run-of-4 logic (from pty.rs)
-├── is_prompt_line()       — with all 3 chars ❯ › > (from pty.rs)
-├── is_chrome_row()        — expanded markers + positional awareness
+├── is_separator_line()    — run-of-4 box-drawing chars (─ ━ ═ — ╌ ╍)
+├── is_prompt_line()       — all agent prompt chars: ❯ › >
+├── is_chrome_row()        — 10 marker chars + dingbat range + Codex • disambiguation
 ├── CHROME_SCAN_ROWS       — single constant (15)
-└── find_chrome_cutoff()   — unified logic for all trim operations
+└── find_chrome_cutoff()   — unified trim logic for REST and mobile pipelines
 ```
 
-All three pipelines import from `chrome.rs`. No more divergence.
+| Pipeline | File | What it uses from `chrome.rs` |
+|----------|------|------------------------------|
+| Changed-rows parser | `pty.rs` | `is_chrome_row` (for `chrome_only`), `is_separator_line`, `is_prompt_line` |
+| Screen trim (REST) | `session.rs` | `find_chrome_cutoff` (replaces local `trim_screen_chrome` body) |
+| Log trim (mobile) | `state.rs` | `find_chrome_cutoff` (replaces local `find_prompt_cutoff` body) |
 
 ### Parsing Functions
 
-#### Chrome Detection (`is_chrome_row`) — pty.rs:111
+#### Chrome Detection (`is_chrome_row`) — chrome.rs
 
 Classifies changed terminal rows as "UI decoration" vs "real agent output".
-Returns true if row text contains any of:
-⏵ (U+23F5), › (U+203A), ✻ (U+273B), • (U+2022).
 
-Used by `chrome_only` calculation (pty.rs:794) which gates:
+Detected markers:
+- `⏵` (U+23F5) — CC mode-line prefix
+- `⏸` (U+23F8) — CC plan mode prefix
+- `›` (U+203A) — CC/Codex mode-line prefix
+- `·` (U+00B7) — CC middle-dot spinner prefix
+- `▀` (U+2580) — Gemini prompt box top border
+- `▄` (U+2584) — Gemini prompt box bottom border
+- `░` (U+2591) — Aider Knight Rider spinner
+- `█` (U+2588) — Aider Knight Rider spinner / CC context bar
+- `■` (U+25A0) — Codex interrupt marker
+- `•` (U+2022) — Codex spinner (disambiguated: `• Working` = chrome, `• Created` = output)
+- U+2720–U+273F — CC spinner dingbats (✶✻✳✢ etc.)
+
+Used by `chrome_only` calculation (pty.rs) which also considers `has_status_line`
+from `parse_status_line` events (for Gemini braille/Aider spinners). Gates:
 - `last_output_ms` timestamp updates
 - `SHELL_BUSY` → `SHELL_IDLE` transitions
 - `SilenceState::on_chunk()`

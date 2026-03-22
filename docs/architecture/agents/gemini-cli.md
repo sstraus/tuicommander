@@ -293,14 +293,15 @@ Similar to CC in rendering mechanics (relative cursor positioning).
 - Prompt `>` detected by `is_prompt_line`
 
 ### Not Yet Supported
-- `✦` (U+2726) not in `is_chrome_row` marker set — agent output lines won't be classified
-- `▀▀▀` / `▄▄▄` prompt box borders not detected as chrome
-- Status bar (bottom 2 rows) has no chrome markers
-- Tool call boxes (`╭╮╰╯│`) not classified
-- `? for shortcuts` hint line not classified
+- `✦` (U+2726) is the Gemini agent output prefix (NOT chrome — do not add to `is_chrome_row`)
+- Tool call boxes (`╭╮╰╯│`) not classified as chrome
+- `? for shortcuts` hint line not classified as chrome
+- Status bar labels (bottom 2 rows) have no chrome markers (but `find_chrome_cutoff` trims them via separator anchor)
 - No sandbox/permission prompt detection needed (Gemini handles this at model level)
 
-### Potential `chrome.rs` Updates
-- Add `✦` (U+2726) to `is_chrome_row` marker set
-- Consider `▀` (U+2580) and `▄` (U+2584) half-block detection for prompt box borders
-- Status bar detection may need positional awareness (always last 2 rows)
+### Now Supported (as of chrome.rs multi-agent update)
+- `▀▀▀` / `▄▄▄` prompt box borders detected as chrome via `is_chrome_row`
+- Braille spinner classified as chrome via `has_status_line` in `chrome_only` calculation
+- `find_chrome_cutoff` correctly trims the full Gemini 8-row bottom zone
+- Separator `─────` detected by `is_separator_line`
+- Prompt `>` detected by `is_prompt_line`
