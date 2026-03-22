@@ -105,7 +105,7 @@ const SHELL_BUSY: u8 = 1;
 const SHELL_IDLE: u8 = 2;
 
 // Re-export from chrome module for use by this module and tests.
-pub(crate) use crate::chrome::is_chrome_row;
+use crate::chrome::is_chrome_row;
 
 /// Searches all changed rows (not just the last non-empty one) so a question row
 /// is found even when a mode/status line with a higher row index arrives in the same chunk.
@@ -758,11 +758,20 @@ impl ChunkProcessor {
         // Update silence state for fallback question detection.
         let has_status_line = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
         let last_q_line = extract_question_line(&changed_rows);
+        // A chunk is chrome-only when ALL changed rows are UI decoration.
+        // Path 1: every row has a chrome marker (is_chrome_row).
+        // Path 2: parse_status_line detected a spinner pattern (Gemini braille,
+        //   Aider Knight Rider) AND no row contains real agent output. A row is
+        //   "real output" if it is not chrome and not blank — this prevents
+        //   has_status_line from suppressing chunks that mix spinner + output.
+        let all_chrome_markers = changed_rows.iter().all(|r| is_chrome_row(&r.text));
+        let no_real_output = changed_rows.iter().all(|r| {
+            is_chrome_row(&r.text) || r.text.trim().is_empty()
+        });
         let chrome_only = !regex_found_question
             && last_q_line.is_none()
             && !changed_rows.is_empty()
-            && (changed_rows.iter().all(|r| is_chrome_row(&r.text))
-                || has_status_line);
+            && (all_chrome_markers || (has_status_line && no_real_output));
         {
             let mut sl = silence.lock();
             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
@@ -2219,18 +2228,11 @@ mod tests {
     }
 
     #[test]
-    fn test_chrome_only_status_line_event_is_chrome() {
-        // Gemini braille spinner rows have no chrome markers in is_chrome_row,
-        // but parse_status_line detects them. When has_status_line is true,
-        // the chunk should still be treated as chrome-only.
+    fn test_chrome_only_gemini_braille_spinner_is_chrome() {
+        // Gemini braille spinner chars (U+2800-28FF) are now in is_chrome_row
         let rows = make_rows(&["\u{280B} Connecting to MCP servers..."]);
-        let all_chrome_markers = rows.iter().all(|r| is_chrome_row(&r.text));
-        assert!(!all_chrome_markers, "braille spinner has no chrome markers");
-        // But with has_status_line = true, chrome_only should be true
-        let has_status_line = true;
-        let chrome_only = !rows.is_empty()
-            && (rows.iter().all(|r| is_chrome_row(&r.text)) || has_status_line);
-        assert!(chrome_only, "status_line event should make chunk chrome-only");
+        let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
+        assert!(chrome_only, "Gemini braille spinner should be chrome");
     }
 
     // --- Staleness counter tests ---

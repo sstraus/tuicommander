@@ -1483,7 +1483,7 @@ impl VtLogBuffer {
             if delta > 0 {
                 let screen_height = self.parser.screen().size().0 as usize;
                 let new_lines = self.read_scrollback_lines(delta, screen_height);
-                let trimmed = trim_agent_chrome(new_lines, screen_height);
+                let trimmed = trim_agent_chrome(new_lines);
                 for ll in trimmed {
                     self.push_log_line(ll);
                 }
@@ -1715,11 +1715,11 @@ fn find_prompt_cutoff_loglines(lines: &[LogLine]) -> Option<usize> {
 /// end of the batch is discarded. Applied to all batches regardless of size —
 /// every CLI agent renders context info below the prompt that should not appear
 /// in the log.
-fn trim_agent_chrome(lines: Vec<LogLine>, _screen_rows: usize) -> Vec<LogLine> {
-    match find_prompt_cutoff_loglines(&lines) {
-        Some(cutoff) => lines[..cutoff].to_vec(),
-        None => lines,
+fn trim_agent_chrome(mut lines: Vec<LogLine>) -> Vec<LogLine> {
+    if let Some(cutoff) = find_prompt_cutoff_loglines(&lines) {
+        lines.truncate(cutoff);
     }
+    lines
 }
 
 /// Test helper: construct a minimal `AppState` for unit tests in other modules.
@@ -3382,7 +3382,7 @@ mod tests {
         items.push("");           // index 19
         items.push("Model: x");  // index 20
         let lines = make_log_lines(&items);
-        let result = trim_agent_chrome(lines, 24);
+        let result = trim_agent_chrome(lines);
         assert_eq!(result.len(), 18, "lines before prompt kept");
         assert!(result.iter().all(|l| l.text() == "real content"));
     }
@@ -3394,7 +3394,7 @@ mod tests {
         items.push("> ");    // index 17 — bare "> " treated as prompt
         items.push("chrome"); // index 18
         let lines = make_log_lines(&items);
-        let result = trim_agent_chrome(lines, 24);
+        let result = trim_agent_chrome(lines);
         assert_eq!(result.len(), 17);
     }
 
@@ -3402,7 +3402,7 @@ mod tests {
     #[test]
     fn test_trim_agent_chrome_small_batch_with_prompt_trims() {
         let lines = make_log_lines(&["line 1", "❯ command", "chrome"]);
-        let result = trim_agent_chrome(lines, 24);
+        let result = trim_agent_chrome(lines);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].text(), "line 1");
     }
@@ -3419,7 +3419,7 @@ mod tests {
             "[Opus 4.6 | Max]",
             "Context ███░░░",
         ]);
-        let result = trim_agent_chrome(lines, 24);
+        let result = trim_agent_chrome(lines);
         assert_eq!(result.len(), 2, "only real output lines kept");
         assert_eq!(result[0].text(), "real output");
         assert_eq!(result[1].text(), "more output");
@@ -3435,7 +3435,7 @@ mod tests {
             "❯",
             "Model: x",
         ]);
-        let result = trim_agent_chrome(lines, 24);
+        let result = trim_agent_chrome(lines);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].text(), "real output");
     }
@@ -3455,7 +3455,7 @@ mod tests {
     #[test]
     fn test_trim_agent_chrome_no_prompt_any_size_passthrough() {
         let lines = make_log_lines(&["a", "b", "c"]);
-        let result = trim_agent_chrome(lines.clone(), 24);
+        let result = trim_agent_chrome(lines.clone());
         assert_eq!(result, lines);
     }
 
@@ -3464,14 +3464,14 @@ mod tests {
     fn test_trim_agent_chrome_large_batch_no_prompt_passthrough() {
         let items: Vec<&str> = vec!["output line"; 20];
         let lines = make_log_lines(&items);
-        let result = trim_agent_chrome(lines.clone(), 24);
+        let result = trim_agent_chrome(lines.clone());
         assert_eq!(result, lines);
     }
 
     /// Empty batch → no panic, returns empty.
     #[test]
     fn test_trim_agent_chrome_empty_batch() {
-        assert!(trim_agent_chrome(vec![], 24).is_empty());
+        assert!(trim_agent_chrome(vec![]).is_empty());
     }
 
     // --- LogLine / extract_log_line tests ---

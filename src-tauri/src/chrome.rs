@@ -75,6 +75,8 @@ pub fn is_chrome_row(text: &str) -> bool {
             => return true,
             // Claude Code spinner dingbats (U+2720–U+273F): ✢✣✤...✻✼✽✾✿
             c if ('\u{2720}'..='\u{273F}').contains(&c) => return true,
+            // Braille spinner chars (U+2800–U+28FF): ⠋⠙⠹⠸⠴⠦⠧⠇ — Gemini CLI
+            c if ('\u{2800}'..='\u{28FF}').contains(&c) => return true,
             _ => {}
         }
     }
@@ -85,15 +87,14 @@ pub fn is_chrome_row(text: &str) -> bool {
 /// Returns true only for known chrome patterns.
 fn is_codex_chrome_bullet(text: &str) -> bool {
     let t = text.trim_start();
-    if !t.starts_with('\u{2022}') {
-        return false;
-    }
-    // Short lines like "• Boot" are always chrome
-    if t.len() <= 8 {
+    let after = match t.strip_prefix('\u{2022}') {
+        Some(rest) => rest.trim_start(),
+        None => return false,
+    };
+    // Short suffixes (e.g. "Boot", "…") are always chrome
+    if after.len() <= 5 {
         return true;
     }
-    let after = &t[3..]; // skip "• " (U+2022 is 3 bytes in UTF-8)
-    let after = after.trim_start();
     // Known chrome patterns: Working, Boot, esc/interrupt hints
     after.starts_with("Working") || after.starts_with("Boot")
         || after.contains("esc to") || after.contains("interrupt")
@@ -322,6 +323,17 @@ mod tests {
     #[test]
     fn gemini_prompt_box_bottom() {
         assert!(is_chrome_row("▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄"));
+    }
+
+    // Gemini braille spinner (captured 2026-03-22)
+    #[test]
+    fn gemini_braille_spinner() {
+        assert!(is_chrome_row("⠴ Check tool-specific usage stats with /stats tools… (esc to cancel, 14s)"));
+    }
+
+    #[test]
+    fn gemini_braille_spinner_short() {
+        assert!(is_chrome_row("⠋ Connecting to MCP servers..."));
     }
 
     // Aider Knight Rider spinner (captured 2026-03-22)
