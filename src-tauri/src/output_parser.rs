@@ -710,8 +710,10 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
 /// mode line), then searches for `N <type>` anywhere in the same line
 /// regardless of position relative to the markers.
 fn parse_active_subtasks(clean: &str) -> Option<ParsedEvent> {
-    // Fast path: requires either ›› (U+203A) or ⏵⏵ (U+23F5)
-    if !clean.contains('\u{203A}') && !clean.contains('\u{23F5}') {
+    // Fast path: requires ›› (U+203A), ⏵⏵ (U+23F5), or a digit (bare count)
+    let has_mode_marker = clean.contains('\u{203A}') || clean.contains('\u{23F5}');
+    let has_digit = clean.bytes().any(|b| b.is_ascii_digit());
+    if !has_mode_marker && !has_digit {
         return None;
     }
 
@@ -723,25 +725,35 @@ fn parse_active_subtasks(clean: &str) -> Option<ParsedEvent> {
         // Separated from mode by · (U+00B7). Matches: "· 2 local agents" or "2 local agents ·"
         static ref SUBTASK_COUNT_RE: regex::Regex =
             regex::Regex::new(r"(\d+)\s+([\w][\w\s]*?)(?:\s*(?:\u{00B7}|\(|$))").unwrap();
+        // Bare subprocess count without mode marker (e.g. "  1 shell").
+        // Restricted to known subprocess types to avoid false positives.
+        static ref BARE_SUBTASK_RE: regex::Regex =
+            regex::Regex::new(r"^\s*(\d+)\s+((?:local )?agents?|shells?|bash|background tasks?)\s*$").unwrap();
     }
 
     for line in clean.lines() {
         let trimmed = line.trim();
-        if !MODE_MARKER_RE.is_match(trimmed) {
-            continue;
-        }
-        // Mode line found — extract count if present
-        if let Some(caps) = SUBTASK_COUNT_RE.captures(trimmed) {
-            let count: u32 = caps[1].parse().unwrap_or(0);
-            let task_type = caps[2].trim().to_string();
-            if count > 0 {
-                return Some(ParsedEvent::ActiveSubtasks { count, task_type });
+
+        // Path 1: mode marker present (⏵⏵ or ››)
+        if MODE_MARKER_RE.is_match(trimmed) {
+            if let Some(caps) = SUBTASK_COUNT_RE.captures(trimmed) {
+                let count: u32 = caps[1].parse().unwrap_or(0);
+                let task_type = caps[2].trim().to_string();
+                if count > 0 {
+                    return Some(ParsedEvent::ActiveSubtasks { count, task_type });
+                }
+                return Some(ParsedEvent::ActiveSubtasks { count: 0, task_type: String::new() });
             }
-            // Explicit 0 count → sub-tasks finished
+            // Mode line present but no count → sub-tasks finished
             return Some(ParsedEvent::ActiveSubtasks { count: 0, task_type: String::new() });
         }
-        // Mode line present but no count → sub-tasks finished
-        return Some(ParsedEvent::ActiveSubtasks { count: 0, task_type: String::new() });
+
+        // Path 2: bare count without mode marker (e.g. "  1 shell")
+        if let Some(caps) = BARE_SUBTASK_RE.captures(trimmed) {
+            let count: u32 = caps[1].parse().unwrap_or(0);
+            let task_type = caps[2].trim().to_string();
+            return Some(ParsedEvent::ActiveSubtasks { count, task_type });
+        }
     }
     None
 }
@@ -3568,6 +3580,45 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             }
             _ => panic!("Expected ActiveSubtasks with count=0, got: {:?}", events),
         }
+    }
+
+    #[test]
+    fn test_active_subtasks_bare_count_no_mode_marker() {
+        // "  1 shell" without ⏵⏵ — new CC format where subprocess count
+        // appears alone without mode markers
+        let mut parser = OutputParser::new();
+        let events = parser.parse("  1 shell");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 1);
+                assert_eq!(task_type, "shell");
+            }
+            _ => panic!("Expected ActiveSubtasks with count=1, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_bare_count_plural() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("  2 local agents");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 2);
+                assert_eq!(task_type, "local agents");
+            }
+            _ => panic!("Expected ActiveSubtasks with count=2, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_bare_count_not_triggered_by_random_number() {
+        // "  3 files changed" should NOT trigger subtask detection
+        let mut parser = OutputParser::new();
+        let events = parser.parse("  3 files changed");
+        assert!(
+            !events.iter().any(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })),
+            "random numbered line should not trigger subtasks: {:?}", events
+        );
     }
 
     // --- Ink footer question detection ---
