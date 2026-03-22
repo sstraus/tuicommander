@@ -700,9 +700,15 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
 }
 
 /// Detect Claude Code active sub-task indicators from the mode line.
-/// Supports both `››` (U+203A, older) and `⏵⏵` (U+23F5, current) prefixes.
-/// With sub-tasks: `⏵⏵ <mode> · N <type>` → count=N
-/// Without sub-tasks: `⏵⏵ <mode>` → count=0 (all sub-tasks finished)
+///
+/// Supports all observed formats (order-agnostic):
+/// 1. Old: `⏵⏵ <mode> · N <type>` — markers first, count last
+/// 2. New: `N <type> · ⏵⏵ <mode>` — count first, markers last
+/// 3. Bare: `⏵⏵ <mode>` — markers only, no count (count = 0)
+///
+/// The function looks for `⏵⏵`/`››` anywhere in the line (confirms it's a
+/// mode line), then searches for `N <type>` anywhere in the same line
+/// regardless of position relative to the markers.
 fn parse_active_subtasks(clean: &str) -> Option<ParsedEvent> {
     // Fast path: requires either ›› (U+203A) or ⏵⏵ (U+23F5)
     if !clean.contains('\u{203A}') && !clean.contains('\u{23F5}') {
@@ -710,29 +716,32 @@ fn parse_active_subtasks(clean: &str) -> Option<ParsedEvent> {
     }
 
     lazy_static::lazy_static! {
-        // ⏵⏵|›› <mode> · <count> <type>
+        // Detect ⏵⏵ or ›› anywhere in the line (confirms mode line)
+        static ref MODE_MARKER_RE: regex::Regex =
+            regex::Regex::new(r"(?:\u{203A}\u{203A}|\u{23F5}\u{23F5})").unwrap();
+        // Extract count + type from anywhere in the line: "N <type>"
+        // Separated from mode by · (U+00B7). Matches: "· 2 local agents" or "2 local agents ·"
         static ref SUBTASK_COUNT_RE: regex::Regex =
-            regex::Regex::new(r"(?:\u{203A}\u{203A}|\u{23F5}\u{23F5})\s+.+?\s+\u{00B7}\s+(\d+)\s+(.+?)$").unwrap();
-        // ⏵⏵|›› <mode> (without sub-task suffix)
-        static ref SUBTASK_BARE_RE: regex::Regex =
-            regex::Regex::new(r"(?:\u{203A}\u{203A}|\u{23F5}\u{23F5})\s+\S").unwrap();
+            regex::Regex::new(r"(\d+)\s+([\w][\w\s]*?)(?:\s*(?:\u{00B7}|\(|$))").unwrap();
     }
 
     for line in clean.lines() {
         let trimmed = line.trim();
+        if !MODE_MARKER_RE.is_match(trimmed) {
+            continue;
+        }
+        // Mode line found — extract count if present
         if let Some(caps) = SUBTASK_COUNT_RE.captures(trimmed) {
             let count: u32 = caps[1].parse().unwrap_or(0);
             let task_type = caps[2].trim().to_string();
             if count > 0 {
                 return Some(ParsedEvent::ActiveSubtasks { count, task_type });
             }
-            // Count-bearing ›› line with count=0 → sub-tasks finished
+            // Explicit 0 count → sub-tasks finished
             return Some(ParsedEvent::ActiveSubtasks { count: 0, task_type: String::new() });
         }
-        // ›› line present but no count suffix → sub-tasks finished
-        if SUBTASK_BARE_RE.is_match(trimmed) {
-            return Some(ParsedEvent::ActiveSubtasks { count: 0, task_type: String::new() });
-        }
+        // Mode line present but no count → sub-tasks finished
+        return Some(ParsedEvent::ActiveSubtasks { count: 0, task_type: String::new() });
     }
     None
 }
@@ -3502,6 +3511,62 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
                 assert_eq!(task_type, "background tasks");
             }
             _ => panic!("Expected ActiveSubtasks event with ⏵⏵ prefix, got: {:?}", events),
+        }
+    }
+
+    // --- ActiveSubtasks: new format (count LEFT of markers) — captured from live sessions ---
+
+    #[test]
+    fn test_active_subtasks_new_format_count_left() {
+        // Real: "1 shell · ⏵⏵ bypass permissions on" (CC v2.1.81, 2026-03-21)
+        let mut parser = OutputParser::new();
+        let events = parser.parse("1 shell \u{00B7} \u{23F5}\u{23F5} bypass permissions on");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 1);
+                assert_eq!(task_type, "shell");
+            }
+            _ => panic!("Expected ActiveSubtasks with count-left format, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_new_format_plural() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("2 local agents \u{00B7} \u{23F5}\u{23F5} bypass permissions on");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 2);
+                assert_eq!(task_type, "local agents");
+            }
+            _ => panic!("Expected ActiveSubtasks with count-left plural, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_new_format_with_hint() {
+        // Mode line with both subprocess count and shift+tab hint
+        let mut parser = OutputParser::new();
+        let events = parser.parse("1 shell \u{00B7} \u{23F5}\u{23F5} bypass permissions on (shift+tab to cycle)");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, task_type }) => {
+                assert_eq!(*count, 1);
+                assert_eq!(task_type, "shell");
+            }
+            _ => panic!("Expected ActiveSubtasks with hint suffix, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_active_subtasks_mode_line_with_hint_no_count() {
+        // "⏵⏵ bypass permissions on (shift+tab to cycle)" — no subprocess count
+        let mut parser = OutputParser::new();
+        let events = parser.parse("\u{23F5}\u{23F5} bypass permissions on (shift+tab to cycle)");
+        match events.iter().find(|e| matches!(e, ParsedEvent::ActiveSubtasks { .. })) {
+            Some(ParsedEvent::ActiveSubtasks { count, .. }) => {
+                assert_eq!(*count, 0);
+            }
+            _ => panic!("Expected ActiveSubtasks with count=0, got: {:?}", events),
         }
     }
 
