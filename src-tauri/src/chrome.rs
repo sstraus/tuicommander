@@ -62,6 +62,12 @@ pub fn is_chrome_row(text: &str) -> bool {
             | '\u{23F8}'        // ⏸ — Claude Code plan mode prefix
             | '\u{203A}'        // › — Claude Code / Codex mode-line prefix
             | '\u{2022}'        // • — Codex spinner / status indicator
+            | '\u{00B7}'        // · — Claude Code middle-dot spinner prefix
+            | '\u{2580}'        // ▀ — Gemini prompt box top border
+            | '\u{2584}'        // ▄ — Gemini prompt box bottom border
+            | '\u{2591}'        // ░ — Aider Knight Rider spinner (light shade)
+            | '\u{2588}'        // █ — Aider Knight Rider spinner (full block)
+            | '\u{25A0}'        // ■ — Codex interrupt marker
             => return true,
             // Claude Code spinner dingbats (U+2720–U+273F): ✢✣✤...✻✼✽✾✿
             c if ('\u{2720}'..='\u{273F}').contains(&c) => return true,
@@ -223,9 +229,36 @@ mod tests {
 
     #[test]
     fn cc_spinner_proofing() {
-        // · (U+00B7) is NOT in the chrome markers — spinner with middle dot prefix
-        // is detected via › or ✻ in the same chunk, not this specific char
-        assert!(!is_chrome_row("· Proofing… (1m 14s · ↓ 1.6k tokens)"));
+        // · (U+00B7) middle dot CC spinner prefix
+        assert!(is_chrome_row("· Proofing… (1m 14s · ↓ 1.6k tokens)"));
+    }
+
+    // Gemini prompt box borders (captured 2026-03-22)
+    #[test]
+    fn gemini_prompt_box_top() {
+        assert!(is_chrome_row("▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀"));
+    }
+
+    #[test]
+    fn gemini_prompt_box_bottom() {
+        assert!(is_chrome_row("▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄"));
+    }
+
+    // Aider Knight Rider spinner (captured 2026-03-22)
+    #[test]
+    fn aider_knight_rider_1() {
+        assert!(is_chrome_row("░█  Updating repo map: examples/plugins/repo-dashboard/main.js"));
+    }
+
+    #[test]
+    fn aider_knight_rider_2() {
+        assert!(is_chrome_row("█░  Waiting for openrouter/anthropic/claude-sonnet-4.5"));
+    }
+
+    // Codex interrupt marker (captured 2026-03-21)
+    #[test]
+    fn codex_interrupt() {
+        assert!(is_chrome_row("■ Conversation interrupted - tell the model what to do differently."));
     }
 
     // Claude Code separators (captured 2026-03-21)
@@ -273,10 +306,10 @@ mod tests {
         assert!(is_chrome_row("• Created /tmp/codex-test.txt with hello."));
     }
 
-    // Claude Code status lines — NOT chrome (known gap)
+    // Claude Code status lines — now detected via █/░ block chars
     #[test]
     fn cc_status_context_bar() {
-        assert!(!is_chrome_row("  Context █░░░░░░░░░ 8% $0 (~$2.97) │ Usage ⚠ (429)"));
+        assert!(is_chrome_row("  Context █░░░░░░░░░ 8% $0 (~$2.97) │ Usage ⚠ (429)"));
     }
 
     #[test]
@@ -284,15 +317,15 @@ mod tests {
         assert!(!is_chrome_row("  5h: 42% (3h) | 7d: 27% (2d)"));
     }
 
-    // Interactive menu footers — NOT chrome markers
+    // Interactive menu footers — now detected as chrome via · (U+00B7)
     #[test]
     fn cc_menu_footer_cancel() {
-        assert!(!is_chrome_row("Esc to cancel · Tab to amend"));
+        assert!(is_chrome_row("Esc to cancel · Tab to amend"));
     }
 
     #[test]
     fn cc_menu_footer_select() {
-        assert!(!is_chrome_row("Enter to select · Tab/Arrow keys to navigate · Esc to cancel"));
+        assert!(is_chrome_row("Enter to select · Tab/Arrow keys to navigate · Esc to cancel"));
     }
 
     // Codex separator between tool output and summary
