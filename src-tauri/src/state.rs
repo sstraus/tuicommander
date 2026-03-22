@@ -1679,29 +1679,8 @@ impl VtLogBuffer {
 // ---------------------------------------------------------------------------
 
 use crate::chrome::find_chrome_cutoff;
-#[cfg(test)]
-use crate::chrome::is_separator_line;
 
-/// Returns the index of the first line to discard when a prompt line is found
-/// in the last [`CHROME_SCAN_ROWS`] rows of `lines`, scanning from the bottom.
-///
-/// Prompt patterns (at line start after trimming whitespace):
-/// - `❯` (U+276F) — used by Claude Code / Ink
-/// - `> ` (greater-than + space) — used by Codex and Gemini
-/// - `>` alone
-///
-/// After finding the prompt, extends the cutoff UP past immediately preceding
-/// separator lines and empty lines (the separator that typically sits above
-/// the prompt in agent UIs).
-///
-/// Returns `None` if no prompt line is found in the scan window.
-#[cfg(test)]
-fn find_prompt_cutoff(lines: &[String]) -> Option<usize> {
-    let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
-    find_chrome_cutoff(&refs)
-}
-
-/// Like `find_prompt_cutoff` but works on `LogLine` slices.
+/// Find chrome cutoff for `LogLine` slices (mobile log trim).
 fn find_prompt_cutoff_loglines(lines: &[LogLine]) -> Option<usize> {
     let texts: Vec<String> = lines.iter().map(|l| l.text()).collect();
     let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
@@ -3311,67 +3290,7 @@ mod tests {
         }).collect()
     }
 
-    /// ❯ prompt found in last 8 rows → cutoff at that index.
-    #[test]
-    fn test_find_prompt_cutoff_ink_prompt() {
-        let lines = make_lines(&[
-            "real output 1",
-            "real output 2",
-            "❯ some command",
-            "",
-            "Model: claude",
-        ]);
-        assert_eq!(find_prompt_cutoff(&lines), Some(2));
-    }
-
-    /// `> ` prompt (Codex/Gemini style) found → cutoff at that index.
-    #[test]
-    fn test_find_prompt_cutoff_gt_space_prompt() {
-        let lines = make_lines(&["real output", "> some command", "model info"]);
-        assert_eq!(find_prompt_cutoff(&lines), Some(1));
-    }
-
-    /// `>` alone (bare prompt) found → cutoff at that index.
-    #[test]
-    fn test_find_prompt_cutoff_gt_alone() {
-        let lines = make_lines(&["content", ">", "chrome"]);
-        assert_eq!(find_prompt_cutoff(&lines), Some(1));
-    }
-
-    /// No prompt-like line → None.
-    #[test]
-    fn test_find_prompt_cutoff_no_prompt() {
-        let lines = make_lines(&["line 1", "line 2", "line 3"]);
-        assert_eq!(find_prompt_cutoff(&lines), None);
-    }
-
-    /// Prompt-in-content false-positive guard: `> ` in rows above the scan window
-    /// is not mistaken for a prompt.  Only the last 8 rows are scanned.
-    #[test]
-    fn test_find_prompt_cutoff_prompt_outside_scan_window_ignored() {
-        // 20 lines: prompt at index 2 (scan window = last 15 = indices 5-19)
-        let mut items: Vec<&str> = vec!["content"; 20];
-        items[2] = "> git diff output";
-        let lines = make_lines(&items);
-        assert_eq!(
-            find_prompt_cutoff(&lines),
-            None,
-            "prompt outside last 15 rows must not trigger cutoff"
-        );
-    }
-
-    /// When scanning bottom-to-top, the bottom-most prompt in the scan window
-    /// is used as the cutoff (not an earlier one).
-    #[test]
-    fn test_find_prompt_cutoff_uses_bottom_most_prompt_in_window() {
-        // scan window (last 15 of 20) = indices 5-19
-        // prompts at indices 6 and 15 → bottom-most in window is 15
-        let mut items: Vec<&str> = vec!["content"; 20];
-        items[6] = "❯ earlier";
-        items[15] = "❯ later";
-        let lines = make_lines(&items);
-        assert_eq!(find_prompt_cutoff(&lines), Some(15));
-    }
+    // find_prompt_cutoff tests live in chrome.rs (canonical location)
 
     /// Large batch (>= 2/3 of screen height) with an Ink prompt → chrome trimmed.
     #[test]
@@ -3440,16 +3359,7 @@ mod tests {
         assert_eq!(result[0].text(), "real output");
     }
 
-    /// is_separator_line detects common box-drawing lines.
-    #[test]
-    fn test_is_separator_line() {
-        assert!(is_separator_line("────────────────────"));
-        assert!(is_separator_line("━━━━━━━━━━━━━━━━━━━━"));
-        assert!(is_separator_line("  ──────────────  "));  // with whitespace
-        assert!(!is_separator_line("── real text ──"));
-        assert!(!is_separator_line("hello world"));
-        assert!(!is_separator_line(""));
-    }
+    // is_separator_line tests live in chrome.rs (canonical location)
 
     /// Batch with no prompt → all lines kept, regardless of size.
     #[test]

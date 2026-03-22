@@ -185,6 +185,11 @@ mod tests {
     }
 
     #[test]
+    fn whitespace_padded_separator() {
+        assert!(is_separator_line("  ──────────────  "));
+    }
+
+    #[test]
     fn short_run_not_separator() {
         assert!(!is_separator_line("───"));
     }
@@ -529,6 +534,23 @@ mod tests {
             "❯ hello",
         ];
         assert_eq!(find_chrome_cutoff(&rows), Some(1));
+    }
+
+    #[test]
+    fn cutoff_prompt_outside_scan_window_ignored() {
+        // 20 lines: prompt at index 2, scan window = last 15 = indices 5-19
+        let mut items: Vec<&str> = vec!["content"; 20];
+        items[2] = "> git diff output";
+        assert_eq!(find_chrome_cutoff(&items), None);
+    }
+
+    #[test]
+    fn cutoff_uses_bottom_most_prompt() {
+        // Two prompts in scan window → bottom-most one wins
+        let mut items: Vec<&str> = vec!["content"; 20];
+        items[6] = "❯ earlier";
+        items[15] = "❯ later";
+        assert_eq!(find_chrome_cutoff(&items), Some(15));
     }
 
     // Gemini CLI bottom-zone tests (captured 2026-03-22, v0.34.0)

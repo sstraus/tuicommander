@@ -898,8 +898,6 @@ struct TrimResult {
 }
 
 use crate::chrome::find_chrome_cutoff;
-#[cfg(test)]
-use crate::chrome::is_separator_line;
 
 fn trim_screen_chrome(rows: Vec<String>) -> TrimResult {
     let refs: Vec<&str> = rows.iter().map(|s| s.as_str()).collect();
@@ -911,44 +909,7 @@ fn trim_screen_chrome(rows: Vec<String>) -> TrimResult {
 mod tests {
     use super::*;
 
-    // --- is_separator_line ---
-
-    #[test]
-    fn separator_plain() {
-        assert!(is_separator_line("───────────────────────────────"));
-    }
-
-    #[test]
-    fn separator_decorated_with_text() {
-        // Claude Code v2.1.70+ adds model info to separators
-        assert!(is_separator_line("──────── ■■■ Medium /model ─"));
-    }
-
-    #[test]
-    fn separator_with_session_name_badge() {
-        // After /rename, separator has a name badge on the right
-        assert!(is_separator_line("──────────────────────────────────── pwa ──"));
-    }
-
-    #[test]
-    fn separator_heavy_line() {
-        assert!(is_separator_line("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
-    }
-
-    #[test]
-    fn not_separator_short_run() {
-        assert!(!is_separator_line("── text ──"));
-    }
-
-    #[test]
-    fn not_separator_plain_text() {
-        assert!(!is_separator_line("hello world"));
-    }
-
-    #[test]
-    fn not_separator_empty() {
-        assert!(!is_separator_line(""));
-    }
+    // is_separator_line tests live in chrome.rs (canonical location)
 
     // --- trim_screen_chrome ---
 
