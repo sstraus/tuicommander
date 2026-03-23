@@ -794,6 +794,10 @@ pub(crate) struct AgentRunConfig {
 pub(crate) struct AgentSettings {
     #[serde(default)]
     pub(crate) run_configs: Vec<AgentRunConfig>,
+    /// Automatically retry on server errors (5xx) by injecting "continue" into the session.
+    /// Retries up to 3 times with exponential backoff (5s, 15s, 30s).
+    #[serde(default)]
+    pub(crate) auto_retry_on_error: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]

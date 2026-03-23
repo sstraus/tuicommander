@@ -18,6 +18,7 @@ import { notificationsStore } from "../../stores/notifications";
 import { invoke } from "../../invoke";
 import { isMacOS } from "../../platform";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
+import { agentConfigsStore } from "../../stores/agentConfigs";
 import { parseOsc7Url } from "../../utils/osc7";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { getAwaitingInputSound } from "./awaitingInputSound";
@@ -141,6 +142,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // Flow control state
   let pendingWriteBytes = 0;
   let isPaused = false;
+
+  // Auto-retry on API server errors — per-agent setting
+  const RETRY_DELAYS = [5_000, 15_000, 30_000]; // exponential backoff
+  let retryCount = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Resize debounce (150ms trailing edge)
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -408,6 +414,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             break;
           }
           case "status-line": {
+            retryCount = 0; // Reset auto-retry — agent is working again
             // Agent is working again — clear question state (but NOT suggest:
             // suggested actions persist until the user selects one, dismisses, or
             // sends new input via write_pty).
@@ -498,9 +505,31 @@ export const Terminal: Component<TerminalProps> = (props) => {
             const kindLabel = kind === "server" ? "server error" : kind === "auth" ? "auth failure" : "API error";
             appLogger.error("terminal", `${label}: ${kindLabel} (${patternName})`);
             terminalsStore.setAwaitingInput(props.id, "error");
+
+            // Auto-retry: inject "continue" for server errors when enabled per-agent
+            if (kind === "server" && agent && agentConfigsStore.isAutoRetryEnabled(agent) && !retryTimer) {
+              if (retryCount < RETRY_DELAYS.length) {
+                const delay = RETRY_DELAYS[retryCount];
+                const attempt = retryCount + 1;
+                appLogger.info("terminal", `[AutoRetry] ${label}: attempt ${attempt}/${RETRY_DELAYS.length} in ${delay / 1000}s`);
+                retryTimer = setTimeout(() => {
+                  retryTimer = undefined;
+                  if (sessionId) {
+                    appLogger.info("terminal", `[AutoRetry] ${label}: injecting "continue" (attempt ${attempt})`);
+                    pty.write(sessionId, "continue\r").catch((err) =>
+                      appLogger.error("terminal", "[AutoRetry] Failed to write", { error: String(err) }),
+                    );
+                  }
+                }, delay);
+                retryCount++;
+              } else {
+                appLogger.warn("terminal", `[AutoRetry] ${label}: exhausted ${RETRY_DELAYS.length} retries, manual intervention needed`);
+              }
+            }
             break;
           }
           case "intent":
+            retryCount = 0; // Reset auto-retry on successful agent output
             terminalsStore.setAgentIntent(props.id, parsed.text);
             if (parsed.title && settingsStore.state.intentTabTitle) {
               terminalsStore.update(props.id, { name: parsed.title });
@@ -1159,6 +1188,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   onCleanup(() => {
     clearTimeout(resizeTimer);
     clearTimeout(resizeObserverTimer);
+    clearTimeout(retryTimer);
     // shellState is now Rust-authoritative — no need to force idle on unmount.
     // Rust will emit idle when the agent actually stops. On remount,
     // attachSessionListeners syncs via get_shell_state.

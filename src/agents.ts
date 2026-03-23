@@ -352,6 +352,7 @@ export interface AgentRunConfig {
 /** Per-agent settings (matches Rust AgentSettings) */
 export interface AgentSettingsConfig {
   run_configs: AgentRunConfig[];
+  auto_retry_on_error?: boolean;
 }
 
 /** Full agents config (matches Rust AgentsConfig) */

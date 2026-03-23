@@ -4,7 +4,7 @@ import type { AgentType, AgentRunConfig, AgentsConfig } from "../agents";
 import { appLogger } from "./appLogger";
 
 interface AgentConfigsState {
-  agents: Record<string, { run_configs: AgentRunConfig[] }>;
+  agents: Record<string, { run_configs: AgentRunConfig[]; auto_retry_on_error?: boolean }>;
   loaded: boolean;
 }
 
@@ -100,6 +100,26 @@ function createAgentConfigsStore() {
         await saveToDisk();
       } catch (err) {
         appLogger.error("config", "Failed to save agent config", err);
+      }
+    },
+
+    /** Check if auto-retry on error is enabled for an agent */
+    isAutoRetryEnabled(type: AgentType): boolean {
+      return state.agents[type]?.auto_retry_on_error === true;
+    },
+
+    /** Toggle auto-retry on error for an agent */
+    async setAutoRetry(type: AgentType, enabled: boolean): Promise<void> {
+      setState(produce((s) => {
+        if (!s.agents[type]) {
+          s.agents[type] = { run_configs: [] };
+        }
+        s.agents[type].auto_retry_on_error = enabled;
+      }));
+      try {
+        await saveToDisk();
+      } catch (err) {
+        appLogger.error("config", "Failed to save auto-retry setting", err);
       }
     },
 
