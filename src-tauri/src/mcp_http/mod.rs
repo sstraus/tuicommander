@@ -378,9 +378,21 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
             let now = std::time::Instant::now();
-            reaper_state.mcp_sessions.retain(|_id, meta| {
-                now.duration_since(meta.created_at) < MCP_SESSION_TTL
-            });
+            let reaped: Vec<String> = reaper_state.mcp_sessions.iter()
+                .filter(|e| now.duration_since(e.value().created_at) >= MCP_SESSION_TTL)
+                .map(|e| e.key().clone())
+                .collect();
+            for sid in &reaped {
+                reaper_state.mcp_sessions.remove(sid);
+                // Clean up peer agents whose MCP session was reaped
+                reaper_state.peer_agents.retain(|_, peer| peer.mcp_session_id != *sid);
+            }
+            // Evict orphaned inboxes for peers that no longer exist
+            if !reaped.is_empty() {
+                let known_tuic: std::collections::HashSet<String> = reaper_state.peer_agents.iter()
+                    .map(|e| e.key().clone()).collect();
+                reaper_state.agent_inbox.retain(|tuic, _| known_tuic.contains(tuic));
+            }
         }
     });
 

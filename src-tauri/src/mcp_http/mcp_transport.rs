@@ -195,6 +195,20 @@ fn native_tool_definitions() -> serde_json::Value {
             }, "required": ["action"] }
         },
         {
+            "name": "messaging",
+            "description": "Inter-agent messaging — coordinate with other AI agents connected to TUICommander.\n\nActions (pass as 'action' parameter):\n- register: Register as a peer agent. Requires tuic_session (your $TUIC_SESSION env var). Optional: name, project.\n- list_peers: List all registered peer agents. Optional: project (filter by repo path).\n- send: Send a message to a peer. Requires to (recipient's tuic_session UUID), message (max 64KB).\n- inbox: Read buffered messages. Optional: limit (default 50), since (unix millis, only messages after this timestamp).",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: register, list_peers, send, inbox" },
+                "tuic_session": { "type": "string", "description": "Your $TUIC_SESSION env var value (action=register, required)" },
+                "name": { "type": "string", "description": "Display name (action=register, default: 'agent')" },
+                "project": { "type": "string", "description": "Git repo root path (action=register optional, action=list_peers filter)" },
+                "to": { "type": "string", "description": "Recipient tuic_session UUID (action=send, required)" },
+                "message": { "type": "string", "description": "Message content, max 64KB (action=send, required)" },
+                "limit": { "type": "integer", "description": "Max messages to return (action=inbox, default 50)" },
+                "since": { "type": "integer", "description": "Unix millis — only return messages after this (action=inbox)" }
+            }, "required": ["action"] }
+        },
+        {
             "name": "config",
             "description": "Read or write app configuration.\n\nActions (pass as 'action' parameter):\n- get: Returns app config (shell, font, theme, etc.). Password hash is stripped.\n- save: Persists configuration. Requires config object. Partial updates OK.",
             "inputSchema": { "type": "object", "properties": {
@@ -1796,6 +1810,15 @@ pub(super) async fn mcp_delete(
 ) -> impl IntoResponse {
     if let Some(sid) = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok()) {
         state.mcp_sessions.remove(sid);
+        // Clean up peer agents and inboxes for this MCP session
+        let removed_tuic: Vec<String> = state.peer_agents.iter()
+            .filter(|e| e.value().mcp_session_id == sid)
+            .map(|e| e.key().clone())
+            .collect();
+        for tuic in &removed_tuic {
+            state.peer_agents.remove(tuic);
+            state.agent_inbox.remove(tuic);
+        }
     }
     StatusCode::OK
 }
