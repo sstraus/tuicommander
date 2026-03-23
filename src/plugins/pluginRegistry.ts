@@ -660,7 +660,7 @@ function createPluginRegistry() {
     for (const line of lines) {
       // Strip ANSI escapes, then backticks — Claude Code renders tokens as
       // markdown inline code (`path`), leaving literal backticks in clean text.
-      const clean = stripAnsi(line).replaceAll("`", "");
+      const clean = stripAnsi(line).split("`").join("");
       dispatchLine(clean, sessionId);
     }
   }

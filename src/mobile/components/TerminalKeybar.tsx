@@ -24,8 +24,8 @@ const STANDARD_KEYS: KeyDef[] = [
 ];
 
 const CONFIRM_KEYS: KeyDef[] = [
-  { label: "Yes", seq: "yes", confirm: true, autoEnter: true },
-  { label: "No", seq: "no", confirm: true, autoEnter: true },
+  { label: "Yes", seq: "\r", confirm: true },   // Enter = accept highlighted option
+  { label: "No", seq: "\x1b", confirm: true },  // Esc = cancel/reject
 ];
 
 export function TerminalKeybar(props: TerminalKeybarProps) {
