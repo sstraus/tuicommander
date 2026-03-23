@@ -67,8 +67,15 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     if (mdTabsStore.state.activeId === props.tab.id) focusWrapper();
   });
 
-  /** Read file content for the current tab, using fsRoot (worktree-aware) when available */
+  /** Read file content — uses repo-scoped read for relative paths, external read for absolute.
+   *  Absolute paths bypass the repo security check since they're already fully qualified. */
   const readFileContent = async (fsRoot: string | undefined, filePath: string): Promise<string> => {
+    // Absolute paths: always use read_external_file (no repo constraint).
+    // This avoids "Access denied" when the file is outside the tab's repoPath
+    // (e.g. file from a different repo opened via terminal link click).
+    if (filePath.startsWith("/")) {
+      return await invoke<string>("read_external_file", { path: filePath });
+    }
     return fsRoot
       ? await repo.readFile(fsRoot, filePath)
       : await invoke<string>("read_external_file", { path: filePath });
@@ -93,9 +100,14 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
       (async () => {
         try {
           const fileContent = await readFileContent(fsRoot || repoPath, filePath);
+          if (!fileContent) {
+            appLogger.warn("app", "readFileContent returned empty", { repoPath, filePath, fsRoot });
+          }
           setContent(fileContent);
         } catch (err) {
-          setError(String(err));
+          const msg = err instanceof Error ? err.message : String(err);
+          appLogger.error("app", "readFileContent failed", { repoPath, filePath, fsRoot, error: msg });
+          setError(msg);
           setContent("");
         } finally {
           setLoading(false);
