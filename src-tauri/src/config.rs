@@ -1479,6 +1479,7 @@ mod tests {
                         is_default: false,
                     },
                 ],
+                auto_retry_on_error: false,
             },
         );
         let loaded: AgentsConfig = round_trip_in_dir(dir.path(), "agents.json", &agents);
