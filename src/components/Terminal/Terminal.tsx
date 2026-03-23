@@ -1121,9 +1121,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
       rafHandle = requestAnimationFrame(() => {
         rafHandle = 0;
         openTerminal();
-        // Rebuild the WebGL glyph atlas after display:none → block transitions.
-        // The GPU texture can become corrupt when the terminal was hidden.
-        terminal?.clearTextureAtlas();
         safeFit(() => initSession());
 
         // For reconnected terminals (existing sessionId), explicitly sync PTY dimensions.
