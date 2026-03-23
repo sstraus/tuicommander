@@ -615,6 +615,8 @@ mod tests {
             shell_states: DashMap::new(),
             loaded_plugins: DashMap::new(),
             relay: crate::state::RelayState::new(),
+            peer_agents: DashMap::new(),
+            agent_inbox: DashMap::new(),
         })
     }
 

@@ -609,6 +609,8 @@ pub fn run() {
         shell_states: DashMap::new(),
         loaded_plugins: DashMap::new(),
         relay: crate::state::RelayState::new(),
+        peer_agents: DashMap::new(),
+        agent_inbox: DashMap::new(),
     });
 
     // Wire the event bus into the upstream registry so status changes emit SSE events.

@@ -708,6 +708,45 @@ pub struct McpSessionMeta {
     pub is_claude_code: bool,
 }
 
+/// A registered peer agent in the inter-agent messaging system.
+/// Keyed by `tuic_session` (the stable tab UUID from TUIC_SESSION env var).
+#[derive(Debug, Clone, Serialize)]
+pub struct PeerAgent {
+    /// Stable tab UUID (from TUIC_SESSION env var) — primary identifier
+    pub tuic_session: String,
+    /// MCP session ID (for routing notifications via SSE)
+    pub mcp_session_id: String,
+    /// Display name (tab name or agent-chosen name)
+    pub name: String,
+    /// Git repo root this agent is working on (for filtering)
+    pub project: Option<String>,
+    /// When the agent registered (unix millis for serialization)
+    pub registered_at: u64,
+}
+
+/// A message in the inter-agent mailbox.
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentMessage {
+    /// Unique message ID
+    pub id: String,
+    /// Sender's tuicSession UUID
+    pub from_tuic_session: String,
+    /// Sender display name
+    pub from_name: String,
+    /// Message body (max 64 KB)
+    pub content: String,
+    /// Unix millis timestamp
+    pub timestamp: u64,
+    /// Whether this message was pushed via SSE channel notification
+    pub delivered_via_channel: bool,
+}
+
+/// Max messages per agent inbox before FIFO eviction.
+pub(crate) const AGENT_INBOX_CAPACITY: usize = 100;
+
+/// Max message body size in bytes (64 KB).
+pub(crate) const AGENT_MESSAGE_MAX_BYTES: usize = 64 * 1024;
+
 /// Global state for managing PTY sessions and worktrees
 pub struct AppState {
     pub sessions: DashMap<String, Mutex<PtySession>>,
@@ -800,6 +839,11 @@ pub struct AppState {
     pub(crate) loaded_plugins: DashMap<String, Vec<String>>,
     /// Cloud relay client state
     pub(crate) relay: RelayState,
+    /// Registered peer agents for inter-agent messaging (tuic_session → PeerAgent)
+    pub peer_agents: DashMap<String, PeerAgent>,
+    /// Message inbox per agent (tuic_session → VecDeque<AgentMessage>).
+    /// Capped at AGENT_INBOX_CAPACITY messages per agent, old messages evicted FIFO.
+    pub agent_inbox: DashMap<String, VecDeque<AgentMessage>>,
 }
 
 /// Cloud relay client state (connection + shutdown handle).
@@ -1744,6 +1788,8 @@ pub(crate) mod tests_support {
             shell_states: DashMap::new(),
             loaded_plugins: DashMap::new(),
             relay: RelayState::new(),
+            peer_agents: DashMap::new(),
+            agent_inbox: DashMap::new(),
         }
     }
 }
@@ -2164,6 +2210,8 @@ mod tests {
             shell_states: DashMap::new(),
             loaded_plugins: DashMap::new(),
             relay: RelayState::new(),
+            peer_agents: DashMap::new(),
+            agent_inbox: DashMap::new(),
         }
     }
 
