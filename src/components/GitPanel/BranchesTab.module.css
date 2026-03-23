@@ -249,20 +249,6 @@
   color: var(--fg-primary);
 }
 
-/* Keyboard hints bar at bottom */
-.hintsBar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 4px 12px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-tertiary);
-  font-size: var(--font-2xs);
-  font-family: var(--font-ui);
-  color: var(--fg-muted);
-  flex-shrink: 0;
-  margin-top: auto;
-}
 
 /* Inline dialog / popover (for multi-button confirms) */
 .overlay {

@@ -560,42 +560,51 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
   function buildContextMenuItems(branch: BranchDetail): ContextMenuItem[] {
     const cur = currentBranch();
     const isCurrent = branch.is_current;
+    const sep: ContextMenuItem = { separator: true, label: "", action: () => undefined };
 
-    const copyName = { label: "Copy Name", action: () => void navigator.clipboard.writeText(branch.name) };
+    const copyName: ContextMenuItem = { label: "Copy Name", action: () => void navigator.clipboard.writeText(branch.name) };
 
     if (branch.is_remote) {
       return [
-        { label: "Checkout (create local)", action: () => void handleCheckout(branch) },
-        { label: "Fetch", action: () => void doFetch(branch) },
+        { label: "Checkout (create local)", shortcut: "\u23CE", action: () => void handleCheckout(branch) },
+        sep,
+        { label: "Fetch", shortcut: "f", action: () => void doFetch(branch) },
         { label: "Compare with current", action: () => void doCompare(branch), disabled: !cur },
-        { separator: true, label: "", action: () => undefined },
+        sep,
         copyName,
       ];
     }
 
     if (isCurrent) {
       return [
-        { label: "Push", action: () => void doPush(branch) },
-        { label: "Pull", action: () => void doPull(branch) },
-        { separator: true, label: "", action: () => undefined },
+        { label: "Push", shortcut: "\u21E7P", action: () => void doPush(branch) },
+        { label: "Pull", shortcut: "p", action: () => void doPull(branch) },
+        { label: "Fetch", shortcut: "f", action: () => void doFetch(branch) },
+        sep,
+        { label: "Rename", shortcut: "\u21E7R", action: () => startRename(branch, getFlatIndex(branch)) },
+        sep,
         copyName,
       ];
     }
 
     const items: ContextMenuItem[] = [
-      { label: "Checkout", action: () => void handleCheckout(branch) },
-      { label: "Merge into current", action: () => startMerge(branch), disabled: !cur },
-      { label: "Rebase onto", action: () => startRebase(branch), disabled: !cur },
+      { label: "Checkout", shortcut: "\u23CE", action: () => void handleCheckout(branch) },
+      { label: "Merge into current", shortcut: "\u21E7M", action: () => startMerge(branch), disabled: !cur },
+      { label: "Rebase onto", shortcut: "r", action: () => startRebase(branch), disabled: !cur },
       { label: "Compare with current", action: () => void doCompare(branch), disabled: !cur },
-      { separator: true, label: "", action: () => undefined },
-      { label: "Push", action: () => void doPush(branch) },
+      sep,
+      { label: "Push", shortcut: "\u21E7P", action: () => void doPush(branch) },
+      { label: "Pull", shortcut: "p", action: () => void doPull(branch) },
+      { label: "Fetch", shortcut: "f", action: () => void doFetch(branch) },
     ];
 
     if (!branch.is_main) {
-      items.push({ label: "Delete", action: () => startDelete(branch) });
+      items.push(sep);
+      items.push({ label: "Rename", shortcut: "\u21E7R", action: () => startRename(branch, getFlatIndex(branch)) });
+      items.push({ label: "Delete", shortcut: "d", action: () => startDelete(branch) });
     }
 
-    items.push({ separator: true, label: "", action: () => undefined });
+    items.push(sep);
     items.push(copyName);
 
     return items;
@@ -779,18 +788,18 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
   }
 
   function renderBranchRow(branch: BranchDetail, isLocal: boolean, indented = false) {
-    const flatIndex = getFlatIndex(branch);
-    const isSelected = selectedIndex() === flatIndex;
+    const flatIndex = () => getFlatIndex(branch);
+    const isSelected = () => selectedIndex() === flatIndex();
     return (
       <div
         class={cx(
           s.branchRow,
           indented && s.branchRowIndented,
           isStale(branch.last_commit_date) && s.stale,
-          isSelected && s.selected,
+          isSelected() && s.selected,
         )}
         title={branchTooltip(branch)}
-        onClick={() => { setSelectedIndex(flatIndex); containerRef?.focus(); }}
+        onClick={() => { setSelectedIndex(flatIndex()); containerRef?.focus(); }}
         onDblClick={() => handleCheckout(branch)}
         onContextMenu={(e) => openContextMenu(e, branch)}
       >
@@ -806,7 +815,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
           when={isLocal}
           fallback={<span class={s.branchName}>{branch.name}</span>}
         >
-          {renderBranchName(branch, flatIndex)}
+          {renderBranchName(branch, flatIndex())}
         </Show>
         <span class={s.branchMeta}>
           <Show when={isLocal && (branch.ahead ?? 0) > 0}>
@@ -981,16 +990,6 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
         </Show>
       </Show>
 
-      {/* Keyboard hints bar */}
-      <div class={s.hintsBar}>
-        <span>Enter: checkout</span>
-        <span>n: new</span>
-        <span>d: delete</span>
-        <span>R: rename</span>
-        <span>M: merge</span>
-        <span>r: rebase</span>
-        <span>P/p/f: push/pull/fetch</span>
-      </div>
 
       {/* Dirty checkout dialog */}
       <Show when={dirtyCheckout() !== null}>
