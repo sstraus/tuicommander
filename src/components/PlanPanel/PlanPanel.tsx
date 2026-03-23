@@ -1,6 +1,7 @@
-import { Component, createMemo, For, Show } from "solid-js";
+import { Component, createEffect, createMemo, For, Show } from "solid-js";
 import { activityStore } from "../../stores/activityStore";
 import { mdTabsStore } from "../../stores/mdTabs";
+import { scanPlans } from "../../plugins/planPlugin";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { cx } from "../../utils";
 import p from "../shared/panel.module.css";
@@ -23,6 +24,13 @@ function statusClass(status: string): string {
 }
 
 export const PlanPanel: Component<PlanPanelProps> = (props) => {
+  // Scan plans/ directory when repo changes or panel becomes visible
+  createEffect(() => {
+    if (props.repoPath && props.visible) {
+      scanPlans(props.repoPath);
+    }
+  });
+
   const planItems = createMemo(() => {
     if (!props.repoPath) return [];
     return activityStore.getForSection("plan", props.repoPath);

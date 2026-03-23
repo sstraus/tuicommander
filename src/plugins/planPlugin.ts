@@ -3,6 +3,7 @@ import { activityStore } from "../stores/activityStore";
 import { mdTabsStore } from "../stores/mdTabs";
 import { appLogger } from "../stores/appLogger";
 import { stripFrontmatter, extractPlanMetadata } from "../utils/frontmatter";
+import type { DirEntry } from "../types/fs";
 import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -61,15 +62,13 @@ const planMarkdownProvider: MarkdownProvider = {
 // Plugin implementation
 // ---------------------------------------------------------------------------
 
-/** Max plan items shown in the Activity Center bell dropdown */
-const MAX_PLAN_ITEMS = 3;
-
 class PlanPlugin implements TuiPlugin {
   readonly id = PLUGIN_ID;
-  /** Ordered list of active plan item IDs (oldest first) */
-  private planItemIds: string[] = [];
+  private host: PluginHost | null = null;
 
   onload(host: PluginHost): void {
+    this.host = host;
+
     host.registerSection({
       id: SECTION_ID,
       label: "ACTIVE PLAN",
@@ -77,11 +76,14 @@ class PlanPlugin implements TuiPlugin {
       canDismissAll: false,
     });
 
-    // Rebuild planItemIds from hydrated activityStore items
+    // Enrich any hydrated items that have no metadata yet
     const existingItems = activityStore.getForSection(SECTION_ID);
-    this.planItemIds = [...existingItems]
-      .sort((a, b) => a.createdAt - b.createdAt)
-      .map((i) => i.id);
+    for (const item of existingItems) {
+      if (!item.metadata) {
+        const path = item.subtitle; // subtitle holds the absolute path
+        if (path) this.enrichItem(item.id, path, host);
+      }
+    }
 
     host.registerStructuredEventHandler("plan-file", (payload, sessionId) => {
       if (typeof payload !== "object" || payload === null || typeof (payload as Record<string, unknown>).path !== "string") return;
@@ -98,56 +100,58 @@ class PlanPlugin implements TuiPlugin {
         if (!cwd || !cwd.startsWith(activeRepo)) return;
       }
 
-      const id = itemId(absolutePath);
+      const repoPath = activeRepo ?? cwd ?? undefined;
+      const isNew = !activityStore.getForSection(SECTION_ID).some((i) => i.id === itemId(absolutePath));
 
-      // If already tracked, move it to the end (most recent)
-      const existingIdx = this.planItemIds.indexOf(id);
-      const isNew = existingIdx < 0;
-      if (existingIdx >= 0) {
-        this.planItemIds.splice(existingIdx, 1);
-      }
-      this.planItemIds.push(id);
-
-      // Evict oldest items beyond the limit
-      while (this.planItemIds.length > MAX_PLAN_ITEMS) {
-        const evictId = this.planItemIds.shift();
-        if (evictId !== undefined) host.removeItem(evictId);
-      }
-
-      const fallbackTitle = displayName(absolutePath);
-      const uri = contentUri(absolutePath);
-
-      // Add immediately with fallback title (sync), then enrich with file metadata (async)
-      host.addItem({
-        id,
-        pluginId: PLUGIN_ID,
-        sectionId: SECTION_ID,
-        title: fallbackTitle,
-        subtitle: absolutePath,
-        icon: ICON_SVG,
-        dismissible: true,
-        repoPath: activeRepo ?? cwd ?? undefined,
-        contentUri: uri,
-      });
+      this.addPlanItem(absolutePath, repoPath, host);
 
       // Auto-open new plans belonging to the active repo as a background tab
       if (isNew && activeRepo) {
-        mdTabsStore.addVirtualBackground(fallbackTitle, uri, activeRepo);
+        mdTabsStore.addVirtualBackground(displayName(absolutePath), contentUri(absolutePath), activeRepo);
       }
-
-      // Async: read the file and enrich with extracted metadata
-      this.enrichItem(id, absolutePath, host);
     });
 
-    // Enrich any hydrated items that have no metadata yet
-    for (const item of existingItems) {
-      if (!item.metadata) {
-        const path = item.subtitle; // subtitle holds the absolute path
-        if (path) this.enrichItem(item.id, path, host);
-      }
-    }
-
     host.registerMarkdownProvider("plan", planMarkdownProvider);
+
+    // Scan plans/ directory for the active repo on startup
+    const activeRepo = host.getActiveRepoPath();
+    if (activeRepo) {
+      this.scanPlansDirectory(activeRepo);
+    }
+  }
+
+  /** Add or update a plan item in the activity store, then enrich with file metadata. */
+  private addPlanItem(absolutePath: string, repoPath: string | undefined, host: PluginHost): void {
+    const id = itemId(absolutePath);
+    host.addItem({
+      id,
+      pluginId: PLUGIN_ID,
+      sectionId: SECTION_ID,
+      title: displayName(absolutePath),
+      subtitle: absolutePath,
+      icon: ICON_SVG,
+      dismissible: true,
+      repoPath,
+      contentUri: contentUri(absolutePath),
+    });
+    this.enrichItem(id, absolutePath, host);
+  }
+
+  /** Scan a repo's plans/ directory and add discovered plan files. */
+  scanPlansDirectory(repoPath: string): void {
+    invoke<DirEntry[]>("list_directory", { repoPath, subdir: "plans" })
+      .then((entries) => {
+        const mdFiles = entries.filter((e) => !e.is_dir && e.name.endsWith(".md"));
+        for (const entry of mdFiles) {
+          const absolutePath = `${repoPath.replace(/\/$/, "")}/${entry.path}`;
+          if (this.host) {
+            this.addPlanItem(absolutePath, repoPath, this.host);
+          }
+        }
+      })
+      .catch(() => {
+        // plans/ directory may not exist — that's fine
+      });
   }
 
   /** Read a plan file and update the ActivityItem with extracted metadata. */
@@ -173,8 +177,15 @@ class PlanPlugin implements TuiPlugin {
   }
 
   onunload(): void {
-    // All registrations are auto-disposed by the plugin registry
+    this.host = null;
   }
 }
 
-export const planPlugin: TuiPlugin = new PlanPlugin();
+const planPluginInstance = new PlanPlugin();
+export const planPlugin: TuiPlugin = planPluginInstance;
+
+/** Scan a repo's plans/ directory and populate the PlanPanel.
+ *  Safe to call multiple times — uses stable IDs for dedup. */
+export function scanPlans(repoPath: string): void {
+  planPluginInstance.scanPlansDirectory(repoPath);
+}
