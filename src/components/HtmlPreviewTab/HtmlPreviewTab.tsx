@@ -68,7 +68,9 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
     const { fsRoot, repoPath, filePath } = props.tab;
     const root = fsRoot || repoPath;
     const absolutePath = filePath.startsWith("/") ? filePath : `${root}/${filePath}`;
-    openPath(absolutePath);
+    openPath(absolutePath).catch((err) =>
+      appLogger.error("app", "Failed to open HTML in browser", { path: absolutePath, error: String(err) }),
+    );
   };
 
   const displayPath = () => {
@@ -96,7 +98,7 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
       <Show when={!loading() && !error() && content()}>
         <iframe
           class={s.iframe}
-          sandbox="allow-same-origin"
+          sandbox=""
           srcdoc={content()}
           title={props.tab.fileName}
         />

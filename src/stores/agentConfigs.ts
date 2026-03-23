@@ -19,10 +19,15 @@ function createAgentConfigsStore() {
     loaded: false,
   });
 
-  /** Save full config to Rust */
+  /** Save full config to Rust. Logs and rethrows on failure so callers can surface errors. */
   async function saveToDisk(): Promise<void> {
-    const full: AgentsConfig = { agents: clone(state.agents) };
-    await invoke("save_agents_config", { config: full });
+    try {
+      const full: AgentsConfig = { agents: clone(state.agents) };
+      await invoke("save_agents_config", { config: full });
+    } catch (err) {
+      appLogger.error("config", "Failed to save agent config to disk", err);
+      throw err;
+    }
   }
 
   const actions = {
@@ -66,7 +71,7 @@ function createAgentConfigsStore() {
       try {
         await saveToDisk();
       } catch (err) {
-        appLogger.error("config", "Failed to save agent config", err);
+        // saveToDisk already logged the error
       }
     },
 
@@ -80,7 +85,7 @@ function createAgentConfigsStore() {
       try {
         await saveToDisk();
       } catch (err) {
-        appLogger.error("config", "Failed to save agent config", err);
+        // saveToDisk already logged the error
       }
     },
 
@@ -99,7 +104,7 @@ function createAgentConfigsStore() {
       try {
         await saveToDisk();
       } catch (err) {
-        appLogger.error("config", "Failed to save agent config", err);
+        // saveToDisk already logged the error
       }
     },
 
@@ -119,7 +124,7 @@ function createAgentConfigsStore() {
       try {
         await saveToDisk();
       } catch (err) {
-        appLogger.error("config", "Failed to save auto-retry setting", err);
+        // saveToDisk already logged the error
       }
     },
 
@@ -136,7 +141,7 @@ function createAgentConfigsStore() {
       try {
         await saveToDisk();
       } catch (err) {
-        appLogger.error("config", "Failed to save agent config", err);
+        // saveToDisk already logged the error
       }
     },
   };

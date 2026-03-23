@@ -272,7 +272,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       // Pause reader if we've accumulated too much unprocessed data
       if (!isPaused && pendingWriteBytes > HIGH_WATERMARK && sessionId) {
         isPaused = true;
-        pty.pause(sessionId).catch(() => {});
+        pty.pause(sessionId).catch((err) => appLogger.warn("terminal", "PTY pause failed", { error: String(err) }));
       }
 
       // Snapshot scroll state before write — xterm may jump the viewport when
@@ -286,7 +286,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pendingWriteBytes -= byteLen;
         if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
           isPaused = false;
-          pty.resume(sessionId).catch(() => {});
+          pty.resume(sessionId).catch((err) => appLogger.warn("terminal", "PTY resume failed", { error: String(err) }));
         }
         if (!terminal) return;
 
@@ -514,7 +514,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
                 appLogger.info("terminal", `[AutoRetry] ${label}: attempt ${attempt}/${RETRY_DELAYS.length} in ${delay / 1000}s`);
                 retryTimer = setTimeout(() => {
                   retryTimer = undefined;
-                  if (sessionId) {
+                  const current = terminalsStore.get(props.id);
+                  if (sessionId && current?.awaitingInput === "error") {
                     appLogger.info("terminal", `[AutoRetry] ${label}: injecting "continue" (attempt ${attempt})`);
                     pty.write(sessionId, "continue\r").catch((err) =>
                       appLogger.error("terminal", "[AutoRetry] Failed to write", { error: String(err) }),
@@ -1201,7 +1202,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Resume reader if paused (don't leave PTY blocked after unmount)
     if (isPaused && sessionId) {
       isPaused = false;
-      pty.resume(sessionId).catch(() => {});
+      pty.resume(sessionId).catch((err) => appLogger.warn("terminal", "PTY resume failed (cleanup)", { error: String(err) }));
     }
 
     // NOTE: We intentionally do NOT close the PTY session here.
