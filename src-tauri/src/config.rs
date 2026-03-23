@@ -209,6 +209,8 @@ pub(crate) enum WorktreeStorage {
     AppDir,
     /// `<repo>/.worktrees/feat-123` — inside the repository
     InsideRepo,
+    /// `<repo>/.claude/worktrees/feat-123` — Claude Code default location
+    ClaudeCodeDefault,
 }
 
 /// How to handle orphan worktrees (branch deleted)
@@ -1500,6 +1502,7 @@ mod tests {
         assert_eq!(serde_json::to_string(&WorktreeStorage::Sibling).unwrap(), r#""sibling""#);
         assert_eq!(serde_json::to_string(&WorktreeStorage::AppDir).unwrap(), r#""app-dir""#);
         assert_eq!(serde_json::to_string(&WorktreeStorage::InsideRepo).unwrap(), r#""inside-repo""#);
+        assert_eq!(serde_json::to_string(&WorktreeStorage::ClaudeCodeDefault).unwrap(), r#""claude-code-default""#);
         assert_eq!(serde_json::to_string(&OrphanCleanup::Ask).unwrap(), r#""ask""#);
         assert_eq!(serde_json::to_string(&OrphanCleanup::On).unwrap(), r#""on""#);
         assert_eq!(serde_json::to_string(&MergeStrategy::Squash).unwrap(), r#""squash""#);
@@ -1515,6 +1518,7 @@ mod tests {
         assert_eq!(serde_json::from_str::<WorktreeStorage>(r#""sibling""#).unwrap(), WorktreeStorage::Sibling);
         assert_eq!(serde_json::from_str::<WorktreeStorage>(r#""app-dir""#).unwrap(), WorktreeStorage::AppDir);
         assert_eq!(serde_json::from_str::<WorktreeStorage>(r#""inside-repo""#).unwrap(), WorktreeStorage::InsideRepo);
+        assert_eq!(serde_json::from_str::<WorktreeStorage>(r#""claude-code-default""#).unwrap(), WorktreeStorage::ClaudeCodeDefault);
         assert_eq!(serde_json::from_str::<OrphanCleanup>(r#""ask""#).unwrap(), OrphanCleanup::Ask);
         assert_eq!(serde_json::from_str::<MergeStrategy>(r#""rebase""#).unwrap(), MergeStrategy::Rebase);
         assert_eq!(serde_json::from_str::<WorktreeAfterMerge>(r#""ask""#).unwrap(), WorktreeAfterMerge::Ask);

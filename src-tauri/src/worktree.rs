@@ -65,6 +65,7 @@ pub(crate) struct WorktreeResult {
 /// - `Sibling`: `{repo_parent}/{repo_name}__wt/`
 /// - `AppDir`: `{app_config_dir}/worktrees/{repo_name}/`
 /// - `InsideRepo`: `{repo_path}/.worktrees/`
+/// - `ClaudeCodeDefault`: `{repo_path}/.claude/worktrees/`
 pub(crate) fn resolve_worktree_dir(
     repo_path: &Path,
     strategy: &crate::config::WorktreeStorage,
@@ -88,6 +89,7 @@ pub(crate) fn resolve_worktree_dir(
             app_worktrees_dir.join(repo_name)
         }
         WorktreeStorage::InsideRepo => repo_path.join(".worktrees"),
+        WorktreeStorage::ClaudeCodeDefault => repo_path.join(".claude").join("worktrees"),
     }
 }
 
@@ -1381,6 +1383,17 @@ mod tests {
         assert_eq!(
             resolve_worktree_dir(&repo, &WorktreeStorage::InsideRepo, &app_dir),
             PathBuf::from("/home/user/dev/myrepo/.worktrees")
+        );
+    }
+
+    #[test]
+    fn resolve_worktree_dir_claude_code_default_strategy() {
+        use crate::config::WorktreeStorage;
+        let repo = PathBuf::from("/home/user/dev/myrepo");
+        let app_dir = PathBuf::from("/home/user/.config/tuic/worktrees");
+        assert_eq!(
+            resolve_worktree_dir(&repo, &WorktreeStorage::ClaudeCodeDefault, &app_dir),
+            PathBuf::from("/home/user/dev/myrepo/.claude/worktrees")
         );
     }
 
