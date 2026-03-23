@@ -1018,7 +1018,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     // Track user-initiated scrolls so doFit() can restore position after reflow.
     // Ignores alternate buffer (always 0,0 — would corrupt tracked state).
-    // Skips the first scroll event after a hidden→visible transition: xterm fires
+    // Passes actual visibility so hidden terminals use the inference branch in
+    // updateTrackedScroll (buf.viewportY is unreliable when display:none).
+    // Also skips the first scroll after hidden→visible transition: xterm fires
     // onScroll with viewportY=0 when display:none→block resets DOM scrollTop.
     terminal.onScroll(() => {
       const buf = terminal!.buffer.active;
@@ -1032,7 +1034,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         return;
       }
       lastKnownVisible = isNowVisible;
-      updateTrackedScroll(buf, true);
+      updateTrackedScroll(buf, isNowVisible);
     });
 
     resizeObserver = new ResizeObserver(() => {
