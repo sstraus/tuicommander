@@ -81,6 +81,8 @@ export const GitHubTab: Component = () => {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
+      // On fetch failure, show disconnected state rather than stale connected state
+      setAuthStatus({ authenticated: false, login: null, avatar_url: null, source: "none", scopes: null });
       appLogger.error("github", "Failed to fetch auth status", e);
     }
   }
@@ -192,8 +194,12 @@ export const GitHubTab: Component = () => {
     try {
       await rpc<void>("github_disconnect");
       setError(null);
+      // Force unauthenticated state immediately, then refresh from backend
+      setAuthStatus({ authenticated: false, login: null, avatar_url: null, source: "none", scopes: null });
       await fetchStatus();
     } catch (e) {
+      // Even on error, ensure we show the disconnected state
+      setAuthStatus({ authenticated: false, login: null, avatar_url: null, source: "none", scopes: null });
       setError(e instanceof Error ? e.message : String(e));
       appLogger.error("github", "Failed to disconnect", e);
     } finally {
