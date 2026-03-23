@@ -270,6 +270,22 @@ const AgentRow: Component<{
             </label>
           </div>
 
+          {/* Auto-retry on server errors */}
+          <div class={a.expandedSection}>
+            <label class={a.toggleRow} onClick={(e) => e.stopPropagation()}>
+              <input
+                type="checkbox"
+                checked={agentConfigsStore.isAutoRetryEnabled(props.agentType)}
+                onChange={() => agentConfigsStore.setAutoRetry(
+                  props.agentType,
+                  !agentConfigsStore.isAutoRetryEnabled(props.agentType),
+                )}
+              />
+              <span>Auto-retry on server errors</span>
+            </label>
+            <p class={s.hint}>Inject "continue" on 5xx errors with backoff (5s, 15s, 30s)</p>
+          </div>
+
           {/* Run Configurations */}
           <div class={a.expandedSection}>
             <div class={a.expandedLabel}>Run Configurations</div>
