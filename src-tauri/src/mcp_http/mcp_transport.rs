@@ -136,6 +136,7 @@ const CONFIG_ACTIONS: &str = "get, save";
 const WORKSPACE_ACTIONS: &str = "list, active";
 const NOTIFY_ACTIONS: &str = "toast, confirm";
 const KNOWLEDGE_ACTIONS: &str = "search, code_graph, status, setup";
+const MESSAGING_ACTIONS: &str = "register, list_peers, send, inbox";
 
 /// MCP tool definitions — 5 meta-commands mirroring tui_mcp_bridge
 fn native_tool_definitions() -> serde_json::Value {
@@ -341,6 +342,7 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
         "github" => handle_github(state, args).await,
         "worktree" => handle_worktree(state, args, is_claude_code),
         "agent" => handle_agent(state, addr, args),
+        "messaging" => handle_messaging(state, args, mcp_session_id),
         "config" => handle_config(state, addr, args),
         "workspace" => handle_workspace(state, args),
         "notify" => handle_notify(state, addr, args),
@@ -349,7 +351,7 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
         }
         _ => serde_json::json!({"error": format!(
-            "Unknown tool '{}'. Available: session, github, worktree, agent, config, workspace, notify, knowledge, plugin_dev_guide", name
+            "Unknown tool '{}'. Available: session, github, worktree, agent, messaging, config, workspace, notify, knowledge, plugin_dev_guide", name
         )}),
     }
 }
@@ -942,6 +944,70 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'agent'. Available: {}", other, AGENT_ACTIONS
+        )}),
+    }
+}
+
+fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
+    let action = match require_action(args, "messaging", MESSAGING_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "register" => {
+            let tuic_session = match args["tuic_session"].as_str() {
+                Some(s) if !s.is_empty() => s,
+                _ => return serde_json::json!({"error": "Action 'register' requires 'tuic_session' (your $TUIC_SESSION env var)"}),
+            };
+            let mcp_sid = match mcp_session_id {
+                Some(sid) => sid.to_string(),
+                None => return serde_json::json!({"error": "No MCP session — send an initialize request first"}),
+            };
+            let name = args["name"].as_str().unwrap_or("agent").to_string();
+            let project = args["project"].as_str().map(|s| s.to_string());
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+
+            let peer = crate::state::PeerAgent {
+                tuic_session: tuic_session.to_string(),
+                mcp_session_id: mcp_sid,
+                name: name.clone(),
+                project,
+                registered_at: now_ms,
+            };
+            state.peer_agents.insert(tuic_session.to_string(), peer);
+            serde_json::json!({"ok": true, "tuic_session": tuic_session, "name": name})
+        }
+        "list_peers" => {
+            let project_filter = args["project"].as_str();
+            let peers: Vec<serde_json::Value> = state.peer_agents.iter()
+                .filter(|entry| {
+                    if let Some(filter) = project_filter {
+                        entry.value().project.as_deref() == Some(filter)
+                    } else {
+                        true
+                    }
+                })
+                .map(|entry| {
+                    let p = entry.value();
+                    serde_json::json!({
+                        "tuic_session": p.tuic_session,
+                        "name": p.name,
+                        "project": p.project,
+                        "registered_at": p.registered_at,
+                    })
+                })
+                .collect();
+            serde_json::json!({"peers": peers, "count": peers.len()})
+        }
+        "send" | "inbox" => {
+            // Implemented in story 893
+            serde_json::json!({"error": format!("Action '{}' is not yet implemented", action)})
+        }
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'messaging'. Available: {}", other, MESSAGING_ACTIONS
         )}),
     }
 }
@@ -1763,5 +1829,77 @@ mod tests {
         assert!(state.vt_log_buffers.contains_key(sid), "vt_log_buffers should contain session");
         assert!(state.last_output_ms.contains_key(sid), "last_output_ms should contain session");
         assert!(state.output_buffers.contains_key(sid), "output_buffers should contain session");
+    }
+
+    // ── messaging tool tests ────────────────────────────────────────
+
+    #[test]
+    fn messaging_register_requires_tuic_session() {
+        let state = test_state();
+        let args = serde_json::json!({"action": "register"});
+        let result = handle_messaging(&state, &args, Some("mcp-1"));
+        assert!(result["error"].as_str().unwrap().contains("tuic_session"));
+    }
+
+    #[test]
+    fn messaging_register_requires_mcp_session() {
+        let state = test_state();
+        let args = serde_json::json!({"action": "register", "tuic_session": "tab-1"});
+        let result = handle_messaging(&state, &args, None);
+        assert!(result["error"].as_str().unwrap().contains("MCP session"));
+    }
+
+    #[test]
+    fn messaging_register_and_list_peers() {
+        let state = test_state();
+
+        // Register two agents
+        let r1 = handle_messaging(&state, &serde_json::json!({
+            "action": "register", "tuic_session": "tab-1", "name": "worker-1", "project": "/repo/a"
+        }), Some("mcp-1"));
+        assert_eq!(r1["ok"], true);
+        assert_eq!(r1["name"], "worker-1");
+
+        let r2 = handle_messaging(&state, &serde_json::json!({
+            "action": "register", "tuic_session": "tab-2", "name": "worker-2", "project": "/repo/a"
+        }), Some("mcp-2"));
+        assert_eq!(r2["ok"], true);
+
+        // List all peers
+        let list = handle_messaging(&state, &serde_json::json!({"action": "list_peers"}), Some("mcp-1"));
+        assert_eq!(list["count"], 2);
+
+        // Filter by project
+        let filtered = handle_messaging(&state, &serde_json::json!({
+            "action": "list_peers", "project": "/repo/b"
+        }), Some("mcp-1"));
+        assert_eq!(filtered["count"], 0);
+    }
+
+    #[test]
+    fn messaging_register_updates_existing() {
+        let state = test_state();
+
+        handle_messaging(&state, &serde_json::json!({
+            "action": "register", "tuic_session": "tab-1", "name": "old-name"
+        }), Some("mcp-1"));
+
+        // Re-register with new name
+        handle_messaging(&state, &serde_json::json!({
+            "action": "register", "tuic_session": "tab-1", "name": "new-name"
+        }), Some("mcp-2"));
+
+        assert_eq!(state.peer_agents.len(), 1);
+        assert_eq!(state.peer_agents.get("tab-1").unwrap().name, "new-name");
+        assert_eq!(state.peer_agents.get("tab-1").unwrap().mcp_session_id, "mcp-2");
+    }
+
+    #[test]
+    fn messaging_register_default_name() {
+        let state = test_state();
+        let r = handle_messaging(&state, &serde_json::json!({
+            "action": "register", "tuic_session": "tab-1"
+        }), Some("mcp-1"));
+        assert_eq!(r["name"], "agent");
     }
 }
