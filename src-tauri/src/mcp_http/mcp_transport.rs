@@ -7,6 +7,7 @@ use axum::response::IntoResponse;
 use axum::Json;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use std::collections::VecDeque;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -1002,9 +1003,84 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
                 .collect();
             serde_json::json!({"peers": peers, "count": peers.len()})
         }
-        "send" | "inbox" => {
-            // Implemented in story 893
-            serde_json::json!({"error": format!("Action '{}' is not yet implemented", action)})
+        "send" => {
+            let to = match args["to"].as_str() {
+                Some(s) if !s.is_empty() => s,
+                _ => return serde_json::json!({"error": "Action 'send' requires 'to' (recipient's tuic_session UUID)"}),
+            };
+            let message = match args["message"].as_str() {
+                Some(s) if !s.is_empty() => s,
+                _ => return serde_json::json!({"error": "Action 'send' requires 'message'"}),
+            };
+            if message.len() > crate::state::AGENT_MESSAGE_MAX_BYTES {
+                return serde_json::json!({"error": format!(
+                    "Message exceeds 64 KB limit ({} bytes)", message.len()
+                )});
+            }
+            // Resolve sender from MCP session
+            let sender = match mcp_session_id.and_then(|sid| {
+                state.peer_agents.iter().find(|e| e.value().mcp_session_id == sid).map(|e| (e.value().tuic_session.clone(), e.value().name.clone()))
+            }) {
+                Some(s) => s,
+                None => return serde_json::json!({"error": "You are not registered. Register first with messaging action=register"}),
+            };
+            // Check recipient exists
+            if !state.peer_agents.contains_key(to) {
+                return serde_json::json!({"error": format!("Recipient '{}' is not registered. Use list_peers to find valid targets.", to)});
+            }
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let msg = crate::state::AgentMessage {
+                id: uuid::Uuid::new_v4().to_string(),
+                from_tuic_session: sender.0,
+                from_name: sender.1,
+                content: message.to_string(),
+                timestamp: now_ms,
+                delivered_via_channel: false, // Phase 2 will set this
+            };
+            let msg_id = msg.id.clone();
+            // Buffer in recipient's inbox with FIFO eviction
+            let mut inbox = state.agent_inbox.entry(to.to_string()).or_insert_with(VecDeque::new);
+            if inbox.len() >= crate::state::AGENT_INBOX_CAPACITY {
+                inbox.pop_front();
+            }
+            inbox.push_back(msg);
+            serde_json::json!({"ok": true, "message_id": msg_id})
+        }
+        "inbox" => {
+            // Resolve caller's tuic_session from MCP session
+            let tuic_session = match mcp_session_id.and_then(|sid| {
+                state.peer_agents.iter().find(|e| e.value().mcp_session_id == sid).map(|e| e.value().tuic_session.clone())
+            }) {
+                Some(ts) => ts,
+                None => return serde_json::json!({"error": "You are not registered. Register first with messaging action=register"}),
+            };
+            let limit = args["limit"].as_u64().unwrap_or(50) as usize;
+            let since = args["since"].as_u64().unwrap_or(0);
+            let messages: Vec<serde_json::Value> = state.agent_inbox
+                .get(&tuic_session)
+                .map(|inbox| {
+                    inbox.iter()
+                        .filter(|m| m.timestamp > since)
+                        .rev() // newest first
+                        .take(limit)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev() // restore chronological order
+                        .map(|m| serde_json::json!({
+                            "id": m.id,
+                            "from_tuic_session": m.from_tuic_session,
+                            "from_name": m.from_name,
+                            "content": m.content,
+                            "timestamp": m.timestamp,
+                            "delivered_via_channel": m.delivered_via_channel,
+                        }))
+                        .collect()
+                })
+                .unwrap_or_default();
+            serde_json::json!({"messages": messages, "count": messages.len()})
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'messaging'. Available: {}", other, MESSAGING_ACTIONS
@@ -1901,5 +1977,134 @@ mod tests {
             "action": "register", "tuic_session": "tab-1"
         }), Some("mcp-1"));
         assert_eq!(r["name"], "agent");
+    }
+
+    fn register_peer(state: &Arc<AppState>, tuic: &str, name: &str, mcp: &str) {
+        handle_messaging(state, &serde_json::json!({
+            "action": "register", "tuic_session": tuic, "name": name
+        }), Some(mcp));
+    }
+
+    #[test]
+    fn messaging_send_requires_to_and_message() {
+        let state = test_state();
+        register_peer(&state, "tab-1", "sender", "mcp-1");
+
+        let r1 = handle_messaging(&state, &serde_json::json!({
+            "action": "send", "message": "hello"
+        }), Some("mcp-1"));
+        assert!(r1["error"].as_str().unwrap().contains("'to'"));
+
+        let r2 = handle_messaging(&state, &serde_json::json!({
+            "action": "send", "to": "tab-2"
+        }), Some("mcp-1"));
+        assert!(r2["error"].as_str().unwrap().contains("'message'"));
+    }
+
+    #[test]
+    fn messaging_send_to_unregistered_peer() {
+        let state = test_state();
+        register_peer(&state, "tab-1", "sender", "mcp-1");
+
+        let r = handle_messaging(&state, &serde_json::json!({
+            "action": "send", "to": "tab-999", "message": "hello"
+        }), Some("mcp-1"));
+        assert!(r["error"].as_str().unwrap().contains("not registered"));
+    }
+
+    #[test]
+    fn messaging_send_and_inbox() {
+        let state = test_state();
+        register_peer(&state, "tab-1", "alice", "mcp-1");
+        register_peer(&state, "tab-2", "bob", "mcp-2");
+
+        // Alice sends to Bob
+        let r = handle_messaging(&state, &serde_json::json!({
+            "action": "send", "to": "tab-2", "message": "hello bob"
+        }), Some("mcp-1"));
+        assert_eq!(r["ok"], true);
+
+        // Bob checks inbox
+        let inbox = handle_messaging(&state, &serde_json::json!({
+            "action": "inbox"
+        }), Some("mcp-2"));
+        let msgs = inbox["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["from_name"], "alice");
+        assert_eq!(msgs[0]["content"], "hello bob");
+        assert_eq!(msgs[0]["from_tuic_session"], "tab-1");
+    }
+
+    #[test]
+    fn messaging_inbox_limit_and_since() {
+        let state = test_state();
+        register_peer(&state, "tab-1", "alice", "mcp-1");
+        register_peer(&state, "tab-2", "bob", "mcp-2");
+
+        // Send 3 messages
+        for i in 0..3 {
+            handle_messaging(&state, &serde_json::json!({
+                "action": "send", "to": "tab-2", "message": format!("msg-{}", i)
+            }), Some("mcp-1"));
+        }
+
+        // Limit to 2
+        let inbox = handle_messaging(&state, &serde_json::json!({
+            "action": "inbox", "limit": 2
+        }), Some("mcp-2"));
+        assert_eq!(inbox["messages"].as_array().unwrap().len(), 2);
+
+        // Since filter — get timestamp of first message
+        let first_ts = inbox["messages"][0]["timestamp"].as_u64().unwrap();
+        let since_inbox = handle_messaging(&state, &serde_json::json!({
+            "action": "inbox", "since": first_ts
+        }), Some("mcp-2"));
+        // Should return messages after that timestamp (at least the remaining ones)
+        let msgs = since_inbox["messages"].as_array().unwrap();
+        assert!(msgs.iter().all(|m| m["timestamp"].as_u64().unwrap() > first_ts));
+    }
+
+    #[test]
+    fn messaging_send_requires_sender_registration() {
+        let state = test_state();
+        register_peer(&state, "tab-2", "bob", "mcp-2");
+
+        let r = handle_messaging(&state, &serde_json::json!({
+            "action": "send", "to": "tab-2", "message": "hello"
+        }), Some("mcp-unknown"));
+        assert!(r["error"].as_str().unwrap().contains("Register first"));
+    }
+
+    #[test]
+    fn messaging_inbox_fifo_eviction() {
+        let state = test_state();
+        register_peer(&state, "tab-1", "alice", "mcp-1");
+        register_peer(&state, "tab-2", "bob", "mcp-2");
+
+        // Send more than AGENT_INBOX_CAPACITY messages
+        for i in 0..(crate::state::AGENT_INBOX_CAPACITY + 10) {
+            handle_messaging(&state, &serde_json::json!({
+                "action": "send", "to": "tab-2", "message": format!("msg-{}", i)
+            }), Some("mcp-1"));
+        }
+
+        let inbox = handle_messaging(&state, &serde_json::json!({"action": "inbox", "limit": 200}), Some("mcp-2"));
+        let msgs = inbox["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), crate::state::AGENT_INBOX_CAPACITY);
+        // First message should be msg-10 (oldest 10 evicted)
+        assert_eq!(msgs[0]["content"], "msg-10");
+    }
+
+    #[test]
+    fn messaging_send_message_size_limit() {
+        let state = test_state();
+        register_peer(&state, "tab-1", "alice", "mcp-1");
+        register_peer(&state, "tab-2", "bob", "mcp-2");
+
+        let big_msg = "x".repeat(crate::state::AGENT_MESSAGE_MAX_BYTES + 1);
+        let r = handle_messaging(&state, &serde_json::json!({
+            "action": "send", "to": "tab-2", "message": big_msg
+        }), Some("mcp-1"));
+        assert!(r["error"].as_str().unwrap().contains("64 KB"));
     }
 }
