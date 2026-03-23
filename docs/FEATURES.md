@@ -555,7 +555,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 
 ### 7.2 Worktrees
 - Auto-creation on branch select (non-main branches)
-- Configurable storage strategies: sibling (`__wt`), app directory, or inside-repo (`.worktrees/`)
+- Configurable storage strategies: sibling (`__wt`), app directory, inside-repo (`.worktrees/`), or Claude Code default (`.claude/worktrees/`)
 - Sci-fi themed auto-generated names
 - Three creation flows: dialog (with base ref dropdown), instant (auto-name), right-click branch (quick-clone with hybrid `{branch}--{random}` name)
 - Base ref selection: choose which branch to start from when creating new worktrees

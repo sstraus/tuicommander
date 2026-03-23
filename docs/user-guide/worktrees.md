@@ -25,6 +25,7 @@ Configure where worktrees are stored (Settings → General → Worktree Defaults
 | **Sibling** (default) | `{repo_parent}/{repo_name}__wt/` | Keeps worktrees near the repo |
 | **App directory** | `~/Library/Application Support/tuicommander/worktrees/{repo_name}/` | Centralised storage |
 | **Inside repo** | `{repo_path}/.worktrees/` | Self-contained, add to `.gitignore` |
+| **Claude Code default** | `{repo_path}/.claude/worktrees/` | Compatible with Claude Code's native `EnterWorktree` |
 
 Override per-repo in Settings → Repository → Worktree.
 
