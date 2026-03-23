@@ -1097,7 +1097,7 @@ fn parse_suggest(clean: &str) -> Option<ParsedEvent> {
     }
     lazy_static::lazy_static! {
         static ref SUGGEST_RE: regex::Regex =
-            regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})suggest:\s*([^\]\x{27E7}]+?)\s*(?:\]?\]|\x{27E7})").unwrap();
+            regex::Regex::new(r"(?m)^\s*(?:\[\[?|\x{27E6})suggest:\s*([^\]\x{27E7}]+?)\s*(?:\]?\]|\x{27E7})\s*$").unwrap();
     }
     SUGGEST_RE.captures(clean).and_then(|caps| {
         let raw = caps[1].trim();
