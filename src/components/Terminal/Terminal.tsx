@@ -207,13 +207,25 @@ export const Terminal: Component<TerminalProps> = (props) => {
       terminal.scrollToBottom();
     } else {
       const newBase = terminal.buffer.active.baseY;
-      const target = Math.max(0, newBase - linesFromBottom);
-      appLogger.debug("terminal", "doFit-restore", {
-        trackedViewportY: trackedScrollState.viewportY,
-        trackedBaseY: trackedScrollState.baseY,
-        newBase, linesFromBottom, target,
-      });
-      terminal.scrollToLine(target);
+      // Guard: if the buffer shrank below the tracked scroll distance (reflow
+      // after hidden→visible, or massive buffer contraction), the old position
+      // no longer exists — fall back to scrollToBottom instead of line 0.
+      if (linesFromBottom > newBase) {
+        appLogger.warn("terminal", "doFit-clamp", {
+          trackedViewportY: trackedScrollState.viewportY,
+          trackedBaseY: trackedScrollState.baseY,
+          newBase, linesFromBottom,
+        });
+        terminal.scrollToBottom();
+      } else {
+        const target = newBase - linesFromBottom;
+        appLogger.debug("terminal", "doFit-restore", {
+          trackedViewportY: trackedScrollState.viewportY,
+          trackedBaseY: trackedScrollState.baseY,
+          newBase, linesFromBottom, target,
+        });
+        terminal.scrollToLine(target);
+      }
     }
   };
 
@@ -306,7 +318,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // position (agent cleared screen — old line no longer exists).
         if (lastKnownVisible && !wasAtBottomBefore && afterBuf.viewportY !== viewportYBefore) {
           if (afterBuf.baseY >= viewportYBefore) {
-            appLogger.debug("terminal", "write-restore", {
+            // DIAG: temporarily warn-level to capture scroll jumps via HTTP /logs
+            appLogger.warn("terminal", "write-restore", {
               viewportYBefore, afterViewportY: afterBuf.viewportY,
               afterBaseY: afterBuf.baseY,
             });
