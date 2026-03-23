@@ -1111,6 +1111,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
     terminalsStore.state.activeId === props.id ||
     terminalsStore.state.layout.panes.includes(props.id);
 
+  // Track hidden→visible transitions to rebuild the WebGL glyph atlas only once
+  // after the terminal was actually hidden (branch/tab switch), not on every
+  // isVisible() re-evaluation.
+  let wasHidden = false;
+
   // When this terminal becomes visible: open xterm, fit, and init PTY session
   createEffect(() => {
     if (isVisible()) {
@@ -1121,6 +1126,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
       rafHandle = requestAnimationFrame(() => {
         rafHandle = 0;
         openTerminal();
+        // Rebuild WebGL glyph atlas only on actual hidden→visible transition.
+        // The GPU texture can corrupt during display:none periods.
+        if (wasHidden && terminal) {
+          terminal.clearTextureAtlas();
+          wasHidden = false;
+        }
         safeFit(() => initSession());
 
         // For reconnected terminals (existing sessionId), explicitly sync PTY dimensions.
@@ -1145,6 +1156,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       onCleanup(() => {
         if (rafHandle) cancelAnimationFrame(rafHandle);
         resizeObserver?.disconnect();
+        wasHidden = true;
       });
     }
   });
