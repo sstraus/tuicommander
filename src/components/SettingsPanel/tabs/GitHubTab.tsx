@@ -487,6 +487,7 @@ export const GitHubTab: Component = () => {
             <option value="sibling">Sibling directory (__wt)</option>
             <option value="app-dir">App config directory</option>
             <option value="inside-repo">Inside repository (.worktrees)</option>
+            <option value="claude-code-default">Claude Code default (.claude/worktrees)</option>
           </select>
           <p class={s.hint}>Where to create worktree directories</p>
         </div>

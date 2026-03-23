@@ -147,6 +147,7 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
           <option value="sibling">{t("repoWorktree.worktreeStorage.sibling", "Sibling directory (__wt)")}</option>
           <option value="app-dir">{t("repoWorktree.worktreeStorage.appDir", "App config directory")}</option>
           <option value="inside-repo">{t("repoWorktree.worktreeStorage.insideRepo", "Inside repository (.worktrees)")}</option>
+          <option value="claude-code-default">{t("repoWorktree.worktreeStorage.claudeCodeDefault", "Claude Code default (.claude/worktrees)")}</option>
         </select>
       </div>
 

@@ -3,7 +3,7 @@ import { invoke } from "../invoke";
 import { appLogger } from "./appLogger";
 
 /** Worktree storage strategy — mirrors Rust WorktreeStorage enum */
-export type WorktreeStorage = "sibling" | "app-dir" | "inside-repo";
+export type WorktreeStorage = "sibling" | "app-dir" | "inside-repo" | "claude-code-default";
 
 /** Orphan worktree cleanup mode — mirrors Rust OrphanCleanup enum */
 export type OrphanCleanup = "on" | "off" | "ask";
