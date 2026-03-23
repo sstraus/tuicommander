@@ -190,7 +190,7 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
                     onClick={() => setFocusedIndex(i())}
                   >
                     {/* Line 1: ref name + message */}
-                    <div class={s.stashHeader}>
+                    <div class={s.stashHeader} title={`${stash.ref_name}  ${stash.message}`}>
                       <span class={s.stashRef}>{stash.ref_name}</span>
                       <span class={s.stashMessage}>{stash.message}</span>
                     </div>

@@ -116,7 +116,7 @@ export const BlameTab: Component<BlameTabProps> = (props) => {
       <Show when={props.filePath}>
         <div class={s.fileHeader}>
           <span class={s.fileLabel}>File:</span>
-          <span class={s.filePath}>{props.filePath}</span>
+          <span class={s.filePath} title={props.filePath!}>{props.filePath}</span>
         </div>
       </Show>
 
@@ -175,7 +175,7 @@ export const BlameTab: Component<BlameTabProps> = (props) => {
                   >
                     <Show when={groupStart}>
                       <span class={s.gutterHash}>{line.hash.slice(0, 7)}</span>
-                      <span class={s.gutterAuthor}>{line.author}</span>
+                      <span class={s.gutterAuthor} title={line.author}>{line.author}</span>
                       <span class={s.gutterAge}>
                         {formatRelativeTime(line.author_time * 1000)}
                       </span>

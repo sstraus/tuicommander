@@ -563,6 +563,12 @@ struct ChunkProcessor {
     /// When a chunk contains an opener without the closing `]]`, we hold the data
     /// and prepend it to the next chunk so colorize/conceal regexes see the full token.
     pending_xterm: Option<String>,
+    /// Plan files awaiting creation on disk (agent announces before writing).
+    /// Tuples of (absolute_path, deadline). Checked each chunk until file appears
+    /// or 10s deadline expires. Already-emitted paths tracked for dedup.
+    pending_planfiles: Vec<(String, std::time::Instant)>,
+    /// Plan file paths already emitted — prevents re-emitting on spinner redraws.
+    emitted_planfiles: std::collections::HashSet<String>,
 }
 
 impl ChunkProcessor {
@@ -573,6 +579,8 @@ impl ChunkProcessor {
             last_question_text: None,
             session_cwd,
             pending_xterm: None,
+            pending_planfiles: Vec::new(),
+            emitted_planfiles: std::collections::HashSet::new(),
         }
     }
 
@@ -629,6 +637,48 @@ impl ChunkProcessor {
         }
     }
 
+    /// Drain pending plan files: emit event for files that now exist, drop expired ones.
+    fn check_pending_planfiles(
+        &mut self,
+        session_id: &str,
+        state: &AppState,
+        app: Option<&AppHandle>,
+    ) {
+        if self.pending_planfiles.is_empty() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        let mut i = 0;
+        while i < self.pending_planfiles.len() {
+            let (ref path, deadline) = self.pending_planfiles[i];
+            if now > deadline {
+                tracing::info!("[plan-file] Retry expired (10s), dropping: {path}");
+                self.pending_planfiles.swap_remove(i);
+                continue;
+            }
+            if std::path::Path::new(path).is_file() {
+                let path = self.pending_planfiles.swap_remove(i).0;
+                tracing::info!("[plan-file] Retry succeeded: {path}");
+                self.emitted_planfiles.insert(path.clone());
+                let evt = ParsedEvent::PlanFile { path };
+                if let Ok(json) = serde_json::to_value(&evt) {
+                    let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
+                        session_id: session_id.to_string(),
+                        parsed: json.clone(),
+                    });
+                    if let Some(a) = app {
+                        let _ = a.emit("pty-parsed", serde_json::json!({
+                            "session_id": session_id,
+                            "parsed": json,
+                        }));
+                    }
+                }
+                continue;
+            }
+            i += 1;
+        }
+    }
+
     /// Process a chunk of PTY output after kitty-sequence stripping.
     /// Handles: VT log buffer, ring buffer, WebSocket broadcast, event parsing,
     /// dedup, resize-grace filtering, PlanFile resolution, event emission,
@@ -647,6 +697,9 @@ impl ChunkProcessor {
         if data.is_empty() {
             return None;
         }
+
+        // Check pending plan files: emit if file appeared, drop if deadline expired.
+        self.check_pending_planfiles(session_id, state, app);
 
         // Feed raw data (post-kitty-strip) into VT100 log buffer.
         let changed_rows = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
@@ -716,15 +769,26 @@ impl ChunkProcessor {
             }
 
             // Resolve relative plan-file paths to absolute using session CWD.
-            // Skip plan-file events for files that don't exist on disk.
+            // If the file doesn't exist yet (agent announces before writing),
+            // queue it for retry — checked each chunk for up to 10 seconds.
             let resolved = if let ParsedEvent::PlanFile { path } = event {
                 match self.resolve_planfile_path(path) {
+                    Some(p) if self.emitted_planfiles.contains(&p) => {
+                        // Already emitted — skip (spinner redraws re-parse the same line)
+                        continue;
+                    }
                     Some(p) if std::path::Path::new(&p).is_file() => {
                         tracing::info!("[plan-file] Detected: {p} (cwd={:?})", self.session_cwd);
+                        self.emitted_planfiles.insert(p.clone());
                         Some(ParsedEvent::PlanFile { path: p })
                     }
                     Some(p) => {
-                        tracing::warn!("[plan-file] File not found on disk: {p} (raw={path}, cwd={:?})", self.session_cwd);
+                        // File not on disk yet — queue for retry if not already pending
+                        if !self.pending_planfiles.iter().any(|(pp, _)| pp == &p) {
+                            tracing::info!("[plan-file] Queued for retry: {p} (cwd={:?})", self.session_cwd);
+                            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                            self.pending_planfiles.push((p, deadline));
+                        }
                         continue;
                     }
                     None => {

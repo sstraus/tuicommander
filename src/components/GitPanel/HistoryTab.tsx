@@ -119,7 +119,7 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
           <svg class={s.fileIcon} width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <path d="M13 4H8.4L7 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z"/>
           </svg>
-          <span class={s.filePath}>{props.filePath}</span>
+          <span class={s.filePath} title={props.filePath!}>{props.filePath}</span>
         </div>
       </Show>
 
@@ -138,7 +138,7 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
                     onClick={() => openCommitDiff(commit.hash)}
                   >
                     {/* Line 1: dot + hash + subject */}
-                    <div class={s.commitLine1}>
+                    <div class={s.commitLine1} title={commit.subject}>
                       <span class={s.commitDot} />
                       <span class={s.commitHash}>{commit.hash.slice(0, 7)}</span>
                       <span class={s.commitSubject}>{commit.subject}</span>
