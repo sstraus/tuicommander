@@ -4,6 +4,7 @@ import { DiffTab } from "./DiffTab";
 import { PrDiffTab } from "./PrDiffTab";
 import { MarkdownTab } from "./MarkdownTab";
 import { PluginPanel } from "./PluginPanel";
+import { HtmlPreviewTab } from "./HtmlPreviewTab";
 import { ClaudeUsageDashboard } from "./ClaudeUsageDashboard";
 import { CodeEditorTab } from "./CodeEditorPanel";
 import SuggestOverlay from "./SuggestOverlay/SuggestOverlay";
@@ -210,6 +211,11 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                     prNumber={mdTab.prNumber}
                     prTitle={mdTab.prTitle}
                     diff={mdTab.diff}
+                  />
+                ) : mdTab && mdTab.type === "html-preview" ? (
+                  <HtmlPreviewTab
+                    tab={mdTab}
+                    onClose={() => props.onCloseTab(id)}
                   />
                 ) : mdTab ? (
                   <MarkdownTab

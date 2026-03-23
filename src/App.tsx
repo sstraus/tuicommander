@@ -668,6 +668,8 @@ const App: Component = () => {
 
     if (filePath.endsWith(".md") || filePath.endsWith(".mdx")) {
       mdTabsStore.add(repoPath, filePath, fsRoot);
+    } else if (filePath.endsWith(".html") || filePath.endsWith(".htm")) {
+      mdTabsStore.addHtmlPreview(repoPath, filePath, fsRoot);
     } else {
       const tabId = editorTabsStore.add(fsRoot, filePath);
       terminalLifecycle.handleTerminalSelect(tabId);
@@ -690,6 +692,8 @@ const App: Component = () => {
 
         if (absolutePath.endsWith(".md") || absolutePath.endsWith(".mdx")) {
           mdTabsStore.add(effectiveRepo, filePath, effectiveRoot || undefined);
+        } else if (absolutePath.endsWith(".html") || absolutePath.endsWith(".htm")) {
+          mdTabsStore.addHtmlPreview(effectiveRepo, filePath, effectiveRoot || undefined);
         } else {
           editorTabsStore.add(effectiveRoot || effectiveRepo, filePath);
         }

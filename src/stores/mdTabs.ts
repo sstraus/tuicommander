@@ -51,8 +51,18 @@ export interface PrDiffTab extends BaseTab {
   diff: string;
 }
 
+/** HTML preview tab (renders HTML in a sandboxed iframe) */
+export interface HtmlPreviewTab extends BaseTab {
+  type: "html-preview";
+  title: string;
+  repoPath: string;
+  filePath: string;
+  fileName: string;
+  fsRoot?: string;
+}
+
 /** Discriminated union of all markdown tab types */
-export type MdTabData = FileTab | VirtualTab | PluginPanelTab | ClaudeUsageTab | PrDiffTab;
+export type MdTabData = FileTab | VirtualTab | PluginPanelTab | ClaudeUsageTab | PrDiffTab | HtmlPreviewTab;
 
 // ---------------------------------------------------------------------------
 // Store
@@ -192,6 +202,23 @@ function createMdTabsStore() {
       const title = `PR #${prNumber}`;
       const tabId = base._addTab({ type: "pr-diff", id, title, repoPath, prNumber, prTitle, diff, pinned: false } as PrDiffTab);
       return tabId;
+    },
+
+    /** Add an HTML preview tab (or return existing if same file already open) */
+    addHtmlPreview(repoPath: string, filePath: string, fsRoot?: string): string {
+      const effectiveRoot = fsRoot || repoPath;
+      const existing = Object.values(base.state.tabs).find(
+        (tab) => tab.type === "html-preview" && (tab as HtmlPreviewTab).fsRoot === effectiveRoot && tab.filePath === filePath,
+      ) as HtmlPreviewTab | undefined;
+      if (existing) {
+        base.setActive(existing.id);
+        return existing.id;
+      }
+
+      const id = base._nextId("md");
+      const fileName = filePath.split("/").pop() || filePath;
+      const tab: HtmlPreviewTab = { type: "html-preview", id, title: fileName, repoPath, filePath, fileName, branchKey: currentBranchKey(), fsRoot: effectiveRoot };
+      return base._addTab(tab);
     },
 
     /** Register an imperative handle for a tab (e.g. MarkdownTabHandle with openSearch) */

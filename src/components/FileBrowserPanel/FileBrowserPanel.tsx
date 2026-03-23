@@ -520,6 +520,22 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
       separator: true,
     });
 
+    if (!entry.is_dir && (entry.path.endsWith(".html") || entry.path.endsWith(".htm"))) {
+      items.push({
+        label: "Open in Browser",
+        action: () => {
+          const r = root();
+          if (r) {
+            import("@tauri-apps/plugin-opener").then(({ openPath }) => {
+              const abs = entry.path.startsWith("/") ? entry.path : `${r}/${entry.path}`;
+              openPath(abs).catch((err) => appLogger.error("app", "Failed to open HTML in browser", err));
+            });
+          }
+        },
+        separator: true,
+      });
+    }
+
     items.push({
       label: t("fileBrowser.rename", "Rename\u2026"),
       action: () => handleRename(entry),
