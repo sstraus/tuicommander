@@ -206,17 +206,18 @@ describe("plan-file repoPath and path resolution", () => {
       dismissible: true,
       repoPath: "/repo",
     });
-    // Register the plugin — it should rebuild planItemIds from existing items
+    // Register the plugin — it should pick up existing items and enrich them
     pluginRegistry.register(planPlugin);
-    // Add MAX_PLAN_ITEMS more — the old one should be evicted
+    // Add more plans — no eviction limit, all items coexist
     for (let i = 1; i <= 3; i++) {
       pluginRegistry.dispatchStructuredEvent("plan-file", { path: `/repo/plans/new-${i}.md` }, "sess-x");
       await flushMicrotasks();
     }
     const items = activityStore.getForSection("plan");
-    // Should have at most MAX_PLAN_ITEMS (3), the old one evicted
-    expect(items.length).toBeLessThanOrEqual(3);
-    expect(items.find((i) => i.id === "plan:/repo/plans/old.md")).toBeUndefined();
+    // All items should be present (1 hydrated + 3 new = 4)
+    expect(items.length).toBe(4);
+    // The old hydrated item should still exist
+    expect(items.find((i) => i.id === "plan:/repo/plans/old.md")).toBeDefined();
   });
 });
 

@@ -11,8 +11,9 @@ describe("SuggestOverlay", () => {
     const { container } = render(() => (
       <SuggestOverlay items={items} onSelect={() => {}} onDismiss={() => {}} />
     ));
+    // 3 item buttons + 1 close button
     const buttons = container.querySelectorAll("button");
-    expect(buttons.length).toBe(3);
+    expect(buttons.length).toBe(4);
     expect(buttons[0].textContent).toContain("Run tests");
     expect(buttons[1].textContent).toContain("Review diff");
     expect(buttons[2].textContent).toContain("Deploy");
@@ -97,12 +98,13 @@ describe("SuggestOverlay", () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
-  it("renders empty when items array is empty", () => {
+  it("renders only close button when items array is empty", () => {
     const { container } = render(() => (
       <SuggestOverlay items={[]} onSelect={() => {}} onDismiss={() => {}} />
     ));
+    // Only the close button should be present, no item buttons
     const buttons = container.querySelectorAll("button");
-    expect(buttons.length).toBe(0);
+    expect(buttons.length).toBe(1);
   });
 });
 

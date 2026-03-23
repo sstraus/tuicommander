@@ -398,7 +398,7 @@ describe("transport", () => {
       globalThis.WebSocket = origWs;
     });
 
-    it("logs warning on abnormal WebSocket close", async () => {
+    it("logs warning and schedules reconnect on abnormal WebSocket close", async () => {
       const { subscribePty } = await import("../transport");
 
       let wsInstance: { onopen: (() => void) | null; onclose: ((event: { wasClean: boolean; code: number; reason: string }) => void) | null; onmessage: unknown; onerror: unknown; close: () => void };
@@ -420,13 +420,15 @@ describe("transport", () => {
 
       const subscribePromise = subscribePty("sess-1", vi.fn(), onExit);
       wsInstance!.onopen!();
-      await subscribePromise;
+      const unsub = await subscribePromise;
 
-      // Abnormal close
+      // Abnormal close triggers reconnect, not onExit
       wsInstance!.onclose!({ wasClean: false, code: 1006, reason: "" });
       expect(debugSpy).toHaveBeenCalledWith("[network]", expect.stringContaining("abnormally"), expect.anything());
-      expect(onExit).toHaveBeenCalled();
+      // onExit is NOT called on abnormal close — the transport schedules a reconnect instead
+      expect(onExit).not.toHaveBeenCalled();
 
+      unsub();
       debugSpy.mockRestore();
       globalThis.WebSocket = origWs;
     });

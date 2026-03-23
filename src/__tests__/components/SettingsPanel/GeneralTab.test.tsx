@@ -99,22 +99,32 @@ vi.mock("../../../stores/repoDefaults", () => ({
   },
 }));
 
-import { GeneralTab } from "../../../components/SettingsPanel/tabs/GeneralTab";
+// GitHubTab calls rpc() in onMount — mock it to resolve with authenticated state
+// so all sections (including auth-gated PR settings) render
+vi.mock("../../../transport", () => ({
+  rpc: vi.fn().mockResolvedValue({ authenticated: true, login: "testuser", avatar_url: null, source: "oauth", scopes: "repo" }),
+}));
 
-describe("GeneralTab — Repository Defaults section", () => {
+vi.mock("../../../utils/openUrl", () => ({
+  handleOpenUrl: vi.fn(),
+}));
+
+// Repository Defaults section moved from GeneralTab to GitHubTab
+import { GitHubTab } from "../../../components/SettingsPanel/tabs/GitHubTab";
+
+describe("GitHubTab — Repository Defaults section", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("renders Repository Defaults heading", () => {
-    const { container } = render(() => <GeneralTab />);
+    const { container } = render(() => <GitHubTab />);
     const headings = Array.from(container.querySelectorAll("h3")).map(h => h.textContent);
     expect(headings).toContain("Repository Defaults");
   });
 
   it("shows baseBranch dropdown with current global default selected", () => {
-    const { container } = render(() => <GeneralTab />);
-    // The repo defaults select is the one with an "Automatic (origin/main" option
+    const { container } = render(() => <GitHubTab />);
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const baseBranchSelect = selects.find(s =>
       Array.from(s.options).some(o => o.text.includes("Automatic"))
@@ -124,7 +134,7 @@ describe("GeneralTab — Repository Defaults section", () => {
   });
 
   it("calls setBaseBranch when dropdown changes", () => {
-    const { container } = render(() => <GeneralTab />);
+    const { container } = render(() => <GitHubTab />);
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const baseBranchSelect = selects.find(s =>
       Array.from(s.options).some(o => o.text.includes("Automatic"))
@@ -134,21 +144,16 @@ describe("GeneralTab — Repository Defaults section", () => {
   });
 
   it("shows copyIgnoredFiles and copyUntrackedFiles toggles", () => {
-    const { container } = render(() => <GeneralTab />);
-    // All checkboxes in the tab
+    const { container } = render(() => <GitHubTab />);
     const checkboxes = container.querySelectorAll("input[type=checkbox]");
-    expect(checkboxes.length).toBeGreaterThanOrEqual(4); // global booleans + existing settings
+    expect(checkboxes.length).toBeGreaterThanOrEqual(2);
   });
 
   it("calls setCopyIgnoredFiles when toggle changes", () => {
-    const { container } = render(() => <GeneralTab />);
-    // The copyIgnoredFiles checkbox is the one that, when changed, calls mockSetCopyIgnoredFiles
-    // Trigger change on ALL checkboxes and check that the right mock was called
+    const { container } = render(() => <GitHubTab />);
     const checkboxes = Array.from(container.querySelectorAll("input[type=checkbox]")) as HTMLInputElement[];
-    // Find the checkbox that triggers setCopyIgnoredFiles (in the repo defaults section, after the h3)
     const repoDefaultsH3 = Array.from(container.querySelectorAll("h3"))
       .find(h => h.textContent === "Repository Defaults")!;
-    // Get checkboxes that are siblings of the h3 (appear after it in DOM order)
     const h3Index = checkboxes.findIndex(cb => {
       return repoDefaultsH3.compareDocumentPosition(cb) & Node.DOCUMENT_POSITION_FOLLOWING;
     });
@@ -158,20 +163,21 @@ describe("GeneralTab — Repository Defaults section", () => {
   });
 
   it("shows setupScript and runScript textareas", () => {
-    const { container } = render(() => <GeneralTab />);
+    const { container } = render(() => <GitHubTab />);
     const textareas = container.querySelectorAll("textarea");
     expect(textareas.length).toBeGreaterThanOrEqual(2);
   });
 
   it("calls setSetupScript when first repo-defaults textarea changes", () => {
-    const { container } = render(() => <GeneralTab />);
+    const { container } = render(() => <GitHubTab />);
+    // Find the Setup Script textarea (after the "Repository Defaults" heading)
     const textareas = container.querySelectorAll("textarea");
     fireEvent.input(textareas[0], { target: { value: "npm install" } });
     expect(mockSetSetupScript).toHaveBeenCalledWith("npm install");
   });
 
   it("renders auto-fetch interval dropdown with Disabled selected", () => {
-    const { container } = render(() => <GeneralTab />);
+    const { container } = render(() => <GitHubTab />);
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const fetchSelect = selects.find(s =>
       Array.from(s.options).some(o => o.text === "Disabled")
@@ -181,7 +187,7 @@ describe("GeneralTab — Repository Defaults section", () => {
   });
 
   it("calls setAutoFetchIntervalMinutes when auto-fetch dropdown changes", () => {
-    const { container } = render(() => <GeneralTab />);
+    const { container } = render(() => <GitHubTab />);
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const fetchSelect = selects.find(s =>
       Array.from(s.options).some(o => o.text === "Disabled")
@@ -190,8 +196,10 @@ describe("GeneralTab — Repository Defaults section", () => {
     expect(mockSetAutoFetchIntervalMinutes).toHaveBeenCalledWith(15);
   });
 
-  it("renders auto-delete on PR close dropdown with Off selected", () => {
-    const { container } = render(() => <GeneralTab />);
+  it("renders auto-delete on PR close dropdown with Off selected", async () => {
+    const { container } = render(() => <GitHubTab />);
+    // Wait for async auth status to settle (rpc mock resolves a microtask)
+    await new Promise((r) => setTimeout(r, 0));
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const deleteSelect = selects.find(s =>
       Array.from(s.options).some(o => o.text === "Ask before deleting")
@@ -200,8 +208,9 @@ describe("GeneralTab — Repository Defaults section", () => {
     expect(deleteSelect!.value).toBe("off");
   });
 
-  it("calls setAutoDeleteOnPrClose when auto-delete dropdown changes", () => {
-    const { container } = render(() => <GeneralTab />);
+  it("calls setAutoDeleteOnPrClose when auto-delete dropdown changes", async () => {
+    const { container } = render(() => <GitHubTab />);
+    await new Promise((r) => setTimeout(r, 0));
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const deleteSelect = selects.find(s =>
       Array.from(s.options).some(o => o.text === "Ask before deleting")

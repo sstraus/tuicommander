@@ -496,7 +496,7 @@ describe("PluginHost — Tier 2 read-only state", () => {
 describe("PluginHost — git:read capability gating", () => {
   it("external plugin without git:read throws on getGitBranches", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [], // no capabilities
     );
@@ -505,7 +505,7 @@ describe("PluginHost — git:read capability gating", () => {
 
   it("external plugin with git:read can call getGitBranches", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["git:read"],
     );
@@ -515,7 +515,7 @@ describe("PluginHost — git:read capability gating", () => {
 
   it("external plugin without git:read throws on getRecentCommits", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [],
     );
@@ -524,7 +524,7 @@ describe("PluginHost — git:read capability gating", () => {
 
   it("external plugin with git:read can call getRecentCommits", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["git:read"],
     );
@@ -533,7 +533,7 @@ describe("PluginHost — git:read capability gating", () => {
 
   it("external plugin without git:read throws on getGitDiff", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [],
     );
@@ -542,7 +542,7 @@ describe("PluginHost — git:read capability gating", () => {
 
   it("external plugin with git:read can call getGitDiff", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["git:read"],
     );
@@ -573,7 +573,7 @@ describe("PluginHost — Tier 3 capability gating", () => {
 
   it("external plugin without pty:write throws PluginCapabilityError on writePty", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [], // no capabilities
     );
@@ -582,25 +582,25 @@ describe("PluginHost — Tier 3 capability gating", () => {
 
   it("external plugin with pty:write can call writePty", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["pty:write"],
     );
     await expect(host!.writePty("s1", "data")).resolves.toBeUndefined();
   });
 
-  it("external plugin without ui:markdown throws on openMarkdownPanel", () => {
+  it("external plugin without ui:markdown throws on openMarkdownPanel", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [],
     );
     expect(() => host!.openMarkdownPanel("Title", "plan:file")).toThrow(PluginCapabilityError);
   });
 
-  it("external plugin with ui:markdown can call openMarkdownPanel", () => {
+  it("external plugin with ui:markdown can call openMarkdownPanel", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["ui:markdown"],
     );
@@ -609,7 +609,7 @@ describe("PluginHost — Tier 3 capability gating", () => {
 
   it("external plugin without ui:sound throws on playNotificationSound", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [],
     );
@@ -618,7 +618,7 @@ describe("PluginHost — Tier 3 capability gating", () => {
 
   it("external plugin with ui:sound can call playNotificationSound", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["ui:sound"],
     );
@@ -631,18 +631,18 @@ describe("PluginHost — Tier 3 capability gating", () => {
 // ---------------------------------------------------------------------------
 
 describe("PluginHost — Tier 3c openPanel capability gating", () => {
-  it("external plugin without ui:panel throws on openPanel", () => {
+  it("external plugin without ui:panel throws on openPanel", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [], // no capabilities
     );
     expect(() => host!.openPanel({ id: "test", title: "Test", html: "<h1>hi</h1>" })).toThrow(PluginCapabilityError);
   });
 
-  it("external plugin with ui:panel can call openPanel", () => {
+  it("external plugin with ui:panel can call openPanel", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["ui:panel"],
     );
@@ -687,7 +687,7 @@ describe("PluginHost — Tier 3c openPanel capability gating", () => {
 describe("PluginHost — Tier 3c readCredential capability gating", () => {
   it("external plugin without credentials:read throws on readCredential", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [], // no capabilities
     );
@@ -709,7 +709,7 @@ describe("PluginHost — Tier 3c readCredential capability gating", () => {
 describe("PluginHost — execCli capability gating", () => {
   it("external plugin without exec:cli throws on execCli", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [], // no capabilities
     );
@@ -718,7 +718,7 @@ describe("PluginHost — execCli capability gating", () => {
 
   it("external plugin with exec:cli can call execCli", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["exec:cli"],
     );
@@ -734,7 +734,7 @@ describe("PluginHost — execCli capability gating", () => {
 
   it("passes correct args to the Rust command", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["exec:cli"],
     );
@@ -750,7 +750,7 @@ describe("PluginHost — execCli capability gating", () => {
 
   it("passes null cwd when not provided", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["exec:cli"],
     );
@@ -769,7 +769,7 @@ describe("PluginHost — execCli capability gating", () => {
 describe("PluginHost — Tier 3c httpFetch capability gating", () => {
   it("external plugin without net:http throws on httpFetch", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [], // no capabilities
     );
@@ -778,7 +778,7 @@ describe("PluginHost — Tier 3c httpFetch capability gating", () => {
 
   it("external plugin with net:http can call httpFetch", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["net:http"],
       ["https://example.com/*"],
@@ -796,7 +796,7 @@ describe("PluginHost — Tier 3c httpFetch capability gating", () => {
   it("passes allowedUrls to the Rust command", async () => {
     let host: PluginHost | null = null;
     const allowedUrls = ["https://api.anthropic.com/*"];
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["net:http"],
       allowedUrls,
@@ -830,7 +830,7 @@ describe("PluginHost — Tier 4 scoped invoke", () => {
 
   it("allows whitelisted plugin data commands without capability", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [], // no capabilities
     );
@@ -841,7 +841,7 @@ describe("PluginHost — Tier 4 scoped invoke", () => {
 
   it("external plugin needs invoke:read_file capability for read_file", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [], // no invoke:read_file capability
     );
@@ -851,7 +851,7 @@ describe("PluginHost — Tier 4 scoped invoke", () => {
 
   it("external plugin with invoke:read_file can call read_file", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["invoke:read_file"],
     );
@@ -867,7 +867,7 @@ describe("PluginHost — Tier 4 scoped invoke", () => {
 describe("PluginHost — fs:write capability gating", () => {
   it("external plugin without fs:write throws on writeFile", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [],
     );
@@ -876,7 +876,7 @@ describe("PluginHost — fs:write capability gating", () => {
 
   it("external plugin with fs:write can call writeFile", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["fs:write"],
     );
@@ -885,7 +885,7 @@ describe("PluginHost — fs:write capability gating", () => {
 
   it("passes correct args to the Rust command", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["fs:write"],
     );
@@ -908,7 +908,7 @@ describe("PluginHost — fs:write capability gating", () => {
 describe("PluginHost — fs:rename capability gating", () => {
   it("external plugin without fs:rename throws on renamePath", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       [],
     );
@@ -917,7 +917,7 @@ describe("PluginHost — fs:rename capability gating", () => {
 
   it("external plugin with fs:rename can call renamePath", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["fs:rename"],
     );
@@ -926,7 +926,7 @@ describe("PluginHost — fs:rename capability gating", () => {
 
   it("passes correct args to the Rust command", async () => {
     let host: PluginHost | null = null;
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("ext", (h) => { host = h; }),
       ["fs:rename"],
     );
@@ -1009,10 +1009,10 @@ describe("PluginHost — panel message bridge", () => {
 // ---------------------------------------------------------------------------
 
 describe("register with capabilities", () => {
-  it("second arg passes capabilities to buildHost", () => {
+  it("second arg passes capabilities to buildHost", async () => {
     // Verify the external plugin pattern works end-to-end
     const onload = vi.fn();
-    pluginRegistry.register(makePlugin("ext", onload), ["pty:write", "ui:sound"]);
+    await pluginRegistry.register(makePlugin("ext", onload), ["pty:write", "ui:sound"]);
     expect(onload).toHaveBeenCalledOnce();
   });
 

@@ -29,8 +29,8 @@ beforeEach(() => {
 });
 
 describe("registerTerminalAction", () => {
-  it("external plugin with ui:context-menu capability can register actions", () => {
-    pluginRegistry.register(
+  it("external plugin with ui:context-menu capability can register actions", async () => {
+    await pluginRegistry.register(
       makePlugin("p1", (host) => {
         host.registerTerminalAction({ id: "act1", label: "Test Action", action: () => {} });
       }),
@@ -40,9 +40,9 @@ describe("registerTerminalAction", () => {
     expect(contextMenuActionsStore.getActions()[0].label).toBe("Test Action");
   });
 
-  it("external plugin without ui:context-menu capability fails to load and registers no actions", () => {
+  it("external plugin without ui:context-menu capability fails to load and registers no actions", async () => {
     // register() catches PluginCapabilityError internally (logs + marks plugin as failed)
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("p1", (host) => {
         host.registerTerminalAction({ id: "act1", label: "Test", action: () => {} });
       }),
@@ -61,8 +61,8 @@ describe("registerTerminalAction", () => {
     expect(contextMenuActionsStore.getActions()).toHaveLength(1);
   });
 
-  it("unregistering plugin auto-disposes its actions", () => {
-    pluginRegistry.register(
+  it("unregistering plugin auto-disposes its actions", async () => {
+    await pluginRegistry.register(
       makePlugin("p1", (host) => {
         host.registerTerminalAction({ id: "act1", label: "Will Be Removed", action: () => {} });
       }),
@@ -73,9 +73,9 @@ describe("registerTerminalAction", () => {
     expect(contextMenuActionsStore.getActions()).toHaveLength(0);
   });
 
-  it("stale action handler is a no-op after plugin unregister", () => {
+  it("stale action handler is a no-op after plugin unregister", async () => {
     const handler = vi.fn();
-    pluginRegistry.register(
+    await pluginRegistry.register(
       makePlugin("p1", (host) => {
         host.registerTerminalAction({ id: "act1", label: "Stale", action: handler });
       }),
