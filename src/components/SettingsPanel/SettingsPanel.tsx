@@ -39,7 +39,7 @@ const GLOBAL_TABS: SettingsShellTab[] = [
   { key: "appearance", label: t("settings.appearance", "Appearance") },
   { key: "notifications", label: t("settings.notifications", "Notifications") },
   { key: "dictation", label: t("settings.dictation", "Dictation") },
-  { key: "github", label: "GitHub" },
+  { key: "github", label: "Git & GitHub" },
   { key: "services", label: t("settings.services", "Services") },
   { key: "plugins", label: t("settings.plugins", "Plugins") },
   { key: "agents", label: t("settings.agents", "Agents") },

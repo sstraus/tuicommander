@@ -185,6 +185,14 @@
   border-radius: var(--radius-sm);
 }
 
+/* ── Section headings ── */
+.sectionHeading {
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--fg-primary);
+  margin: 0;
+}
+
 /* ── Diagnostics section ── */
 .diagnosticsSection {
   display: flex;
