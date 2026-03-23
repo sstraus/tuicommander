@@ -262,13 +262,15 @@
   background: var(--accent);
 }
 
+/* xterm v6 uses a VS Code-style custom scrollbar (.xterm-scrollable-element).
+   Hide the native viewport scrollbar — it's redundant and updates out of sync
+   with the custom widget, causing a visible thumb-resize flash on each write. */
 .terminal-pane .xterm-viewport {
-  overflow-y: auto;
+  overflow-y: hidden;
 }
 
 /* Match xterm custom scrollbar widget to app-wide thin style.
-   xterm v6 uses a VS Code-style scrollbar (not native), rendered via
-   .xterm-scrollable-element > .scrollbar with inline width (~14px).
+   xterm v6 renders .xterm-scrollable-element > .scrollbar with inline ~14px.
    Override with !important to match our 8px thin scrollbar. */
 .terminal-pane .xterm .xterm-scrollable-element > .scrollbar.vertical {
   width: 8px !important;
@@ -276,24 +278,6 @@
 
 .terminal-pane .xterm .xterm-scrollable-element > .scrollbar.vertical .slider {
   border-radius: var(--radius-md);
-}
-
-/* Also style the native fallback scrollbar on .xterm-viewport */
-.terminal-pane .xterm-viewport::-webkit-scrollbar {
-  width: 8px;
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb {
-  background: var(--bg-highlight);
-  border-radius: var(--radius-md);
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: var(--fg-muted);
 }
 
 /* Awaiting Input Visual Indicators */
