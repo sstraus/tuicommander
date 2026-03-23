@@ -59,6 +59,27 @@
   color: var(--text-on-accent);
 }
 
+.closeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.1s ease, background 0.1s ease;
+}
+
+.closeBtn:hover {
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+}
+
 .shortcut {
   display: inline-flex;
   align-items: center;
