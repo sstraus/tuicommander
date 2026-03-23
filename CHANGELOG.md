@@ -6,15 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [0.9.5] - 2026-03-21
+## [0.9.5] - 2026-03-23
 
 ### Added
 - **GitHub OAuth Login** — New "GitHub" tab in Settings with one-click Device Flow authentication. Stores token securely in OS keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service). Eliminates manual PAT management and missing-scope issues. Token resolution priority: env vars → OAuth keyring → gh CLI
 - **Branch Panel** — New Branches tab (4th tab) in the Git Panel with full branch management: checkout (with dirty-worktree stash/force/cancel dialog), create, delete (safe + force), rename, merge, rebase, push (auto-sets upstream), pull, fetch, inline search, context menu, stale dimming (>30 days), merged badge, ahead/behind counts, prefix folding, and recent branches from reflog. `Cmd+G` opens the Git Panel directly on the Branches tab; clicking the sidebar "GIT" vertical label also lands on Branches
 - **Worktree Agent Bridge** — MCP `worktree action=create` now returns a `cc_agent_hint` field for Claude Code clients, guiding CC to spawn a subagent that works in the worktree using absolute paths. Works around CC's inability to change working directory mid-session
+- **Auto-retry on API errors** — Terminal sessions automatically retry when the AI provider returns server errors (5xx, rate limits). Configurable per-agent in Settings
+- **Plans Panel** — Scans `plans/` directory to populate the PlanPanel with project plans
+- **HTML Preview** — New panel for previewing HTML files with "Open in Browser" action
+- **Cmd+Q confirmation** — Shows a confirmation dialog when quitting with active terminal sessions
+
+### Fixed
+- **Terminal scrollbar jank** — Eliminated a redundant native scrollbar on the xterm viewport that was updating out of sync with xterm v6's custom scrollbar widget, causing a visible thumb-resize flash on each write
+- **Terminal scroll stability** — Seven distinct root causes for viewport-jump-to-line-0 identified and fixed: escape-sequence jumps, buffer contraction drift, baseY staleness on idle sessions, alternate buffer corruption, hidden terminal viewportY drift, hidden→visible transition guards, and WebGL atlas rebuild timing
+- **Suggest overlay** — Added close button (X) and anchored the suggest token regex to start-of-line to prevent false matches
+- **File path linking** — Terminal file paths followed by sentence punctuation (`.`, `,`, `)`) are now correctly clickable
+- **GitHub settings** — "Connect to GitHub" button now appears after disconnect or fetch failure
+- **Config test initializer** — Added missing `auto_retry_on_error` field
 
 ### Removed
 - **Lazygit integration** — Replaced by the native Branch Panel. `Cmd+G` is reassigned to the Branches tab
+
+### Security
+- Updated `tar` crate 0.4.44 → 0.4.45 to fix RUSTSEC-2026-0067/0068
 
 ## [0.9.4] - 2026-03-19
 
