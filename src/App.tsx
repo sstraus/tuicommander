@@ -1056,6 +1056,19 @@ const App: Component = () => {
         }
         case "reopen-closed-tab": terminalLifecycle.reopenClosedTab(); break;
         case "settings": setSettingsPanelVisible((v) => !v); break;
+        case "quit-app": {
+          if (settingsStore.state.confirmBeforeQuit) {
+            const activeTerminals = terminalsStore.getIds().filter(
+              (id) => terminalsStore.get(id)?.sessionId,
+            );
+            if (activeTerminals.length > 0) {
+              setQuitDialogVisible(true);
+              break;
+            }
+          }
+          void forceQuit();
+          break;
+        }
 
         // Edit
         case "clear-terminal": terminalLifecycle.clearTerminal(); break;

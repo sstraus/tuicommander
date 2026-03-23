@@ -38,7 +38,7 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         // On Windows/Linux, Quit lives in File menu
         file = file
             .separator()
-            .item(&PredefinedMenuItem::quit(app, None)?);
+            .item(&item!("quit-app", "Quit", "CmdOrCtrl+Q"));
     }
     let file = file.build()?;
 
@@ -176,7 +176,7 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
             .item(&PredefinedMenuItem::hide_others(app, None)?)
             .item(&PredefinedMenuItem::show_all(app, None)?)
             .separator()
-            .item(&PredefinedMenuItem::quit(app, None)?)
+            .item(&item!("quit-app", "Quit TUICommander", "CmdOrCtrl+Q"))
             .build()?;
         menu = menu.item(&app_menu);
     }
