@@ -837,7 +837,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         `[\\w./@-]*` +                                               // middle segments
         `\\.(?:${CODING_EXT})` +                                     // .ext
         `(?::\\d+(?::\\d+)?)?)` +                                    // optional :line:col
-        `(?=[\\s"'\`),;\\]}>]|$)`,                                   // boundary
+        `(?=[\\s"'\`),;.!?:\\]}>]|$)`,                                // boundary (incl. sentence-ending punctuation)
         "g",
       );
 
