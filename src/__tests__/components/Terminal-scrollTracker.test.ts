@@ -40,6 +40,32 @@ describe("ScrollTracker", () => {
       expect(t.isAtBottom).toBe(false); // must NOT corrupt
       expect(t.linesFromBottom).toBe(50);
     });
+
+    it("rejects stale deferred onScroll with viewportY=0 when scrolled up", () => {
+      const t = new ScrollTracker();
+      t.setVisible(true);
+      t.onScroll(snap(50, 100)); // user scrolled up
+      // Stale deferred event from fit/init arrives with viewportY=0
+      t.onScroll(snap(0, 100));
+      expect(t.isAtBottom).toBe(false); // must NOT corrupt
+      expect(t.linesFromBottom).toBe(50); // unchanged
+    });
+
+    it("rejects viewportY=0 even when at bottom (stale deferred event)", () => {
+      const t = new ScrollTracker();
+      t.setVisible(true);
+      t.onScroll(snap(100, 100)); // at bottom
+      t.onScroll(snap(0, 100)); // stale event — rejected
+      expect(t.isAtBottom).toBe(true); // unchanged
+      expect(t.linesFromBottom).toBe(0); // still at bottom
+    });
+
+    it("accepts viewportY=0 when buffer is empty", () => {
+      const t = new ScrollTracker();
+      t.setVisible(true);
+      t.onScroll(snap(0, 0)); // empty buffer — legitimate
+      expect(t.isAtBottom).toBe(true);
+    });
   });
 
   describe("onScroll (hidden)", () => {

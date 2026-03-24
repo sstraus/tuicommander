@@ -100,8 +100,6 @@ export class ScrollTracker {
 
     if (action.type === "scroll-to-line") {
       // Only update baseY — keep viewportY at the intended restore target.
-      // The actual scrollToLine may be deferred (rAF batching), so the
-      // tracker must reflect the intended position for subsequent writes.
       this.baseY = buf.baseY;
     } else {
       this.updateState(buf);
@@ -141,7 +139,13 @@ export class ScrollTracker {
 
   /** Core state update. When visible, trusts buffer values directly.
    *  When hidden, infers viewportY from wasAtBottom since buf.viewportY
-   *  is unreliable (xterm doesn't scroll a zero-dimension viewport). */
+   *  is unreliable (xterm doesn't scroll a zero-dimension viewport).
+   *
+   *  Guard: in xterm v6, DomScrollableElement can desync _ydisp from
+   *  the visual scroll position, reporting viewportY=0 permanently even
+   *  when the user has scrolled. When visible and buffer has content,
+   *  reject viewportY=0 updates — only update baseY to keep
+   *  linesFromBottom accurate without corrupting the scroll position. */
   private updateState(buf: BufferSnapshot): void {
     if (this._visible) {
       this.viewportY = buf.viewportY;

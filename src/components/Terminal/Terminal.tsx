@@ -165,11 +165,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const scrollTracker = new ScrollTracker();
 
   // Batch write-callback scroll restores to one per animation frame.
-  // Without batching, each PTY data chunk calls scrollToLine() synchronously,
-  // and xterm's DomScrollableElement chases each one with a deferred rAF sync,
-  // causing visible scrollbar jank (slider flickers on rapid output).
   let pendingScrollRestore: number | null = null;
   let scrollRestoreRaf = 0;
+
 
   /** Fit terminal to container, preserving scroll position across reflows. */
   const doFit = () => {
@@ -181,6 +179,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const snapshot = scrollTracker.snapshotForFit();
     fitAddon.fit();
     const action = scrollTracker.computeFitRestore(terminal.buffer.active.baseY, snapshot);
+
 
     if (action.type === "scroll-to-bottom") {
       scrollTracker.suppressNextScroll();
@@ -232,7 +231,25 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
 
   /** Process a chunk of PTY output — write to terminal or buffer if not ready */
-  const handlePtyData = (data: string) => {
+  const handlePtyData = (rawData: string) => {
+    // Strip destructive clear sequences that break scroll position:
+    // - ESC[3J (clear scrollback): leaves viewportY=0 while baseY grows,
+    //   permanently disabling xterm auto-scroll
+    // - ESC[2J (clear screen): scrolls viewport content into scrollback,
+    //   shifting ydisp by +rows even when user is scrolled up
+    // Scrollback is managed by TUICommander, not by agents. The agent's
+    // TUI redraws work fine without these — cursor positioning + content
+    // overwrite handles the visual clear.
+    // Sanitize destructive clear sequences that break scroll position:
+    // - ESC[3J (clear scrollback): stripped entirely — scrollback is ours
+    // - ESC[2J (clear screen): replaced with ESC[H ESC[J (home + erase below)
+    //   which clears the visible screen WITHOUT scrolling content into
+    //   scrollback (ESC[2J pushes viewport content into scrollback, shifting
+    //   ydisp even when user is scrolled up)
+    let data = rawData;
+    if (data.includes("\x1b[3J") || data.includes("\x1b[2J")) {
+      data = data.replaceAll("\x1b[3J", "").replaceAll("\x1b[2J", "\x1b[H\x1b[J");
+    }
     if (terminal) {
       // Dispatch to plugins for all terminals — background tabs may have
       // plugin-relevant output (e.g. agent detection, error tracking)
@@ -249,7 +266,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pty.pause(sessionId).catch((err) => appLogger.warn("terminal", "PTY pause failed", { error: String(err) }));
       }
 
-      const writeToken = scrollTracker.beforeWrite(terminal.buffer.active);
+      const preBuf = terminal.buffer.active;
+      const writeToken = scrollTracker.beforeWrite(preBuf);
 
       terminal.write(data, () => {
         pendingWriteBytes -= byteLen;
@@ -259,7 +277,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
         if (!terminal) return;
 
-        const action = scrollTracker.afterWrite(terminal.buffer.active, writeToken);
+        const afterBuf = terminal.buffer.active;
+        const action = scrollTracker.afterWrite(afterBuf, writeToken);
+
         if (action.type === "scroll-to-line") {
           // Batch to rAF — multiple writes per frame get one scrollToLine
           pendingScrollRestore = action.line!;
@@ -306,11 +326,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const replayBuffer = () => {
     if (terminal && outputBuffer.length > 0) {
       for (const chunk of outputBuffer) {
-        terminal.write(chunk);
+        const clean = chunk.includes("\x1b[3J") || chunk.includes("\x1b[2J")
+          ? chunk.replaceAll("\x1b[3J", "").replaceAll("\x1b[2J", "\x1b[H\x1b[J")
+          : chunk;
+        terminal.write(clean);
       }
       outputBuffer = [];
       outputBufferBytes = 0;
-      // Sync scroll tracker with post-replay buffer state
       scrollTracker.onScroll(terminal.buffer.active);
     }
   };
@@ -622,8 +644,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const openTerminal = () => {
     if (terminalOpened || !containerRef) return;
     terminalOpened = true;
+    // DIAG: expose xterm instances for console debugging
+    const w = window as any;
+    if (!w.__terms) w.__terms = {};
+    w.__terms[props.id] = () => terminal;
 
     terminal = new XTerm({
+      scrollback: 10000,
       fontSize: settingsStore.state.defaultFontSize,
       fontFamily: getFontFamily(),
       fontWeight: String(settingsStore.state.fontWeight) as any,
@@ -977,6 +1004,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       scrollTracker.onScroll(terminal!.buffer.active);
     });
 
+
     resizeObserver = new ResizeObserver(() => {
       // Debounce: panels opening/closing can cause multiple rapid layout changes
       // (container oscillates between full-width and panel-reduced width).
@@ -1075,15 +1103,23 @@ export const Terminal: Component<TerminalProps> = (props) => {
       // is already open (flex layout hasn't settled yet at the synchronous call site).
       rafHandle = requestAnimationFrame(() => {
         rafHandle = 0;
+        const wasActuallyHidden = wasHidden;
         scrollTracker.setVisible(true);
         openTerminal();
         // Rebuild WebGL glyph atlas only on actual hidden→visible transition.
         // The GPU texture can corrupt during display:none periods.
-        if (wasHidden && terminal) {
+        if (wasActuallyHidden && terminal) {
           terminal.clearTextureAtlas();
           wasHidden = false;
         }
-        safeFit(() => initSession());
+        // Only fit if the terminal was actually hidden or never fitted.
+        // When the visibility effect re-triggers without a real hide (e.g.,
+        // activeId flips null→id), skip the fit to avoid resetting scroll.
+        if (wasActuallyHidden || !terminal) {
+          safeFit(() => initSession());
+        } else {
+          initSession();
+        }
 
         // For reconnected terminals (existing sessionId), explicitly sync PTY dimensions.
         // When a terminal was in the background while a panel opened/close, terminal.onResize
@@ -1107,8 +1143,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
       onCleanup(() => {
         if (rafHandle) cancelAnimationFrame(rafHandle);
         resizeObserver?.disconnect();
-        scrollTracker.setVisible(false);
-        wasHidden = true;
+        // Only mark hidden if the terminal is actually becoming invisible.
+        // SolidJS re-runs the effect (and its cleanup) when reactive deps
+        // change even if isVisible() stays true. Setting visible=false here
+        // would corrupt the tracker's wasAtBottom state.
+        if (!isVisible()) {
+          scrollTracker.setVisible(false);
+          wasHidden = true;
+        }
       });
     }
   });
