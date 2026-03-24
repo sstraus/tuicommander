@@ -803,6 +803,10 @@ pub struct AppState {
     /// Per-session VT100 log buffers for clean mobile/REST output (session_id → buffer).
     /// Separate DashMap to avoid writer contention on PtySession.
     pub(crate) vt_log_buffers: DashMap<String, Mutex<VtLogBuffer>>,
+    /// Per-session VT100 diff renderers for scroll-jump-free xterm output.
+    /// When present for a session, raw PTY data is processed through vt100::Parser
+    /// and only minimal screen diffs are emitted to the frontend.
+    pub(crate) diff_renderers: DashMap<String, Mutex<crate::diff_renderer::DiffRenderer>>,
     /// Per-session kitty keyboard protocol state (session_id → state).
     /// Separate DashMap (not inside PtySession) to avoid writer contention.
     pub(crate) kitty_states: DashMap<String, Mutex<KittyKeyboardState>>,
@@ -1790,6 +1794,7 @@ pub(crate) mod tests_support {
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
             vt_log_buffers: dashmap::DashMap::new(),
+            diff_renderers: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),
@@ -2213,6 +2218,7 @@ mod tests {
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
             vt_log_buffers: dashmap::DashMap::new(),
+            diff_renderers: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),

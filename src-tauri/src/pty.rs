@@ -979,6 +979,7 @@ fn cleanup_session(session_id: &str, state: &AppState) {
     state.input_buffers.remove(session_id);
     state.silence_states.remove(session_id);
     state.shell_states.remove(session_id);
+    state.diff_renderers.remove(session_id);
 }
 
 /// Spawn a reader thread that reads from a PTY, emits Tauri events, and writes to the ring buffer.
@@ -1033,12 +1034,32 @@ pub(crate) fn spawn_reader_thread(
                     if let Some(processed) = processor.process_chunk(&data, &silence, &session_id, &state, Some(&app)) {
                         // Colorize intent / conceal suggest tokens, buffering incomplete
                         // tokens across streaming chunks to prevent cosmetic flash.
-                        if let Some(data) = processor.transform_xterm(processed) {
+                        if let Some(xterm_data) = processor.transform_xterm(processed) {
+                            // If a diff renderer is active for this session, process through
+                            // it to emit minimal screen diffs instead of raw escape sequences.
+                            let emit_data = if let Some(renderer) = state.diff_renderers.get(&session_id) {
+                                let output = renderer.lock().process(xterm_data.as_bytes());
+                                if output.use_raw_passthrough {
+                                    // Alt buffer — forward raw data
+                                    xterm_data
+                                } else {
+                                    // Concatenate scrollback lines + screen patch
+                                    let mut buf = Vec::new();
+                                    for line in &output.scrollback_lines {
+                                        buf.extend_from_slice(line);
+                                    }
+                                    buf.extend_from_slice(&output.screen_patch);
+                                    // SAFETY: vt100 contents_diff/formatted produce valid UTF-8 ANSI
+                                    String::from_utf8(buf).unwrap_or(xterm_data)
+                                }
+                            } else {
+                                xterm_data
+                            };
                             let _ = app.emit(
                                 &format!("pty-output-{session_id}"),
                                 PtyOutput {
                                     session_id: session_id.clone(),
-                                    data,
+                                    data: emit_data,
                                 },
                             );
                         }
@@ -1545,6 +1566,27 @@ pub(crate) fn get_shell_state(
     })
 }
 
+/// Enable or disable VT100 diff rendering for a PTY session.
+/// When enabled, raw PTY output is processed through a vt100::Parser and only
+/// minimal screen diffs are emitted to the frontend, preventing scroll jumping
+/// from ESC[2J/ESC[3J sequences.
+#[tauri::command]
+pub(crate) fn set_diff_render(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    enabled: bool,
+    rows: u16,
+    cols: u16,
+) -> Result<(), String> {
+    if enabled {
+        let renderer = crate::diff_renderer::DiffRenderer::new(rows.max(24), cols.max(80));
+        state.diff_renderers.insert(session_id, parking_lot::Mutex::new(renderer));
+    } else {
+        state.diff_renderers.remove(&session_id);
+    }
+    Ok(())
+}
+
 /// Resize a PTY session
 #[tauri::command]
 pub(crate) fn resize_pty(
@@ -1572,6 +1614,10 @@ pub(crate) fn resize_pty(
     // Resize VT log buffer dimensions to match new terminal size.
     if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
         vt_log.lock().resize(rows, cols);
+    }
+    // Resize diff renderer if active (clears prev_screen → forces full repaint).
+    if let Some(renderer) = state.diff_renderers.get(&session_id) {
+        renderer.lock().resize(rows, cols);
     }
     // Mark resize in silence state so the reader thread suppresses re-parsed events
     // from the shell's prompt redraw triggered by SIGWINCH.

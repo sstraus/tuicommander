@@ -1960,6 +1960,7 @@ mod tests {
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
             vt_log_buffers: dashmap::DashMap::new(),
+            diff_renderers: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),
