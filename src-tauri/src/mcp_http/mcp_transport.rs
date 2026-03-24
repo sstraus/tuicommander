@@ -61,6 +61,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     out.push_str("| `github` | prs, status | Open PRs with CI rollup, cross-repo status |\n");
     out.push_str("| `worktree` | list, create, remove | Git worktree lifecycle |\n");
     out.push_str("| `agent` | detect, spawn, stats, metrics | AI agent management |\n");
+    out.push_str("| `messaging` | register, list_peers, send, inbox | Inter-agent coordination |\n");
     out.push_str("| `workspace` | list, active | Repos, branches, groups |\n");
     out.push_str("| `config` | get, save | App configuration |\n");
     out.push_str("| `notify` | toast, confirm | User notifications |\n");
@@ -83,6 +84,19 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     if is_claude_code {
         out.push_str("**Worktree workflow:** When `worktree action=create` returns a `cc_agent_hint` field, spawn a subagent (Agent tool) that works in the worktree using absolute paths. The subagent should use Read, Edit, Glob, Grep with absolute file paths and `cd <path> && ...` for shell commands. Do NOT try to change your own working directory — use the subagent pattern instead.\n\n");
         out.push_str("**Teammates:** When spawning teammates for parallel work, use `worktree action=create` with `spawn_session=true` — creates an isolated worktree + PTY visible in the UI.\n\n");
+    }
+
+    // ── Inter-agent messaging ─────────────────────────────────────
+    let peer_count = state.peer_agents.len();
+    if peer_count > 0 {
+        out.push_str("## Inter-Agent Messaging\n\n");
+        out.push_str(&format!("There are currently **{}** registered peer agent(s). ", peer_count));
+        out.push_str("Read your `$TUIC_SESSION` env var — this is your identity.\n\n");
+        out.push_str("- `messaging action=register tuic_session=\"$TUIC_SESSION\"` — register yourself (do this first)\n");
+        out.push_str("- `messaging action=list_peers` — see who else is connected\n");
+        out.push_str("- `messaging action=send to=\"<tuic_session>\" message=\"...\"` — send a message to a peer\n");
+        out.push_str("- `messaging action=inbox` — check for messages (also delivered via channel notifications)\n\n");
+        out.push_str("Coordinate to avoid conflicts: claim files before editing, share progress, ask before modifying shared code.\n\n");
     }
 
     // ── Dynamic: repos ──────────────────────────────────────────────
@@ -899,6 +913,12 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 if let Some(model) = args["model"].as_str() {
                     cmd.arg("--model");
                     cmd.arg(model);
+                }
+                // Enable channel notifications for inter-agent messaging
+                let agent_type = args["agent_type"].as_str().unwrap_or("claude");
+                if agent_type == "claude" {
+                    cmd.arg("--dangerously-load-development-channels");
+                    cmd.arg("server:tuicommander");
                 }
                 cmd.arg(&prompt);
             }
