@@ -1295,7 +1295,7 @@ pub(crate) async fn create_pty(
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
     state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
 
-    // Create ring buffer and VT log buffer for this session
+    // Create ring buffer, VT log buffer, and diff renderer for this session
     state.output_buffers.insert(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
@@ -1303,6 +1303,10 @@ pub(crate) async fn create_pty(
     state.vt_log_buffers.insert(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
+    );
+    state.diff_renderers.insert(
+        session_id.clone(),
+        Mutex::new(crate::diff_renderer::DiffRenderer::new(rows, cols)),
     );
     state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
@@ -1325,6 +1329,8 @@ pub(crate) async fn create_pty_with_worktree(
     pty_config: PtyConfig,
     worktree_config: WorktreeConfig,
 ) -> Result<WorktreeResult, String> {
+    let pty_rows = pty_config.rows.max(24);
+    let pty_cols = pty_config.cols.max(80);
     // Create the worktree first
     let worktrees_dir = crate::worktree::resolve_worktree_dir_for_repo(
         std::path::Path::new(&worktree_config.base_repo),
@@ -1405,7 +1411,7 @@ pub(crate) async fn create_pty_with_worktree(
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
     state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
 
-    // Create ring buffer and VT log buffer for this session
+    // Create ring buffer, VT log buffer, and diff renderer for this session
     state.output_buffers.insert(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
@@ -1413,6 +1419,10 @@ pub(crate) async fn create_pty_with_worktree(
     state.vt_log_buffers.insert(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
+    );
+    state.diff_renderers.insert(
+        session_id.clone(),
+        Mutex::new(crate::diff_renderer::DiffRenderer::new(pty_rows, pty_cols)),
     );
     state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
