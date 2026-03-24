@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Inter-Agent Messaging** — New `messaging` MCP tool for agent-to-agent coordination. Agents register with their `$TUIC_SESSION` identity, discover peers via `list_peers`, and exchange messages via `send`/`inbox`. Dual delivery: real-time push via MCP channel notifications (SSE) when `--dangerously-load-development-channels` is active, plus polling fallback via inbox. Spawned Claude Code agents automatically get the channels flag. TUICommander acts as the messaging hub — no external daemon needed
+
 ## [0.9.5] - 2026-03-23
 
 ### Added

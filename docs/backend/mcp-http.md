@@ -168,6 +168,40 @@ This works around Claude Code's inability to change its working directory mid-se
 
 Non-Claude Code MCP clients do not receive this field.
 
+## Inter-Agent Messaging
+
+The `messaging` MCP tool enables coordination between multiple AI agents connected to TUICommander.
+
+### Protocol
+
+1. **Register**: Agent reads `$TUIC_SESSION` env var and calls `messaging action=register tuic_session=<uuid>`. This links the MCP session to the stable tab identity.
+2. **Discover**: `messaging action=list_peers` returns all registered peers (filterable by project).
+3. **Send**: `messaging action=send to=<tuic_session> message="..."` routes the message to the recipient's inbox.
+4. **Receive**: Messages arrive via MCP channel notification (real-time, if SSE connected) and/or `messaging action=inbox` (polling).
+
+### Channel Push Delivery
+
+When a recipient has an active SSE stream (`GET /mcp`), messages are pushed as `notifications/claude/channel` JSON-RPC notifications:
+
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "notifications/claude/channel",
+    "params": {
+        "content": "Message from worker-1: done with auth module",
+        "meta": { "from_tuic_session": "abc-123", "from_name": "worker-1", "message_id": "msg-uuid" }
+    }
+}
+```
+
+This requires the client to be launched with `--dangerously-load-development-channels server:tuicommander`. The server declares `experimental.claude/channel` in its capabilities. Spawned Claude Code agents get this flag automatically.
+
+### Limits
+
+- Max message size: 64 KB
+- Inbox capacity: 100 messages per agent (FIFO eviction)
+- Peer registrations cleaned up on MCP session delete and TTL reap
+
 ## Authentication
 
 When remote access is enabled:

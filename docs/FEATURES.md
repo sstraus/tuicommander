@@ -544,6 +544,16 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Produces `ParsedEvent::SlashMenu { items }` — used by mobile PWA to render a native bottom-sheet overlay
 - `slash_mode` cleared on user-input events and status-line events
 
+### 6.13 Inter-Agent Messaging
+- New `messaging` MCP tool for agent-to-agent coordination when multiple agents are spawned in parallel
+- **Identity**: Each agent uses its `$TUIC_SESSION` env var (stable tab UUID) as its messaging identity
+- **Actions**: `register` (announce presence), `list_peers` (discover other agents), `send` (message a peer by tuic_session), `inbox` (poll for messages)
+- **Dual delivery**: Real-time push via MCP `notifications/claude/channel` over SSE when the client supports channels; polling fallback via `inbox` always available
+- **Channel support**: TUICommander declares `experimental.claude/channel` capability; spawned Claude Code agents automatically get `--dangerously-load-development-channels server:tuicommander`
+- **Lifecycle**: Peer registrations cleaned up on MCP session delete and TTL reap; `PeerRegistered`/`PeerUnregistered` events broadcast via event bus for frontend visibility
+- **Limits**: 64 KB max message size, 100 messages per inbox (FIFO eviction), optional project filtering for `list_peers`
+- TUICommander acts as the messaging hub — no external daemon needed
+
 ---
 
 ## 7. Git Integration
