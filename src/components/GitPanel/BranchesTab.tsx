@@ -5,8 +5,20 @@ import { appLogger } from "../../stores/appLogger";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu/ContextMenu";
 import { cx } from "../../utils";
+import { handleOpenUrl } from "../../utils/openUrl";
 import type { BranchDetail } from "./types";
 import s from "./BranchesTab.module.css";
+
+/** Convert a git remote URL (SSH or HTTPS) to a GitHub web URL, or null if not GitHub. */
+function remoteUrlToGitHub(remoteUrl: string): string | null {
+  // SSH: git@github.com:owner/repo.git
+  const sshMatch = remoteUrl.match(/^git@github\.com:(.+?)(?:\.git)?$/);
+  if (sshMatch) return `https://github.com/${sshMatch[1]}`;
+  // HTTPS: https://github.com/owner/repo.git
+  const httpsMatch = remoteUrl.match(/^https?:\/\/github\.com\/(.+?)(?:\.git)?$/);
+  if (httpsMatch) return `https://github.com/${httpsMatch[1]}`;
+  return null;
+}
 
 export interface BranchesTabProps {
   repoPath: string | null;
@@ -498,6 +510,21 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
     }
   }
 
+  async function openBranchOnGitHub(branch: BranchDetail) {
+    if (!props.repoPath) return;
+    try {
+      const remoteUrl = await invoke<string | null>("get_remote_url", { path: props.repoPath });
+      if (!remoteUrl) return;
+      const ghBase = remoteUrlToGitHub(remoteUrl);
+      if (!ghBase) return;
+      // Strip remote prefix: "origin/feature-branch" → "feature-branch"
+      const branchName = branch.name.replace(/^[^/]+\//, "");
+      handleOpenUrl(`${ghBase}/tree/${encodeURIComponent(branchName)}`);
+    } catch (err) {
+      appLogger.error("git", "Failed to open branch on GitHub", err);
+    }
+  }
+
   async function doFetch(branch: BranchDetail) {
     if (!props.repoPath) return;
     try {
@@ -571,6 +598,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
         { label: "Fetch", shortcut: "f", action: () => void doFetch(branch) },
         { label: "Compare with current", action: () => void doCompare(branch), disabled: !cur },
         sep,
+        { label: "Open on GitHub", action: () => void openBranchOnGitHub(branch) },
         copyName,
       ];
     }
