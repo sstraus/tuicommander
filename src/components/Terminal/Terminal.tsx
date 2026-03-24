@@ -192,19 +192,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
   });
 
-  // Auto-enable VT100 diff rendering when a CC agent is detected.
-  // Prevents scroll jumping caused by ESC[2J/ESC[3J TUI redraws.
-  let diffRenderEnabled = false;
-  createEffect(() => {
-    const agentType = terminalsStore.get(props.id)?.agentType;
-    const shouldEnable = agentType != null; // any detected agent
-    if (shouldEnable !== diffRenderEnabled && sessionId && terminal) {
-      diffRenderEnabled = shouldEnable;
-      pty.setDiffRender(sessionId, shouldEnable, terminal.rows, terminal.cols).catch((err) =>
-        appLogger.warn("terminal", `setDiffRender(${shouldEnable}) failed`, { error: String(err) }),
-      );
-    }
-  });
 
   // Edge-detection for notification sounds: play once per awaitingInput transition.
   // Event handlers set state idempotently; this effect handles the one-shot sound.
