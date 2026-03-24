@@ -7,7 +7,6 @@ use axum::response::IntoResponse;
 use axum::Json;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use std::collections::VecDeque;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -1088,30 +1087,28 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
                 let has_sse = state.mcp_sessions.get(mcp_sid)
                     .map(|m| m.has_sse_stream)
                     .unwrap_or(false);
-                if has_sse {
-                    if let Some(tx) = state.messaging_channels.get(mcp_sid) {
-                        let notification = serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "method": "notifications/claude/channel",
-                            "params": {
-                                "content": format!("Message from {}: {}", sender_name, message),
-                                "meta": {
-                                    "from_tuic_session": sender_tuic,
-                                    "from_name": sender_name,
-                                    "message_id": msg_id,
-                                }
+                if has_sse && let Some(tx) = state.messaging_channels.get(mcp_sid) {
+                    let notification = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "method": "notifications/claude/channel",
+                        "params": {
+                            "content": format!("Message from {}: {}", sender_name, message),
+                            "meta": {
+                                "from_tuic_session": sender_tuic,
+                                "from_name": sender_name,
+                                "message_id": msg_id,
                             }
-                        });
-                        if tx.send(serde_json::to_string(&notification).unwrap_or_default()).is_ok() {
-                            pushed = true;
-                            msg.delivered_via_channel = true;
                         }
+                    });
+                    if tx.send(serde_json::to_string(&notification).unwrap_or_default()).is_ok() {
+                        pushed = true;
+                        msg.delivered_via_channel = true;
                     }
                 }
             }
 
             // Always buffer in recipient's inbox with FIFO eviction
-            let mut inbox = state.agent_inbox.entry(to.to_string()).or_insert_with(VecDeque::new);
+            let mut inbox = state.agent_inbox.entry(to.to_string()).or_default();
             if inbox.len() >= crate::state::AGENT_INBOX_CAPACITY {
                 inbox.pop_front();
             }
