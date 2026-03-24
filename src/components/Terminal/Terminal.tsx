@@ -164,11 +164,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // re-entrancy without any DOM reads. See scrollTracker.ts for details.
   const scrollTracker = new ScrollTracker();
 
-  // Batch write-callback scroll restores to one per animation frame.
-  let pendingScrollRestore: number | null = null;
-  let scrollRestoreRaf = 0;
-
-
   /** Fit terminal to container, preserving scroll position across reflows. */
   const doFit = () => {
     if (!containerRef || !fitAddon || !terminal) return;
@@ -232,32 +227,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   /** Process a chunk of PTY output — write to terminal or buffer if not ready */
   const handlePtyData = (rawData: string) => {
-    // Strip destructive clear sequences that break scroll position:
-    // - ESC[3J (clear scrollback): leaves viewportY=0 while baseY grows,
-    //   permanently disabling xterm auto-scroll
-    // - ESC[2J (clear screen): scrolls viewport content into scrollback,
-    //   shifting ydisp by +rows even when user is scrolled up
-    // Scrollback is managed by TUICommander, not by agents. The agent's
-    // TUI redraws work fine without these — cursor positioning + content
-    // overwrite handles the visual clear.
-    // Sanitize destructive clear sequences that break scroll position:
-    // - ESC[3J (clear scrollback): stripped entirely — scrollback is ours
-    // - ESC[2J (clear screen): replaced with ESC[H ESC[J (home + erase below)
-    //   which clears the visible screen WITHOUT scrolling content into
-    //   scrollback (ESC[2J pushes viewport content into scrollback, shifting
-    //   ydisp even when user is scrolled up)
-    let data = rawData;
-    if (data.includes("\x1b[3J") || data.includes("\x1b[2J")) {
-      data = data.replaceAll("\x1b[3J", "").replaceAll("\x1b[2J", "\x1b[H\x1b[J");
-    }
     if (terminal) {
       // Dispatch to plugins for all terminals — background tabs may have
       // plugin-relevant output (e.g. agent detection, error tracking)
       if (sessionId) {
-        pluginRegistry.processRawOutput(data, sessionId);
+        pluginRegistry.processRawOutput(rawData, sessionId);
       }
 
-      const byteLen = data.length;
+      const byteLen = rawData.length;
       pendingWriteBytes += byteLen;
 
       // Pause reader if we've accumulated too much unprocessed data
@@ -266,39 +243,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pty.pause(sessionId).catch((err) => appLogger.warn("terminal", "PTY pause failed", { error: String(err) }));
       }
 
-      const preBuf = terminal.buffer.active;
-      const writeToken = scrollTracker.beforeWrite(preBuf);
-
-      terminal.write(data, () => {
+      terminal.write(rawData, () => {
         pendingWriteBytes -= byteLen;
         if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
           isPaused = false;
           pty.resume(sessionId).catch((err) => appLogger.warn("terminal", "PTY resume failed", { error: String(err) }));
         }
-        if (!terminal) return;
-
-        const afterBuf = terminal.buffer.active;
-        const action = scrollTracker.afterWrite(afterBuf, writeToken);
-
-        if (action.type === "scroll-to-line") {
-          // Batch to rAF — multiple writes per frame get one scrollToLine
-          pendingScrollRestore = action.line!;
-          if (!scrollRestoreRaf) {
-            scrollRestoreRaf = requestAnimationFrame(() => {
-              scrollRestoreRaf = 0;
-              if (pendingScrollRestore !== null && terminal) {
-                scrollTracker.suppressNextScroll();
-                terminal.scrollToLine(pendingScrollRestore);
-                pendingScrollRestore = null;
-              }
-            });
-          }
-        }
       });
     } else {
       // Buffer output until terminal.open() is called
-      outputBuffer.push(data);
-      outputBufferBytes += data.length;
+      outputBuffer.push(rawData);
+      outputBufferBytes += rawData.length;
       // Cap buffer: drop oldest chunks when over limit
       while (outputBufferBytes > OUTPUT_BUFFER_MAX_BYTES && outputBuffer.length > 1) {
         const dropped = outputBuffer.shift()!;
@@ -326,10 +281,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const replayBuffer = () => {
     if (terminal && outputBuffer.length > 0) {
       for (const chunk of outputBuffer) {
-        const clean = chunk.includes("\x1b[3J") || chunk.includes("\x1b[2J")
-          ? chunk.replaceAll("\x1b[3J", "").replaceAll("\x1b[2J", "\x1b[H\x1b[J")
-          : chunk;
-        terminal.write(clean);
+        terminal.write(chunk);
       }
       outputBuffer = [];
       outputBufferBytes = 0;
@@ -1185,7 +1137,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
     clearTimeout(resizeTimer);
     clearTimeout(resizeObserverTimer);
     clearTimeout(retryTimer);
-    if (scrollRestoreRaf) cancelAnimationFrame(scrollRestoreRaf);
     // shellState is now Rust-authoritative — no need to force idle on unmount.
     // Rust will emit idle when the agent actually stops. On remount,
     // attachSessionListeners syncs via get_shell_state.
