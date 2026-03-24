@@ -228,14 +228,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   /** Process a chunk of PTY output — write to terminal or buffer if not ready */
   const handlePtyData = (rawData: string) => {
+    // Strip ESC[3J (clear scrollback) — CC sends this on every TUI redraw,
+    // destroying all scrollback content. We manage scrollback ourselves.
+    const data = rawData.includes("\x1b[3J")
+      ? rawData.replaceAll("\x1b[3J", "")
+      : rawData;
     if (terminal) {
       // Dispatch to plugins for all terminals — background tabs may have
       // plugin-relevant output (e.g. agent detection, error tracking)
       if (sessionId) {
-        pluginRegistry.processRawOutput(rawData, sessionId);
+        pluginRegistry.processRawOutput(data, sessionId);
       }
 
-      const byteLen = rawData.length;
+      const byteLen = data.length;
       pendingWriteBytes += byteLen;
 
       // Pause reader if we've accumulated too much unprocessed data
@@ -244,7 +249,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pty.pause(sessionId).catch((err) => appLogger.warn("terminal", "PTY pause failed", { error: String(err) }));
       }
 
-      terminal.write(rawData, () => {
+      terminal.write(data, () => {
         pendingWriteBytes -= byteLen;
         if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
           isPaused = false;
@@ -253,8 +258,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
       });
     } else {
       // Buffer output until terminal.open() is called
-      outputBuffer.push(rawData);
-      outputBufferBytes += rawData.length;
+      outputBuffer.push(data);
+      outputBufferBytes += data.length;
       // Cap buffer: drop oldest chunks when over limit
       while (outputBufferBytes > OUTPUT_BUFFER_MAX_BYTES && outputBuffer.length > 1) {
         const dropped = outputBuffer.shift()!;
