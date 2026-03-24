@@ -629,6 +629,7 @@ mod tests {
             relay: crate::state::RelayState::new(),
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
+            messaging_channels: DashMap::new(),
         })
     }
 
@@ -1076,6 +1077,7 @@ mod tests {
         state.mcp_sessions.insert("test-sid".to_string(), crate::state::McpSessionMeta {
             created_at: std::time::Instant::now(),
             is_claude_code: false,
+            has_sse_stream: false,
         });
         let app = build_router(state.clone(), false, true);
         let mut req = Request::delete("/mcp")
@@ -2065,6 +2067,7 @@ mod tests {
         state.mcp_sessions.insert("test-sid-proxy".to_string(), crate::state::McpSessionMeta {
             created_at: std::time::Instant::now(),
             is_claude_code: false,
+            has_sse_stream: false,
         });
 
         let app = build_router(state, false, true);
@@ -2091,6 +2094,7 @@ mod tests {
         state.mcp_sessions.insert("test-sid-native".to_string(), crate::state::McpSessionMeta {
             created_at: std::time::Instant::now(),
             is_claude_code: false,
+            has_sse_stream: false,
         });
         let app = build_router(state, false, true);
         let body = serde_json::json!({

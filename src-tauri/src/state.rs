@@ -706,6 +706,8 @@ pub struct McpSessionMeta {
     pub created_at: Instant,
     /// Whether the client identified as Claude Code (or tuic-bridge) at initialize time
     pub is_claude_code: bool,
+    /// Whether this session has an active SSE stream (GET /mcp connected)
+    pub has_sse_stream: bool,
 }
 
 /// A registered peer agent in the inter-agent messaging system.
@@ -844,6 +846,9 @@ pub struct AppState {
     /// Message inbox per agent (tuic_session → VecDeque<AgentMessage>).
     /// Capped at AGENT_INBOX_CAPACITY messages per agent, old messages evicted FIFO.
     pub agent_inbox: DashMap<String, VecDeque<AgentMessage>>,
+    /// Per-MCP-session broadcast channels for inter-agent messaging notifications.
+    /// Each SSE listener subscribes; `send` action pushes here for real-time delivery.
+    pub(crate) messaging_channels: DashMap<String, tokio::sync::broadcast::Sender<String>>,
 }
 
 /// Cloud relay client state (connection + shutdown handle).
@@ -1790,6 +1795,7 @@ pub(crate) mod tests_support {
             relay: RelayState::new(),
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
+            messaging_channels: DashMap::new(),
         }
     }
 }
@@ -2212,6 +2218,7 @@ mod tests {
             relay: RelayState::new(),
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
+            messaging_channels: DashMap::new(),
         }
     }
 

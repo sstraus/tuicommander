@@ -611,6 +611,7 @@ pub fn run() {
         relay: crate::state::RelayState::new(),
         peer_agents: DashMap::new(),
         agent_inbox: DashMap::new(),
+        messaging_channels: DashMap::new(),
     });
 
     // Wire the event bus into the upstream registry so status changes emit SSE events.

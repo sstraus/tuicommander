@@ -1046,22 +1046,53 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
-            let msg = crate::state::AgentMessage {
+            let (sender_tuic, sender_name) = sender;
+            let mut msg = crate::state::AgentMessage {
                 id: uuid::Uuid::new_v4().to_string(),
-                from_tuic_session: sender.0,
-                from_name: sender.1,
+                from_tuic_session: sender_tuic.clone(),
+                from_name: sender_name.clone(),
                 content: message.to_string(),
                 timestamp: now_ms,
-                delivered_via_channel: false, // Phase 2 will set this
+                delivered_via_channel: false,
             };
             let msg_id = msg.id.clone();
-            // Buffer in recipient's inbox with FIFO eviction
+
+            // Try channel push if recipient has SSE stream
+            let recipient_mcp_sid = state.peer_agents.get(to).map(|p| p.mcp_session_id.clone());
+            let mut pushed = false;
+            if let Some(ref mcp_sid) = recipient_mcp_sid {
+                let has_sse = state.mcp_sessions.get(mcp_sid)
+                    .map(|m| m.has_sse_stream)
+                    .unwrap_or(false);
+                if has_sse {
+                    if let Some(tx) = state.messaging_channels.get(mcp_sid) {
+                        let notification = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "method": "notifications/claude/channel",
+                            "params": {
+                                "content": format!("Message from {}: {}", sender_name, message),
+                                "meta": {
+                                    "from_tuic_session": sender_tuic,
+                                    "from_name": sender_name,
+                                    "message_id": msg_id,
+                                }
+                            }
+                        });
+                        if tx.send(serde_json::to_string(&notification).unwrap_or_default()).is_ok() {
+                            pushed = true;
+                            msg.delivered_via_channel = true;
+                        }
+                    }
+                }
+            }
+
+            // Always buffer in recipient's inbox with FIFO eviction
             let mut inbox = state.agent_inbox.entry(to.to_string()).or_insert_with(VecDeque::new);
             if inbox.len() >= crate::state::AGENT_INBOX_CAPACITY {
                 inbox.pop_front();
             }
             inbox.push_back(msg);
-            serde_json::json!({"ok": true, "message_id": msg_id})
+            serde_json::json!({"ok": true, "message_id": msg_id, "delivered_via_channel": pushed})
         }
         "inbox" => {
             // Resolve caller's tuic_session from MCP session
@@ -1616,6 +1647,7 @@ pub(super) async fn mcp_post(
             state.mcp_sessions.insert(session_id.clone(), crate::state::McpSessionMeta {
                 created_at: std::time::Instant::now(),
                 is_claude_code,
+                has_sse_stream: false,
             });
             let instructions = build_mcp_instructions(&state, client_name);
 
@@ -1624,7 +1656,10 @@ pub(super) async fn mcp_post(
                 "id": id,
                 "result": {
                     "protocolVersion": "2025-03-26",
-                    "capabilities": { "tools": {} },
+                    "capabilities": {
+                        "tools": {},
+                        "experimental": { "claude/channel": {} }
+                    },
                     "serverInfo": {
                         "name": "tuicommander",
                         "version": env!("CARGO_PKG_VERSION")
@@ -1677,6 +1712,7 @@ pub(super) async fn mcp_post(
                         state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
                             created_at: std::time::Instant::now(),
                             is_claude_code: false,
+                            has_sse_stream: false,
                         });
                         true
                     }
@@ -1741,50 +1777,87 @@ pub(super) async fn mcp_post(
     }
 }
 
-/// GET /mcp — SSE stream for MCP server→client notifications (tools/list_changed).
+/// GET /mcp — SSE stream for MCP server→client notifications (tools/list_changed, channel messages).
 /// Requires a valid `mcp-session-id` header (established via POST /mcp initialize).
 pub(super) async fn mcp_get(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
     // Validate MCP session (auto-recover stale sessions, same as tools/call)
-    let session_valid = headers
+    let session_id = headers
         .get(MCP_SESSION_HEADER)
         .and_then(|v| v.to_str().ok())
-        .map(|sid| {
-            if !state.mcp_sessions.contains_key(sid) {
-                tracing::warn!("MCP SSE session auto-recovered (stale session_id: {sid}); client identity unknown — cc_agent_hint disabled");
-                state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
-                    created_at: std::time::Instant::now(),
-                    is_claude_code: false,
-                });
-            }
-            true
-        })
-        .unwrap_or(false);
+        .map(|s| s.to_string());
+    let session_valid = session_id.as_deref().map(|sid| {
+        if !state.mcp_sessions.contains_key(sid) {
+            tracing::warn!("MCP SSE session auto-recovered (stale session_id: {sid}); client identity unknown — cc_agent_hint disabled");
+            state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
+                created_at: std::time::Instant::now(),
+                is_claude_code: false,
+                has_sse_stream: false,
+            });
+        }
+        // Mark this session as having an active SSE stream
+        if let Some(mut meta) = state.mcp_sessions.get_mut(sid) {
+            meta.has_sse_stream = true;
+        }
+        true
+    }).unwrap_or(false);
     if !session_valid {
         return StatusCode::UNAUTHORIZED.into_response();
     }
+    let sid = session_id.unwrap(); // safe: session_valid=true implies Some
 
-    let mut rx = state.mcp_tools_changed.subscribe();
+    // Create or subscribe to per-session messaging channel
+    let msg_rx = {
+        let tx = state.messaging_channels
+            .entry(sid.clone())
+            .or_insert_with(|| tokio::sync::broadcast::channel(64).0);
+        tx.subscribe()
+    };
+
+    let mut tools_rx = state.mcp_tools_changed.subscribe();
+    let mut msg_rx = msg_rx;
+    let cleanup_state = state.clone();
+    let cleanup_sid = sid.clone();
 
     let stream = async_stream::stream! {
         loop {
-            match rx.recv().await {
-                Ok(()) => {
-                    let notification = serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "method": "notifications/tools/list_changed"
-                    });
-                    yield Ok::<_, std::convert::Infallible>(
-                        axum::response::sse::Event::default()
-                            .data(serde_json::to_string(&notification).unwrap_or_default())
-                    );
+            tokio::select! {
+                result = tools_rx.recv() => {
+                    match result {
+                        Ok(()) => {
+                            let notification = serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "method": "notifications/tools/list_changed"
+                            });
+                            yield Ok::<_, std::convert::Infallible>(
+                                axum::response::sse::Event::default()
+                                    .data(serde_json::to_string(&notification).unwrap_or_default())
+                            );
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                result = msg_rx.recv() => {
+                    match result {
+                        Ok(json_str) => {
+                            yield Ok::<_, std::convert::Infallible>(
+                                axum::response::sse::Event::default().data(json_str)
+                            );
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
             }
         }
+        // SSE stream ended — mark session as no longer having SSE
+        if let Some(mut meta) = cleanup_state.mcp_sessions.get_mut(&cleanup_sid) {
+            meta.has_sse_stream = false;
+        }
+        cleanup_state.messaging_channels.remove(&cleanup_sid);
     };
 
     axum::response::sse::Sse::new(stream)
@@ -1881,6 +1954,7 @@ mod tests {
             relay: crate::state::RelayState::new(),
             peer_agents: dashmap::DashMap::new(),
             agent_inbox: dashmap::DashMap::new(),
+            messaging_channels: dashmap::DashMap::new(),
         })
     }
 
