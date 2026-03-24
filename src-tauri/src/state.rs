@@ -78,6 +78,17 @@ pub enum AppEvent {
         branch: String,
         worktree_path: String,
     },
+    /// A peer agent registered for inter-agent messaging
+    #[serde(rename = "peer-registered")]
+    PeerRegistered {
+        tuic_session: String,
+        name: String,
+    },
+    /// A peer agent was unregistered (session closed or reaped)
+    #[serde(rename = "peer-unregistered")]
+    PeerUnregistered {
+        tuic_session: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -1175,7 +1186,9 @@ impl AppState {
             | AppEvent::UpstreamStatusChanged { .. }
             | AppEvent::McpToast { .. }
             | AppEvent::DirChanged { .. }
-            | AppEvent::WorktreeCreated { .. } => {}
+            | AppEvent::WorktreeCreated { .. }
+            | AppEvent::PeerRegistered { .. }
+            | AppEvent::PeerUnregistered { .. } => {}
         }
     }
 

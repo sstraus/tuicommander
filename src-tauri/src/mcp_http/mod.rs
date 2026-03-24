@@ -384,8 +384,17 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
                 .collect();
             for sid in &reaped {
                 reaper_state.mcp_sessions.remove(sid);
-                // Clean up peer agents whose MCP session was reaped
-                reaper_state.peer_agents.retain(|_, peer| peer.mcp_session_id != *sid);
+                // Clean up peer agents whose MCP session was reaped — emit events
+                let removed: Vec<String> = reaper_state.peer_agents.iter()
+                    .filter(|e| e.value().mcp_session_id == *sid)
+                    .map(|e| e.key().clone())
+                    .collect();
+                for tuic in &removed {
+                    reaper_state.peer_agents.remove(tuic);
+                    let _ = reaper_state.event_bus.send(crate::state::AppEvent::PeerUnregistered {
+                        tuic_session: tuic.clone(),
+                    });
+                }
             }
             // Evict orphaned inboxes for peers that no longer exist
             if !reaped.is_empty() {

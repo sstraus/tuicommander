@@ -1013,6 +1013,10 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
                 registered_at: now_ms,
             };
             state.peer_agents.insert(tuic_session.to_string(), peer);
+            let _ = state.event_bus.send(crate::state::AppEvent::PeerRegistered {
+                tuic_session: tuic_session.to_string(),
+                name: name.clone(),
+            });
             serde_json::json!({"ok": true, "tuic_session": tuic_session, "name": name})
         }
         "list_peers" => {
@@ -1911,6 +1915,9 @@ pub(super) async fn mcp_delete(
         for tuic in &removed_tuic {
             state.peer_agents.remove(tuic);
             state.agent_inbox.remove(tuic);
+            let _ = state.event_bus.send(crate::state::AppEvent::PeerUnregistered {
+                tuic_session: tuic.clone(),
+            });
         }
     }
     StatusCode::OK
