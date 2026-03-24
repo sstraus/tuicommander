@@ -121,7 +121,9 @@ impl DiffRenderer {
         let screen_height = self.parser.screen().size().0 as usize;
         let mut lines = Vec::with_capacity(delta);
 
-        // Read new scrollback lines from oldest to newest, in pages
+        // Read new scrollback lines from oldest to newest, in pages.
+        // rows_formatted(start_col, width) returns an iterator over ALL rows
+        // with `start_col` as column offset and `width` as column count.
         let read_start = total_sb.saturating_sub(delta);
         let mut remaining = delta;
         let mut pos = read_start;
@@ -131,14 +133,12 @@ impl DiffRenderer {
             let offset = total_sb - pos;
             self.parser.screen_mut().set_scrollback(offset);
 
-            let screen = self.parser.screen();
-            for row_idx in 0..page {
-                if let Some(row_bytes) = screen.rows_formatted(row_idx as u16, cols).next() {
-                    let mut buf = Vec::with_capacity(row_bytes.len() + 2);
-                    buf.extend_from_slice(&row_bytes);
-                    buf.extend_from_slice(b"\r\n");
-                    lines.push(buf);
-                }
+            // rows_formatted(0, cols) returns all rows; take only the page we need
+            for row_bytes in self.parser.screen().rows_formatted(0, cols).take(page) {
+                let mut buf = Vec::with_capacity(row_bytes.len() + 2);
+                buf.extend_from_slice(&row_bytes);
+                buf.extend_from_slice(b"\r\n");
+                lines.push(buf);
             }
 
             pos += page;
@@ -247,19 +247,15 @@ mod tests {
         for i in 0..10 {
             data.extend_from_slice(format!("line {i}\r\n").as_bytes());
         }
-        let scrollback_before = r.parser.screen().scrollback();
         let out = r.process(&data);
-        let scrollback_after = r.parser.screen().scrollback();
-        eprintln!("scrollback before={scrollback_before} after={scrollback_after} scrollback_read={}", r.scrollback_read);
-        eprintln!("scrollback_lines.len()={}", out.scrollback_lines.len());
-        for (i, line) in out.scrollback_lines.iter().enumerate() {
-            eprintln!("  scrollback[{i}]: {:?}", String::from_utf8_lossy(line));
-        }
         // With 5-row screen and 10 lines written, ~5 lines should scroll off
         assert!(
             !out.scrollback_lines.is_empty(),
-            "scrollback should have lines that scrolled off the 5-row screen (scrollback_before={scrollback_before}, scrollback_after={scrollback_after})"
+            "scrollback should have lines that scrolled off the 5-row screen"
         );
+        // Verify content is correct (not truncated)
+        let first = String::from_utf8_lossy(&out.scrollback_lines[0]);
+        assert!(first.contains("line 0"), "first scrollback line should be 'line 0', got: {first}");
     }
 
     #[test]
