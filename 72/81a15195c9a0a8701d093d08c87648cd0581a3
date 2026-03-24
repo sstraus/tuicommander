@@ -1,0 +1,29 @@
+CHANGELOG.md
+  880c28d8bcc2cf20 9-11
+SPEC.md
+  880c28d8bcc2cf20 303
+docs/backend/mcp-http.md
+  880c28d8bcc2cf20 171-204
+docs/FEATURES.md
+  880c28d8bcc2cf20 547-556
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "7281a15195c9a0a8701d093d08c87648cd0581a3",
+  "prompts": {
+    "880c28d8bcc2cf20": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b553277-6441-46e7-8860-208006c53865",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 50,
+      "total_deletions": 2,
+      "accepted_lines": 48,
+      "overriden_lines": 0
+    }
+  }
+}
