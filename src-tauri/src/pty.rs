@@ -1295,7 +1295,7 @@ pub(crate) async fn create_pty(
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
     state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
 
-    // Create ring buffer, VT log buffer, and diff renderer for this session
+    // Create ring buffer and VT log buffer for this session
     state.output_buffers.insert(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
@@ -1303,10 +1303,6 @@ pub(crate) async fn create_pty(
     state.vt_log_buffers.insert(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
-    );
-    state.diff_renderers.insert(
-        session_id.clone(),
-        Mutex::new(crate::diff_renderer::DiffRenderer::new(rows, cols)),
     );
     state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
