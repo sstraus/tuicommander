@@ -65,11 +65,14 @@ export class ScrollTracker {
   }
 
   /** Snapshot buffer state before terminal.write(). Returns a token
-   *  to pair with the afterWrite callback. */
+   *  to pair with the afterWrite callback.
+   *  Uses tracker's viewportY (intended position) instead of xterm's live
+   *  viewportY, which may be stale if a rAF-batched scrollToLine hasn't
+   *  executed yet. */
   beforeWrite(buf: BufferSnapshot): WriteToken {
     return {
-      viewportY: buf.viewportY,
-      wasAtBottom: buf.viewportY >= buf.baseY,
+      viewportY: this._visible ? this.viewportY : buf.viewportY,
+      wasAtBottom: this._wasAtBottom,
       bufferType: buf.type,
     };
   }
@@ -95,8 +98,14 @@ export class ScrollTracker {
       }
     }
 
-    // Update tracked state
-    this.updateState(buf);
+    if (action.type === "scroll-to-line") {
+      // Only update baseY — keep viewportY at the intended restore target.
+      // The actual scrollToLine may be deferred (rAF batching), so the
+      // tracker must reflect the intended position for subsequent writes.
+      this.baseY = buf.baseY;
+    } else {
+      this.updateState(buf);
+    }
 
     return action;
   }

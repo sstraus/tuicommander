@@ -78,7 +78,8 @@ describe("ScrollTracker", () => {
     it("returns scroll-to-line when visible, scrolled up, and viewport moved", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
-      // Simulate: user at viewportY=50, baseY=100
+      t.onScroll(snap(50, 100)); // user scrolled up
+      // beforeWrite uses tracker's viewportY (50), not xterm's
       const token = t.beforeWrite(snap(50, 100));
       // After write: xterm moved viewport to 80 (escape sequence)
       const action = t.afterWrite(snap(80, 105, "normal"), token);
@@ -89,6 +90,7 @@ describe("ScrollTracker", () => {
     it("returns none when at bottom", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
+      t.onScroll(snap(100, 100)); // at bottom
       const token = t.beforeWrite(snap(100, 100));
       const action = t.afterWrite(snap(101, 101), token);
       expect(action.type).toBe("none");
@@ -97,6 +99,7 @@ describe("ScrollTracker", () => {
     it("returns none when viewport did not move", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
+      t.onScroll(snap(50, 100)); // scrolled up
       const token = t.beforeWrite(snap(50, 100));
       const action = t.afterWrite(snap(50, 105), token);
       expect(action.type).toBe("none");
@@ -113,6 +116,7 @@ describe("ScrollTracker", () => {
     it("returns none when buffer contracted below position", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
+      t.onScroll(snap(50, 100)); // scrolled up
       const token = t.beforeWrite(snap(50, 100));
       // Buffer contracted (agent cleared screen)
       const action = t.afterWrite(snap(0, 10), token);
@@ -122,6 +126,7 @@ describe("ScrollTracker", () => {
     it("returns none on normal→alternate transition", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
+      t.onScroll(snap(50, 100));
       const token = t.beforeWrite(snap(50, 100, "normal"));
       const action = t.afterWrite(snap(0, 0, "alternate"), token);
       expect(action.type).toBe("none");
@@ -135,13 +140,36 @@ describe("ScrollTracker", () => {
       expect(action.type).toBe("none");
     });
 
-    it("updates tracked state after write (visible)", () => {
+    it("updates tracked state after write (visible, no restore)", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
+      t.onScroll(snap(100, 100)); // at bottom
       const token = t.beforeWrite(snap(100, 100));
       t.afterWrite(snap(105, 105), token);
       expect(t.isAtBottom).toBe(true);
       expect(t.linesFromBottom).toBe(0);
+    });
+
+    it("keeps intended viewportY when restoring (rAF batching safety)", () => {
+      const t = new ScrollTracker();
+      t.setVisible(true);
+      t.onScroll(snap(50, 100)); // user at 50
+
+      // First write: xterm moves viewport to 80
+      const tok1 = t.beforeWrite(snap(50, 100));
+      const act1 = t.afterWrite(snap(80, 105), tok1);
+      expect(act1.type).toBe("scroll-to-line");
+      expect(act1.line).toBe(50);
+      // Tracker should keep viewportY=50 (intended position)
+      expect(t.linesFromBottom).toBe(55); // 105 - 50
+
+      // Second write (rAF hasn't fired, xterm still at 80):
+      // beforeWrite uses tracker's viewportY=50, not xterm's 80
+      const tok2 = t.beforeWrite(snap(80, 105));
+      expect(tok2.viewportY).toBe(50); // from tracker, not from buf
+      const act2 = t.afterWrite(snap(85, 110), tok2);
+      expect(act2.type).toBe("scroll-to-line");
+      expect(act2.line).toBe(50); // still restoring to user's position
     });
 
     it("updates tracked state after write (hidden, at bottom)", () => {
