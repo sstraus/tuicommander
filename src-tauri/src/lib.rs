@@ -6,6 +6,7 @@ pub(crate) mod chrome;
 pub(crate) mod claude_usage;
 pub(crate) mod cli;
 pub(crate) mod config;
+pub(crate) mod diff_renderer;
 mod dictation;
 pub(crate) mod error_classification;
 pub(crate) mod fs;
