@@ -164,13 +164,23 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // re-entrancy without any DOM reads. See scrollTracker.ts for details.
   const scrollTracker = new ScrollTracker();
 
+  // Batch write-callback scroll restores to one per animation frame.
+  // Without batching, each PTY data chunk calls scrollToLine() synchronously,
+  // and xterm's DomScrollableElement chases each one with a deferred rAF sync,
+  // causing visible scrollbar jank (slider flickers on rapid output).
+  let pendingScrollRestore: number | null = null;
+  let scrollRestoreRaf = 0;
+
   /** Fit terminal to container, preserving scroll position across reflows. */
   const doFit = () => {
     if (!containerRef || !fitAddon || !terminal) return;
     if (containerRef.offsetWidth < MIN_FIT_WIDTH || containerRef.offsetHeight < MIN_FIT_HEIGHT) return;
 
+    // Snapshot BEFORE fit — fitAddon.fit() triggers reflow → onScroll events
+    // that would corrupt the tracker's state before we can read it.
+    const snapshot = scrollTracker.snapshotForFit();
     fitAddon.fit();
-    const action = scrollTracker.computeFitRestore(terminal.buffer.active.baseY);
+    const action = scrollTracker.computeFitRestore(terminal.buffer.active.baseY, snapshot);
 
     if (action.type === "scroll-to-bottom") {
       scrollTracker.suppressNextScroll();
@@ -251,8 +261,18 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
         const action = scrollTracker.afterWrite(terminal.buffer.active, writeToken);
         if (action.type === "scroll-to-line") {
-          scrollTracker.suppressNextScroll();
-          terminal.scrollToLine(action.line!);
+          // Batch to rAF — multiple writes per frame get one scrollToLine
+          pendingScrollRestore = action.line!;
+          if (!scrollRestoreRaf) {
+            scrollRestoreRaf = requestAnimationFrame(() => {
+              scrollRestoreRaf = 0;
+              if (pendingScrollRestore !== null && terminal) {
+                scrollTracker.suppressNextScroll();
+                terminal.scrollToLine(pendingScrollRestore);
+                pendingScrollRestore = null;
+              }
+            });
+          }
         }
       });
     } else {
@@ -1123,6 +1143,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     clearTimeout(resizeTimer);
     clearTimeout(resizeObserverTimer);
     clearTimeout(retryTimer);
+    if (scrollRestoreRaf) cancelAnimationFrame(scrollRestoreRaf);
     // shellState is now Rust-authoritative — no need to force idle on unmount.
     // Rust will emit idle when the agent actually stops. On remount,
     // attachSessionListeners syncs via get_shell_state.

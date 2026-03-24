@@ -167,12 +167,13 @@ describe("ScrollTracker", () => {
     });
   });
 
-  describe("computeFitRestore", () => {
+  describe("snapshotForFit / computeFitRestore", () => {
     it("returns scroll-to-bottom when wasAtBottom", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
       t.onScroll(snap(100, 100)); // at bottom
-      const action = t.computeFitRestore(120);
+      const s = t.snapshotForFit();
+      const action = t.computeFitRestore(120, s);
       expect(action.type).toBe("scroll-to-bottom");
     });
 
@@ -180,7 +181,8 @@ describe("ScrollTracker", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
       t.onScroll(snap(80, 100)); // 20 lines from bottom
-      const action = t.computeFitRestore(150);
+      const s = t.snapshotForFit();
+      const action = t.computeFitRestore(150, s);
       expect(action.type).toBe("scroll-to-line");
       expect(action.line).toBe(130); // 150 - 20
     });
@@ -189,9 +191,23 @@ describe("ScrollTracker", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
       t.onScroll(snap(50, 100)); // 50 lines from bottom
-      const action = t.computeFitRestore(30); // buffer shrank to 30
+      const s = t.snapshotForFit();
+      const action = t.computeFitRestore(30, s); // buffer shrank to 30
       expect(action.type).toBe("scroll-to-bottom");
       expect(action.clamped).toBe(true);
+    });
+
+    it("snapshot survives onScroll during fit (race condition)", () => {
+      const t = new ScrollTracker();
+      t.setVisible(true);
+      t.onScroll(snap(80, 100)); // 20 lines from bottom
+      const s = t.snapshotForFit();
+      // Simulate: fit triggers reflow → onScroll fires with new values
+      t.onScroll(snap(0, 80));
+      // computeFitRestore must use the SNAPSHOT, not the corrupted state
+      const action = t.computeFitRestore(120, s);
+      expect(action.type).toBe("scroll-to-line");
+      expect(action.line).toBe(100); // 120 - 20 (from snapshot)
     });
   });
 
@@ -261,12 +277,12 @@ describe("ScrollTracker", () => {
       expect(act2.line).toBe(50);
     });
 
-    it("computeFitRestore reads snapshot at call time", () => {
+    it("computeFitRestore uses snapshot not live state", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
       t.onScroll(snap(80, 100)); // 20 from bottom
-      // Snapshot is taken internally
-      const action = t.computeFitRestore(200);
+      const s = t.snapshotForFit();
+      const action = t.computeFitRestore(200, s);
       expect(action.line).toBe(180); // 200 - 20
     });
   });

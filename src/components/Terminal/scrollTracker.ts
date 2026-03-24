@@ -101,20 +101,27 @@ export class ScrollTracker {
     return action;
   }
 
+  /** Capture scroll state before fitAddon.fit(). fit() triggers reflow →
+   *  potential onScroll events that corrupt the tracker. The snapshot freezes
+   *  the pre-fit values for computeFitRestore to use. */
+  snapshotForFit(): { wasAtBottom: boolean; linesFromBottom: number } {
+    return { wasAtBottom: this._wasAtBottom, linesFromBottom: this.linesFromBottom };
+  }
+
   /** Compute scroll action after fitAddon.fit() reflows the buffer.
-   *  Call with the new buffer's baseY after fit completes. */
-  computeFitRestore(newBaseY: number): RestoreAction {
-    if (this._wasAtBottom) {
+   *  @param newBaseY — buffer.active.baseY after fit
+   *  @param snapshot — pre-fit snapshot from snapshotForFit() */
+  computeFitRestore(newBaseY: number, snapshot: { wasAtBottom: boolean; linesFromBottom: number }): RestoreAction {
+    if (snapshot.wasAtBottom) {
       return { type: "scroll-to-bottom" };
     }
 
-    const lfb = this.linesFromBottom;
-    if (lfb > newBaseY) {
+    if (snapshot.linesFromBottom > newBaseY) {
       // Buffer shrank below tracked scroll distance — old position gone
       return { type: "scroll-to-bottom", clamped: true };
     }
 
-    return { type: "scroll-to-line", line: newBaseY - lfb };
+    return { type: "scroll-to-line", line: newBaseY - snapshot.linesFromBottom };
   }
 
   /** Suppress the next onScroll event. Call before programmatic
