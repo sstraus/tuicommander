@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { ScrollTracker, type BufferSnapshot } from "../../components/Terminal/scrollTracker";
+import { describe, it, expect, beforeEach } from "vitest";
+import { ScrollTracker, ViewportLock, type BufferSnapshot } from "../../components/Terminal/scrollTracker";
 
 /** Helper: create a normal-buffer snapshot */
 function snap(viewportY: number, baseY: number, type = "normal"): BufferSnapshot {
@@ -41,23 +41,22 @@ describe("ScrollTracker", () => {
       expect(t.linesFromBottom).toBe(50);
     });
 
-    it("rejects stale deferred onScroll with viewportY=0 when scrolled up", () => {
+    it("accepts viewportY=0 with baseY>0 (scrolled to top)", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
       t.onScroll(snap(50, 100)); // user scrolled up
-      // Stale deferred event from fit/init arrives with viewportY=0
-      t.onScroll(snap(0, 100));
-      expect(t.isAtBottom).toBe(false); // must NOT corrupt
-      expect(t.linesFromBottom).toBe(50); // unchanged
+      t.onScroll(snap(0, 100)); // scrolled to very top
+      expect(t.isAtBottom).toBe(false);
+      expect(t.linesFromBottom).toBe(100);
     });
 
-    it("rejects viewportY=0 even when at bottom (stale deferred event)", () => {
+    it("viewportY=0 after being at bottom means scrolled to top", () => {
       const t = new ScrollTracker();
       t.setVisible(true);
       t.onScroll(snap(100, 100)); // at bottom
-      t.onScroll(snap(0, 100)); // stale event — rejected
-      expect(t.isAtBottom).toBe(true); // unchanged
-      expect(t.linesFromBottom).toBe(0); // still at bottom
+      t.onScroll(snap(0, 100)); // scrolled to top
+      expect(t.isAtBottom).toBe(false);
+      expect(t.linesFromBottom).toBe(100);
     });
 
     it("accepts viewportY=0 when buffer is empty", () => {
@@ -338,6 +337,166 @@ describe("ScrollTracker", () => {
       const s = t.snapshotForFit();
       const action = t.computeFitRestore(200, s);
       expect(action.line).toBe(180); // 200 - 20
+    });
+  });
+});
+
+/** Helper: create a container with a .xterm-viewport child element */
+function createViewportContainer(): { container: HTMLDivElement; viewport: HTMLDivElement } {
+  const container = document.createElement("div");
+  const viewport = document.createElement("div");
+  viewport.className = "xterm-viewport";
+  container.appendChild(viewport);
+  document.body.appendChild(container);
+  return { container, viewport };
+}
+
+describe("ViewportLock", () => {
+  let lock: ViewportLock;
+
+  beforeEach(() => {
+    lock = new ViewportLock();
+  });
+
+  describe("attach", () => {
+    it("finds .xterm-viewport inside container", () => {
+      const { container } = createViewportContainer();
+      lock.attach(container);
+      // Should not throw; lock is ready
+      expect(lock.isLocked).toBe(false);
+      lock.dispose();
+    });
+
+    it("does nothing when no .xterm-viewport found", () => {
+      const container = document.createElement("div");
+      lock.attach(container); // should not throw
+      lock.update(false); // should not throw
+      lock.dispose();
+    });
+  });
+
+  describe("lock behavior", () => {
+    it("allows scrollTop changes when not locked (user at bottom)", () => {
+      const { container, viewport } = createViewportContainer();
+      lock.attach(container);
+      lock.update(true); // at bottom — not locked
+
+      viewport.scrollTop = 100;
+      expect(viewport.scrollTop).toBe(100);
+      lock.dispose();
+    });
+
+    it("blocks programmatic scrollTop changes when locked (user scrolled up)", () => {
+      const { container, viewport } = createViewportContainer();
+      lock.attach(container);
+
+      // Set an initial scrollTop value
+      viewport.scrollTop = 50;
+      expect(viewport.scrollTop).toBe(50);
+
+      // Lock (user scrolled up)
+      lock.update(false);
+      expect(lock.isLocked).toBe(true);
+
+      // Programmatic scrollTop change should be blocked
+      viewport.scrollTop = 200;
+      expect(viewport.scrollTop).toBe(50); // unchanged
+      lock.dispose();
+    });
+
+    it("unlocks when user returns to bottom", () => {
+      const { container, viewport } = createViewportContainer();
+      lock.attach(container);
+
+      viewport.scrollTop = 50;
+      lock.update(false); // locked
+
+      viewport.scrollTop = 200;
+      expect(viewport.scrollTop).toBe(50); // blocked
+
+      lock.update(true); // unlocked (back at bottom)
+      expect(lock.isLocked).toBe(false);
+
+      viewport.scrollTop = 200;
+      expect(viewport.scrollTop).toBe(200); // allowed
+      lock.dispose();
+    });
+
+    it("allows scrollTop changes during user wheel events", () => {
+      const { container, viewport } = createViewportContainer();
+      lock.attach(container);
+
+      viewport.scrollTop = 50;
+      lock.update(false); // locked
+
+      // Simulate user wheel event
+      viewport.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
+
+      // During the wheel event handler chain, scrollTop changes are allowed
+      viewport.scrollTop = 30;
+      expect(viewport.scrollTop).toBe(30);
+      lock.dispose();
+    });
+
+    it("re-engages lock after wheel microtask completes", async () => {
+      const { container, viewport } = createViewportContainer();
+      lock.attach(container);
+
+      viewport.scrollTop = 50;
+      lock.update(false); // locked
+
+      viewport.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
+      viewport.scrollTop = 30; // allowed during wheel
+
+      // Wait for microtask to clear userScrolling flag
+      await Promise.resolve();
+
+      // Now programmatic changes should be blocked again
+      viewport.scrollTop = 200;
+      expect(viewport.scrollTop).toBe(30); // blocked
+      lock.dispose();
+    });
+
+    it("allows scrollTop changes during mousedown (scrollbar drag)", () => {
+      const { container, viewport } = createViewportContainer();
+      lock.attach(container);
+
+      viewport.scrollTop = 50;
+      lock.update(false); // locked
+
+      // Simulate scrollbar drag
+      viewport.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+
+      viewport.scrollTop = 30;
+      expect(viewport.scrollTop).toBe(30);
+
+      // Release mouse
+      window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      lock.dispose();
+    });
+  });
+
+  describe("dispose", () => {
+    it("restores original scrollTop behavior", () => {
+      const { container, viewport } = createViewportContainer();
+      lock.attach(container);
+      lock.update(false); // locked
+
+      viewport.scrollTop = 200;
+      // blocked by lock — value should NOT be 200
+
+      lock.dispose();
+
+      // After dispose, scrollTop should work normally again
+      viewport.scrollTop = 300;
+      expect(viewport.scrollTop).toBe(300);
+    });
+
+    it("is safe to call multiple times", () => {
+      const { container } = createViewportContainer();
+      lock.attach(container);
+      lock.dispose();
+      lock.dispose(); // should not throw
     });
   });
 });

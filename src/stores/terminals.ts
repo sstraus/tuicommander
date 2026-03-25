@@ -144,12 +144,11 @@ function createTerminalsStore() {
         busySinceMap.set(id, Date.now());
       }
       busyDurationMap.delete(id);
-      // Agent resumed output after being idle — clear question state immediately.
       // Error state is NOT cleared here: API errors are persistent and should only
       // be cleared by explicit agent activity (status-line, user-input) or process exit.
-      if (prev === "idle" && state.terminals[id]?.awaitingInput === "question") {
-        terminalsStore.clearAwaitingInput(id);
-      }
+      // Question state is NOT cleared here either: timer ticks while waiting for
+      // input can cause idle→busy oscillation, which would dismiss the notification.
+      // Questions are cleared by user-input events (user actually typed).
     } else if (next !== "busy" && prev === "busy") {
       // Leaving busy: freeze duration, start cooldown
       const since = busySinceMap.get(id);

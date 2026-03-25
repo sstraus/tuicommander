@@ -78,10 +78,10 @@ impl DiffRenderer {
 
         // Compute screen patch
         let screen = self.parser.screen();
-        let screen_patch = if force_full || self.prev_screen.is_none() {
-            screen.contents_formatted()
-        } else {
-            screen.contents_diff(self.prev_screen.as_ref().unwrap())
+        let screen_patch = match &self.prev_screen {
+            None => screen.contents_formatted(),
+            Some(_) if force_full => screen.contents_formatted(),
+            Some(prev) => screen.contents_diff(prev),
         };
 
         // Save current screen for next diff

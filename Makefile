@@ -26,9 +26,9 @@ DIST_DIR=dist-release
 
 all: build sign
 
-# Run in development mode with hot reload
+# Run in development mode with hot reload (debug tracing for our code only)
 dev:
-	npm run tauri dev
+	RUST_LOG=tuicommander_lib=debug,info npm run tauri dev
 
 # Build frontend + launch Tauri dev (for quick manual testing)
 test:

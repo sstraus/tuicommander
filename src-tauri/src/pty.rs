@@ -157,7 +157,11 @@ pub(crate) fn verify_question_on_screen(screen_rows: &[String], question: &str, 
     screen_rows.iter().rev()
         .filter(|r| !r.is_empty())
         .take(max_bottom_rows)
-        .any(|r| r.trim() == q)
+        .any(|r| {
+            let t = r.trim();
+            // Exact match or prefix match (question may be truncated/wrapped on screen)
+            t == q || (!q.is_empty() && t.starts_with(q)) || (!t.is_empty() && q.starts_with(t))
+        })
 }
 
 use crate::chrome::{is_separator_line, is_prompt_line};
@@ -180,10 +184,11 @@ pub(crate) fn extract_last_chat_line(screen_rows: &[String]) -> Option<String> {
         .find(|(_, row)| is_prompt_line(row))?
         .0;
 
-    // Walk upward past separator lines and empty lines to find the last chat line.
+    // Walk upward past separator lines, empty lines, and chrome rows
+    // (timer/spinner like ✻, mode-line like ⏵⏵) to find the last chat line.
     for i in (0..prompt_idx).rev() {
         let trimmed = screen_rows[i].trim();
-        if !trimmed.is_empty() && !is_separator_line(trimmed) {
+        if !trimmed.is_empty() && !is_separator_line(trimmed) && !is_chrome_row(trimmed) {
             return Some(trimmed.to_string());
         }
     }
@@ -491,6 +496,12 @@ fn spawn_silence_timer(
                 .and_then(|vt| {
                     let rows = vt.lock().screen_rows();
                     let line = extract_last_chat_line(&rows)?;
+                    tracing::debug!(
+                        session_id = %session_id,
+                        last_chat_line = %line,
+                        ends_with_q = line.ends_with('?'),
+                        "DIAG silence_timer: screen strategy"
+                    );
                     if line.ends_with('?') && is_plausible_question(&line) {
                         Some(line)
                     } else {
@@ -512,13 +523,25 @@ fn spawn_silence_timer(
                                 SCREEN_VERIFY_ROWS,
                             ))
                             .unwrap_or(false);
+                        tracing::debug!(
+                            session_id = %session_id,
+                            question = %text,
+                            on_screen = on_screen,
+                            "silence_timer: chunk fallback"
+                        );
                         if !on_screen {
                             silence.lock().clear_stale_question();
                             continue;
                         }
                         text.clone()
                     }
-                    None => continue,
+                    None => {
+                        tracing::debug!(
+                            session_id = %session_id,
+                            "silence_timer: silent but no question candidate"
+                        );
+                        continue;
+                    },
                 }
             };
 
@@ -830,12 +853,34 @@ impl ChunkProcessor {
         //   has_status_line from suppressing chunks that mix spinner + output.
         let all_chrome_markers = changed_rows.iter().all(|r| is_chrome_row(&r.text));
         let no_real_output = changed_rows.iter().all(|r| {
-            is_chrome_row(&r.text) || r.text.trim().is_empty()
+            is_chrome_row(&r.text)
+                || r.text.trim().is_empty()
+                || crate::chrome::is_separator_line(&r.text)
+                || crate::chrome::is_prompt_line(&r.text)
         });
         let chrome_only = !regex_found_question
             && last_q_line.is_none()
             && !changed_rows.is_empty()
             && (all_chrome_markers || (has_status_line && no_real_output));
+        // DIAG: log non-chrome chunks to find what breaks chrome_only
+        if !chrome_only && !changed_rows.is_empty() {
+            let non_chrome: Vec<_> = changed_rows.iter()
+                .filter(|r| !is_chrome_row(&r.text) && !r.text.trim().is_empty()
+                    && !crate::chrome::is_separator_line(&r.text)
+                    && !crate::chrome::is_prompt_line(&r.text))
+                .map(|r| format!("r{}:{:?}", r.row_index, &r.text[..r.text.len().min(60)]))
+                .collect();
+            if !non_chrome.is_empty() {
+                tracing::debug!(
+                    session_id = %session_id,
+                    all_chrome = all_chrome_markers,
+                    has_sl = has_status_line,
+                    no_real = no_real_output,
+                    rows = ?non_chrome,
+                    "chrome_only=false: non-chrome rows"
+                );
+            }
+        }
         {
             let mut sl = silence.lock();
             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
@@ -2349,6 +2394,92 @@ mod tests {
         let rows = make_rows(&["\u{280B} Connecting to MCP servers..."]);
         let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
         assert!(chrome_only, "Gemini braille spinner should be chrome");
+    }
+
+    // --- chrome_only full formula tests (mirrors process_chunk logic) ---
+
+    /// Helper: compute chrome_only using the same formula as process_chunk.
+    fn compute_chrome_only(
+        rows: &[ChangedRow],
+        has_status_line: bool,
+        regex_found_question: bool,
+        last_q_line: bool,
+    ) -> bool {
+        let all_chrome_markers = rows.iter().all(|r| is_chrome_row(&r.text));
+        let no_real_output = rows.iter().all(|r| {
+            is_chrome_row(&r.text)
+                || r.text.trim().is_empty()
+                || crate::chrome::is_separator_line(&r.text)
+                || crate::chrome::is_prompt_line(&r.text)
+        });
+        !regex_found_question
+            && !last_q_line
+            && !rows.is_empty()
+            && (all_chrome_markers || (has_status_line && no_real_output))
+    }
+
+    #[test]
+    fn test_chrome_only_formula_timer_tick_only() {
+        // CC timer tick: only the timer row changed
+        let rows = make_rows(&["\u{273B} Cogitated 3m 47s"]);
+        assert!(compute_chrome_only(&rows, true, false, false),
+            "timer-only tick should be chrome_only");
+    }
+
+    #[test]
+    fn test_chrome_only_formula_timer_plus_separator() {
+        // CC timer tick + separator repaint (ESC[2J full redraw)
+        let rows = make_rows(&[
+            "────────────────────────────────────",
+            "\u{273B} Cogitated 3m 48s",
+        ]);
+        assert!(compute_chrome_only(&rows, true, false, false),
+            "timer + separator should be chrome_only");
+    }
+
+    #[test]
+    fn test_chrome_only_formula_timer_plus_prompt_and_separator() {
+        // CC timer tick + prompt + separator (full bottom chrome zone)
+        let rows = make_rows(&[
+            "────────────────────────────────────",
+            "❯",
+            "────────────────────────────────────",
+            "\u{23F5}\u{23F5} auto mode",
+            "\u{273B} Cogitated 3m 48s",
+        ]);
+        assert!(compute_chrome_only(&rows, true, false, false),
+            "timer + prompt + separator + mode-line should be chrome_only");
+    }
+
+    #[test]
+    fn test_chrome_only_formula_timer_plus_blank_rows() {
+        // CC timer tick with blank rows (padding in TUI)
+        let rows = make_rows(&[
+            "",
+            "\u{273B} Cogitated 3m 48s",
+            "",
+        ]);
+        assert!(compute_chrome_only(&rows, true, false, false),
+            "timer + blank rows should be chrome_only");
+    }
+
+    #[test]
+    fn test_chrome_only_formula_real_output_not_chrome() {
+        // Real agent output mixed with status line
+        let rows = make_rows(&[
+            "I will edit the file for you.",
+            "\u{273B} Cogitated 3m 48s",
+        ]);
+        assert!(!compute_chrome_only(&rows, true, false, false),
+            "real text + timer should NOT be chrome_only");
+    }
+
+    #[test]
+    fn test_chrome_only_formula_question_line_not_chrome() {
+        // Even if all chrome, a pending question line disables chrome_only
+        let rows = make_rows(&["\u{273B} Cogitated 3m 48s"]);
+        assert!(!compute_chrome_only(&rows, true, false, true),
+            "chrome with pending question should NOT be chrome_only");
     }
 
     // --- Staleness counter tests ---

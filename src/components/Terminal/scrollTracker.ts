@@ -143,9 +143,7 @@ export class ScrollTracker {
    *
    *  Guard: in xterm v6, DomScrollableElement can desync _ydisp from
    *  the visual scroll position, reporting viewportY=0 permanently even
-   *  when the user has scrolled. When visible and buffer has content,
-   *  reject viewportY=0 updates — only update baseY to keep
-   *  linesFromBottom accurate without corrupting the scroll position. */
+   *  when the user has scrolled. */
   private updateState(buf: BufferSnapshot): void {
     if (this._visible) {
       this.viewportY = buf.viewportY;
@@ -160,5 +158,130 @@ export class ScrollTracker {
         this._wasAtBottom = this.viewportY >= buf.baseY;
       }
     }
+  }
+}
+
+/**
+ * Prevents programmatic scrollTop changes on the xterm viewport element
+ * while the user is scrolled up. This blocks xterm.js DomScrollableElement's
+ * rAF-based scrollTop sync that causes scroll-to-bottom jumps when agents
+ * send ESC[2J (clear display) or similar sequences.
+ *
+ * How it works:
+ * - Overrides the scrollTop setter on the viewport element via Object.defineProperty
+ * - While locked, the setter silently discards writes (xterm buffer updates normally)
+ * - User scroll events (wheel, mousedown on scrollbar) temporarily allow scrollTop
+ *   changes so the user can always scroll freely
+ * - When the user scrolls back to bottom, the lock deactivates
+ *
+ * This is a DOM-level defense, complementary to the ESC[2J/ESC[3J stripping
+ * and ScrollTracker's afterWrite restore logic.
+ */
+export class ViewportLock {
+  private viewport: HTMLElement | null = null;
+  private locked = false;
+  private userScrolling = false;
+  private originalDescriptor: PropertyDescriptor | undefined;
+  private cleanupFns: (() => void)[] = [];
+
+  /** Attach to the .xterm-viewport element inside the terminal container.
+   *  Call after terminal.open(). */
+  attach(container: HTMLElement): void {
+    const vp = container.querySelector<HTMLElement>(".xterm-viewport");
+    if (!vp) return;
+    this.viewport = vp;
+
+    // Capture the original scrollTop descriptor from the prototype chain.
+    // Walk up to find it — real browsers define it on Element.prototype,
+    // but test environments (happy-dom) may not have it at all.
+    this.originalDescriptor = this.findScrollTopDescriptor(vp);
+
+    const self = this;
+    const origDesc = this.originalDescriptor;
+
+    // When no native descriptor exists (test environments), fall back to
+    // a simple value store that mirrors the native scrollTop behavior.
+    let storedValue = vp.scrollTop ?? 0;
+
+    // Override scrollTop on the instance so xterm's DomScrollableElement
+    // writes go through our gate.
+    Object.defineProperty(vp, "scrollTop", {
+      configurable: true,
+      get() {
+        return origDesc?.get ? origDesc.get.call(vp) : storedValue;
+      },
+      set(value: number) {
+        if (self.locked && !self.userScrolling) {
+          // Silently discard programmatic scrollTop changes while locked
+          return;
+        }
+        if (origDesc?.set) {
+          origDesc.set.call(vp, value);
+        } else {
+          storedValue = value;
+        }
+      },
+    });
+
+    // Detect user-initiated scrolling: wheel events on the viewport
+    const onWheel = () => {
+      self.userScrolling = true;
+      // Reset after a microtask — the wheel event handler chain
+      // (including xterm's) will have run by then.
+      queueMicrotask(() => { self.userScrolling = false; });
+    };
+
+    // Detect scrollbar drag: mousedown on the viewport (scrollbar area)
+    const onMouseDown = () => {
+      self.userScrolling = true;
+    };
+    const onMouseUp = () => {
+      self.userScrolling = false;
+    };
+
+    vp.addEventListener("wheel", onWheel, { passive: true });
+    vp.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mouseup", onMouseUp);
+
+    this.cleanupFns.push(
+      () => vp.removeEventListener("wheel", onWheel),
+      () => vp.removeEventListener("mousedown", onMouseDown),
+      () => window.removeEventListener("mouseup", onMouseUp),
+    );
+  }
+
+  /** Update lock state based on whether the user is at the bottom.
+   *  Call after every scroll state change (onScroll, afterWrite, etc.). */
+  update(isAtBottom: boolean): void {
+    this.locked = !isAtBottom;
+  }
+
+  /** Remove all listeners and restore the original scrollTop descriptor. */
+  dispose(): void {
+    for (const fn of this.cleanupFns) fn();
+    this.cleanupFns = [];
+
+    // Restore original scrollTop behavior
+    if (this.viewport) {
+      delete (this.viewport as unknown as Record<string, unknown>).scrollTop;
+    }
+    this.viewport = null;
+    this.locked = false;
+  }
+
+  /** Whether the lock is currently active (for debugging/testing). */
+  get isLocked(): boolean {
+    return this.locked;
+  }
+
+  /** Walk the prototype chain to find the native scrollTop property descriptor. */
+  private findScrollTopDescriptor(el: HTMLElement): PropertyDescriptor | undefined {
+    let proto: object | null = el;
+    while (proto) {
+      const desc = Object.getOwnPropertyDescriptor(proto, "scrollTop");
+      if (desc) return desc;
+      proto = Object.getPrototypeOf(proto);
+    }
+    return undefined;
   }
 }

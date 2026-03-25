@@ -22,7 +22,7 @@ import { agentConfigsStore } from "../../stores/agentConfigs";
 import { parseOsc7Url } from "../../utils/osc7";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { getAwaitingInputSound } from "./awaitingInputSound";
-import { ScrollTracker } from "./scrollTracker";
+import { ScrollTracker, ViewportLock } from "./scrollTracker";
 import s from "./Terminal.module.css";
 
 
@@ -163,6 +163,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // Scroll position tracker — handles visibility, alternate buffer, and
   // re-entrancy without any DOM reads. See scrollTracker.ts for details.
   const scrollTracker = new ScrollTracker();
+  // DOM-level defense: blocks programmatic scrollTop changes when user is
+  // scrolled up, preventing xterm's DomScrollableElement from jumping to bottom.
+  const viewportLock = new ViewportLock();
 
   /** Fit terminal to container, preserving scroll position across reflows. */
   const doFit = () => {
@@ -183,6 +186,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       scrollTracker.suppressNextScroll();
       terminal.scrollToLine(action.line!);
     }
+    viewportLock.update(scrollTracker.isAtBottom);
   };
 
   // Reset activity flag when this terminal becomes active (store clears activity)
@@ -229,7 +233,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
   /** Process a chunk of PTY output — write to terminal or buffer if not ready */
   const handlePtyData = (rawData: string) => {
     // Strip ESC[3J (clear scrollback) — CC sends this on every TUI redraw,
-    // destroying all scrollback content. We manage scrollback ourselves.
+    // destroying all scrollback content. We preserve scrollback ourselves.
+    // ESC[2J is NOT stripped — ViewportLock prevents the scroll jump instead.
     const data = rawData.includes("\x1b[3J")
       ? rawData.replaceAll("\x1b[3J", "")
       : rawData;
@@ -292,6 +297,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       outputBuffer = [];
       outputBufferBytes = 0;
       scrollTracker.onScroll(terminal.buffer.active);
+      viewportLock.update(scrollTracker.isAtBottom);
     }
   };
 
@@ -338,9 +344,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
         switch (parsed.type) {
           case "progress": {
-            // Don't clear error state on progress — API errors are persistent
-            // and should only be cleared by user input or process exit.
-            if (terminalsStore.get(props.id)?.awaitingInput !== "error") {
+            // Don't clear error/question state on progress — API errors are
+            // persistent, and question state should survive timer ticks.
+            const awProg = terminalsStore.get(props.id)?.awaitingInput;
+            if (awProg && awProg !== "error" && awProg !== "question") {
               terminalsStore.clearAwaitingInput(props.id);
             }
             if (parsed.state === 0) {
@@ -352,11 +359,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
           case "status-line": {
             retryCount = 0; // Reset auto-retry — agent is working again
-            // Agent is working again — clear question state (but NOT suggest:
-            // suggested actions persist until the user selects one, dismisses, or
-            // sends new input via write_pty).
-            // Don't clear error state — API errors are persistent.
-            if (terminalsStore.get(props.id)?.awaitingInput !== "error") {
+            // Agent is working again — clear awaiting input state, EXCEPT:
+            // - "error": API errors are persistent (only cleared by user input / exit)
+            // - "question": timer ticks while waiting for input emit status-line
+            //   events but should not dismiss the question notification
+            const awState = terminalsStore.get(props.id)?.awaitingInput;
+            if (awState && awState !== "error" && awState !== "question") {
               terminalsStore.clearAwaitingInput(props.id);
             }
             terminalsStore.update(props.id, { currentTask: parsed.task_name });
@@ -903,6 +911,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
 
     terminal.open(containerRef);
+    // ViewportLock disabled — Object.defineProperty on scrollTop causes
+    // xterm.js to render a phantom cursor row below the terminal content.
+    // TODO: find an alternative approach for scroll-jump prevention.
+    // viewportLock.attach(containerRef);
 
     // Preload the configured font so the canvas/WebGL renderer can measure
     // and render it correctly from the start (see preloadFont comment above).
@@ -960,6 +972,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     terminal.onScroll(() => {
       scrollTracker.onScroll(terminal!.buffer.active);
+      viewportLock.update(scrollTracker.isAtBottom);
     });
 
 
@@ -987,8 +1000,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     terminal.onData(async (data) => {
       if (sessionId) {
-        // User typing means they answered any pending prompt
-        if (terminalsStore.get(props.id)?.awaitingInput) {
+        // Focus report sequences (CSI I / CSI O) from DECSET 1004 fire on
+        // tab/window focus changes — not user input. Still forward to PTY
+        // (CC needs them) but don't clear awaitingInput.
+        const isFocusReport = data === "\x1b[I" || data === "\x1b[O";
+        if (!isFocusReport && terminalsStore.get(props.id)?.awaitingInput) {
           terminalsStore.clearAwaitingInput(props.id);
         }
         try {
@@ -1165,6 +1181,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Clean up plugin line buffer for this session
     if (sessionId) pluginRegistry.removeSession(sessionId);
 
+    viewportLock.dispose();
     terminal?.dispose();
   });
 
