@@ -236,27 +236,14 @@ pub(super) async fn close_session(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
 ) -> impl IntoResponse {
-    if let Some((_, session_mutex)) = state.sessions.remove(&session_id) {
-        state.output_buffers.remove(&session_id);
-        state.vt_log_buffers.remove(&session_id);
-        state.ws_clients.remove(&session_id);
-        state.kitty_states.remove(&session_id);
-        state.input_buffers.remove(&session_id);
-        state.silence_states.remove(&session_id);
-        state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
-
-        let mut session = session_mutex.into_inner();
-        let _ = session.writer.write_all(&[0x03]);
-        let _ = session.writer.flush();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
-        loop {
-            match session._child.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) if std::time::Instant::now() >= deadline => break,
-                _ => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
-            }
+    if state.sessions.contains_key(&session_id) {
+        // Send Ctrl+C then cleanup
+        if let Some(entry) = state.sessions.get(&session_id) {
+            let mut session = entry.lock();
+            let _ = session.writer.write_all(&[0x03]);
+            let _ = session.writer.flush();
         }
-        drop(session);
+        crate::pty::cleanup_session(&session_id, &state);
 
         // Broadcast to SSE/WebSocket consumers
         tracing::info!(source = "session", session_id = %session_id, "Session closed: explicit close");
@@ -264,7 +251,6 @@ pub(super) async fn close_session(
             session_id: session_id.clone(),
             reason: "explicit_close".to_string(),
         });
-        // Tauri IPC for desktop backward compat
         if let Some(app) = state.app_handle.read().as_ref() {
             let _ = app.emit("session-closed", serde_json::json!({
                 "session_id": session_id,

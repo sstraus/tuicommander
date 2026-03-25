@@ -6309,7 +6309,7 @@ dependencies = [
 
 [[package]]
 name = "tuicommander"
-version = "0.9.5"
+version = "0.9.6"
 dependencies = [
  "aes-gcm",
  "anyhow",

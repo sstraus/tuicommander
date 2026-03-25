@@ -520,19 +520,13 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 Ok(id) => id,
                 Err(e) => return e,
             };
-            if let Some((_, session_mutex)) = state.sessions.remove(session_id) {
-                state.output_buffers.remove(session_id);
-                state.vt_log_buffers.remove(session_id);
-                state.ws_clients.remove(session_id);
-                state.kitty_states.remove(session_id);
-                state.input_buffers.remove(session_id);
-                state.silence_states.remove(session_id);
-                state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
-
-                let mut session = session_mutex.into_inner();
+            if let Some(entry) = state.sessions.get(session_id) {
+                let mut session = entry.lock();
                 let _ = session.writer.write_all(&[0x03]);
                 let _ = session.writer.flush();
                 drop(session);
+                drop(entry);
+                crate::pty::cleanup_session(session_id, &state);
                 serde_json::json!({"ok": true})
             } else {
                 serde_json::json!({"error": "Session not found"})
@@ -543,20 +537,14 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 Ok(id) => id,
                 Err(e) => return e,
             };
-            if let Some((_, session_mutex)) = state.sessions.remove(session_id) {
-                state.output_buffers.remove(session_id);
-                state.vt_log_buffers.remove(session_id);
-                state.ws_clients.remove(session_id);
-                state.kitty_states.remove(session_id);
-                state.input_buffers.remove(session_id);
-                state.silence_states.remove(session_id);
-                state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
-
-                let mut session = session_mutex.into_inner();
+            if let Some(entry) = state.sessions.get(session_id) {
+                let mut session = entry.lock();
                 if let Err(e) = session._child.kill() {
                     tracing::warn!(session_id = %session_id, "SIGKILL failed: {e}");
                 }
                 drop(session);
+                drop(entry);
+                crate::pty::cleanup_session(session_id, &state);
                 tracing::info!(source = "session", session_id = %session_id, "Session killed: SIGKILL");
                 let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
                     session_id: session_id.to_string(),

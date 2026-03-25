@@ -994,7 +994,7 @@ fn flush_eof(
 }
 
 /// Clean up session state from all DashMaps after a reader thread exits.
-fn cleanup_session(session_id: &str, state: &AppState) {
+pub(crate) fn cleanup_session(session_id: &str, state: &AppState) {
     if state.sessions.remove(session_id).is_some() {
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
     }
@@ -1006,6 +1006,8 @@ fn cleanup_session(session_id: &str, state: &AppState) {
     state.silence_states.remove(session_id);
     state.shell_states.remove(session_id);
     state.diff_renderers.remove(session_id);
+    state.last_output_ms.remove(session_id);
+    state.last_prompts.remove(session_id);
 }
 
 /// Spawn a reader thread that reads from a PTY, emits Tauri events, and writes to the ring buffer.
