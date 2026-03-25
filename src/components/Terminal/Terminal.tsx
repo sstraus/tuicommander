@@ -247,14 +247,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
       }
 
       viewportLock.writeStart();
-      terminal.write(rawData, () => {
+      try {
+        terminal.write(rawData, () => {
+          viewportLock.writeEnd();
+          pendingWriteBytes -= byteLen;
+          if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
+            isPaused = false;
+            pty.resume(sessionId).catch((err) => appLogger.warn("terminal", "PTY resume failed", { error: String(err) }));
+          }
+        });
+      } catch (e) {
         viewportLock.writeEnd();
         pendingWriteBytes -= byteLen;
-        if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
-          isPaused = false;
-          pty.resume(sessionId).catch((err) => appLogger.warn("terminal", "PTY resume failed", { error: String(err) }));
-        }
-      });
+        appLogger.warn("terminal", "terminal.write() threw", { error: String(e), sessionId });
+      }
     } else {
       // Buffer output until terminal.open() is called
       outputBuffer.push(rawData);
@@ -908,7 +914,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
     viewportLock.attach(
       containerRef,
       (line) => terminal!.scrollToLine(line),
-      () => terminal!.scrollToBottom(),
       () => ({
         viewportY: terminal!.buffer.active.viewportY,
         baseY: terminal!.buffer.active.baseY,

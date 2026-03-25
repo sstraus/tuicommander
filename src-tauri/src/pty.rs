@@ -160,7 +160,7 @@ pub(crate) fn verify_question_on_screen(screen_rows: &[String], question: &str, 
         .any(|r| {
             let t = r.trim();
             // Exact match or prefix match (question may be truncated/wrapped on screen)
-            t == q || (!q.is_empty() && t.starts_with(q)) || (!t.is_empty() && q.starts_with(t))
+            t == q || (!q.is_empty() && t.starts_with(q))
         })
 }
 

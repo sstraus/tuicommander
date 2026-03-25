@@ -6,13 +6,6 @@ export interface BufferSnapshot {
   type: string; // "normal" | "alternate"
 }
 
-/** Opaque token pairing a pre-write snapshot with its post-write callback. */
-export interface WriteToken {
-  viewportY: number;
-  wasAtBottom: boolean;
-  bufferType: string;
-}
-
 /** Action the caller should execute after a scroll-related decision. */
 export interface RestoreAction {
   type: "scroll-to-bottom" | "scroll-to-line" | "none";
@@ -47,8 +40,8 @@ export class ScrollTracker {
     return this.baseY - this.viewportY;
   }
 
-  /** Update visibility state. When hidden, onScroll and afterWrite use
-   *  inference instead of trusting buf.viewportY. */
+  /** Update visibility state. When hidden, onScroll uses inference
+   *  instead of trusting buf.viewportY. */
   setVisible(visible: boolean): void {
     this._visible = visible;
   }
@@ -62,50 +55,6 @@ export class ScrollTracker {
       return;
     }
     this.updateState(buf);
-  }
-
-  /** Snapshot buffer state before terminal.write(). Returns a token
-   *  to pair with the afterWrite callback.
-   *  Uses tracker's viewportY (intended position) instead of xterm's live
-   *  viewportY, which may be stale if a rAF-batched scrollToLine hasn't
-   *  executed yet. */
-  beforeWrite(buf: BufferSnapshot): WriteToken {
-    return {
-      viewportY: this._visible ? this.viewportY : buf.viewportY,
-      wasAtBottom: this._wasAtBottom,
-      bufferType: buf.type,
-    };
-  }
-
-  /** Process buffer state after terminal.write() completes.
-   *  Returns a RestoreAction the caller should execute.
-   *  Also updates internal tracked state. */
-  afterWrite(buf: BufferSnapshot, token: WriteToken): RestoreAction {
-    // Skip everything on buffer type transitions (normal↔alternate).
-    // Alt buffer reads 0/0 — updating state would corrupt normal tracking.
-    if (buf.type !== "normal" || token.bufferType !== "normal") {
-      return { type: "none" };
-    }
-
-    // Determine restore action BEFORE updating state
-    let action: RestoreAction = { type: "none" };
-
-    if (this._visible && !token.wasAtBottom && buf.viewportY !== token.viewportY) {
-      // Viewport moved while user was scrolled up — restore if buffer
-      // hasn't contracted below the original position
-      if (buf.baseY >= token.viewportY) {
-        action = { type: "scroll-to-line", line: token.viewportY };
-      }
-    }
-
-    if (action.type === "scroll-to-line") {
-      // Only update baseY — keep viewportY at the intended restore target.
-      this.baseY = buf.baseY;
-    } else {
-      this.updateState(buf);
-    }
-
-    return action;
   }
 
   /** Capture scroll state before fitAddon.fit(). fit() triggers reflow →
@@ -180,14 +129,13 @@ export class ViewportLock {
   private anchorLine = 0;
   private scrollToLineFn: ((line: number) => void) | null = null;
   private getBufferFn: (() => BufferSnapshot) | null = null;
-  private cleanupFns: (() => void)[] = [];
+  private cleanupScroll: (() => void) | null = null;
   private viewport: HTMLElement | null = null;
 
   /** Bind terminal API callbacks. Call once after terminal.open(). */
   attach(
     container: HTMLElement,
     scrollToLine: (line: number) => void,
-    _scrollToBottom: () => void,
     getBuffer: () => BufferSnapshot,
   ): void {
     this.viewport = container.querySelector<HTMLElement>(".xterm-viewport");
@@ -232,7 +180,10 @@ export class ViewportLock {
   }
 
   private engage(): void {
-    if (!this.viewport || !this.getBufferFn) return;
+    if (!this.viewport || !this.getBufferFn) {
+      this.locked = false;
+      return;
+    }
     const buf = this.getBufferFn();
     this.anchorLine = buf.viewportY;
 
@@ -256,11 +207,11 @@ export class ViewportLock {
     };
 
     this.viewport.addEventListener("scroll", onScroll);
-    this.cleanupFns.push(() => this.viewport?.removeEventListener("scroll", onScroll));
+    this.cleanupScroll = () => this.viewport?.removeEventListener("scroll", onScroll);
   }
 
   private disengage(): void {
-    for (const fn of this.cleanupFns) fn();
-    this.cleanupFns = [];
+    this.cleanupScroll?.();
+    this.cleanupScroll = null;
   }
 }
