@@ -22,7 +22,7 @@ import { agentConfigsStore } from "../../stores/agentConfigs";
 import { parseOsc7Url } from "../../utils/osc7";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { getAwaitingInputSound } from "./awaitingInputSound";
-import { ScrollTracker, ViewportLock } from "./scrollTracker";
+import { ScrollTracker /* , ViewportLock */ } from "./scrollTracker";
 import s from "./Terminal.module.css";
 
 
@@ -165,7 +165,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const scrollTracker = new ScrollTracker();
   // DOM-level defense: blocks programmatic scrollTop changes when user is
   // scrolled up, preventing xterm's DomScrollableElement from jumping to bottom.
-  const viewportLock = new ViewportLock();
+  // const viewportLock = new ViewportLock();
 
   /** Fit terminal to container, preserving scroll position across reflows. */
   const doFit = () => {
@@ -186,7 +186,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       scrollTracker.suppressNextScroll();
       terminal.scrollToLine(action.line!);
     }
-    viewportLock.update(scrollTracker.isAtBottom);
+    // viewportLock.update(scrollTracker.isAtBottom);
   };
 
   // Reset activity flag when this terminal becomes active (store clears activity)
@@ -297,7 +297,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       outputBuffer = [];
       outputBufferBytes = 0;
       scrollTracker.onScroll(terminal.buffer.active);
-      viewportLock.update(scrollTracker.isAtBottom);
+      // viewportLock.update(scrollTracker.isAtBottom);
     }
   };
 
@@ -911,10 +911,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
 
     terminal.open(containerRef);
-    // ViewportLock disabled — Object.defineProperty on scrollTop causes
-    // xterm.js to render a phantom cursor row below the terminal content.
-    // TODO: find an alternative approach for scroll-jump prevention.
     // viewportLock.attach(containerRef);
+    // // viewportLock.attach(containerRef);
 
     // Preload the configured font so the canvas/WebGL renderer can measure
     // and render it correctly from the start (see preloadFont comment above).
@@ -972,7 +970,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     terminal.onScroll(() => {
       scrollTracker.onScroll(terminal!.buffer.active);
-      viewportLock.update(scrollTracker.isAtBottom);
+      // viewportLock.update(scrollTracker.isAtBottom);
     });
 
 
@@ -1181,7 +1179,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Clean up plugin line buffer for this session
     if (sessionId) pluginRegistry.removeSession(sessionId);
 
-    viewportLock.dispose();
+    // viewportLock.dispose();
     terminal?.dispose();
   });
 

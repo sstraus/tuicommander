@@ -178,110 +178,84 @@ export class ScrollTracker {
  * and ScrollTracker's afterWrite restore logic.
  */
 export class ViewportLock {
+  private container: HTMLElement | null = null;
   private viewport: HTMLElement | null = null;
   private locked = false;
   private userScrolling = false;
-  private originalDescriptor: PropertyDescriptor | undefined;
+  private anchorScrollTop = 0;
   private cleanupFns: (() => void)[] = [];
 
-  /** Attach to the .xterm-viewport element inside the terminal container.
-   *  Call after terminal.open(). */
+  /** Register the container. No listeners or overrides installed until
+   *  update() transitions to locked state. Zero footprint when at bottom. */
   attach(container: HTMLElement): void {
-    const vp = container.querySelector<HTMLElement>(".xterm-viewport");
-    if (!vp) return;
-    this.viewport = vp;
-
-    // Capture the original scrollTop descriptor from the prototype chain.
-    // Walk up to find it — real browsers define it on Element.prototype,
-    // but test environments (happy-dom) may not have it at all.
-    this.originalDescriptor = this.findScrollTopDescriptor(vp);
-
-    const self = this;
-    const origDesc = this.originalDescriptor;
-
-    // When no native descriptor exists (test environments), fall back to
-    // a simple value store that mirrors the native scrollTop behavior.
-    let storedValue = vp.scrollTop ?? 0;
-
-    // Override scrollTop on the instance so xterm's DomScrollableElement
-    // writes go through our gate.
-    Object.defineProperty(vp, "scrollTop", {
-      configurable: true,
-      get() {
-        return origDesc?.get ? origDesc.get.call(vp) : storedValue;
-      },
-      set(value: number) {
-        if (self.locked && !self.userScrolling) {
-          // Silently discard programmatic scrollTop changes while locked
-          return;
-        }
-        if (origDesc?.set) {
-          origDesc.set.call(vp, value);
-        } else {
-          storedValue = value;
-        }
-      },
-    });
-
-    // Detect user-initiated scrolling: wheel events on the viewport
-    const onWheel = () => {
-      self.userScrolling = true;
-      // Reset after a microtask — the wheel event handler chain
-      // (including xterm's) will have run by then.
-      queueMicrotask(() => { self.userScrolling = false; });
-    };
-
-    // Detect scrollbar drag: mousedown on the viewport (scrollbar area)
-    const onMouseDown = () => {
-      self.userScrolling = true;
-    };
-    const onMouseUp = () => {
-      self.userScrolling = false;
-    };
-
-    vp.addEventListener("wheel", onWheel, { passive: true });
-    vp.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mouseup", onMouseUp);
-
-    this.cleanupFns.push(
-      () => vp.removeEventListener("wheel", onWheel),
-      () => vp.removeEventListener("mousedown", onMouseDown),
-      () => window.removeEventListener("mouseup", onMouseUp),
-    );
+    this.container = container;
   }
 
-  /** Update lock state based on whether the user is at the bottom.
-   *  Call after every scroll state change (onScroll, afterWrite, etc.). */
+  /** Dynamically engage/disengage ALL viewport interventions.
+   *  At bottom: zero listeners, zero overrides — xterm is fully native.
+   *  Scrolled up: scrollTop override + user-scroll listeners installed. */
   update(isAtBottom: boolean): void {
-    this.locked = !isAtBottom;
+    if (!this.container) return;
+    const shouldLock = !isAtBottom;
+    if (shouldLock === this.locked) return;
+    this.locked = shouldLock;
+
+    if (shouldLock) {
+      this.engage();
+    } else {
+      this.disengage();
+    }
   }
 
-  /** Remove all listeners and restore the original scrollTop descriptor. */
+  /** Remove everything and reset. */
   dispose(): void {
-    for (const fn of this.cleanupFns) fn();
-    this.cleanupFns = [];
-
-    // Restore original scrollTop behavior
-    if (this.viewport) {
-      delete (this.viewport as unknown as Record<string, unknown>).scrollTop;
-    }
-    this.viewport = null;
+    this.disengage();
+    this.container = null;
     this.locked = false;
   }
 
-  /** Whether the lock is currently active (for debugging/testing). */
   get isLocked(): boolean {
     return this.locked;
   }
 
-  /** Walk the prototype chain to find the native scrollTop property descriptor. */
-  private findScrollTopDescriptor(el: HTMLElement): PropertyDescriptor | undefined {
-    let proto: object | null = el;
-    while (proto) {
-      const desc = Object.getOwnPropertyDescriptor(proto, "scrollTop");
-      if (desc) return desc;
-      proto = Object.getPrototypeOf(proto);
-    }
-    return undefined;
+  /** Lock: save scrollTop, fight any programmatic scroll by restoring it.
+   *  No DOM/CSS modifications — just event-driven scroll restore. */
+  private engage(): void {
+    const vp = this.container?.querySelector<HTMLElement>(".xterm-viewport");
+    if (!vp) return;
+    this.viewport = vp;
+    this.anchorScrollTop = vp.scrollTop;
+
+    const self = this;
+
+    // When user scrolls via wheel, update the anchor
+    const onWheel = () => { self.userScrolling = true; };
+
+    // On ANY scroll: if not user-initiated, snap back to anchor
+    const onScroll = () => {
+      if (!self.viewport) return;
+      if (self.userScrolling) {
+        // User scrolled — update anchor to new position
+        self.anchorScrollTop = self.viewport.scrollTop;
+        self.userScrolling = false;
+      } else {
+        // Programmatic scroll (xterm jump) — restore anchor
+        self.viewport.scrollTop = self.anchorScrollTop;
+      }
+    };
+
+    vp.addEventListener("wheel", onWheel, { passive: true });
+    vp.addEventListener("scroll", onScroll);
+    this.cleanupFns.push(
+      () => vp.removeEventListener("wheel", onWheel),
+      () => vp.removeEventListener("scroll", onScroll),
+    );
+  }
+
+  /** Unlock: remove listeners, no cleanup needed (no DOM was modified). */
+  private disengage(): void {
+    for (const fn of this.cleanupFns) fn();
+    this.cleanupFns = [];
+    this.viewport = null;
   }
 }
