@@ -1,4 +1,4 @@
-use crate::pty::{build_shell_command, resolve_shell, spawn_headless_reader_thread, spawn_reader_thread};
+use crate::pty::{resolve_shell, spawn_headless_reader_thread, spawn_reader_thread};
 use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
 use crate::state::{OUTPUT_RING_BUFFER_CAPACITY, VtLogBuffer, VT_LOG_BUFFER_CAPACITY};
 use axum::extract::{ConnectInfo, State};
@@ -415,59 +415,10 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             let shell = resolve_shell(args["shell"].as_str().map(|s| s.to_string()));
             let cwd = args["cwd"].as_str().map(|s| s.to_string());
 
-            let session_id = Uuid::new_v4().to_string();
-            let pty_system = native_pty_system();
-            let pair = match pty_system.openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }) {
-                Ok(p) => p,
-                Err(e) => return serde_json::json!({"error": format!("Failed to open PTY: {}", e)}),
-            };
-            let mut cmd = build_shell_command(&shell);
-            if let Some(ref dir) = cwd { cmd.cwd(dir); }
-            let child = match pair.slave.spawn_command(cmd) {
-                Ok(c) => c,
-                Err(e) => return serde_json::json!({"error": format!("Failed to spawn shell: {}", e)}),
-            };
-            let writer = match pair.master.take_writer() {
-                Ok(w) => w,
-                Err(e) => return serde_json::json!({"error": format!("Failed to get PTY writer: {}", e)}),
-            };
-            let reader = match pair.master.try_clone_reader() {
-                Ok(r) => r,
-                Err(e) => return serde_json::json!({"error": format!("Failed to get PTY reader: {}", e)}),
-            };
-            let paused = Arc::new(AtomicBool::new(false));
-            state.sessions.insert(session_id.clone(), Mutex::new(PtySession {
-                writer, master: pair.master, _child: child, paused: paused.clone(), worktree: None, cwd: cwd.clone(), display_name: None,
-            }));
-            state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
-            state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
-            state.output_buffers.insert(session_id.clone(), Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)));
-            state.vt_log_buffers.insert(session_id.clone(), Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)));
-            state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
-
-            // Broadcast to SSE/WebSocket consumers
-            let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
-                session_id: session_id.clone(),
-                cwd: cwd.clone(),
-            });
-
-            // Use full reader thread (with Tauri events) when AppHandle is available
-            let app_handle = state.app_handle.read().clone();
-            if let Some(ref app) = app_handle {
-                spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state.clone());
-            } else {
-                spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
+            match super::session::spawn_pty_session(state.clone(), shell, cwd, rows, cols, None) {
+                Ok(session_id) => serde_json::json!({"session_id": session_id}),
+                Err((_, body)) => serde_json::json!({"error": body.0.get("error").and_then(|v| v.as_str()).unwrap_or("spawn failed")}),
             }
-
-            // Emit Tauri IPC event so frontend creates a tab
-            if let Some(app) = app_handle {
-                let _ = app.emit("session-created", serde_json::json!({
-                    "session_id": session_id,
-                    "cwd": cwd,
-                }));
-            }
-
-            serde_json::json!({"session_id": session_id})
         }
         "input" => {
             let session_id = match require_session_id(args, "input") {
@@ -676,43 +627,8 @@ async fn handle_github(state: &Arc<AppState>, args: &serde_json::Value) -> serde
 /// Reuses the same setup as `session action=create` but with fixed defaults.
 fn create_session_in_dir(state: &Arc<AppState>, cwd: &str) -> Result<String, String> {
     let shell = resolve_shell(None);
-    let session_id = Uuid::new_v4().to_string();
-    let pty_system = native_pty_system();
-    let pair = pty_system.openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
-        .map_err(|e| format!("Failed to open PTY: {e}"))?;
-    let mut cmd = build_shell_command(&shell);
-    cmd.cwd(cwd);
-    let child = pair.slave.spawn_command(cmd)
-        .map_err(|e| format!("Failed to spawn shell: {e}"))?;
-    let writer = pair.master.take_writer()
-        .map_err(|e| format!("Failed to get PTY writer: {e}"))?;
-    let reader = pair.master.try_clone_reader()
-        .map_err(|e| format!("Failed to get PTY reader: {e}"))?;
-    let paused = Arc::new(AtomicBool::new(false));
-    state.sessions.insert(session_id.clone(), Mutex::new(PtySession {
-        writer, master: pair.master, _child: child, paused: paused.clone(),
-        worktree: None, cwd: Some(cwd.to_string()), display_name: None,
-    }));
-    state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
-    state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
-    state.output_buffers.insert(session_id.clone(), Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)));
-    state.vt_log_buffers.insert(session_id.clone(), Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)));
-    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
-    let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
-        session_id: session_id.clone(), cwd: Some(cwd.to_string()),
-    });
-    let app_handle = state.app_handle.read().clone();
-    if let Some(ref app) = app_handle {
-        spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state.clone());
-    } else {
-        spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
-    }
-    if let Some(app) = app_handle {
-        let _ = app.emit("session-created", serde_json::json!({
-            "session_id": session_id, "cwd": cwd,
-        }));
-    }
-    Ok(session_id)
+    super::session::spawn_pty_session(state.clone(), shell, Some(cwd.to_string()), 24, 80, None)
+        .map_err(|(_, body)| body.0.get("error").and_then(|v| v.as_str()).unwrap_or("spawn failed").to_string())
 }
 
 fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, is_claude_code: bool) -> serde_json::Value {

@@ -282,7 +282,7 @@ pub(super) async fn close_session(
 ///
 /// Returns `(session_id, cwd_string)` on success. Both `create_session` and
 /// `create_session_with_worktree` delegate here after deriving the cwd and worktree.
-fn spawn_pty_session(
+pub(super) fn spawn_pty_session(
     state: Arc<AppState>,
     shell: String,
     cwd: Option<String>,
@@ -345,7 +345,11 @@ fn spawn_pty_session(
     );
     state.vt_log_buffers.insert(
         session_id.clone(),
-        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
+        Mutex::new(VtLogBuffer::new(rows, cols.max(220), VT_LOG_BUFFER_CAPACITY)),
+    );
+    state.last_output_ms.insert(
+        session_id.clone(),
+        std::sync::atomic::AtomicU64::new(0),
     );
 
     // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
