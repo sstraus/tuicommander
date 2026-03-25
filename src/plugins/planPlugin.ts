@@ -74,6 +74,7 @@ class PlanPlugin implements TuiPlugin {
       label: "ACTIVE PLAN",
       priority: 10,
       canDismissAll: false,
+      panelOnly: true,
     });
 
     // Enrich any hydrated items that have no metadata yet

@@ -32,6 +32,8 @@ export interface ActivitySection {
   priority: number;
   /** Whether the section shows a "Dismiss All" button */
   canDismissAll: boolean;
+  /** When true, section is only shown in its dedicated panel, not in the toolbar activity popover */
+  panelOnly?: boolean;
 }
 
 /**

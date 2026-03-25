@@ -83,7 +83,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   });
 
   const activeNotifs = createMemo(() => prNotificationsStore.getActive());
-  const activitySections = createMemo(() => activityStore.getSections());
+  const activitySections = createMemo(() => activityStore.getSections().filter((s) => !s.panelOnly));
   const hasUpdate = () => updaterStore.state.available && !!updaterStore.state.version;
   /** Count only activity items visible in the popover (filtered by active repo) */
   const visibleActivityCount = createMemo(() => {
