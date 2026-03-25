@@ -265,22 +265,27 @@ export async function initApp(deps: AppInitDeps) {
       isRemote: true,
     });
 
-    // Match to repo/branch by cwd
+    // Match to repo/branch by cwd (ancestor path matching)
     if (cwd) {
+      const cwdNorm = cwd.endsWith("/") ? cwd : cwd + "/";
       const matchedRepo = repositoriesStore.getPaths().find((repoPath) => {
-        if (cwd === repoPath) return true;
+        const repoNorm = repoPath.endsWith("/") ? repoPath : repoPath + "/";
+        // cwd is the repo root or a subdirectory of it
+        if (cwd === repoPath || cwdNorm.startsWith(repoNorm)) return true;
+        // cwd is a worktree path or subdirectory of one
         const repoState = repositoriesStore.get(repoPath);
         if (!repoState) return false;
         return Object.values(repoState.branches).some(
-          (b) => b.worktreePath && cwd === b.worktreePath,
+          (b) => b.worktreePath && (cwd === b.worktreePath || cwdNorm.startsWith(b.worktreePath + "/")),
         );
       });
 
       if (matchedRepo) {
         const repoState = repositoriesStore.get(matchedRepo);
+        // Try worktree match first, then fall back to active branch
         const branchName =
           Object.values(repoState?.branches || {}).find(
-            (b) => b.worktreePath && cwd === b.worktreePath,
+            (b) => b.worktreePath && (cwd === b.worktreePath || cwdNorm.startsWith(b.worktreePath + "/")),
           )?.name || repoState?.activeBranch;
 
         if (branchName) {
