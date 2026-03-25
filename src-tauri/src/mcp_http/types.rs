@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize)]
 pub(super) struct HealthResponse {
     pub ok: bool,
+    pub uptime_secs: u64,
+    pub session_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub socket_path: Option<String>,
 }
 
 #[derive(Serialize)]

@@ -25,8 +25,17 @@ fn session_not_found() -> (StatusCode, Json<serde_json::Value>) {
     )
 }
 
-pub(super) async fn health() -> Json<HealthResponse> {
-    Json(HealthResponse { ok: true })
+pub(super) async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
+    let uptime = state.server_start_time.elapsed().as_secs();
+    let session_count = state.sessions.len();
+    #[cfg(unix)]
+    let socket_path = {
+        let p = state.bound_socket_path.read();
+        if p.as_os_str().is_empty() { None } else { Some(p.display().to_string()) }
+    };
+    #[cfg(not(unix))]
+    let socket_path = None;
+    Json(HealthResponse { ok: true, uptime_secs: uptime, session_count, socket_path })
 }
 
 pub(super) async fn list_sessions(State(state): State<Arc<AppState>>) -> Json<Vec<SessionInfo>> {
@@ -250,13 +259,16 @@ pub(super) async fn close_session(
         drop(session);
 
         // Broadcast to SSE/WebSocket consumers
+        tracing::info!(source = "session", session_id = %session_id, "Session closed: explicit close");
         let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
             session_id: session_id.clone(),
+            reason: "explicit_close".to_string(),
         });
         // Tauri IPC for desktop backward compat
         if let Some(app) = state.app_handle.read().as_ref() {
             let _ = app.emit("session-closed", serde_json::json!({
                 "session_id": session_id,
+                "reason": "explicit_close",
             }));
         }
 
@@ -611,7 +623,7 @@ async fn handle_ws_session(
                             let matches = match &event {
                                 crate::state::AppEvent::PtyParsed { session_id: sid, .. } => sid == &sid_for_events,
                                 crate::state::AppEvent::PtyExit { session_id: sid } => sid == &sid_for_events,
-                                crate::state::AppEvent::SessionClosed { session_id: sid } => sid == &sid_for_events,
+                                crate::state::AppEvent::SessionClosed { session_id: sid, .. } => sid == &sid_for_events,
                                 _ => false,
                             };
                             if !matches { continue; }
@@ -624,8 +636,8 @@ async fn handle_ws_session(
                                 crate::state::AppEvent::PtyExit { session_id: sid } => {
                                     serde_json::json!({"type": "exit", "session_id": sid})
                                 }
-                                crate::state::AppEvent::SessionClosed { session_id: sid } => {
-                                    serde_json::json!({"type": "closed", "session_id": sid})
+                                crate::state::AppEvent::SessionClosed { session_id: sid, reason } => {
+                                    serde_json::json!({"type": "closed", "session_id": sid, "reason": reason})
                                 }
                                 _ => continue,
                             };
@@ -771,7 +783,7 @@ async fn handle_ws_log_session(
                     let is_relevant = match &event {
                         crate::state::AppEvent::PtyParsed { session_id: sid, .. }
                         | crate::state::AppEvent::PtyExit { session_id: sid }
-                        | crate::state::AppEvent::SessionClosed { session_id: sid } => sid == &sid_poll,
+                        | crate::state::AppEvent::SessionClosed { session_id: sid, .. } => sid == &sid_poll,
                         _ => false,
                     };
                     if is_relevant { LoopAction::Event } else { LoopAction::Skip }

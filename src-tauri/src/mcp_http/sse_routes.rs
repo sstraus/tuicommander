@@ -113,8 +113,8 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         AppEvent::SessionCreated { session_id, cwd } => {
             serde_json::json!({ "session_id": session_id, "cwd": cwd })
         }
-        AppEvent::SessionClosed { session_id } => {
-            serde_json::json!({ "session_id": session_id })
+        AppEvent::SessionClosed { session_id, reason } => {
+            serde_json::json!({ "session_id": session_id, "reason": reason })
         }
         AppEvent::PtyParsed { session_id, parsed } => {
             serde_json::json!({ "session_id": session_id, "parsed": parsed })

@@ -39,6 +39,7 @@ pub enum AppEvent {
     #[serde(rename = "session-closed")]
     SessionClosed {
         session_id: String,
+        reason: String,
     },
     #[serde(rename = "pty-parsed")]
     PtyParsed {
@@ -866,7 +867,6 @@ pub struct AppState {
     #[cfg(unix)]
     pub(crate) bound_socket_path: parking_lot::RwLock<std::path::PathBuf>,
     /// Server start time for uptime calculation in health endpoint.
-    #[expect(dead_code, reason = "will be used by health endpoint in story 910-1140")]
     pub(crate) server_start_time: std::time::Instant,
     /// Per-MCP-session broadcast channels for inter-agent messaging notifications.
     /// Each SSE listener subscribes; `send` action pushes here for real-time delivery.
@@ -1071,7 +1071,7 @@ impl AppState {
                     ..Default::default()
                 });
             }
-            AppEvent::SessionClosed { session_id } => {
+            AppEvent::SessionClosed { session_id, .. } => {
                 state.session_states.remove(session_id);
             }
             AppEvent::PtyParsed { session_id, parsed } => {

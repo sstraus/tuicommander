@@ -1136,11 +1136,14 @@ pub(crate) fn spawn_reader_thread(
             &format!("pty-exit-{session_id}"),
             serde_json::json!({ "session_id": session_id }),
         );
+        tracing::info!(source = "pty", session_id = %session_id, "Session closed: process exited");
         let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
             session_id: session_id.clone(),
+            reason: "process_exit".to_string(),
         });
         let _ = app.emit("session-closed", serde_json::json!({
             "session_id": session_id,
+            "reason": "process_exit",
         }));
 
         cleanup_session(&session_id, &state);
@@ -1215,12 +1218,15 @@ pub(crate) fn spawn_headless_reader_thread(
         flush_eof(&mut utf8_buf, &mut esc_buf, &session_id, &state);
 
         // Broadcast exit so SSE/WebSocket consumers and Tauri frontend can clean up
+        tracing::info!(source = "pty", session_id = %session_id, "Headless session closed: process exited");
         let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
             session_id: session_id.clone(),
+            reason: "process_exit".to_string(),
         });
         if let Some(app) = state.app_handle.read().as_ref() {
             let _ = app.emit("session-closed", serde_json::json!({
                 "session_id": session_id,
+                "reason": "process_exit",
             }));
         }
 
