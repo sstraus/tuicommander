@@ -8,9 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Inter-Agent Messaging** — New `messaging` MCP tool for agent-to-agent coordination. Agents register with their `$TUIC_SESSION` identity, discover peers via `list_peers`, and exchange messages via `send`/`inbox`. Dual delivery: real-time push via MCP channel notifications (SSE) when `--dangerously-load-development-channels` is active, plus polling fallback via inbox. Spawned Claude Code agents automatically get the channels flag. TUICommander acts as the messaging hub — no external daemon needed
+- **Multi-instance socket coexistence** — Multiple TUICommander instances (e.g. release + dev build) now coexist safely. First instance binds `mcp.sock`, subsequent instances fall back to `mcp-{pid}.sock`. Bridge auto-discovers live sockets with `TUIC_SOCKET` env override. Stale sockets cleaned on startup
+- **Enriched health endpoint** — `/health` now returns `uptime_secs`, `session_count`, and `socket_path` for monitoring
+- **Session close reasons** — `session-closed` events include a `reason` field (`process_exit`, `explicit_close`) for debugging session lifecycle
 
 ### Changed
 - **Terminal scroll tracking** — Consolidated 20 iteratively-patched scroll fixes into a self-contained `ScrollTracker` class with 26 unit tests. Replaces inline `trackedScrollState`, `lastKnownVisible`, and `updateTrackedScroll` with a testable state machine that handles visibility inference, alternate buffer guards, and re-entrancy suppression
+
+### Fixed
+- **Terminal scroll lock** — New write-based `ViewportLock` keeps the viewport anchored when user scrolls up to read. Programmatic scrolls (from agent output) are intercepted during `terminal.write()` and restored via xterm's `scrollToLine()` API. Zero overhead when at bottom
+- **Session tab visibility** — MCP-created sessions now match to repos using ancestor path matching (subdirectory of repo root or worktree), fixing a race condition with branch stats loading
+- **Question detection** — Removed `q.starts_with(t)` prefix match that could produce false positive ghost notifications on short screen rows
+- **PTY creation consolidation** — Shell PTY creation in MCP transport now delegates to `spawn_pty_session`, fixing a missing `last_output_ms` insertion for REST-created sessions
 
 ## [0.9.5] - 2026-03-23
 
