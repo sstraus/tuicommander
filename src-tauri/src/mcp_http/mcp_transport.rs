@@ -142,7 +142,7 @@ fn validate_mcp_repo_path(path: &str) -> Result<(), serde_json::Value> {
         .map_err(|msg| serde_json::json!({"error": msg}))
 }
 
-const SESSION_ACTIONS: &str = "list, create, input, output, resize, close, pause, resume";
+const SESSION_ACTIONS: &str = "list, create, input, output, resize, close, kill, pause, resume";
 const AGENT_ACTIONS: &str = "detect, spawn, stats, metrics";
 const GITHUB_ACTIONS: &str = "prs, status";
 const WORKTREE_ACTIONS: &str = "list, create, remove";
@@ -157,9 +157,9 @@ fn native_tool_definitions() -> serde_json::Value {
     let defs = serde_json::json!([
         {
             "name": "session",
-            "description": "Manage PTY terminal sessions.\n\nActions (pass as 'action' parameter):\n- list: Returns [{session_id, cwd, worktree_path, worktree_branch}] for all active sessions. Call first to discover IDs.\n- create: Creates a new PTY session. Returns {session_id}. Optional: rows, cols, shell, cwd.\n- input: Sends text and/or a special key to a session. Requires session_id, plus input and/or special_key.\n- output: Returns {data, total_written, exited, exit_code} from session ring buffer. Requires session_id. Optional: limit. exited=true when process has terminated; exit_code is the process return code (null if still running).\n- resize: Resizes PTY dimensions. Requires session_id, rows, cols.\n- close: Terminates a session. Requires session_id.\n- pause: Pauses output buffering. Requires session_id.\n- resume: Resumes output buffering. Requires session_id.",
+            "description": "Manage PTY terminal sessions.\n\nActions (pass as 'action' parameter):\n- list: Returns [{session_id, cwd, worktree_path, worktree_branch}] for all active sessions. Call first to discover IDs.\n- create: Creates a new PTY session. Returns {session_id}. Optional: rows, cols, shell, cwd.\n- input: Sends text and/or a special key to a session. Requires session_id, plus input and/or special_key.\n- output: Returns {data, total_written, exited, exit_code} from session ring buffer. Requires session_id. Optional: limit. exited=true when process has terminated; exit_code is the process return code (null if still running).\n- resize: Resizes PTY dimensions. Requires session_id, rows, cols.\n- close: Terminates a session gracefully (sends Ctrl+C, waits briefly). Requires session_id.\n- kill: Force-kills the session process with SIGKILL. Use when Ctrl+C/close don't work (e.g. nested agents that catch SIGINT). Requires session_id.\n- pause: Pauses output buffering. Requires session_id.\n- resume: Resumes output buffering. Requires session_id.",
             "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: list, create, input, output, resize, close, pause, resume" },
+                "action": { "type": "string", "description": "One of: list, create, input, output, resize, close, kill, pause, resume" },
                 "session_id": { "type": "string", "description": "Session ID (required for input, output, resize, close, pause, resume)" },
                 "input": { "type": "string", "description": "Raw text to write (action=input)" },
                 "special_key": { "type": "string", "description": "Special key: enter, tab, ctrl+c, ctrl+d, ctrl+z, ctrl+l, ctrl+a, ctrl+e, ctrl+k, ctrl+u, ctrl+w, ctrl+r, up, down, left, right, home, end, backspace, delete, escape (action=input)" },
@@ -533,6 +533,41 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 let _ = session.writer.write_all(&[0x03]);
                 let _ = session.writer.flush();
                 drop(session);
+                serde_json::json!({"ok": true})
+            } else {
+                serde_json::json!({"error": "Session not found"})
+            }
+        }
+        "kill" => {
+            let session_id = match require_session_id(args, "kill") {
+                Ok(id) => id,
+                Err(e) => return e,
+            };
+            if let Some((_, session_mutex)) = state.sessions.remove(session_id) {
+                state.output_buffers.remove(session_id);
+                state.vt_log_buffers.remove(session_id);
+                state.ws_clients.remove(session_id);
+                state.kitty_states.remove(session_id);
+                state.input_buffers.remove(session_id);
+                state.silence_states.remove(session_id);
+                state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+
+                let mut session = session_mutex.into_inner();
+                if let Err(e) = session._child.kill() {
+                    tracing::warn!(session_id = %session_id, "SIGKILL failed: {e}");
+                }
+                drop(session);
+                tracing::info!(source = "session", session_id = %session_id, "Session killed: SIGKILL");
+                let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
+                    session_id: session_id.to_string(),
+                    reason: "killed".to_string(),
+                });
+                if let Some(app) = state.app_handle.read().as_ref() {
+                    let _ = app.emit("session-closed", serde_json::json!({
+                        "session_id": session_id,
+                        "reason": "killed",
+                    }));
+                }
                 serde_json::json!({"ok": true})
             } else {
                 serde_json::json!({"error": "Session not found"})
