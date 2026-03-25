@@ -104,17 +104,16 @@ fn cleanup_stale_sockets() {
         let name = entry.file_name();
         let Some(name_str) = name.to_str() else { continue };
         // Match pattern: mcp-{digits}.sock
-        if let Some(rest) = name_str.strip_prefix("mcp-") {
-            if let Some(pid_str) = rest.strip_suffix(".sock") {
-                if let Ok(pid) = pid_str.parse::<u32>() {
-                    // Check if process is still alive (signal 0 = existence check)
-                    let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
-                    if !alive {
-                        let path = entry.path();
-                        tracing::info!(source = "mcp_http", path = %path.display(), pid, "Removing stale socket");
-                        let _ = std::fs::remove_file(&path);
-                    }
-                }
+        if let Some(rest) = name_str.strip_prefix("mcp-")
+            && let Some(pid_str) = rest.strip_suffix(".sock")
+            && let Ok(pid) = pid_str.parse::<u32>()
+        {
+            // Check if process is still alive (signal 0 = existence check)
+            let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+            if !alive {
+                let path = entry.path();
+                tracing::info!(source = "mcp_http", path = %path.display(), pid, "Removing stale socket");
+                let _ = std::fs::remove_file(&path);
             }
         }
     }
