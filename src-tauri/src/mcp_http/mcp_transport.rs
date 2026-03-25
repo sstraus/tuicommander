@@ -1980,6 +1980,9 @@ mod tests {
             peer_agents: dashmap::DashMap::new(),
             agent_inbox: dashmap::DashMap::new(),
             messaging_channels: dashmap::DashMap::new(),
+            #[cfg(unix)]
+            bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
+            server_start_time: std::time::Instant::now(),
         })
     }
 

@@ -101,14 +101,41 @@ impl tokio::io::AsyncWrite for IpcStream {
 }
 
 /// Open a connection to the TUIC IPC endpoint.
+/// Tries `TUIC_SOCKET` env var first, then `mcp.sock`, then any `mcp-*.sock` in config_dir.
 async fn connect_ipc() -> Result<IpcStream, String> {
     #[cfg(unix)]
     {
-        let path = config_dir().join("mcp.sock");
-        let stream = tokio::net::UnixStream::connect(&path)
-            .await
-            .map_err(|e| format!("connect {}: {e}", path.display()))?;
-        Ok(IpcStream::Unix(stream))
+        // Explicit override via environment variable
+        if let Ok(explicit) = std::env::var("TUIC_SOCKET") {
+            let path = std::path::PathBuf::from(&explicit);
+            let stream = tokio::net::UnixStream::connect(&path)
+                .await
+                .map_err(|e| format!("connect {}: {e}", path.display()))?;
+            return Ok(IpcStream::Unix(stream));
+        }
+
+        let dir = config_dir();
+        let primary = dir.join("mcp.sock");
+
+        // Try primary socket first
+        if let Ok(stream) = tokio::net::UnixStream::connect(&primary).await {
+            return Ok(IpcStream::Unix(stream));
+        }
+
+        // Fall back to mcp-*.sock alternatives
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let Some(name_str) = name.to_str() else { continue };
+                if name_str.starts_with("mcp-") && name_str.ends_with(".sock") {
+                    if let Ok(stream) = tokio::net::UnixStream::connect(&entry.path()).await {
+                        return Ok(IpcStream::Unix(stream));
+                    }
+                }
+            }
+        }
+
+        Err(format!("connect {}: no live socket found", primary.display()))
     }
     #[cfg(windows)]
     {

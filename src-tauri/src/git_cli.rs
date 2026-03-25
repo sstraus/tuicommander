@@ -212,7 +212,7 @@ mod tests {
         let mut cmd = Command::new("/nonexistent/git-binary-that-does-not-exist");
         cmd.current_dir(&path);
         cmd.args(["status"]);
-        let gc = GitCmd { cmd };
+        let gc = GitCmd { cmd, cwd: path.clone() };
         let result = gc.run();
         assert!(result.is_err());
         match result.unwrap_err() {

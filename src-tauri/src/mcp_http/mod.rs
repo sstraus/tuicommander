@@ -65,10 +65,59 @@ fn validate_repo_path(path: &str) -> Result<(), (StatusCode, Json<serde_json::Va
         .map_err(|msg| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg}))))
 }
 
-/// IPC endpoint path for local MCP bridge connections (Unix domain socket).
+/// Default IPC endpoint path for local MCP bridge connections (Unix domain socket).
 #[cfg(unix)]
 pub(crate) fn socket_path() -> std::path::PathBuf {
     crate::config::config_dir().join("mcp.sock")
+}
+
+/// Resolve which socket path this instance should bind to.
+/// If `mcp.sock` is already held by another live process, returns `mcp-{pid}.sock`.
+#[cfg(unix)]
+fn resolve_socket_path() -> std::path::PathBuf {
+    let primary = socket_path();
+    if primary.exists() {
+        // Try connecting — if it succeeds, another instance is alive on this socket.
+        if std::os::unix::net::UnixStream::connect(&primary).is_ok() {
+            let alt = crate::config::config_dir().join(format!("mcp-{}.sock", std::process::id()));
+            tracing::info!(
+                source = "mcp_http",
+                primary = %primary.display(),
+                alt = %alt.display(),
+                "Primary socket held by another instance, using alternative"
+            );
+            return alt;
+        }
+        // Socket file exists but nobody is listening — stale, will be cleaned up by bind.
+    }
+    // Also clean up any stale mcp-*.sock files left by dead processes.
+    cleanup_stale_sockets();
+    primary
+}
+
+/// Remove `mcp-{pid}.sock` files whose owning PID is no longer alive.
+#[cfg(unix)]
+fn cleanup_stale_sockets() {
+    let config_dir = crate::config::config_dir();
+    let Ok(entries) = std::fs::read_dir(&config_dir) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name_str) = name.to_str() else { continue };
+        // Match pattern: mcp-{digits}.sock
+        if let Some(rest) = name_str.strip_prefix("mcp-") {
+            if let Some(pid_str) = rest.strip_suffix(".sock") {
+                if let Ok(pid) = pid_str.parse::<u32>() {
+                    // Check if process is still alive (signal 0 = existence check)
+                    let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+                    if !alive {
+                        let path = entry.path();
+                        tracing::info!(source = "mcp_http", path = %path.display(), pid, "Removing stale socket");
+                        let _ = std::fs::remove_file(&path);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Named pipe name for Windows IPC (without the \\.\pipe\ prefix for display).
@@ -413,7 +462,7 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
     // --- Unix socket listener (always on, no auth) ---
     #[cfg(unix)]
     let socket_handle = {
-        let sock = socket_path();
+        let sock = resolve_socket_path();
 
         if let Some(parent) = sock.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
@@ -421,9 +470,9 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
             tracing::warn!(source = "mcp_http", path = %parent.display(), "Failed to create socket parent dir: {e}");
         }
 
-        // Bind the socket. Remove any stale file first (left by a crashed previous run).
-        // NOTE: No SocketGuard here — cleanup on server restart would race with the new
-        // instance's bind. Explicit removal happens in the shutdown sequence below (line ~567).
+        // Bind the socket. Remove stale file first (left by a crashed previous run).
+        // resolve_socket_path() already verified the primary socket is not live,
+        // so remove_file here only cleans up stale/dead sockets.
         const MAX_BIND_ATTEMPTS: u8 = 3;
         async fn bind_unix_socket(sock: &std::path::Path) -> Result<tokio::net::UnixListener, std::io::Error> {
             let mut last_err = std::io::Error::other("no bind attempts");
@@ -450,6 +499,8 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
             }
             Ok(initial_uds) => {
                 tracing::info!(source = "mcp_http", path = %sock.display(), "Unix socket listening");
+                // Record which socket we actually bound so shutdown cleans up the right file.
+                *state.bound_socket_path.write() = sock.clone();
                 // Watchdog task: if axum::serve() returns (crash or abort), log it.
                 // On graceful shutdown h.abort() is called — the task exits cleanly,
                 // and the explicit remove_file below handles cleanup.
@@ -558,9 +609,14 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
     }
     reaper_handle.abort();
 
-    // Cleanup socket file (Unix only — named pipes clean up automatically)
+    // Cleanup the socket file we actually bound (may be mcp.sock or mcp-{pid}.sock).
     #[cfg(unix)]
-    let _ = std::fs::remove_file(socket_path());
+    {
+        let bound = state.bound_socket_path.read().clone();
+        if !bound.as_os_str().is_empty() {
+            let _ = std::fs::remove_file(&bound);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -640,6 +696,9 @@ mod tests {
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
             messaging_channels: DashMap::new(),
+            #[cfg(unix)]
+            bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
+            server_start_time: std::time::Instant::now(),
         })
     }
 
@@ -2306,6 +2365,125 @@ mod tests {
 
         server2.abort();
         let _ = std::fs::remove_file(&sock_path);
+        let _ = std::fs::remove_dir(&tmp_dir);
+    }
+
+    /// When a live socket exists, resolve_socket_path-style logic should pick an alternative.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_multi_instance_socket_coexistence() {
+        let tmp_dir = std::path::PathBuf::from("/tmp")
+            .join(format!("tuic-multi-{}", &uuid::Uuid::new_v4().to_string()[..8]));
+        match std::fs::create_dir_all(&tmp_dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!("Skipping test: cannot create dir in sandbox");
+                return;
+            }
+            Err(e) => panic!("create_dir_all: {e}"),
+        }
+
+        let primary = tmp_dir.join("mcp.sock");
+
+        // First instance: bind primary socket and start serving
+        let _ = std::fs::remove_file(&primary);
+        let uds1 = tokio::net::UnixListener::bind(&primary).unwrap();
+        let state = test_state();
+        let app1 = build_router(state.clone(), false, true)
+            .layer(axum::middleware::from_fn(inject_localhost_connect_info));
+        let server1 = tokio::spawn(async move {
+            let _ = axum::serve(uds1, app1.into_make_service()).await;
+        });
+        // Give server a moment to start accepting
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Verify primary socket is live (can connect)
+        assert!(
+            tokio::net::UnixStream::connect(&primary).await.is_ok(),
+            "primary socket should accept connections"
+        );
+
+        // Second instance: primary is live, so it should NOT be able to bind primary.
+        // Simulate resolve_socket_path logic: check if primary is live, use alt if so.
+        let primary_live = std::os::unix::net::UnixStream::connect(&primary).is_ok();
+        assert!(primary_live, "primary should be detected as live");
+
+        let alt = tmp_dir.join(format!("mcp-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&alt);
+        let uds2 = tokio::net::UnixListener::bind(&alt).unwrap();
+        let app2 = build_router(state.clone(), false, true)
+            .layer(axum::middleware::from_fn(inject_localhost_connect_info));
+        let server2 = tokio::spawn(async move {
+            let _ = axum::serve(uds2, app2.into_make_service()).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Both sockets should be live simultaneously
+        assert!(
+            tokio::net::UnixStream::connect(&primary).await.is_ok(),
+            "primary still alive"
+        );
+        assert!(
+            tokio::net::UnixStream::connect(&alt).await.is_ok(),
+            "alternative also alive"
+        );
+
+        // Cleanup
+        server1.abort();
+        server2.abort();
+        let _ = std::fs::remove_file(&primary);
+        let _ = std::fs::remove_file(&alt);
+        let _ = std::fs::remove_dir(&tmp_dir);
+    }
+
+    /// Stale mcp-{pid}.sock files (dead PID) should be cleaned up.
+    #[cfg(unix)]
+    #[test]
+    fn test_cleanup_stale_sockets() {
+        let tmp_dir = std::path::PathBuf::from("/tmp")
+            .join(format!("tuic-stale-{}", &uuid::Uuid::new_v4().to_string()[..8]));
+        match std::fs::create_dir_all(&tmp_dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!("Skipping test: cannot create dir in sandbox");
+                return;
+            }
+            Err(e) => panic!("create_dir_all: {e}"),
+        }
+
+        // Create a socket file for a PID that definitely doesn't exist (PID 1 is launchd, skip it)
+        let dead_pid = 99999;
+        let stale = tmp_dir.join(format!("mcp-{dead_pid}.sock"));
+        std::fs::write(&stale, "").unwrap();
+        assert!(stale.exists());
+
+        // Create a socket file for our own PID (alive)
+        let alive = tmp_dir.join(format!("mcp-{}.sock", std::process::id()));
+        std::fs::write(&alive, "").unwrap();
+
+        // Run cleanup logic inline (can't call cleanup_stale_sockets directly as it uses config_dir)
+        for entry in std::fs::read_dir(&tmp_dir).unwrap().flatten() {
+            let name = entry.file_name();
+            let Some(name_str) = name.to_str() else { continue };
+            if let Some(rest) = name_str.strip_prefix("mcp-") {
+                if let Some(pid_str) = rest.strip_suffix(".sock") {
+                    if let Ok(pid) = pid_str.parse::<u32>() {
+                        let alive_check = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+                        if !alive_check {
+                            let _ = std::fs::remove_file(entry.path());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Dead PID socket should be removed
+        assert!(!stale.exists(), "stale socket for dead PID should be cleaned up");
+        // Our own PID socket should remain
+        assert!(alive.exists(), "socket for live PID should not be removed");
+
+        // Cleanup
+        let _ = std::fs::remove_file(&alive);
         let _ = std::fs::remove_dir(&tmp_dir);
     }
 
