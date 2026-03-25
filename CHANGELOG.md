@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-03-25
+
 ### Added
 - **Inter-Agent Messaging** — New `messaging` MCP tool for agent-to-agent coordination. Agents register with their `$TUIC_SESSION` identity, discover peers via `list_peers`, and exchange messages via `send`/`inbox`. Dual delivery: real-time push via MCP channel notifications (SSE) when `--dangerously-load-development-channels` is active, plus polling fallback via inbox. Spawned Claude Code agents automatically get the channels flag. TUICommander acts as the messaging hub — no external daemon needed
 - **Multi-instance socket coexistence** — Multiple TUICommander instances (e.g. release + dev build) now coexist safely. First instance binds `mcp.sock`, subsequent instances fall back to `mcp-{pid}.sock`. Bridge auto-discovers live sockets with `TUIC_SOCKET` env override. Stale sockets cleaned on startup
