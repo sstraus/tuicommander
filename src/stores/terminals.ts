@@ -146,9 +146,13 @@ function createTerminalsStore() {
       busyDurationMap.delete(id);
       // Error state is NOT cleared here: API errors are persistent and should only
       // be cleared by explicit agent activity (status-line, user-input) or process exit.
-      // Question state is NOT cleared here either: timer ticks while waiting for
-      // input can cause idle→busy oscillation, which would dismiss the notification.
-      // Questions are cleared by user-input events (user actually typed).
+      // Question state IS cleared: idle→busy means the agent resumed work, so any
+      // pending question notification is stale. False-positive idle→busy oscillations
+      // from spinner ticks are suppressed upstream in Rust (spinner suppression).
+      if (prev === "idle" && state.terminals[id]?.awaitingInput) {
+        setState("terminals", id, "awaitingInput", null);
+        setState("terminals", id, "awaitingInputConfident", false);
+      }
     } else if (next !== "busy" && prev === "busy") {
       // Leaving busy: freeze duration, start cooldown
       const since = busySinceMap.get(id);
