@@ -2,6 +2,17 @@
 
 Features to test when TUICommander is more usable.
 
+## MCP Ctrl+C Forwarding (904-5deb — verified non-bug)
+- [ ] Create PTY via MCP `session create`, run `sleep 1000`, send `session input special_key=ctrl+c` → sleep exits
+- [ ] Same with nested shell: `sh -c 'sleep 1000'` → ctrl+c kills inner sleep
+- [ ] Verify via `session output` that process exited (not hanging)
+
+## Multi-instance Socket Coexistence (907-e4e9)
+- [ ] Start TUIC-preview.app, then `tauri dev` → both instances run, each with its own socket
+- [ ] tuic-bridge connects to the correct instance (check `TUIC_SOCKET` override)
+- [ ] Kill one instance → other still works, bridge reconnects if needed
+- [ ] Stale `mcp-*.sock` files cleaned on startup
+
 ## Shell State Rust Derivation (741-3faf)
 - [ ] Agent runs → tab shows blue busy indicator
 - [ ] Agent stops → tab transitions to green idle (no mode-line flicker)

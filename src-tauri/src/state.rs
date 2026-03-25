@@ -861,6 +861,12 @@ pub struct AppState {
     /// Message inbox per agent (tuic_session → VecDeque<AgentMessage>).
     /// Capped at AGENT_INBOX_CAPACITY messages per agent, old messages evicted FIFO.
     pub agent_inbox: DashMap<String, VecDeque<AgentMessage>>,
+    /// Actual bound socket path (may differ from default if another instance holds mcp.sock).
+    /// Updated by `start_server` after successful bind.
+    #[cfg(unix)]
+    pub(crate) bound_socket_path: parking_lot::RwLock<std::path::PathBuf>,
+    /// Server start time for uptime calculation in health endpoint.
+    pub(crate) server_start_time: std::time::Instant,
     /// Per-MCP-session broadcast channels for inter-agent messaging notifications.
     /// Each SSE listener subscribes; `send` action pushes here for real-time delivery.
     pub(crate) messaging_channels: DashMap<String, tokio::sync::broadcast::Sender<String>>,

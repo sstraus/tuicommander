@@ -6,7 +6,7 @@
 
 use std::ffi::OsStr;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::cli::resolve_cli;
@@ -75,6 +75,7 @@ pub(crate) struct GitOutput {
 /// ```
 pub(crate) struct GitCmd {
     cmd: Command,
+    cwd: PathBuf,
 }
 
 impl GitCmd {
@@ -116,10 +117,11 @@ impl GitCmd {
     /// Spawn failures are logged to stderr (they indicate a broken git
     /// installation, not normal git behavior).
     pub fn run_silent(self) -> Option<GitOutput> {
+        let cwd = self.cwd.clone();
         match self.run() {
             Ok(o) => Some(o),
             Err(GitError::SpawnFailed(e)) => {
-                tracing::error!(source = "git_cli", "Spawn failed: {e}");
+                tracing::error!(source = "git_cli", cwd = %cwd.display(), "Spawn failed: {e}");
                 None
             }
             Err(GitError::NonZeroExit { .. }) => None,
@@ -144,7 +146,7 @@ pub(crate) fn git_cmd(cwd: &Path) -> GitCmd {
     cmd.current_dir(cwd);
     cmd.env("GIT_TERMINAL_PROMPT", "0");
     crate::cli::apply_no_window(&mut cmd);
-    GitCmd { cmd }
+    GitCmd { cmd, cwd: cwd.to_path_buf() }
 }
 
 // ---------------------------------------------------------------------------

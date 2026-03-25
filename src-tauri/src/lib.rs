@@ -614,6 +614,9 @@ pub fn run() {
         peer_agents: DashMap::new(),
         agent_inbox: DashMap::new(),
         messaging_channels: DashMap::new(),
+        #[cfg(unix)]
+        bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
+        server_start_time: std::time::Instant::now(),
     });
 
     // Wire the event bus into the upstream registry so status changes emit SSE events.
