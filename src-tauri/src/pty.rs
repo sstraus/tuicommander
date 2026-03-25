@@ -862,25 +862,6 @@ impl ChunkProcessor {
             && last_q_line.is_none()
             && !changed_rows.is_empty()
             && (all_chrome_markers || (has_status_line && no_real_output));
-        // DIAG: log non-chrome chunks to find what breaks chrome_only
-        if !chrome_only && !changed_rows.is_empty() {
-            let non_chrome: Vec<_> = changed_rows.iter()
-                .filter(|r| !is_chrome_row(&r.text) && !r.text.trim().is_empty()
-                    && !crate::chrome::is_separator_line(&r.text)
-                    && !crate::chrome::is_prompt_line(&r.text))
-                .map(|r| format!("r{}:{:?}", r.row_index, &r.text[..r.text.len().min(60)]))
-                .collect();
-            if !non_chrome.is_empty() {
-                tracing::debug!(
-                    session_id = %session_id,
-                    all_chrome = all_chrome_markers,
-                    has_sl = has_status_line,
-                    no_real = no_real_output,
-                    rows = ?non_chrome,
-                    "chrome_only=false: non-chrome rows"
-                );
-            }
-        }
         {
             let mut sl = silence.lock();
             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
