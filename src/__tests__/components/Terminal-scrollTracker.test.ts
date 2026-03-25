@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { ScrollTracker, ViewportLock, type BufferSnapshot } from "../../components/Terminal/scrollTracker";
 
 /** Helper: create a normal-buffer snapshot */
@@ -351,150 +351,122 @@ function createViewportContainer(): { container: HTMLDivElement; viewport: HTMLD
   return { container, viewport };
 }
 
+/** Helper: create mock terminal API functions and a mutable buffer for ViewportLock */
+function createLockHarness() {
+  const { container, viewport } = createViewportContainer();
+  const scrollToLineCalls: number[] = [];
+  const scrollToBottomCalls: number[] = [];
+  let bufferState: BufferSnapshot = { viewportY: 5, baseY: 100, type: "normal" };
+
+  const lock = new ViewportLock();
+  lock.attach(
+    container,
+    (line) => scrollToLineCalls.push(line),
+    () => scrollToBottomCalls.push(1),
+    () => bufferState,
+  );
+
+  return { lock, container, viewport, scrollToLineCalls, scrollToBottomCalls, bufferState, setBuffer: (b: BufferSnapshot) => { bufferState = b; } };
+}
+
 describe("ViewportLock", () => {
-  let lock: ViewportLock;
-
-  beforeEach(() => {
-    lock = new ViewportLock();
-  });
-
   describe("attach", () => {
-    it("finds .xterm-viewport inside container", () => {
-      const { container } = createViewportContainer();
-      lock.attach(container);
-      // Should not throw; lock is ready
+    it("starts unlocked", () => {
+      const { lock } = createLockHarness();
       expect(lock.isLocked).toBe(false);
       lock.dispose();
     });
 
     it("does nothing when no .xterm-viewport found", () => {
+      const lock = new ViewportLock();
       const container = document.createElement("div");
-      lock.attach(container); // should not throw
+      lock.attach(
+        container,
+        () => {},
+        () => {},
+        () => ({ viewportY: 0, baseY: 0, type: "normal" }),
+      );
       lock.update(false); // should not throw
       lock.dispose();
     });
   });
 
-  describe("lock behavior", () => {
-    it("allows scrollTop changes when not locked (user at bottom)", () => {
-      const { container, viewport } = createViewportContainer();
-      lock.attach(container);
-      lock.update(true); // at bottom — not locked
-
-      viewport.scrollTop = 100;
-      expect(viewport.scrollTop).toBe(100);
-      lock.dispose();
-    });
-
-    it("blocks programmatic scrollTop changes when locked (user scrolled up)", () => {
-      const { container, viewport } = createViewportContainer();
-      lock.attach(container);
-
-      // Set an initial scrollTop value
-      viewport.scrollTop = 50;
-      expect(viewport.scrollTop).toBe(50);
-
-      // Lock (user scrolled up)
-      lock.update(false);
+  describe("lock/unlock transitions", () => {
+    it("locks when update(false) and unlocks when update(true)", () => {
+      const { lock } = createLockHarness();
+      lock.update(false); // user scrolled up
       expect(lock.isLocked).toBe(true);
-
-      // Programmatic scrollTop change should be blocked
-      viewport.scrollTop = 200;
-      expect(viewport.scrollTop).toBe(50); // unchanged
-      lock.dispose();
-    });
-
-    it("unlocks when user returns to bottom", () => {
-      const { container, viewport } = createViewportContainer();
-      lock.attach(container);
-
-      viewport.scrollTop = 50;
-      lock.update(false); // locked
-
-      viewport.scrollTop = 200;
-      expect(viewport.scrollTop).toBe(50); // blocked
-
-      lock.update(true); // unlocked (back at bottom)
+      lock.update(true); // user at bottom
       expect(lock.isLocked).toBe(false);
-
-      viewport.scrollTop = 200;
-      expect(viewport.scrollTop).toBe(200); // allowed
       lock.dispose();
     });
 
-    it("allows scrollTop changes during user wheel events", () => {
-      const { container, viewport } = createViewportContainer();
-      lock.attach(container);
+    it("does not re-engage on duplicate update calls", () => {
+      const { lock } = createLockHarness();
+      lock.update(false);
+      lock.update(false); // no-op
+      expect(lock.isLocked).toBe(true);
+      lock.dispose();
+    });
+  });
 
-      viewport.scrollTop = 50;
-      lock.update(false); // locked
+  describe("write-based scroll lock", () => {
+    it("restores scroll position when scroll fires during write", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false); // locked at line 5
 
-      // Simulate user wheel event
-      viewport.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
+      // Simulate a write that triggers a programmatic scroll
+      lock.writeStart();
+      viewport.dispatchEvent(new Event("scroll"));
+      lock.writeEnd();
 
-      // During the wheel event handler chain, scrollTop changes are allowed
-      viewport.scrollTop = 30;
-      expect(viewport.scrollTop).toBe(30);
+      expect(scrollToLineCalls).toEqual([5]);
       lock.dispose();
     });
 
-    it("re-engages lock after wheel microtask completes", async () => {
-      const { container, viewport } = createViewportContainer();
-      lock.attach(container);
-
-      viewport.scrollTop = 50;
+    it("does NOT restore when scroll fires outside a write (user scroll)", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
       lock.update(false); // locked
 
-      viewport.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
-      viewport.scrollTop = 30; // allowed during wheel
+      // User scrolls (no write in progress)
+      setBuffer({ viewportY: 10, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
 
-      // Wait for microtask to clear userScrolling flag
-      await Promise.resolve();
-
-      // Now programmatic changes should be blocked again
-      viewport.scrollTop = 200;
-      expect(viewport.scrollTop).toBe(30); // blocked
+      expect(scrollToLineCalls).toEqual([]); // no restore
       lock.dispose();
     });
 
-    it("allows scrollTop changes during mousedown (scrollbar drag)", () => {
-      const { container, viewport } = createViewportContainer();
-      lock.attach(container);
-
-      viewport.scrollTop = 50;
+    it("unlocks when user scrolls to bottom outside a write", () => {
+      const { lock, viewport, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
       lock.update(false); // locked
 
-      // Simulate scrollbar drag
-      viewport.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      // User scrolls to bottom
+      setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
 
-      viewport.scrollTop = 30;
-      expect(viewport.scrollTop).toBe(30);
+      expect(lock.isLocked).toBe(false);
+      lock.dispose();
+    });
 
-      // Release mouse
-      window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    it("no listeners active when unlocked (at bottom)", () => {
+      const { lock, viewport, scrollToLineCalls } = createLockHarness();
+      // Never locked — fire scroll events
+      lock.writeStart();
+      viewport.dispatchEvent(new Event("scroll"));
+      lock.writeEnd();
+
+      expect(scrollToLineCalls).toEqual([]); // no listener installed
       lock.dispose();
     });
   });
 
   describe("dispose", () => {
-    it("restores original scrollTop behavior", () => {
-      const { container, viewport } = createViewportContainer();
-      lock.attach(container);
+    it("cleans up and is safe to call multiple times", () => {
+      const { lock } = createLockHarness();
       lock.update(false); // locked
-
-      viewport.scrollTop = 200;
-      // blocked by lock — value should NOT be 200
-
-      lock.dispose();
-
-      // After dispose, scrollTop should work normally again
-      viewport.scrollTop = 300;
-      expect(viewport.scrollTop).toBe(300);
-    });
-
-    it("is safe to call multiple times", () => {
-      const { container } = createViewportContainer();
-      lock.attach(container);
       lock.dispose();
       lock.dispose(); // should not throw
     });

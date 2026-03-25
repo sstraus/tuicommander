@@ -22,7 +22,7 @@ import { agentConfigsStore } from "../../stores/agentConfigs";
 import { parseOsc7Url } from "../../utils/osc7";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { getAwaitingInputSound } from "./awaitingInputSound";
-import { ScrollTracker /* , ViewportLock */ } from "./scrollTracker";
+import { ScrollTracker, ViewportLock } from "./scrollTracker";
 import s from "./Terminal.module.css";
 
 
@@ -163,9 +163,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // Scroll position tracker — handles visibility, alternate buffer, and
   // re-entrancy without any DOM reads. See scrollTracker.ts for details.
   const scrollTracker = new ScrollTracker();
-  // DOM-level defense: blocks programmatic scrollTop changes when user is
-  // scrolled up, preventing xterm's DomScrollableElement from jumping to bottom.
-  // const viewportLock = new ViewportLock();
+  const viewportLock = new ViewportLock();
 
   /** Fit terminal to container, preserving scroll position across reflows. */
   const doFit = () => {
@@ -186,7 +184,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       scrollTracker.suppressNextScroll();
       terminal.scrollToLine(action.line!);
     }
-    // viewportLock.update(scrollTracker.isAtBottom);
+    viewportLock.update(scrollTracker.isAtBottom);
   };
 
   // Reset activity flag when this terminal becomes active (store clears activity)
@@ -232,20 +230,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   /** Process a chunk of PTY output — write to terminal or buffer if not ready */
   const handlePtyData = (rawData: string) => {
-    // Strip ESC[3J (clear scrollback) — CC sends this on every TUI redraw,
-    // destroying all scrollback content. We preserve scrollback ourselves.
-    // ESC[2J is NOT stripped — ViewportLock prevents the scroll jump instead.
-    const data = rawData.includes("\x1b[3J")
-      ? rawData.replaceAll("\x1b[3J", "")
-      : rawData;
     if (terminal) {
       // Dispatch to plugins for all terminals — background tabs may have
       // plugin-relevant output (e.g. agent detection, error tracking)
       if (sessionId) {
-        pluginRegistry.processRawOutput(data, sessionId);
+        pluginRegistry.processRawOutput(rawData, sessionId);
       }
 
-      const byteLen = data.length;
+      const byteLen = rawData.length;
       pendingWriteBytes += byteLen;
 
       // Pause reader if we've accumulated too much unprocessed data
@@ -254,7 +246,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pty.pause(sessionId).catch((err) => appLogger.warn("terminal", "PTY pause failed", { error: String(err) }));
       }
 
-      terminal.write(data, () => {
+      viewportLock.writeStart();
+      terminal.write(rawData, () => {
+        viewportLock.writeEnd();
         pendingWriteBytes -= byteLen;
         if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
           isPaused = false;
@@ -263,8 +257,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
       });
     } else {
       // Buffer output until terminal.open() is called
-      outputBuffer.push(data);
-      outputBufferBytes += data.length;
+      outputBuffer.push(rawData);
+      outputBufferBytes += rawData.length;
       // Cap buffer: drop oldest chunks when over limit
       while (outputBufferBytes > OUTPUT_BUFFER_MAX_BYTES && outputBuffer.length > 1) {
         const dropped = outputBuffer.shift()!;
@@ -297,7 +291,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       outputBuffer = [];
       outputBufferBytes = 0;
       scrollTracker.onScroll(terminal.buffer.active);
-      // viewportLock.update(scrollTracker.isAtBottom);
+      viewportLock.update(scrollTracker.isAtBottom);
     }
   };
 
@@ -911,8 +905,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
 
     terminal.open(containerRef);
-    // viewportLock.attach(containerRef);
-    // // viewportLock.attach(containerRef);
+    viewportLock.attach(
+      containerRef,
+      (line) => terminal!.scrollToLine(line),
+      () => terminal!.scrollToBottom(),
+      () => ({
+        viewportY: terminal!.buffer.active.viewportY,
+        baseY: terminal!.buffer.active.baseY,
+        type: terminal!.buffer.active.type,
+      }),
+    );
 
     // Preload the configured font so the canvas/WebGL renderer can measure
     // and render it correctly from the start (see preloadFont comment above).
@@ -970,7 +972,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     terminal.onScroll(() => {
       scrollTracker.onScroll(terminal!.buffer.active);
-      // viewportLock.update(scrollTracker.isAtBottom);
+      viewportLock.update(scrollTracker.isAtBottom);
     });
 
 
@@ -1179,7 +1181,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Clean up plugin line buffer for this session
     if (sessionId) pluginRegistry.removeSession(sessionId);
 
-    // viewportLock.dispose();
+    viewportLock.dispose();
     terminal?.dispose();
   });
 

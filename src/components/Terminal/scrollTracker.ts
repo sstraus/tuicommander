@@ -162,40 +162,52 @@ export class ScrollTracker {
 }
 
 /**
- * Prevents programmatic scrollTop changes on the xterm viewport element
- * while the user is scrolled up. This blocks xterm.js DomScrollableElement's
- * rAF-based scrollTop sync that causes scroll-to-bottom jumps when agents
- * send ESC[2J (clear display) or similar sequences.
+ * Prevents programmatic scroll changes while the user is scrolled up.
  *
- * How it works:
- * - Overrides the scrollTop setter on the viewport element via Object.defineProperty
- * - While locked, the setter silently discards writes (xterm buffer updates normally)
- * - User scroll events (wheel, mousedown on scrollbar) temporarily allow scrollTop
- *   changes so the user can always scroll freely
- * - When the user scrolls back to bottom, the lock deactivates
+ * Strategy: track whether a terminal.write() is in progress. Scroll events
+ * that fire during a write are programmatic (xterm reflow). Scroll events
+ * outside a write are user-initiated (wheel, scrollbar drag, keyboard).
  *
- * This is a DOM-level defense, complementary to the ESC[2J/ESC[3J stripping
- * and ScrollTracker's afterWrite restore logic.
+ * When locked (user not at bottom):
+ * - Programmatic scrolls (during write) → restore to anchor via scrollToLine()
+ * - User scrolls → update anchor, check if at bottom → unlock if so
+ *
+ * When unlocked (at bottom): zero listeners, zero overhead — xterm is native.
  */
 export class ViewportLock {
-  private container: HTMLElement | null = null;
-  private viewport: HTMLElement | null = null;
   private locked = false;
-  private userScrolling = false;
-  private anchorScrollTop = 0;
+  private writeInProgress = false;
+  private anchorLine = 0;
+  private scrollToLineFn: ((line: number) => void) | null = null;
+  private getBufferFn: (() => BufferSnapshot) | null = null;
   private cleanupFns: (() => void)[] = [];
+  private viewport: HTMLElement | null = null;
 
-  /** Register the container. No listeners or overrides installed until
-   *  update() transitions to locked state. Zero footprint when at bottom. */
-  attach(container: HTMLElement): void {
-    this.container = container;
+  /** Bind terminal API callbacks. Call once after terminal.open(). */
+  attach(
+    container: HTMLElement,
+    scrollToLine: (line: number) => void,
+    _scrollToBottom: () => void,
+    getBuffer: () => BufferSnapshot,
+  ): void {
+    this.viewport = container.querySelector<HTMLElement>(".xterm-viewport");
+    this.scrollToLineFn = scrollToLine;
+    this.getBufferFn = getBuffer;
   }
 
-  /** Dynamically engage/disengage ALL viewport interventions.
-   *  At bottom: zero listeners, zero overrides — xterm is fully native.
-   *  Scrolled up: scrollTop override + user-scroll listeners installed. */
+  /** Signal that a terminal.write() is about to start. */
+  writeStart(): void {
+    this.writeInProgress = true;
+  }
+
+  /** Signal that a terminal.write() callback has fired. */
+  writeEnd(): void {
+    this.writeInProgress = false;
+  }
+
+  /** Engage or disengage based on scroll position.
+   *  At bottom → unlock (xterm native). Scrolled up → lock. */
   update(isAtBottom: boolean): void {
-    if (!this.container) return;
     const shouldLock = !isAtBottom;
     if (shouldLock === this.locked) return;
     this.locked = shouldLock;
@@ -207,55 +219,48 @@ export class ViewportLock {
     }
   }
 
-  /** Remove everything and reset. */
-  dispose(): void {
-    this.disengage();
-    this.container = null;
-    this.locked = false;
-  }
-
   get isLocked(): boolean {
     return this.locked;
   }
 
-  /** Lock: save scrollTop, fight any programmatic scroll by restoring it.
-   *  No DOM/CSS modifications — just event-driven scroll restore. */
+  dispose(): void {
+    this.disengage();
+    this.scrollToLineFn = null;
+    this.getBufferFn = null;
+    this.viewport = null;
+    this.locked = false;
+  }
+
   private engage(): void {
-    const vp = this.container?.querySelector<HTMLElement>(".xterm-viewport");
-    if (!vp) return;
-    this.viewport = vp;
-    this.anchorScrollTop = vp.scrollTop;
+    if (!this.viewport || !this.getBufferFn) return;
+    const buf = this.getBufferFn();
+    this.anchorLine = buf.viewportY;
 
-    const self = this;
-
-    // When user scrolls via wheel, update the anchor
-    const onWheel = () => { self.userScrolling = true; };
-
-    // On ANY scroll: if not user-initiated, snap back to anchor
     const onScroll = () => {
-      if (!self.viewport) return;
-      if (self.userScrolling) {
-        // User scrolled — update anchor to new position
-        self.anchorScrollTop = self.viewport.scrollTop;
-        self.userScrolling = false;
+      if (!this.getBufferFn) return;
+      const buf = this.getBufferFn();
+
+      if (this.writeInProgress) {
+        // Programmatic scroll from xterm write — restore anchor
+        if (this.scrollToLineFn && buf.baseY >= this.anchorLine) {
+          this.scrollToLineFn(this.anchorLine);
+        }
       } else {
-        // Programmatic scroll (xterm jump) — restore anchor
-        self.viewport.scrollTop = self.anchorScrollTop;
+        // User-initiated scroll — update anchor
+        this.anchorLine = buf.viewportY;
+        // If user scrolled to bottom, unlock
+        if (buf.viewportY >= buf.baseY) {
+          this.update(true);
+        }
       }
     };
 
-    vp.addEventListener("wheel", onWheel, { passive: true });
-    vp.addEventListener("scroll", onScroll);
-    this.cleanupFns.push(
-      () => vp.removeEventListener("wheel", onWheel),
-      () => vp.removeEventListener("scroll", onScroll),
-    );
+    this.viewport.addEventListener("scroll", onScroll);
+    this.cleanupFns.push(() => this.viewport?.removeEventListener("scroll", onScroll));
   }
 
-  /** Unlock: remove listeners, no cleanup needed (no DOM was modified). */
   private disengage(): void {
     for (const fn of this.cleanupFns) fn();
     this.cleanupFns = [];
-    this.viewport = null;
   }
 }
