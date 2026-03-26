@@ -3358,10 +3358,6 @@ mod tests {
 
     // --- trim_agent_chrome / find_prompt_cutoff tests ---
 
-    fn make_lines(items: &[&str]) -> Vec<String> {
-        items.iter().map(|s| s.to_string()).collect()
-    }
-
     /// Helper: create plain LogLine vec from string slices for testing.
     fn make_log_lines(items: &[&str]) -> Vec<LogLine> {
         items.iter().map(|s| LogLine {
