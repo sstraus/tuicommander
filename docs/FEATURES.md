@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.9.5 | **Last verified:** 2026-03-22
+**Version:** 0.9.7 | **Last verified:** 2026-03-26
 
 ---
 

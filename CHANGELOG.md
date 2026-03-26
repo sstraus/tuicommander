@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-03-26
+
 ### Added
 - **Sidebar Plugin Panels** — New `ui:sidebar` capability lets plugins register collapsible panel sections in the sidebar below the branch list. Panels display structured data (items with icon, label, subtitle, badge, context menu) scoped per-repo. Built-in plan plugin migrated from Activity Center to sidebar panel
 - **Multi-target context menu actions** — Plugins can now register actions in branch, repo, and tab context menus (not just terminal). New `registerContextMenuAction()` API with target types and typed context

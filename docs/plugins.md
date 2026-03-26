@@ -789,7 +789,7 @@ if (credJson) {
 - macOS: Reads from Keychain (`security find-generic-password -s <service> -w`)
 - Linux/Windows: Reads from `~/.claude/.credentials.json`
 
-### Tier 3g: HTTP Requests (capability-gated)
+### Tier 3h: HTTP Requests (capability-gated)
 
 #### host.httpFetch(url, options?) -> Promise<HttpResponse>
 
@@ -830,7 +830,7 @@ interface HttpResponse {
 - `"http://localhost:8080/*"` — allows localhost on that port (required to unblock localhost)
 - The URL must start with the pattern prefix (before `*`) to match
 
-### Tier 3h: File Tail (capability-gated)
+### Tier 3i: File Tail (capability-gated)
 
 #### host.readFileTail(absolutePath, maxBytes) -> Promise<string>
 
@@ -841,7 +841,7 @@ const tail = await host.readFileTail("/Users/me/.claude/hud-tracking.jsonl", 512
 const lines = tail.split("\n").filter(Boolean);
 ```
 
-### Tier 3i: CLI Execution (capability-gated)
+### Tier 3j: CLI Execution (capability-gated)
 
 #### host.execCli(binary, args, cwd?) -> Promise<string>
 
