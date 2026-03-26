@@ -1,0 +1,595 @@
+docs/FEATURES.md
+  6cf9ef103a779cbc 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.19",
+  "base_commit_sha": "324c882a7184e0b64d3a8ee9fff3b63b539746bd",
+  "prompts": {
+    "04be421ee1002d0d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67042c31-6df2-4dce-bc1e-af1179cc4706",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 12,
+      "total_deletions": 1,
+      "accepted_lines": 12,
+      "overriden_lines": 0
+    },
+    "0ab84ff25f16f0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45d73e90-6d26-4793-aa16-63971bd2504a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 24,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "1537c9edddb101a8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f7dcc4c-e940-47df-860e-15040b46009a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 91,
+      "total_deletions": 44,
+      "accepted_lines": 87,
+      "overriden_lines": 0
+    },
+    "2379a93fcfd36d3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "901f7f94-a422-4db0-93f2-9955efe5860c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 51,
+      "overriden_lines": 0
+    },
+    "257732b56920e340": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce8b00ba-fa41-4d08-9af6-c1064e66eb50",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 7,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    },
+    "2cfc0e82fdab6b3c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b96ef939-5ad1-4fd4-9636-0e441d573bda",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "3f286127a046b141": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e84667c-f247-4e48-8bdd-8a0c22ac6f4a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 9,
+      "total_deletions": 0,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    },
+    "49fc2b54cf6fad60": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "34775ba3-3bd9-4ee0-b1b3-ed409142c47d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 0,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    },
+    "4afb91585f48d832": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b0165046-3741-4208-b50b-09ae7c241e17",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 220,
+      "overriden_lines": 0
+    },
+    "4bd2668b50df4198": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92228039-37c0-46d0-94e4-bd9653f44347",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Roberto Serafin <roberto.serafin@lansweeper.com>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 0,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    },
+    "4edf3f37670677e5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "085f312a-b459-4063-a597-b151d0f7641c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 265,
+      "total_deletions": 64,
+      "accepted_lines": 223,
+      "overriden_lines": 0
+    },
+    "516195b9dcc3e9a3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b1dd1e3-f834-40be-9459-7c9632ff46fb",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 1047,
+      "total_deletions": 2,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    },
+    "519d05160e6ef99a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "95ef6175-af0b-4b4b-988c-dc5c5c94ec8a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    },
+    "54b7bf520258388a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "283696f2-196e-4dff-b443-6da5fc622b6d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 2,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "565843328bbd8c9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d951fac9-300b-4db1-8ad9-758f7f2b0e41",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 319,
+      "total_deletions": 39,
+      "accepted_lines": 304,
+      "overriden_lines": 0
+    },
+    "618b1252172f44b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bc65e7b9-9f59-4361-b9ca-78409bce5cf7",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 55,
+      "total_deletions": 2,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    },
+    "637be5d3b867a187": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "52cd6d41-8254-41c2-9724-86c34919367e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 1763,
+      "total_deletions": 164,
+      "accepted_lines": 1600,
+      "overriden_lines": 0
+    },
+    "6af5fe2322e27900": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f7c62c11-a1ea-451d-b2d0-91b192515790",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 22,
+      "total_deletions": 1,
+      "accepted_lines": 22,
+      "overriden_lines": 0
+    },
+    "6cf9ef103a779cbc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51d440b2-01da-4ffa-82ab-e10cd4580419",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 78,
+      "total_deletions": 28,
+      "accepted_lines": 160,
+      "overriden_lines": 0
+    },
+    "6e79cf5e89df4b5b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ac07b14b-3229-47c9-a7de-00b8f7829574",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 0,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    },
+    "76a2baf8ac1260dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "15d6d929-641f-46f0-930b-2ca7c650d8a1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 115,
+      "total_deletions": 25,
+      "accepted_lines": 494,
+      "overriden_lines": 0
+    },
+    "77b5d513999037d0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fe7cbda9-e15e-44a7-9951-5979344beed7",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "79531c35309daaf1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0849ebe3-fb06-4563-add2-3e22fb4230bf",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 1494,
+      "total_deletions": 147,
+      "accepted_lines": 1175,
+      "overriden_lines": 0
+    },
+    "7db2f161065d28e1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a031b85c-cea3-4e62-9f6a-b148fc46a7c2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 59,
+      "total_deletions": 33,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    },
+    "87f045589290b05c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bfe3673a-6762-4c6e-becc-7ab0f4ef0bcd",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 23,
+      "total_deletions": 21,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "880c28d8bcc2cf20": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b553277-6441-46e7-8860-208006c53865",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 28,
+      "total_deletions": 0,
+      "accepted_lines": 28,
+      "overriden_lines": 0
+    },
+    "8aa47af8153f528b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "193b109b-2e7b-433f-85b0-8e428f8740a6",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 51,
+      "total_deletions": 6,
+      "accepted_lines": 51,
+      "overriden_lines": 0
+    },
+    "92c14e0818f3660a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "af467730-5e79-49d9-8a17-ebd94c99f262",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 12,
+      "total_deletions": 8,
+      "accepted_lines": 13,
+      "overriden_lines": 0
+    },
+    "9391906e2518348a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c62acd64-bb36-46eb-b9fb-f1501b220c4e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 12,
+      "overriden_lines": 0
+    },
+    "95a5af8cba08c14a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6d72c3d7-447a-44d3-ab0c-8025b5d04ba3",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 23,
+      "total_deletions": 9,
+      "accepted_lines": 20,
+      "overriden_lines": 0
+    },
+    "986f5f383ed04210": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a895b4e-0168-4e18-b101-a0d851cb5591",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 28,
+      "total_deletions": 37,
+      "accepted_lines": 25,
+      "overriden_lines": 0
+    },
+    "9a8f3c337eef2a1f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a744606-e725-498f-a516-9d30a4214da0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 7,
+      "total_deletions": 2,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    },
+    "aa000eaefb982dc8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48c58664-e38c-40cc-91e1-ef391ccd48f8",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 36,
+      "total_deletions": 0,
+      "accepted_lines": 10,
+      "overriden_lines": 0
+    },
+    "b303056691ec7eab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2ea1e4b9-df35-4e05-847e-d47f798499d8",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 67,
+      "total_deletions": 51,
+      "accepted_lines": 66,
+      "overriden_lines": 0
+    },
+    "b90003bea2fc81ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e65d89a4-0976-4295-9eb6-be7e2893c71b",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 293,
+      "total_deletions": 71,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    },
+    "bc0057a72a80f732": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4e9276f0-d812-4023-953f-9b620a883383",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 793,
+      "total_deletions": 23,
+      "accepted_lines": 781,
+      "overriden_lines": 0
+    },
+    "c12f3445dc144e17": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "883abde1-becd-48c2-8e16-a98bcb4f84e2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    },
+    "c5c42bfa80788506": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "00f46460-02c5-45a9-a27c-a499fc2c7393",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 159,
+      "total_deletions": 37,
+      "accepted_lines": 159,
+      "overriden_lines": 0
+    },
+    "c8cd94e095227087": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7548d0d3-365e-4ba8-b520-25179e736afe",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 109,
+      "total_deletions": 85,
+      "accepted_lines": 50,
+      "overriden_lines": 0
+    },
+    "cf3511a9344cf85d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "021dbf18-253b-46e7-9b2c-e510c9dda86e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 44,
+      "overriden_lines": 0
+    },
+    "dc0e9f7f1c82b7e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e3b1dd10-9aa3-4581-80bd-9185732c4196",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 11,
+      "overriden_lines": 0
+    },
+    "e00c433839850e2c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8de55755-0287-44bd-934d-c662a75251e4",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 250,
+      "total_deletions": 24,
+      "accepted_lines": 250,
+      "overriden_lines": 0
+    },
+    "e5458edc56702a98": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12601615-ef15-4b09-b4da-179fc019ce6c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 3,
+      "accepted_lines": 55,
+      "overriden_lines": 0
+    },
+    "f53e6f15d2574b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6fd11954-bcf6-4cca-9b4c-080de1fc0a6f",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 17,
+      "total_deletions": 0,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    },
+    "fb0c6dd6c38d5eb3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cfe8ad28-48df-4c36-90a5-72a5f4a29bf6",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 10,
+      "total_deletions": 0,
+      "accepted_lines": 10,
+      "overriden_lines": 0
+    }
+  }
+}
