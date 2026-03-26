@@ -945,6 +945,7 @@ All data persisted to platform config directory via Rust:
 | `Cmd+Shift+E` | Error log |
 | `Cmd+Shift+W` | Worktree manager |
 | `Cmd+Shift+A` | Activity dashboard |
+| `Cmd+Shift+M` | MCP servers popup (per-repo) |
 
 ### Git
 | Shortcut | Action |

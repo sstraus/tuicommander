@@ -82,6 +82,7 @@ Proxy external MCP servers through TUICommander. Their tools appear prefixed as 
 - API keys for HTTP upstreams are stored in the OS keychain
 - Live status (connecting, ready, circuit open, failed) with tool count and call metrics
 - Reconnect and remove controls per upstream
+- Per-repo scoping: each repo can define an allowlist of active upstream servers via **Cmd+Shift+M** popup (or repo settings). Empty/null allowlist = all servers active
 
 ### Remote Access
 
