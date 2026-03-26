@@ -11,6 +11,7 @@ import { appLogger } from "../../stores/appLogger";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
+import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
 import type { ContextMenuItem } from "../ContextMenu/ContextMenu";
 import s from "./TabBar.module.css";
 
@@ -143,6 +144,19 @@ export const TabBar: Component<TabBarProps> = (props) => {
           })),
         },
       );
+    }
+    // Plugin-registered tab actions
+    const tabActions = contextMenuActionsStore.getContextActions("tab");
+    if (tabActions.length > 0) {
+      const ctx = { target: "tab" as const, tabId: id, sessionId: terminalsStore.get(id)?.sessionId ?? undefined };
+      for (const a of tabActions) {
+        items.push({
+          label: a.label,
+          action: () => a.action(ctx),
+          disabled: a.disabled?.(ctx),
+          separator: tabActions.indexOf(a) === 0,
+        });
+      }
     }
     return items;
   };
