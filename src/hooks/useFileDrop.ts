@@ -5,7 +5,7 @@ import { editorTabsStore } from "../stores/editorTabs";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
-import { rpc } from "../transport";
+import { rpc, isTauri } from "../transport";
 
 /** Markdown extensions (case-insensitive) */
 const MD_EXTENSIONS = new Set([".md", ".mdx"]);
@@ -41,6 +41,8 @@ function resolveRepoPaths(absolutePath: string): [repoPath: string, filePath: st
  */
 export function useFileDrop() {
   const [isDragging, setIsDragging] = createSignal(false);
+
+  if (!isTauri()) return { isDragging };
 
   const setup = getCurrentWebview().onDragDropEvent((event) => {
     const { type } = event.payload;
