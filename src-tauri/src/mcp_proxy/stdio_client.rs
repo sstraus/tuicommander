@@ -246,6 +246,32 @@ impl StdioMcpClient {
         Ok(resp.get("result").cloned().unwrap_or(resp))
     }
 
+    /// Check if alive and refresh the tool list. Used for health checks.
+    pub(crate) fn health_check(&mut self) -> Result<Vec<UpstreamToolDef>, String> {
+        if !self.is_alive() {
+            return Err(format!(
+                "Upstream '{}' process is not running",
+                self.config.name
+            ));
+        }
+        let tools_resp = self.rpc("tools/list", serde_json::json!({}))?;
+        let tools_arr = tools_resp["result"]["tools"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let tools = tools_arr
+            .into_iter()
+            .filter_map(|tool| {
+                let original_name = tool["name"].as_str()?.to_string();
+                Some(UpstreamToolDef {
+                    original_name,
+                    definition: tool,
+                })
+            })
+            .collect();
+        Ok(tools)
+    }
+
     /// Check if the child process is still running.
     pub(crate) fn is_alive(&mut self) -> bool {
         match &mut self.child {

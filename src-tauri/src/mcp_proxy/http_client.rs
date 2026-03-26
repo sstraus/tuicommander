@@ -209,12 +209,10 @@ impl HttpMcpClient {
         }
     }
 
-    /// Ping the upstream via tools/list. Used for health checks.
-    pub(crate) async fn health_check(&self) -> Result<(), String> {
+    /// Ping the upstream via tools/list and return refreshed tool definitions.
+    pub(crate) async fn health_check(&self) -> Result<Vec<UpstreamToolDef>, String> {
         let auth_token = read_upstream_credential(&self.name)?;
-        self.rpc("tools/list", serde_json::json!({}), &auth_token)
-            .await
-            .map(|_| ())
+        self.fetch_tools(&auth_token).await
     }
 
     /// Send DELETE /mcp to cleanly terminate the upstream session.

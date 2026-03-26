@@ -676,9 +676,11 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
     for entry_ref in registry.entries.iter() {
         let status = entry_ref.status.read().clone();
         // Probe Ready upstreams and CircuitOpen with expired backoff
+        // Probe Ready upstreams, CircuitOpen with expired backoff, and stuck Connecting
         let should_probe = match status {
             UpstreamStatus::Ready => true,
             UpstreamStatus::CircuitOpen => !entry_ref.cb.is_open(),
+            UpstreamStatus::Connecting => true,
             _ => false,
         };
         if !should_probe {
@@ -687,63 +689,78 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
         let entry = Arc::clone(entry_ref.value());
         let name = entry_ref.key().clone();
         let bus = bus_snapshot.clone();
-        let was_circuit_open = status == UpstreamStatus::CircuitOpen;
+        let needs_recovery = status != UpstreamStatus::Ready;
         tokio::spawn(async move {
-            let ok = health_check_entry(&entry).await;
-            if ok {
-                entry.cb.record_success();
-                // Recovery: CircuitOpen → Ready
-                if was_circuit_open {
-                    *entry.status.write() = UpstreamStatus::Ready;
-                    tracing::info!(source = "mcp_registry", %name, "Recovered (Ready)");
-                    if let Some(ref sender) = bus {
-                        let _ = sender.send(crate::state::AppEvent::UpstreamStatusChanged {
-                            name: name.clone(),
-                            status: "ready".to_string(),
-                        });
+            // For stuck Connecting entries, re-run full initialization
+            if status == UpstreamStatus::Connecting {
+                initialize_entry(&entry, &name, bus.as_ref()).await;
+                return;
+            }
+
+            match health_check_entry(&entry).await {
+                Ok(tools) => {
+                    // Always refresh the tool list (fixes "0 tools" after recovery)
+                    let old_count = entry.tools.read().len();
+                    let new_count = tools.len();
+                    *entry.tools.write() = tools;
+
+                    entry.cb.record_success();
+                    if needs_recovery {
+                        *entry.status.write() = UpstreamStatus::Ready;
+                        tracing::info!(source = "mcp_registry", %name, "Recovered (Ready) with {new_count} tools");
+                        if let Some(ref sender) = bus {
+                            let _ = sender.send(crate::state::AppEvent::UpstreamStatusChanged {
+                                name: name.clone(),
+                                status: "ready".to_string(),
+                            });
+                        }
+                    } else if old_count != new_count {
+                        tracing::info!(source = "mcp_registry", %name, "Tool list refreshed: {old_count} → {new_count}");
                     }
                 }
-            } else {
-                let exhausted = entry.cb.record_failure();
-                let new_status = if exhausted {
-                    tracing::error!(source = "mcp_registry", %name, "Health check failed permanently");
-                    UpstreamStatus::Failed
-                } else {
-                    tracing::warn!(source = "mcp_registry", %name, "Health check failed — circuit opening");
-                    UpstreamStatus::CircuitOpen
-                };
-                *entry.status.write() = new_status.clone();
-                if let Some(ref sender) = bus {
-                    let status_str = match new_status {
-                        UpstreamStatus::Failed => "failed",
-                        _ => "circuit_open",
+                Err(_) => {
+                    let exhausted = entry.cb.record_failure();
+                    let new_status = if exhausted {
+                        tracing::error!(source = "mcp_registry", %name, "Health check failed permanently");
+                        UpstreamStatus::Failed
+                    } else {
+                        tracing::warn!(source = "mcp_registry", %name, "Health check failed — circuit opening");
+                        UpstreamStatus::CircuitOpen
                     };
-                    let _ = sender.send(crate::state::AppEvent::UpstreamStatusChanged {
-                        name: name.clone(),
-                        status: status_str.to_string(),
-                    });
+                    *entry.status.write() = new_status.clone();
+                    if let Some(ref sender) = bus {
+                        let status_str = match new_status {
+                            UpstreamStatus::Failed => "failed",
+                            _ => "circuit_open",
+                        };
+                        let _ = sender.send(crate::state::AppEvent::UpstreamStatusChanged {
+                            name: name.clone(),
+                            status: status_str.to_string(),
+                        });
+                    }
                 }
             }
         });
     }
 }
 
-/// Perform a health check on a single entry. Returns true on success.
-async fn health_check_entry(entry: &UpstreamEntry) -> bool {
+/// Perform a health check on a single entry.
+/// Returns the refreshed tool list on success, or an error string on failure.
+async fn health_check_entry(entry: &UpstreamEntry) -> Result<Vec<UpstreamToolDef>, String> {
     match &entry.client {
         UpstreamClient::Http(mutex) => {
             let guard = mutex.lock().await;
-            guard.health_check().await.is_ok()
+            guard.health_check().await
         }
         UpstreamClient::Stdio(mutex) => {
             let arc = Arc::clone(mutex);
             tokio::task::spawn_blocking(move || {
                 arc.lock()
-                    .map(|mut g| g.is_alive())
-                    .unwrap_or(false)
+                    .map_err(|e| e.to_string())?
+                    .health_check()
             })
             .await
-            .unwrap_or(false)
+            .unwrap_or_else(|e| Err(format!("spawn_blocking error: {e}")))
         }
     }
 }
