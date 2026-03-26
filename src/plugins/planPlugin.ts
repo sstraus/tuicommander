@@ -1,16 +1,15 @@
 import { invoke } from "../invoke";
-import { activityStore } from "../stores/activityStore";
 import { mdTabsStore } from "../stores/mdTabs";
 import { appLogger } from "../stores/appLogger";
 import { stripFrontmatter, extractPlanMetadata } from "../utils/frontmatter";
 import type { DirEntry } from "../types/fs";
-import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
+import type { MarkdownProvider, PluginHost, TuiPlugin, SidebarItem } from "./types";
+import type { SidebarPanelHandle } from "../stores/sidebarPluginStore";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const SECTION_ID = "plan";
 const PLUGIN_ID = "plan";
 
 // Inline document SVG icon
@@ -27,11 +26,6 @@ const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fi
 function displayName(absolutePath: string): string {
   const base = absolutePath.split("/").pop() ?? absolutePath;
   return base.replace(/\.[^.]+$/, ""); // strip extension
-}
-
-/** Stable item id for a given plan path. */
-function itemId(absolutePath: string): string {
-  return `plan:${absolutePath}`;
 }
 
 /** Build the contentUri for a plan file path. */
@@ -59,32 +53,35 @@ const planMarkdownProvider: MarkdownProvider = {
 };
 
 // ---------------------------------------------------------------------------
+// Internal plan item tracking
+// ---------------------------------------------------------------------------
+
+interface PlanEntry {
+  path: string;
+  title: string;
+  subtitle: string;
+  metadata?: Record<string, string>;
+}
+
+// ---------------------------------------------------------------------------
 // Plugin implementation
 // ---------------------------------------------------------------------------
 
 class PlanPlugin implements TuiPlugin {
   readonly id = PLUGIN_ID;
-  private host: PluginHost | null = null;
+  private panelHandle: SidebarPanelHandle | null = null;
+  private plans = new Map<string, PlanEntry>();
 
   onload(host: PluginHost): void {
-    this.host = host;
+    this.plans.clear();
 
-    host.registerSection({
-      id: SECTION_ID,
-      label: "ACTIVE PLAN",
+    this.panelHandle = host.registerSidebarPanel({
+      id: "active-plans",
+      label: "ACTIVE PLANS",
+      icon: ICON_SVG,
       priority: 10,
-      canDismissAll: false,
-      panelOnly: true,
+      collapsed: false,
     });
-
-    // Enrich any hydrated items that have no metadata yet
-    const existingItems = activityStore.getForSection(SECTION_ID);
-    for (const item of existingItems) {
-      if (!item.metadata) {
-        const path = item.subtitle; // subtitle holds the absolute path
-        if (path) this.enrichItem(item.id, path, host);
-      }
-    }
 
     host.registerStructuredEventHandler("plan-file", (payload, sessionId) => {
       if (typeof payload !== "object" || payload === null || typeof (payload as Record<string, unknown>).path !== "string") return;
@@ -101,10 +98,9 @@ class PlanPlugin implements TuiPlugin {
         if (!cwd || !cwd.startsWith(activeRepo)) return;
       }
 
-      const repoPath = activeRepo ?? cwd ?? undefined;
-      const isNew = !activityStore.getForSection(SECTION_ID).some((i) => i.id === itemId(absolutePath));
+      const isNew = !this.plans.has(absolutePath);
 
-      this.addPlanItem(absolutePath, repoPath, host);
+      this.addPlan(absolutePath);
 
       // Auto-open new plans belonging to the active repo as a background tab
       if (isNew && activeRepo) {
@@ -121,21 +117,17 @@ class PlanPlugin implements TuiPlugin {
     }
   }
 
-  /** Add or update a plan item in the activity store, then enrich with file metadata. */
-  private addPlanItem(absolutePath: string, repoPath: string | undefined, host: PluginHost): void {
-    const id = itemId(absolutePath);
-    host.addItem({
-      id,
-      pluginId: PLUGIN_ID,
-      sectionId: SECTION_ID,
-      title: displayName(absolutePath),
-      subtitle: absolutePath,
-      icon: ICON_SVG,
-      dismissible: true,
-      repoPath,
-      contentUri: contentUri(absolutePath),
-    });
-    this.enrichItem(id, absolutePath, host);
+  /** Add or update a plan entry and refresh the sidebar panel. */
+  private addPlan(absolutePath: string): void {
+    if (!this.plans.has(absolutePath)) {
+      this.plans.set(absolutePath, {
+        path: absolutePath,
+        title: displayName(absolutePath),
+        subtitle: absolutePath,
+      });
+    }
+    this.refreshPanel();
+    this.enrichPlan(absolutePath);
   }
 
   /** Scan a repo's plans/ directory and add discovered plan files. */
@@ -145,9 +137,7 @@ class PlanPlugin implements TuiPlugin {
         const mdFiles = entries.filter((e) => !e.is_dir && e.name.endsWith(".md"));
         for (const entry of mdFiles) {
           const absolutePath = `${repoPath.replace(/\/$/, "")}/${entry.path}`;
-          if (this.host) {
-            this.addPlanItem(absolutePath, repoPath, this.host);
-          }
+          this.addPlan(absolutePath);
         }
       })
       .catch(() => {
@@ -155,11 +145,14 @@ class PlanPlugin implements TuiPlugin {
       });
   }
 
-  /** Read a plan file and update the ActivityItem with extracted metadata. */
-  private enrichItem(itemId: string, absolutePath: string, host: PluginHost): void {
+  /** Read a plan file and update the entry with extracted metadata. */
+  private enrichPlan(absolutePath: string): void {
     invoke<string>("plugin_read_file", { path: absolutePath, pluginId: PLUGIN_ID })
       .then((raw) => {
         const meta = extractPlanMetadata(raw);
+        const entry = this.plans.get(absolutePath);
+        if (!entry) return;
+
         const updates: Record<string, string> = {};
         if (meta.status) updates.status = meta.status;
         if (meta.effort) updates.effort = meta.effort;
@@ -167,25 +160,52 @@ class PlanPlugin implements TuiPlugin {
         if (meta.story) updates.story = meta.story;
         if (meta.created) updates.created = meta.created;
 
-        host.updateItem(itemId, {
-          title: meta.title ?? displayName(absolutePath),
-          metadata: Object.keys(updates).length > 0 ? updates : undefined,
-        });
+        entry.title = meta.title ?? displayName(absolutePath);
+        entry.metadata = Object.keys(updates).length > 0 ? updates : undefined;
+        this.refreshPanel();
       })
       .catch(() => {
         // File read failed — keep fallback title, no metadata
       });
   }
 
+  /** Rebuild sidebar items from the internal plans map. */
+  private refreshPanel(): void {
+    if (!this.panelHandle) return;
+    const items: SidebarItem[] = [];
+    for (const [, entry] of this.plans) {
+      const subtitle = entry.metadata?.status
+        ? `${entry.metadata.status}${entry.metadata.effort ? ` · ${entry.metadata.effort}` : ""}`
+        : entry.subtitle;
+      items.push({
+        id: `plan:${entry.path}`,
+        label: entry.title,
+        subtitle,
+        icon: ICON_SVG,
+        onClick: () => {
+          mdTabsStore.addVirtual(entry.title, contentUri(entry.path));
+        },
+      });
+    }
+    this.panelHandle.setItems(items);
+    this.panelHandle.setBadge(items.length > 0 ? String(items.length) : null);
+  }
+
+  /** Get current plan entries (for testing). */
+  getPlans(): Map<string, PlanEntry> {
+    return this.plans;
+  }
+
   onunload(): void {
-    this.host = null;
+    this.panelHandle = null;
+    this.plans.clear();
   }
 }
 
 const planPluginInstance = new PlanPlugin();
 export const planPlugin: TuiPlugin = planPluginInstance;
 
-/** Scan a repo's plans/ directory and populate the PlanPanel.
+/** Scan a repo's plans/ directory and populate the sidebar panel.
  *  Safe to call multiple times — uses stable IDs for dedup. */
 export function scanPlans(repoPath: string): void {
   planPluginInstance.scanPlansDirectory(repoPath);

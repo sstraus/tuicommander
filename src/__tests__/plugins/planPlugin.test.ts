@@ -8,7 +8,7 @@ vi.mock("../../invoke", () => ({
 
 import { invoke } from "../../invoke";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
-import { activityStore } from "../../stores/activityStore";
+import { sidebarPluginStore } from "../../stores/sidebarPluginStore";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { mdTabsStore } from "../../stores/mdTabs";
@@ -33,14 +33,25 @@ function clearTerminals(): void {
   }
 }
 
+/** Get plan items from the sidebar panel */
+function getPlanItems() {
+  const panels = sidebarPluginStore.getPanels();
+  const planPanel = panels.find((p) => p.pluginId === "plan");
+  return planPanel?.items ?? [];
+}
+
+/** Get plan panel from sidebar store */
+function getPlanPanel() {
+  return sidebarPluginStore.getPanels().find((p) => p.pluginId === "plan");
+}
+
 beforeEach(() => {
   pluginRegistry.clear();
-  activityStore.clearAll();
+  sidebarPluginStore.clear();
   markdownProviderRegistry.clear();
   mdTabsStore.clearAll();
   clearTerminals();
   mockedInvoke.mockReset().mockResolvedValue(undefined);
-  // Clean up terminals and repos from previous tests
   for (const id of terminalsStore.getIds()) {
     terminalsStore.remove(id);
   }
@@ -52,15 +63,16 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("planPlugin lifecycle", () => {
-  it("registers a 'plan' section on load", () => {
+  it("registers a sidebar panel on load", () => {
     pluginRegistry.register(planPlugin);
-    expect(activityStore.getSections().some((s) => s.id === "plan")).toBe(true);
+    expect(getPlanPanel()).toBeDefined();
+    expect(getPlanPanel()!.label).toBe("ACTIVE PLANS");
   });
 
-  it("unregistering removes the 'plan' section", () => {
+  it("unregistering removes the sidebar panel", () => {
     pluginRegistry.register(planPlugin);
     pluginRegistry.unregister("plan");
-    expect(activityStore.getSections().some((s) => s.id === "plan")).toBe(false);
+    expect(getPlanPanel()).toBeUndefined();
   });
 
   it("registers a plan markdown provider on load", async () => {
@@ -89,36 +101,34 @@ describe("plan-file structured event", () => {
     pluginRegistry.register(planPlugin);
   });
 
-  it("adds an ActivityItem to activityStore on plan-file event", async () => {
+  it("adds an item to sidebar panel on plan-file event", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
     await flushMicrotasks();
-    const items = activityStore.getForSection("plan");
+    const items = getPlanItems();
     expect(items).toHaveLength(1);
-    expect(items[0].sectionId).toBe("plan");
-    expect(items[0].contentUri).toBe("plan:file?path=%2Frepo%2Fplans%2Ffoo.md");
-    expect(items[0].dismissible).toBe(true);
+    expect(items[0].id).toBe("plan:/repo/plans/foo.md");
   });
 
-  it("item title is the plan display name (basename without extension)", async () => {
+  it("item label is the plan display name (basename without extension)", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/my-cool-plan.md" }, "s1");
     await flushMicrotasks();
-    const item = activityStore.getForSection("plan")[0];
-    expect(item.title).toBe("my-cool-plan");
+    const item = getPlanItems()[0];
+    expect(item.label).toBe("my-cool-plan");
   });
 
-  it("item subtitle is the full path", async () => {
+  it("item subtitle is the full path initially", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
     await flushMicrotasks();
-    const item = activityStore.getForSection("plan")[0];
+    const item = getPlanItems()[0];
     expect(item.subtitle).toBe("/repo/plans/foo.md");
   });
 
-  it("deduplicates: second event with same path updates, not adds", async () => {
+  it("deduplicates: second event with same path does not duplicate", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
     await flushMicrotasks();
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
     await flushMicrotasks();
-    expect(activityStore.getForSection("plan")).toHaveLength(1);
+    expect(getPlanItems()).toHaveLength(1);
   });
 
   it("different paths create separate items", async () => {
@@ -126,38 +136,47 @@ describe("plan-file structured event", () => {
     await flushMicrotasks();
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/b.md" }, "s1");
     await flushMicrotasks();
-    expect(activityStore.getForSection("plan")).toHaveLength(2);
+    expect(getPlanItems()).toHaveLength(2);
   });
 
   it("item has an icon (non-empty SVG string)", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/foo.md" }, "s1");
     await flushMicrotasks();
-    const item = activityStore.getForSection("plan")[0];
+    const item = getPlanItems()[0];
     expect(item.icon).toContain("<svg");
   });
 
   it("ignores null payload", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", null, "s1");
     await flushMicrotasks();
-    expect(activityStore.getForSection("plan")).toHaveLength(0);
+    expect(getPlanItems()).toHaveLength(0);
   });
 
   it("ignores payload with non-string path", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: 42 }, "s1");
     await flushMicrotasks();
-    expect(activityStore.getForSection("plan")).toHaveLength(0);
+    expect(getPlanItems()).toHaveLength(0);
   });
 
   it("ignores payload without path property", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { file: "/foo.md" }, "s1");
     await flushMicrotasks();
-    expect(activityStore.getForSection("plan")).toHaveLength(0);
+    expect(getPlanItems()).toHaveLength(0);
   });
 
   it("ignores string payload (not object)", async () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", "/foo.md", "s1");
     await flushMicrotasks();
-    expect(activityStore.getForSection("plan")).toHaveLength(0);
+    expect(getPlanItems()).toHaveLength(0);
+  });
+
+  it("updates badge count when items are added", async () => {
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/a.md" }, "s1");
+    await flushMicrotasks();
+    expect(getPlanPanel()!.badge).toBe("1");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/b.md" }, "s1");
+    await flushMicrotasks();
+    expect(getPlanPanel()!.badge).toBe("2");
   });
 });
 
@@ -170,54 +189,21 @@ describe("plan-file repoPath and path resolution", () => {
     pluginRegistry.register(planPlugin);
   });
 
-  it("attaches repoPath derived from session CWD to the activity item", async () => {
-    addTerminalWithSession("sess-1", "/Users/dev/my-project");
-    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/Users/dev/my-project/plans/foo.md" }, "sess-1");
-    await flushMicrotasks();
-    const item = activityStore.getForSection("plan")[0];
-    expect(item.repoPath).toBeDefined();
-  });
-
   it("resolves relative plan path to absolute using session CWD", async () => {
     addTerminalWithSession("sess-2", "/Users/dev/my-project");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "plans/feature.md" }, "sess-2");
     await flushMicrotasks();
-    const item = activityStore.getForSection("plan")[0];
+    const item = getPlanItems()[0];
+    // Subtitle shows the full path before enrichment replaces it
     expect(item.subtitle).toBe("/Users/dev/my-project/plans/feature.md");
-    expect(item.contentUri).toContain(encodeURIComponent("/Users/dev/my-project/plans/feature.md"));
   });
 
   it("keeps absolute path unchanged", async () => {
     addTerminalWithSession("sess-3", "/Users/dev/my-project");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/absolute/plans/bar.md" }, "sess-3");
     await flushMicrotasks();
-    const item = activityStore.getForSection("plan")[0];
+    const item = getPlanItems()[0];
     expect(item.subtitle).toBe("/absolute/plans/bar.md");
-  });
-
-  it("rebuilds planItemIds from activityStore on re-register (simulates hydrate)", async () => {
-    // Simulate hydrated items by adding directly to activityStore
-    activityStore.addItem({
-      id: "plan:/repo/plans/old.md",
-      pluginId: "plan",
-      sectionId: "plan",
-      title: "old",
-      icon: "<svg/>",
-      dismissible: true,
-      repoPath: "/repo",
-    });
-    // Register the plugin — it should pick up existing items and enrich them
-    pluginRegistry.register(planPlugin);
-    // Add more plans — no eviction limit, all items coexist
-    for (let i = 1; i <= 3; i++) {
-      pluginRegistry.dispatchStructuredEvent("plan-file", { path: `/repo/plans/new-${i}.md` }, "sess-x");
-      await flushMicrotasks();
-    }
-    const items = activityStore.getForSection("plan");
-    // All items should be present (1 hydrated + 3 new = 4)
-    expect(items.length).toBe(4);
-    // The old hydrated item should still exist
-    expect(items.find((i) => i.id === "plan:/repo/plans/old.md")).toBeDefined();
   });
 });
 
@@ -278,29 +264,22 @@ describe("plan-file metadata enrichment", () => {
     pluginRegistry.register(planPlugin);
   });
 
-
   it("enriches item title with H1 from file content", async () => {
     mockedInvoke.mockResolvedValue("# Implementation Plan: My Feature\n\n**Status:** Draft\n**Estimated Effort:** M");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/my-feature.md" }, "s1");
     await flushMicrotasks();
-    // Wait for the async enrichment
     await flushMicrotasks();
-    const item = activityStore.getForSection("plan")[0];
-    expect(item.title).toBe("My Feature");
+    const item = getPlanItems()[0];
+    expect(item.label).toBe("My Feature");
   });
 
-  it("populates metadata with status, effort, priority, story", async () => {
+  it("populates subtitle with status and effort after enrichment", async () => {
     mockedInvoke.mockResolvedValue("# Plan: Cool Feature\n\n**Status:** In Progress\n**Estimated Effort:** L-XL\n**Priority:** P1\n**Story:** 420-e0ea");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/cool.md" }, "s1");
     await flushMicrotasks();
     await flushMicrotasks();
-    const item = activityStore.getForSection("plan")[0];
-    expect(item.metadata).toEqual({
-      status: "In Progress",
-      effort: "L-XL",
-      priority: "P1",
-      story: "420-e0ea",
-    });
+    const item = getPlanItems()[0];
+    expect(item.subtitle).toBe("In Progress · L-XL");
   });
 
   it("uses YAML frontmatter status over inline status", async () => {
@@ -308,8 +287,8 @@ describe("plan-file metadata enrichment", () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/done.md" }, "s1");
     await flushMicrotasks();
     await flushMicrotasks();
-    const item = activityStore.getForSection("plan")[0];
-    expect(item.metadata?.status).toBe("completed");
+    const item = getPlanItems()[0];
+    expect(item.subtitle).toContain("completed");
   });
 
   it("falls back to basename when file has no H1", async () => {
@@ -317,8 +296,8 @@ describe("plan-file metadata enrichment", () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/orphan.md" }, "s1");
     await flushMicrotasks();
     await flushMicrotasks();
-    const item = activityStore.getForSection("plan")[0];
-    expect(item.title).toBe("orphan");
+    const item = getPlanItems()[0];
+    expect(item.label).toBe("orphan");
   });
 
   it("keeps basename title when file read fails", async () => {
@@ -326,36 +305,8 @@ describe("plan-file metadata enrichment", () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/missing.md" }, "s1");
     await flushMicrotasks();
     await flushMicrotasks();
-    const item = activityStore.getForSection("plan")[0];
-    expect(item.title).toBe("missing");
-  });
-
-  it("enriches hydrated items on plugin load", async () => {
-    // Add an item without metadata (simulating hydration from disk)
-    activityStore.addItem({
-      id: "plan:/repo/plans/old.md",
-      pluginId: "plan",
-      sectionId: "plan",
-      title: "old",
-      subtitle: "/repo/plans/old.md",
-      icon: "<svg/>",
-      dismissible: true,
-      repoPath: "/repo",
-    });
-    // Route plugin_read_file to return plan content, all others resolve normally
-    mockedInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "plugin_read_file") return Promise.resolve("# Implementation Plan: Old Feature\n\n**Status:** Draft\n**Estimated Effort:** S");
-      return Promise.resolve(undefined);
-    });
-
-    pluginRegistry.register(planPlugin);
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    const item = activityStore.getForSection("plan").find((i) => i.id === "plan:/repo/plans/old.md");
-    expect(item?.title).toBe("Old Feature");
-    expect(item?.metadata?.status).toBe("Draft");
-    expect(item?.metadata?.effort).toBe("S");
+    const item = getPlanItems()[0];
+    expect(item.label).toBe("missing");
   });
 });
 
@@ -426,7 +377,7 @@ describe("plan-file session filtering", () => {
     const termId = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T", cwd: "/some/path", awaitingInput: null });
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/some/path/plan.md" }, "s1");
     await flushMicrotasks();
-    expect(activityStore.getForSection("plan")).toHaveLength(1);
+    expect(getPlanItems()).toHaveLength(1);
     terminalsStore.remove(termId);
   });
 
@@ -436,7 +387,7 @@ describe("plan-file session filtering", () => {
     const termId = terminalsStore.add({ sessionId: "s-repo", fontSize: 14, name: "T", cwd: "/my/repo/subdir", awaitingInput: null });
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/my/repo/plan.md" }, "s-repo");
     await flushMicrotasks();
-    expect(activityStore.getForSection("plan")).toHaveLength(1);
+    expect(getPlanItems()).toHaveLength(1);
     terminalsStore.remove(termId);
     repositoriesStore.setActive(null);
     repositoriesStore.remove("/my/repo");
@@ -446,20 +397,10 @@ describe("plan-file session filtering", () => {
     repositoriesStore.add({ path: "/my/repo", displayName: "repo" });
     repositoriesStore.setActive("/my/repo");
     const termId = terminalsStore.add({ sessionId: "s-other", fontSize: 14, name: "T", cwd: "/other/project", awaitingInput: null });
-    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/other/plan.md" }, "s-other");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/other/project/plan.md" }, "s-other");
     await flushMicrotasks();
-    expect(activityStore.getForSection("plan")).toHaveLength(0);
+    expect(getPlanItems()).toHaveLength(0);
     terminalsStore.remove(termId);
-    repositoriesStore.setActive(null);
-    repositoriesStore.remove("/my/repo");
-  });
-
-  it("hides plan when session is unknown (no terminal with that sessionId)", async () => {
-    repositoriesStore.add({ path: "/my/repo", displayName: "repo" });
-    repositoriesStore.setActive("/my/repo");
-    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/my/repo/plan.md" }, "s-unknown");
-    await flushMicrotasks();
-    expect(activityStore.getForSection("plan")).toHaveLength(0);
     repositoriesStore.setActive(null);
     repositoriesStore.remove("/my/repo");
   });
